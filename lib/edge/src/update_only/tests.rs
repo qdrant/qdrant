@@ -200,18 +200,23 @@ mod store {
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::payload_json;
     use segment::payload_storage::update_only::UpdateOnlyPayloadStorage;
-    use segment::types::{Distance, Filter, Payload, WithPayloadInterface, WithVector};
-    use shard::files::SEGMENTS_PATH;
+    use segment::segment_constructor::get_vector_storage_path;
+    use segment::types::{
+        BinaryQuantization, BinaryQuantizationConfig, Distance, Filter, Payload,
+        QuantizationConfig, WithPayloadInterface, WithVector,
+    };
+    use shard::files::{SEGMENTS_PATH, segment_manifest_path};
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{UpsertPoints, UpsertPointsConditional};
     use shard::operations::point_ops::{
         ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
     };
+    use shard::optimizers::config::TEMP_SEGMENTS_PATH;
 
     use super::*;
     use crate::RetrieveRequestBuilder;
-    use crate::read_only::ReadOnlyEdgeShard;
     use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
+    use crate::read_only::{ManifestSegmentEnumerator, ReadOnlyEdgeShard};
     use crate::read_view::EdgeShardRead as _;
 
     /// The leader writes its payload storage in mutable (Gridstore) mode, which an
@@ -535,6 +540,90 @@ mod store {
                 .to_vec(),
         );
         assert_follower_vectors(&follower, &[11, 12]);
+    }
+
+    /// Every quantized row stored in the shard's appendable segments, in slot
+    /// order. The vectors are one-dimensional and Binary-quantized into `u128`
+    /// words, so each row is 16 bytes and a positive vector sets its first bit.
+    fn quantized_rows(shard_dir: &Path) -> Vec<[u8; 16]> {
+        let mut rows = Vec::new();
+        for segment in fs_err::read_dir(shard_dir.join(SEGMENTS_PATH)).unwrap() {
+            let segment_path = segment.unwrap().path();
+            let data_dir =
+                get_vector_storage_path(&segment_path, VECTOR_NAME).join("quantized_data");
+            if !data_dir.is_dir() {
+                continue;
+            }
+            let status = fs_err::read(data_dir.join("status.dat")).unwrap();
+            let len = usize::from_le_bytes(status[..size_of::<usize>()].try_into().unwrap());
+            let data = fs_err::read(data_dir.join("chunk_0.mmap")).unwrap();
+            let (stored, _) = data.as_chunks::<16>();
+            rows.extend_from_slice(&stored[..len]);
+        }
+        rows
+    }
+
+    /// Sequential batches through one writer keep the quantized rows of the
+    /// earlier ones: each batch must see the chunk files the previous one
+    /// wrote, not the listing taken when the quantized writer was opened.
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    fn sequential_batches_keep_quantized_rows() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-update-quantized-sequential")
+            .tempdir()
+            .unwrap();
+        fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+        let writer = UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+            None,
+        )
+        .unwrap();
+        let config = EdgeConfig {
+            quantization_config: Some(QuantizationConfig::Binary(BinaryQuantization {
+                binary: BinaryQuantizationConfig {
+                    always_ram: None,
+                    memory: None,
+                    encoding: None,
+                    query_encoding: None,
+                },
+            })),
+            ..test_config()
+        }
+        .plain_segment_config();
+        let (mut writer, _) = writer
+            .create_appendable(
+                &config,
+                &HashMap::new(),
+                &dir.path().join(TEMP_SEGMENTS_PATH),
+            )
+            .unwrap();
+
+        for (op_num, ids) in [(1, 1..=3), (2, 4..=6), (3, 7..=9)] {
+            let (next, outcome) = writer
+                .apply_batch(store_batch(op_num, ids.map(point).collect()))
+                .unwrap();
+            assert_eq!(outcome.stored, 3);
+            writer = next;
+        }
+
+        let rows = quantized_rows(dir.path());
+        assert_eq!(rows.len(), 9, "one quantized row per stored point");
+        for (slot, row) in rows.iter().enumerate() {
+            assert!(
+                row.iter().any(|&byte| byte != 0),
+                "quantized row {slot} was zeroed",
+            );
+        }
+
+        let follower = open_follower(dir.path());
+        assert_eq!(exact_count(&follower), 9);
     }
 
     /// An `insert_only` batch over a mix of taken and free ids: the free ones
