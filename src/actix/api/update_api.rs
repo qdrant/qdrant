@@ -462,7 +462,7 @@ async fn staging_operation(
         None, // shard_key
         auth,
     )
-    .unmeasured(reason("🤖 This API isn't measured"))
+    .unmeasured(reason("This API isn't measured"))
     .await;
 
     process_response(result, timing, None)

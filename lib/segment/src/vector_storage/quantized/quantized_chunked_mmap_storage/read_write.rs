@@ -208,11 +208,8 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
-        hw::unmeasured(
-            reason("🤖 Building quantized vectors is an internal operation"),
-            || self.data.push(other),
-        )
-        .map(|_| ())
-        .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
+        hw::unmeasured(reason("Internal operation"), || self.data.push(other))
+            .map(|_| ())
+            .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }
 }

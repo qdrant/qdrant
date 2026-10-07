@@ -230,8 +230,7 @@ impl<'a> GraphLayersHealer<'a> {
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
-                    let _hw =
-                        hw::unmeasured_guard(reason("Internal operation. No measurements needed."));
+                    let _hw = hw::unmeasured_guard(reason("Internal operation"));
                     let query = vector_storage
                         .get_vector::<Random>(offset)
                         .as_vec_ref()

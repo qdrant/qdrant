@@ -231,12 +231,8 @@ where
             })
             .expect("multi-vector offsets read");
 
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump(
-            sub_vector_offsets.len()
-                * self.quantized_vector_size()
-                * usize::from(self.quantized_storage.is_on_disk()),
-        );
+        let mul = usize::from(self.quantized_storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(sub_vector_offsets.len() * self.quantized_vector_size() * mul);
 
         // Reads may complete in any order, so we buffer each point's sub-vectors
         // (keyed by `point_index`) and emit the multi-vector once all of them have

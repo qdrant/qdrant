@@ -131,7 +131,7 @@ impl MutableNullIndex {
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // Account for I/O cost as if we were writing to disk now
-        let _hw = hw::unmeasured_guard(reason("🤖 TODO: attribute to the caller's operation"));
+        let _hw = hw::unmeasured_guard(reason("TODO: attribute to the caller's operation"));
         HwMetric::PayloadIndexIoWrite.bump(2);
 
         Ok(())

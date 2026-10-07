@@ -358,7 +358,7 @@ pub fn apply_change<S>(segment: &mut S, change: &PendingChange) -> OperationResu
 where
     S: NonAppendableSegmentEntry + ?Sized,
 {
-    let _hw = hw::unmeasured_guard(reason("Internal operation, no need to measure hardware IO"));
+    let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
     match change {
         PendingChange::DeletePoint { point_id, versions } => {

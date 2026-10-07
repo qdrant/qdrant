@@ -514,7 +514,7 @@ impl Collection {
                 let count_result = replica_set
                     .count_local(count_request.clone(), None, DeferredBehavior::VisibleOnly)
                     .unmeasured(reason(
-                        "🤖 Cluster info is excluded from hardware measurements",
+                        "Cluster info is excluded from hardware measurements",
                     ))
                     .await
                     .unwrap_or_default();

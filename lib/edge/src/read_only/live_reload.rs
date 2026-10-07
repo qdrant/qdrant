@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hw;
-use common::reason::reason;
+use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -87,7 +87,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.live_reload_impl(is_stopped)
     }
 

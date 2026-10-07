@@ -1,19 +1,3 @@
-//! 🤖 Ambient, per-thread hardware usage context.
-//!
-//! 🤖 Code that does measurable work calls [`HwMetric::bump`] without passing any counter around.
-//! 🤖 Where the measurements go is decided by the innermost scope on the current thread, entered
-//! 🤖 with [`AmbientContext::measure`] / [`unmeasured`]. Bumps outside of any scope panic in
-//! 🤖 debug builds, and are dropped in release builds.
-//!
-//! 🤖 Scopes restore the outer state on exit. Closure scopes can't span an `.await`; guard scopes
-//! 🤖 are `!Send`, so a spawned future can't hold them across an `.await` either. Use
-//! 🤖 [`HwFutureExt`] to enter a scope on every poll of a future.
-//! 🤖 To continue a scope on another thread or task, pass the [`HwHandoff`] from [`current`] and
-//! 🤖 enter it there with [`HwHandoff::enter`].
-//! 🤖 Wrap rayon calls into [`parallel`]: while inside, jobs stolen by this thread that didn't
-//! 🤖 enter their own scope are not attributed to the current one.
-//! 🤖 Scopes exited out of order lose their measurements (debug builds panic).
-
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -36,54 +20,44 @@ impl HwMetric {
 }
 
 impl AmbientContext {
-    /// 🤖 Run `f`, measuring everything it does on this thread into `self`.
+    /// Run `f`, measuring everything it does on this thread into `self`.
     pub fn measure<R>(&self, f: impl FnOnce() -> R) -> R {
         let _scope = self.measure_guard();
         f()
     }
 
-    /// 🤖 Guard version of [`Self::measure`]. Don't hold it across `.await`.
+    /// Guard version of [`Self::measure`]. Don't hold it across `.await`.
     pub fn measure_guard(&self) -> HwScope<'_> {
         hw_slot::enter_measured(self)
     }
 
-    /// 🤖 Like [`Self::measure_guard`], but keeps the context alive by owning it.
+    /// Like [`Self::measure_guard`], but keeps the context alive by owning it.
     pub fn measure_guard_owned(self) -> HwScope<'static> {
         hw_slot::enter_measured_owned(self)
     }
 }
 
-/// 🤖 Run `f` without measuring it. Use for internal operations, which are not attributed to any
-/// 🤖 request.
+/// Run `f` without measuring it.
 pub fn unmeasured<R>(_: Reason, f: impl FnOnce() -> R) -> R {
     let _scope = hw_slot::enter_unmeasured();
     f()
 }
 
-/// 🤖 Guard version of [`unmeasured`]. Don't hold it across `.await`.
+/// Guard version of [`unmeasured`]. Don't hold it across `.await`.
 pub fn unmeasured_guard(_: Reason) -> HwScope<'static> {
     hw_slot::enter_unmeasured()
 }
 
-/// 🤖 [`unmeasured`] for tests, to keep [`unmeasured`] for internal operations.
 #[cfg(any(test, feature = "testing"))]
 pub fn test<R>(f: impl FnOnce() -> R) -> R {
-    unmeasured(
-        crate::reason::reason("🤖 Tests aren't attributed to any request"),
-        f,
-    )
+    unmeasured(crate::reason::reason("Test code"), f)
 }
 
-/// 🤖 Guard version of [`test`].
 #[cfg(any(test, feature = "testing"))]
 pub fn test_guard() -> HwScope<'static> {
-    unmeasured_guard(crate::reason::reason(
-        "🤖 Tests aren't attributed to any request",
-    ))
+    unmeasured_guard(crate::reason::reason("Test code"))
 }
 
-/// 🤖 A context to enter, taken from [`current`] / [`parallel`], or constructed explicitly.
-/// 🤖 Not measuring requires spelling out the reason, so it is never a silent default.
 #[derive(Clone, Debug)]
 pub struct HwHandoff(Option<AmbientContext>);
 
@@ -92,18 +66,18 @@ impl HwHandoff {
         Self(Some(ctx))
     }
 
-    /// 🤖 Don't measure. Use for internal operations, which are not attributed to any request.
+    /// Don't measure. Use for internal operations, which are not attributed to any request.
     pub fn unmeasured(_: Reason) -> Self {
         Self(None)
     }
 
-    /// 🤖 Run `f` in this context.
+    /// Run `f` in this context.
     pub fn enter<R>(&self, f: impl FnOnce() -> R) -> R {
         let _scope = self.enter_guard();
         f()
     }
 
-    /// 🤖 Guard version of [`Self::enter`]. Don't hold it across `.await`.
+    /// Guard version of [`Self::enter`]. Don't hold it across `.await`.
     pub fn enter_guard(&self) -> HwScope<'_> {
         match &self.0 {
             Some(ctx) => hw_slot::enter_measured(ctx),
@@ -119,7 +93,7 @@ impl HwHandoff {
         self.0.as_ref()
     }
 
-    /// 🤖 CPU utilization of the context; a fresh one when unmeasured.
+    /// CPU utilization of the context; a fresh one when unmeasured.
     pub fn cpu_utilization(&self) -> CpuUtilization {
         self.0
             .as_ref()
@@ -127,41 +101,41 @@ impl HwHandoff {
     }
 }
 
-/// 🤖 Run rayon (or any other work-stealing) calls.
-/// 🤖 Closures passed to rayon must enter the provided context, see [`HwHandoff::enter`].
+/// Run rayon (or any other work-stealing) calls.
+/// Closures passed to rayon must enter the provided context, see [`HwHandoff::enter`].
 pub fn parallel<R>(f: impl FnOnce(&HwHandoff) -> R) -> R {
     let ctx = current();
     let _scope = hw_slot::enter_masked();
     f(&ctx)
 }
 
-/// 🤖 The context of the current scope, to enter it on another thread or task.
+/// The context of the current scope, to enter it on another thread or task.
 pub fn current() -> HwHandoff {
     HwHandoff(hw_slot::current_ctx())
 }
 
-/// 🤖 Whether the current scope is measured.
+/// Whether the current scope is measured.
 pub fn is_measured() -> bool {
     hw_slot::is_measured()
 }
 
-/// 🤖 CPU utilization of the current context; a fresh one when unmeasured.
+/// CPU utilization of the current context; a fresh one when unmeasured.
 pub fn cpu_utilization() -> CpuUtilization {
     current().cpu_utilization()
 }
 
-/// 🤖 [`AmbientContext::accumulate_request`] on the current context, if measured.
+/// [`AmbientContext::accumulate_request`] on the current context, if measured.
 pub fn accumulate_request(src: HardwareData) {
     hw_slot::accumulate_request(src);
 }
 
-/// 🤖 Measurements of the current scope, not yet flushed into its context.
+/// Measurements of the current scope, not yet flushed into its context.
 #[cfg(any(test, feature = "testing"))]
 pub fn pending() -> HardwareData {
     hw_slot::pending()
 }
 
-/// 🤖 Run `f`, counting its `Cpu` bumps `multiplier` times.
+/// Run `f`, counting its `Cpu` bumps `multiplier` times.
 pub fn scale_cpu<R>(multiplier: usize, f: impl FnOnce() -> R) -> R {
     let before = hw_slot::pending_metric(HwMetric::Cpu);
     let result = f();
@@ -170,7 +144,7 @@ pub fn scale_cpu<R>(multiplier: usize, f: impl FnOnce() -> R) -> R {
     result
 }
 
-/// 🤖 Multipliers for `cpu` and `vector_io_read` bumps of a scorer-like object.
+/// Multipliers for `cpu` and `vector_io_read` bumps of a scorer-like object.
 #[derive(Clone, Copy, Debug)]
 pub struct HwScale {
     pub cpu: usize,
@@ -189,7 +163,7 @@ impl HwScale {
     }
 }
 
-/// 🤖 Future adapters that enter a scope on every poll.
+/// Future adapters that enter a scope on every poll.
 pub trait HwFutureExt: Future + Sized {
     fn measured(self, ctx: AmbientContext) -> HwFuture<Self> {
         self.in_hw(HwHandoff::measured(ctx))
@@ -199,7 +173,7 @@ pub trait HwFutureExt: Future + Sized {
         self.in_hw(HwHandoff::unmeasured(reason))
     }
 
-    /// 🤖 Enter a context taken from [`current`].
+    /// Enter a context taken from [`current`].
     fn in_hw(self, hw: HwHandoff) -> HwFuture<Self> {
         HwFuture { hw, future: self }
     }
@@ -212,7 +186,6 @@ pub trait HwFutureExt: Future + Sized {
 impl<F: Future> HwFutureExt for F {}
 
 pin_project! {
-    /// 🤖 See [`HwFutureExt`].
     pub struct HwFuture<F> {
         hw: HwHandoff,
         #[pin]
@@ -340,7 +313,7 @@ mod tests {
             test(|| HwMetric::Cpu.bump(100));
         }
         .measured(AmbientContext::clone(&ctx));
-        test(|| HwMetric::Cpu.bump(1000)); // 🤖 not polled yet: not attributed
+        test(|| HwMetric::Cpu.bump(1000)); // not polled yet: not attributed
         futures::executor::block_on(future);
         assert_eq!(ctx.hw_data()[HwMetric::Cpu], 11);
     }

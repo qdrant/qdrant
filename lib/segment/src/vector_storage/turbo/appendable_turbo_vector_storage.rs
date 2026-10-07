@@ -397,9 +397,7 @@ impl DenseTQVectorStorage for AppendableMmapTurboVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let _hw = hw::unmeasured_guard(reason(
-            "🤖 This function is only used for internal operations.",
-        ));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         let start_index = self.storage.vectors_count() as PointOffsetType;
         let mut key = start_index;
 

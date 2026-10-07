@@ -665,7 +665,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         HwMetric::Cpu.bump(self.metadata.vector_parameters().dim);
 
-        // 🤖 Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump(
             (self.metadata.vector_parameters().dim * 2)
                 * usize::from(self.encoded_vectors.is_on_disk()),

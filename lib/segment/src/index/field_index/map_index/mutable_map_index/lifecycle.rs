@@ -63,7 +63,7 @@ where
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(prefix_index);
 
-        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, BlobstoreError>(
                 |idx, values: Vec<_>| {

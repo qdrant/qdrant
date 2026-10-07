@@ -101,7 +101,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match hw::unmeasured(reason("🤖 Vector storage read IO not measured"), || {
+        match hw::unmeasured(reason("Vector storage read IO not measured"), || {
             self.storage.get_value::<P>(key)
         }) {
             Ok(Some(stored)) => SparseVector::try_from(stored).ok().map(CowVector::from),

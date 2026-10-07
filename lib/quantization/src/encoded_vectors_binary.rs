@@ -923,11 +923,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         let vector_data_1 = self.encoded_vectors.get_vector_data(i);
         let vector_data_2 = self.encoded_vectors.get_vector_data(j);
 
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump(
-            (vector_data_1.len() + vector_data_2.len())
-                * usize::from(self.encoded_vectors.is_on_disk()),
-        );
+        let mul = usize::from(self.encoded_vectors.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((vector_data_1.len() + vector_data_2.len()) * mul);
 
         // TODO Safety
         #[expect(deprecated, reason = "legacy code")]

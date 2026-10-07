@@ -19,3 +19,11 @@ pub struct Reason(());
 pub const fn reason(_: &'static str) -> Reason {
     Reason(())
 }
+
+/// Commonly used reasons.
+impl Reason {
+    pub const EDGE_UNMEASURED: Reason = reason("Edge doesn't report hardware usage (yet?)");
+
+    #[cfg(any(test, feature = "testing"))]
+    pub const TEST: Reason = reason("Test or benchmark code");
+}

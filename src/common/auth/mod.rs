@@ -269,7 +269,7 @@ impl AuthKeys {
                 ShardSelectorInternal::All,
                 Auth::new_internal(Access::full("JWT stateful validation")),
             )
-            .unmeasured(reason("🤖 Access checks aren't attributed to the request"))
+            .unmeasured(reason("Access checks aren't attributed to the request"))
             .await
             .map_err(|e| {
                 #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]

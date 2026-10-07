@@ -564,11 +564,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         let centroids_i = self.encoded_vectors.get_vector_data(i);
         let centroids_j = self.encoded_vectors.get_vector_data(j);
 
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump(
-            (self.metadata.vector_division.len() * 2)
-                * usize::from(self.encoded_vectors.is_on_disk()),
-        );
+        let mul = usize::from(self.encoded_vectors.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((self.metadata.vector_division.len() * 2) * mul);
 
         HwMetric::Cpu.bump(
             centroids_i.as_ref().len()

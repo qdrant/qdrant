@@ -5,7 +5,6 @@ use bustle::Collection;
 use common::counter::hw;
 use common::counter::hw::HwMetric;
 use common::generic_consts::Random;
-use common::reason::reason;
 use parking_lot::RwLock;
 
 use crate::PayloadStorage;
@@ -34,7 +33,7 @@ impl Collection for ArcStorage<PayloadStorage> {
 
 impl SequentialCollectionHandle for PayloadStorage {
     fn get(&self, key: &u32) -> bool {
-        let _hw = hw::unmeasured_guard(reason("No measurements needed in benches"));
+        let _hw = hw::test_guard();
         self.get_value::<Random>(*key).unwrap().is_some()
     }
 

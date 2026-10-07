@@ -54,7 +54,7 @@ where
     }
 
     /// Build a raw scorer for the specified `point_id`.
-    /// 🤖 If not supported, return [`InternalScorerUnsupported`].
+    /// If not supported, return [`InternalScorerUnsupported`].
     pub fn new_internal(
         point_id: PointOffsetType,
         quantized_data: &'a TEncodedVectors,

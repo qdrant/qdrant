@@ -296,9 +296,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
         offsets: impl Iterator<Item = MultivectorOffset>,
         in_ram: bool,
     ) -> OperationResult<Self> {
-        let _hw = hw::unmeasured_guard(reason(
-            "🤖 Building quantized vectors is an internal operation",
-        ));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         let mut offsets_storage = Self::load(fs, path, in_ram)?;
         for (id, offset) in offsets.enumerate() {
             offsets_storage.upsert_offset(id as PointOffsetType, offset)?;

@@ -14,7 +14,6 @@ pub enum HwMetric {
 }
 
 /// Contains all hardware metrics. Only serves as value holding structure without any semantics.
-/// 🤖 Indexed by [`HwMetric`].
 #[derive(Copy, Clone, Default)]
 pub struct HardwareData(pub(super) [usize; HwMetric::COUNT]);
 

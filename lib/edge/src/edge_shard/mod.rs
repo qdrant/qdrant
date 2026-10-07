@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hw;
-use common::reason::reason;
+use common::reason::Reason;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
 use parking_lot::Mutex;
@@ -529,7 +529,7 @@ fn ensure_appendable_segment(
 
     let (mut segment, token) =
         build_segment(segments_path, &config.plain_segment_config(), None, true)?;
-    let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
+    let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
     for (key, schema) in &indexed_fields {
         segment.create_field_index(0, key, Some(schema))?;
     }

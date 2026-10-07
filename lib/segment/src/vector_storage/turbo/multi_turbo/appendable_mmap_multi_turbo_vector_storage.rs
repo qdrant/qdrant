@@ -454,8 +454,8 @@ impl AppendableMmapMultiTurboVectorStorage {
 
         HwMetric::Cpu.bump(records.len() * query.len());
 
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump((records.len()) * usize::from(self.storage.is_on_disk()));
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(records.len() * mul);
 
         self.score_records_max_similarity(query, &records)
     }
@@ -486,9 +486,8 @@ impl AppendableMmapMultiTurboVectorStorage {
             .expect("Multivector not found");
 
         HwMetric::Cpu.bump(records_a.len() * offset_b.count as usize);
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead
-            .bump((records_a.len() + records_b.len()) * usize::from(self.storage.is_on_disk()));
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
         let quantized_size = self.quantizer.quantized_size();
         let mut sum = 0.0;
@@ -677,9 +676,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let record_size = self.quantizer.quantized_size();
-        let _hw = hw::unmeasured_guard(reason(
-            "🤖 This function is only used for internal operations.",
-        ));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         let start_index = self.offsets.len() as PointOffsetType;
 
         for (blob, deleted) in other_vectors {

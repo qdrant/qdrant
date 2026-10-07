@@ -156,7 +156,7 @@ impl Collection {
                         None,
                         false,
                     )
-                    .unmeasured(reason("Internal operation. No measurement needed."))
+                    .unmeasured(reason("Internal operation"))
                     .await?;
             }
 

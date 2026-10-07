@@ -155,7 +155,7 @@ fn build_graph_on_gpu<'a, 'b>(
 ) -> OperationResult<Option<GraphLayersBuilder>> {
     if let Some(gpu_insert_context) = gpu_insert_context {
         let gpu_constructed_graph = hw::unmeasured(
-            reason("🤖 internal operation, the scorers are used within this call"),
+            reason("internal operation, the scorers are used within this call"),
             || {
                 build_hnsw_on_gpu(
                     gpu_insert_context,

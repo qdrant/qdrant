@@ -918,7 +918,7 @@ impl LocalShard {
             let op_started = Instant::now();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &hw::unmeasured(reason("Internal operation, no measurement needed."), || {
+            match &hw::unmeasured(reason("Internal operation"), || {
                 CollectionUpdater::update(
                     &self.segments,
                     op_num,

@@ -46,7 +46,7 @@ pub struct CompressedPostingListView<'a, W: Weight> {
     remainders: &'a [GenericPostingElement<W>],
     last_id: Option<PointOffsetType>,
     multiplier: W::QuantizationParams,
-    /// 🤖 Multiplier for `VectorIoRead` bumps, see [`PostingListIter::set_vector_io_read_unit`].
+    /// Multiplier for [`HwMetric::VectorIoRead`] bumps, see [`PostingListIter::set_vector_io_read_unit`].
     vector_io_read_unit: usize,
 }
 

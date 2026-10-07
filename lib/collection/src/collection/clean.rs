@@ -292,7 +292,7 @@ async fn drain_update_queue(
     ));
     shard
         .update_local(barrier, WaitUntil::Visible, None, false)
-        .unmeasured(reason("🤖 Collection cleanup is an internal operation"))
+        .unmeasured(reason("Internal operation"))
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
@@ -355,7 +355,7 @@ async fn clean_task(
                 None,
                 DeferredBehavior::WithDeferred, // Include also deferred points in the cleanup task.
             )
-            .unmeasured(reason("Internal operation, no measurement needed!"))
+            .unmeasured(reason("Internal operation"))
             .await
         {
             Ok(batch) => batch.into_iter().map(|entry| entry.id).collect::<Vec<_>>(),
@@ -396,7 +396,7 @@ async fn clean_task(
         );
         if let Err(err) = shard
             .update_local(delete_operation, WaitUntil::from(last_batch), None, false)
-            .unmeasured(reason("🤖 Collection cleanup is an internal operation"))
+            .unmeasured(reason("Internal operation"))
             .await
         {
             return Err(CollectionError::service_error(format!(

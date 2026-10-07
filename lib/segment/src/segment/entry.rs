@@ -931,7 +931,7 @@ impl SegmentEntry for Segment {
             .vector_storage
             .borrow()
             .is_deleted_vector(internal_id);
-        let _hw = hw::unmeasured_guard(reason("🤖 Vector deletions are not measured"));
+        let _hw = hw::unmeasured_guard(reason("Vector deletions are not measured"));
         let is_deleted = self.handle_point_mutate(
             op_num,
             point_id,

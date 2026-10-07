@@ -1323,7 +1323,7 @@ impl SegmentHolder {
         let (mut segment, token) =
             build_segment(segments_path, &config, deferred_internal_id, save_version)?;
 
-        let _hw = hw::unmeasured_guard(reason("Internal operation."));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
         let payload_schema_lock = payload_index_schema.read();
         for (key, schema) in payload_schema_lock.schema.iter() {

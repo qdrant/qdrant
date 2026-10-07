@@ -695,7 +695,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     on_successful_start();
 
-    let _hw = hw::unmeasured_guard(reason("🤖 Optimization is an internal operation"));
+    let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
     // Building the cow segment yields a `NewSegmentToken`; we register it below, once it is added to
     // the holder, and before the slow build can route writes into it.

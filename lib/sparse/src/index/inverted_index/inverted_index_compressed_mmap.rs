@@ -105,7 +105,7 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 
         if index.file_header.total_sparse_size.is_none() {
             // legacy header: compute in memory, never write back
-            let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
+            let _hw = hw::unmeasured_guard(reason("Internal operation"));
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
         }
 
@@ -141,7 +141,7 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             _phantom: PhantomData,
         };
 
-        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
         if index.file_header.total_sparse_size.is_none() {
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);

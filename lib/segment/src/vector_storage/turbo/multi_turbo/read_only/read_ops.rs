@@ -238,8 +238,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
             .expect("Multivector not found");
 
         HwMetric::Cpu.bump(records.len() * query.len());
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump((records.len()) * usize::from(self.storage.is_on_disk()));
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(records.len() * mul);
 
         self.score_records_max_similarity(query, &records)
     }
@@ -268,9 +268,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
             .expect("Multivector not found");
 
         HwMetric::Cpu.bump(records_a.len() * offset_b.count as usize);
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead
-            .bump((records_a.len() + records_b.len()) * usize::from(self.storage.is_on_disk()));
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
         let quantized_size = self.quantizer.quantized_size();
         let mut sum = 0.0;

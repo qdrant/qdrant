@@ -55,7 +55,7 @@ where
         };
 
         let mut in_memory_index = InMemoryNumericIndex::default();
-        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?,

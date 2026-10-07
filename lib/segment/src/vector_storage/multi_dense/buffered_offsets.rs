@@ -206,7 +206,7 @@ impl BufferedOffsets {
 
                 let mut inner = inner.write();
 
-                let _hw = hw::unmeasured_guard(reason("🤖 Flushing is an internal operation"));
+                let _hw = hw::unmeasured_guard(reason("Internal operation"));
                 for (key, entry) in &items {
                     inner.store.insert(*key, &[*entry])?;
                 }

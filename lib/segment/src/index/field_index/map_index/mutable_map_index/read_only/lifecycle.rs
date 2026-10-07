@@ -62,7 +62,7 @@ where
         // the gridstore carries no prefix marker, and this open path has no
         // schema access. Prefix conditions fall back to slower checks.
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
-        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?,
             |idx, values: Vec<_>| {

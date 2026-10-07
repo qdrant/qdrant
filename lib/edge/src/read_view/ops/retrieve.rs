@@ -1,5 +1,5 @@
 use common::counter::hw;
-use common::reason::reason;
+use common::reason::Reason;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVector};
@@ -16,7 +16,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         with_vector: Option<WithVector>,
     ) -> OperationResult<Vec<RecordInternal>> {
         self.check_stopped()?;
-        let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let with_payload =
             WithPayload::from(with_payload.unwrap_or(WithPayloadInterface::Bool(true)));
         let with_vector = with_vector.unwrap_or(WithVector::Bool(false));

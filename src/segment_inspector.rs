@@ -77,8 +77,7 @@ fn main() {
             if internal_id.is_some() {
                 let version = segment.point_version(point_id);
                 let payload =
-                    hw::unmeasured(reason("🤖 Debugging tool"), || segment.payload(point_id))
-                        .unwrap();
+                    hw::unmeasured(reason("Debugging tool"), || segment.payload(point_id)).unwrap();
                 // let vectors = segment.all_vectors(point_id).unwrap();
 
                 println!("Internal ID: {internal_id:?}");

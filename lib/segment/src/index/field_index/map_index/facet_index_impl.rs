@@ -88,7 +88,7 @@ where
 
 /// Faceting over the read-only enum mirrors [`FacetIndex for MapIndex<N>`]:
 /// the three iteration methods come from the shared [`MapIndexRead`] surface,
-/// 🤖 and `for_points_values` dispatches to the inner variant's inherent method.
+/// and `for_points_values` dispatches to the inner variant's inherent method.
 impl<N: MapIndexKey + common::persisted_hashmap::Key + ?Sized, S: UniversalRead> FacetIndex
     for ReadOnlyMapIndex<N, S>
 where

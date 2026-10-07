@@ -7,8 +7,7 @@ use strum::EnumCount;
 use super::hardware_data::{HardwareData, HwMetric};
 use crate::cpu_utilization::CpuUtilization;
 
-/// 🤖 Thread-safe counters, shared as the per-collection drain of multiple [`AmbientContext`]s.
-/// 🤖 Indexed by [`HwMetric`].
+/// Thread-safe counters, shared as the per-collection drain of multiple [`AmbientContext`]s.
 #[derive(Debug, Default)]
 pub struct HwSharedDrain([AtomicUsize; HwMetric::COUNT]);
 
@@ -24,8 +23,8 @@ impl HwSharedDrain {
     }
 }
 
-/// 🤖 One per request; [`super::hw`] scopes flush into it.
-/// 🤖 Reference-counted: clones read and write the same counters.
+/// One per request; [`super::hw`] scopes flush into it.
+/// Reference-counted: clones read and write the same counters.
 #[derive(Clone, Debug)]
 pub struct AmbientContext(Arc<Inner>);
 
@@ -75,14 +74,12 @@ impl AmbientContext {
     }
 
     pub(super) fn inner_ptr(&self) -> NonNull<Inner> {
-        // 🤖 `Arc::as_ptr` is never null.
-        NonNull::new(Arc::as_ptr(&self.0).cast_mut()).unwrap()
+        NonNull::new(Arc::as_ptr(&self.0).cast_mut()).expect("Arc::as_ptr is never null")
     }
 
-    /// 🤖 # Safety
-    /// 🤖 `ptr` comes from [`Self::inner_ptr`] of a context that is still alive.
+    /// # Safety
+    /// `ptr` comes from [`Self::inner_ptr`] of a context that is still alive.
     pub(super) unsafe fn from_inner_ptr(ptr: NonNull<Inner>) -> Self {
-        // 🤖 SAFETY: see the function contract.
         unsafe {
             Arc::increment_strong_count(ptr.as_ptr());
             Self(Arc::from_raw(ptr.as_ptr()))

@@ -1169,7 +1169,7 @@ pub async fn create_vector_name_internal(
         None,
         auth,
     )
-    .unmeasured(reason("🤖 This API isn't measured"))
+    .unmeasured(reason("This API isn't measured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -1206,7 +1206,7 @@ pub async fn delete_vector_name_internal(
         None,
         auth,
     )
-    .unmeasured(reason("🤖 This API isn't measured"))
+    .unmeasured(reason("This API isn't measured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);

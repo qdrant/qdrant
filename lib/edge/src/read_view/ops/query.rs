@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use common::counter::hw;
-use common::reason::reason;
+use common::reason::Reason;
 use common::types::{DeferredBehavior, ScoreType};
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -55,7 +55,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         requests: Vec<ShardQueryRequest>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _hw = hw::unmeasured_guard(reason("🤖 Edge doesn't report hardware usage"));
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // The planner fetches `limit + offset` points; the offset is cut off here.
         let offsets: Vec<_> = requests.iter().map(|request| request.offset).collect();
         let planned_query = PlannedQuery::try_from(requests)?;

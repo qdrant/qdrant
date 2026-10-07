@@ -467,9 +467,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         let v1 = self.encoded_vectors.get_vector_data(i);
         let v2 = self.encoded_vectors.get_vector_data(j);
 
-        // 🤖 Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead
-            .bump((v1.len() + v2.len()) * usize::from(self.encoded_vectors.is_on_disk()));
+        let mul = usize::from(self.encoded_vectors.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((v1.len() + v2.len()) * mul);
 
         let score = self.quantizer.score_symmetric(&v1, &v2);
         if self.metadata.vector_parameters.invert {

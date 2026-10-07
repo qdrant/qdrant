@@ -212,6 +212,10 @@ impl PostingListIter for PostingListIterator<'_> {
         size_of::<DimWeight>()
     }
 
+    fn set_vector_io_read_unit(&mut self, _unit: usize) {
+        // No-op because always in RAM and no `VectorIoRead` bumps to scale.
+    }
+
     #[inline]
     fn skip_to(&mut self, record_id: PointOffsetType) -> Option<PostingElementEx> {
         self.skip_to(record_id)

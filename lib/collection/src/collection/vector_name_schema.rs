@@ -69,7 +69,7 @@ impl Collection {
             WaitUntil::from(true),
             true, // Delete even in dead shards
         )
-        .unmeasured(reason("🤖 Schema changes aren't measured"))
+        .unmeasured(reason("Schema changes aren't measured"))
         .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the

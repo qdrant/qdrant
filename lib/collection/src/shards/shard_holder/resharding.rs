@@ -451,7 +451,7 @@ impl ShardHolder {
             let filter = Filter::new_must_not(Condition::new_custom(Arc::new(filter)));
             shard
                 .delete_local_points(filter, true, DeferredBehavior::WithDeferred, WaitUntil::Wal)
-                .unmeasured(reason("Internal operation, no performance tracking needed"))
+                .unmeasured(reason("Internal operation"))
                 .await?;
         }
 

@@ -430,9 +430,7 @@ impl Collection {
 
         for (vector_name, config) in to_create {
             self.create_named_vector(vector_name, config)
-                .unmeasured(reason(
-                    "🤖 Collection state recovery is an internal operation",
-                ))
+                .unmeasured(reason("Internal operation"))
                 .await?;
         }
 

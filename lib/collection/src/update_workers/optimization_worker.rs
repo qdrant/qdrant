@@ -540,7 +540,7 @@ impl UpdateWorkers {
                             "Failed to read WAL during recovery: {e}"
                         ))
                     })?;
-                    hw::unmeasured(reason("Internal operation, no measurement needed"), || {
+                    hw::unmeasured(reason("Internal operation"), || {
                         CollectionUpdater::update(
                             &segments,
                             op_num,

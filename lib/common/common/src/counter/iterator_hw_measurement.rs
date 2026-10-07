@@ -2,8 +2,7 @@ use super::hw::HwMetric;
 use crate::iterator_ext::on_final_count::OnFinalCount;
 
 pub trait HwMeasurementIteratorExt: Iterator {
-    /// 🤖 Measures the hardware usage of an iterator: bumps `metric` by `multiplier` per
-    /// 🤖 iterated item, once the iterator is dropped.
+    /// Measures the hardware usage of an iterator, once the iterator is dropped.
     fn measure_hw(
         self,
         metric: HwMetric,
@@ -17,8 +16,7 @@ pub trait HwMeasurementIteratorExt: Iterator {
         })
     }
 
-    /// 🤖 Same as [`Self::measure_hw`], with the size of a single item being represented as a
-    /// 🤖 fraction.
+    /// Same as [`Self::measure_hw`], but with a fractional instead of a multiplier.
     fn measure_hw_fraction(
         self,
         metric: HwMetric,

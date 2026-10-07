@@ -59,7 +59,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         let phrase_matching = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let _hw = hw::unmeasured_guard(reason("🤖 Loading an index is an internal operation"));
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
         let mut records_without_length = 0usize;
 

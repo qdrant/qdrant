@@ -91,7 +91,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                 None,
                 DeferredBehavior::WithDeferred,
             )
-            .unmeasured(reason("🤖 Shard transfer is an internal operation"))
+            .unmeasured(reason("Internal operation"))
             .await?
         else {
             return Err(CollectionError::service_error(format!(

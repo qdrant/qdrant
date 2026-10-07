@@ -24,7 +24,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`super::on_disk_map_index::OnDiskMapIndex`]).
 ///
 /// Signatures are unified across variants so the enum-level dispatcher in
-/// 🤖 [`MapIndex`] can call them generically.
+/// [`MapIndex`] can call them generically.
 pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     fn check_values_any(
         &self,

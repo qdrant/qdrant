@@ -255,7 +255,7 @@ fn condition_points(
 ) -> OperationResult<Vec<PointOffsetType>> {
     let filter = Filter::new_must(Field(condition));
 
-    let _hw = hw::unmeasured_guard(reason("Internal operation. No measurements needed"));
+    let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 

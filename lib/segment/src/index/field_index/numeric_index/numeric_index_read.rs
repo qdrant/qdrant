@@ -17,13 +17,13 @@ use crate::telemetry::PayloadIndexTelemetry;
 /// [`super::mmap_numeric_index::UniversalNumericIndex`]).
 ///
 /// Signatures are unified across variants so the enum-level dispatcher in
-/// 🤖 [`NumericIndexInner`] can call them generically.
+/// [`NumericIndexInner`] can call them generically.
 ///
 /// [`NumericIndexInner`]: super::NumericIndexInner
 pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
-    /// 🤖 Returns an error if the underlying mmap read
-    /// fails, so a transient IO failure surfaces to the caller instead of
-    /// being silently reported as "no match".
+    /// Returns an error if the underlying mmap read fails, so a transient IO
+    /// failure surfaces to the caller instead of being silently reported as
+    /// "no match".
     fn check_values_any(
         &self,
         idx: PointOffsetType,

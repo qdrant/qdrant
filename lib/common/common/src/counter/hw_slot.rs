@@ -1,8 +1,4 @@
-//! 🤖 The per-thread slot that [`super::hw`] scopes save to and restore from.
-//!
-//! 🤖 All the thread-local and unsafe pointer machinery lives here, behind a narrow
-//! 🤖 `pub(super)` surface that upholds the invariants by construction. [`super::hw`] is
-//! 🤖 plain safe composition over this module.
+//! Unsafe/thread-local implementation details for the [`super::hw`] module.
 
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -23,12 +19,12 @@ pub(super) fn bump(metric: HwMetric, delta: usize) {
     });
 }
 
-/// 🤖 The not-yet-flushed value of one counter of the current scope.
+/// The not-yet-flushed value of one counter of the current scope.
 pub(super) fn pending_metric(metric: HwMetric) -> usize {
     SLOT.with(|slot| slot.counters[metric as usize].get())
 }
 
-/// 🤖 The not-yet-flushed values of all counters of the current scope.
+/// The not-yet-flushed values of all counters of the current scope.
 #[cfg(any(test, feature = "testing"))]
 pub(super) fn pending() -> HardwareData {
     SLOT.with(|slot| HardwareData(slot.counters.each_ref().map(Cell::get)))
@@ -47,7 +43,7 @@ pub(super) fn enter_unmeasured() -> HwScope<'static> {
     HwScope::enter(Target::Unmeasured, None)
 }
 
-/// 🤖 Mask the current scope, see [`super::hw::parallel`].
+/// Mask the current scope, see [`super::hw::parallel`].
 pub(super) fn enter_masked() -> HwScope<'static> {
     HwScope::enter(Target::Unset, None)
 }
@@ -57,7 +53,7 @@ pub(super) fn current_ctx() -> Option<AmbientContext> {
         #[cfg(debug_assertions)]
         slot.check_access("hw::current()");
         match slot.target.get() {
-            // 🤖 SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
+            // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
             Target::Measured(acc) => Some(unsafe { AmbientContext::from_inner_ptr(acc) }),
             Target::Unset | Target::Unmeasured => None,
         }
@@ -72,11 +68,11 @@ pub(super) fn is_measured() -> bool {
     })
 }
 
-/// 🤖 [`AmbientContext::accumulate_request`] on the current context, if measured.
+/// [`AmbientContext::accumulate_request`] on the current context, if measured.
 pub(super) fn accumulate_request(src: HardwareData) {
     SLOT.with(|slot| {
         if let Target::Measured(acc) = slot.target.get() {
-            // 🤖 SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
+            // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
             unsafe { acc.as_ref() }.accumulate_request(src);
         }
     });
@@ -92,20 +88,20 @@ thread_local! {
     };
 }
 
-/// 🤖 Attribution target of the innermost scope on the current thread.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Target {
-    /// 🤖 No scope: before the first one on this thread, or masked by [`super::hw::parallel`].
-    /// 🤖 Bumps are a misuse: they panic in debug builds and are dropped in release builds.
+    /// The default state of a thread-local slot.
+    /// Bumping counters in this state is a misuse:
+    ///   it will panic in debug builds and unmeasured in release builds.
     Unset,
+    /// Explicitly unmeasured.
     Unmeasured,
-    /// 🤖 The context is kept alive by the scope that entered it.
     Measured(NonNull<Inner>),
 }
 
 struct Slot {
     target: Cell<Target>,
-    /// 🤖 Number of active scopes, to check they are exited in reverse order.
+    /// Number of active scopes, to check they are exited in reverse order.
     depth: Cell<u64>,
     counters: [Cell<usize>; HwMetric::COUNT],
 }
@@ -130,8 +126,7 @@ impl Slot {
         }
     }
 
-    /// 🤖 Drop the measurements and make every active scope stale: none of them restores its
-    /// 🤖 saved state, so a pointer to an already dropped context never comes back.
+    /// Drop the measurements and make every active scope stale.
     #[cold]
     fn poison(&self) {
         self.depth.set(self.depth.get() + (1 << 32));
@@ -140,20 +135,23 @@ impl Slot {
     }
 }
 
-/// 🤖 An active scope. Restores the outer one on drop (also on panic).
-/// 🤖 It's `!Send`, so a future holding it across `.await` can't be spawned on a multi-threaded
-/// 🤖 runtime.
+/// An active scope. Restores the outer one on drop/panic.
 #[must_use]
 pub struct HwScope<'a> {
     depth: u64,
-    /// 🤖 The target of the outer scope, restored on drop.
+    /// The target of the outer scope, restored on drop.
     outer: Target,
     counters: [usize; HwMetric::COUNT],
-    /// 🤖 Keeps `Target::Measured` alive for owned guard scopes.
+    /// Keeps [`Target::Measured`] alive for owned guard scopes.
     _ctx: Option<AmbientContext>,
-    /// 🤖 Keeps `Target::Measured` alive for borrowed guard scopes.
+    /// Keeps [`Target::Measured`] alive for borrowed guard scopes.
     _borrow: PhantomData<&'a Inner>,
 }
+
+#[cfg(test)]
+// Make sure that a future holding HwScope across `.await` can't be spawned on a
+// multi-threaded runtime.
+static_assertions::assert_not_impl_any!(HwScope<'static>: Send);
 
 impl<'a> HwScope<'a> {
     fn enter(target: Target, ctx: Option<AmbientContext>) -> Self {
@@ -185,7 +183,7 @@ impl Drop for HwScope<'_> {
             if let Target::Measured(acc) = target
                 && counters.iter().any(|&c| c != 0)
             {
-                // 🤖 SAFETY: exited in order, so `acc` belongs to this scope, which keeps it alive.
+                // SAFETY: exited in order, so `acc` belongs to this scope, which keeps it alive.
                 unsafe { acc.as_ref() }.accumulate(HardwareData(counters));
             }
         });

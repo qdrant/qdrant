@@ -509,10 +509,9 @@ impl SegmentBuilder {
 
             // Propagate payload to new segment
             if !other_payload.is_empty() {
-                hw::unmeasured(
-                    reason("🤖 Segment building is an internal operation"),
-                    || self.payload_storage.set(new_internal_id, &other_payload),
-                )?;
+                hw::unmeasured(reason("Internal operation"), || {
+                    self.payload_storage.set(new_internal_id, &other_payload)
+                })?;
             }
         }
 
