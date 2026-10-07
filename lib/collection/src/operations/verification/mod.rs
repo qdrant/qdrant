@@ -406,9 +406,13 @@ pub fn check_grouping_field(
 mod test {
     use std::sync::Arc;
 
-    use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
+    use api::rest::{
+        FacetRequestInternal, PointInsertOperations, PointStruct, PointsList, SearchRequestInternal,
+    };
     use common::budget::ResourceBudget;
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use segment::data_types::facets::FacetParams;
+    use segment::json_path::JsonPath;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
@@ -443,6 +447,7 @@ mod test {
         test_filter_write(&collection).await;
         test_substring_filter(&collection).await;
         test_request_exact(&collection).await;
+        test_facet_params_request_exact(&collection).await;
         test_search_batch_limit(&collection).await;
         test_upsert_batch_limit(&collection).await;
     }
@@ -588,6 +593,57 @@ mod test {
         let request = CountRequestInternal {
             filter: None,
             exact: false,
+        };
+        assert_strict_mode_success(request, collection).await;
+    }
+
+    /// Regression for issue #10522: gRPC facet requests built as `FacetParams`
+    /// must report the resolved `exact` flag to strict-mode verification so
+    /// that `search_allow_exact: false` rejects `exact: true`. REST already
+    /// enforces this through `FacetRequestInternal`; this test pins the gRPC
+    /// path on `FacetParams` to the same behavior.
+    async fn test_facet_params_request_exact(collection: &Collection) {
+        let request = FacetParams {
+            key: JsonPath::new(INDEXED_KEY),
+            limit: 1,
+            filter: None,
+            exact: true,
+        };
+        assert_strict_mode_error(request, collection).await;
+
+        let request = FacetParams {
+            key: JsonPath::new(INDEXED_KEY),
+            limit: 1,
+            filter: None,
+            exact: false,
+        };
+        assert_strict_mode_success(request, collection).await;
+
+        // REST path: `FacetRequestInternal` already enforced this before the fix;
+        // verify it still does so we don't regress the other surface.
+        let request = FacetRequestInternal {
+            key: JsonPath::new(INDEXED_KEY),
+            limit: Some(1),
+            filter: None,
+            exact: Some(true),
+        };
+        assert_strict_mode_error(request, collection).await;
+
+        let request = FacetRequestInternal {
+            key: JsonPath::new(INDEXED_KEY),
+            limit: Some(1),
+            filter: None,
+            exact: Some(false),
+        };
+        assert_strict_mode_success(request, collection).await;
+
+        // `exact: None` (omitted by the client) means the default `false`, so
+        // it must still pass strict mode.
+        let request = FacetRequestInternal {
+            key: JsonPath::new(INDEXED_KEY),
+            limit: Some(1),
+            filter: None,
+            exact: None,
         };
         assert_strict_mode_success(request, collection).await;
     }
