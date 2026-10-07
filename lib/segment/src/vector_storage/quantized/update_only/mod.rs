@@ -1,36 +1,14 @@
 //! The write half of quantized vectors, for update-only appendable segments.
 //!
 //! Scoped to what an update-only segment needs: dense (single-vector) Binary and TurboQuant
-//! quantization only — the two methods [`QuantizationConfig::supports_appendable`] allows, and
-//! the two this stack currently wires up (multivector support is a follow-up: it needs its own
-//! append-only offsets storage, mirroring [`MultivectorOffsetsStorageChunked`] the same way this
-//! mirrors [`QuantizedChunkedStorage`]).
+//! quantization only, the two methods [`QuantizationConfig::supports_appendable`] allows.
 //!
-//! [`Self::open`] only reopens an overlay that already exists on disk (unlike
-//! [`QuantizedVectors::load`]'s `count == 0` auto-create, which this otherwise mirrors) — it
-//! never guesses from file absence whether one should be created. Building a fresh overlay for a
-//! genuinely new segment is out of scope here: nothing in this stack constructs the first
-//! appendable segment of a collection yet, so there is no real caller for that path today.
+//! [`UpdateOnlyQuantizedVectors::open`] only reopens an overlay that already exists on disk. It
+//! loads the fitted metadata through the `quantization` crate's standalone encoders and appends
+//! the encoded rows in the layout [`QuantizedChunkedStorage`] reads, so a promoted segment's
+//! quantized data reads through the existing reader.
 //!
-//! Reuses the `quantization` crate's encoding logic — `EncodedVectorsBin`/`EncodedVectorsTQ` —
-//! almost entirely unchanged: creation goes through their existing `encode`, already generic
-//! over the storage backend; reopening to resume appending goes through the new
-//! `reopen_for_write` (added alongside `load`, which additionally validates a stored vector by
-//! reading it back — a read this write-only storage cannot serve, and a guarantee a resuming
-//! writer doesn't need: every vector it writes is sized from the same metadata `load` and
-//! `reopen_for_write` both read). Both `reopen_for_write` and `upsert_many`/`flusher` only
-//! require [`EncodedStorageWrite`] — the write-only half of [`EncodedStorage`], split out so a
-//! storage that can never serve a read doesn't have to fake one. The only new storage-layer code
-//! is [`UpdateOnlyQuantizedChunkedStorage`], an [`EncodedStorageWrite`] backed by
-//! [`UpdateOnlyChunkedVectors`] instead of positional [`ChunkedVectors`] writes, writing files
-//! in the exact layout [`QuantizedChunkedStorage`] reads — so a promoted segment's quantized
-//! data reads through the existing, unmodified reader.
-//!
-//! [`MultivectorOffsetsStorageChunked`]: crate::vector_storage::quantized::quantized_multivector_storage::MultivectorOffsetsStorageChunked
-//! [`ChunkedVectors`]: crate::vector_storage::chunked_vectors::ChunkedVectors
-//! [`UpdateOnlyChunkedVectors`]: crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVectors
-//! [`EncodedStorage`]: quantization::EncodedStorage
-//! [`EncodedStorageWrite`]: quantization::EncodedStorageWrite
+//! [`QuantizedChunkedStorage`]: crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorage
 
 #[cfg(test)]
 mod tests;
@@ -41,8 +19,9 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, read_json_via};
-use quantization::encoded_vectors_binary::EncodedVectorsBin;
-use quantization::encoded_vectors_tq::EncodedVectorsTQ;
+use quantization::EncodedStorageWrite as _;
+use quantization::encoded_vectors_binary::EncoderBin;
+use quantization::encoded_vectors_tq::EncoderTQ;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -54,9 +33,18 @@ use crate::vector_storage::quantized::quantized_vectors::{
 };
 use crate::vector_storage::update_only::VectorToStore;
 
-enum UpdateOnlyQuantizedVectorStorage<Fs: UniversalAppendFs> {
-    Binary(Box<EncodedVectorsBin<u128, UpdateOnlyQuantizedChunkedStorage<Fs>>>),
-    Turbo(Box<EncodedVectorsTQ<UpdateOnlyQuantizedChunkedStorage<Fs>>>),
+enum Encoder {
+    Binary(EncoderBin<u128>),
+    Turbo(Box<EncoderTQ>),
+}
+
+impl Encoder {
+    fn encode(&mut self, vector: &[VectorElementType]) -> Vec<u8> {
+        match self {
+            Encoder::Binary(encoder) => encoder.encode(vector).as_bytes().to_vec(),
+            Encoder::Turbo(encoder) => encoder.encode(vector),
+        }
+    }
 }
 
 /// The write half of a dense vector's quantized overlay, for one update-only appendable
@@ -65,7 +53,8 @@ enum UpdateOnlyQuantizedVectorStorage<Fs: UniversalAppendFs> {
 ///
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
 pub struct UpdateOnlyQuantizedVectors<Fs: UniversalAppendFs> {
-    storage: UpdateOnlyQuantizedVectorStorage<Fs>,
+    encoder: Encoder,
+    storage: UpdateOnlyQuantizedChunkedStorage<Fs>,
     config: QuantizedVectorsConfig,
     /// Raw-storage properties, needed to decode a [`VectorToStore::Raw`].
     distance: Distance,
@@ -105,13 +94,6 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
         Self::open_existing(fs, config, path, vector_config.distance, datatype).map(Some)
     }
 
-    /// Reopen a previously-persisted overlay to resume appending: reads the fitted metadata
-    /// (encoding, stats) needed to keep encoding consistently, through
-    /// [`EncodedVectorsBin::reopen_for_write`]/[`EncodedVectorsTQ::reopen_for_write`] — not
-    /// `load`, which additionally reads back a stored vector to validate it, a read this
-    /// write-only storage cannot serve. A writer resuming appends doesn't need that guarantee:
-    /// every vector it writes is sized from this same metadata, so the invariant `load`'s check
-    /// protects holds by construction here, not by verification.
     fn open_existing(
         fs: Fs,
         config: QuantizedVectorsConfig,
@@ -121,29 +103,11 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
     ) -> OperationResult<Self> {
         let meta_path = QuantizedVectors::get_meta_path(path);
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
-        let quantized_vector_size = config.quantized_vector_size(false);
-        let meta_fs = fs.clone();
 
-        let storage = match &config.quantization_config {
-            QuantizationConfig::Binary(_) => {
-                let backend = UpdateOnlyQuantizedChunkedStorage::open(
-                    fs,
-                    data_path.as_path(),
-                    quantized_vector_size,
-                )?;
-                UpdateOnlyQuantizedVectorStorage::Binary(Box::new(
-                    EncodedVectorsBin::reopen_for_write(&meta_fs, backend, &meta_path)?,
-                ))
-            }
+        let encoder = match &config.quantization_config {
+            QuantizationConfig::Binary(_) => Encoder::Binary(EncoderBin::load(&fs, &meta_path)?),
             QuantizationConfig::Turbo(_) => {
-                let backend = UpdateOnlyQuantizedChunkedStorage::open(
-                    fs,
-                    data_path.as_path(),
-                    quantized_vector_size,
-                )?;
-                UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(
-                    EncodedVectorsTQ::reopen_for_write(&meta_fs, backend, &meta_path)?,
-                ))
+                Encoder::Turbo(Box::new(EncoderTQ::load(&fs, &meta_path)?))
             }
             QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {
                 return Err(OperationError::service_error(
@@ -152,8 +116,14 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
                 ));
             }
         };
+        let storage = UpdateOnlyQuantizedChunkedStorage::open(
+            fs,
+            &data_path,
+            config.quantized_vector_size(false),
+        )?;
 
         Ok(Self {
+            encoder,
             storage,
             config,
             distance,
@@ -183,15 +153,13 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
             });
         }
 
-        let rows = run.iter().map(Cow::as_ref);
-        match &mut self.storage {
-            UpdateOnlyQuantizedVectorStorage::Binary(q) => {
-                Ok(q.append_many(start_slot, rows, hw_counter)?)
-            }
-            UpdateOnlyQuantizedVectorStorage::Turbo(q) => {
-                Ok(q.append_many(start_slot, rows, hw_counter)?)
-            }
-        }
+        let rows: Vec<Vec<u8>> = run
+            .iter()
+            .map(|vector| self.encoder.encode(vector))
+            .collect();
+        self.storage
+            .upsert_many(start_slot, rows.iter().map(Vec::as_slice), hw_counter)?;
+        Ok(())
     }
 
     /// The dimensionality of the (dense, unrotated) vector this overlay quantizes.
