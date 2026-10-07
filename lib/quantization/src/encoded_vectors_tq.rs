@@ -177,10 +177,10 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         // quantile at `Phi(c_outer)` equals `c_outer`, so shift/scale collapse
         // to `(0, 1)`. For anisotropic data the quantile-anchored fit avoids
         // the bias of mean/stddev under heavy-tailed or skewed coords.
-        if mode == TQMode::Plus && bits == TQBits::Bits8 {
-            return Err(EncodingError::ArgumentsError(
-                "TQ+ mode is not supported for 8-bit TurboQuant".to_string(),
-            ));
+        if mode == TQMode::Plus && bits.grid_max().is_some() {
+            return Err(EncodingError::ArgumentsError(format!(
+                "TQ+ mode is not supported for {bits:?} TurboQuant"
+            )));
         }
         let error_correction = match mode {
             TQMode::Normal => None,

@@ -251,5 +251,8 @@ fn storage_datatype_to_collection(
         segment::types::VectorStorageDatatype::Uint8 => crate::operations::types::Datatype::Uint8,
         segment::types::VectorStorageDatatype::Turbo4 => crate::operations::types::Datatype::Turbo4,
         segment::types::VectorStorageDatatype::Turbo8 => crate::operations::types::Datatype::Turbo8,
+        segment::types::VectorStorageDatatype::Turbo16 => {
+            crate::operations::types::Datatype::Turbo16
+        }
     }
 }

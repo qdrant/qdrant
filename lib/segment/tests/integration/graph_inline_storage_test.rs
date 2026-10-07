@@ -91,7 +91,8 @@ fn random_vectors(count: usize, datatype: Option<VectorStorageDatatype>) -> Vec<
             VectorStorageDatatype::Float32
             | VectorStorageDatatype::Float16
             | VectorStorageDatatype::Turbo4
-            | VectorStorageDatatype::Turbo8,
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16,
         ) => rng.random_range(-1.0..1.0),
     };
     (0..count)
@@ -225,6 +226,11 @@ fn stored_vector(segment: &impl ReadSegmentEntry, id: u64) -> Vec<f32> {
 #[case::turbo8(Some(VectorStorageDatatype::Turbo8), VectorStorageType::Mmap)]
 #[case::turbo8_chunked(
     Some(VectorStorageDatatype::Turbo8),
+    VectorStorageType::InRamChunkedMmap
+)]
+#[case::turbo16(Some(VectorStorageDatatype::Turbo16), VectorStorageType::Mmap)]
+#[case::turbo16_chunked(
+    Some(VectorStorageDatatype::Turbo16),
     VectorStorageType::InRamChunkedMmap
 )]
 fn test_graph_inline_storage_contract(

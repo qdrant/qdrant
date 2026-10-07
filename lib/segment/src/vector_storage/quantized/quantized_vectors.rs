@@ -202,14 +202,14 @@ impl QuantizedVectors {
     pub(in crate::vector_storage::quantized) fn tq_mode(bits: TQBits) -> TQMode {
         match bits {
             TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 | TQBits::Bits4 => TQMode::Plus,
-            TQBits::Bits8 => TQMode::Normal,
+            TQBits::Bits8 | TQBits::Bits16 => TQMode::Normal,
         }
     }
 
     pub(in crate::vector_storage::quantized) fn tq_bits_default_rescoring(bits: TQBits) -> bool {
         match bits {
             TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 => true,
-            TQBits::Bits4 | TQBits::Bits8 => false,
+            TQBits::Bits4 | TQBits::Bits8 | TQBits::Bits16 => false,
         }
     }
 
@@ -352,7 +352,9 @@ pub fn should_keep_source_rotated(
     };
     matches!(
         source_datatype,
-        VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8
+        VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16
     ) && turbo.turbo.bits.unwrap_or_default() != TurboQuantBitSize::Bits1_5
         && distance != Distance::Manhattan
 }

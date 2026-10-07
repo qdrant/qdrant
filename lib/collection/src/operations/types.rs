@@ -1411,6 +1411,7 @@ pub enum Datatype {
     Float16,
     Turbo4,
     Turbo8,
+    Turbo16,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1421,6 +1422,7 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Float16 => VectorStorageDatatype::Float16,
             Datatype::Turbo4 => VectorStorageDatatype::Turbo4,
             Datatype::Turbo8 => VectorStorageDatatype::Turbo8,
+            Datatype::Turbo16 => VectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -1478,6 +1480,8 @@ pub struct VectorParams {
     ///   TurboQuant algorithm.
     /// - For `turbo8` datatype - vectors are quantized to 8 bits per element using the
     ///   TurboQuant algorithm.
+    /// - For `turbo16` datatype - vectors are quantized to 16 bits per element using the
+    ///   TurboQuant algorithm.
     pub datatype: Option<Datatype>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1497,6 +1501,7 @@ fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> 
     match datatype {
         Datatype::Turbo4 => return Err(common::validation::sparse_turbo4_unsupported_error()),
         Datatype::Turbo8 => return Err(common::validation::sparse_turbo8_unsupported_error()),
+        Datatype::Turbo16 => return Err(common::validation::sparse_turbo16_unsupported_error()),
         Datatype::Float32 | Datatype::Uint8 | Datatype::Float16 => {}
     }
     Ok(())

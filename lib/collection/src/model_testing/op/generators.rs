@@ -371,7 +371,13 @@ fn random_dense_vec(rng: &mut impl Rng, dim: u64, datatype: Option<Datatype>) ->
     let upper = match datatype {
         Some(Datatype::Uint8) => 256.0,
         None
-        | Some(Datatype::Float32 | Datatype::Float16 | Datatype::Turbo4 | Datatype::Turbo8) => 1.0,
+        | Some(
+            Datatype::Float32
+            | Datatype::Float16
+            | Datatype::Turbo4
+            | Datatype::Turbo8
+            | Datatype::Turbo16,
+        ) => 1.0,
     };
     (0..dim).map(|_| rng.random_range(0.0..upper)).collect()
 }

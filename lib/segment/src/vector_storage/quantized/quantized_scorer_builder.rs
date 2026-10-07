@@ -153,7 +153,8 @@ impl<'a> QuantizedScorerBuilder<'a> {
             // so its query is preprocessed as `VectorElementType` like Float32.
             VectorStorageDatatype::Float32
             | VectorStorageDatatype::Turbo4
-            | VectorStorageDatatype::Turbo8 => match self.distance {
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => match self.distance {
                 Distance::Cosine => {
                     self.build_with_metric::<VectorElementType, CosineMetric, _>(storage)
                 }

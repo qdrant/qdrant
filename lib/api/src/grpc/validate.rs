@@ -537,6 +537,9 @@ pub fn validate_sparse_datatype(datatype: &i32) -> Result<(), ValidationError> {
     if *datatype == grpc::Datatype::Turbo8 as i32 {
         return Err(common::validation::sparse_turbo8_unsupported_error());
     }
+    if *datatype == grpc::Datatype::Turbo16 as i32 {
+        return Err(common::validation::sparse_turbo16_unsupported_error());
+    }
     Ok(())
 }
 

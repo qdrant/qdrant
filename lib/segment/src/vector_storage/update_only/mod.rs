@@ -111,15 +111,18 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
             (false, VectorStorageDatatype::Float16) => {
                 Self::DenseHalf(Box::new(UpdateOnlyDenseVectorStorage::open(fs, path, dim)?))
             }
-            (false, VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8) => {
-                Self::Turbo(Box::new(UpdateOnlyTurboVectorStorage::open(
-                    fs,
-                    path,
-                    dim,
-                    config.distance,
-                    tq_bits(datatype),
-                )?))
-            }
+            (
+                false,
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16,
+            ) => Self::Turbo(Box::new(UpdateOnlyTurboVectorStorage::open(
+                fs,
+                path,
+                dim,
+                config.distance,
+                tq_bits(datatype),
+            )?)),
             (true, VectorStorageDatatype::Float32) => Self::MultiDense(Box::new(
                 UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim)?,
             )),
@@ -129,15 +132,18 @@ impl<S: UniversalAppend + 'static> UpdateOnlyVectorStorage<S> {
             (true, VectorStorageDatatype::Float16) => Self::MultiDenseHalf(Box::new(
                 UpdateOnlyMultiDenseVectorStorage::open(fs, path, dim)?,
             )),
-            (true, VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8) => {
-                Self::MultiTurbo(Box::new(UpdateOnlyMultiTurboVectorStorage::open(
-                    fs,
-                    path,
-                    dim,
-                    config.distance,
-                    tq_bits(datatype),
-                )?))
-            }
+            (
+                true,
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16,
+            ) => Self::MultiTurbo(Box::new(UpdateOnlyMultiTurboVectorStorage::open(
+                fs,
+                path,
+                dim,
+                config.distance,
+                tq_bits(datatype),
+            )?)),
         };
 
         Ok(storage)

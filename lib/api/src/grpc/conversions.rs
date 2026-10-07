@@ -3860,6 +3860,7 @@ fn convert_datatype_from_proto(
         grpc::Datatype::Uint8 => Ok(Some(VectorStorageDatatype::Uint8)),
         grpc::Datatype::Turbo4 => Ok(Some(VectorStorageDatatype::Turbo4)),
         grpc::Datatype::Turbo8 => Ok(Some(VectorStorageDatatype::Turbo8)),
+        grpc::Datatype::Turbo16 => Ok(Some(VectorStorageDatatype::Turbo16)),
     }
 }
 
@@ -3917,6 +3918,7 @@ fn datatype_to_grpc(dt: VectorStorageDatatype) -> grpc::Datatype {
         VectorStorageDatatype::Uint8 => grpc::Datatype::Uint8,
         VectorStorageDatatype::Turbo4 => grpc::Datatype::Turbo4,
         VectorStorageDatatype::Turbo8 => grpc::Datatype::Turbo8,
+        VectorStorageDatatype::Turbo16 => grpc::Datatype::Turbo16,
     }
 }
 

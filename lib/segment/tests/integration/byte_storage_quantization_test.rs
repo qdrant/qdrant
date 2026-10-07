@@ -54,7 +54,8 @@ where
         VectorStorageDatatype::Float32 => unreachable!(),
         VectorStorageDatatype::Float16
         | VectorStorageDatatype::Turbo4
-        | VectorStorageDatatype::Turbo8 => {
+        | VectorStorageDatatype::Turbo8
+        | VectorStorageDatatype::Turbo16 => {
             let mut vector = segment::fixtures::payload_fixtures::random_vector(rnd_gen, dim);
             vector.iter_mut().for_each(|x| *x -= 0.5);
             vector
@@ -259,6 +260,24 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     32, // ef
     70., // min_acc out of 100
 )]
+#[case::nearest_scalar_turbo16_dot(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Turbo16,
+    QuantizationVariant::Scalar,
+    Distance::Dot,
+    32, // dim
+    32, // ef
+    70., // min_acc out of 100
+)]
+#[case::nearest_turbo16_turbo_euclid(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Turbo16,
+    QuantizationVariant::Turbo,
+    Distance::Euclid,
+    33, // dim
+    32, // ef
+    70., // min_acc out of 100
+)]
 // Bits1_5 target requires a Padded rotation, so the source rotation cannot be
 // kept: the vectors must be rotated back and re-rotated. Must not panic
 // (`Bits1_5 requires Padded` assert) or silently degrade to 1-bit.
@@ -327,7 +346,9 @@ fn test_quantization_over_typed_storage_hnsw(
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
         match storage_data_type {
-            VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+            VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => {
                 assert_matches!(
                     raw_storage,
                     &VectorStorageEnum::DenseTurboAppendableMemmap(_)
