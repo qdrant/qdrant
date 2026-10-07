@@ -30,8 +30,7 @@ pub(super) struct Storage<S: common::universal_io::UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::{AmbientContext, hw};
     use common::types::PointOffsetType;
     use serde_json::Value;
     use tempfile::TempDir;
@@ -56,18 +55,14 @@ mod tests {
 
         let mut builder = MutableNullIndex::builder(dir.path(), n as usize).unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         for i in 0..n {
             match i % 4 {
-                0 => builder.add_point(i, &[&null_value], &hw_counter).unwrap(),
-                1 => builder
-                    .add_point(i, &[&null_value_in_array], &hw_counter)
-                    .unwrap(),
-                2 => builder.add_point(i, &[], &hw_counter).unwrap(),
-                3 => builder
-                    .add_point(i, &[&Value::Bool(true)], &hw_counter)
-                    .unwrap(),
+                0 => builder.add_point(i, &[&null_value]).unwrap(),
+                1 => builder.add_point(i, &[&null_value_in_array]).unwrap(),
+                2 => builder.add_point(i, &[]).unwrap(),
+                3 => builder.add_point(i, &[&Value::Bool(true)]).unwrap(),
                 _ => unreachable!(),
             }
         }
@@ -93,16 +88,15 @@ mod tests {
             is_null: None,
         };
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _hw = AmbientContext::new().measure_guard_owned();
 
         let is_null_values: Vec<_> = null_index
-            .filter(&filter_is_null, &hw_counter)
+            .filter(&filter_is_null)
             .unwrap()
             .unwrap()
             .collect();
         let not_empty_values: Vec<_> = null_index
-            .filter(&filter_is_not_empty, &hw_counter)
+            .filter(&filter_is_not_empty)
             .unwrap()
             .unwrap()
             .collect();
@@ -148,21 +142,20 @@ mod tests {
             }
         }
 
-        let hw_cell = HardwareCounterCell::new();
         let is_null_cardinality = null_index
-            .estimate_cardinality(&filter_is_null, &hw_cell)
+            .estimate_cardinality(&filter_is_null)
             .unwrap()
             .unwrap();
         let non_empty_cardinality = null_index
-            .estimate_cardinality(&filter_is_not_empty, &hw_cell)
+            .estimate_cardinality(&filter_is_not_empty)
             .unwrap()
             .unwrap();
         let is_empty_cardinality = null_index
-            .estimate_cardinality(&filter_is_empty, &hw_cell)
+            .estimate_cardinality(&filter_is_empty)
             .unwrap()
             .unwrap();
         let not_null_cardinality = null_index
-            .estimate_cardinality(&filter_is_not_null, &hw_cell)
+            .estimate_cardinality(&filter_is_not_null)
             .unwrap()
             .unwrap();
 
@@ -180,11 +173,11 @@ mod tests {
         let dir = TempDir::with_prefix("test_manual_buffer_flushing").unwrap();
         let mut index = MutableNullIndex::builder(dir.path(), 10).unwrap().0;
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         for i in 0..10 {
             index
-                .add_point(i as PointOffsetType, &[&Value::Bool(true)], &hw_counter)
+                .add_point(i as PointOffsetType, &[&Value::Bool(true)])
                 .unwrap();
         }
 

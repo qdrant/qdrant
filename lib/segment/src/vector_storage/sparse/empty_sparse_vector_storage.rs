@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -141,12 +140,7 @@ impl VectorStorageRead for EmptySparseVectorStorage {
 }
 
 impl VectorStorage for EmptySparseVectorStorage {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Cannot insert into empty sparse vector storage",
         ))

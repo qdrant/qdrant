@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use api::grpc::UpdateBatchInternal;
 use async_trait::async_trait;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use common::tar_ext;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
@@ -270,11 +271,10 @@ impl QueueProxyShard {
     pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         self.inner_unchecked()
             .wrapped_shard
-            .estimate_cardinality(filter, hw_measurement_acc)
+            .estimate_cardinality(filter)
             .await
     }
 
@@ -310,11 +310,10 @@ impl ShardOperation for QueueProxyShard {
         operation: OperationWithClockTag,
         wait: WaitUntil,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `Inner::update` is cancel safe, so this is also cancel safe.
         self.inner_unchecked()
-            .update(operation, wait, timeout, hw_measurement_acc)
+            .update(operation, wait, timeout)
             .await
     }
 
@@ -324,10 +323,9 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
-            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .scroll_by(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -341,7 +339,6 @@ impl ShardOperation for QueueProxyShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
@@ -353,7 +350,6 @@ impl ShardOperation for QueueProxyShard {
                 filter,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -368,10 +364,9 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.inner_unchecked()
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -381,17 +376,10 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         self.inner_unchecked()
-            .count(
-                request,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-                deferred_behavior,
-            )
+            .count(request, search_runtime_handle, timeout, deferred_behavior)
             .await
     }
 
@@ -403,7 +391,6 @@ impl ShardOperation for QueueProxyShard {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.inner_unchecked()
@@ -413,7 +400,6 @@ impl ShardOperation for QueueProxyShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -425,11 +411,10 @@ impl ShardOperation for QueueProxyShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.inner_unchecked()
             .wrapped_shard
-            .query_batch(requests, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(requests, search_runtime_handle, timeout)
             .await
     }
 
@@ -438,11 +423,10 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         self.inner_unchecked()
             .wrapped_shard
-            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .facet(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -726,8 +710,10 @@ impl Inner {
 
         // Transfer batch with retries and store last transferred ID
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
-            let disposed_hw = HwMeasurementAcc::disposable(); // Internal operation
-            match transfer_batch(&request, &self.remote_shard, disposed_hw).await {
+            match transfer_batch(&request, &self.remote_shard)
+                .unmeasured(reason("Internal operation"))
+                .await
+            {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
@@ -763,7 +749,6 @@ impl ShardOperation for Inner {
         operation: OperationWithClockTag,
         wait: WaitUntil,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` is cancel safe, so this is also cancel safe.
 
@@ -772,9 +757,7 @@ impl ShardOperation for Inner {
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        local_shard
-            .update(operation, wait, timeout, hw_measurement_acc)
-            .await
+        local_shard.update(operation, wait, timeout).await
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`
@@ -783,11 +766,10 @@ impl ShardOperation for Inner {
         request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .scroll_by(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -800,7 +782,6 @@ impl ShardOperation for Inner {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
@@ -813,7 +794,6 @@ impl ShardOperation for Inner {
                 filter,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -831,11 +811,10 @@ impl ShardOperation for Inner {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -845,18 +824,11 @@ impl ShardOperation for Inner {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .count(
-                request,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-                deferred_behavior,
-            )
+            .count(request, search_runtime_handle, timeout, deferred_behavior)
             .await
     }
 
@@ -868,7 +840,6 @@ impl ShardOperation for Inner {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
@@ -879,7 +850,6 @@ impl ShardOperation for Inner {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -891,11 +861,10 @@ impl ShardOperation for Inner {
         request: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -904,11 +873,10 @@ impl ShardOperation for Inner {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .facet(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -927,16 +895,12 @@ impl ShardOperation for Inner {
 async fn transfer_batch(
     request: &Arc<UpdateBatchInternal>,
     remote_shard: &RemoteShard,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
     if request.operations.is_empty() {
         return Ok(());
     }
 
-    match remote_shard
-        .forward_update_batch(Arc::clone(request), hw_measurement_acc.clone())
-        .await
-    {
+    match remote_shard.forward_update_batch(Arc::clone(request)).await {
         Ok(_) => return Ok(()),
         // A transient error is a delivery failure: let the caller retry the whole batch.
         Err(err) if err.is_transient() => return Err(err),
@@ -960,9 +924,7 @@ async fn transfer_batch(
             wait_override: request.wait_override,
         });
 
-        let result = remote_shard
-            .forward_update_batch(single, hw_measurement_acc.clone())
-            .await;
+        let result = remote_shard.forward_update_batch(single).await;
 
         skip_if_rejected(result, remote_shard)?;
     }

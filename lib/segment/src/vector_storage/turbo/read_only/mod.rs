@@ -69,7 +69,7 @@ impl<S: UniversalRead> std::fmt::Debug for ReadOnlyChunkedTurboVectorStorage<S> 
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -92,7 +92,7 @@ mod tests {
             .prefix("ro_turbo_appended_deleted")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let mut writer = open_appendable_turbo_vector_storage(
             dir.path(),
@@ -103,7 +103,7 @@ mod tests {
         )
         .unwrap();
         writer
-            .insert_vector(0, VectorRef::from(&vec![1.0; DIM]), &hw)
+            .insert_vector(0, VectorRef::from(&vec![1.0; DIM]))
             .unwrap();
         writer.flusher()().unwrap();
 
@@ -118,7 +118,7 @@ mod tests {
         .unwrap();
 
         writer
-            .insert_vector(1, VectorRef::from(&vec![0.0; DIM]), &hw)
+            .insert_vector(1, VectorRef::from(&vec![0.0; DIM]))
             .unwrap();
         writer.delete_vector(1).unwrap();
         writer.flusher()().unwrap();
@@ -130,7 +130,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 
@@ -148,7 +147,7 @@ mod tests {
             .prefix("ro_turbo_appended_batch")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let mut writer = open_appendable_turbo_vector_storage(
             dir.path(),
@@ -160,7 +159,7 @@ mod tests {
         .unwrap();
         for id in 0..3u32 {
             writer
-                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]), &hw)
+                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -177,7 +176,7 @@ mod tests {
 
         for id in 3..8u32 {
             writer
-                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]), &hw)
+                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]))
                 .unwrap();
         }
         let deleted_appended: Vec<PointOffsetType> = vec![4, 6];
@@ -193,7 +192,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 

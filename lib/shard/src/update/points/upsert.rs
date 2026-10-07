@@ -3,7 +3,6 @@
 use std::num::NonZeroUsize;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
 use parking_lot::RwLockWriteGuard;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -32,12 +31,11 @@ pub fn upsert_points<'a, T>(
     op_num: SeqNumberType,
     points: T,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize>
 where
     T: IntoIterator<Item = &'a PointStructPersisted>,
 {
-    upsert_points_impl(segments, op_num, points, max_segment_size_bytes, hw_counter)
+    upsert_points_impl(segments, op_num, points, max_segment_size_bytes)
 }
 
 /// Same as [`upsert_points`], but for points carrying raw vector bytes verbatim.
@@ -46,10 +44,9 @@ pub fn upsert_points_raw(
     op_num: SeqNumberType,
     points: &[PointStructRawPersisted],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     ensure_payloads_decoded(points)?;
-    upsert_points_impl(segments, op_num, points, max_segment_size_bytes, hw_counter)
+    upsert_points_impl(segments, op_num, points, max_segment_size_bytes)
 }
 
 /// Applying a point writes [`PointStructRawPersisted::payload`], so one still holding a
@@ -76,7 +73,6 @@ pub(crate) fn retain_conditional_upsert_points(
     points_op: &mut PointInsertOperationsInternal,
     condition: Filter,
     update_mode: Option<UpdateMode>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let point_ids = points_op.point_ids();
     let update_mode = update_mode.unwrap_or_default();
@@ -84,8 +80,7 @@ pub(crate) fn retain_conditional_upsert_points(
     match update_mode {
         UpdateMode::Upsert => {
             // Default behavior: insert new points, update existing points that match the condition
-            let points_to_exclude =
-                select_excluded_by_filter_ids(segments, point_ids, condition, hw_counter)?;
+            let points_to_exclude = select_excluded_by_filter_ids(segments, point_ids, condition)?;
             points_op.retain_point_ids(|idx| !points_to_exclude.contains(idx));
         }
         UpdateMode::InsertOnly => {
@@ -96,7 +91,7 @@ pub(crate) fn retain_conditional_upsert_points(
         UpdateMode::UpdateOnly => {
             // Only update existing points that match the condition, don't insert new points
             let points_to_exclude =
-                select_excluded_by_filter_ids(segments, point_ids.clone(), condition, hw_counter)?;
+                select_excluded_by_filter_ids(segments, point_ids.clone(), condition)?;
             let existing_points = segments.select_existing_points(point_ids);
             // Keep only points that exist AND are not excluded by the condition
             points_op.retain_point_ids(|idx| {
@@ -113,7 +108,6 @@ pub fn conditional_upsert(
     op_num: SeqNumberType,
     operation: ConditionalInsertOperationInternal,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let ConditionalInsertOperationInternal {
         mut points_op,
@@ -121,16 +115,10 @@ pub fn conditional_upsert(
         update_mode,
     } = operation;
 
-    retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode, hw_counter)?;
+    retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode)?;
 
     let points = points_op.into_point_vec();
-    let upserted_points = upsert_points(
-        segments,
-        op_num,
-        points.iter(),
-        max_segment_size_bytes,
-        hw_counter,
-    )?;
+    let upserted_points = upsert_points(segments, op_num, points.iter(), max_segment_size_bytes)?;
 
     if upserted_points == 0 {
         // In case we didn't hit any points, we suggest this op_num to the segment-holder to make WAL acknowledge this operation.
@@ -164,7 +152,6 @@ pub(super) trait PointToUpsert {
         &self,
         segment: &mut RwLockWriteGuard<dyn SegmentEntry>,
         op_num: SeqNumberType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let PointParts {
             raw_vectors,
@@ -179,7 +166,6 @@ pub(super) trait PointToUpsert {
             raw_vectors,
             updated_vectors,
             payload.unwrap_or(&empty),
-            hw_counter,
         )
     }
 
@@ -220,7 +206,6 @@ pub(super) fn upsert_points_impl<'a, P>(
     op_num: SeqNumberType,
     points: impl IntoIterator<Item = &'a P>,
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize>
 where
     P: PointToUpsert + 'a,
@@ -240,13 +225,12 @@ where
                     !feature_flags().append_only_storages,
                     "This should never be called in append-only mode"
                 );
-                points_map[&id].upsert_into(write_segment, op_num, hw_counter)
+                points_map[&id].upsert_into(write_segment, op_num)
             },
             |id, raw_vectors, updated_vectors, old_payload| {
                 points_map[&id].write_moved(raw_vectors, updated_vectors, old_payload)
             },
             max_segment_size_bytes,
-            hw_counter,
         )?;
 
         res += updated_points.len();
@@ -267,11 +251,7 @@ where
             let segment_arc = default_write_segment.get();
             let mut write_segment = segment_arc.write();
             for point_id in new_point_ids {
-                res += usize::from(points_map[&point_id].upsert_into(
-                    &mut write_segment,
-                    op_num,
-                    hw_counter,
-                )?);
+                res += usize::from(points_map[&point_id].upsert_into(&mut write_segment, op_num)?);
             }
             RwLockWriteGuard::unlock_fair(write_segment);
         };

@@ -4,7 +4,7 @@ mod prof;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
 use rand::distr::Distribution;
@@ -69,7 +69,7 @@ fn uuid_str(n: u64) -> String {
 /// Vectors are irrelevant to faceting, so every point gets the same trivial
 /// 1-dimensional vector just to register the point in the segment.
 fn build_facet_segment(path: &Path) -> Segment {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut rng = SmallRng::seed_from_u64(SEED);
 
     let mut segment = build_simple_segment(path, 1, Distance::Dot).unwrap();
@@ -85,7 +85,7 @@ fn build_facet_segment(path: &Path) -> Segment {
     for i in 0..NUM_POINTS {
         let point_id = PointIdType::from(i as u64 + 1);
         segment
-            .upsert_point(OP_NUM, point_id, only_default_vector(&vector), &hw_counter)
+            .upsert_point(OP_NUM, point_id, only_default_vector(&vector))
             .unwrap();
 
         let category_idx = rng.random_range(0..CATEGORY_CARDINALITY);
@@ -100,7 +100,7 @@ fn build_facet_segment(path: &Path) -> Segment {
             RAND_KEY: rand_val,
         };
         segment
-            .set_full_payload(OP_NUM, point_id, &payload, &hw_counter)
+            .set_full_payload(OP_NUM, point_id, &payload)
             .unwrap();
     }
 
@@ -116,7 +116,6 @@ fn build_facet_segment(path: &Path) -> Segment {
                 OP_NUM,
                 &JsonPath::new(key),
                 Some(&PayloadFieldSchema::FieldType(schema)),
-                &hw_counter,
             )
             .unwrap();
     }
@@ -203,7 +202,7 @@ fn facet_benchmark(c: &mut Criterion) {
     let dir = Builder::new().prefix("facet_segment").tempdir().unwrap();
     let segment = build_facet_segment(dir.path());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     let mut group = c.benchmark_group("facet");
@@ -222,7 +221,7 @@ fn facet_benchmark(c: &mut Criterion) {
 
             let bench_id = BenchmarkId::new(key_label, filter_label);
             group.bench_with_input(bench_id, &request, |b, request| {
-                b.iter(|| segment.facet(request, &is_stopped, &hw_counter).unwrap());
+                b.iter(|| segment.facet(request, &is_stopped).unwrap());
             });
         }
     }

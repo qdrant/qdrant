@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use itertools::Itertools as _;
@@ -248,14 +247,9 @@ impl FullTextIndex {
 impl ValueIndexer for FullTextIndex {
     type ValueType = String;
 
-    fn add_many(
-        &mut self,
-        idx: PointOffsetType,
-        values: Vec<String>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.add_many(idx, values, hw_counter),
+            Self::Mutable(index) => index.add_many(idx, values),
             Self::Immutable(_) => Err(OperationError::service_error(
                 "Cannot add values to immutable text index",
             )),
@@ -335,11 +329,10 @@ impl ValueIndexer for FullTextGridstoreIndexBuilder {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let values: Vec<Value> = values.into_iter().map(Value::String).collect();
         let values: Vec<&Value> = values.iter().collect();
-        FieldIndexBuilderTrait::add_point(self, id, &values, hw_counter)
+        FieldIndexBuilderTrait::add_point(self, id, &values)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -375,18 +368,13 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

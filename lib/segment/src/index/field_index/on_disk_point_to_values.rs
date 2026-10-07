@@ -4,10 +4,11 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitVec, DeletedBitVec};
-use common::counter::conditioned_counter::ConditionedCounter;
+use common::counter::hw::{self, HwMetric};
 use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{
     self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult, UniversalRead,
@@ -221,9 +222,8 @@ where
         &self,
         point_id: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &ConditionedCounter,
     ) -> OperationResult<bool> {
-        let Some(mut values_iter) = self.values_iter(point_id, *hw_counter)? else {
+        let Some(mut values_iter) = self.values_iter(point_id)? else {
             return Ok(false);
         };
 
@@ -239,10 +239,7 @@ where
     pub fn values_iter(
         &self,
         point_id: PointOffsetType,
-        hw_counter: ConditionedCounter, // TODO: make it by reference
     ) -> OperationResult<Option<ValuesIter<'_, T>>> {
-        let hw_cell = hw_counter.payload_index_io_read_counter();
-
         // first, get range of values for point
         let Some((bytes_range, count)) = self.get_bytes_range(point_id)?.map(|(range, count)| {
             let range = universal_io::ReadRange {
@@ -250,7 +247,7 @@ where
                 length: range.end - range.start,
             };
             // Measure IO overhead of `self.get_bytes_range()` and the length of the values
-            hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
+            HwMetric::PayloadIndexIoRead.bump(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
 
             (range, count)
         }) else {
@@ -271,11 +268,8 @@ where
         &self,
         items: impl Iterator<Item = (U, PointOffsetType)>,
         deleted: &DeletedBitVec,
-        hw_counter: ConditionedCounter,
         mut f: impl FnMut(U, ValuesIter<'_, T>),
     ) -> OperationResult<()> {
-        let hw_cell = hw_counter.payload_index_io_read_counter();
-
         let points_count = self.header.points_count as PointOffsetType;
         let ranges_start = self.header.ranges_start;
         let file_len = self.store.len::<u8>()?;
@@ -305,7 +299,7 @@ where
 
                 // Mirror `values_iter`: account the per-point access overhead
                 // plus the length of the values.
-                hw_cell.incr_delta(MMAP_PTV_ACCESS_OVERHEAD + length as usize);
+                HwMetric::PayloadIndexIoRead.bump(MMAP_PTV_ACCESS_OVERHEAD + length as usize);
 
                 // Note: if `count == 0`, we'd better call `f` right away, but
                 // `f` is already mut-borrowed in the iterator above. So,
@@ -412,17 +406,17 @@ where
     ) -> OperationResult<()> {
         // Report deleted points with values too.
         let blank_bitmask = DeletedBitVec::new(BitVec::repeat(false, self.len()));
-        // TODO: Propagate counter upwards
-        self.values_iter_batch(
-            (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
-            &blank_bitmask,
-            ConditionedCounter::never(),
-            |point_id, values| {
-                if values.count > 0 {
-                    f(point_id, values);
-                }
-            },
-        )
+        hw::unmeasured(reason("TODO: Propagate counter upwards"), || {
+            self.values_iter_batch(
+                (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
+                &blank_bitmask,
+                |point_id, values| {
+                    if values.count > 0 {
+                        f(point_id, values);
+                    }
+                },
+            )
+        })
     }
 }
 
@@ -560,8 +554,7 @@ mod tests {
 
         // Roundtrip check
         for (idx, values) in values.iter().enumerate() {
-            let v = ppv
-                .values_iter(idx as PointOffsetType, ConditionedCounter::never())
+            let v = hw::test(|| ppv.values_iter(idx as PointOffsetType))
                 .unwrap()
                 .unwrap()
                 .map(Cow::into_owned)
@@ -585,12 +578,13 @@ mod tests {
 
             // Run `values_iter_batch` and store its results into
             let mut reported = Vec::new();
-            ppv.values_iter_batch(
-                (0..values.len()).chain([large_id]).map(|id| (id, id as _)),
-                &deleted,
-                ConditionedCounter::never(),
-                |id, vals| reported.push((id, vals.map(Cow::into_owned).collect_vec())),
-            )
+            hw::test(|| {
+                ppv.values_iter_batch(
+                    (0..values.len()).chain([large_id]).map(|id| (id, id as _)),
+                    &deleted,
+                    |id, vals| reported.push((id, vals.map(Cow::into_owned).collect_vec())),
+                )
+            })
             .unwrap();
             reported.sort_unstable_by_key(|&(id, _)| id);
 

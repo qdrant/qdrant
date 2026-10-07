@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
@@ -24,10 +23,8 @@ impl<S: UniversalRead> LiveReload for QuantizedChunkedStorageRead<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.data
-            .live_reload(fs, deleted_points, new_points, hw_counter)
+        self.data.live_reload(fs, deleted_points, new_points)
     }
 }
 

@@ -3,7 +3,6 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -211,12 +210,7 @@ impl VectorStorageRead for VolatileSparseVectorStorage {
 }
 
 impl VectorStorage for VolatileSparseVectorStorage {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &SparseVector = vector.try_into()?;
         debug_assert!(vector.is_sorted());
         self.total_vector_count = std::cmp::max(self.total_vector_count, key as usize + 1);

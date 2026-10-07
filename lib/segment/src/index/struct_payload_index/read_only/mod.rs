@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs};
@@ -92,10 +91,9 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyStructPayloadIndex<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for field_index in self.field_indexes.values_mut().flatten() {
-            field_index.live_reload(fs, deleted_points, new_points, hw_counter)?;
+            field_index.live_reload(fs, deleted_points, new_points)?;
         }
 
         Ok(())

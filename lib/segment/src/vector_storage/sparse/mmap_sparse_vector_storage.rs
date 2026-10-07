@@ -8,9 +8,10 @@ use blobstore::config::{
 };
 use blobstore::{Blob, Blobstore};
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
 use common::generic_consts::{AccessPattern, Random};
 use common::iterator_ext::IteratorExt;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use fs_err as fs;
@@ -161,14 +162,13 @@ impl MmapSparseVectorStorage {
         &mut self,
         key: PointOffsetType,
         vector: Option<&SparseVector>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let Some(vector) = vector {
             // upsert vector
             self.storage.put_value(
                 key,
                 &StoredSparseVector::from(vector),
-                hw_counter.ref_vector_io_write_counter(),
+                HwMetric::VectorIoWrite,
             )?;
         } else if (key as usize) < self.next_point_offset {
             // delete vector
@@ -213,10 +213,11 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        self.storage
-            .get_value::<P>(key, &HardwareCounterCell::disposable())? // Vector storage read IO not measured
-            .map(SparseVector::try_from)
-            .transpose()
+        hw::unmeasured(reason("Vector storage read IO not measured"), || {
+            self.storage.get_value::<P>(key)
+        })?
+        .map(SparseVector::try_from)
+        .transpose()
     }
 
     fn for_each_in_sparse_batch<F>(
@@ -237,11 +238,8 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
             Ok(())
         };
 
-        self.storage.read_values::<Random, _, _>(
-            point_offsets,
-            callback,
-            HardwareCounterCell::disposable().vector_io_read(),
-        )
+        self.storage
+            .read_values::<Random, _, _>(point_offsets, callback, None)
     }
 }
 
@@ -251,7 +249,9 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let hw_counter = HardwareCounterCell::disposable(); // This function is only used for internal operations. No need to measure.
+        let _hw = hw::unmeasured_guard(reason(
+            "This function is only used for internal operations. No need to measure.",
+        ));
         let start_index = self.next_point_offset as PointOffsetType;
         for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
             // Do not perform preprocessing - vectors should be already processed
@@ -261,7 +261,7 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
             self.set_deleted(new_id, other_deleted);
 
             let vector = (!other_deleted).then_some(other_vector);
-            self.update_stored(new_id, vector, &hw_counter)?;
+            self.update_stored(new_id, vector)?;
         }
 
         // return cancelled error if stopped
@@ -313,11 +313,7 @@ impl VectorStorageRead for MmapSparseVectorStorage {
         };
 
         self.storage
-            .read_values::<P, _, _>(
-                keys.into_iter(),
-                callback,
-                HardwareCounterCell::disposable().vector_io_read(),
-            )
+            .read_values::<P, _, _>(keys.into_iter(), callback, None)
             .expect("sparse vectors read")
     }
 
@@ -361,22 +357,17 @@ impl VectorStorageRead for MmapSparseVectorStorage {
                 callback(user_data, point_offset, Blob::to_bytes(&stored));
                 Ok(())
             },
-            HardwareCounterCell::disposable().vector_io_read(),
+            None,
         )
     }
 }
 
 impl VectorStorage for MmapSparseVectorStorage {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector = <&SparseVector>::try_from(vector)?;
         debug_assert!(vector.is_sorted(), "Vector is not sorted {vector:?}");
         self.set_deleted(key, false);
-        self.update_stored(key, Some(vector), hw_counter)?;
+        self.update_stored(key, Some(vector))?;
         Ok(())
     }
 
@@ -411,8 +402,8 @@ impl VectorStorage for MmapSparseVectorStorage {
     ) -> crate::common::operation_error::OperationResult<bool> {
         let was_deleted = !self.set_deleted(key, true);
 
-        let hw_counter = HardwareCounterCell::disposable(); // Deletions not measured
-        self.update_stored(key, None, &hw_counter)?;
+        let _hw = hw::unmeasured_guard(reason("Deletions not measured"));
+        self.update_stored(key, None)?;
 
         Ok(was_deleted)
     }
@@ -437,7 +428,6 @@ mod test {
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
-    use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
@@ -535,20 +525,14 @@ mod test {
             values: vec![0.1, 0.2, 0.3],
         };
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
 
-            storage
-                .insert_vector(0, VectorRef::from(&vector), &hw_counter)
-                .unwrap();
-            storage
-                .insert_vector(2, VectorRef::from(&vector), &hw_counter)
-                .unwrap();
-            storage
-                .insert_vector(4, VectorRef::from(&vector), &hw_counter)
-                .unwrap();
+            storage.insert_vector(0, VectorRef::from(&vector)).unwrap();
+            storage.insert_vector(2, VectorRef::from(&vector)).unwrap();
+            storage.insert_vector(4, VectorRef::from(&vector)).unwrap();
             storage.flusher()().unwrap();
         }
 
@@ -573,13 +557,13 @@ mod test {
         let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {
             let vector = random_sparse_vector(&mut rng, DIM);
             storage
-                .insert_vector(internal_id, VectorRef::from(&vector), &hw_counter)
+                .insert_vector(internal_id, VectorRef::from(&vector))
                 .unwrap();
         }
         for internal_id in 0..POINT_COUNT {

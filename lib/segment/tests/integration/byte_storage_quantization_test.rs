@@ -9,6 +9,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -280,7 +281,6 @@ fn test_quantization_over_typed_storage_hnsw(
     #[case] ef: usize,
     #[case] min_acc: f64, // out of 100
 ) {
-    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
@@ -341,7 +341,7 @@ fn test_quantization_over_typed_storage_hnsw(
         }
     }
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();
@@ -351,26 +351,17 @@ fn test_quantization_over_typed_storage_hnsw(
         let payload = payload_json! {int_key: int_payload};
 
         segment_byte
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment_byte
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
     segment_byte
         .payload_index
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let quantization_config = match quantization_variant {

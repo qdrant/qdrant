@@ -1,5 +1,4 @@
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
@@ -35,17 +34,16 @@ where
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyNumericIndexInner::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
         }
     }

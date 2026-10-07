@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::Blobstore;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
@@ -50,8 +51,7 @@ impl MutableFullTextIndex {
         let phrase_matching = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let hw_counter = HardwareCounterCell::disposable();
-        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
         let mut records_without_length = 0usize;
@@ -66,7 +66,7 @@ impl MutableFullTextIndex {
                     builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
-                hw_counter_ref,
+                HwMetric::PayloadIndexIoWrite,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -132,12 +132,7 @@ impl MutableFullTextIndex {
         self.storage.files()
     }
 
-    pub fn add_many(
-        &mut self,
-        idx: PointOffsetType,
-        values: Vec<String>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -156,18 +151,14 @@ impl MutableFullTextIndex {
 
         self.inner
             .inverted_index
-            .index_str_tokens(idx, &str_tokens, doc_len, hw_counter)?;
+            .index_str_tokens(idx, &str_tokens, doc_len)?;
 
         let db_document =
             FullTextIndex::serialize_stored_document(str_tokens, phrase_matching, doc_len)?;
 
         // Update persisted storage
         self.storage
-            .put_value(
-                idx,
-                &db_document,
-                hw_counter.ref_payload_index_io_write_counter(),
-            )
+            .put_value(idx, &db_document, HwMetric::PayloadIndexIoWrite)
             .map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to put value in mutable full text index gridstore: {err}"
@@ -190,8 +181,7 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc_len(&self, idx: PointOffsetType) -> Option<u32> {
         use common::generic_consts::Random;
-        self.storage
-            .get_value::<Random>(idx, &HardwareCounterCell::disposable())
+        hw::test(|| self.storage.get_value::<Random>(idx))
             .unwrap()
             .and_then(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().doc_len)
     }
@@ -200,8 +190,7 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
         use common::generic_consts::Random;
-        self.storage
-            .get_value::<Random>(idx, &HardwareCounterCell::disposable())
+        hw::test(|| self.storage.get_value::<Random>(idx))
             .unwrap()
             .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().tokens)
     }
@@ -210,13 +199,8 @@ impl MutableFullTextIndex {
 impl ValueIndexer for MutableFullTextIndex {
     type ValueType = String;
 
-    fn add_many(
-        &mut self,
-        idx: PointOffsetType,
-        values: Vec<String>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.add_many(idx, values, hw_counter)
+    fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+        self.add_many(idx, values)
     }
 
     fn get_value(value: &serde_json::Value) -> Option<String> {

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
@@ -30,7 +29,6 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
     stats: &mut TextFieldStats,
     is_stopped: &AtomicBool,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     debug_assert!(
         stats.df.keys().all(|term| is_tokenized(index, term)),
@@ -43,7 +41,6 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     let mut counts: Vec<(&mut usize, usize)> = Vec::with_capacity(stats.df.len());
     index.for_each_token_id(
         stats.df.iter_mut().map(|(term, df)| (df, term.as_str())),
-        hw_counter,
         |df, token_id| {
             if let Some(token_id) = token_id {
                 counts.push((df, token_id as usize));
@@ -53,7 +50,7 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
 
     for (df, token_id) in counts {
         check_process_stopped(is_stopped)?;
-        if let Some(posting_len) = index.posting_len(token_id as TokenId, hw_counter)? {
+        if let Some(posting_len) = index.posting_len(token_id as TokenId)? {
             *df += posting_len;
         }
     }
@@ -93,7 +90,6 @@ pub fn score_bm25<T: FullTextIndexRead>(
     accept: &dyn Fn(PointOffsetType) -> bool,
     limit: usize,
     is_stopped: &AtomicBool,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<ScoredPointOffset>> {
     debug_assert!(
         terms.iter().all(|term| is_tokenized(index, term)),
@@ -103,7 +99,6 @@ pub fn score_bm25<T: FullTextIndexRead>(
     let mut resolved = Vec::with_capacity(terms.len());
     index.for_each_token_id(
         terms.iter().enumerate().map(|(i, term)| (i, term.as_str())),
-        hw_counter,
         |i, token_id| {
             if let Some(token_id) = token_id {
                 resolved.push(Bm25Term {
@@ -118,7 +113,7 @@ pub fn score_bm25<T: FullTextIndexRead>(
     }
 
     let query = Bm25Query::new(resolved, params, context.avg_doc_len())?;
-    index.score_bm25(&query, accept, limit, is_stopped, hw_counter)
+    index.score_bm25(&query, accept, limit, is_stopped)
 }
 
 /// Selects how a text query is parsed and matched against the payload.
@@ -178,7 +173,6 @@ pub trait FullTextIndexRead {
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()>;
 
@@ -206,7 +200,6 @@ pub trait FullTextIndexRead {
         accept: &dyn Fn(PointOffsetType) -> bool,
         limit: usize,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>>;
 
     /// Documents in this segment containing `token_id`: `df(t)` before it is
@@ -216,30 +209,23 @@ pub trait FullTextIndexRead {
     /// points from its postings; the immutable and on-disk ones keep them until
     /// the segment is rebuilt. So `df` can exceed `N`, and the same data can
     /// report a different `df` before and after an optimization.
-    fn posting_len(
-        &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>>;
+    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>>;
 
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()>;
 
     fn filter_query<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     fn estimate_query_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation>;
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool>;
@@ -269,24 +255,16 @@ pub trait FullTextIndexRead {
 
     /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
     /// Returns [`None`] if there are any unseen tokens.
-    fn parse_phrase_query(
-        &self,
-        phrase: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
-        let document = self.parse_document(phrase, hw_counter)?;
+    fn parse_phrase_query(&self, phrase: &str) -> OperationResult<Option<ParsedQuery>> {
+        let document = self.parse_document(phrase)?;
         Ok(document.map(ParsedQuery::Phrase))
     }
 
     /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AllTokens`].
     /// Returns [`None`] if there are any unseen tokens.
-    fn parse_text_query(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
+    fn parse_text_query(&self, text: &str) -> OperationResult<Option<ParsedQuery>> {
         let tokenset: Option<TokenSet> = self
-            .resolve_tokens(TokenizerTextKind::Query, text, hw_counter)?
+            .resolve_tokens(TokenizerTextKind::Query, text)?
             .into_values()
             .collect::<Option<TokenSet>>();
         Ok(tokenset.map(ParsedQuery::AllTokens))
@@ -294,24 +272,15 @@ pub trait FullTextIndexRead {
 
     /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AnyTokens`].
     /// Unseen tokens are ignored. Never returns [`None`].
-    fn parse_text_any_query(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<ParsedQuery>> {
-        let tokenset = self.parse_tokenset(TokenizerTextKind::Query, text, hw_counter)?;
+    fn parse_text_any_query(&self, text: &str) -> OperationResult<Option<ParsedQuery>> {
+        let tokenset = self.parse_tokenset(TokenizerTextKind::Query, text)?;
         Ok(Some(ParsedQuery::AnyTokens(tokenset)))
     }
 
     /// Parse as provided [`TokenizerTextKind`] and return [`TokenSet`].
     /// Unseen tokens are ignored.
-    fn parse_tokenset(
-        &self,
-        kind: TokenizerTextKind,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<TokenSet> {
-        let token_ids = self.resolve_tokens(kind, text, hw_counter)?.into_values();
+    fn parse_tokenset(&self, kind: TokenizerTextKind, text: &str) -> OperationResult<TokenSet> {
+        let token_ids = self.resolve_tokens(kind, text)?.into_values();
         Ok(token_ids.flatten().collect())
     }
 
@@ -321,7 +290,6 @@ pub trait FullTextIndexRead {
         &self,
         kind: TokenizerTextKind,
         text: &'a str,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<AHashMap<Cow<'a, str>, Option<TokenId>>> {
         let mut token_map = AHashMap::new();
         self.tokenizer().tokenize(kind, text, |token| {
@@ -330,19 +298,15 @@ pub trait FullTextIndexRead {
         let iter = token_map
             .iter_mut()
             .map(|(token, cell)| (cell, token.as_ref()));
-        self.for_each_token_id(iter, hw_counter, |cell, token_id| *cell = token_id)?;
+        self.for_each_token_id(iter, |cell, token_id| *cell = token_id)?;
         Ok(token_map)
     }
 
     /// Parse as [`TokenizerTextKind::Document`] and return a [`Document`].
     /// Returns [`None`] if there are any unseen tokens.
-    fn parse_document(
-        &self,
-        text: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Document>> {
+    fn parse_document(&self, text: &str) -> OperationResult<Option<Document>> {
         let mut document_tokens = Vec::new();
-        let token_map = self.resolve_tokens(TokenizerTextKind::Document, text, hw_counter)?;
+        let token_map = self.resolve_tokens(TokenizerTextKind::Document, text)?;
         if token_map.values().any(|token_id| token_id.is_none()) {
             return Ok(None);
         }
@@ -371,12 +335,11 @@ pub trait FullTextIndexRead {
         payload_value: &serde_json::Value,
         text: &str,
         query_type: PayloadMatchQueryType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let query_opt = match query_type {
-            PayloadMatchQueryType::Text => self.parse_text_query(text, hw_counter)?,
-            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text, hw_counter)?,
-            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text, hw_counter)?,
+            PayloadMatchQueryType::Text => self.parse_text_query(text)?,
+            PayloadMatchQueryType::Phrase => self.parse_phrase_query(text)?,
+            PayloadMatchQueryType::TextAny => self.parse_text_any_query(text)?,
         };
 
         let Some(query) = query_opt else {
@@ -387,17 +350,15 @@ pub trait FullTextIndexRead {
             .iter()
             .try_any(|value| match &query {
                 ParsedQuery::AllTokens(query) => {
-                    let tokenset =
-                        self.parse_tokenset(TokenizerTextKind::Document, value, hw_counter)?;
+                    let tokenset = self.parse_tokenset(TokenizerTextKind::Document, value)?;
                     Ok(tokenset.has_subset(query))
                 }
                 ParsedQuery::Phrase(query) => {
-                    let document = self.parse_document(value, hw_counter)?;
+                    let document = self.parse_document(value)?;
                     Ok(document.is_some_and(|doc| doc.has_phrase(query)))
                 }
                 ParsedQuery::AnyTokens(query) => {
-                    let tokenset =
-                        self.parse_tokenset(TokenizerTextKind::Document, value, hw_counter)?;
+                    let tokenset = self.parse_tokenset(TokenizerTextKind::Document, value)?;
                     Ok(tokenset.has_any(query))
                 }
             })

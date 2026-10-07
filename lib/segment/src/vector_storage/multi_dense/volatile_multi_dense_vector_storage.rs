@@ -4,8 +4,9 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::AccessPattern;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
@@ -140,11 +141,10 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         key: PointOffsetType,
         vector: VectorRef,
         is_deleted: bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
-        self.insert_multi_native(key, multi_vector.as_ref(), is_deleted, hw_counter)
+        self.insert_multi_native(key, multi_vector.as_ref(), is_deleted)
     }
 
     /// Insert a multi-vector already in the storage's element type `T`.
@@ -153,7 +153,6 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         key: PointOffsetType,
         multi_vector: TypedMultiDenseVectorRef<T>,
         is_deleted: bool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.dim);
 
@@ -245,11 +244,9 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.vectors_metadata.len() as PointOffsetType;
-            self.insert_multi_native(
-                new_id,
-                other_vector.as_ref(),
-                other_deleted,
-                &HardwareCounterCell::disposable(), // This function is only used by internal operations
+            hw::unmeasured(
+                reason("This function is only used by internal operations"),
+                || self.insert_multi_native(new_id, other_vector.as_ref(), other_deleted),
             )?;
         }
         let end_index = self.vectors_metadata.len() as PointOffsetType;
@@ -316,13 +313,8 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorSt
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for VolatileMultiDenseVectorStorage<T> {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.insert_vector_impl(key, vector, false, hw_counter)
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        self.insert_vector_impl(key, vector, false)
     }
 
     fn flusher(&self) -> Flusher {

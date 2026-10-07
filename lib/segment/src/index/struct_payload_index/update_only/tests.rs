@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::universal_io::{MmapFile, MmapFs};
 use tempfile::TempDir;
 
@@ -57,7 +57,7 @@ fn write_config(segment_path: &Path, types: Vec<FullPayloadIndexType>) {
 #[test]
 fn batch_reaches_every_index_of_a_field() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     write_config(
         dir.path(),
         vec![
@@ -78,7 +78,6 @@ fn batch_reaches_every_index_of_a_field() {
         .par_append_many(
             &MmapFs,
             payloads.iter().enumerate().map(|(i, p)| (i as u32, p)),
-            &hw_counter,
         )
         .unwrap();
     drop(index);
@@ -94,7 +93,7 @@ fn batch_reaches_every_index_of_a_field() {
     .unwrap();
     let values = |slot| {
         keyword
-            .get_values(slot, &hw_counter)
+            .get_values(slot)
             .map(|values| values.map(String::from).collect::<Vec<_>>())
     };
     assert_eq!(values(0), Some(vec!["alpha".to_string()]));
@@ -118,7 +117,7 @@ fn batch_reaches_every_index_of_a_field() {
 #[test]
 fn batches_resume() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     write_config(
         dir.path(),
         vec![
@@ -130,9 +129,7 @@ fn batches_resume() {
     for (slot, value) in [(0, "alpha"), (1, "beta")] {
         let payload = payload_json! { "f": value };
         let mut index = Index::par_open(&MmapFs, dir.path()).unwrap();
-        index
-            .par_append_many(&MmapFs, [(slot, &payload)], &hw_counter)
-            .unwrap();
+        index.par_append_many(&MmapFs, [(slot, &payload)]).unwrap();
     }
 
     let path = get_payload_index_path(dir.path());
@@ -147,7 +144,7 @@ fn batches_resume() {
     for (slot, expected) in [(0, "alpha"), (1, "beta")] {
         assert_eq!(
             keyword
-                .get_values(slot, &hw_counter)
+                .get_values(slot)
                 .map(|values| values.map(String::from).collect::<Vec<_>>()),
             Some(vec![expected.to_string()]),
         );
@@ -169,13 +166,11 @@ fn batches_resume() {
 #[test]
 fn segment_without_indexes_opens_empty() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let payload = payload_json! { "f": "alpha" };
     let mut index = Index::par_open(&MmapFs, dir.path()).unwrap();
-    index
-        .par_append_many(&MmapFs, [(0, &payload)], &hw_counter)
-        .unwrap();
+    index.par_append_many(&MmapFs, [(0, &payload)]).unwrap();
 }
 
 /// A config that does not say which indexes a field has is refused: this writer

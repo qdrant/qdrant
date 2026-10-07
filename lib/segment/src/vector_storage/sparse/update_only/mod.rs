@@ -4,7 +4,7 @@ mod tests;
 use std::path::Path;
 
 use blobstore::config::{Compression, DEFAULT_PAGE_SIZE_BYTES, LogstoreConfig};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use sparse::common::sparse_vector::SparseVector;
@@ -55,7 +55,6 @@ impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
         fs: &impl UniversalAppendFs<AppendFile = S>,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for (offset, vector) in vectors.into_iter().enumerate() {
             let slot = start_slot + offset as PointOffsetType;
@@ -77,10 +76,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlySparseVectorStorage<S> {
             };
 
             self.storage
-                .put(fs, slot, &stored, hw_counter.ref_vector_io_write_counter())?;
+                .put(fs, slot, &stored, HwMetric::VectorIoWrite)?;
         }
 
         self.storage.flush()?;
-        self.deleted.flush(fs, hw_counter)
+        self.deleted.flush(fs)
     }
 }

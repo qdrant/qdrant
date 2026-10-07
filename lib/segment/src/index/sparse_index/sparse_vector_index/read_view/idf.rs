@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSliceExt as _, BitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::InvertedIndex;
@@ -53,11 +52,10 @@ where
         idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         match corpus {
-            None => self.fill_global_idf_statistics(idf, hw_counter),
-            Some(corpus) => self.fill_corpus_idf_statistics(idf, corpus, is_stopped, hw_counter),
+            None => self.fill_global_idf_statistics(idf),
+            Some(corpus) => self.fill_corpus_idf_statistics(idf, corpus, is_stopped),
         }
     }
 
@@ -65,14 +63,13 @@ where
     fn fill_global_idf_statistics(
         &self,
         idf: &mut HashMap<DimId, usize>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         let iter = idf.iter_mut().filter_map(|(dim_id, count)| {
             let offset = self.indices_tracker.remap_index(*dim_id)?;
             Some((count, offset))
         });
         self.inverted_index
-            .posting_list_len_batch(iter, hw_counter, |count, len| {
+            .posting_list_len_batch(iter, |count, len| {
                 *count += len;
                 Ok(())
             })?;
@@ -86,10 +83,8 @@ where
         idf: &mut HashMap<DimId, usize>,
         corpus: &Filter,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        let (document_count, corpus_points) =
-            self.collect_corpus_points(corpus, is_stopped, hw_counter)?;
+        let (document_count, corpus_points) = self.collect_corpus_points(corpus, is_stopped)?;
 
         let arena = blink_alloc::Blink::new();
         let ids = idf.iter_mut().filter_map(|(dim_id, count)| {
@@ -98,26 +93,19 @@ where
         });
         match corpus_points {
             CorpusPoints::Mask(mask) => {
-                self.inverted_index.get_batch(
-                    ids,
-                    &arena,
-                    hw_counter,
-                    |count, posting_list_iter| {
+                self.inverted_index
+                    .get_batch(ids, &arena, |count, posting_list_iter| {
                         for element in posting_list_iter.into_std_iter() {
                             if mask.get_bit(element.record_id as usize).unwrap_or(false) {
                                 *count += 1;
                             }
                         }
                         Ok(())
-                    },
-                )?;
+                    })?;
             }
             CorpusPoints::SortedIds(corpus_ids) => {
-                self.inverted_index.get_batch(
-                    ids,
-                    &arena,
-                    hw_counter,
-                    |count, mut posting_list_iter| {
+                self.inverted_index
+                    .get_batch(ids, &arena, |count, mut posting_list_iter| {
                         let Some(last_id) = posting_list_iter.last_id() else {
                             return Ok(());
                         };
@@ -130,8 +118,7 @@ where
                             }
                         }
                         Ok(())
-                    },
-                )?;
+                    })?;
             }
         }
         check_process_stopped(is_stopped)?;
@@ -150,16 +137,13 @@ where
         &self,
         corpus: &Filter,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(usize, CorpusPoints)> {
         let total_points = self.id_tracker.total_point_count();
         // At 1/32 of the segment the sorted id list (4 bytes/id) starts to
         // outweigh the dense mask (1 bit/point).
         let id_list_threshold = (total_points / 32).max(128);
 
-        let cardinality = self
-            .payload_index
-            .estimate_cardinality(corpus, hw_counter)?;
+        let cardinality = self.payload_index.estimate_cardinality(corpus)?;
 
         let deleted_vectors = self.vector_storage.deleted_vector_bitslice();
 
@@ -171,7 +155,6 @@ where
         let points_iter = self.payload_index.iter_filtered_points(
             corpus,
             &cardinality,
-            hw_counter,
             is_stopped,
             DeferredBehavior::VisibleOnly,
         )?;

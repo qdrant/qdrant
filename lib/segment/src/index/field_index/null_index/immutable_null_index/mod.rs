@@ -10,7 +10,7 @@ pub struct ImmutableNullIndex(pub(super) MutableNullIndex);
 #[cfg(test)]
 mod tests {
     use common::bitvec::BitVec;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use itertools::Itertools as _;
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -25,20 +25,16 @@ mod tests {
     fn test_remove_idempotent() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
         let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let null_value = Value::Null;
         let null_value_in_array =
             Value::Array(vec![Value::String("test".to_string()), Value::Null]);
 
-        builder.add_point(0, &[&null_value], &hw_counter).unwrap();
-        builder
-            .add_point(1, &[&null_value_in_array], &hw_counter)
-            .unwrap();
-        builder.add_point(2, &[], &hw_counter).unwrap();
-        builder
-            .add_point(3, &[&Value::Bool(true)], &hw_counter)
-            .unwrap();
+        builder.add_point(0, &[&null_value]).unwrap();
+        builder.add_point(1, &[&null_value_in_array]).unwrap();
+        builder.add_point(2, &[]).unwrap();
+        builder.add_point(3, &[&Value::Bool(true)]).unwrap();
 
         let mut index = builder.finalize().unwrap();
 
@@ -60,7 +56,7 @@ mod tests {
 
         assert_eq!(
             index
-                .filter(&filter_is_null, &hw_counter)
+                .filter(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -68,7 +64,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .filter(&filter_is_not_empty, &hw_counter)
+                .filter(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -76,7 +72,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_null, &hw_counter)
+                .estimate_cardinality(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -84,7 +80,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_not_empty, &hw_counter)
+                .estimate_cardinality(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -94,7 +90,7 @@ mod tests {
         index.remove_point(1).unwrap();
         assert_eq!(
             index
-                .filter(&filter_is_null, &hw_counter)
+                .filter(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -102,7 +98,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .filter(&filter_is_not_empty, &hw_counter)
+                .filter(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -110,7 +106,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_null, &hw_counter)
+                .estimate_cardinality(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -118,7 +114,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_not_empty, &hw_counter)
+                .estimate_cardinality(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -128,7 +124,7 @@ mod tests {
         index.remove_point(1).unwrap();
         assert_eq!(
             index
-                .filter(&filter_is_null, &hw_counter)
+                .filter(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -136,7 +132,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .filter(&filter_is_not_empty, &hw_counter)
+                .filter(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -144,7 +140,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_null, &hw_counter)
+                .estimate_cardinality(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -152,7 +148,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_not_empty, &hw_counter)
+                .estimate_cardinality(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -162,7 +158,7 @@ mod tests {
         index.remove_point(3).unwrap();
         assert_eq!(
             index
-                .filter(&filter_is_null, &hw_counter)
+                .filter(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -170,7 +166,7 @@ mod tests {
         );
         assert!(
             index
-                .filter(&filter_is_not_empty, &hw_counter)
+                .filter(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .collect_vec()
@@ -178,7 +174,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_null, &hw_counter)
+                .estimate_cardinality(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -186,7 +182,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_not_empty, &hw_counter)
+                .estimate_cardinality(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -196,7 +192,7 @@ mod tests {
         index.remove_point(3).unwrap();
         assert_eq!(
             index
-                .filter(&filter_is_null, &hw_counter)
+                .filter(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -204,7 +200,7 @@ mod tests {
         );
         assert!(
             index
-                .filter(&filter_is_not_empty, &hw_counter)
+                .filter(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .collect_vec()
@@ -212,7 +208,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_null, &hw_counter)
+                .estimate_cardinality(&filter_is_null)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -220,7 +216,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .estimate_cardinality(&filter_is_not_empty, &hw_counter)
+                .estimate_cardinality(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .exp,
@@ -232,10 +228,10 @@ mod tests {
     fn test_remove_reopen() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
         let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
-        let hw_counter = HardwareCounterCell::new();
-        builder.add_point(0, &[&json!(true)], &hw_counter).unwrap();
-        builder.add_point(1, &[&json!(true)], &hw_counter).unwrap();
-        builder.add_point(2, &[&json!(false)], &hw_counter).unwrap();
+        let _hw = hw::test_guard();
+        builder.add_point(0, &[&json!(true)]).unwrap();
+        builder.add_point(1, &[&json!(true)]).unwrap();
+        builder.add_point(2, &[&json!(false)]).unwrap();
 
         let index = builder.finalize().unwrap();
 
@@ -261,7 +257,7 @@ mod tests {
 
         assert_eq!(
             reopened_index
-                .filter(&filter_is_not_empty, &hw_counter)
+                .filter(&filter_is_not_empty)
                 .unwrap()
                 .unwrap()
                 .collect_vec(),

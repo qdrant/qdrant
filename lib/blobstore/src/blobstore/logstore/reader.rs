@@ -2,9 +2,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::counter::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
@@ -164,9 +162,8 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.view().get_value::<P>(point_offset, hw_counter)
+        self.view().get_value::<P>(point_offset)
     }
 
     /// Get the serialized value for a given point offset.
@@ -175,10 +172,9 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Vec<u8>>> {
         let view = self.view();
-        let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+        let bytes = view.get_value_bytes::<P>(point_offset)?;
         Ok(bytes.map(std::borrow::Cow::into_owned))
     }
 
@@ -190,7 +186,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         &self,
         max_id: PointOffset,
         mut callback: F,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
@@ -206,7 +202,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         while current_offset < max_id {
             let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_id);
 
-            if !view.iter_range(current_offset..end_offset, &mut callback, hw_counter)? {
+            if !view.iter_range(current_offset..end_offset, &mut callback, hw_metric)? {
                 return Ok(());
             }
 
@@ -220,7 +216,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -233,7 +229,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
                 callback(user_data, point_offset, value)?;
                 Ok(true)
             },
-            hw_counter_cell,
+            hw_metric,
         )?;
 
         Ok(())
@@ -244,7 +240,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -257,7 +253,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
                 callback(user_data, point_offset, bytes)?;
                 Ok(true)
             },
-            hw_counter_cell,
+            hw_metric,
         )?;
 
         Ok(())

@@ -1,5 +1,4 @@
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
@@ -79,15 +78,9 @@ where
         self.inverted_index.total_sparse_vectors_size()
     }
 
-    fn get_query_cardinality(
-        &self,
-        filter: &Filter,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<CardinalityEstimation> {
+    fn get_query_cardinality(&self, filter: &Filter) -> OperationResult<CardinalityEstimation> {
         let available_vector_count = self.vector_storage.available_vector_count();
-        let query_point_cardinality = self
-            .payload_index
-            .estimate_cardinality(filter, hw_counter)?;
+        let query_point_cardinality = self.payload_index.estimate_cardinality(filter)?;
         Ok(adjust_to_available_vectors(
             query_point_cardinality,
             available_vector_count,
@@ -117,9 +110,7 @@ where
             None,
             top,
             deleted_point_bitslice,
-            vector_query_context.hardware_counter(),
         )?;
-        let hw_counter = vector_query_context.hardware_counter();
         let mut results = match filter {
             Some(filter) => {
                 let filtered_points = match prefiltered_points {
@@ -127,8 +118,7 @@ where
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
                         let filtered_points =
-                            self.payload_index
-                                .query_points(filter, &hw_counter, &is_stopped)?;
+                            self.payload_index.query_points(filter, &is_stopped)?;
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
@@ -161,8 +151,6 @@ where
             .unwrap_or(self.id_tracker.deleted_point_bitslice());
         let not_deleted = self.vector_storage.not_deleted_checker(point_deleted);
 
-        let hw_counter = vector_query_context.hardware_counter();
-
         let ids = match prefiltered_points {
             // Deferred points get filtered in the `None` case and are added to `prefiltered_points`.
             // In the `Some` case, we iterate over this set of points,
@@ -174,7 +162,6 @@ where
                     .iter_filtered_points(
                         filter,
                         query_cardinality,
-                        &hw_counter,
                         &is_stopped,
                         DeferredBehavior::VisibleOnly,
                     )?
@@ -189,21 +176,13 @@ where
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let mut scratch = self.search_scratch_pool.get();
-        let mut hw_counter = vector_query_context.hardware_counter();
-        let is_index_on_disk = self.config.index_type.is_on_disk();
-        if is_index_on_disk {
-            hw_counter.set_vector_io_read_multiplier(1);
-        } else {
-            hw_counter.set_vector_io_read_multiplier(0);
-        }
-
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
             self.inverted_index,
             &mut scratch,
             &is_stopped,
-            &hw_counter,
+            usize::from(self.config.index_type.is_on_disk()),
         )?;
         let search_result = search_context.plain_search(&ids);
         Ok(search_result)
@@ -229,26 +208,18 @@ where
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let mut scratch = self.search_scratch_pool.get();
-        let mut hw_counter = vector_query_context.hardware_counter();
-        let is_index_on_disk = self.config.index_type.is_on_disk();
-        if is_index_on_disk {
-            hw_counter.set_vector_io_read_multiplier(1);
-        } else {
-            hw_counter.set_vector_io_read_multiplier(0);
-        }
-
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
             self.inverted_index,
             &mut scratch,
             &is_stopped,
-            &hw_counter,
+            usize::from(self.config.index_type.is_on_disk()),
         )?;
 
         match filter {
             Some(filter) => {
-                let filter_context = self.payload_index.filter_context(filter, &hw_counter)?;
+                let filter_context = self.payload_index.filter_context(filter)?;
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check_infallible(idx)
                 };
@@ -273,8 +244,7 @@ where
         match filter {
             Some(filter) => {
                 // if cardinality is small - use plain search
-                let query_cardinality =
-                    self.get_query_cardinality(filter, &vector_query_context.hardware_counter())?;
+                let query_cardinality = self.get_query_cardinality(filter)?;
                 let threshold = self
                     .config
                     .full_scan_threshold

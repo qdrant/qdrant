@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
 use blink_alloc::Blink;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -83,7 +82,6 @@ pub trait InvertedIndex: Sized + Debug + 'static {
         &'a self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         arena: &'a Blink,
-        hw_counter: &'a HardwareCounterCell,
         callback: impl FnMut(U, Self::Iter<'a>) -> UioResult<()>,
     ) -> UioResult<()>;
 
@@ -99,7 +97,6 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn posting_list_len_batch<U: UserData>(
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
-        hw_counter: &HardwareCounterCell,
         callback: impl FnMut(U, usize) -> UioResult<()>,
     ) -> UioResult<()>;
 

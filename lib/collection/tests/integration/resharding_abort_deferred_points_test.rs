@@ -25,7 +25,8 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard_trait::WaitUntil;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use itertools::Itertools;
 use tempfile::Builder;
 use uuid::Uuid;
@@ -101,8 +102,8 @@ async fn test_abort_resharding_down_does_not_wait_for_deferred_points() {
             None,
             WriteOrdering::default(),
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("insert must succeed");
 

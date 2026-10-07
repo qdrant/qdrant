@@ -18,7 +18,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::universal_io::{MmapFile, MmapFs, UniversalWriteFs as _};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
@@ -185,7 +185,7 @@ fn create_empty_overlay(
 /// then dropped, then reopened through `open` — proving a second writer resumes correctly,
 /// mirroring `dense/update_only/tests.rs::batches_resume`.
 fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec<f32>]) {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     fn as_batch(vectors: &[Vec<f32>]) -> impl Iterator<Item = VectorToStore<'_>> {
         vectors
@@ -196,7 +196,7 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
     let split = vectors.len() / 2;
     let mut writer = create_empty_overlay(config, path);
     writer
-        .append_many(&MmapFs, 0, as_batch(&vectors[..split]), &hw_counter)
+        .append_many(&MmapFs, 0, as_batch(&vectors[..split]))
         .unwrap();
     drop(writer);
 
@@ -204,12 +204,7 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
         .unwrap()
         .expect("overlay was already created by the first writer");
     writer
-        .append_many(
-            &MmapFs,
-            split as u32,
-            as_batch(&vectors[split..]),
-            &hw_counter,
-        )
+        .append_many(&MmapFs, split as u32, as_batch(&vectors[split..]))
         .unwrap();
     drop(writer);
 }
@@ -272,11 +267,9 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     for (id, vector) in vectors.iter().enumerate() {
-        reference
-            .upsert_vector(id as u32, vector, &hw_counter)
-            .unwrap();
+        reference.upsert_vector(id as u32, vector).unwrap();
     }
 
     for id in 0..vectors.len() as u32 {
@@ -351,11 +344,9 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
         &AtomicBool::new(false),
     )
     .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     for (id, vector) in vectors.iter().enumerate() {
-        reference
-            .upsert_vector(id as u32, vector, &hw_counter)
-            .unwrap();
+        reference.upsert_vector(id as u32, vector).unwrap();
     }
 
     for id in 0..vectors.len() as u32 {
@@ -385,7 +376,7 @@ fn open_returns_none_when_nothing_persisted() {
 fn reopening_a_nonempty_overlay_works() {
     let dir = TempDir::with_prefix("update_only_quantized_reopen_nonempty").unwrap();
     let config = binary_config();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut writer = create_empty_overlay(&config, dir.path());
     let vector = some_vectors(1).remove(0);
@@ -394,7 +385,6 @@ fn reopening_a_nonempty_overlay_works() {
             &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(vector.as_slice()))],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);

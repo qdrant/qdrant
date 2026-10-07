@@ -8,7 +8,6 @@
 use std::ops::Bound;
 
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
@@ -31,25 +30,17 @@ where
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         match self {
-            ReadOnlyNumericIndexInner::Appendable(index) => {
-                index.check_values_any(idx, check_fn, hw_counter)
-            }
-            ReadOnlyNumericIndexInner::Immutable(index) => {
-                index.check_values_any(idx, check_fn, hw_counter)
-            }
-            ReadOnlyNumericIndexInner::OnDisk(index) => {
-                index.check_values_any(idx, check_fn, hw_counter)
-            }
+            ReadOnlyNumericIndexInner::Appendable(index) => index.check_values_any(idx, check_fn),
+            ReadOnlyNumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
+            ReadOnlyNumericIndexInner::OnDisk(index) => index.check_values_any(idx, check_fn),
         }
     }
 
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,
-        hw_counter: &HardwareCounterCell,
         check_fn: F,
         on_match: M,
     ) -> OperationResult<()>
@@ -61,13 +52,13 @@ where
     {
         match self {
             ReadOnlyNumericIndexInner::Appendable(index) => {
-                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+                index.for_each_matching_value(items, check_fn, on_match)
             }
             ReadOnlyNumericIndexInner::Immutable(index) => {
-                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+                index.for_each_matching_value(items, check_fn, on_match)
             }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
-                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+                index.for_each_matching_value(items, check_fn, on_match)
             }
         }
     }
@@ -100,17 +91,16 @@ where
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         let boxed: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
             ReadOnlyNumericIndexInner::Appendable(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
+                Box::new(index.values_range(start_bound, end_bound)?)
             }
             ReadOnlyNumericIndexInner::Immutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
+                Box::new(index.values_range(start_bound, end_bound)?)
             }
             ReadOnlyNumericIndexInner::OnDisk(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
+                Box::new(index.values_range(start_bound, end_bound)?)
             }
         };
         Ok(boxed)

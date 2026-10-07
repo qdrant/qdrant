@@ -1449,6 +1449,7 @@ dependencies = [
  "ordered-float 5.5.0",
  "parking_lot",
  "ph",
+ "pin-project-lite",
  "procfs",
  "quick_cache",
  "rand 0.10.3",

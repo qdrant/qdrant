@@ -33,10 +33,10 @@ use std::{cmp, thread};
 
 use arc_swap::ArcSwap;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwHandoff};
 use common::defaults::log_load_timing;
 use common::rate_limiting::RateLimiter;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use common::{panic, tar_ext};
@@ -918,15 +918,16 @@ impl LocalShard {
             let op_started = Instant::now();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(
-                &self.segments,
-                op_num,
-                update.operation,
-                self.update_operation_lock.clone(),
-                self.update_tracker.clone(),
-                max_segment_size_bytes,
-                &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
-            ) {
+            match &hw::unmeasured(reason("Internal operation"), || {
+                CollectionUpdater::update(
+                    &self.segments,
+                    op_num,
+                    update.operation,
+                    self.update_operation_lock.clone(),
+                    self.update_tracker.clone(),
+                    max_segment_size_bytes,
+                )
+            }) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 
@@ -1033,8 +1034,6 @@ impl LocalShard {
                 last_wal_index - to
             );
             let update_sender = self.update_sender.load();
-            // TODO use proper collection's hardware measurement
-            let hw_measurements = HwMeasurementAcc::disposable();
             for op_num in to..last_wal_index {
                 update_sender
                     .send(UpdateSignal::Operation(OperationData {
@@ -1042,7 +1041,9 @@ impl LocalShard {
                         operation: None,
                         sender: None,
                         wait_for_deferred: false,
-                        hw_measurements: hw_measurements.clone(),
+                        hw_measurements: HwHandoff::unmeasured(reason(
+                            "TODO use proper collection's hardware measurement",
+                        )),
                     }))
                     .await?;
             }
@@ -1105,13 +1106,13 @@ impl LocalShard {
     pub async fn estimate_cardinality<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         let segments = self.segments.clone();
-        let hw_counter = hw_measurement_acc.get_counter_cell();
+        let hw_acc = hw::current();
         // clone filter for spawning task
         let filter = filter.cloned();
         let cardinality = tokio::task::spawn_blocking(move || -> OperationResult<_> {
+            let _hw = hw_acc.enter_guard();
             // Collect the segments first so we don't lock the segment holder during the operations.
             let segments = segments
                 .read()
@@ -1125,7 +1126,7 @@ impl LocalShard {
                     segment
                         .get()
                         .read() // blocking sync lock
-                        .estimate_point_count(filter.as_ref(), &hw_counter)
+                        .estimate_point_count(filter.as_ref())
                 })
                 .process_results(|iter| iter.merge_independent())
         });
@@ -1137,7 +1138,6 @@ impl LocalShard {
         &'a self,
         filter: Option<&'a Filter>,
         runtime_handle: &AdaptiveSearchHandle,
-        hw_counter: HwMeasurementAcc,
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
@@ -1146,7 +1146,6 @@ impl LocalShard {
             segments,
             filter,
             runtime_handle,
-            hw_counter,
             timeout,
             deferred_behavior,
         )
@@ -1472,22 +1471,16 @@ impl LocalShard {
     }
 
     /// Check if the read rate limiter allows the operation to proceed
-    /// - hw_measurement_acc: the current hardware measurement accumulator
     /// - context: the context of the operation to add on the error message
     /// - cost_fn: the cost of the operation called lazily
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_read_rate_limiter<F>(
-        &self,
-        hw_measurement_acc: &HwMeasurementAcc,
-        context: &str,
-        cost_fn: F,
-    ) -> CollectionResult<()>
+    fn check_read_rate_limiter<F>(&self, context: &str, cost_fn: F) -> CollectionResult<()>
     where
         F: FnOnce() -> usize,
     {
         // Do not rate limit internal operation tagged with disposable measurement
-        if hw_measurement_acc.is_disposable() {
+        if !hw::is_measured() {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.read_rate_limiter {
@@ -1508,16 +1501,12 @@ impl LocalShard {
     /// Mirrors `check_read_rate_limiter` but for writes; the cost is computed
     /// lazily via `cost_fn` (which may be async, e.g. cardinality estimates).
     /// Returns an error if the rate limit is exceeded.
-    pub(crate) async fn check_write_rate_limiter<F>(
-        &self,
-        hw_measurement_acc: &HwMeasurementAcc,
-        cost_fn: F,
-    ) -> CollectionResult<()>
+    pub(crate) async fn check_write_rate_limiter<F>(&self, cost_fn: F) -> CollectionResult<()>
     where
         F: AsyncFnOnce() -> usize,
     {
         // Do not rate limit internal operation tagged with disposable measurement
-        if hw_measurement_acc.is_disposable() {
+        if !hw::is_measured() {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.write_rate_limiter {

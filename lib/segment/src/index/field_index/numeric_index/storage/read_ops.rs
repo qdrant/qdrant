@@ -8,7 +8,6 @@
 use std::ops::Bound;
 
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::super::Encodable;
@@ -29,14 +28,11 @@ where
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         match self {
-            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn, hw_counter),
-            NumericIndexInner::Immutable(index) => {
-                index.check_values_any(idx, check_fn, hw_counter)
-            }
-            NumericIndexInner::OnDisk(index) => index.check_values_any(idx, check_fn, hw_counter),
+            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
+            NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
+            NumericIndexInner::OnDisk(index) => index.check_values_any(idx, check_fn),
         }
     }
 
@@ -68,17 +64,16 @@ where
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         let boxed: Box<dyn Iterator<Item = PointOffsetType> + 'a> = match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
+                Box::new(index.values_range(start_bound, end_bound)?)
             }
             NumericIndexInner::Immutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
+                Box::new(index.values_range(start_bound, end_bound)?)
             }
             NumericIndexInner::OnDisk(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter)?)
+                Box::new(index.values_range(start_bound, end_bound)?)
             }
         };
         Ok(boxed)
@@ -164,11 +159,10 @@ where
     pub fn point_ids_by_value<'a>(
         &'a self,
         value: T,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
-        self.values_range(start, end, hw_counter)
+        self.values_range(start, end)
     }
 
     pub fn is_on_disk(&self) -> bool {

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::DeferredBehavior;
 use fs_err as fs;
 use tempfile::Builder;
@@ -49,7 +49,7 @@ fn delete_change(point_id: u64, version: SeqNumberType) -> PendingChange {
 
 /// Build a segment with points 1..=5 at versions 1..=5, flushed to disk.
 fn build_segment(path: &Path) -> Segment {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
     for point_id in 1..=5u64 {
         segment
@@ -57,7 +57,6 @@ fn build_segment(path: &Path) -> Segment {
                 point_id,
                 point_id.into(),
                 only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
-                &hw_counter,
             )
             .unwrap();
     }
@@ -464,7 +463,6 @@ fn test_load_resumes_same_log_name() {
 #[test]
 fn test_recover_pending_changes() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     let mut segment = build_segment(dir.path());
     let segment_dir = segment.data_path();
     let segment_version = segment.version();
@@ -516,11 +514,7 @@ fn test_recover_pending_changes() {
     assert!(recovered.log_files.is_empty());
 
     // Deleting a point again with the same version is silently skipped
-    assert!(
-        !segment
-            .delete_point(segment_version + 1, 2.into(), &hw_counter)
-            .unwrap()
-    );
+    assert!(!segment.delete_point(segment_version + 1, 2.into()).unwrap());
 }
 
 #[test]
@@ -574,7 +568,6 @@ fn test_recover_ignore_leaves_log_untouched() {
 #[test]
 fn test_recover_stale_log_is_noop() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     let mut segment = build_segment(dir.path());
     let segment_dir = segment.data_path();
     let op_version = segment.version() + 1;
@@ -592,9 +585,7 @@ fn test_recover_stale_log_is_noop() {
     pending_changes.flusher(op_version, None).unwrap()().unwrap();
     drop(pending_changes);
 
-    segment
-        .delete_point(op_version, 3.into(), &hw_counter)
-        .unwrap();
+    segment.delete_point(op_version, 3.into()).unwrap();
     let point_count = segment.available_point_count();
 
     // Replaying the stale log must not change anything; the file is left for the caller to
@@ -782,12 +773,11 @@ fn test_pending_change_version() {
 #[test]
 fn test_recover_delete_if_incompatible_index_change() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     let mut segment = build_segment(dir.path());
     let segment_dir = segment.data_path();
 
     segment
-        .create_field_index(6, &field("color"), Some(&keyword_schema()), &hw_counter)
+        .create_field_index(6, &field("color"), Some(&keyword_schema()))
         .unwrap();
     assert!(segment.get_indexed_fields().contains_key(&field("color")));
 
@@ -833,7 +823,7 @@ fn test_recover_delete_if_incompatible_index_change() {
 #[test]
 fn test_recover_superseding_vector_name_change() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut segment = build_segment(dir.path());
 
     segment
@@ -842,16 +832,9 @@ fn test_recover_superseding_vector_name_change() {
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![1.0f32; 4].into());
     vectors.insert("v2".to_owned(), vec![2.0f32; 4].into());
-    segment
-        .upsert_point(7, 1.into(), vectors, &hw_counter)
-        .unwrap();
+    segment.upsert_point(7, 1.into(), vectors).unwrap();
     segment.flush(true).unwrap();
-    assert!(
-        segment
-            .vector("v2", 1.into(), &hw_counter)
-            .unwrap()
-            .is_some()
-    );
+    assert!(segment.vector("v2", 1.into()).unwrap().is_some());
 
     let segment_dir = segment.data_path();
     let segment_config = segment.config().clone();
@@ -873,10 +856,7 @@ fn test_recover_superseding_vector_name_change() {
     assert_eq!(vector_config.size, 8);
     assert_eq!(vector_config.distance, Distance::Cosine);
     assert!(
-        segment
-            .vector("v2", 1.into(), &hw_counter)
-            .unwrap()
-            .is_none(),
+        segment.vector("v2", 1.into()).unwrap().is_none(),
         "superseded vector data must be cleared on replay",
     );
 

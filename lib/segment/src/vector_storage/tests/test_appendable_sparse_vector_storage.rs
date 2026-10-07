@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -32,12 +32,12 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let delete_mask = [false, false, true, true, false];
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     // Insert all points
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vec.into())
             .unwrap();
     }
 
@@ -124,7 +124,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     .map(|opt| opt.map(|v| v.try_into().unwrap()))
     .collect();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let id_tracker = create_id_tracker_fixture(points.len());
     {
@@ -133,7 +133,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         points.iter().enumerate().for_each(|(i, opt_vec)| {
             if let Some(vec) = opt_vec {
                 storage2
-                    .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
+                    .insert_vector(i as PointOffsetType, vec.into())
                     .unwrap();
             } else {
                 storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -209,11 +209,11 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
     .map(|v| v.try_into().unwrap())
     .collect::<Vec<SparseVector>>();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     points.iter().enumerate().for_each(|(i, vec)| {
         storage
-            .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vec.into())
             .unwrap();
     });
 

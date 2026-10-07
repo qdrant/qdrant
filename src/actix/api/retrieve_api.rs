@@ -6,7 +6,7 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{PointRequest, PointRequestInternal, ScrollRequest};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
@@ -48,7 +48,6 @@ async fn do_get_point(
     routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
     auth: Auth,
-    hw_counter: HwMeasurementAcc,
 ) -> Result<Option<RecordInternal>, StorageError> {
     let request = PointRequestInternal {
         ids: vec![point_id],
@@ -66,7 +65,6 @@ async fn do_get_point(
         timeout,
         shard_selection,
         auth,
-        hw_counter,
     )
     .await
     .map(|points| points.into_iter().next())
@@ -116,8 +114,8 @@ async fn get_point(
         routing_token,
         params.timeout(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .and_then(|i| {
         i.ok_or_else(|| {
@@ -178,8 +176,8 @@ async fn get_points(
         params.timeout(),
         shard_selection,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .map_ok(|response| {
         response
             .into_iter()
@@ -242,8 +240,8 @@ async fn scroll_points(
             params.timeout(),
             shard_selection,
             auth,
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await;
 
     process_response(res, timing, request_hw_counter.to_rest_api())

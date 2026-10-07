@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use segment::pending_changes::PersistedProxyChanges;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
@@ -45,29 +46,27 @@ async fn test_fix_payload_indices() {
     .await
     .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
 
     let upsert_ops = upsert_operation();
     shard
-        .update(upsert_ops.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(upsert_ops.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&hw_acc))
         .await
         .unwrap();
 
     // Create payload index in shard locally, not in global collection configuration
     let index_op = create_payload_index_operation();
     shard
-        .update(index_op.into(), WaitUntil::Visible, None, hw_acc.clone())
+        .update(index_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&hw_acc))
         .await
         .unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard
-        .update(
-            delete_point_op.into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(delete_point_op.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&hw_acc))
         .await
         .unwrap();
 

@@ -3,6 +3,7 @@ use actix_web_validator::{Json, Path, Query};
 use api::rest::models::InferenceUsage;
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use common::counter::hw::HwFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -57,7 +58,6 @@ async fn query_points(
         None => ShardSelectorInternal::All,
         Some(shard_keys) => shard_keys.into(),
     };
-    let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
     let inference_params = InferenceParams::new(api_keys, params.timeout());
@@ -86,7 +86,6 @@ async fn query_points(
                 routing_token,
                 auth,
                 params.timeout(),
-                hw_measurement_acc,
             )
             .await?
             .pop()
@@ -99,6 +98,7 @@ async fn query_points(
 
         Ok(QueryResponse { points })
     }
+    .measured(request_hw_counter.get_counter())
     .await;
 
     helpers::process_response_with_inference_usage(
@@ -130,7 +130,6 @@ async fn query_points_batch(
         None,
     );
     let timing = Instant::now();
-    let hw_measurement_acc = request_hw_counter.get_counter();
 
     let mut all_usages: InferenceUsage = InferenceUsage::default();
 
@@ -177,7 +176,6 @@ async fn query_points_batch(
                 routing_token,
                 auth,
                 params.timeout(),
-                hw_measurement_acc,
             )
             .await?
             .into_iter()
@@ -190,6 +188,7 @@ async fn query_points_batch(
             .collect_vec();
         Ok(res)
     }
+    .measured(request_hw_counter.get_counter())
     .await;
 
     helpers::process_response_with_inference_usage(
@@ -224,7 +223,6 @@ async fn query_points_groups(
         None,
     );
     let timing = Instant::now();
-    let hw_measurement_acc = request_hw_counter.get_counter();
     let mut inference_usage = InferenceUsage::default();
 
     let inference_params = InferenceParams::new(api_keys, params.timeout());
@@ -257,11 +255,11 @@ async fn query_points_groups(
             shard_selection,
             auth,
             params.timeout(),
-            hw_measurement_acc,
         )
         .await?;
         Ok(query_result)
     }
+    .measured(request_hw_counter.get_counter())
     .await;
 
     helpers::process_response_with_inference_usage(

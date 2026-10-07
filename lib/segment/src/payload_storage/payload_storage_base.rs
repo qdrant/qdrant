@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -16,17 +15,9 @@ use crate::types::{IoBackend, OwnedPayloadRef, Payload};
 /// only requires this trait, which makes it possible to implement read-only
 /// segments without duplicating storage code.
 pub trait PayloadStorageRead {
-    fn get(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
+    fn get(&self, point_offset: PointOffsetType) -> OperationResult<Payload>;
 
-    fn get_sequential(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload>;
+    fn get_sequential(&self, point_offset: PointOffsetType) -> OperationResult<Payload>;
 
     /// Return a borrowed or owned reference to the payload for `point_offset`.
     ///
@@ -36,17 +27,12 @@ pub trait PayloadStorageRead {
     ///
     /// For points without payload, return an empty payload via
     /// `OwnedPayloadRef::Owned(...)` so the caller never has to handle `None`.
-    fn payload_ref(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<OwnedPayloadRef<'_>>;
+    fn payload_ref(&self, point_offset: PointOffsetType) -> OperationResult<OwnedPayloadRef<'_>>;
 
     fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Payload) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Raw analogue of [`Self::read_payloads`]: hands the callback each payload
@@ -56,14 +42,13 @@ pub trait PayloadStorageRead {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Iterate over all stored payload and apply the provided callback.
     /// Stop iteration if callback returns false or error.
     ///
     /// Required for building payload index.
-    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    fn iter<F>(&self, callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
 
@@ -83,20 +68,10 @@ pub trait PayloadStorageRead {
 /// Trait for payload data storage with mutating operations. Should allow filter checks
 pub trait PayloadStorage: PayloadStorageRead {
     /// Overwrite payload for point_id. If payload already exists, replace it
-    fn overwrite(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()>;
+    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Set payload for point_id. If payload already exists, merge it with existing
-    fn set(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()>;
+    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Set payload to a point_id by key. If payload already exists, merge it with existing
     fn set_by_key(
@@ -104,27 +79,17 @@ pub trait PayloadStorage: PayloadStorageRead {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Delete payload by point_id and key
-    fn delete(
-        &mut self,
-        point_id: PointOffsetType,
-        key: &JsonPath,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Vec<Value>>;
+    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>>;
 
     /// Clear all payload of the point
-    fn clear(
-        &mut self,
-        point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Payload>>;
+    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
 
     /// Completely delete payload storage, without keeping allocated memory. Pufff!
     #[cfg(test)]
-    fn clear_all(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
+    fn clear_all(&mut self) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

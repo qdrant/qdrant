@@ -15,8 +15,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::defaults::log_load_timing;
+use common::reason::reason;
 use fs_err as fs;
 
 use super::field_index::FieldIndex;
@@ -215,11 +216,9 @@ impl StructPayloadIndex {
             // Close any partially-loaded index storages first: the rebuild wipes
             // their directories before building fresh.
             indexes.clear();
-            indexes = self.build_field_indexes(
-                field,
-                &payload_schema.schema,
-                &HardwareCounterCell::disposable(), // Internal operation
-            )?;
+            indexes = hw::unmeasured(reason("Internal operation"), || {
+                self.build_field_indexes(field, &payload_schema.schema)
+            })?;
 
             // The durable config keeps listing this field: persist the rebuilt data
             // now, or a crash before the next flush cycle would leave the config

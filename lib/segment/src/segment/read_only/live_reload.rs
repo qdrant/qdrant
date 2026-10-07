@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs, UniversalReadFsAsync};
@@ -82,7 +81,6 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     pub fn live_reload(
         &mut self,
         max_committed_id: Option<PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Self {
             uuid: _,
@@ -122,13 +120,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
             payload_storage
                 .borrow_mut()
-                .live_reload(fs, &deleted, &inserted, hw_counter)?;
+                .live_reload(fs, &deleted, &inserted)?;
             payload_index
                 .borrow_mut()
-                .live_reload(fs, &deleted, &inserted, hw_counter)?;
+                .live_reload(fs, &deleted, &inserted)?;
 
             for vector_data in vector_data.values() {
-                vector_data.live_reload(fs, &deleted, &inserted, hw_counter)?;
+                vector_data.live_reload(fs, &deleted, &inserted)?;
             }
         }
 
@@ -172,7 +170,6 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
         fs: &Fs,
         deleted: &SortedSlice<'_, PointOffsetType>,
         inserted: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Self {
             vector_index,
@@ -185,12 +182,12 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
         // its inverted index (see `ReadOnlySparseVectorIndex::live_reload`).
         vector_storage
             .borrow_mut()
-            .live_reload(fs, deleted, inserted, hw_counter)?;
+            .live_reload(fs, deleted, inserted)?;
         vector_index
             .borrow_mut()
-            .live_reload(fs, deleted, inserted, hw_counter)?;
+            .live_reload(fs, deleted, inserted)?;
         if let Some(quantized_vectors) = quantized_vectors.borrow_mut().as_mut() {
-            quantized_vectors.live_reload(fs, deleted, inserted, hw_counter)?;
+            quantized_vectors.live_reload(fs, deleted, inserted)?;
         }
 
         Ok(())

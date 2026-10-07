@@ -2,7 +2,8 @@ use std::mem;
 use std::sync::Arc;
 
 use ahash::AHashSet;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw;
+use common::reason::Reason;
 use common::types::{DeferredBehavior, ScoreType};
 use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -54,6 +55,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         requests: Vec<ShardQueryRequest>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // The planner fetches `limit + offset` points; the offset is cut off here.
         let offsets: Vec<_> = requests.iter().map(|request| request.offset).collect();
         let planned_query = PlannedQuery::try_from(requests)?;
@@ -79,13 +81,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let mut scored_points_batch = Vec::with_capacity(root_plans.len());
         for (root_plan, offset) in root_plans.into_iter().zip(offsets) {
             self.check_stopped()?;
-            let scored_points = self.resolve_plan(
-                root_plan,
-                offset,
-                &mut search_results,
-                &mut scroll_results,
-                HwMeasurementAcc::disposable_edge(),
-            )?;
+            let scored_points =
+                self.resolve_plan(root_plan, offset, &mut search_results, &mut scroll_results)?;
 
             scored_points_batch.push(scored_points)
         }
@@ -99,7 +96,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         offset: usize,
         search_results: &mut Vec<Vec<ScoredPoint>>,
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let RootPlan {
@@ -108,22 +104,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             with_vector,
         } = root_plan;
 
-        let mut results = self.recurse_prefetch(
-            merge_plan,
-            search_results,
-            scroll_results,
-            0,
-            hw_measurement_acc.clone(),
-        )?;
+        let mut results = self.recurse_prefetch(merge_plan, search_results, scroll_results, 0)?;
         results.drain(..offset.min(results.len()));
 
         let [result] = self
-            .fill_with_payload_or_vectors(
-                vec![results],
-                with_payload,
-                with_vector,
-                hw_measurement_acc,
-            )?
+            .fill_with_payload_or_vectors(vec![results], with_payload, with_vector)?
             .try_into()
             .map_err(|unconverted: Vec<_>| {
                 OperationError::service_error(format!(
@@ -140,7 +125,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         search_results: &mut Vec<Vec<ScoredPoint>>,
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
         depth: usize,
-        hw_counter_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let MergePlan {
@@ -172,7 +156,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                         search_results,
                         scroll_results,
                         depth + 1,
-                        hw_counter_acc.clone(),
                     )?;
 
                     sources.push(merged);
@@ -187,13 +170,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             } = rescore_stages;
 
             let shard_stage_result = if let Some(rescore_params) = shard_level {
-                vec![self.rescore(sources, rescore_params, hw_counter_acc.clone())?]
+                vec![self.rescore(sources, rescore_params)?]
             } else {
                 sources
             };
 
             let collection_result = if let Some(rescore_params) = collection_level {
-                self.rescore(shard_stage_result, rescore_params, hw_counter_acc)?
+                self.rescore(shard_stage_result, rescore_params)?
             } else {
                 // Only one shard result is expected at this point.
                 shard_stage_result.into_iter().next().unwrap_or_default()
@@ -221,7 +204,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         sources: Vec<Vec<ScoredPoint>>,
         rescore_params: RescoreParams,
-        hw_counter_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let RescoreParams {
@@ -282,7 +264,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 sources,
                 limit,
                 score_threshold.map(OrderedFloat::into_inner),
-                hw_counter_acc,
             ),
 
             ScoringQuery::Sample(sample) => match sample {
@@ -303,7 +284,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 }
             },
 
-            ScoringQuery::Mmr(mmr) => self.mmr_rescore(sources, mmr, limit, hw_counter_acc),
+            ScoringQuery::Mmr(mmr) => self.mmr_rescore(sources, mmr, limit),
             // Refused when the query is planned, see `MergePlan::validate`.
             ScoringQuery::Text(_) => Err(text_not_supported()),
         }
@@ -344,7 +325,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         prefetches_results: Vec<Vec<ScoredPoint>>,
         limit: usize,
         score_threshold: Option<ScoreType>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let ctx = FormulaContext {
@@ -357,11 +337,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         let ctx = Arc::new(ctx);
 
-        let rescored_results = self.par_map_segments(|segment| {
-            segment
-                .read_segment()
-                .rescore_with_formula(ctx.clone(), &hw_measurement_acc.get_counter_cell())
-        })?;
+        let rescored_results = self
+            .par_map_segments(|segment| segment.read_segment().rescore_with_formula(ctx.clone()))?;
 
         // use aggregator with only one "batch"
         let mut aggregator = BatchResultAggregator::new(std::iter::once(limit));
@@ -382,7 +359,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         sources: Vec<Vec<ScoredPoint>>,
         mmr: MmrInternal,
         limit: usize,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let points_with_vector = self
@@ -390,7 +366,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 sources,
                 false.into(),
                 WithVector::from(mmr.using.clone()),
-                hw_measurement_acc.clone(),
             )?
             .into_iter()
             .flatten();
@@ -409,7 +384,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             vector_data_config.distance,
             vector_data_config.multivector_config,
             limit,
-            hw_measurement_acc,
         )?;
 
         // strip mmr vector. We will handle user-requested vectors at root level of request.
@@ -426,7 +400,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         query_response: ShardQueryResponse,
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<ShardQueryResponse> {
         self.check_stopped()?;
         if !with_payload.is_required() && !with_vector.is_enabled() {
@@ -446,7 +419,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             &WithPayload::from(with_payload),
             &with_vector,
             &self.is_stopped,
-            hw_measurement_acc,
             DeferredBehavior::VisibleOnly,
         )?;
         self.check_stopped()?;

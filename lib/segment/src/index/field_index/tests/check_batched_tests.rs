@@ -1,7 +1,6 @@
 use common::bitvec::BitVec;
 use common::condition_checker::{ConditionChecker, assert_congruence};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::universal_io::MmapFs;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -203,10 +202,9 @@ fn check_index<T: Serialize>(
             assert_eq!(builders.len(), 1);
             let mut builder = builders.pop().unwrap();
             builder.init().unwrap();
+            let _hw = hw::test_guard();
             for (id, (row, _, _, _)) in (0u32..).zip(points) {
-                builder
-                    .add_point(id, &row.iter().collect_vec(), &HardwareCounterCell::new())
-                    .unwrap();
+                builder.add_point(id, &row.iter().collect_vec()).unwrap();
             }
             let mut index = builder.finalize().unwrap();
             for (id, &(_, _, removed, _)) in (0u32..).zip(points) {
@@ -216,7 +214,7 @@ fn check_index<T: Serialize>(
             }
 
             // Sanity check: `check()` is the same as `expected`
-            let checker = index.condition_checker(condition, HwMeasurementAcc::new());
+            let checker = index.condition_checker(condition);
             let checker = checker.unwrap().unwrap();
             for (id, &(_, _, _, expected)) in (0u32..).zip(points) {
                 assert_eq!(checker.check(id).unwrap(), expected, "{id}");
@@ -229,7 +227,7 @@ fn check_index<T: Serialize>(
             let index =
                 ReadOnlyFieldIndex::open(&MmapFs, dir, &field, schema, &r#type, n, &deleted, None);
             let index = index.unwrap().unwrap();
-            let checker = index.condition_checker(condition, HwMeasurementAcc::new());
+            let checker = index.condition_checker(condition);
             assert_congruence(&checker.unwrap().unwrap(), n as _, &mut rng);
         }
     }

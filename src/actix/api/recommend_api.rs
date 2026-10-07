@@ -8,7 +8,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::collection_verification::{
@@ -79,8 +79,8 @@ async fn recommend_points(
             shard_selection,
             auth,
             params.timeout(),
-            request_hw_counter.get_counter(),
         )
+        .measured(request_hw_counter.get_counter())
         .await
         .map(|scored_points| {
             scored_points
@@ -101,7 +101,6 @@ async fn do_recommend_batch_points(
     routing_token: Option<RoutingToken>,
     auth: Auth,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches
@@ -123,7 +122,6 @@ async fn do_recommend_batch_points(
         routing_token,
         auth,
         timeout,
-        hw_measurement_acc,
     )
     .await
 }
@@ -168,8 +166,8 @@ async fn recommend_batch_points(
         routing_token,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(|batch_scored_points| {
         batch_scored_points
@@ -236,8 +234,8 @@ async fn recommend_point_groups(
         shard_selection,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())

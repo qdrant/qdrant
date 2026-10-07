@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, BlobstoreReader};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
+use common::reason::reason;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::MapIndexKey;
@@ -61,14 +62,14 @@ where
         // the gridstore carries no prefix marker, and this open path has no
         // schema access. Prefix conditions fall back to slower checks.
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?,
             |idx, values: Vec<_>| {
                 in_memory_index.add_many_to_map(idx, values);
                 Ok(true)
             },
-            hw_counter.ref_payload_index_io_write_counter(),
+            HwMetric::PayloadIndexIoWrite,
         )?;
 
         Ok(Some(Self {

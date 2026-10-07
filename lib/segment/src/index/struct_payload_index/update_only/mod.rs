@@ -6,7 +6,7 @@ mod tests;
 use std::path::Path;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use rayon::iter::{IntoParallelIterator as _, IntoParallelRefIterator, ParallelIterator as _};
@@ -85,29 +85,27 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
         &mut self,
         fs: &impl UniversalAppendFs<AppendFile = S>,
         points: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Every index walks the whole run
         let points: Vec<(PointOffsetType, &Payload)> = points.into_iter().collect();
-        // One cell per index, off the accumulator: the cell itself is not Sync
-        let hw_acc = hw_counter.new_accumulator();
-
         // Each index owns its files, so none of them waits on another
-        self.field_indexes
+        let indexes = self
+            .field_indexes
             .iter_mut()
             .flat_map(|(field, indexes)| indexes.iter_mut().map(move |index| (field, index)))
-            .collect::<Vec<_>>()
-            .into_par_iter()
-            .try_for_each(|(field, index)| {
-                let hw_counter = hw_acc.get_counter_cell();
+            .collect::<Vec<_>>();
+        hw::parallel(|hw_acc| {
+            indexes.into_par_iter().try_for_each(|(field, index)| {
+                let _hw = hw_acc.enter_guard();
                 for (slot, payload) in &points {
                     let values = payload.get_value(field);
-                    index.add_point(fs, *slot, &values, &hw_counter)?;
+                    index.add_point(fs, *slot, &values)?;
                 }
 
                 // Once per index per batch: for the bitmask-backed indexes a flush
                 // rewrites a whole mask
-                index.flush(fs, &hw_counter)
+                index.flush(fs)
             })
+        })
     }
 }

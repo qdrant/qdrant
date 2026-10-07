@@ -2,7 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -70,14 +71,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     }
 
     /// [`live_reload`](Self::live_reload) with a caller-supplied hardware counter.
-    pub fn live_reload_with(
-        &self,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<LiveReloadOutcome>
+    pub fn live_reload_with(&self) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_impl(hw_counter, &AtomicBool::new(false))
+        self.live_reload_impl(&AtomicBool::new(false))
     }
 
     /// Shared by the counter-less entry points and by [`open`](Self::open), which is a live_reload
@@ -89,15 +87,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        let hw_counter = HardwareCounterCell::disposable();
-        self.live_reload_impl(&hw_counter, is_stopped)
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        self.live_reload_impl(is_stopped)
     }
 
-    fn live_reload_impl(
-        &self,
-        hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
-    ) -> OperationResult<LiveReloadOutcome>
+    fn live_reload_impl(&self, is_stopped: &AtomicBool) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -111,7 +105,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         const MAX_ATTEMPTS: usize = 3;
 
         for _ in 0..MAX_ATTEMPTS {
-            match self.live_reload_attempt(hw_counter, is_stopped)? {
+            match self.live_reload_attempt(is_stopped)? {
                 LiveReloadOutcome::Complete => return Ok(LiveReloadOutcome::Complete),
                 LiveReloadOutcome::ManifestChanged => {}
             }
@@ -135,11 +129,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// the leader removed mid-attempt is dropped and reported as [`LiveReloadOutcome::ManifestChanged`]
     /// so the caller re-runs against the fresh manifest; one whose files are missing while the
     /// manifest still lists it escalates. Any other reload failure escalates after the loop.
-    fn live_reload_attempt(
-        &self,
-        hw_counter: &HardwareCounterCell,
-        is_stopped: &AtomicBool,
-    ) -> OperationResult<LiveReloadOutcome>
+    fn live_reload_attempt(&self, is_stopped: &AtomicBool) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -224,7 +214,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         check_process_stopped(is_stopped)?;
 
         // 4. Live-reload survivors to assimilate new appends and deletes from data.
-        let results = reload_segments_parallel(&self.load_pool, survivors, hw_counter, is_stopped)?;
+        let results = reload_segments_parallel(&self.load_pool, survivors, is_stopped)?;
 
         let mut not_found: Vec<(Uuid, OperationError)> = Vec::new();
         let mut first_hard_error: Option<OperationError> = None;

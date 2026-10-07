@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use itertools::Itertools;
 
@@ -51,7 +50,6 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(OptimizedFilter<'b>, CardinalityEstimation)> {
         let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
         let Filter {
@@ -66,7 +64,6 @@ where
             payload_provider.clone(),
             total,
             deferred_behavior,
-            hw_counter,
         )?;
         filter_estimations.push(estimation);
 
@@ -83,7 +80,6 @@ where
             payload_provider.clone(),
             total,
             deferred_behavior,
-            hw_counter,
         )?;
         filter_estimations.push(estimation);
 
@@ -92,7 +88,6 @@ where
             payload_provider.clone(),
             total,
             deferred_behavior,
-            hw_counter,
         )?;
         filter_estimations.push(estimation);
 
@@ -101,7 +96,6 @@ where
             payload_provider,
             total,
             deferred_behavior,
-            hw_counter,
         )?;
         filter_estimations.push(estimation);
 
@@ -120,7 +114,6 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(ConditionCheckerEnum<'b>, CardinalityEstimation)>> {
         conditions
             .iter()
@@ -131,7 +124,6 @@ where
                         payload_provider.clone(),
                         total,
                         deferred_behavior,
-                        hw_counter,
                     )?;
                     Ok((ConditionCheckerEnum::Filter(optimized_filter), estimation))
                 }
@@ -144,12 +136,11 @@ where
                 | Condition::Nested(_)
                 | Condition::CustomIdChecker(_) => {
                     let estimation =
-                        self.condition_cardinality(condition, None, deferred_behavior, hw_counter)?;
+                        self.condition_cardinality(condition, None, deferred_behavior)?;
                     let condition_checker = self.condition_converter(
                         condition,
                         payload_provider.clone(),
                         deferred_behavior,
-                        hw_counter,
                     )?;
                     Ok((condition_checker, estimation))
                 }
@@ -163,20 +154,14 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         if conditions.is_empty() {
             // Empty `should` => match every point.
             return Ok((Vec::new(), CardinalityEstimation::exact(total)));
         }
 
-        let mut converted = self.convert_conditions(
-            conditions,
-            payload_provider,
-            total,
-            deferred_behavior,
-            hw_counter,
-        )?;
+        let mut converted =
+            self.convert_conditions(conditions, payload_provider, total, deferred_behavior)?;
         // More probable conditions first
         converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
@@ -191,15 +176,9 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
-        let mut converted = self.convert_conditions(
-            conditions,
-            payload_provider,
-            total,
-            deferred_behavior,
-            hw_counter,
-        )?;
+        let mut converted =
+            self.convert_conditions(conditions, payload_provider, total, deferred_behavior)?;
         // More probable conditions first if min_count < number of conditions
         if min_count < conditions.len() / 2 {
             converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
@@ -221,15 +200,9 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
-        let mut converted = self.convert_conditions(
-            conditions,
-            payload_provider,
-            total,
-            deferred_behavior,
-            hw_counter,
-        )?;
+        let mut converted =
+            self.convert_conditions(conditions, payload_provider, total, deferred_behavior)?;
         // Less probable conditions first
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
@@ -243,15 +216,9 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
-        let mut converted = self.convert_conditions(
-            conditions,
-            payload_provider,
-            total,
-            deferred_behavior,
-            hw_counter,
-        )?;
+        let mut converted =
+            self.convert_conditions(conditions, payload_provider, total, deferred_behavior)?;
         // More probable conditions first, as it will be reverted
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();

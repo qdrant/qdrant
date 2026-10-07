@@ -15,7 +15,8 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::{ShardOperation, WaitUntil};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use criterion::{Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
@@ -99,12 +100,11 @@ fn setup() -> (TempDir, LocalShard, Runtime) {
     let rnd_batch = create_rnd_batch();
 
     handle
-        .block_on(shard.update(
-            rnd_batch.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        ))
+        .block_on(
+            shard
+                .update(rnd_batch.into(), WaitUntil::Visible, None)
+                .measured(AmbientContext::new()),
+        )
         .unwrap();
 
     (storage_dir, shard, runtime)
@@ -184,9 +184,10 @@ fn batch_search_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let hw_acc = HwMeasurementAcc::new();
+                    let hw_acc = AmbientContext::new();
                     let result = shard
-                        .query_batch(Arc::new(searches), &search_runtime_handle, None, hw_acc)
+                        .query_batch(Arc::new(searches), &search_runtime_handle, None)
+                        .measured(hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -214,10 +215,11 @@ fn batch_search_bench(c: &mut Criterion) {
                         searches.push(search_query.into());
                     }
 
-                    let hw_acc = HwMeasurementAcc::new();
+                    let hw_acc = AmbientContext::new();
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .core_search(Arc::new(search_query), &search_runtime_handle, None, hw_acc)
+                        .core_search(Arc::new(search_query), &search_runtime_handle, None)
+                        .measured(hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -285,9 +287,10 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let hw_acc = HwMeasurementAcc::new();
+                    let hw_acc = AmbientContext::new();
                     let result = shard
-                        .query_batch(Arc::new(searches), &search_runtime_handle, None, hw_acc)
+                        .query_batch(Arc::new(searches), &search_runtime_handle, None)
+                        .measured(hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -342,9 +345,10 @@ fn batch_rescore_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let hw_acc = HwMeasurementAcc::new();
+                    let hw_acc = AmbientContext::new();
                     let result = shard
-                        .query_batch(Arc::new(searches), &search_runtime_handle, None, hw_acc)
+                        .query_batch(Arc::new(searches), &search_runtime_handle, None)
+                        .measured(hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

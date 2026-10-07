@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -116,7 +115,6 @@ fn create_test_segment(
     with_payload_index: bool,
 ) -> Segment {
     let mut rng = StdRng::seed_from_u64(42);
-    let hw_counter = HardwareCounterCell::new();
 
     let mut segment = build_simple_segment(dir, dim, distance).unwrap();
     for n in 0..num_vectors {
@@ -127,15 +125,10 @@ fn create_test_segment(
         let payload = payload_json! {int_key: int_payload};
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
@@ -143,11 +136,7 @@ fn create_test_segment(
         segment
             .payload_index
             .borrow_mut()
-            .set_indexed(
-                &JsonPath::new(int_key),
-                PayloadSchemaType::Integer,
-                &hw_counter,
-            )
+            .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
             .unwrap();
     }
 

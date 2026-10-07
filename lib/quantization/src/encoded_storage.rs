@@ -7,7 +7,6 @@ use std::num::NonZeroUsize;
 use std::path::Path;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(feature = "testing")]
 use common::fs::OneshotFile;
 use common::mmap::Flusher;
@@ -25,28 +24,18 @@ pub trait EncodedStorageWrite {
     fn is_in_ram_or_mmap() -> bool;
     fn is_on_disk(&self) -> bool;
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()>;
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()>;
 
     /// Persist `vectors` on consecutive ids starting at `start_id`. A storage
     /// whose backend can batch writes overrides this; the default loops over
     /// [`upsert_vector`](Self::upsert_vector).
-    fn upsert_many<'a, I>(
-        &mut self,
-        start_id: PointOffsetType,
-        vectors: I,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()>
+    fn upsert_many<'a, I>(&mut self, start_id: PointOffsetType, vectors: I) -> std::io::Result<()>
     where
         I: IntoIterator<Item = &'a [u8]>,
         I::IntoIter: ExactSizeIterator,
     {
         for (offset, vector) in vectors.into_iter().enumerate() {
-            self.upsert_vector(start_id + offset as PointOffsetType, vector, hw_counter)?;
+            self.upsert_vector(start_id + offset as PointOffsetType, vector)?;
         }
         Ok(())
     }
@@ -312,12 +301,7 @@ impl TestEncodedStorage {
 
 #[cfg(feature = "testing")]
 impl EncodedStorageWrite for TestEncodedStorage {
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
         if vector.len() != self.quantized_vector_size.get() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,

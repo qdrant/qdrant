@@ -33,7 +33,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use serde_json::Value;
     use tempfile::TempDir;
@@ -49,22 +49,18 @@ mod tests {
     #[test]
     fn read_only_appendable_numeric_round_trip() {
         let dir = TempDir::with_prefix("read_only_numeric").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut builder = NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_gridstore(
                 dir.path().to_path_buf(),
             );
             builder.init().unwrap();
+            builder.add_point(0, &[&Value::from(1.5)]).unwrap();
             builder
-                .add_point(0, &[&Value::from(1.5)], &hw_counter)
-                .unwrap();
-            builder
-                .add_point(1, &[&Value::from(2.5), &Value::from(3.5)], &hw_counter)
+                .add_point(1, &[&Value::from(2.5), &Value::from(3.5)])
                 .unwrap(); // 2 values
-            builder
-                .add_point(2, &[&Value::from(4.5)], &hw_counter)
-                .unwrap();
+            builder.add_point(2, &[&Value::from(4.5)]).unwrap();
             // `finalize` flushes the Gridstore to disk.
             builder.finalize().unwrap();
         }

@@ -4,7 +4,7 @@ mod tests;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     OpenOptions, Populate, UniversalAppend, UniversalFlush as _, UniversalRead as _,
@@ -176,7 +176,6 @@ where
         fs: &Fs,
         start_key: VectorOffsetType,
         vectors: I,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         I: IntoIterator<Item = &'a [T]>,
@@ -210,7 +209,7 @@ where
             // Flush in case of local backends.
             chunk.flusher()()?;
 
-            hw_counter.vector_io_write_counter().incr_delta(batch_bytes);
+            HwMetric::VectorIoWrite.bump(batch_bytes);
         }
 
         // Persist the watermark only after the data landed

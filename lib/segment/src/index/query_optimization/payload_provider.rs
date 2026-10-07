@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::payload_storage::PayloadStorageRead;
@@ -27,12 +26,7 @@ impl<P: PayloadStorageRead> PayloadProvider<P> {
         Self { payload_storage }
     }
 
-    pub fn with_payload<F, G>(
-        &self,
-        point_id: PointOffsetType,
-        callback: F,
-        hw_counter: &HardwareCounterCell,
-    ) -> G
+    pub fn with_payload<F, G>(&self, point_id: PointOffsetType, callback: F) -> G
     where
         F: FnOnce(OwnedPayloadRef) -> G,
     {
@@ -47,7 +41,7 @@ impl<P: PayloadStorageRead> PayloadProvider<P> {
         // would be to rewrite condition checking to support error reporting,
         // which would require pervasive changes.
         let payload = guard
-            .payload_ref(point_id, hw_counter)
+            .payload_ref(point_id)
             .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"));
         callback(payload)
     }

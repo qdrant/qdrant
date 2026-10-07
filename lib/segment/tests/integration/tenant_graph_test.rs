@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::TelemetryDetail;
@@ -38,7 +38,7 @@ fn test_tenant_graph_with_second_condition() {
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Cosine).unwrap();
     for n in 0..num_vectors {
@@ -49,12 +49,10 @@ fn test_tenant_graph_with_second_condition() {
         };
         let vector = random_vector(&mut rng, dim);
         segment
-            .upsert_point(n, n.into(), only_default_vector(&vector), &hw_counter)
+            .upsert_point(n, n.into(), only_default_vector(&vector))
             .unwrap();
         let payload = payload_json! {"tenant": "A", "product": product};
-        segment
-            .set_full_payload(n, n.into(), &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(n, n.into(), &payload).unwrap();
     }
     for (seq, field, is_tenant) in [
         (num_vectors, "tenant", true),
@@ -70,12 +68,7 @@ fn test_tenant_graph_with_second_condition() {
                 prefix: None,
             }));
         segment
-            .create_field_index(
-                seq as SeqNumberType,
-                &JsonPath::new(field),
-                Some(&schema),
-                &hw_counter,
-            )
+            .create_field_index(seq as SeqNumberType, &JsonPath::new(field), Some(&schema))
             .unwrap();
     }
 

@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 use common::typelevel::True;
@@ -653,38 +653,22 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        self.score_bytes(True, query, encoded_vector, hw_counter)
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
+        self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(
-        &self,
-        query: &EncodedQueryU8,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_point(&self, query: &EncodedQueryU8, i: PointOffsetType) -> f32 {
         let bytes = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, &bytes, hw_counter)
+        self.score_bytes(True, query, &bytes)
     }
 
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_parameters().dim);
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
+        HwMetric::Cpu.bump(self.metadata.vector_parameters().dim);
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(self.metadata.vector_parameters().dim * 2);
+        HwMetric::VectorIoRead.bump(
+            (self.metadata.vector_parameters().dim * 2)
+                * usize::from(self.encoded_vectors.is_on_disk()),
+        );
 
         #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
@@ -727,12 +711,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         }
     }
 
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[f32],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[f32]) -> std::io::Result<()> {
         debug_assert!(false, "SQ does not support upsert_vector",);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
@@ -775,16 +754,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     }
 
     type SupportsBytes = True;
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_parameters().dim);
+    fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
+        HwMetric::Cpu.bump(self.metadata.vector_parameters().dim);
 
         // For storage-derived vectors this invariant is validated once at load time (see
         // `load`), so we only assert it here in debug builds to also cover externally provided

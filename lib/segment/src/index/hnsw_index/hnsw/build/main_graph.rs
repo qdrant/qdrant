@@ -1,8 +1,9 @@
 use std::ops::Deref as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::progress_tracker::ProgressTracker;
+use common::reason::reason;
 use log::debug;
 use rayon::ThreadPool;
 use rayon::prelude::*;
@@ -92,8 +93,9 @@ pub(super) fn build_main_graph_on_cpu(
 
     let insert_point = |vector_id| {
         check_process_stopped(stopped)?;
-        // No need to accumulate hardware, since this is an internal operation
-        let internal_hardware_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason(
+            "No need to accumulate hardware, since this is an internal operation",
+        ));
 
         let points_scorer = FilteredScorer::new_internal(
             vector_id,
@@ -101,7 +103,6 @@ pub(super) fn build_main_graph_on_cpu(
             quantized_vectors.as_ref(),
             None,
             id_tracker.deleted_point_bitslice(),
-            internal_hardware_counter,
         )?;
 
         graph_layers_builder.link_new_point(vector_id, points_scorer);

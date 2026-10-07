@@ -4,8 +4,9 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::bitvec::BitSlice;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+#[cfg(feature = "testing")]
+use common::counter::AmbientContext;
+use common::counter::hw::HwHandoff;
 use common::cow::SimpleCow;
 use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
@@ -117,13 +118,13 @@ pub struct QueryContext {
 
     /// Structure to accumulate and report hardware usage.
     /// Holds reference to the shared drain, which is used to accumulate the values.
-    hardware_usage_accumulator: HwMeasurementAcc,
+    hardware_usage_accumulator: HwHandoff,
 }
 
 impl QueryContext {
     pub fn new(
         search_optimized_threshold_kb: usize,
-        hardware_usage_accumulator: HwMeasurementAcc,
+        hardware_usage_accumulator: HwHandoff,
     ) -> Self {
         Self {
             available_point_count: 0,
@@ -237,11 +238,10 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
-            hardware_counter: self.hardware_usage_accumulator.get_counter_cell(),
         }
     }
 
-    pub fn hardware_usage_accumulator(&self) -> &HwMeasurementAcc {
+    pub fn hardware_usage_accumulator(&self) -> &HwHandoff {
         &self.hardware_usage_accumulator
     }
 }
@@ -249,7 +249,7 @@ impl QueryContext {
 #[cfg(feature = "testing")]
 impl Default for QueryContext {
     fn default() -> Self {
-        Self::new(usize::MAX, HwMeasurementAcc::new()) // Search optimized threshold won't affect the search.
+        Self::new(usize::MAX, HwHandoff::measured(AmbientContext::new())) // Search optimized threshold won't affect the search.
     }
 }
 
@@ -258,12 +258,15 @@ impl Default for QueryContext {
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> SegmentQueryContext<'a> {
     pub fn available_point_count(&self) -> usize {
         self.query_context.available_point_count()
+    }
+
+    pub fn hardware_usage_accumulator(&self) -> &HwHandoff {
+        self.query_context.hardware_usage_accumulator()
     }
 
     /// Vector-level context for the given vector name and IDF corpus
@@ -282,7 +285,6 @@ impl<'a> SegmentQueryContext<'a> {
                 .and_then(|scope| scope.indexed_vectors.get(vector_name))
                 .copied(),
             deleted_points: self.deleted_points,
-            hardware_counter: self.hardware_counter.fork(),
         }
     }
 
@@ -296,7 +298,6 @@ impl<'a> SegmentQueryContext<'a> {
                 stats,
                 is_stopped: &self.query_context.is_stopped,
                 deleted_points: self.deleted_points,
-                hardware_counter: self.hardware_counter.fork(),
             })
     }
 
@@ -313,7 +314,6 @@ impl<'a> SegmentQueryContext<'a> {
         Self {
             query_context: self.query_context,
             deleted_points: self.deleted_points,
-            hardware_counter: self.hardware_counter.fork(),
         }
     }
 }
@@ -332,15 +332,9 @@ pub struct VectorQueryContext<'a> {
     indexed_vectors: Option<usize>,
 
     deleted_points: Option<&'a BitSlice>,
-
-    hardware_counter: HardwareCounterCell,
 }
 
 impl VectorQueryContext<'_> {
-    pub fn hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.fork()
-    }
-
     pub fn search_optimized_threshold_kb(&self) -> usize {
         self.search_optimized_threshold_kb
     }
@@ -388,7 +382,6 @@ impl Default for VectorQueryContext<'_> {
             idf: None,
             indexed_vectors: None,
             deleted_points: None,
-            hardware_counter: HardwareCounterCell::new(),
         }
     }
 }
@@ -402,7 +395,6 @@ pub struct TextQueryContext<'a> {
     /// Replaces the id tracker's deletions when set, as a proxy segment does
     /// for the segment it wraps. Same role as in [`VectorQueryContext`].
     deleted_points: Option<&'a BitSlice>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl TextQueryContext<'_> {
@@ -412,10 +404,6 @@ impl TextQueryContext<'_> {
 
     pub fn deleted_points(&self) -> Option<&BitSlice> {
         self.deleted_points
-    }
-
-    pub fn hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.fork()
     }
 
     /// `N`: documents carrying the field, over this shard's segments.

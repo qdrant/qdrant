@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -25,7 +25,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
 
@@ -45,10 +44,10 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
                         .into_iter()
                         .map(GeoPoint::from)
                         .collect::<Vec<_>>();
-                    in_memory_index.add_many_geo_points(point_offset, geo_points, hw_counter)?;
+                    in_memory_index.add_many_geo_points(point_offset, geo_points)?;
                     Ok(true)
                 },
-                hw_counter.payload_index_io_read_counter(),
+                Some(HwMetric::PayloadIndexIoRead),
             )?;
 
         Ok(())

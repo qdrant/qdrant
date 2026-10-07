@@ -1,7 +1,8 @@
 use std::cmp;
 use std::sync::{Arc, LazyLock};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
@@ -510,14 +511,11 @@ impl Collection {
 
                 // Cluster info is explicitly excluded from hardware measurements
                 // So that we can monitor hardware usage without interference
-                let hw_acc = HwMeasurementAcc::disposable();
                 let count_result = replica_set
-                    .count_local(
-                        count_request.clone(),
-                        None,
-                        hw_acc,
-                        DeferredBehavior::VisibleOnly,
-                    )
+                    .count_local(count_request.clone(), None, DeferredBehavior::VisibleOnly)
+                    .unmeasured(reason(
+                        "Cluster info is excluded from hardware measurements",
+                    ))
                     .await
                     .unwrap_or_default();
 

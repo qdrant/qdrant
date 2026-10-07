@@ -15,9 +15,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
+use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -307,7 +308,6 @@ impl AppendableMmapMultiTurboVectorStorage {
         &mut self,
         key: PointOffsetType,
         multi_vector: TypedMultiDenseVectorRef<'_, VectorElementType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.dim);
 
@@ -322,14 +322,10 @@ impl AppendableMmapMultiTurboVectorStorage {
             let quantized = self
                 .quantizer
                 .quantize(inner, &mut self.quantization_buffer);
-            self.storage.upsert_vector(
-                offset.offset + i as PointOffsetType,
-                &quantized,
-                hw_counter,
-            )?;
+            self.storage
+                .upsert_vector(offset.offset + i as PointOffsetType, &quantized)?;
         }
-        self.offsets
-            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
+        self.offsets.insert(key as VectorOffsetType, &[offset])?;
         self.set_deleted(key, false);
 
         Ok(())
@@ -343,7 +339,6 @@ impl AppendableMmapMultiTurboVectorStorage {
         &mut self,
         key: PointOffsetType,
         bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let record_size = self.quantizer.quantized_size();
         if bytes.is_empty() || !bytes.len().is_multiple_of(record_size) {
@@ -357,14 +352,10 @@ impl AppendableMmapMultiTurboVectorStorage {
         let offset = self.record_range_for_upsert(key, count);
 
         for (i, encoded) in bytes.chunks_exact(record_size).enumerate() {
-            self.storage.upsert_vector(
-                offset.offset + i as PointOffsetType,
-                encoded,
-                hw_counter,
-            )?;
+            self.storage
+                .upsert_vector(offset.offset + i as PointOffsetType, encoded)?;
         }
-        self.offsets
-            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
+        self.offsets.insert(key as VectorOffsetType, &[offset])?;
         self.set_deleted(key, false);
 
         Ok(())
@@ -450,7 +441,6 @@ impl AppendableMmapMultiTurboVectorStorage {
         &self,
         query: &[EncodedQueryTQ],
         key: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let Some(offset) = self.get_offset::<Random>(key) else {
             log::error!("Multivector not found");
@@ -462,11 +452,10 @@ impl AppendableMmapMultiTurboVectorStorage {
             .get_many::<Random>(offset.offset, offset.count as usize)
             .expect("Multivector not found");
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(records.len() * query.len());
+        HwMetric::Cpu.bump(records.len() * query.len());
 
-        hw_counter.vector_io_read().incr_delta(records.len());
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(records.len() * mul);
 
         self.score_records_max_similarity(query, &records)
     }
@@ -477,7 +466,6 @@ impl AppendableMmapMultiTurboVectorStorage {
         &self,
         point_a: PointOffsetType,
         point_b: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let (Some(offset_a), Some(offset_b)) = (
             self.get_offset::<Random>(point_a),
@@ -497,12 +485,9 @@ impl AppendableMmapMultiTurboVectorStorage {
             .get_many::<Random>(offset_b.offset, offset_b.count as usize)
             .expect("Multivector not found");
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(records_a.len() * offset_b.count as usize);
-        hw_counter
-            .vector_io_read()
-            .incr_delta(records_a.len() + records_b.len());
+        HwMetric::Cpu.bump(records_a.len() * offset_b.count as usize);
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
         let quantized_size = self.quantizer.quantized_size();
         let mut sum = 0.0;
@@ -591,14 +576,9 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
 }
 
 impl VectorStorage for AppendableMmapMultiTurboVectorStorage {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
-        self.insert_multi(key, multi_vector, hw_counter)
+        self.insert_multi(key, multi_vector)
     }
 
     fn flusher(&self) -> Flusher {
@@ -641,22 +621,16 @@ impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
         &self,
         query: &[EncodedQueryTQ],
         key: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        AppendableMmapMultiTurboVectorStorage::score_point_max_similarity(
-            self, query, key, hw_counter,
-        )
+        AppendableMmapMultiTurboVectorStorage::score_point_max_similarity(self, query, key)
     }
 
     fn score_internal_max_similarity(
         &self,
         point_a: PointOffsetType,
         point_b: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
-        AppendableMmapMultiTurboVectorStorage::score_internal_max_similarity(
-            self, point_a, point_b, hw_counter,
-        )
+        AppendableMmapMultiTurboVectorStorage::score_internal_max_similarity(self, point_a, point_b)
     }
 
     fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType {
@@ -702,7 +676,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let record_size = self.quantizer.quantized_size();
-        let disposed_hw = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         let start_index = self.offsets.len() as PointOffsetType;
 
         for (blob, deleted) in other_vectors {
@@ -718,11 +692,8 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
             let key = self.offsets.len() as PointOffsetType;
             let inner_start = self.storage.vectors_count() as PointOffsetType;
             for (i, record) in blob.chunks_exact(record_size).enumerate() {
-                self.storage.upsert_vector(
-                    inner_start + i as PointOffsetType,
-                    record,
-                    &disposed_hw,
-                )?;
+                self.storage
+                    .upsert_vector(inner_start + i as PointOffsetType, record)?;
             }
 
             let offset = MultivectorMmapOffset {
@@ -730,8 +701,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
                 count,
                 capacity: count,
             };
-            self.offsets
-                .insert(key as VectorOffsetType, &[offset], &disposed_hw)?;
+            self.offsets.insert(key as VectorOffsetType, &[offset])?;
             self.set_deleted(key, deleted);
         }
 
@@ -797,14 +767,12 @@ mod tests {
     fn insert_all(
         storage: &mut AppendableMmapMultiTurboVectorStorage,
         vectors: &[MultiDenseVectorInternal],
-        hw: &HardwareCounterCell,
     ) {
         for (i, multi) in vectors.iter().enumerate() {
             storage
                 .insert_vector(
                     i as PointOffsetType,
                     TypedMultiDenseVectorRef::from(multi).into(),
-                    hw,
                 )
                 .unwrap();
         }
@@ -861,7 +829,7 @@ mod tests {
             for dim in [1, 127, 128, 1025] {
                 let distance = Distance::Dot;
                 let dir = Builder::new().prefix("turbo_multi").tempdir().unwrap();
-                let hw_counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
 
                 let oracle = Oracle::new(dim, distance);
                 let inputs = make_multi_vectors(dim, COUNT, seed);
@@ -879,7 +847,7 @@ mod tests {
                         false,
                     )
                     .unwrap();
-                    insert_all(&mut storage, &inputs, &hw_counter);
+                    insert_all(&mut storage, &inputs);
                     assert_eq!(storage.total_vector_count(), COUNT);
                     storage.flusher()().unwrap();
                 }
@@ -1060,7 +1028,7 @@ mod tests {
             let distance = Distance::Dot;
             let src_dir = Builder::new().prefix("turbo_multi_src").tempdir().unwrap();
             let dst_dir = Builder::new().prefix("turbo_multi_dst").tempdir().unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
             let stopped = AtomicBool::new(false);
 
             let mut src = open_appendable_turbo_multi_vector_storage(
@@ -1072,7 +1040,7 @@ mod tests {
                 true,
             )
             .unwrap();
-            insert_all(&mut src, &make_multi_vectors(DIM, COUNT, seed), &hw_counter);
+            insert_all(&mut src, &make_multi_vectors(DIM, COUNT, seed));
             src.delete_vector(2).unwrap();
             src.delete_vector(7).unwrap();
 
@@ -1157,7 +1125,7 @@ mod tests {
         const DIM: usize = 128;
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_multi_cap").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
             dir.path(),
@@ -1186,11 +1154,7 @@ mod tests {
         // count=3 allocates 3 records.
         let initial = multi_of(DIM, 3, 1);
         storage
-            .insert_vector(
-                0,
-                TypedMultiDenseVectorRef::from(&initial).into(),
-                &hw_counter,
-            )
+            .insert_vector(0, TypedMultiDenseVectorRef::from(&initial).into())
             .unwrap();
         assert_eq!(storage.total_vector_count(), 1);
         assert_eq!(inner_records(&storage), 3);
@@ -1201,11 +1165,7 @@ mod tests {
         // and the in-place overwrite stores the new bytes.
         let shrunk = multi_of(DIM, 2, 2);
         storage
-            .insert_vector(
-                0,
-                TypedMultiDenseVectorRef::from(&shrunk).into(),
-                &hw_counter,
-            )
+            .insert_vector(0, TypedMultiDenseVectorRef::from(&shrunk).into())
             .unwrap();
         assert_eq!(inner_records(&storage), 3);
         assert_eq!(storage.get_multi_tq::<Random>(0).len(), 2 * record_size);
@@ -1220,11 +1180,7 @@ mod tests {
         // Regrow to count=3: still within capacity, no inner-space growth.
         let regrown = multi_of(DIM, 3, 3);
         storage
-            .insert_vector(
-                0,
-                TypedMultiDenseVectorRef::from(&regrown).into(),
-                &hw_counter,
-            )
+            .insert_vector(0, TypedMultiDenseVectorRef::from(&regrown).into())
             .unwrap();
         assert_eq!(inner_records(&storage), 3);
         assert_eq!(storage.get_multi_tq::<Random>(0).len(), 3 * record_size);
@@ -1233,11 +1189,7 @@ mod tests {
         // Grow to count=5: re-append, old range becomes garbage (3 + 5 records).
         let grown = multi_of(DIM, 5, 4);
         storage
-            .insert_vector(
-                0,
-                TypedMultiDenseVectorRef::from(&grown).into(),
-                &hw_counter,
-            )
+            .insert_vector(0, TypedMultiDenseVectorRef::from(&grown).into())
             .unwrap();
         assert_eq!(storage.total_vector_count(), 1);
         assert_eq!(inner_records(&storage), 8);
@@ -1257,7 +1209,7 @@ mod tests {
             .prefix("turbo_multi_straddle")
             .tempdir()
             .unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
@@ -1285,11 +1237,7 @@ mod tests {
         // continues into the next chunk. No slot is skipped.
         let multi = multi_of(DIM, 3, 7);
         storage
-            .insert_vector(
-                1,
-                TypedMultiDenseVectorRef::from(&multi).into(),
-                &hw_counter,
-            )
+            .insert_vector(1, TypedMultiDenseVectorRef::from(&multi).into())
             .unwrap();
         let offset = storage.get_offset::<Random>(1).unwrap();
         assert_eq!(offset.offset as usize, records_per_chunk - 1);
@@ -1336,7 +1284,7 @@ mod tests {
             .prefix("turbo_multi_oversized")
             .tempdir()
             .unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
@@ -1364,11 +1312,7 @@ mod tests {
         // Same through `insert_vector`
         let multi = multi_of(DIM, records_per_chunk + 1, 11);
         storage
-            .insert_vector(
-                1,
-                TypedMultiDenseVectorRef::from(&multi).into(),
-                &hw_counter,
-            )
+            .insert_vector(1, TypedMultiDenseVectorRef::from(&multi).into())
             .unwrap();
 
         assert_eq!(storage.total_vector_count(), 2);
@@ -1389,7 +1333,7 @@ mod tests {
                 .prefix("turbo_multi_reinsert")
                 .tempdir()
                 .unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1401,7 +1345,7 @@ mod tests {
             )
             .unwrap();
             let inputs = make_multi_vectors(DIM, 2, seed);
-            insert_all(&mut storage, &inputs, &hw_counter);
+            insert_all(&mut storage, &inputs);
 
             assert_eq!(storage.deleted_vector_count(), 0);
 
@@ -1412,11 +1356,7 @@ mod tests {
             assert!(storage.is_deleted_vector(0));
 
             storage
-                .insert_vector(
-                    0,
-                    TypedMultiDenseVectorRef::from(&inputs[0]).into(),
-                    &hw_counter,
-                )
+                .insert_vector(0, TypedMultiDenseVectorRef::from(&inputs[0]).into())
                 .unwrap();
             assert!(!storage.is_deleted_vector(0));
             assert_eq!(storage.deleted_vector_count(), 0);
@@ -1436,7 +1376,7 @@ mod tests {
                 .prefix("turbo_multi_avail")
                 .tempdir()
                 .unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1447,11 +1387,7 @@ mod tests {
                 true,
             )
             .unwrap();
-            insert_all(
-                &mut storage,
-                &make_multi_vectors(DIM, COUNT, seed),
-                &hw_counter,
-            );
+            insert_all(&mut storage, &make_multi_vectors(DIM, COUNT, seed));
 
             let record_size = storage.quantized_vector_size();
             // make_multi_vectors gives point i (i % 4) + 1 inner vectors.
@@ -1516,7 +1452,7 @@ mod tests {
                 .prefix("turbo_multi_read_batch")
                 .tempdir()
                 .unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1527,11 +1463,7 @@ mod tests {
                 true,
             )
             .unwrap();
-            insert_all(
-                &mut storage,
-                &make_multi_vectors(DIM, COUNT, seed),
-                &hw_counter,
-            );
+            insert_all(&mut storage, &make_multi_vectors(DIM, COUNT, seed));
 
             // User data is an arbitrary tag we expect echoed back beside each offset.
             let keys: Vec<(usize, PointOffsetType)> =
@@ -1656,7 +1588,7 @@ mod tests {
             .prefix("turbo_multi_model_dst")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut model: Vec<Slot> = Vec::new();
@@ -1684,7 +1616,7 @@ mod tests {
                 0..=34 => {
                     let multi = random_multi(&mut rng, dim);
                     storage
-                        .insert_vector(count, TypedMultiDenseVectorRef::from(&multi).into(), &hw)
+                        .insert_vector(count, TypedMultiDenseVectorRef::from(&multi).into())
                         .unwrap();
                     model.push(Slot {
                         encoded: oracle.encode_multi(&multi),
@@ -1699,7 +1631,6 @@ mod tests {
                         .insert_vector(
                             k as PointOffsetType,
                             TypedMultiDenseVectorRef::from(&multi).into(),
-                            &hw,
                         )
                         .unwrap();
                     model[k] = Slot {
@@ -1831,7 +1762,7 @@ mod tests {
             .prefix("turbo_multi_files")
             .tempdir()
             .unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
             dir.path(),
@@ -1842,11 +1773,7 @@ mod tests {
             true,
         )
         .unwrap();
-        insert_all(
-            &mut storage,
-            &make_multi_vectors(DIM, COUNT, SEED),
-            &hw_counter,
-        );
+        insert_all(&mut storage, &make_multi_vectors(DIM, COUNT, SEED));
 
         let vectors_dir = dir.path().join("tq_vectors");
         let offsets_dir = dir.path().join("tq_offsets");
@@ -1902,7 +1829,7 @@ mod tests {
                         .prefix("turbo_multi_score")
                         .tempdir()
                         .unwrap();
-                    let hw_counter = HardwareCounterCell::new();
+                    let _hw = hw::test_guard();
                     let mut storage = open_appendable_turbo_multi_vector_storage(
                         dir.path(),
                         dim,
@@ -1913,11 +1840,10 @@ mod tests {
                     )
                     .unwrap();
                     let inputs = make_multi_vectors(dim, COUNT, seed);
-                    insert_all(&mut storage, &inputs, &hw_counter);
+                    insert_all(&mut storage, &inputs);
 
                     for (q, query) in inputs.iter().enumerate() {
-                        let scorer =
-                            TurboMultiQueryScorer::new(query, &storage, HardwareCounterCell::new());
+                        let scorer = TurboMultiQueryScorer::new(query, &storage);
 
                         let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
                             .map(|k| scorer.score_stored(k))
@@ -1965,7 +1891,7 @@ mod tests {
             for dim in [32, 128] {
                 for seed in SEEDS {
                     let dir = Builder::new().prefix("turbo_multi_reco").tempdir().unwrap();
-                    let hw_counter = HardwareCounterCell::new();
+                    let _hw = hw::test_guard();
                     let mut storage = open_appendable_turbo_multi_vector_storage(
                         dir.path(),
                         dim,
@@ -1976,18 +1902,14 @@ mod tests {
                     )
                     .unwrap();
                     let inputs = make_multi_vectors(dim, COUNT, seed);
-                    insert_all(&mut storage, &inputs, &hw_counter);
+                    insert_all(&mut storage, &inputs);
 
                     for (q, query) in inputs.iter().enumerate() {
                         let reco = RecoBestScoreQuery::from(RecoQuery::new(
                             vec![query.clone()],
                             Vec::<MultiDenseVectorInternal>::new(),
                         ));
-                        let scorer = TurboMultiCustomQueryScorer::new(
-                            reco,
-                            &storage,
-                            HardwareCounterCell::new(),
-                        );
+                        let scorer = TurboMultiCustomQueryScorer::new(reco, &storage);
 
                         let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
                             .map(|k| scorer.score_stored(k))

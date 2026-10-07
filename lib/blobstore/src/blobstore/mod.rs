@@ -8,9 +8,7 @@ mod tests;
 
 use std::path::PathBuf;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::counter::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
     MmapFile, Populate, UniversalAppend, UniversalReadFs, UniversalWrite, UniversalWriteFs,
@@ -146,14 +144,14 @@ where
         &mut self,
         point_offset: PointOffset,
         value: &V,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
         match &mut self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.put_value(&self.fs, point_offset, value, hw_counter)
+                storage.put_value(&self.fs, point_offset, value, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.put_value(&self.fs, point_offset, value, hw_counter)
+                storage.put_value(&self.fs, point_offset, value, hw_metric)
             }
         }
     }
@@ -172,14 +170,14 @@ where
         &mut self,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
         match &mut self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_counter)
+                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_counter)
+                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_metric)
             }
         }
     }
@@ -264,14 +262,10 @@ where
         }
     }
 
-    pub fn get_value<P: AccessPattern>(
-        &self,
-        point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> Result<Option<V>> {
+    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
-            BlobstoreInner::Logstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
+            BlobstoreInner::Gridstore(storage) => storage.get_value::<P>(point_offset),
+            BlobstoreInner::Logstore(storage) => storage.get_value::<P>(point_offset),
         }
     }
 
@@ -283,15 +277,10 @@ where
     pub fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Vec<u8>>> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => {
-                storage.get_value_bytes::<P>(point_offset, hw_counter)
-            }
-            BlobstoreInner::Logstore(storage) => {
-                storage.get_value_bytes::<P>(point_offset, hw_counter)
-            }
+            BlobstoreInner::Gridstore(storage) => storage.get_value_bytes::<P>(point_offset),
+            BlobstoreInner::Logstore(storage) => storage.get_value_bytes::<P>(point_offset),
         }
     }
 
@@ -302,7 +291,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -311,10 +300,10 @@ where
     {
         match &self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
         }
     }
@@ -327,7 +316,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -336,10 +325,10 @@ where
     {
         match &self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
             }
         }
     }
@@ -362,14 +351,14 @@ where
     /// Iterate over all values and execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
-    pub fn iter<F, E>(&self, callback: F, hw_counter: HwMetricRefCounter) -> Result<(), E>
+    pub fn iter<F, E>(&self, callback: F, hw_metric: HwMetric) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.iter(callback, hw_counter),
-            BlobstoreInner::Logstore(storage) => storage.iter(callback, hw_counter),
+            BlobstoreInner::Gridstore(storage) => storage.iter(callback, hw_metric),
+            BlobstoreInner::Logstore(storage) => storage.iter(callback, hw_metric),
         }
     }
 }

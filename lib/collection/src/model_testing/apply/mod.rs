@@ -3,7 +3,8 @@ mod writes;
 
 use std::collections::{BTreeSet, HashMap};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::types::VectorNameBuf;
 
@@ -243,13 +244,8 @@ pub(super) async fn apply(
 /// Submit a write op through the standard path and panic with the engine error on failure.
 async fn apply_update(collection: &Collection, op: CollectionUpdateOperations, ctx: &str) {
     collection
-        .update_from_client_simple(
-            op,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(op, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("{ctx} failed: {e:?}"));
 }

@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 use common::bitmap_scan::BatchedBitmapScan;
 use common::bitvec::BitSlice;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
@@ -164,15 +163,14 @@ impl<'a> FilteredScorer<'a> {
         quantized_vectors: Option<&'a Q>,
         filter_context: Option<OptimizedFilter<'a>>,
         point_deleted: &'a BitSlice,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
         Q: QuantizedVectorsRead,
     {
         let raw_scorer = match quantized_vectors {
-            Some(quantized_vectors) => quantized_vectors.raw_scorer(query, hardware_counter)?,
-            None => vectors.build_raw_scorer(query, hardware_counter)?,
+            Some(quantized_vectors) => quantized_vectors.raw_scorer(query)?,
+            None => vectors.build_raw_scorer(query)?,
         };
         Ok(FilteredScorer {
             raw_scorer,
@@ -187,7 +185,6 @@ impl<'a> FilteredScorer<'a> {
         quantized_vectors: Option<&'a Q>,
         filter_context: Option<OptimizedFilter<'a>>,
         point_deleted: &'a BitSlice,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
@@ -201,14 +198,12 @@ impl<'a> FilteredScorer<'a> {
             query
         };
         let raw_scorer = match quantized_vectors {
-            Some(quantized_vectors) => quantized_vectors
-                .raw_internal_scorer(point_id, hardware_counter)
-                .or_else(|InternalScorerUnsupported(hardware_counter)| {
-                    quantized_vectors.raw_scorer(original_query_fn(), hardware_counter)
-                })?,
+            Some(quantized_vectors) => quantized_vectors.raw_internal_scorer(point_id).or_else(
+                |InternalScorerUnsupported| quantized_vectors.raw_scorer(original_query_fn()),
+            )?,
             None => {
                 let query = original_query_fn();
-                vectors.build_raw_scorer(query, hardware_counter)?
+                vectors.build_raw_scorer(query)?
             }
         };
         Ok(FilteredScorer {
@@ -230,7 +225,7 @@ impl<'a> FilteredScorer<'a> {
         point_deleted: &'a BitSlice,
     ) -> Self {
         FilteredScorer {
-            raw_scorer: new_raw_scorer(vector, vector_storage, HardwareCounterCell::new()).unwrap(),
+            raw_scorer: new_raw_scorer(vector, vector_storage).unwrap(),
             filters: ScorerFilters::new(None, vector_storage.not_deleted_checker(point_deleted)),
             scores_buffer: Vec::new(),
         }
@@ -326,7 +321,6 @@ impl<'a> BatchFilteredSearcher<'a> {
         filter_context: Option<OptimizedFilter<'a>>,
         top: usize,
         point_deleted: &'a BitSlice,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Self>
     where
         V: VectorStorageRead + RawScorerBuilder,
@@ -336,12 +330,9 @@ impl<'a> BatchFilteredSearcher<'a> {
             .iter()
             .map(|&query| {
                 let query = query.to_owned();
-                let hardware_counter = hardware_counter.fork();
                 let raw_scorer = match quantized_vectors {
-                    Some(quantized_vectors) => {
-                        quantized_vectors.raw_scorer(query, hardware_counter)
-                    }
-                    None => vectors.build_raw_scorer(query, hardware_counter),
+                    Some(quantized_vectors) => quantized_vectors.raw_scorer(query),
+                    None => vectors.build_raw_scorer(query),
                 };
                 let top_k = TopK::new(top);
                 raw_scorer.map(|raw_scorer| BatchSearch { raw_scorer, top_k })
@@ -370,12 +361,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         let scorer_batch = vectors
             .iter()
             .map(|vector| {
-                let raw_scorer = new_raw_scorer(
-                    vector.to_owned(),
-                    vector_storage,
-                    HardwareCounterCell::new(),
-                )
-                .unwrap();
+                let raw_scorer = new_raw_scorer(vector.to_owned(), vector_storage).unwrap();
                 BatchSearch {
                     raw_scorer,
                     top_k: TopK::new(top),
@@ -565,6 +551,7 @@ fn score_chunk(
 #[cfg(test)]
 mod tests {
     use common::bitvec::{BitSliceExt as _, BitVec};
+    use common::counter::hw;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
@@ -594,13 +581,13 @@ mod tests {
         const TOP: usize = 20;
 
         let mut rng = StdRng::seed_from_u64(42);
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let mut storage = new_volatile_dense_vector_storage(DIM, Distance::Dot);
         for i in 0..TOTAL {
             let vector: Vec<f32> = (0..DIM).map(|_| rng.random_range(-1.0..1.0)).collect();
             storage
-                .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                .insert_vector(i as PointOffsetType, vector.as_slice().into())
                 .unwrap();
         }
         for i in 0..TOTAL {

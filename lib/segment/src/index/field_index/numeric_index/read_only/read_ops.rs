@@ -4,8 +4,6 @@
 use std::ops::Bound;
 
 use blobstore::Blob;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
@@ -33,15 +31,13 @@ where
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.inner.check_values_any(idx, check_fn, hw_counter)
+        self.inner.check_values_any(idx, check_fn)
     }
 
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,
-        hw_counter: &HardwareCounterCell,
         check_fn: F,
         on_match: M,
     ) -> OperationResult<()>
@@ -52,7 +48,7 @@ where
         M: FnMut(U, bool),
     {
         self.inner
-            .for_each_matching_value(items, hw_counter, check_fn, on_match)
+            .for_each_matching_value(items, check_fn, on_match)
     }
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
@@ -71,9 +67,8 @@ where
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
-        self.inner.values_range(start_bound, end_bound, hw_counter)
+        self.inner.values_range(start_bound, end_bound)
     }
 
     fn orderable_values_range(
@@ -121,17 +116,15 @@ where
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        self.inner.filter(condition, hw_counter)
+        self.inner.filter(condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        self.inner.estimate_cardinality(condition, hw_counter)
+        self.inner.estimate_cardinality(condition)
     }
 
     fn for_each_payload_block(
@@ -146,8 +139,7 @@ where
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        self.inner.condition_checker(condition, hw_acc)
+        self.inner.condition_checker(condition)
     }
 }

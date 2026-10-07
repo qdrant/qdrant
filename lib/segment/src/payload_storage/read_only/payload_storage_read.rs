@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
@@ -13,37 +13,22 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
         IoBackend::from_universal_kind(S::kind())
     }
 
-    fn get(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self.storage.get_value::<Random>(point_offset, hw_counter)? {
+    fn get(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
+        match self.storage.get_value::<Random>(point_offset)? {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }
 
-    fn get_sequential(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self
-            .storage
-            .get_value::<Sequential>(point_offset, hw_counter)?
-        {
+    fn get_sequential(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
+        match self.storage.get_value::<Sequential>(point_offset)? {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }
 
-    fn payload_ref(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<OwnedPayloadRef<'_>> {
-        let payload = self.get(point_offset, hw_counter)?;
+    fn payload_ref(&self, point_offset: PointOffsetType) -> OperationResult<OwnedPayloadRef<'_>> {
+        let payload = self.get(point_offset)?;
         Ok(OwnedPayloadRef::from(payload))
     }
 
@@ -51,7 +36,6 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, Payload) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // TODO: `hw_counter`!?
 
@@ -61,7 +45,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
                 let payload = payload.unwrap_or_default();
                 callback(user_data, payload)
             },
-            hw_counter.payload_io_read_counter(),
+            Some(HwMetric::PayloadIoRead),
         )
     }
 
@@ -69,16 +53,15 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.read_values_bytes::<P, _, _>(
             point_offsets,
             |user_data, _, bytes| callback(user_data, bytes),
-            hw_counter.payload_io_read_counter(),
+            Some(HwMetric::PayloadIoRead),
         )
     }
 
-    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
@@ -86,7 +69,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
         self.storage.iter(
             max_id,
             |point_id, payload| callback(point_id, &payload),
-            hw_counter.ref_payload_io_read_counter(),
+            HwMetric::PayloadIoRead,
         )
     }
 

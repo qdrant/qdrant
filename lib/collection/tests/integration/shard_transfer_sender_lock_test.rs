@@ -36,7 +36,8 @@ use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use collection::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use parking_lot::Mutex;
 use rstest::rstest;
 use segment::types::StrictModeConfig;
@@ -100,13 +101,8 @@ async fn test_sender_releases_shard_holder(
         PointInsertOperationsInternal::PointsList(vec![point]),
     ));
     collection
-        .update_from_client_simple(
-            operation,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(operation, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     let recovery_point = collection.shard_recovery_point(SHARD).await.unwrap();
