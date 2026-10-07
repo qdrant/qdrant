@@ -566,9 +566,19 @@ async fn test_wal_replay_loads_pending_to_queue() {
     .await
     .unwrap();
 
-    // Check update queue info after load.
+    // Force the race this test used to be vulnerable to: drain the update queue completely
+    // *before* inspecting it, the same way the background worker can race ahead and finish
+    // draining on a fast enough machine/CI runner. `post_load_info.length` is guaranteed to be
+    // 0 at this point no matter whether the queue-loading path ever ran.
+    shard.plunge_async().await.unwrap().await.unwrap();
+
+    // Check update queue info after load (and after the forced drain above).
     let post_load_info = shard.local_update_queue_info().await;
     eprintln!("Post-load update queue info: {post_load_info:?}");
+    assert_eq!(
+        post_load_info.length, 0,
+        "sanity check: the queue was just drained, so live length must be 0 here"
+    );
 
     // The applied_seq should be the value we set
     assert!(
@@ -576,12 +586,14 @@ async fn test_wal_replay_loads_pending_to_queue() {
         "applied_seq should be tracked"
     );
 
-    // Length should be not zero, as there should be pending ops loaded into the queue.
-    // This check may be potentially flaky if the update worker can process
-    // all pending operations between WAL load and `local_update_queue_info`.
+    // There should have been pending ops loaded into the queue. Check this via
+    // `wal_tail_queued`, captured synchronously during `load_from_wal`, rather than via
+    // `post_load_info.length`: the update worker is already running concurrently and may have
+    // drained the queue by the time `local_update_queue_info` runs (as the forced drain above
+    // demonstrates), making `length` reach 0 even though the queue-loading path did trigger.
     assert!(
-        post_load_info.length > 0,
-        "update queue should have pending operations after WAL replay"
+        shard.wal_tail_queued() > 0,
+        "update queue should have had pending operations queued during WAL replay"
     );
 
     // Wait for update worker to process all queued operations with a timeout
