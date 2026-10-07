@@ -346,39 +346,24 @@ impl GraphLayersBuilder {
     }
 
     pub fn merge_from_other(&mut self, other: GraphLayersBuilder) {
-        self.max_level = AtomicUsize::new(max(
-            self.max_level.load(std::sync::atomic::Ordering::Relaxed),
-            other.max_level.load(std::sync::atomic::Ordering::Relaxed),
-        ));
+        self.max_level.fetch_max(
+            other.max_level.into_inner(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let mut visited_list = self.visited_pool.get(self.num_points());
         if other.links_layers.len() > self.links_layers.len() {
             self.links_layers
                 .resize_with(other.links_layers.len(), Vec::new);
         }
         for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            let current_layers = &mut self.links_layers[point_id];
-            for (level, other_links) in layers.into_iter().enumerate() {
-                if current_layers.len() <= level {
-                    current_layers.push(other_links);
-                } else {
-                    let other_links = other_links.into_inner();
-                    visited_list.next_iteration();
-                    let mut current_links = current_layers[level].write();
-                    current_links.iter().for_each(|x| {
-                        visited_list.check_and_update_visited(x);
-                    });
-                    for other_link in other_links
-                        .into_vec()
-                        .into_iter()
-                        .filter(|x| !visited_list.check_and_update_visited(*x))
-                    {
-                        current_links.push(other_link);
-                    }
-                }
-            }
+            Self::merge_point_links(
+                &mut self.links_layers[point_id],
+                layers.into_iter().map(RwLock::into_inner),
+                &mut visited_list,
+            );
         }
         self.entry_points
-            .lock()
+            .get_mut()
             .merge_from_other(other.entry_points.into_inner());
     }
 
@@ -389,38 +374,49 @@ impl GraphLayersBuilder {
     /// Costs O(`points`) instead of O(segment), and keeps `other`'s allocation.
     pub fn merge_block_from(&mut self, other: &mut GraphLayersBuilder, points: &[PointOffsetType]) {
         self.max_level.fetch_max(
-            *other.max_level.get_mut(),
+            std::mem::take(other.max_level.get_mut()),
             std::sync::atomic::Ordering::Relaxed,
         );
-        *other.max_level.get_mut() = 0;
         let mut visited_list = self.visited_pool.get(self.num_points());
         for &point_id in points {
-            let other_layers = &mut other.links_layers[point_id as usize];
-            let current_layers = &mut self.links_layers[point_id as usize];
-            for (level, other_links) in other_layers.iter_mut().enumerate() {
-                let other_links =
-                    std::mem::replace(other_links.get_mut(), LinksContainer::with_capacity(0));
-                if current_layers.len() <= level {
-                    current_layers.push(RwLock::new(other_links));
-                    continue;
-                }
-                visited_list.next_iteration();
-                let current_links = current_layers[level].get_mut();
-                current_links.iter().for_each(|x| {
-                    visited_list.check_and_update_visited(x);
-                });
-                for other_link in other_links.into_vec() {
-                    if !visited_list.check_and_update_visited(other_link) {
-                        current_links.push(other_link);
-                    }
-                }
-            }
+            let other_layers = other.links_layers[point_id as usize]
+                .iter_mut()
+                .map(|links| std::mem::replace(links.get_mut(), LinksContainer::with_capacity(0)));
+            Self::merge_point_links(
+                &mut self.links_layers[point_id as usize],
+                other_layers,
+                &mut visited_list,
+            );
             other.ready_list.set(point_id as usize, false);
         }
         let other_entry_points = other.entry_points.get_mut().take();
         self.entry_points
             .get_mut()
             .merge_from_other(other_entry_points);
+    }
+
+    /// Append `other_layers` to one point's `current_layers`, skipping links it already has.
+    fn merge_point_links(
+        current_layers: &mut LockedLayersContainer,
+        other_layers: impl IntoIterator<Item = LinksContainer>,
+        visited_list: &mut VisitedListHandle,
+    ) {
+        for (level, other_links) in other_layers.into_iter().enumerate() {
+            if current_layers.len() <= level {
+                current_layers.push(RwLock::new(other_links));
+                continue;
+            }
+            visited_list.next_iteration();
+            let current_links = current_layers[level].get_mut();
+            current_links.iter().for_each(|x| {
+                visited_list.check_and_update_visited(x);
+            });
+            for other_link in other_links.into_vec() {
+                if !visited_list.check_and_update_visited(other_link) {
+                    current_links.push(other_link);
+                }
+            }
+        }
     }
 
     fn num_points(&self) -> usize {
