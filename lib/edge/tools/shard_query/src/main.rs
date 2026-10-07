@@ -9,6 +9,8 @@
 //! * `search` — nearest-neighbour search for a query vector, optionally filtered.
 //! * `search-sparse` — nearest-neighbour search for a sparse query vector,
 //!   optionally filtered.
+//! * `count` — count points matching an optional filter.
+//! * `facet` — count points per unique value of a payload key.
 //!
 //! All sub-commands accept an arbitrary payload filter as JSON via `--filter`
 //! (curl `--data` style: a literal JSON string, `@file` to read from a file, or
