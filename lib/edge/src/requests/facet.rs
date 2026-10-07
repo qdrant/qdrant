@@ -1,3 +1,4 @@
+use segment::data_types::load_profile::LoadProfile;
 use segment::json_path::JsonPath;
 use segment::types::Filter;
 use shard::facet::FacetRequestInternal;
@@ -24,5 +25,12 @@ impl FacetRequest {
             filter: None,
             exact: false,
         }
+    }
+
+    /// Request-specific [`LoadProfile`] for opening a read-only shard to serve exactly
+    /// this facet: no vector components are warmed, and only the field indexes the filter
+    /// and facet key read keep their configured placement.
+    pub fn load_profile(&self) -> LoadProfile {
+        LoadProfile::for_scroll(self.filter.as_ref(), Some(&self.key), false)
     }
 }
