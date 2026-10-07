@@ -1,5 +1,4 @@
 use common::ambient;
-use common::ambient::AmbientContext;
 use common::ambient::hw::{self, HwMetric};
 use common::generic_consts::Random;
 use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -70,7 +69,7 @@ fn test_empty_storage() {
 #[case(Compression::None)]
 #[case(Compression::LZ4)]
 fn test_put_get_roundtrip(#[case] compression: Compression) {
-    let _scope = AmbientContext::new().measure_guard_owned();
+    let _scope = ambient::test_guard();
     let dir = TempDir::new().unwrap();
     let config = StorageConfig::AppendOnly(LogstoreConfig {
         page_capacity_bytes: DEFAULT_PAGE_SIZE_BYTES,

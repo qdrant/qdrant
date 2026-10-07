@@ -270,7 +270,7 @@ impl ValueIndexer for BoolIndex {
 mod tests {
     use std::path::Path;
 
-    use common::ambient::{self, AmbientContext};
+    use common::ambient;
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -360,7 +360,7 @@ mod tests {
 
         builder.add_point(0, &[&given]).unwrap();
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let index = builder.finalize().unwrap();
         let count = index
             .filter(&match_bool(match_on))
@@ -440,7 +440,7 @@ mod tests {
 
         let new_index = I::open_at(tmp_dir.path());
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let point_offsets = new_index
             .filter(&match_bool(false))
             .unwrap()
@@ -476,7 +476,7 @@ mod tests {
         let idx = 1000;
         index.add_point(idx, &[&before]).unwrap();
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
 
         let point_offsets = index
             .filter(&match_bool(false))

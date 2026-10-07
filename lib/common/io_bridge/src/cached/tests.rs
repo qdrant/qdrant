@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use common::ambient;
 use common::universal_io::{
     DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalWriteFs as _,
 };
@@ -169,6 +170,7 @@ fn open_options() -> OpenOptions {
 /// mirror's `NotFound` from the offset check.
 #[test]
 fn rewrite_append_at_offset_zero_creates_the_missing_object() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::tempdir().unwrap();
     let source = ThresholdMockSource::default();
     let mut file = cached_fs(&source, tmp.path())
@@ -190,6 +192,7 @@ fn rewrite_append_at_offset_zero_creates_the_missing_object() {
 /// the object rebuild as a save.
 #[test]
 fn rewrite_appends_are_counted_as_remote_requests() {
+    let _scope = ambient::test_guard();
     use common::ambient::trace::Op;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -217,6 +220,7 @@ fn rewrite_appends_are_counted_as_remote_requests() {
 /// the object's length is zero, not unknowable.
 #[test]
 fn rewrite_append_at_nonzero_offset_on_a_missing_object_conflicts() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::tempdir().unwrap();
     let source = ThresholdMockSource::default();
     let mut file = cached_fs(&source, tmp.path())

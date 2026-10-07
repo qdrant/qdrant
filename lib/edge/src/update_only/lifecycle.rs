@@ -55,6 +55,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         enumerator: impl SegmentEnumerator + 'static,
         deferred_threshold_kb: Option<usize>,
     ) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // Sized like the search pools: over-provisioned relative to the CPU
         // count, since on a remote backend the threads mostly wait on IO.
         let pool = build_segment_pool(
@@ -65,21 +66,25 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         let segments: Vec<(Uuid, ListedSegment)> =
             enumerator.list_segments()?.into_iter().collect();
-        let opened: Vec<_> = pool.install(|| {
-            segments
-                .into_par_iter()
-                .map(|(uuid, listing)| {
-                    let ListedSegment { path, writable } = listing;
-                    let segment = LookupSegment::open(fs.clone(), &path, deferred_threshold_kb)?;
-                    let writer = UpdateOnlySegmentEnum::open(
-                        fs.clone(),
-                        &path,
-                        &segment.segment_config,
-                        segment.writer_state(),
-                    )?;
-                    Ok((uuid, segment, writer, writable))
-                })
-                .collect::<OperationResult<Vec<_>>>()
+        let opened: Vec<_> = ambient::parallel(|handoff| {
+            pool.install(|| {
+                segments
+                    .into_par_iter()
+                    .map(|(uuid, listing)| {
+                        let _scope = handoff.enter_guard();
+                        let ListedSegment { path, writable } = listing;
+                        let segment =
+                            LookupSegment::open(fs.clone(), &path, deferred_threshold_kb)?;
+                        let writer = UpdateOnlySegmentEnum::open(
+                            fs.clone(),
+                            &path,
+                            &segment.segment_config,
+                            segment.writer_state(),
+                        )?;
+                        Ok((uuid, segment, writer, writable))
+                    })
+                    .collect::<OperationResult<Vec<_>>>()
+            })
         })?;
 
         let mut holder = LookupSegmentHolder::default();

@@ -4,9 +4,10 @@ use std::cmp::max;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient::trace;
+use common::ambient::{self, trace};
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{UniversalRead, UniversalReadFs, read_bin_via};
 use itertools::Itertools;
@@ -45,6 +46,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         dir: &Path,
         residency: GraphLinksResidency,
     ) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir))?;
         let format = GraphLayers::probe_links_format(fs, dir)?
             .ok_or_else(|| OperationError::service_error("No links file found"))?;

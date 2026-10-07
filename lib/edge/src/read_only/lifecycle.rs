@@ -2,6 +2,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
+use common::reason::Reason;
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationResult, check_process_stopped};
@@ -155,6 +157,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         check_process_stopped(is_stopped)?;
         let provided_config = config.unwrap_or_default();
 

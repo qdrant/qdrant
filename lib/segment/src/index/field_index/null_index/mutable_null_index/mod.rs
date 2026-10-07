@@ -30,7 +30,7 @@ pub(super) struct Storage<S: common::universal_io::UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::ambient::{self, AmbientContext};
+    use common::ambient;
     use common::types::PointOffsetType;
     use serde_json::Value;
     use tempfile::TempDir;
@@ -88,7 +88,7 @@ mod tests {
             is_null: None,
         };
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
 
         let is_null_values: Vec<_> = null_index
             .filter(&filter_is_null)

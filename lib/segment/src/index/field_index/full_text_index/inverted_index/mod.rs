@@ -968,7 +968,7 @@ mod tests {
     fn doc_len_and_total_tokens_agree_across_backends(
         #[values(false, true)] phrase_matching: bool,
     ) {
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 

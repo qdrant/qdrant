@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::ops::Range;
 
-use common::ambient::{self, AmbientContext};
+use common::ambient;
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
@@ -115,7 +115,7 @@ fn condition_for_geo_box(key: &str, geo_bounding_box: GeoBoundingBox) -> FieldCo
 
 /// Run a filter query and return the matching point offsets, sorted.
 fn filtered_points(index: &GeoIndex, condition: &FieldCondition) -> Vec<PointOffsetType> {
-    let _scope = AmbientContext::new().measure_guard_owned();
+    let _scope = ambient::test_guard();
     let mut points: Vec<PointOffsetType> = index.filter(condition).unwrap().unwrap().collect();
     points.sort_unstable();
     points

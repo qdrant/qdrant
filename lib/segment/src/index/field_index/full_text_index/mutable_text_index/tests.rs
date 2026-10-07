@@ -19,7 +19,7 @@ fn filter_request(text: &str) -> FieldCondition {
 
 #[test]
 fn test_full_text_indexing() {
-    use common::ambient::AmbientContext;
+    use common::ambient;
 
     use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 
@@ -71,7 +71,7 @@ fn test_full_text_indexing() {
 
         assert_eq!(index.count_indexed_points().unwrap(), payloads.len());
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
 
         let filter_condition = filter_request("multivac");
         let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
@@ -123,7 +123,7 @@ fn test_full_text_indexing() {
 
         assert_eq!(index.count_indexed_points().unwrap(), 4);
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
 
         let filter_condition = filter_request("multivac");
         let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();

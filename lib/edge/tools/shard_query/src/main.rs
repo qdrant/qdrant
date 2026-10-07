@@ -106,7 +106,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser as _;
-use common::ambient::trace;
+use common::ambient::{self, trace};
+use common::reason::Reason;
 use common::universal_io::DiskCache;
 use edge::{EdgeConfig, ReadOnlyEdgeShard};
 use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
@@ -248,7 +249,7 @@ fn main() -> Result<()> {
         conn.prefix,
     );
 
-    match conn.backend {
+    let run_backend = || match conn.backend {
         Backend::Aws => {
             run::<ObjectStoreSource<AmazonS3>>(&cli, &prefix, &cache_dir, build_aws_config(conn)?)
         }
@@ -261,7 +262,8 @@ fn main() -> Result<()> {
         Backend::UioGrpc => {
             run::<UioGrpcSource>(&cli, &prefix, &cache_dir, build_uio_config(conn)?)
         }
-    }
+    };
+    ambient::unmeasured(Reason::EDGE_UNMEASURED, run_backend)
 }
 
 /// Default local mirror directory. The mirror is keyed by `--prefix`-relative

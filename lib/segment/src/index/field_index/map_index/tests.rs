@@ -5,7 +5,6 @@ use std::path::Path;
 
 use blobstore::Blob;
 use common::ambient;
-use common::ambient::AmbientContext;
 use common::ambient::hw::{self, HwMetric};
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
@@ -304,7 +303,7 @@ fn test_empty_index(#[case] index_type: IndexType) {
 /// Test that `get_values` on an on-disk mmap index actually increments the hardware counter.
 #[test]
 fn test_mmap_get_values_hw_counter() {
-    let _scope = AmbientContext::new().measure_guard_owned();
+    let _scope = ambient::test_guard();
     let data = vec![vec![1i64, 2, 3], vec![4, 5], vec![6]];
 
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
@@ -324,7 +323,7 @@ fn test_mmap_get_values_hw_counter() {
     save_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap, |v| (*v).into());
     let index2 = load_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap);
 
-    let _scope2 = AmbientContext::new().measure_guard_owned();
+    let _scope2 = ambient::test_guard();
     for idx in 0..data.len() {
         let _values: Vec<_> = index2.get_values(idx as PointOffsetType).unwrap().collect();
     }

@@ -117,7 +117,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
 
 #[cfg(test)]
 mod tests {
-    use common::ambient::AmbientContext;
+    use common::ambient;
     use common::sorted_slice::SortedSlice;
     use common::universal_io::{
         CachedFs, CachedReadFs, MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs,
@@ -188,7 +188,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
 
         assert_eq!(
             index
@@ -309,7 +309,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
 
         let reloaded_true = reloaded
             .filter(&match_bool(true))
@@ -486,7 +486,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let _scope = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         assert_eq!(
             index
                 .filter(&match_bool(true))

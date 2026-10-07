@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use blobstore::Blob;
-use common::ambient::{self, AmbientContext};
+use common::ambient;
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -852,7 +852,7 @@ fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
     };
 
     let condition = FieldCondition::new_range(JsonPath::new("unused"), ordered_range);
-    let _scope = AmbientContext::new().measure_guard_owned();
+    let _scope = ambient::test_guard();
     let offsets = index.filter(&condition).unwrap().unwrap().collect_vec();
     assert_eq!(offsets, result);
 }
@@ -895,7 +895,7 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
 fn test_remove_reopen() {
     use crate::index::field_index::PayloadFieldIndexRead;
 
-    let _scope = AmbientContext::new().measure_guard_owned();
+    let _scope = ambient::test_guard();
     let (temp_dir, mut builder) = get_index_builder(IndexType::Mmap);
     let values = [10.0_f64, 20.0, 30.0, 40.0];
     for (idx, val) in values.iter().enumerate() {
