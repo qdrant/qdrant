@@ -4,14 +4,6 @@
 Visualizer for traces written by the `ambient::trace` module.
 See `lib/edge/tools/shard_query/SKILL.md` for an example on how to obtain this trace.
 
-Requests are grouped into lanes by the file tree of their paths; click a tree node
-(or a lane header) to expand or collapse it, shift+click to do so for its whole subtree.
-Files that report `sections` split into one child per section.
-Click a tree node's swatch to give it a random colour (again to clear), right-click the node to pick one;
-requests take the colour of their nearest coloured node. Click a request to reveal it in the tree.
-Filter by path (substring or glob: `*` within a path segment, `**` across them) to grey
-out the rest, and by operation to hide it. Phases, marks and CPU usage show only when the trace has them.
-
 -->
 <html lang="en">
 <head>
@@ -36,19 +28,14 @@ body {
   font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
   display: flex; flex-direction: column;
 }
-header {
-  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
-  padding: 5px 10px; border-bottom: 1px solid var(--axis);
-}
-header #note {
-  flex: 1; min-width: 0; color: var(--bad);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-header label { color: var(--ink2); white-space: nowrap; }
-header .off { display: none; }
-#ops { display: flex; gap: 8px; }
+#side { width: 280px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--axis); }
+#controls { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--axis); }
+#controls > div { display: flex; gap: 8px; flex-wrap: wrap; }
+#controls label { color: var(--ink2); white-space: nowrap; }
+#side .off, #ops:empty, #note:empty { display: none; }
+#note { color: var(--bad); }
 #filter {
-  width: 26ch; background: var(--surface); color: var(--ink);
+  background: var(--surface); color: var(--ink);
   border: 1px solid var(--axis); border-radius: 4px; padding: 2px 6px; font: inherit;
 }
 button {
@@ -58,20 +45,27 @@ button {
 button:disabled { color: var(--muted); cursor: default; }
 #file { display: none; }
 #wrap { position: relative; flex: 1; min-height: 0; display: flex; background: var(--surface); }
-#tree {
-  width: 280px; flex: none; overflow: auto; border-right: 1px solid var(--axis);
-  padding: 4px 0; font-size: 12px; user-select: none;
-}
-#tree .row {
+#tree, #traces { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; font-size: 12px; user-select: none; }
+#tabs { display: flex; border-bottom: 1px solid var(--axis); }
+#tabs button { flex: 1; border: none; border-radius: 0; background: none; padding: 4px; }
+#tabs button.on { color: var(--ink); box-shadow: inset 0 -2px var(--ink2); }
+#side .row {
   display: flex; align-items: center; gap: 5px; padding: 1px 8px 1px 0;
   cursor: default; white-space: nowrap;
 }
-#tree .row.branch { cursor: pointer; }
-#tree .row:hover { background: #ffffff10; }
-#tree .row.dim { opacity: 0.4; }
-#tree .row.on { background: #ffffff24; }
+#side .row.branch, #traces .row { cursor: pointer; }
+#side .row:hover { background: #ffffff10; }
+#side .row.dim { opacity: 0.4; }
+#side .row.on { background: #ffffff24; }
+#traces .row { padding-left: 8px; }
+#traces .ct { width: 6ch; text-align: right; }
+#traces .head { position: sticky; top: -4px; background: var(--surface); }
+#traces .head span { color: var(--muted); }
+#traces .head .on { color: var(--ink); }
 #tree .tw { width: 10px; flex: none; color: var(--muted); text-align: center; }
-#tree .sw { width: 9px; height: 9px; flex: none; border-radius: 2px; cursor: pointer; }
+#tree .sw { position: relative; width: 11px; height: 11px; flex: none; border-radius: 2px; cursor: pointer; }
+#tree .sw::after { content: ""; position: absolute; inset: -4px; }
+#tree .sw:hover { outline: 1px solid var(--ink2); }
 #tree .sw.none { box-shadow: inset 0 0 0 1px var(--muted); }
 #pal {
   position: fixed; display: none; z-index: 4; grid-template-columns: repeat(6, 16px); gap: 4px;
@@ -79,8 +73,8 @@ button:disabled { color: var(--muted); cursor: default; }
 }
 #pal i { width: 16px; height: 16px; border-radius: 3px; cursor: pointer; }
 #pal i.none { box-shadow: inset 0 0 0 1px var(--muted); }
-#tree .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink2); }
-#tree .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
+#side .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink2); }
+#side .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
 #stage { position: relative; flex: 1; min-width: 0; }
 canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 #tip {
@@ -116,28 +110,45 @@ canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
 body.over #drop { outline: 2px dashed var(--ink2); outline-offset: -14px; }
 </style>
 </head>
+<!--
+The comment at the top of the file is the "What is it?" text shown before a trace is loaded.
+Keep it to what the UI cannot hint at: what this page is for, what writes the traces, how to get one.
+Don't explain the UI there; a placeholder, a short tooltip, or a more obvious UI does it better:
+- nobody reads a wall of text before dropping a trace, but a hint is seen right when needed;
+- prose goes stale with UI changes, a tooltip is edited along with its control;
+- a feature that needs a paragraph to be found is a UI bug;
+- stating the obvious ("click a request to reveal it") buries what is worth saying.
+-->
 <body>
-<header>
-  <span id="note"></span>
-  <input type="search" id="filter" placeholder="filter paths (/)" title="Substring or glob: `*` within a path segment, `**` across them.">
-  <span id="ops"></span>
-  <label id="marksLabel" title="Show text marks left by `uio_trace::mark!()`."><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
-  <button id="reflow" title="Hide lanes without visible requests.&#10;(when zooming in)">re<u>f</u>low</button>
-  <button id="url"><u>o</u>pen URL</button>
-  <button id="upload"><u>u</u>pload file</button>
-  <input type="file" id="file" accept=".jsonl,.json,.ndjson,application/json">
-</header>
 <div id="wrap">
-  <div id="tree"></div>
+  <div id="side">
+    <div id="controls">
+      <div>
+        <button id="url"><u>o</u>pen URL</button>
+        <button id="upload"><u>u</u>pload file</button>
+        <button id="reflow" title="Hide lanes without visible requests.&#10;(when zooming in)">re<u>f</u>low</button>
+        <input type="file" id="file" accept=".jsonl,.json,.ndjson,.gz,application/json,application/gzip">
+      </div>
+      <div id="marksRow" class="off">
+        <label title="Show text marks left by `uio_trace::mark!()`."><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
+      </div>
+      <input type="search" id="filter" placeholder="filter paths (/)" title="Substring or glob: `*` within a path segment, `**` across them.">
+      <div id="ops"></div>
+      <div id="note"></div>
+    </div>
+    <div id="tabs" class="off"><button data-tab="traces">traces</button><button data-tab="tree">files</button></div>
+    <div id="traces" class="off"></div>
+    <div id="tree"></div>
+  </div>
   <div id="stage">
     <canvas id="c"></canvas>
     <div id="tip"></div>
     <div id="toast">ctrl+wheel or pinch to zoom</div>
-  </div>
-  <div id="drop">
-    <b>What is it?</b>
-    <div id="help"></div>
-    <b id="hint">drop a trace here</b>
+    <div id="drop">
+      <b>What is it?</b>
+      <div id="help"></div>
+      <b id="hint">drop a trace here</b>
+    </div>
   </div>
 </div>
 <div id="pal"></div>
@@ -163,12 +174,17 @@ const BAD_DARK = darken(BAD);
 const PAL = 18;  // colours in the right-click palette
 const UNCOLORED = INK2;  // requests without a coloured node on their path
 const DIMMED = mix(MUTED, SURFACE, 0.6);  // requests the path filter does not match
+const SUBTREE = "\nshift+click: whole subtree";
+const TRACE_HINT = "click: show only this trace\nshift+click: add or remove";
 
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 const tip = document.getElementById("tip");
 const stage = document.getElementById("stage");
+const sideBox = document.getElementById("side");
 const treeBox = document.getElementById("tree");
+const tracesBox = document.getElementById("traces");
+const tabsBox = document.getElementById("tabs");
 const note = document.getElementById("note");
 const marksBox = document.getElementById("marks");
 const filterBox = document.getElementById("filter");
@@ -190,15 +206,17 @@ let refit = true;
 let toastTimer = 0;
 let hidden = new Set();  // lanes folded into one column by "reflow"
 let unseen = [];  // lanes without requests in view, as of the last draw
-let pressed = null;  // request under the pointer when the button went down
+let pressed = null;  // request or span under the pointer when the button went down
 let picked = null;  // tree node of the last clicked request
 let painting = null;  // tree node the palette is open for
+let spot = null;  // {match} or {trace}: the item under the pointer, see `drawSpot`
+let traceSort = "start";
 
 // ---------- trace ----------
 
 function build(text, name) {
   const layouts = new Map();
-  const phases = [];
+  const spans = new Map();
   const marks = [];
   const all = [];
   const cpu = [];
@@ -210,32 +228,55 @@ function build(text, name) {
     if (ev.kind === "sections") {
       layouts.set(ev.path, ev.sections);
     } else if (ev.kind === "cpu") {
-      cpu.push({at: ev.at_ns / 1000, cpu: ev.cpu_ns / 1000});
+      ev.timestamps.forEach((at, i) => cpu.push({at: at / 1000, cpu: ev.cpu_ns[i] / 1000}));
     } else if (ev.kind === "dropped") {
       dropped += ev.count;
-    } else if (ev.kind === "phase") {
-      phases.push({id: ev.id, name: ev.name, s: ev.start_ns / 1000, e: ev.end_ns / 1000, depth: 0});
+    } else if (ev.kind === "span_start") {
+      spans.set(ev.id, {name: ev.name, parent: ev.parent, s: ev.timestamp / 1000, e: undefined});
+    } else if (ev.kind === "span_end") {
+      // Without an end the span is still running, or its end was dropped.
+      const span = spans.get(ev.id);
+      if (span) span.e = ev.timestamp / 1000;
     } else if (ev.kind === "mark") {
-      marks.push({at: ev.at_ns / 1000, text: ev.text});
+      marks.push({parent: ev.parent, at: ev.timestamp / 1000, text: ev.text});
     } else if (ev.kind === "request") {
       all.push({
         // Requests are not numbered in the trace; the file order names them.
-        id: all.length, parent: ev.parent, s: ev.start_ns / 1000, e: ev.end_ns / 1000,
+        id: all.length, parent: ev.parent, s: ev.started / 1000, e: ev.ended / 1000,
         op: ev.op, path: ev.path, off: Number(ev.offset), len: Number(ev.length), outcome: ev.outcome,
       });
     }
   }
+  const phases = [...spans.values()];
   if (!all.length && !phases.length) throw new Error("no spans in " + name);
+  // Timestamps are Unix time; plot them from the first event.
+  let t0 = Infinity;
+  for (const x of [...phases, ...all]) t0 = Math.min(t0, x.s);
+  for (const x of [...marks, ...cpu]) t0 = Math.min(t0, x.at);
+  for (const x of [...phases, ...all]) { x.s -= t0; if (x.e !== undefined) x.e -= t0; }
+  for (const x of [...marks, ...cpu]) x.at -= t0;
 
   for (const req of all) req.spans = sections(layouts, req);
   // Built before sorting by start time: tree order is the order of first appearance in the file.
   const tree = buildTree(all, layouts);
   const ops = [...new Set(all.map(req => req.op))];
 
-  phases.sort((a, b) => a.s - b.s || b.e - a.e);
+  // A trace is a root span with everything under it.
+  const resolve = span => {
+    if (span.root) return span;
+    const parent = spans.get(span.parent);
+    span.root = parent ? resolve(parent).root : span;
+    span.depth = parent ? parent.depth + 1 : 0;
+    return span;
+  };
+  phases.forEach(resolve);
+  for (const x of [...marks, ...all]) x.trace = spans.has(x.parent) ? resolve(spans.get(x.parent)).root : null;
+  phases.sort((a, b) => a.s - b.s || a.depth - b.depth);
   marks.sort((a, b) => a.at - b.at);
   all.sort((a, b) => a.s - b.s);
-  nest(phases);
+  const traces = phases.filter(phase => phase.root === phase);
+  traces.forEach((trace, i) => { trace.n = i + 1; trace.reqs = 0; });
+  for (const req of all) if (req.trace) req.trace.reqs++;
 
   let tMax = 1;
   for (const req of all) {
@@ -246,17 +287,16 @@ function build(text, name) {
     req.shade = h % SHADES;
     tMax = Math.max(tMax, req.e);
   }
-  for (const phase of phases) tMax = Math.max(tMax, phase.e);
+  for (const phase of phases) tMax = Math.max(tMax, phase.e ?? phase.s);
   for (const mark of marks) tMax = Math.max(tMax, mark.at);
-
-  ctx.font = LANE_FONT;
-  const phaseW = phases.length ? phases.reduce(
-    (w, phase) => Math.max(w, 18 + phase.depth * 11 + ctx.measureText(phase.name).width),
-    ctx.measureText("phases").width + 8) : 0;
+  // Open spans reach the end of the picture.
+  for (const phase of phases) if (phase.e === undefined) { phase.e = tMax; phase.open = true; }
 
   return {
-    name, all, phases, marks, dropped, bad, phaseW, tree, ops,
+    name, all, allPhases: phases, traces, marks, dropped, bad, tree, ops,
     opsOn: new Set(ops),
+    focus: null,  // traces shown alone, or all when `null`
+    origin: 0,  // time the ruler counts from
     t_max: tMax,
     files: files(layouts, all),
     gap: tMax * 0.005,
@@ -264,14 +304,33 @@ function build(text, name) {
   };
 }
 
-// Phases carry no parent, so nesting is by containment.
-function nest(phases) {
-  const stack = [];
+/**
+ * Traces that overlap in time go side by side, one track each; spans nest within the track
+ * of their trace. Labels fit only when there is a single track.
+ */
+function pack(phases) {
+  const ends = [];
+  let depth = 0;
   for (const phase of phases) {
-    while (stack.length && stack[stack.length - 1] < phase.e) stack.pop();
-    phase.depth = stack.length;
-    stack.push(phase.e);
+    if (phase.root === phase) {
+      const free = ends.findIndex(end => end <= phase.s);
+      phase.track = free < 0 ? ends.length : free;
+      ends[phase.track] = phase.e;
+    } else {
+      phase.track = phase.root.track;
+    }
+    depth = Math.max(depth, phase.depth);
   }
+  D.phases = phases;
+  D.labels = ends.length === 1;
+  // Without labels, tracks shrink to a thin bar with ticks.
+  D.indent = D.labels ? 11 : 3;
+  D.tick = D.labels ? 3 : 1;
+  D.trackW = depth * D.indent + 2 + 2 * D.tick + 1;
+  ctx.font = LANE_FONT;
+  D.phaseW = !phases.length ? 0 : Math.max(ctx.measureText("spans").width + 8, D.labels
+    ? phases.reduce((w, phase) => Math.max(w, 18 + phase.depth * D.indent + ctx.measureText(phase.name).width), 0)
+    : ends.length * D.trackW + 4);
 }
 
 // Bytes of `req` landing in each section of the file's reported byte layout, largest
@@ -376,10 +435,12 @@ function files(layouts, reqs) {
 /**
  * Requests of the checked operations, their lanes, and the series derived from those
  * matching the path filter. Requests off the path filter stay in their lanes, greyed out.
+ * With traces in focus, only theirs.
  */
 function refilter() {
   const re = globRe(filterBox.value);
-  D.reqs = D.all.filter(req => D.opsOn.has(req.op));
+  D.reqs = D.all.filter(req => D.opsOn.has(req.op) && (!D.focus || D.focus.has(req.trace)));
+  pack(D.focus ? D.allPhases.filter(phase => D.focus.has(phase.root)) : D.allPhases);
   for (const n of D.tree.byKey.values()) { n.count = 0; n.hits = 0; n.bytes = 0; n.ownVisible = 0; }
   let maxdur = 1;
   for (const req of D.reqs) {
@@ -505,8 +566,29 @@ function closePalette() {
 function reveal(req) {
   for (const n of req.chain) if (n.children.length) n.open = true;
   picked = req.chain[req.chain.length - 1];
+  showTab("tree");
   relane();
   [...treeBox.children].find(row => row.dataset.key === picked.key)?.scrollIntoView({block: "nearest"});
+}
+
+/** Click shows only `trace`, or all again; shift+click adds or removes it. */
+function focusTrace(trace, add) {
+  if (!add) return setFocus(new Set(D.focus?.size === 1 && D.focus.has(trace) ? [] : [trace]));
+  const focus = new Set(D.focus);
+  if (!focus.delete(trace)) focus.add(trace);
+  setFocus(focus);
+}
+
+function setFocus(focus) {
+  D.focus = focus.size ? focus : null;
+  D.origin = D.focus ? Math.min(...[...focus].map(t => t.s)) : 0;
+  refilter();
+  renderTraces();
+  if (!D.focus) return fit();
+  view.t0 = D.origin;
+  view.tpp = (Math.max(...[...focus].map(t => t.e)) - D.origin) / L.ph;
+  refit = false;
+  redraw();
 }
 
 function toggle(n, deep) {
@@ -522,15 +604,34 @@ function renderTree() {
   const walk = (n, depth) => {
     const branch = n.children.length > 0;
     rows.push("<div class='row" + (branch ? " branch" : "") + (n.hits ? "" : " dim") + (n === picked ? " on" : "") +
-      "' data-key='" + esc(n.key) + "' title='" + esc(n.key.slice(1) || "/") + "' style='padding-left:" +
-      (4 + depth * 12) + "px'><span class=tw>" + (branch ? (n.open ? "▾" : "▸") : "") +
+      "' data-key='" + esc(n.key) + "' title='" + esc(n.key.slice(1) || "/") + (branch ? SUBTREE : "") +
+      "' style='padding-left:" + (4 + depth * 12) + "px'><span class=tw>" + (branch ? (n.open ? "▾" : "▸") : "") +
       "</span><i class='sw" + (n.color ? "' style='background:" + n.color : " none") +
-      "' title='click: random colour or none, right-click the row: pick one'></i><span class=nm>" + esc(n.name || "/") +
+      "' title='click: random colour&#10;right-click: pick'></i><span class=nm>" + esc(n.name || "/") +
       "</span><span class=ct>" + fmtInt(n.hits) + " · " + fmtBytes(n.bytes) + "</span></div>");
     if (n.open) for (const c of n.children) walk(c, depth + 1);
   };
   walk(D.tree.root, 0);
   treeBox.innerHTML = rows.join("");
+}
+
+function showTab(name) {
+  for (const button of tabsBox.children) button.classList.toggle("on", button.dataset.tab === name);
+  tracesBox.classList.toggle("off", name !== "traces");
+  treeBox.classList.toggle("off", name !== "tree");
+}
+
+function renderTraces() {
+  if (D.traces.length < 2) { tracesBox.innerHTML = ""; return; }
+  const key = {start: t => t.s, dur: t => t.s - t.e, reqs: t => -t.reqs}[traceSort];
+  const head = (sort, cls, text) =>
+    "<span class='" + cls + (sort === traceSort ? " on" : "") + "' data-sort=" + sort + ">" + text + "</span>";
+  tracesBox.innerHTML = "<div class='row head'>" + head("start", "nm", fmtInt(D.traces.length) + " traces") +
+    head("dur", "ct", "ms") + head("reqs", "ct", "reqs") + "</div>" +
+    [...D.traces].sort((a, b) => key(a) - key(b)).map(t =>
+      "<div class='row" + (D.focus?.has(t) ? " on" : "") + "' data-trace=" + t.n + " title='" + esc(t.name) +
+      "\n" + TRACE_HINT + "'><span class=nm>#" + t.n + " " + esc(t.name) + "</span><span class=ct>" +
+      ((t.e - t.s) / 1000).toFixed(1) + "</span><span class=ct>" + fmtInt(t.reqs) + "</span></div>").join("");
 }
 
 function renderOps() {
@@ -782,6 +883,7 @@ function draw() {
   drawSelection();
   drawHeader();
   drawCrosshair();
+  drawSpot();
 }
 
 function drawHeader() {
@@ -795,7 +897,7 @@ function drawHeader() {
   ctx.textAlign = "right";
   ctx.fillText("ms", W_RULER - 6, HEAD / 2);
   ctx.textAlign = "left";
-  if (D.phases.length) ctx.fillText("phases", L.phaseX + 4, HEAD / 2);
+  if (D.phases.length) ctx.fillText("spans", L.phaseX + 4, HEAD / 2);
   for (let i = 0; i < D.lanes.length; i++) {
     if (hidden.has(i)) continue;
     ctx.save();
@@ -822,7 +924,7 @@ function niceStep(target) {
 
 function drawRuler() {
   const step = niceStep(56 * view.tpp);
-  const begin = Math.floor(view.t0 / step) * step;
+  const begin = D.origin + Math.floor((view.t0 - D.origin) / step) * step;
   ctx.font = LANE_FONT;
   ctx.lineWidth = 1;
   for (let t = begin; t <= viewEnd(); t += step) {
@@ -834,7 +936,7 @@ function drawRuler() {
     ctx.beginPath(); ctx.moveTo(W_RULER - 6, y); ctx.lineTo(W_RULER, y); ctx.stroke();
     ctx.fillStyle = MUTED;
     ctx.textAlign = "right";
-    ctx.fillText(fmtMs(t), W_RULER - 8, y);
+    ctx.fillText(fmtAt(t), W_RULER - 8, y);
   }
   ctx.textAlign = "left";
 }
@@ -850,12 +952,13 @@ function drawPhases() {
   for (const phase of D.phases) {
     const y0 = yOf(phase.s), y1 = yOf(phase.e);
     if (y1 < L.top || y0 > L.h) continue;
-    const x = L.phaseX + 5 + phase.depth * 11;
+    const x = phaseX(phase);
     const alpha = Math.max(0.35, 0.95 - 0.13 * phase.depth);
     ctx.fillStyle = rgba(INK2, alpha);
     ctx.fillRect(x, Math.max(y0, L.top), 2, Math.max(1, y1 - Math.max(y0, L.top)));
-    if (y0 >= L.top) ctx.fillRect(x - 3, y0, 8, 2);
-    ctx.fillRect(x - 3, y1 - 2, 8, 2);
+    if (y0 >= L.top) ctx.fillRect(x - D.tick, y0, 2 + 2 * D.tick, 2);
+    ctx.fillRect(x - D.tick, y1 - 2, 2 + 2 * D.tick, 2);
+    if (!D.labels) continue;
     // Nested phases start at nearly the same time; push labels apart.
     let ly = Math.min(Math.max(y0 + 9, L.top + 9), Math.max(y1 - 3, L.top + 9));
     while (taken.some(v => Math.abs(v - ly) < 12)) ly += 12;
@@ -867,18 +970,19 @@ function drawPhases() {
   ctx.restore();
 }
 
+// One pixel short, so that back-to-back requests stay apart; errors one pixel wider.
+function barRect(req) {
+  const pad = req.outcome === "err" ? 1 : 0;
+  return [reqX(req) - pad, yOf(req.s), req.w + 2 * pad, Math.max(1.5 + pad, (req.e - req.s) / view.tpp - 1)];
+}
+
 function drawRequests() {
-  const t0 = view.t0, tpp = view.tpp, vend = viewEnd();
+  const t0 = view.t0, vend = viewEnd();
   ctx.save();
   ctx.beginPath();
   ctx.rect(L.reqX, L.top, L.reqW, L.ph);
   ctx.clip();
-  // One pixel short, so that back-to-back requests stay apart; errors one pixel wider.
-  const bar = req => {
-    const pad = req.outcome === "err" ? 1 : 0;
-    ctx.fillRect(reqX(req) - pad, L.top + (req.s - t0) / tpp, req.w + 2 * pad,
-      Math.max(1.5 + pad, (req.e - req.s) / tpp - 1));
-  };
+  const bar = req => ctx.fillRect(...barRect(req));
   const bad = [], lit = [];
   const seen = D.lanes.map(() => false);
   // Greyed-out requests first, so that the matching ones stay on top.
@@ -917,6 +1021,47 @@ function drawRequests() {
   reflowButton.disabled = !hidden.size && !unseen.length;
 }
 
+/**
+ * Tints the canvas, except where the item under the pointer is:
+ * the lanes of a path or an operation, or the time and the track of a trace.
+ */
+function drawSpot() {
+  if (!spot) return;
+  const tint = rgba("#000000", 0.6);
+  const trace = spot.trace;
+  const y0 = trace && clampY(yOf(trace.s)), h = trace && clampY(yOf(trace.e)) - y0;
+  ctx.beginPath();
+  ctx.rect(0, 0, L.w, L.h);
+  if (trace) {
+    ctx.rect(0, y0, L.phaseX, h);
+    if (D.labels) ctx.rect(L.phaseX, y0, D.phaseW, h);
+    else ctx.rect(L.phaseX + trace.track * D.trackW, y0, D.trackW, h);
+    ctx.rect(L.markX, y0, L.w - L.markX, h);
+  } else {
+    // By position, as hidden lanes share one column.
+    const lanes = new Map(D.reqs.filter(spot.match).map(req => [L.laneX[req.k], L.laneW[req.k]]));
+    for (const [x, width] of lanes) ctx.rect(x, 0, width, L.h);
+  }
+  ctx.fillStyle = tint;
+  ctx.fill("evenodd");
+  if (!trace) return;
+  // Concurrent traces share the time of this one; tint their requests one by one.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(L.reqX, y0, L.reqW, h);
+  ctx.clip();
+  for (let i = lowerBound(D.S, trace.s - D.maxdur); i < D.reqs.length && D.reqs[i].s <= trace.e; i++) {
+    if (D.reqs[i].trace !== trace) ctx.fillRect(...barRect(D.reqs[i]));
+  }
+  ctx.restore();
+}
+
+const phaseX = phase => L.phaseX + 2 + D.tick + phase.track * D.trackW + phase.depth * D.indent;
+
+// Marks of concurrent traces interleave into noise; only those of the focused or hovered ones.
+const markShown = mark =>
+  D.focus ? D.focus.has(mark.trace) : spot?.trace ? mark.trace === spot.trace : D.traces.length < 2;
+
 function drawMarks() {
   if (!D.marks.length) return;
   const vend = viewEnd();
@@ -924,7 +1069,7 @@ function drawMarks() {
   ctx.lineWidth = 1;
   const visible = [];
   for (const mark of D.marks) {
-    if (mark.at < view.t0 || mark.at > vend) continue;
+    if (mark.at < view.t0 || mark.at > vend || !markShown(mark)) continue;
     const y = Math.round(yOf(mark.at)) + 0.5;
     if (y < L.top) continue;
     if (marksBox.checked) {
@@ -1005,7 +1150,7 @@ function drawCrosshair() {
   ctx.fillRect(0, y - 7, W_RULER - 6, 14);
   ctx.fillStyle = INK;
   ctx.textAlign = "right";
-  ctx.fillText(fmtMs(tOf(mouse.y)), W_RULER - 8, y);
+  ctx.fillText(fmtAt(tOf(mouse.y)), W_RULER - 8, y);
   ctx.textAlign = "left";
 }
 
@@ -1035,6 +1180,17 @@ function hitReq(mx, my) {
   return best;
 }
 
+function hitPhase(mx, my) {
+  if (my < L.top || mx < L.phaseX || mx >= L.markX) return null;
+  const t = tOf(my), track = D.labels ? 0 : Math.floor((mx - L.phaseX) / D.trackW);
+  let best = null;
+  for (const phase of D.phases) {
+    if (phase.track !== track || t < phase.s || t > phase.e) continue;
+    if (!best || phase.depth > best.depth) best = phase;
+  }
+  return best;
+}
+
 const inSide = (key, mx) => L.side[key] !== undefined && mx >= L.side[key] && mx < L.side[key] + W_SIDE;
 
 function hitLane(mx) {
@@ -1047,25 +1203,22 @@ function hit(mx, my) {
   if (D.marks.length && mx >= L.markX && mx < L.reqX) {
     let best = null, bestDy = 5;
     for (const mark of D.marks) {
+      if (!markShown(mark)) continue;
       const dy = Math.abs(yOf(mark.at) - my);
       if (dy < bestDy) { bestDy = dy; best = mark; }
     }
     if (best) {
       return "<b>" + esc(best.text) + "</b>\n<span class=k>t</span> " +
-        fmtMs(best.at) + " ms";
+        fmtAt(best.at) + " ms";
     }
   }
-  if (mx >= L.phaseX && mx < L.markX) {
-    let best = null;
-    for (const phase of D.phases) {
-      if (t < phase.s || t > phase.e) continue;
-      if (!best || phase.depth > best.depth) best = phase;
-    }
-    if (best) {
-      return "<b>phase " + esc(best.name) + "</b>\n" + times(best);
-    }
+  const phase = hitPhase(mx, my);
+  if (phase) {
+    const trace = phase.root;
+    return "<b>span " + esc(phase.name) + "</b>\n" + times(phase) + (D.traces.length < 2 ? "" :
+      "<span class=k>trace</span> #" + trace.n + ", " + fmtInt(trace.reqs) + " requests\n" + TRACE_HINT);
   }
-  const at = "<span class=k>t</span> " + fmtMs(t) + " ms\n<span class=k>so far</span> ";
+  const at = "<span class=k>t</span> " + fmtAt(t) + " ms\n<span class=k>so far</span> ";
   if (inSide("conc", mx)) {
     return "<b>concurrency " + binAt(D.conc, t) + "</b>\n" + at +
       fmtInt(lowerBound(D.hitS, t)) + " requests";
@@ -1090,7 +1243,7 @@ function headTip(mx) {
   const lane = hitLane(mx);
   if (lane >= 0) {
     const {node, self} = D.lanes[lane];
-    const action = self ? "\nclick to collapse" : node.children.length ? "\nclick to expand" : "";
+    const action = self ? "\nclick: collapse" + SUBTREE : node.children.length ? "\nclick: expand" + SUBTREE : "";
     return "<b>" + esc(node.key.slice(1) || "/") + (self ? "</b> (own requests)" : "</b>") + "\n" +
       fmtInt(D.counts[lane]) + " requests, " + fmtBytes(D.bytes[lane]) + action;
   }
@@ -1127,13 +1280,14 @@ function selection() {
 
 function selectionTip() {
   const [a, b] = selection();
-  return "<b>" + fmtMs(b - a) + " ms</b>\n<span class=k>from</span> " + fmtMs(a) +
-    " ms  <span class=k>to</span> " + fmtMs(b) + " ms";
+  return "<b>" + fmtMs(b - a) + " ms</b>\n<span class=k>from</span> " + fmtAt(a) +
+    " ms  <span class=k>to</span> " + fmtAt(b) + " ms";
 }
 
 function reqTip(req) {
   const section = req.spans?.length ? " <span class=k>#</span>" + esc(req.spans[0][0]) : "";
-  return "<b>#" + req.id + " " + esc(req.op) + "</b>" + section + "\n" + times(req) +
+  const trace = req.trace && D.traces.length > 1 ? "<span class=k>trace</span> #" + req.trace.n + "\n" : "";
+  return "<b>#" + req.id + " " + esc(req.op) + "</b>" + section + "\n" + times(req) + trace +
     "<span class=k>range</span> " + fmtInt(req.off) + "<span class=k>…</span>" +
     fmtInt(req.off + req.len) + "  <span class=k>size</span> " + fmtBytes(req.len) + "\n" + fileMap(req) + spanTip(req) +
     (req.outcome === "ok" ? "" : "<span class=k>outcome</span> <b class=err>" + esc(req.outcome) + "</b>\n") +
@@ -1171,12 +1325,15 @@ function spanTip(req) {
 }
 
 function times(span) {
-  return "<span class=k>start</span> " + fmtMs(span.s) + " ms  " +
-    "<span class=k>end</span> " + fmtMs(span.e) + " ms  " +
-    "<span class=k>dur</span> " + fmtMs(span.e - span.s) + " ms\n";
+  return "<span class=k>start</span> " + fmtAt(span.s) + " ms  " +
+    (span.open ? "<span class=k>still open</span>\n" :
+      "<span class=k>end</span> " + fmtAt(span.e) + " ms  " +
+      "<span class=k>dur</span> " + fmtMs(span.e - span.s) + " ms\n");
 }
 
 // ---------- formatting ----------
+
+const fmtAt = t => fmtMs(t - D.origin);
 
 function fmtMs(us) {
   const step = view.tpp / 1000;
@@ -1252,7 +1409,7 @@ cv.addEventListener("pointerdown", e => {
     return;
   }
   select = tOf(e.offsetY);
-  pressed = hover;
+  pressed = hover ?? (D.traces.length > 1 ? hitPhase(e.offsetX, e.offsetY) : null);
   cv.setPointerCapture(e.pointerId);
   pointAt(e.offsetX, e.offsetY);
 });
@@ -1262,7 +1419,8 @@ for (const type of ["pointerup", "pointercancel"]) {
     if (select === null) return;
     const click = type === "pointerup" && pressed && !selecting();
     select = null;
-    if (click) reveal(pressed);
+    if (click && pressed.chain) reveal(pressed);
+    else if (click) focusTrace(pressed.root, e.shiftKey);
     pressed = null;
     pointAt(e.offsetX, e.offsetY);
   });
@@ -1273,6 +1431,7 @@ cv.addEventListener("pointermove", e => pointAt(e.offsetX, e.offsetY));
 cv.addEventListener("pointerleave", () => {
   mouse = null;
   hover = null;
+  spot = null;
   tip.style.display = "none";
   redraw();
 });
@@ -1281,6 +1440,8 @@ function pointAt(x, y) {
   if (!D || !L) return;
   mouse = {x, y};
   hover = select === null ? hitReq(x, y) : null;
+  const phase = select === null && !hover && D.traces.length > 1 ? hitPhase(x, y) : null;
+  spot = phase && {trace: phase.root};
   const html = select !== null ? (selecting() ? selectionTip() : null) : hover ? reqTip(hover) : hit(x, y);
   if (html === null) {
     tip.style.display = "none";
@@ -1321,6 +1482,22 @@ palBox.addEventListener("click", e => {
   closePalette();
 });
 document.addEventListener("pointerdown", e => { if (painting && !palBox.contains(e.target)) closePalette(); });
+sideBox.addEventListener("pointerover", e => {
+  const n = rowNode(e);
+  const op = e.target.closest("#ops label")?.control.dataset.op;
+  const trace = e.target.closest("[data-trace]")?.dataset.trace;
+  spot = n ? {match: req => req.chain.includes(n)} : op ? {match: req => req.op === op} :
+    trace ? {trace: D.traces[trace - 1]} : null;
+  redraw();
+});
+sideBox.addEventListener("pointerleave", () => { spot = null; redraw(); });
+tabsBox.addEventListener("click", e => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); });
+tracesBox.addEventListener("click", e => {
+  const sort = e.target.closest("[data-sort]")?.dataset.sort;
+  const trace = e.target.closest("[data-trace]")?.dataset.trace;
+  if (sort) { traceSort = sort; renderTraces(); }
+  if (trace) focusTrace(D.traces[trace - 1], e.shiftKey);
+});
 filterBox.addEventListener("input", () => { if (D) refilter(); });
 opsBox.addEventListener("change", e => {
   const op = e.target.dataset.op;
@@ -1336,7 +1513,10 @@ document.getElementById("upload").addEventListener("click", () => document.getEl
 
 // By key position, so that other keyboard layouts work too.
 document.addEventListener("keydown", e => {
-  if (e.code === "Escape") closePalette();
+  if (e.code === "Escape") {
+    closePalette();
+    if (D?.focus) setFocus(new Set());
+  }
   if (e.ctrlKey || e.altKey || e.metaKey || e.repeat || e.target instanceof HTMLInputElement) return;
   if (e.code === "Slash") {
     e.preventDefault();
@@ -1352,7 +1532,7 @@ window.addEventListener("resize", redraw);
 
 document.getElementById("file").addEventListener("change", e => {
   const file = e.target.files[0];
-  if (file) loadTrace(file.name, () => file.text(), "");
+  if (file) loadTrace(file.name, () => readText(file), "");
 });
 
 document.addEventListener("dragover", e => {
@@ -1368,7 +1548,7 @@ document.addEventListener("drop", e => {
   e.preventDefault();
   document.body.classList.remove("over");
   const file = e.dataTransfer.files[0];
-  if (file) loadTrace(file.name, () => file.text(), "");
+  if (file) loadTrace(file.name, () => readText(file), "");
 });
 
 document.getElementById("url").addEventListener("click", () => {
@@ -1395,8 +1575,32 @@ const setHash = hash => history.replaceState(null, "", location.pathname + locat
 async function fetchText(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error("HTTP " + resp.status);
-  return resp.text();
+  return readText(await resp.blob());
 }
+
+/** The text of a trace file, gunzipped if it is gzipped. */
+async function readText(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  if (!isGzip(bytes, 0)) return new TextDecoder().decode(bytes);
+  // Rotated logs are concatenated gzip members, but `DecompressionStream` takes only one.
+  // Members start with the gzip magic; a match inside compressed data fails to decompress.
+  const parts = [];
+  for (let start = 0, end = 1; start < bytes.length; end++) {
+    while (end < bytes.length && !isGzip(bytes, end)) end++;
+    try {
+      parts.push(await gunzip(bytes.subarray(start, end)));
+      start = end;
+    } catch (err) {
+      if (end >= bytes.length) throw err;
+    }
+  }
+  return parts.join("");
+}
+
+const isGzip = (bytes, i) => bytes[i] === 0x1f && bytes[i + 1] === 0x8b && bytes[i + 2] === 8;
+
+const gunzip = bytes =>
+  new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
 
 let loads = 0;
 
@@ -1404,7 +1608,7 @@ async function loadTrace(name, text, hash) {
   const load = ++loads;
   let trace;
   try {
-    trace = build(await text(), name.replace(/\.jsonl$/, ""));
+    trace = build(await text(), name.replace(/\.jsonl(\.gz)?$/, ""));
   } catch (err) {
     if (load !== loads) return;
     note.textContent = name + ": " + err.message;
@@ -1417,7 +1621,7 @@ async function loadTrace(name, text, hash) {
   setHash(hash);
   document.title = D.name + " — uio trace";
   document.getElementById("drop").classList.add("gone");
-  document.getElementById("marksLabel").classList.toggle("off", !D.marks.length);
+  document.getElementById("marksRow").classList.toggle("off", !D.marks.length);
   note.textContent = [
     D.dropped && D.dropped + " events dropped",
     D.bad && D.bad + " unparsed lines",
@@ -1426,6 +1630,9 @@ async function loadTrace(name, text, hash) {
   closePalette();
   recolor();
   renderOps();
+  renderTraces();
+  tabsBox.classList.toggle("off", D.traces.length < 2);
+  showTab(D.traces.length < 2 ? "tree" : "traces");
   refilter();
   autoOpen();
   relane();
