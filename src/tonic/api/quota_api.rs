@@ -53,13 +53,9 @@ impl Quotas for QuotaService {
 
         let UpdateQuotasRequest { config, wait } = request.into_inner();
 
-        update_quota_status(
-            &self.dispatcher,
-            &auth,
-            quota_config_from_grpc(config.unwrap_or_default()),
-            wait,
-        )
-        .await?;
+        let config = quota_config_from_grpc(require_config(config)?);
+
+        update_quota_status(&self.dispatcher, &auth, config, wait).await?;
 
         let response = UpdateQuotasResponse {
             result: true,
@@ -100,6 +96,12 @@ fn quota_config_to_grpc(config: storage::quota::QuotaConfig) -> QuotaConfig {
         max_disk_usage_percent: config.max_disk_usage_percent.map(u32::from),
         release_margin_percent: config.release_margin_percent.map(u32::from),
     }
+}
+
+/// An absent `config` is rejected rather than defaulted: an empty config would
+/// silently disable the quotas for a client that forgot to set the field.
+fn require_config(config: Option<QuotaConfig>) -> Result<QuotaConfig, Status> {
+    config.ok_or_else(|| Status::invalid_argument("Missing quota config"))
 }
 
 /// `config`'s percent fields are already range-checked to fit in `0..=100` by
@@ -162,6 +164,20 @@ mod tests {
         assert_eq!(grpc.release_margin_percent, None);
 
         assert_eq!(quota_config_from_grpc(grpc), original);
+    }
+
+    #[test]
+    fn test_update_rejects_missing_config() {
+        let err = require_config(None).expect_err("a missing config must be rejected");
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+
+        let all_unset = QuotaConfig {
+            enabled: false,
+            max_resident_memory_percent: None,
+            max_disk_usage_percent: None,
+            release_margin_percent: None,
+        };
+        assert!(!require_config(Some(all_unset)).unwrap().enabled);
     }
 
     #[test]
