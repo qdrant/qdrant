@@ -23,8 +23,10 @@ atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 ecow = { workspace = true }
+flate2 = { workspace = true }
 fs-err = { workspace = true }
 fs4 = { workspace = true }
 fs_extra = { workspace = true }
@@ -55,6 +57,7 @@ tar = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 validator = { workspace = true }
 walkdir = { workspace = true }
 zerocopy = { workspace = true }
