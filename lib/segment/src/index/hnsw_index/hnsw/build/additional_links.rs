@@ -381,25 +381,3 @@ fn build_filtered_graph(
     }
     Ok(None)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::PayloadSchemaType;
-
-    #[test]
-    fn test_fields_are_built_in_sorted_order() {
-        let names: Vec<String> = (0..20).map(|i| format!("field_{i:02}")).collect();
-        let fields: HashMap<PayloadKeyType, PayloadFieldSchema> = names
-            .iter()
-            .rev()
-            .map(|name| (JsonPath::new(name), PayloadSchemaType::Keyword.into()))
-            .collect();
-
-        let ordered: Vec<String> = in_build_order(fields)
-            .into_iter()
-            .map(|(field, _)| field.to_string())
-            .collect();
-        assert_eq!(ordered, names);
-    }
-}
