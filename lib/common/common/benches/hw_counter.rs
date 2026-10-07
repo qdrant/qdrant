@@ -1,17 +1,18 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use std::hint::black_box;
+
+use common::counter::AmbientContext;
+use common::counter::hw::HwMetric;
 use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_hw_counter(c: &mut Criterion) {
-    c.bench_function("Disposable Hw Cell", |b| {
-        b.iter(|| {
-            let _ = HardwareCounterCell::new();
-        });
+    c.bench_function("Hw scope", |b| {
+        let acc = AmbientContext::new();
+        b.iter(|| acc.measure(|| HwMetric::Cpu.bump(black_box(1))));
     });
 
-    c.bench_function("Disposable Hw Acc", |b| {
+    c.bench_function("AmbientContext::new", |b| {
         b.iter(|| {
-            let _ = HwMeasurementAcc::new();
+            let _ = AmbientContext::new();
         });
     });
 }

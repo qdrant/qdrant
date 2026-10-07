@@ -1,6 +1,7 @@
 use actix_web::rt::time::Instant;
 use actix_web::{Responder, delete, put, web};
 use actix_web_validator::{Json, Path, Query};
+use common::counter::hw::HwFutureExt;
 use common::validation::validate_vector_name;
 use serde::Deserialize;
 use storage::dispatcher::Dispatcher;
@@ -47,8 +48,8 @@ async fn create_vector_name(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(response, timing, None)
@@ -79,8 +80,8 @@ async fn delete_vector_name(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(response, timing, None)

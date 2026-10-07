@@ -26,7 +26,7 @@
 //! and one tag can cover only one record — untagged or tag-sharing records
 //! break WAL-delta recovery. Splitting oversized resolutions is a follow-up.
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw;
 use shard::resolve::resolve_operation;
 use tokio::sync::oneshot;
 
@@ -72,7 +72,6 @@ impl LocalShard {
         &self,
         operation: OperationWithClockTag,
         wait: WaitUntil,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<SubmitOutcome> {
         let OperationWithClockTag {
             operation,
@@ -102,10 +101,11 @@ impl LocalShard {
         // 3. Resolve the filter against segment state and rewrite the
         // operation to its id-based form.
         let segments = self.segments.clone();
-        let hw_acc = hw_measurement_acc.clone();
+        let hw_acc = hw::current();
         let resolved = tokio::task::spawn_blocking(move || {
             let segments = segments.read();
-            resolve_operation(&segments, operation, &hw_acc.get_counter_cell())
+            let _hw = hw_acc.enter_guard();
+            resolve_operation(&segments, operation)
         })
         .await??;
 
@@ -119,11 +119,7 @@ impl LocalShard {
 
         // 4. Append + dispatch, still inside the fence so no foreign
         // operation can slip into the WAL between resolution and the append.
-        self.append_and_dispatch(
-            OperationWithClockTag::new(resolved, clock_tag),
-            wait,
-            hw_measurement_acc,
-        )
-        .await
+        self.append_and_dispatch(OperationWithClockTag::new(resolved, clock_tag), wait)
+            .await
     }
 }

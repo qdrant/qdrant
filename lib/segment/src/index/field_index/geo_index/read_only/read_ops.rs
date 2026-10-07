@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
@@ -46,65 +44,41 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
         }
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => {
-                GeoIndexRead::points_of_hash(index, hash, hw_counter)
-            }
-            ReadOnlyGeoIndex::Immutable(index) => {
-                GeoIndexRead::points_of_hash(index, hash, hw_counter)
-            }
-            ReadOnlyGeoIndex::OnDisk(index) => {
-                GeoIndexRead::points_of_hash(index, hash, hw_counter)
-            }
+            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::points_of_hash(index, hash),
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::points_of_hash(index, hash),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::points_of_hash(index, hash),
         }
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => {
-                GeoIndexRead::values_of_hash(index, hash, hw_counter)
-            }
-            ReadOnlyGeoIndex::Immutable(index) => {
-                GeoIndexRead::values_of_hash(index, hash, hw_counter)
-            }
-            ReadOnlyGeoIndex::OnDisk(index) => {
-                GeoIndexRead::values_of_hash(index, hash, hw_counter)
-            }
+            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::values_of_hash(index, hash),
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::values_of_hash(index, hash),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::values_of_hash(index, hash),
         }
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+                GeoIndexRead::check_values_any(index, idx, check_fn)
             }
             ReadOnlyGeoIndex::Immutable(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
+                GeoIndexRead::check_values_any(index, idx, check_fn)
             }
-            ReadOnlyGeoIndex::OnDisk(index) => {
-                GeoIndexRead::check_values_any(index, idx, hw_counter, check_fn)
-            }
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::check_values_any(index, idx, check_fn),
         }
     }
 
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,
-        hw_counter: &HardwareCounterCell,
         check_fn: F,
         on_match: M,
     ) -> OperationResult<()>
@@ -116,13 +90,13 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
     {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
-                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+                index.for_each_matching_value(items, check_fn, on_match)
             }
             ReadOnlyGeoIndex::Immutable(index) => {
-                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+                index.for_each_matching_value(items, check_fn, on_match)
             }
             ReadOnlyGeoIndex::OnDisk(index) => {
-                index.for_each_matching_value(items, hw_counter, check_fn, on_match)
+                index.for_each_matching_value(items, check_fn, on_match)
             }
         }
     }
@@ -244,17 +218,15 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
     fn filter<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        read_ops::filter(self, condition, hw_counter)
+        read_ops::filter(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        read_ops::estimate_cardinality(self, condition, hw_counter)
+        read_ops::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(
@@ -269,7 +241,6 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
         let FieldCondition {
             key: _,
@@ -282,17 +253,16 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyGeoIndex<S> {
             is_empty: _,
             is_null: _,
         } = condition;
-        let hw_counter = hw_acc.get_counter_cell();
         if let Some(filter) = *geo_radius {
-            let checker = GeoConditionChecker::new(self, hw_counter, filter);
+            let checker = GeoConditionChecker::new(self, filter);
             return Ok(Some(S::condition_checker_geo_radius(checker)));
         }
         if let Some(filter) = *geo_bounding_box {
-            let checker = GeoConditionChecker::new(self, hw_counter, filter);
+            let checker = GeoConditionChecker::new(self, filter);
             return Ok(Some(S::condition_checker_geo_bounding_box(checker)));
         }
         if let Some(polygon) = geo_polygon.as_ref() {
-            let checker = GeoConditionChecker::new(self, hw_counter, polygon.convert());
+            let checker = GeoConditionChecker::new(self, polygon.convert());
             return Ok(Some(S::condition_checker_geo_polygon(checker)));
         }
         Ok(None)

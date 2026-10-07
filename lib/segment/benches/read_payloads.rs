@@ -1,7 +1,7 @@
 use std::hint::black_box;
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
@@ -87,13 +87,13 @@ where
 
     if !storage_exists {
         let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         for point_id in 0..POINT_COUNT as PointOffsetType {
             let payload = random_payload(&mut rng, point_id);
 
             storage
-                .overwrite(point_id, &payload, &hw_counter)
+                .overwrite(point_id, &payload)
                 .expect("payload inserted");
         }
 
@@ -125,18 +125,14 @@ where
     S: PayloadStorageRead,
 {
     let point_offsets = point_offsets.iter().map(|&point_offset| ((), point_offset));
-    let hw_counter = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
 
     let mut fields_read = 0;
     storage
-        .read_payloads::<P, _>(
-            point_offsets,
-            |_, payload| {
-                fields_read += payload.len();
-                Ok(())
-            },
-            &hw_counter,
-        )
+        .read_payloads::<P, _>(point_offsets, |_, payload| {
+            fields_read += payload.len();
+            Ok(())
+        })
         .expect("payloads read");
 
     black_box(fields_read)

@@ -1,7 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use common::uio_trace;
 use common::universal_io::UniversalRead;
@@ -54,12 +53,11 @@ where
             .deleted_points()
             .unwrap_or_else(|| self.id_tracker.deleted_point_bitslice());
 
-        let hw_counter = vector_query_context.hardware_counter();
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
 
         let first_filtered_points = filter.map(|filter| {
-            let (hw_counter, is_stopped) = (&hw_counter, &is_stopped);
-            move |n| self.first_filtered_points(filter, n, hw_counter, is_stopped)
+            let is_stopped = &is_stopped;
+            move |n| self.first_filtered_points(filter, n, is_stopped)
         });
         let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
 
@@ -84,19 +82,16 @@ where
                 self.vector_storage,
                 Some(quantized_vectors),
                 filter
-                    .map(|f| self.payload_index.filter_context(f, &hw_counter))
+                    .map(|f| self.payload_index.filter_context(f))
                     .transpose()?,
                 deleted_points,
-                vector_query_context.hardware_counter(),
             )?;
             let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
                 return Ok(None);
             };
 
             // Full vectors are "base vectors"
-            let base_scorer = self
-                .vector_storage
-                .build_raw_scorer(vector.to_owned(), vector_query_context.hardware_counter())?;
+            let base_scorer = self.vector_storage.build_raw_scorer(vector.to_owned())?;
             let Some(base_scorer_bytes) = base_scorer.scorer_bytes() else {
                 return Ok(None);
             };
@@ -121,7 +116,7 @@ where
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
             uio_trace::mark!("filter_context begin");
             let filter_context = filter
-                .map(|f| self.payload_index.filter_context(f, &hw_counter))
+                .map(|f| self.payload_index.filter_context(f))
                 .transpose()?;
             uio_trace::mark!("search_scorer begin");
             let points_scorer = construct_search_scorer(
@@ -130,7 +125,6 @@ where
                 self.quantized_vectors,
                 deleted_points,
                 params,
-                vector_query_context.hardware_counter(),
                 filter_context,
             )?;
 
@@ -154,7 +148,6 @@ where
                 vector,
                 params,
                 top,
-                vector_query_context.hardware_counter(),
             )
         };
 
@@ -216,13 +209,7 @@ where
         let batch_filtered_searcher =
             self.construct_plain_batch_searcher(query_vectors, top, params, vector_query_context)?;
         let search_results = batch_filtered_searcher.peek_top_iter(filtered_points, &is_stopped)?;
-        self.postprocess_plain_batch(
-            search_results,
-            query_vectors,
-            top,
-            params,
-            vector_query_context,
-        )
+        self.postprocess_plain_batch(search_results, query_vectors, top, params)
     }
 
     pub(super) fn search_plain_unfiltered_batched(
@@ -246,13 +233,7 @@ where
             BitSlice::empty(),
             &is_stopped,
         )?;
-        self.postprocess_plain_batch(
-            search_results,
-            query_vectors,
-            top,
-            params,
-            vector_query_context,
-        )
+        self.postprocess_plain_batch(search_results, query_vectors, top, params)
     }
 
     fn construct_plain_batch_searcher<'b>(
@@ -273,7 +254,6 @@ where
             oversampled_top,
             deleted_points,
             params,
-            vector_query_context.hardware_counter(),
             None,
         )
     }
@@ -284,7 +264,6 @@ where
         query_vectors: &[&QueryVector],
         top: usize,
         params: Option<&SearchParams>,
-        vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         for (search_result, query_vector) in search_results.iter_mut().zip(query_vectors) {
             *search_result = postprocess_search_result(
@@ -295,7 +274,6 @@ where
                 query_vector,
                 params,
                 top,
-                vector_query_context.hardware_counter(),
             )?;
         }
         Ok(search_results)
@@ -313,7 +291,6 @@ where
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let hw_counter = &vector_query_context.hardware_counter();
         let is_stopped = &vector_query_context.is_stopped();
 
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
@@ -322,7 +299,6 @@ where
             .iter_filtered_points(
                 filter,
                 query_cardinality,
-                hw_counter,
                 is_stopped,
                 // No deferred filtering here since it's HNSW index.
                 DeferredBehavior::WithDeferred,
@@ -342,16 +318,12 @@ where
         &self,
         filter: &Filter,
         n: usize,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointOffsetType>> {
-        let cardinality = self
-            .payload_index
-            .estimate_cardinality(filter, hw_counter)?;
+        let cardinality = self.payload_index.estimate_cardinality(filter)?;
         let points = self.payload_index.iter_filtered_points(
             filter,
             &cardinality,
-            hw_counter,
             is_stopped,
             // HNSW is built on non-appendable segments, which have no deferred points.
             DeferredBehavior::WithDeferred,
@@ -406,7 +378,6 @@ fn construct_search_scorer<'a, V, Q>(
     quantized_storage: Option<&'a Q>,
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
-    hardware_counter: HardwareCounterCell,
     filter_context: Option<OptimizedFilter<'a>>,
 ) -> OperationResult<FilteredScorer<'a>>
 where
@@ -420,7 +391,6 @@ where
         quantization_enabled.then_some(quantized_storage).flatten(),
         filter_context,
         deleted_points,
-        hardware_counter,
     )
 }
 
@@ -432,7 +402,6 @@ fn construct_batch_searcher<'a, V, Q>(
     top: usize,
     deleted_points: &'a BitSlice,
     params: Option<&SearchParams>,
-    hardware_counter: HardwareCounterCell,
     filter_context: Option<OptimizedFilter<'a>>,
 ) -> OperationResult<BatchFilteredSearcher<'a>>
 where
@@ -447,6 +416,5 @@ where
         filter_context,
         top,
         deleted_points,
-        hardware_counter,
     )
 }

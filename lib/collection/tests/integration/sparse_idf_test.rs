@@ -12,7 +12,8 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{SparseVectorParams, UpdateStatus};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::{CollectionUpdateOperations, point_ops};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::NamedSparseVector;
 use segment::json_path::JsonPath;
@@ -115,13 +116,8 @@ async fn sparse_idf_collection_fixture(path: &std::path::Path) -> Collection {
         PointInsertOperationsInternal::PointsList(points),
     ));
     let result = collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     assert_eq!(result.status, UpdateStatus::Completed);
@@ -155,8 +151,8 @@ async fn search(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap()
 }
@@ -301,8 +297,8 @@ async fn sparse_idf_params_require_idf_modifier() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap_err();
     assert!(

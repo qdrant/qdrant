@@ -4,7 +4,8 @@
 
 use std::num::NonZeroU64;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
@@ -24,7 +25,6 @@ impl Collection {
         &self,
         vector_name: VectorNameBuf,
         config: VectorNameConfig,
-        hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<()> {
         self.update_collection_vector_config(|params| {
             add_vector_to_config(params, &vector_name, &config)
@@ -38,7 +38,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(operation, WaitUntil::from(false), hw_acc, true)
+        self.update_all_local(operation, WaitUntil::from(false), true)
             .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
@@ -67,9 +67,9 @@ impl Collection {
         self.update_all_local(
             operation,
             WaitUntil::from(true),
-            HwMeasurementAcc::disposable(),
             true, // Delete even in dead shards
         )
+        .unmeasured(reason("Schema changes aren't measured"))
         .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the

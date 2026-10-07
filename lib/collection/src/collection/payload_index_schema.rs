@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema};
@@ -32,11 +33,10 @@ impl Collection {
         &self,
         field_name: JsonPath,
         field_schema: PayloadFieldSchema,
-        hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // This function is called from consensus, so we use `wait = false`, because we can't afford
         // to wait for the result as indexation may take a long time
-        self.create_payload_index_with_wait(field_name, field_schema, false, hw_acc)
+        self.create_payload_index_with_wait(field_name, field_schema, false)
             .await
     }
 
@@ -45,7 +45,6 @@ impl Collection {
         field_name: JsonPath,
         field_schema: PayloadFieldSchema,
         wait: bool,
-        hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         let field_schema = field_schema.normalized();
         self.payload_index_schema.write(|schema| {
@@ -65,7 +64,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(create_index_operation, WaitUntil::from(wait), hw_acc, false)
+        self.update_all_local(create_index_operation, WaitUntil::from(wait), false)
             .await
     }
 
@@ -82,12 +81,8 @@ impl Collection {
         );
 
         let result = self
-            .update_all_local(
-                delete_index_operation,
-                WaitUntil::from(false),
-                HwMeasurementAcc::disposable(), // Unmeasured API
-                false,
-            )
+            .update_all_local(delete_index_operation, WaitUntil::from(false), false)
+            .unmeasured(reason("Unmeasured API"))
             .await?;
 
         Ok(result)

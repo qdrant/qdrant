@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::Random;
 use common::storage_version::VERSION_FILE;
 use common::types::{PointOffsetType, TelemetryDetail};
@@ -93,6 +93,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
     // compares results with and without filters
     // expects the filter to have no effect on the results because the filter matches everything
     for query in query_vectors {
+        let _hw = hw::test_guard();
         let maximum_number_of_results = sparse_vector_index.max_result_count(&query).unwrap();
         // get all results minus 10 to force a bit of pruning
         let top = max(1, maximum_number_of_results.saturating_sub(10));
@@ -157,7 +158,7 @@ fn sparse_vector_index_fallback_plain_search() {
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage().borrow();
     let point_count = borrowed_vector_storage.available_vector_count();
-    let hw_counter = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
         let vector = borrowed_vector_storage.get_vector::<Random>(id);
@@ -174,7 +175,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
             .map(|(dim_id, dim_value)| (*dim_value, *dim_id));
         sparse_vector_index
             .inverted_index()
-            .get_batch(ids, &arena, &hw_counter, |dim_value, posting_list| {
+            .get_batch(ids, &arena, |dim_value, posting_list| {
                 // assert posting list sorted by record id
                 assert!(
                     posting_list
@@ -322,6 +323,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
 
     // query index
     let query_vector: QueryVector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
+    let _hw = hw::test_guard();
     let before_deletion_results: Vec<_> = sparse_vector_index
         .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
@@ -392,6 +394,7 @@ fn sparse_vector_index_ram_filtered_search() {
 
     // query all sparse dimension to get all points
     let query_vector: QueryVector = random_full_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
+    let _hw = hw::test_guard();
     let before_result = sparse_vector_index
         .search(
             &[&query_vector],
@@ -404,12 +407,10 @@ fn sparse_vector_index_ram_filtered_search() {
     assert_eq!(before_result.len(), 1);
     assert_eq!(before_result[0].len(), 0);
 
-    let hw_counter = HardwareCounterCell::new();
-
     // create payload field index
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     payload_index
-        .set_indexed(&JsonPath::new(field_name), Keyword, &hw_counter)
+        .set_indexed(&JsonPath::new(field_name), Keyword)
         .unwrap();
     drop(payload_index);
 
@@ -429,11 +430,10 @@ fn sparse_vector_index_ram_filtered_search() {
     // add payload on the first half of the points
     let half_indexed_count = sparse_vector_index.indexed_vector_count() / 2;
     let payload = payload_json! {field_name: field_value};
-    let hw_counter = HardwareCounterCell::new();
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..half_indexed_count {
         payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
+            .set_payload(idx as PointOffsetType, &payload, &None)
             .unwrap();
     }
     drop(payload_index);
@@ -488,6 +488,7 @@ fn sparse_vector_index_plain_search() {
     let query_vector: QueryVector = random_full_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
 
     // empty when searching payload index directly
+    let _hw = hw::test_guard();
     let before_plain_results = sparse_vector_index
         .search(
             &[&query_vector],
@@ -503,13 +504,11 @@ fn sparse_vector_index_plain_search() {
 
     let payload = payload_json! {field_name: field_value};
 
-    let hw_counter = HardwareCounterCell::new();
-
     // add payload to all points
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
+            .set_payload(idx as PointOffsetType, &payload, &None)
             .unwrap();
     }
     drop(payload_index);
@@ -553,12 +552,12 @@ fn handling_empty_sparse_vectors() {
         .unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage().borrow_mut();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     // add empty points to storage
     for idx in 0..NUM_VECTORS {
         let vec = &SparseVector::new(vec![], vec![]).unwrap();
         borrowed_storage
-            .insert_vector(idx as PointOffsetType, vec.into(), &hw_counter)
+            .insert_vector(idx as PointOffsetType, vec.into())
             .unwrap();
     }
     drop(borrowed_storage);
@@ -616,7 +615,7 @@ fn sparse_vector_index_persistence_test() {
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     for n in 0..num_vectors {
         let vector: VectorInternal = random_sparse_vector(&mut rnd, dim).into();
@@ -624,7 +623,7 @@ fn sparse_vector_index_persistence_test() {
         named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
         let idx = n.into();
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vector, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, named_vector)
             .unwrap();
     }
     segment.flush(false).unwrap();
@@ -795,7 +794,7 @@ fn sparse_vector_test_large_index() {
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let vector: VectorInternal = SparseVector {
         indices: vec![DimId::MAX],
@@ -806,7 +805,7 @@ fn sparse_vector_test_large_index() {
     named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
     let idx = 0.into();
     segment
-        .upsert_point(0 as SeqNumberType, idx, named_vector, &hw_counter)
+        .upsert_point(0 as SeqNumberType, idx, named_vector)
         .unwrap();
 
     let borrowed_vector_index = segment.vector_data[SPARSE_VECTOR_NAME]

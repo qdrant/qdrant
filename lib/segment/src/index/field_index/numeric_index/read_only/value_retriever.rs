@@ -8,7 +8,6 @@
 //! `numeric_index/value_indexer.rs`.
 
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use serde_json::{Number, Value};
@@ -79,10 +78,7 @@ where
     ///
     /// Used by rescore-formula value lookup; mirrors
     /// `NumericIndex::value_retriever` on the writable side.
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
             self.get_values(point_id)
                 .into_iter()

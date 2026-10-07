@@ -8,7 +8,8 @@ use collection::operations::point_ops::{
     WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::index::{TextIndexParams, TextScoringParams};
@@ -56,8 +57,8 @@ async fn text_collection_with(
             JsonPath::new(FIELD),
             PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
             true,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -87,8 +88,8 @@ async fn text_collection_with(
             true,
             None,
             WriteOrdering::default(),
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     collection
@@ -122,7 +123,8 @@ async fn query(
     shards: ShardSelectorInternal,
 ) -> Vec<ScoredPoint> {
     collection
-        .query(request, None, None, shards, None, HwMeasurementAcc::new())
+        .query(request, None, None, shards, None)
+        .measured(AmbientContext::new())
         .await
         .unwrap()
 }

@@ -2,8 +2,8 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::AmbientContext;
+use common::counter::hw::{self, HwMetric};
 use common::types::{PointOffsetType, ScoredPointOffset};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
@@ -90,7 +90,7 @@ mod test_mod {
     fn test_empty_query() {
         let index = TestIndex::from_ram(InvertedIndexRam::empty());
 
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let is_stopped = AtomicBool::new(false);
         let mut scratch = SearchScratch::new_for_test();
@@ -100,7 +100,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hw_counter,
+            1,
         )
         .unwrap();
         assert_eq!(search_context.search(&match_all), Vec::new());
@@ -117,8 +117,8 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let accumulator = AmbientContext::new();
+        let hw_scope = accumulator.measure_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -129,7 +129,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -152,12 +152,12 @@ mod test_mod {
         );
 
         drop(search_context);
-        drop(hardware_counter);
 
         // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
-        assert!(accumulator.get_cpu() > 0);
+        drop(hw_scope);
+        assert!(accumulator.hw_data()[HwMetric::Cpu] > 0);
         if index.index.is_on_disk() {
-            assert!(accumulator.get_vector_io_read() > 0);
+            assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
     }
 
@@ -177,8 +177,8 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let accumulator = AmbientContext::new();
+        let _hw = accumulator.measure_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -189,7 +189,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -211,7 +211,6 @@ mod test_mod {
             ]
         );
         drop(search_context);
-        drop(hardware_counter);
 
         // update index with new point
         index.index.upsert(
@@ -222,7 +221,7 @@ mod test_mod {
             },
             None,
         );
-        let hardware_counter = accumulator.get_counter_cell();
+        let _hw = accumulator.measure_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -233,7 +232,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -277,8 +276,8 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let accumulator = AmbientContext::new();
+        let hw_scope = accumulator.measure_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -289,7 +288,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -312,16 +311,16 @@ mod test_mod {
         );
 
         drop(search_context);
-        drop(hardware_counter);
 
-        let cpu_cost = accumulator.get_cpu();
+        drop(hw_scope);
+        let cpu_cost = accumulator.hw_data()[HwMetric::Cpu];
         assert!(cpu_cost > 0);
         if index.index.is_on_disk() {
-            assert!(accumulator.get_vector_io_read() > 0);
+            assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
 
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let accumulator = AmbientContext::new();
+        let hw_scope = accumulator.measure_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -332,7 +331,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -356,11 +355,11 @@ mod test_mod {
         );
 
         drop(search_context);
-        drop(hardware_counter);
 
         // No difference to previous calculation because it's the same amount of score
         // calculations when increasing the "top" parameter.
-        assert_eq!(accumulator.get_cpu(), cpu_cost);
+        drop(hw_scope);
+        assert_eq!(accumulator.hw_data()[HwMetric::Cpu], cpu_cost);
     }
 
     #[test]
@@ -374,8 +373,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let _hw = AmbientContext::new().measure_guard_owned();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -386,7 +384,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -410,8 +408,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let _hw = AmbientContext::new().measure_guard_owned();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -422,7 +419,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -451,8 +448,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let _hw = AmbientContext::new().measure_guard_owned();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -463,7 +459,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -490,8 +486,7 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let _hw = AmbientContext::new().measure_guard_owned();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -502,7 +497,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -524,8 +519,8 @@ mod test_mod {
         });
 
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let accumulator = AmbientContext::new();
+        let hw_scope = accumulator.measure_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -536,7 +531,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -560,11 +555,11 @@ mod test_mod {
         );
 
         drop(search_context);
-        drop(hardware_counter);
 
-        assert!(accumulator.get_cpu() > 0);
+        drop(hw_scope);
+        assert!(accumulator.hw_data()[HwMetric::Cpu] > 0);
         if index.index.is_on_disk() {
-            assert!(accumulator.get_vector_io_read() > 0);
+            assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
     }
 
@@ -580,8 +575,8 @@ mod test_mod {
 
         // query vector has a gap for dimension 2
         let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
+        let accumulator = AmbientContext::new();
+        let hw_scope = accumulator.measure_guard();
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
@@ -592,7 +587,7 @@ mod test_mod {
             &index.index,
             &mut scratch,
             &is_stopped,
-            &hardware_counter,
+            1,
         )
         .unwrap();
 
@@ -616,11 +611,11 @@ mod test_mod {
         );
 
         drop(search_context);
-        drop(hardware_counter);
 
-        assert!(accumulator.get_cpu() > 0);
+        drop(hw_scope);
+        assert!(accumulator.hw_data()[HwMetric::Cpu] > 0);
         if index.index.is_on_disk() {
-            assert!(accumulator.get_vector_io_read() > 0);
+            assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
     }
 }

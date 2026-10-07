@@ -16,7 +16,8 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
@@ -111,15 +112,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = HwMeasurementAcc::new();
+    let hw_counter = AmbientContext::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(hw_counter)
         .await
         .unwrap();
 
@@ -167,7 +163,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let reference_result = collection
         .search(
             full_search_request.clone().into(),
@@ -175,12 +171,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await
         .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let recovered_result = recovered_collection
         .search(
             full_search_request.into(),
@@ -188,8 +184,8 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await
         .unwrap();
 

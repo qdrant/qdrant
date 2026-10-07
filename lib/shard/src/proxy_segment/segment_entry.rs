@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::feature_flags;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use segment::common::Flusher;
@@ -324,14 +323,13 @@ impl ReadSegmentEntry for ProxySegment {
     fn rescore_with_formula(
         &self,
         formula_ctx: Arc<FormulaContext>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
         // Run rescore in wrapped segment
         let wrapped_results = self
             .wrapped_segment
             .get()
             .read()
-            .rescore_with_formula(formula_ctx, hw_counter)?;
+            .rescore_with_formula(formula_ctx)?;
 
         let result = {
             if self.pending_changes.deleted_points().is_empty() {
@@ -356,14 +354,8 @@ impl ReadSegmentEntry for ProxySegment {
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        self.vector_with_behavior(
-            vector_name,
-            point_id,
-            DeferredBehavior::VisibleOnly,
-            hw_counter,
-        )
+        self.vector_with_behavior(vector_name, point_id, DeferredBehavior::VisibleOnly)
     }
 
     fn vector_with_behavior(
@@ -371,7 +363,6 @@ impl ReadSegmentEntry for ProxySegment {
         vector_name: &VectorName,
         point_id: PointIdType,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         // The proxy queues a delete or schema-superseding create for this
         // vector — the wrapped's stored data is no longer authoritative.
@@ -397,16 +388,11 @@ impl ReadSegmentEntry for ProxySegment {
                 vector_name,
                 point_id,
                 deferred_behavior,
-                hw_counter,
             )
         }
     }
 
-    fn all_vectors(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors<'_>> {
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors<'_>> {
         let mut result = NamedVectors::default();
         let wrapped = self.wrapped_segment.get();
         let wrapped_guard = wrapped.read();
@@ -424,23 +410,16 @@ impl ReadSegmentEntry for ProxySegment {
         drop(wrapped_guard);
 
         for vector_name in vector_names {
-            if let Some(vector) = self.vector_with_behavior(
-                &vector_name,
-                point_id,
-                DeferredBehavior::VisibleOnly,
-                hw_counter,
-            )? {
+            if let Some(vector) =
+                self.vector_with_behavior(&vector_name, point_id, DeferredBehavior::VisibleOnly)?
+            {
                 result.insert(vector_name, vector);
             }
         }
         Ok(result)
     }
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         if self
             .pending_changes
             .deleted_points()
@@ -448,10 +427,7 @@ impl ReadSegmentEntry for ProxySegment {
         {
             Ok(Payload::default())
         } else {
-            self.wrapped_segment
-                .get()
-                .read()
-                .payload(point_id, hw_counter)
+            self.wrapped_segment.get().read().payload(point_id)
         }
     }
 
@@ -460,7 +436,6 @@ impl ReadSegmentEntry for ProxySegment {
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
@@ -470,7 +445,6 @@ impl ReadSegmentEntry for ProxySegment {
             &filtered_point_ids,
             with_payload,
             with_vector.as_ref(),
-            hw_counter,
             is_stopped,
             deferred_behavior,
         )
@@ -480,7 +454,6 @@ impl ReadSegmentEntry for ProxySegment {
         &self,
         point_ids: &[PointIdType],
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
@@ -489,7 +462,6 @@ impl ReadSegmentEntry for ProxySegment {
         self.wrapped_segment.get().read().retrieve_raw(
             &filtered_point_ids,
             with_vector.as_ref(),
-            hw_counter,
             is_stopped,
             deferred_behavior,
         )
@@ -501,7 +473,6 @@ impl ReadSegmentEntry for ProxySegment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         let filter = filter.map(|f| self.pending_changes.vector_name_changes().redact_filter(f));
@@ -512,7 +483,6 @@ impl ReadSegmentEntry for ProxySegment {
                 limit,
                 filter.as_deref(),
                 is_stopped,
-                hw_counter,
                 deferred_behavior,
             )
         } else {
@@ -525,7 +495,6 @@ impl ReadSegmentEntry for ProxySegment {
                 limit,
                 Some(&wrapped_filter),
                 is_stopped,
-                hw_counter,
                 deferred_behavior,
             )
         }
@@ -537,7 +506,6 @@ impl ReadSegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         order_by: &'a segment::data_types::order_by::OrderBy,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let filter = filter.map(|f| self.pending_changes.vector_name_changes().redact_filter(f));
@@ -548,7 +516,6 @@ impl ReadSegmentEntry for ProxySegment {
                 filter.as_deref(),
                 order_by,
                 is_stopped,
-                hw_counter,
                 deferred_behavior,
             )?
         } else {
@@ -561,7 +528,6 @@ impl ReadSegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 order_by,
                 is_stopped,
-                hw_counter,
                 deferred_behavior,
             )?
         };
@@ -573,7 +539,6 @@ impl ReadSegmentEntry for ProxySegment {
         limit: usize,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
         let filter = filter.map(|f| self.pending_changes.vector_name_changes().redact_filter(f));
 
@@ -582,7 +547,6 @@ impl ReadSegmentEntry for ProxySegment {
                 limit,
                 filter.as_deref(),
                 is_stopped,
-                hw_counter,
             )
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
@@ -593,7 +557,6 @@ impl ReadSegmentEntry for ProxySegment {
                 limit,
                 Some(&wrapped_filter),
                 is_stopped,
-                hw_counter,
             )
         }
     }
@@ -616,15 +579,13 @@ impl ReadSegmentEntry for ProxySegment {
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
         let filter = filter.map(|f| self.pending_changes.vector_name_changes().redact_filter(f));
-        let values = self.wrapped_segment.get().read().unique_values(
-            key,
-            filter.as_deref(),
-            is_stopped,
-            hw_counter,
-        )?;
+        let values =
+            self.wrapped_segment
+                .get()
+                .read()
+                .unique_values(key, filter.as_deref(), is_stopped)?;
         Ok(values)
     }
 
@@ -632,7 +593,6 @@ impl ReadSegmentEntry for ProxySegment {
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let filter = request
             .filter
@@ -646,7 +606,7 @@ impl ReadSegmentEntry for ProxySegment {
                     .wrapped_segment
                     .get()
                     .read()
-                    .facet(request, is_stopped, hw_counter)?,
+                    .facet(request, is_stopped)?,
                 // Filter was redacted — build a new request with the owned filter.
                 Some(std::borrow::Cow::Owned(f)) => {
                     let new_request = FacetParams {
@@ -656,7 +616,7 @@ impl ReadSegmentEntry for ProxySegment {
                     self.wrapped_segment
                         .get()
                         .read()
-                        .facet(&new_request, is_stopped, hw_counter)?
+                        .facet(&new_request, is_stopped)?
                 }
             }
         } else {
@@ -671,7 +631,7 @@ impl ReadSegmentEntry for ProxySegment {
             self.wrapped_segment
                 .get()
                 .read()
-                .facet(&new_request, is_stopped, hw_counter)?
+                .facet(&new_request, is_stopped)?
         };
 
         Ok(hits)
@@ -758,7 +718,6 @@ impl ReadSegmentEntry for ProxySegment {
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         let filter = filter.map(|f| self.pending_changes.vector_name_changes().redact_filter(f));
 
@@ -772,7 +731,7 @@ impl ReadSegmentEntry for ProxySegment {
             let wrapped_segment = self.wrapped_segment.get();
             let wrapped_segment_guard = wrapped_segment.read();
             (
-                wrapped_segment_guard.estimate_point_count(filter.as_deref(), hw_counter)?,
+                wrapped_segment_guard.estimate_point_count(filter.as_deref())?,
                 wrapped_segment_guard.available_point_count_without_deferred(),
             )
         };
@@ -985,7 +944,6 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         _vectors: NamedVectors,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -997,7 +955,6 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         _vectors: &[(VectorNameBuf, Vec<u8>)],
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -1011,7 +968,6 @@ impl SegmentEntry for ProxySegment {
         _raw_vectors: &[(VectorNameBuf, Vec<u8>)],
         _updated_vectors: NamedVectors,
         _payload: &Payload,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Upsert is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -1023,7 +979,6 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         _vectors: NamedVectors,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Update vectors is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -1047,7 +1002,6 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         _full_payload: &Payload,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Set full payload is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -1060,7 +1014,6 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
         _payload: &Payload,
         _key: &Option<JsonPath>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Set payload is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -1072,7 +1025,6 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         _key: PayloadKeyTypeRef,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Delete payload is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -1083,7 +1035,6 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Err(OperationError::service_error(format!(
             "Clear payload is disabled for proxy segments: operation {op_num} on point {point_id}",
@@ -1096,7 +1047,6 @@ impl NonAppendableSegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
         let was_deferred_point;
@@ -1211,7 +1161,6 @@ impl NonAppendableSegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         _key: PayloadKeyTypeRef,
         field_type: &PayloadFieldSchema,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildFieldIndexResult> {
         if self.version() > op_num {
             return Ok(BuildFieldIndexResult::SkippedByVersion);

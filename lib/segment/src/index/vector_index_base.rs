@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use common::universal_io::MmapFile;
 use half::f16;
@@ -59,7 +58,6 @@ pub trait VectorIndexRead {
         idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize>;
 
     /// Whether this is a "real" index rather than a plain (full-scan) one.
@@ -89,7 +87,6 @@ pub trait VectorIndex: VectorIndexRead {
         &mut self,
         id: PointOffsetType,
         vector: Option<VectorRef>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Byte-blob analogue of [`VectorIndex::update_vector`]: `vector` is the
@@ -103,7 +100,6 @@ pub trait VectorIndex: VectorIndexRead {
         &mut self,
         id: PointOffsetType,
         vector: Option<&[u8]>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 }
 
@@ -297,7 +293,6 @@ impl VectorIndexRead for VectorIndexEnum {
         idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         match self {
             // Dense indexes contribute no df counts; document count matches
@@ -310,26 +305,24 @@ impl VectorIndexRead for VectorIndexEnum {
                 None => index.indexed_vector_count(),
                 Some(_) => 0,
             }),
-            Self::SparseRam(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
-            }
+            Self::SparseRam(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
             Self::SparseCompressedImmutableRamF32(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedImmutableRamF16(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedImmutableRamU8(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedMmapF32(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedMmapF16(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedMmapU8(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
         }
     }
@@ -368,24 +361,17 @@ impl VectorIndex for VectorIndexEnum {
         &mut self,
         id: PointOffsetType,
         vector: Option<VectorRef>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::Plain(index) => index.update_vector(id, vector, hw_counter),
-            Self::Hnsw(index) => index.update_vector(id, vector, hw_counter),
-            Self::SparseRam(index) => index.update_vector(id, vector, hw_counter),
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.update_vector(id, vector, hw_counter)
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.update_vector(id, vector, hw_counter)
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.update_vector(id, vector, hw_counter)
-            }
-            Self::SparseCompressedMmapF32(index) => index.update_vector(id, vector, hw_counter),
-            Self::SparseCompressedMmapF16(index) => index.update_vector(id, vector, hw_counter),
-            Self::SparseCompressedMmapU8(index) => index.update_vector(id, vector, hw_counter),
+            Self::Plain(index) => index.update_vector(id, vector),
+            Self::Hnsw(index) => index.update_vector(id, vector),
+            Self::SparseRam(index) => index.update_vector(id, vector),
+            Self::SparseCompressedImmutableRamF32(index) => index.update_vector(id, vector),
+            Self::SparseCompressedImmutableRamF16(index) => index.update_vector(id, vector),
+            Self::SparseCompressedImmutableRamU8(index) => index.update_vector(id, vector),
+            Self::SparseCompressedMmapF32(index) => index.update_vector(id, vector),
+            Self::SparseCompressedMmapF16(index) => index.update_vector(id, vector),
+            Self::SparseCompressedMmapU8(index) => index.update_vector(id, vector),
         }
     }
 
@@ -393,24 +379,17 @@ impl VectorIndex for VectorIndexEnum {
         &mut self,
         id: PointOffsetType,
         vector: Option<&[u8]>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            Self::Plain(index) => index.update_vector_raw(id, vector, hw_counter),
-            Self::Hnsw(index) => index.update_vector_raw(id, vector, hw_counter),
-            Self::SparseRam(index) => index.update_vector_raw(id, vector, hw_counter),
-            Self::SparseCompressedImmutableRamF32(index) => {
-                index.update_vector_raw(id, vector, hw_counter)
-            }
-            Self::SparseCompressedImmutableRamF16(index) => {
-                index.update_vector_raw(id, vector, hw_counter)
-            }
-            Self::SparseCompressedImmutableRamU8(index) => {
-                index.update_vector_raw(id, vector, hw_counter)
-            }
-            Self::SparseCompressedMmapF32(index) => index.update_vector_raw(id, vector, hw_counter),
-            Self::SparseCompressedMmapF16(index) => index.update_vector_raw(id, vector, hw_counter),
-            Self::SparseCompressedMmapU8(index) => index.update_vector_raw(id, vector, hw_counter),
+            Self::Plain(index) => index.update_vector_raw(id, vector),
+            Self::Hnsw(index) => index.update_vector_raw(id, vector),
+            Self::SparseRam(index) => index.update_vector_raw(id, vector),
+            Self::SparseCompressedImmutableRamF32(index) => index.update_vector_raw(id, vector),
+            Self::SparseCompressedImmutableRamF16(index) => index.update_vector_raw(id, vector),
+            Self::SparseCompressedImmutableRamU8(index) => index.update_vector_raw(id, vector),
+            Self::SparseCompressedMmapF32(index) => index.update_vector_raw(id, vector),
+            Self::SparseCompressedMmapF16(index) => index.update_vector_raw(id, vector),
+            Self::SparseCompressedMmapU8(index) => index.update_vector_raw(id, vector),
         }
     }
 }

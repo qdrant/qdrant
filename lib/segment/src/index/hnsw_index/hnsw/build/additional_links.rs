@@ -1,8 +1,9 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use common::bitvec::{BitSliceExt as _, BitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::progress_tracker::ProgressTracker;
+use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
 use log::{debug, trace};
 use rand::Rng;
@@ -254,16 +255,15 @@ fn condition_points(
 ) -> OperationResult<Vec<PointOffsetType>> {
     let filter = Filter::new_must(Field(condition));
 
-    let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation. No measurements needed
+    let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
     payload_index.with_view(|v| {
-        let cardinality_estimation = v.estimate_cardinality(&filter, &disposed_hw_counter)?;
+        let cardinality_estimation = v.estimate_cardinality(&filter)?;
         Ok(v.iter_filtered_points(
             &filter,
             &cardinality_estimation,
-            &disposed_hw_counter,
             stopped,
             DeferredBehavior::WithDeferred,
         )?
@@ -321,8 +321,9 @@ fn build_filtered_graph(
     let insert_points = |block_point_id| {
         check_process_stopped(stopped)?;
 
-        // This hardware counter can be discarded, since it is only used for internal operations
-        let internal_hardware_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason(
+            "This hardware counter can be discarded, since it is only used for internal operations",
+        ));
 
         let block_condition_checker =
             OptimizedFilter::from_checker(ConditionCheckerEnum::Build(BuildConditionChecker {
@@ -335,7 +336,6 @@ fn build_filtered_graph(
             quantized_vectors.as_ref(),
             Some(block_condition_checker),
             id_tracker.deleted_point_bitslice(),
-            internal_hardware_counter,
         )?;
 
         graph_layers_builder.link_new_point(block_point_id, points_scorer);

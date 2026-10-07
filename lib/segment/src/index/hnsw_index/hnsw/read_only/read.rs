@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
@@ -63,7 +62,6 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for ReadOnlyHNSWIndex<S> {
         _idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         _is_stopped: &std::sync::atomic::AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         // HNSW (dense) index doesn't track IDF and contributes no df counts.
         Ok(match corpus {

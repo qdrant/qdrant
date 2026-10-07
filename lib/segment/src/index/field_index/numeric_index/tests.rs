@@ -2,8 +2,7 @@ use std::path::Path;
 
 use blobstore::Blob;
 use common::bitvec::{BitSlice, BitVec};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::{AmbientContext, hw};
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -63,15 +62,10 @@ impl IndexBuilder {
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         match self {
-            IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload, hw_counter),
-            IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
+            IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload),
+            IndexBuilder::Mmap(builder) => builder.add_point(id, payload),
         }
     }
 }
@@ -130,7 +124,7 @@ fn random_index(
     let mut rng = StdRng::seed_from_u64(42);
     let (temp_dir, mut index_builder) = get_index_builder(index_type);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     for i in 0..num_points {
         let values = (0..values_per_point)
@@ -138,7 +132,7 @@ fn random_index(
             .collect_vec();
         let values = values.iter().collect_vec();
         index_builder
-            .add_point(i as PointOffsetType, &values, &hw_counter)
+            .add_point(i as PointOffsetType, &values)
             .unwrap();
     }
     let index = index_builder.finalize().unwrap();
@@ -149,10 +143,7 @@ fn random_index(
 fn cardinality_request(
     index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
     query: Range<FloatPayloadType>,
-    hw_acc: HwMeasurementAcc,
 ) -> CardinalityEstimation {
-    let hw_counter = hw_acc.get_counter_cell();
-
     let ordered_range = Range {
         lt: query.lt.map(OrderedFloat::from),
         gt: query.gt.map(OrderedFloat::from),
@@ -165,10 +156,10 @@ fn cardinality_request(
 
     let result = index
         .inner()
-        .filter(
-            &FieldCondition::new_range(JsonPath::new("unused"), ordered_range),
-            &hw_counter,
-        )
+        .filter(&FieldCondition::new_range(
+            JsonPath::new("unused"),
+            ordered_range,
+        ))
         .unwrap()
         .unwrap()
         .unique()
@@ -195,10 +186,8 @@ fn test_set_empty_payload() {
 
     assert_ne!(values_count, 0);
 
-    let hw_counter = HardwareCounterCell::new();
-
     let payload = serde_json::json!(null);
-    index.add_point(point_id, &[&payload], &hw_counter).unwrap();
+    index.add_point(point_id, &[&payload]).unwrap();
 
     let values_count = index.inner().get_values(point_id).unwrap().count();
 
@@ -220,7 +209,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
     cardinality_request(
         &index,
@@ -230,7 +218,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     let (_temp_dir, index) = random_index(1000, 2, index_type);
@@ -242,7 +229,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
     cardinality_request(
         &index,
@@ -252,7 +238,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     cardinality_request(
@@ -263,7 +248,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     cardinality_request(
@@ -274,7 +258,6 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(110.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 }
 
@@ -335,15 +318,13 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
         vec![2.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_id = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_id, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_id, &values).unwrap();
     });
     let index = index_builder.finalize().unwrap();
 
@@ -377,15 +358,13 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let index = index_builder.finalize().unwrap();
 
@@ -444,15 +423,13 @@ fn test_numeric_index(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let mut index = index_builder.finalize().unwrap();
 
@@ -591,15 +568,13 @@ fn test_numeric_index_reload(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let mut index = index_builder.finalize().unwrap();
 
@@ -756,14 +731,12 @@ fn test_numeric_index_reload_short_deleted_bitslice(#[case] index_type: IndexTyp
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let index = index_builder.finalize().unwrap();
     drop(index);
@@ -822,14 +795,12 @@ fn test_numeric_index_open_compact_deleted_mask(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         let new_idx = idx as PointOffsetType + 1;
-        index_builder
-            .add_point(new_idx, &values, &hw_counter)
-            .unwrap();
+        index_builder.add_point(new_idx, &values).unwrap();
     });
     let index = index_builder.finalize().unwrap();
     drop(index);
@@ -881,13 +852,8 @@ fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
     };
 
     let condition = FieldCondition::new_range(JsonPath::new("unused"), ordered_range);
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
-    let offsets = index
-        .filter(&condition, &hw_counter)
-        .unwrap()
-        .unwrap()
-        .collect_vec();
+    let _hw = AmbientContext::new().measure_guard_owned();
+    let offsets = index.filter(&condition).unwrap().unwrap().collect_vec();
     assert_eq!(offsets, result);
 }
 
@@ -906,7 +872,6 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 
     let (_temp_dir, index) = random_index(0, 0, index_type);
@@ -918,7 +883,6 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
-        HwMeasurementAcc::new(),
     );
 }
 
@@ -931,13 +895,12 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
 fn test_remove_reopen() {
     use crate::index::field_index::PayloadFieldIndexRead;
 
-    let hw_acc = HwMeasurementAcc::new();
-    let hw_counter = hw_acc.get_counter_cell();
+    let _hw = AmbientContext::new().measure_guard_owned();
     let (temp_dir, mut builder) = get_index_builder(IndexType::Mmap);
     let values = [10.0_f64, 20.0, 30.0, 40.0];
     for (idx, val) in values.iter().enumerate() {
         builder
-            .add_point(idx as PointOffsetType, &[&Value::from(*val)], &hw_counter)
+            .add_point(idx as PointOffsetType, &[&Value::from(*val)])
             .unwrap();
     }
     // Persist on-disk state, then drop so the upcoming reopen sees only the
@@ -964,10 +927,7 @@ fn test_remove_reopen() {
     };
     let mut hits: Vec<_> = index
         .inner()
-        .filter(
-            &FieldCondition::new_range(JsonPath::new("unused"), range),
-            &hw_counter,
-        )
+        .filter(&FieldCondition::new_range(JsonPath::new("unused"), range))
         .unwrap()
         .unwrap()
         .collect();
@@ -1001,17 +961,16 @@ fn test_integer_index_fractional_range_bounds() {
     );
     builder.init().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let v1 = Value::from(1_i64);
     let v2 = Value::from(2_i64);
-    builder.add_point(0, &[&v1], &hw_counter).unwrap();
-    builder.add_point(1, &[&v2], &hw_counter).unwrap();
+    builder.add_point(0, &[&v1]).unwrap();
+    builder.add_point(1, &[&v2]).unwrap();
     let index = builder.finalize().unwrap();
 
     let run = |range: Range<FloatPayloadType>| -> Vec<PointOffsetType> {
         let cond = FieldCondition::new_range(JsonPath::new("price"), range.map(OrderedFloat::from));
-        let hw = HardwareCounterCell::new();
-        let mut ids: Vec<_> = index.inner().filter(&cond, &hw).unwrap().unwrap().collect();
+        let mut ids: Vec<_> = index.inner().filter(&cond).unwrap().unwrap().collect();
         ids.sort();
         ids
     };
@@ -1067,7 +1026,7 @@ fn test_block_index_fallback_equivalence() {
         index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
         queries: &[Range<OrderedFloat<FloatPayloadType>>],
     ) -> Vec<(usize, usize, usize, Vec<PointOffsetType>)> {
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         queries
             .iter()
             .map(|query| {
@@ -1076,10 +1035,7 @@ fn test_block_index_fallback_equivalence() {
                         .unwrap();
                 let points = index
                     .inner()
-                    .filter(
-                        &FieldCondition::new_range(JsonPath::new("unused"), *query),
-                        &hw_counter,
-                    )
+                    .filter(&FieldCondition::new_range(JsonPath::new("unused"), *query))
                     .unwrap()
                     .unwrap()
                     .collect_vec();

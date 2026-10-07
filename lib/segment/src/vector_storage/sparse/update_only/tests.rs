@@ -1,7 +1,7 @@
 //! Writes through the update-only storage, then reads back through the
 //! ordinary mmap sparse storage opened on the same directory.
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::Random;
 use common::universal_io::{MmapFile, MmapFs};
 use sparse::common::sparse_vector::SparseVector;
@@ -24,7 +24,7 @@ fn sparse(indices: &[u32], values: &[f32]) -> SparseVector {
 #[test]
 fn sparse_vectors_round_trip() {
     let dir = TempDir::with_prefix("update_only_sparse").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let first = sparse(&[1, 5], &[1.0, 2.0]);
     let second = sparse(&[3], &[3.0]);
@@ -39,7 +39,6 @@ fn sparse_vectors_round_trip() {
                 VectorToStore::Missing,
                 VectorToStore::Decoded(VectorRef::from(&second)),
             ],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
@@ -56,7 +55,7 @@ fn sparse_vectors_round_trip() {
 #[test]
 fn batches_resume() {
     let dir = TempDir::with_prefix("update_only_sparse").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let first = sparse(&[1], &[1.0]);
     let second = sparse(&[2], &[2.0]);
@@ -67,7 +66,6 @@ fn batches_resume() {
             &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(&first))],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
@@ -78,7 +76,6 @@ fn batches_resume() {
             &MmapFs,
             1,
             [VectorToStore::Decoded(VectorRef::from(&second))],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);

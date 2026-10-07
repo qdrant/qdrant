@@ -16,7 +16,6 @@ mod tests;
 use std::borrow::Cow;
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, read_json_via};
 use quantization::encoded_vectors_binary::EncoderBin;
@@ -138,7 +137,6 @@ impl UpdateOnlyQuantizedVectors {
         fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Decoded whole rather than streamed: an owned row must outlive the storage call.
         let placeholder = vec![0.0 as VectorElementType; self.dim()];
@@ -159,7 +157,6 @@ impl UpdateOnlyQuantizedVectors {
             fs,
             start_slot as VectorOffsetType,
             rows.iter().map(Vec::as_slice),
-            hw_counter,
         )
     }
 

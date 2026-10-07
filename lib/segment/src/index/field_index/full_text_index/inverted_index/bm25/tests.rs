@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use rand::rngs::StdRng;
@@ -27,14 +27,12 @@ fn word(rng: &mut StdRng) -> String {
 
 fn fixture(seed: u64, documents: u32, deleted: &[PointOffsetType]) -> MutableInvertedIndex {
     let mut rng = StdRng::seed_from_u64(seed);
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut index = MutableInvertedIndex::new(true, true);
     for idx in 0..documents {
         let len = rng.random_range(3..=60);
         let tokens: Vec<String> = (0..len).map(|_| word(&mut rng)).collect();
-        index
-            .index_str_tokens(idx, &tokens, Some(len), &hw_counter)
-            .unwrap();
+        index.index_str_tokens(idx, &tokens, Some(len)).unwrap();
     }
     for &idx in deleted {
         index.remove(idx);
@@ -145,15 +143,7 @@ fn run<I: InvertedIndex>(
     accept: impl Fn(PointOffsetType) -> bool,
     limit: usize,
 ) -> Vec<ScoredPointOffset> {
-    index
-        .score_bm25(
-            query,
-            &accept,
-            limit,
-            &AtomicBool::new(false),
-            &HardwareCounterCell::new(),
-        )
-        .unwrap()
+    hw::test(|| index.score_bm25(query, &accept, limit, &AtomicBool::new(false))).unwrap()
 }
 
 fn queries() -> Vec<Vec<&'static str>> {
@@ -286,7 +276,7 @@ fn accept_restricts_the_ranking() {
 /// `b = 0` with one, which is what the sparse route produces.
 #[test]
 fn missing_average_length_degrades_to_b_zero() {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mutable = fixture(9, 200, &[]);
 
@@ -304,7 +294,7 @@ fn missing_average_length_degrades_to_b_zero() {
     )
     .unwrap();
     let actual = mutable
-        .score_bm25(&without_average, &|_| true, 20, &is_stopped, &hw_counter)
+        .score_bm25(&without_average, &|_| true, 20, &is_stopped)
         .unwrap();
     assert_top_k(&actual, &expected, 20);
 
@@ -316,7 +306,6 @@ fn missing_average_length_degrades_to_b_zero() {
             &|_| true,
             20,
             &is_stopped,
-            &hw_counter,
         )
         .unwrap();
     assert_ne!(
@@ -327,11 +316,11 @@ fn missing_average_length_degrades_to_b_zero() {
 
 #[test]
 fn positions_are_required() {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_positions = MutableInvertedIndex::new(false, true);
     without_positions
-        .index_str_tokens(0, ["alpha", "beta"], Some(2), &hw_counter)
+        .index_str_tokens(0, ["alpha", "beta"], Some(2))
         .unwrap();
     let query = Bm25Query::new(
         [Bm25Term {
@@ -344,13 +333,13 @@ fn positions_are_required() {
     .unwrap();
     assert!(
         without_positions
-            .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
+            .score_bm25(&query, &|_| true, 10, &is_stopped)
             .is_err()
     );
     let immutable = ImmutableInvertedIndex::from(without_positions);
     assert!(
         immutable
-            .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
+            .score_bm25(&query, &|_| true, 10, &is_stopped)
             .is_err()
     );
 }
@@ -359,11 +348,11 @@ fn positions_are_required() {
 /// no lengths, rather than silently scored as `b = 0`.
 #[test]
 fn length_normalization_requires_lengths() {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_lengths = MutableInvertedIndex::new(true, false);
     without_lengths
-        .index_str_tokens(0, ["alpha", "beta"], None, &hw_counter)
+        .index_str_tokens(0, ["alpha", "beta"], None)
         .unwrap();
     let term = [Bm25Term {
         token_id: 0,
@@ -372,13 +361,13 @@ fn length_normalization_requires_lengths() {
     let normalized = Bm25Query::new(term, Bm25Params::default(), Some(2.0)).unwrap();
     assert!(
         without_lengths
-            .score_bm25(&normalized, &|_| true, 10, &is_stopped, &hw_counter)
+            .score_bm25(&normalized, &|_| true, 10, &is_stopped)
             .is_err()
     );
     let unnormalized = Bm25Query::new(term, Bm25Params::default(), None).unwrap();
     assert_eq!(
         without_lengths
-            .score_bm25(&unnormalized, &|_| true, 10, &is_stopped, &hw_counter)
+            .score_bm25(&unnormalized, &|_| true, 10, &is_stopped)
             .unwrap()
             .len(),
         1
@@ -387,20 +376,20 @@ fn length_normalization_requires_lengths() {
 
 #[test]
 fn empty_query_and_zero_limit_return_nothing() {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mutable = fixture(3, 50, &[]);
     let empty = Bm25Query::new([], Bm25Params::default(), None).unwrap();
     assert!(
         mutable
-            .score_bm25(&empty, &|_| true, 10, &is_stopped, &hw_counter)
+            .score_bm25(&empty, &|_| true, 10, &is_stopped)
             .unwrap()
             .is_empty()
     );
     let query = query(&mutable, &["w0"], Bm25Params::default());
     assert!(
         mutable
-            .score_bm25(&query, &|_| true, 0, &is_stopped, &hw_counter)
+            .score_bm25(&query, &|_| true, 0, &is_stopped)
             .unwrap()
             .is_empty()
     );
@@ -408,13 +397,13 @@ fn empty_query_and_zero_limit_return_nothing() {
 
 #[test]
 fn stop_flag_interrupts_the_scan() {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let is_stopped = AtomicBool::new(true);
     let mutable = fixture(3, 3000, &[]);
     let query = query(&mutable, &["w0"], Bm25Params::default());
     assert!(
         mutable
-            .score_bm25(&query, &|_| true, 10, &is_stopped, &hw_counter)
+            .score_bm25(&query, &|_| true, 10, &is_stopped)
             .is_err()
     );
 }
@@ -453,7 +442,7 @@ fn query_dedups_and_orders_by_bound() {
 /// alone, not in the scorer.
 #[test]
 fn deleted_documents_inflate_df_on_immutable_shapes() {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mutable = fixture(21, 500, &[]);
     let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
     let mut live = mutable;
@@ -476,10 +465,7 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
     let inflated = Bm25Query::new(
         terms.iter().map(|term| {
             let token_id = immutable.vocab[*term];
-            let df = immutable
-                .get_posting_len(token_id, &hw_counter)
-                .unwrap()
-                .unwrap() as f32;
+            let df = immutable.get_posting_len(token_id).unwrap().unwrap() as f32;
             Bm25Term {
                 token_id,
                 idf: fancy_idf(n, df).max(0.0),

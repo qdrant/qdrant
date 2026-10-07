@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
@@ -38,7 +38,7 @@ fn test_graph_connectivity() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
@@ -46,12 +46,7 @@ fn test_graph_connectivity() {
         let vector = random_vector(&mut rng, dim);
 
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
     }
 

@@ -3,8 +3,6 @@ mod lazy_matrix;
 #[cfg(test)]
 mod tests;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoreType;
 use indexmap::IndexSet;
 use itertools::Itertools as _;
@@ -33,7 +31,6 @@ use super::MmrInternal;
 /// * `distance` - The distance metric of the collection.
 /// * `multivector_config` - The multivector configuration of the collection, if any.
 /// * `limit` - The maximum number of points to return.
-/// * `hw_measurement_acc` - The hardware measurement accumulator.
 ///
 /// # Returns
 ///
@@ -44,7 +41,6 @@ pub fn mmr_from_points_with_vector(
     distance: Distance,
     multivector_config: Option<MultiVectorConfig>,
     limit: usize,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> OperationResult<Vec<ScoredPoint>> {
     let (vectors, candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
@@ -66,12 +62,7 @@ pub fn mmr_from_points_with_vector(
         return Ok(candidates);
     }
 
-    let volatile_storage = create_volatile_storage(
-        &vectors,
-        distance,
-        multivector_config,
-        hw_measurement_acc.get_counter_cell(),
-    )?;
+    let volatile_storage = create_volatile_storage(&vectors, distance, multivector_config)?;
 
     if candidates.len() < 2 {
         // can't compute MMR for less than 2 points, return with original score
@@ -79,14 +70,10 @@ pub fn mmr_from_points_with_vector(
     }
 
     // get similarities against query
-    let query_similarities = relevance_similarities(
-        &volatile_storage,
-        mmr.vector,
-        hw_measurement_acc.get_counter_cell(),
-    )?;
+    let query_similarities = relevance_similarities(&volatile_storage, mmr.vector)?;
 
     // get similarity matrix between candidates
-    let similarity_matrix = similarity_matrix(&volatile_storage, vectors, hw_measurement_acc)?;
+    let similarity_matrix = similarity_matrix(&volatile_storage, vectors)?;
 
     // compute MMR
     Ok(maximal_marginal_relevance(
@@ -103,7 +90,6 @@ fn create_volatile_storage(
     vectors: &[VectorInternal],
     distance: Distance,
     multivector_config: Option<MultiVectorConfig>,
-    hw_counter: HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     // Create temporary vector storage
     let mut volatile_storage = {
@@ -132,7 +118,7 @@ fn create_volatile_storage(
 
     // Populate storage with vectors
     for (key, vector) in (0..).zip(vectors) {
-        volatile_storage.insert_vector(key, VectorRef::from(vector), &hw_counter)?;
+        volatile_storage.insert_vector(key, VectorRef::from(vector))?;
     }
 
     Ok(volatile_storage)
@@ -142,10 +128,9 @@ fn create_volatile_storage(
 fn relevance_similarities(
     volatile_storage: &VectorStorageEnum,
     query_vector: VectorInternal,
-    hw_counter: HardwareCounterCell,
 ) -> OperationResult<Vec<ScoreType>> {
     let query = QueryVector::Nearest(query_vector);
-    let query_scorer = new_raw_scorer(query, volatile_storage, hw_counter)?;
+    let query_scorer = new_raw_scorer(query, volatile_storage)?;
 
     // get similarity between candidates and query
     let ids: Vec<_> = (0..volatile_storage.total_vector_count() as u32).collect();
@@ -163,7 +148,6 @@ fn relevance_similarities(
 fn similarity_matrix(
     volatile_storage: &VectorStorageEnum,
     vectors: Vec<VectorInternal>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> OperationResult<LazyMatrix<'_>> {
     let num_vectors = vectors.len();
 
@@ -179,7 +163,7 @@ fn similarity_matrix(
         ));
     }
 
-    LazyMatrix::new(vectors, volatile_storage, hw_measurement_acc)
+    LazyMatrix::new(vectors, volatile_storage)
 }
 
 /// Maximal Marginal Relevance (MMR) algorithm

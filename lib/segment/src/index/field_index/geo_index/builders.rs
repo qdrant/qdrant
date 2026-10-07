@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use serde_json::Value;
@@ -27,18 +26,12 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let values = payload
             .iter()
             .flat_map(|value| <GeoIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
-        self.in_memory_index
-            .add_many_geo_points(id, values, hw_counter)
+        self.in_memory_index.add_many_geo_points(id, values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -95,18 +88,13 @@ impl FieldIndexBuilderTrait for GeoIndexGridstoreBuilder {
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "GeoIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

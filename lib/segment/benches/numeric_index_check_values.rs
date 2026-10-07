@@ -1,5 +1,5 @@
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -44,8 +44,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         .collect::<OperationResult<InMemoryNumericIndex<_>>>()
         .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _hw = hw::test_guard();
     let mut count = 0;
     group.bench_function("numeric-index", |b| {
         b.iter(|| {
@@ -71,7 +70,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
             let random_index = rng.random_range(0..NUM_POINTS) as PointOffsetType;
 
             if mmap_index
-                .check_values_any(random_index, |value| *value > 0.5, &hw_counter)
+                .check_values_any(random_index, |value| *value > 0.5)
                 .unwrap()
             {
                 count += 1;

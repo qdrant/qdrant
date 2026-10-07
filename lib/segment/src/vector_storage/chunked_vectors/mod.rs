@@ -67,7 +67,7 @@ mod tests {
     use std::borrow::Cow;
     use std::iter::zip;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::types::PointOffsetType;
@@ -87,7 +87,7 @@ mod tests {
         let num_vectors = 1000;
         let mut rng = StdRng::seed_from_u64(42);
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let mut vectors: Vec<_> = (0..num_vectors)
             .map(|_| random_vector(&mut rng, dim))
@@ -105,7 +105,7 @@ mod tests {
                 .unwrap();
 
             for vec in &vectors {
-                chunked_mmap.push(vec, &hw_counter).unwrap();
+                chunked_mmap.push(vec).unwrap();
             }
 
             let random_offset = 666;
@@ -138,14 +138,10 @@ mod tests {
             vectors[44] = random_vector(&mut rng, dim);
             vectors[999] = random_vector(&mut rng, dim);
 
-            chunked_mmap.insert(0, &vectors[0], &hw_counter).unwrap();
-            chunked_mmap
-                .insert(150, &vectors[150], &hw_counter)
-                .unwrap();
-            chunked_mmap.insert(44, &vectors[44], &hw_counter).unwrap();
-            chunked_mmap
-                .insert(999, &vectors[999], &hw_counter)
-                .unwrap();
+            chunked_mmap.insert(0, &vectors[0]).unwrap();
+            chunked_mmap.insert(150, &vectors[150]).unwrap();
+            chunked_mmap.insert(44, &vectors[44]).unwrap();
+            chunked_mmap.insert(999, &vectors[999]).unwrap();
 
             assert!(
                 chunked_mmap.chunks.len() > 1,
@@ -162,7 +158,7 @@ mod tests {
     fn run_across_chunk_boundary_round_trips() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let dim = 500;
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
 
         let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> = ChunkedVectors::open(
@@ -182,9 +178,7 @@ mod tests {
             .flat_map(|_| random_vector(&mut rng, dim))
             .collect();
 
-        chunked_mmap
-            .insert_many(start, &run, count, &hw_counter)
-            .unwrap();
+        chunked_mmap.insert_many(start, &run, count).unwrap();
 
         assert_eq!(chunked_mmap.chunks.len(), 2);
         assert_eq!(chunked_mmap.len(), start + count);
@@ -207,7 +201,7 @@ mod tests {
     fn for_each_vector_stitches_straddling_runs() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let dim = 500;
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
 
         let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> = ChunkedVectors::open(
@@ -239,9 +233,7 @@ mod tests {
             .collect();
 
         for (&(start, count), vectors) in zip(&runs, &expected) {
-            chunked_mmap
-                .insert_many(start, vectors, count, &hw_counter)
-                .unwrap();
+            chunked_mmap.insert_many(start, vectors, count).unwrap();
         }
 
         let mut read = vec![None; runs.len()];

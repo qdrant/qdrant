@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use semver::Version;
@@ -101,8 +102,6 @@ pub(super) async fn transfer_stream_records(
         };
         plunger.await?;
 
-        // Don't increment hardware usage for internal operations
-        let hw_acc = HwMeasurementAcc::disposable();
         let Some(count_result) = replica_set
             .count_local(
                 Arc::new(CountRequestInternal {
@@ -110,9 +109,11 @@ pub(super) async fn transfer_stream_records(
                     exact: false,
                 }),
                 None, // no timeout
-                hw_acc,
                 DeferredBehavior::WithDeferred,
             )
+            .unmeasured(reason(
+                "Don't increment hardware usage for internal operations",
+            ))
             .await?
         else {
             return Err(CollectionError::service_error(format!(

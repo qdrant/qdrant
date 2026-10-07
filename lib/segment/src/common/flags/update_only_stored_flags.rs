@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::stored_bitmask::MutableStoredBitmask;
 use common::types::PointOffsetType;
 use common::universal_io::{Populate, UniversalWriteFs};
@@ -67,15 +67,9 @@ impl UpdateOnlyStoredFlags {
 
     /// Persist the mask in one atomic whole-file write, or write nothing when
     /// it has not effectively changed since it was opened or last flushed.
-    pub fn flush<Fs: UniversalWriteFs>(
-        &mut self,
-        fs: &Fs,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn flush<Fs: UniversalWriteFs>(&mut self, fs: &Fs) -> OperationResult<()> {
         let bytes_written = self.mask.save(fs, &self.path)?;
-        hw_counter
-            .payload_index_io_write_counter()
-            .incr_delta(bytes_written);
+        HwMetric::PayloadIndexIoWrite.bump(bytes_written);
         Ok(())
     }
 }
@@ -89,7 +83,7 @@ impl UpdateOnlyStoredFlags {
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::universal_io::Populate;
     #[cfg_predicate]
     use common::universal_io::{Fs, S};
@@ -105,9 +99,7 @@ mod tests_mod {
     }
 
     fn flush(flags: &mut UpdateOnlyStoredFlags) {
-        flags
-            .flush(&Fs::default(), &HardwareCounterCell::new())
-            .unwrap();
+        hw::test(|| flags.flush(&Fs::default())).unwrap();
     }
 
     /// Reader for what the writer left behind, through the type the writable

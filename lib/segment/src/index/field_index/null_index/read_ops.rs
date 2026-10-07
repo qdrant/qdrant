@@ -19,7 +19,6 @@
 use std::path::PathBuf;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
@@ -229,7 +228,6 @@ pub(super) fn estimate_cardinality<N: NullIndexRead>(
 pub(super) fn condition_checker<'a, N: NullIndexRead>(
     null_index: &'a N,
     condition: &FieldCondition,
-    _hw_acc: HwMeasurementAcc,
 ) -> Option<NullConditionChecker<'a, N>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.

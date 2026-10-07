@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::generic_consts::Random;
 use common::types::{DeferredBehavior, PointOffsetType};
 
@@ -27,13 +27,11 @@ where
         &self,
         vector_name: &VectorName,
         point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         let mut result = None;
         self.vectors_by_offsets(
             vector_name,
             std::iter::once(((), point_offset)),
-            hw_counter,
             |(), _, vector_internal| {
                 result = Some(vector_internal);
             },
@@ -53,7 +51,6 @@ where
         &self,
         vector_name: &VectorName,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-        hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(U, PointOffsetType, VectorInternal),
     ) -> OperationResult<()> {
         let vector_storage = self.vector_storage_for(vector_name)?;
@@ -63,9 +60,7 @@ where
             live_keys,
             |user_data, point_offset, cow_vector| {
                 if vector_storage.is_on_disk() {
-                    hw_counter
-                        .vector_io_read()
-                        .incr_delta(cow_vector.estimate_size_in_bytes());
+                    HwMetric::VectorIoRead.bump(cow_vector.estimate_size_in_bytes());
                 }
                 callback(user_data, point_offset, cow_vector.to_owned());
             },
@@ -83,7 +78,6 @@ where
         &self,
         vector_name: &VectorName,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
-        hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(U, PointOffsetType, Vec<u8>),
     ) -> OperationResult<()> {
         let vector_storage = self.vector_storage_for(vector_name)?;
@@ -92,7 +86,7 @@ where
         vector_storage
             .read_vector_bytes::<Random, U>(live_keys, |user_data, point_offset, bytes| {
                 if vector_storage.is_on_disk() {
-                    hw_counter.vector_io_read().incr_delta(bytes.len());
+                    HwMetric::VectorIoRead.bump(bytes.len());
                 }
                 callback(user_data, point_offset, bytes);
             })
@@ -145,16 +139,10 @@ where
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         // Single-point retrieval observes the visible snapshot; deferred
         // mutations stay hidden until the optimizer rolls a fresh segment.
-        self.vector_with_behavior(
-            vector_name,
-            point_id,
-            DeferredBehavior::VisibleOnly,
-            hw_counter,
-        )
+        self.vector_with_behavior(vector_name, point_id, DeferredBehavior::VisibleOnly)
     }
 
     /// Retrieve a named vector for an external point ID with explicit deferred
@@ -166,10 +154,9 @@ where
         vector_name: &VectorName,
         point_id: PointIdType,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         let internal_id = self.lookup_internal_id(point_id, deferred_behavior)?;
-        self.vector_by_offset(vector_name, internal_id, hw_counter)
+        self.vector_by_offset(vector_name, internal_id)
     }
 
     /// Size in bytes of all available vectors for the given vector name.

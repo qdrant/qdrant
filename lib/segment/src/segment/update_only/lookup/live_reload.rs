@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::universal_io::{CachedReadFs, UniversalReadFsAsync};
 
@@ -18,7 +17,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// reloaded again.
     ///
     /// [`ReadOnlySegment::live_reload`]: crate::segment::read_only::ReadOnlySegment::live_reload
-    pub fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    pub fn live_reload(&mut self) -> OperationResult<()> {
         let Self {
             fs,
             segment_path: _,
@@ -59,11 +58,11 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
 
         payload_storage
             .borrow_mut()
-            .live_reload(fs, &deleted, &inserted, hw_counter)?;
+            .live_reload(fs, &deleted, &inserted)?;
         for vector_storage in vector_data.values() {
             vector_storage
                 .borrow_mut()
-                .live_reload(fs, &deleted, &inserted, hw_counter)?;
+                .live_reload(fs, &deleted, &inserted)?;
         }
 
         fs.rotate_cache_file_info();

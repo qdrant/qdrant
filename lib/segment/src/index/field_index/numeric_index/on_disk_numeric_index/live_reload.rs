@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
@@ -28,7 +27,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No on-disk state changes on reload: this index is immutable, so only
         // the in-memory deletion bitvec is patched. `fs` / `new_points` are

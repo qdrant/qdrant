@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
@@ -62,15 +63,14 @@ where
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(prefix_index);
 
-        let hw_counter = HardwareCounterCell::disposable();
-        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, BlobstoreError>(
                 |idx, values: Vec<_>| {
                     in_memory_index.add_many_to_map(idx, values);
                     Ok(true)
                 },
-                hw_counter_ref,
+                HwMetric::PayloadIndexIoWrite,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -88,7 +88,6 @@ where
         &mut self,
         idx: PointOffsetType,
         values: Vec<Q>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         Q: Into<<N as MapIndexKey>::Owned> + Clone,
@@ -97,11 +96,9 @@ where
             return Ok(());
         }
 
-        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
-
         let values = values.into_iter().map(Into::into).collect::<Vec<_>>();
         self.storage
-            .put_value(idx, &values, hw_counter_ref)
+            .put_value(idx, &values, HwMetric::PayloadIndexIoWrite)
             .map_err(|err| {
                 OperationError::service_error(format!(
                     "failed to put value in mutable map index gridstore: {err}"

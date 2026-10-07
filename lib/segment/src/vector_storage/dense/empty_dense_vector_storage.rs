@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -222,12 +221,7 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
 }
 
 impl VectorStorage for EmptyDenseVectorStorage {
-    fn insert_vector(
-        &mut self,
-        _key: PointOffsetType,
-        _vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Cannot insert into empty vector storage",
         ))
@@ -248,6 +242,7 @@ impl VectorStorage for EmptyDenseVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hw;
     use common::generic_consts::Random;
 
     use super::*;
@@ -353,11 +348,7 @@ mod tests {
             10,
         );
         let vector = vec![1.0, 2.0, 3.0, 4.0];
-        let result = storage.insert_vector(
-            0,
-            VectorRef::from(&vector),
-            &HardwareCounterCell::disposable(),
-        );
+        let result = hw::test(|| storage.insert_vector(0, VectorRef::from(&vector)));
         assert!(result.is_err());
     }
 
@@ -394,7 +385,8 @@ mod tests {
             MultiDenseVectorInternal::new(vec![1.0; 8], 4),
         ));
 
-        let scorer = new_raw_scorer(query, &storage, HardwareCounterCell::disposable())
+        let _hw = hw::test_guard();
+        let scorer = new_raw_scorer(query, &storage)
             .expect("multivector query on an empty placeholder must not fail");
 
         // Slots are deleted zero placeholders: scoring them must not panic.

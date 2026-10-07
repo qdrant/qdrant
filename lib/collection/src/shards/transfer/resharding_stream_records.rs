@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use shard::count::CountRequestInternal;
@@ -81,7 +82,6 @@ pub(crate) async fn transfer_resharding_stream_records(
         };
         plunger.await?;
 
-        let hw_acc = HwMeasurementAcc::disposable();
         let Some(count_result) = replica_set
             .count_local(
                 Arc::new(CountRequestInternal {
@@ -89,9 +89,9 @@ pub(crate) async fn transfer_resharding_stream_records(
                     exact: false,
                 }),
                 None,
-                hw_acc,
                 DeferredBehavior::WithDeferred,
             )
+            .unmeasured(reason("Internal operation"))
             .await?
         else {
             return Err(CollectionError::service_error(format!(

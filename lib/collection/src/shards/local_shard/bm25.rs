@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Filter, ScoredPoint, WithPayload, WithVector};
 use shard::common::stopping_guard::StoppingGuard;
 use shard::query::text::{TextScoringQuery, TextSearchRequestInternal};
@@ -25,7 +24,6 @@ impl LocalShard {
         with_payload: WithPayload,
         with_vector: WithVector,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let terms = query.tokenize(&self.payload_index_schema.read())?;
         let stopping_guard = StoppingGuard::new();
@@ -41,7 +39,6 @@ impl LocalShard {
             with_vector,
             &self.search_runtime,
             &stopping_guard,
-            hw_measurement_acc,
             timeout,
         );
 
@@ -56,7 +53,6 @@ impl LocalShard {
         &self,
         texts: Vec<TextSearchRequestInternal>,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let searches = texts.into_iter().map(|text| {
             let TextSearchRequestInternal {
@@ -67,7 +63,6 @@ impl LocalShard {
                 with_vector,
                 with_payload,
             } = text;
-            let hw_measurement_acc = hw_measurement_acc.clone();
             async move {
                 let mut points = self
                     .score_bm25(
@@ -77,7 +72,6 @@ impl LocalShard {
                         WithPayload::from(with_payload),
                         with_vector,
                         timeout,
-                        hw_measurement_acc,
                     )
                     .await?;
                 // Best first, so the threshold cuts a suffix. Strict, as the

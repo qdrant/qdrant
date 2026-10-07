@@ -34,7 +34,8 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::{ShardOperation, WaitUntil};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -229,12 +230,11 @@ fn shard_with(
     ];
     for operation in operations {
         handle
-            .block_on(shard.update(
-                operation.into(),
-                WaitUntil::Visible,
-                None,
-                HwMeasurementAcc::new(),
-            ))
+            .block_on(
+                shard
+                    .update(operation.into(), WaitUntil::Visible, None)
+                    .measured(AmbientContext::new()),
+            )
             .unwrap();
     }
 
@@ -264,8 +264,8 @@ fn run_batch(
                     WithPayload::from(false),
                     WithVector::from(false),
                     QUERY_TIMEOUT,
-                    HwMeasurementAcc::new(),
                 )
+                .measured(AmbientContext::new())
                 .await
                 .unwrap();
             results.push(hits);

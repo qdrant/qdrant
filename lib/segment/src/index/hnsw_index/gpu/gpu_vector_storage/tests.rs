@@ -3,8 +3,6 @@
 // Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
-
-use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::turboquant::TQBits;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -637,11 +635,7 @@ fn test_gpu_vector_storage_turbo_dense(
     for i in 0..num_vectors {
         let vec = distance.preprocess_vector::<VectorElementType>(random_vector(&mut rnd, dim));
         turbo
-            .insert_vector(
-                i as PointOffsetType,
-                VectorRef::from(&vec),
-                &HardwareCounterCell::new(),
-            )
+            .insert_vector(i as PointOffsetType, VectorRef::from(&vec))
             .unwrap();
     }
 
@@ -655,11 +649,7 @@ fn test_gpu_vector_storage_turbo_dense(
     for i in 0..num_vectors {
         let dequantized = turbo.get_dense_for_requantization(i as PointOffsetType, false);
         reference
-            .insert_vector(
-                i as PointOffsetType,
-                VectorRef::from(&dequantized),
-                &HardwareCounterCell::new(),
-            )
+            .insert_vector(i as PointOffsetType, VectorRef::from(&dequantized))
             .unwrap();
     }
 
@@ -737,11 +727,7 @@ fn test_gpu_vector_storage_turbo_multi(
         }
         let multivector = MultiDenseVectorInternal::new(flattened, dim);
         turbo
-            .insert_vector(
-                i as PointOffsetType,
-                VectorRef::from(&multivector),
-                &HardwareCounterCell::new(),
-            )
+            .insert_vector(i as PointOffsetType, VectorRef::from(&multivector))
             .unwrap();
     }
 
@@ -754,11 +740,7 @@ fn test_gpu_vector_storage_turbo_multi(
         let flattened: Vec<VectorElementType> = inner.into_iter().flatten().collect();
         let multivector = MultiDenseVectorInternal::new(flattened, dim);
         reference
-            .insert_vector(
-                i as PointOffsetType,
-                VectorRef::from(&multivector),
-                &HardwareCounterCell::new(),
-            )
+            .insert_vector(i as PointOffsetType, VectorRef::from(&multivector))
             .unwrap();
     }
 
@@ -850,7 +832,7 @@ fn create_vector_storage_f32(
         let vec = distance.preprocess_vector::<VectorElementType>(vec);
         let vec_ref = VectorRef::from(&vec);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
+            .insert_vector(i as PointOffsetType, vec_ref)
             .unwrap();
     }
     vector_storage
@@ -868,7 +850,7 @@ fn create_vector_storage_f16(
         let vec = distance.preprocess_vector::<VectorElementTypeHalf>(vec);
         let vec_ref = VectorRef::from(&vec);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
+            .insert_vector(i as PointOffsetType, vec_ref)
             .unwrap();
     }
     vector_storage
@@ -886,7 +868,7 @@ fn create_vector_storage_u8(
         let vec = distance.preprocess_vector::<VectorElementTypeByte>(vec);
         let vec_ref = VectorRef::from(&vec);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
+            .insert_vector(i as PointOffsetType, vec_ref)
             .unwrap();
     }
     vector_storage
@@ -912,7 +894,7 @@ fn create_vector_storage_f32_multi(
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
         let vec_ref = VectorRef::from(&multivector);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
+            .insert_vector(i as PointOffsetType, vec_ref)
             .unwrap();
     }
     vector_storage
@@ -938,7 +920,7 @@ fn create_vector_storage_f16_multi(
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
         let vec_ref = VectorRef::from(&multivector);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
+            .insert_vector(i as PointOffsetType, vec_ref)
             .unwrap();
     }
     vector_storage
@@ -964,7 +946,7 @@ fn create_vector_storage_u8_multi(
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
         let vec_ref = VectorRef::from(&multivector);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
+            .insert_vector(i as PointOffsetType, vec_ref)
             .unwrap();
     }
     vector_storage
@@ -1047,11 +1029,8 @@ fn test_gpu_vector_storage_impl(
 
     let query = QueryVector::Nearest(storage.get_vector::<Random>(test_point_id).to_owned());
 
-    let hardware_counter = HardwareCounterCell::new();
     let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {
-        quantized_vectors
-            .raw_scorer(query, hardware_counter)
-            .unwrap()
+        quantized_vectors.raw_scorer(query).unwrap()
     } else {
         new_raw_scorer_for_test(query, &storage).unwrap()
     };

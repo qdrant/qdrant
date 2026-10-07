@@ -5,7 +5,8 @@ use collection::operations::point_ops::{
     WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 
@@ -37,15 +38,10 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = HwMeasurementAcc::new();
+    let hw_counter = AmbientContext::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(hw_counter)
         .await
         .unwrap();
 
@@ -62,7 +58,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let reference_result = collection
         .search(
             full_search_request.into(),
@@ -70,8 +66,8 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await
         .unwrap();
 
@@ -91,7 +87,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let page_1_result = collection
         .search(
             page_1_request.into(),
@@ -99,8 +95,8 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await
         .unwrap();
 
@@ -121,7 +117,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let page_9_result = collection
         .search(
             page_9_request.into(),
@@ -129,8 +125,8 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await
         .unwrap();
 

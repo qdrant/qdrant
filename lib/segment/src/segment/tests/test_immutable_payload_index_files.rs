@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
@@ -82,7 +82,7 @@ fn make_payload(i: usize) -> Payload {
 }
 
 fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path: &Path) -> Segment {
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     // Step 1: appendable source segment with payload + field indices.
     let source_dir = Builder::new().prefix("source_seg").tempdir().unwrap();
@@ -115,9 +115,9 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        source.upsert_point(op_num, point_id, vectors, &hw).unwrap();
+        source.upsert_point(op_num, point_id, vectors).unwrap();
         source
-            .set_full_payload(op_num, point_id, &make_payload(i), &hw)
+            .set_full_payload(op_num, point_id, &make_payload(i))
             .unwrap();
     }
 
@@ -128,7 +128,6 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
                 op_num,
                 &JsonPath::new(name),
                 Some(&PayloadFieldSchema::FieldType(*schema)),
-                &hw,
             )
             .unwrap();
     }
@@ -162,9 +161,7 @@ fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path:
         FeatureFlags::default(),
     )
     .unwrap();
-    builder
-        .update(&[&source], &AtomicBool::new(false), &hw)
-        .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
 
     let segment = builder.build_for_test(segments_path);
     assert!(!segment.appendable_flag);
@@ -343,7 +340,7 @@ fn indexed_queries() -> Vec<IndexedQuery> {
 /// For each indexed query, run `read_filtered` and assert the returned count
 /// matches the count predicted from the live set.
 fn assert_query_counts(segment: &Segment, live: &[bool], queries: &[IndexedQuery], stage: &str) {
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     for q in queries {
         let actual = segment
             .read_filtered(
@@ -351,7 +348,6 @@ fn assert_query_counts(segment: &Segment, live: &[bool], queries: &[IndexedQuery
                 None,
                 Some(&q.filter),
                 &AtomicBool::new(false),
-                &hw,
                 DeferredBehavior::WithDeferred,
             )
             .unwrap();
@@ -426,11 +422,11 @@ fn payload_index_files_are_immutable_after_build() {
     // Operation 1: runtime point deletions. delete_point lives on
     // NonAppendableSegmentEntry — it routes through the in-memory id_tracker
     // bitvec only and must not touch payload_index/ files.
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut op_num = 1_000_u64;
     for (i, alive) in live.iter_mut().enumerate().take(NUM_POINTS / 2) {
         segment
-            .delete_point(op_num, ((i as u64) + 1).into(), &hw)
+            .delete_point(op_num, ((i as u64) + 1).into())
             .unwrap();
         *alive = false;
         op_num += 1;
@@ -468,7 +464,7 @@ fn payload_index_files_are_immutable_after_build() {
     // Operation 4: more deletes + flush after reload. Same expectation.
     for (i, alive) in live.iter_mut().enumerate().skip(NUM_POINTS / 2) {
         reloaded
-            .delete_point(op_num, ((i as u64) + 1).into(), &hw)
+            .delete_point(op_num, ((i as u64) + 1).into())
             .unwrap();
         *alive = false;
         op_num += 1;

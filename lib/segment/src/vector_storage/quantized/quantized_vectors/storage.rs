@@ -1,6 +1,5 @@
 use std::fmt;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
@@ -265,73 +264,36 @@ impl QuantizedScorerDispatch for QuantizedVectorStorage {
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
         match self {
-            QuantizedVectorStorage::ScalarRam(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarChunkedMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::PQRam(q) => internal_raw_scorer(point_id, q, hardware_counter),
-            QuantizedVectorStorage::PQMmap(q) => internal_raw_scorer(point_id, q, hardware_counter),
-            QuantizedVectorStorage::PQChunkedMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryRam(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryChunkedMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::TQRam(q) => internal_raw_scorer(point_id, q, hardware_counter),
-            QuantizedVectorStorage::TQMmap(q) => internal_raw_scorer(point_id, q, hardware_counter),
-            QuantizedVectorStorage::TQChunkedMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::ScalarMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
+            QuantizedVectorStorage::ScalarRam(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::ScalarMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::ScalarChunkedMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::PQRam(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::PQMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::PQChunkedMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::BinaryRam(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::BinaryMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::BinaryChunkedMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::TQRam(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::TQMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::TQChunkedMmap(q) => internal_raw_scorer(point_id, q),
+            QuantizedVectorStorage::ScalarRamMulti(q) => internal_raw_multi_scorer(point_id, q),
+            QuantizedVectorStorage::ScalarMmapMulti(q) => internal_raw_multi_scorer(point_id, q),
             QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
-            QuantizedVectorStorage::PQRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::PQMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::PQChunkedMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::BinaryMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
+            QuantizedVectorStorage::PQRamMulti(q) => internal_raw_multi_scorer(point_id, q),
+            QuantizedVectorStorage::PQMmapMulti(q) => internal_raw_multi_scorer(point_id, q),
+            QuantizedVectorStorage::PQChunkedMmapMulti(q) => internal_raw_multi_scorer(point_id, q),
+            QuantizedVectorStorage::BinaryRamMulti(q) => internal_raw_multi_scorer(point_id, q),
+            QuantizedVectorStorage::BinaryMmapMulti(q) => internal_raw_multi_scorer(point_id, q),
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
-            QuantizedVectorStorage::TQRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::TQMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
-            QuantizedVectorStorage::TQChunkedMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
+            QuantizedVectorStorage::TQRamMulti(q) => internal_raw_multi_scorer(point_id, q),
+            QuantizedVectorStorage::TQMmapMulti(q) => internal_raw_multi_scorer(point_id, q),
+            QuantizedVectorStorage::TQChunkedMmapMulti(q) => internal_raw_multi_scorer(point_id, q),
         }
     }
 }

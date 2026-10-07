@@ -5,7 +5,6 @@ use std::mem::MaybeUninit;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::mmap::{AdviceSetting, Flusher, advice};
@@ -251,12 +250,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 }
 
 impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S> {
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[u8]) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "Cannot upsert vector in mmap storage",

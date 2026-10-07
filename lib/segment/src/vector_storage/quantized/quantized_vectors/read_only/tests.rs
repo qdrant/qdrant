@@ -4,7 +4,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::Random;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -37,11 +37,11 @@ const SEED: u64 = 0x5eed_dead;
 fn build_on_disk_storage(dir: &std::path::Path, rng: &mut StdRng) -> VectorStorageEnum {
     // Fill a volatile storage with random vectors, then copy it into an on-disk
     // (memmap) storage so quantization can pick the mmap backend.
-    let hw = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
     let mut raw = new_volatile_dense_vector_storage(DIMS, DISTANCE);
     for id in 0..NUM_POINTS as PointOffsetType {
         let vector: Vec<f32> = (0..DIMS).map(|_| rng.random_range(-1.0..1.0)).collect();
-        raw.insert_vector(id, VectorRef::from(vector.as_slice()), &hw)
+        raw.insert_vector(id, VectorRef::from(vector.as_slice()))
             .unwrap();
     }
 
@@ -156,12 +156,9 @@ fn read_only_matches_read_write(
         let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
         let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
 
-        let rw_scorer = rw
-            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
-            .unwrap();
-        let ro_scorer = ro
-            .raw_scorer(query, HardwareCounterCell::disposable())
-            .unwrap();
+        let _hw = hw::test_guard();
+        let rw_scorer = rw.raw_scorer(query.clone()).unwrap();
+        let ro_scorer = ro.raw_scorer(query).unwrap();
 
         for &id in &sample {
             assert_eq!(
@@ -225,12 +222,9 @@ fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
         let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
         let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
 
-        let rw_scorer = rw
-            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
-            .unwrap();
-        let ro_scorer = ro
-            .raw_scorer(query, HardwareCounterCell::disposable())
-            .unwrap();
+        let _hw = hw::test_guard();
+        let rw_scorer = rw.raw_scorer(query.clone()).unwrap();
+        let ro_scorer = ro.raw_scorer(query).unwrap();
 
         for &id in &sample {
             assert_eq!(
@@ -266,14 +260,12 @@ fn read_only_matches_read_write_multivector(
     let mut rng = StdRng::seed_from_u64(SEED);
     let multivector_config = MultiVectorConfig::default();
 
-    let hw = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
     let mut storage = new_volatile_multi_dense_vector_storage(DIMS, DISTANCE, multivector_config);
     for id in 0..NUM_POINTS as PointOffsetType {
         let count = rng.random_range(1..=4);
         let multi = random_multi_vector(&mut rng, DIMS, count);
-        storage
-            .insert_vector(id, VectorRef::from(&multi), &hw)
-            .unwrap();
+        storage.insert_vector(id, VectorRef::from(&multi)).unwrap();
     }
     let on_disk = storage.is_on_disk();
 
@@ -305,12 +297,8 @@ fn read_only_matches_read_write_multivector(
         let query_id = rng.random_range(0..NUM_POINTS as PointOffsetType);
         let query = QueryVector::Nearest(storage.get_vector::<Random>(query_id).to_owned());
 
-        let rw_scorer = rw
-            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
-            .unwrap();
-        let ro_scorer = ro
-            .raw_scorer(query, HardwareCounterCell::disposable())
-            .unwrap();
+        let rw_scorer = rw.raw_scorer(query.clone()).unwrap();
+        let ro_scorer = ro.raw_scorer(query).unwrap();
 
         for &id in &sample {
             assert_eq!(
@@ -423,12 +411,9 @@ fn preopen_then_open_through_cached_fs(
 
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
     let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
-    let rw_scorer = rw
-        .raw_scorer(query.clone(), HardwareCounterCell::disposable())
-        .unwrap();
-    let ro_scorer = ro
-        .raw_scorer(query, HardwareCounterCell::disposable())
-        .unwrap();
+    let _hw = hw::test_guard();
+    let rw_scorer = rw.raw_scorer(query.clone()).unwrap();
+    let ro_scorer = ro.raw_scorer(query).unwrap();
     for &id in &sample {
         assert_eq!(
             rw_scorer.score_point(id),
@@ -461,14 +446,12 @@ fn preopen_then_open_multivector_through_cached_fs(
     let mut rng = StdRng::seed_from_u64(SEED);
     let multivector_config = MultiVectorConfig::default();
 
-    let hw = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
     let mut storage = new_volatile_multi_dense_vector_storage(DIMS, DISTANCE, multivector_config);
     for id in 0..NUM_POINTS as PointOffsetType {
         let count = rng.random_range(1..=4);
         let multi = random_multi_vector(&mut rng, DIMS, count);
-        storage
-            .insert_vector(id, VectorRef::from(&multi), &hw)
-            .unwrap();
+        storage.insert_vector(id, VectorRef::from(&multi)).unwrap();
     }
     let on_disk = storage.is_on_disk();
 
@@ -498,12 +481,8 @@ fn preopen_then_open_multivector_through_cached_fs(
 
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(11).collect();
     let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
-    let rw_scorer = rw
-        .raw_scorer(query.clone(), HardwareCounterCell::disposable())
-        .unwrap();
-    let ro_scorer = ro
-        .raw_scorer(query, HardwareCounterCell::disposable())
-        .unwrap();
+    let rw_scorer = rw.raw_scorer(query.clone()).unwrap();
+    let ro_scorer = ro.raw_scorer(query).unwrap();
     for &id in &sample {
         assert_eq!(
             rw_scorer.score_point(id),
@@ -519,8 +498,8 @@ fn assert_internal_scorer_eq(
     sample: &[PointOffsetType],
 ) {
     let pivot = sample[0];
-    let rw_internal = rw.raw_internal_scorer(pivot, HardwareCounterCell::disposable());
-    let ro_internal = ro.raw_internal_scorer(pivot, HardwareCounterCell::disposable());
+    let rw_internal = rw.raw_internal_scorer(pivot);
+    let ro_internal = ro.raw_internal_scorer(pivot);
 
     match (rw_internal, ro_internal) {
         (Ok(rw_scorer), Ok(ro_scorer)) => {
@@ -592,9 +571,8 @@ fn reload_chunked_preserves_scores(preload: bool) {
     let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
 
     let before: Vec<_> = {
-        let scorer = ro
-            .raw_scorer(query.clone(), HardwareCounterCell::disposable())
-            .unwrap();
+        let _hw = hw::test_guard();
+        let scorer = ro.raw_scorer(query.clone()).unwrap();
         sample.iter().map(|&id| scorer.score_point(id)).collect()
     };
 
@@ -607,22 +585,14 @@ fn reload_chunked_preserves_scores(preload: bool) {
 
         fs_err::remove_dir_all(quant_dir.path()).unwrap();
 
-        ro.live_reload(
-            &cached_fs,
-            &empty,
-            &empty,
-            &HardwareCounterCell::disposable(),
-        )
-        .unwrap();
+        hw::test(|| ro.live_reload(&cached_fs, &empty, &empty)).unwrap();
     } else {
-        ro.live_reload(&MmapFs, &empty, &empty, &HardwareCounterCell::disposable())
-            .unwrap();
+        hw::test(|| ro.live_reload(&MmapFs, &empty, &empty)).unwrap();
     }
 
     let after: Vec<_> = {
-        let scorer = ro
-            .raw_scorer(query, HardwareCounterCell::disposable())
-            .unwrap();
+        let _hw = hw::test_guard();
+        let scorer = ro.raw_scorer(query).unwrap();
         sample.iter().map(|&id| scorer.score_point(id)).collect()
     };
 

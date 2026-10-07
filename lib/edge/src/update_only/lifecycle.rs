@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::reason::Reason;
 use common::universal_io::{MmapFs, UniversalAppendFs, UniversalWriteFsAsync};
 use futures::StreamExt as _;
 use parking_lot::RwLock;
@@ -142,9 +143,9 @@ where
             .map_err(|err| OperationError::service_error(format!("create scratch dir: {err}")))?;
         let (mut segment, token) = build_segment(scratch.path(), config, None, true)?;
         let uuid = token.id();
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
         for (key, schema) in indexed_fields {
-            segment.create_field_index(0, key, Some(schema), &hw_counter)?;
+            segment.create_field_index(0, key, Some(schema))?;
         }
         segment.flush(true)?;
         let local = segment.data_path();

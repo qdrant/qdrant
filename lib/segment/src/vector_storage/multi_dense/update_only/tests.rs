@@ -1,7 +1,7 @@
 //! Writes through the update-only storage, then reads back through the
 //! ordinary appendable multi-vector storage opened on the same directory.
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::universal_io::MmapFs;
@@ -55,7 +55,7 @@ fn stored(storage: &crate::vector_storage::VectorStorageEnum, slot: u32) -> Vec<
 #[test]
 fn multi_vectors_round_trip() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let first = multi(&[[1.0, 2.0], [3.0, 4.0]]);
     let second = multi(&[[5.0, 6.0]]);
@@ -69,7 +69,6 @@ fn multi_vectors_round_trip() {
                 VectorToStore::Decoded(VectorRef::from(&first)),
                 VectorToStore::Decoded(VectorRef::from(&second)),
             ],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
@@ -84,7 +83,7 @@ fn multi_vectors_round_trip() {
 #[test]
 fn missing_multi_vectors_own_no_rows() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let present = multi(&[[1.0, 2.0]]);
     let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
@@ -96,7 +95,6 @@ fn missing_multi_vectors_own_no_rows() {
                 VectorToStore::Missing,
                 VectorToStore::Decoded(VectorRef::from(&present)),
             ],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
@@ -116,7 +114,7 @@ fn missing_multi_vectors_own_no_rows() {
 #[test]
 fn batches_resume_at_the_row_space_end() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let first = multi(&[[1.0, 1.0], [2.0, 2.0]]);
     let second = multi(&[[3.0, 3.0]]);
@@ -127,7 +125,6 @@ fn batches_resume_at_the_row_space_end() {
             &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(&first))],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
@@ -138,7 +135,6 @@ fn batches_resume_at_the_row_space_end() {
             &MmapFs,
             1,
             [VectorToStore::Decoded(VectorRef::from(&second))],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
@@ -157,18 +153,18 @@ fn batches_resume_at_the_row_space_end() {
 #[test]
 fn raw_multi_bytes_round_trip() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let flattened: Vec<VectorElementType> = vec![1.0, 2.0, 3.0, 4.0];
     let bytes = bytemuck::cast_slice(&flattened).to_vec();
 
     let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
     writer
-        .append_many(&MmapFs, 0, [VectorToStore::Raw(&bytes)], &hw_counter)
+        .append_many(&MmapFs, 0, [VectorToStore::Raw(&bytes)])
         .unwrap();
 
     let err = writer
-        .append_many(&MmapFs, 1, [VectorToStore::Raw(&bytes[..5])], &hw_counter)
+        .append_many(&MmapFs, 1, [VectorToStore::Raw(&bytes[..5])])
         .unwrap_err();
     assert!(
         format!("{err}").contains("Malformed multi vector blob"),

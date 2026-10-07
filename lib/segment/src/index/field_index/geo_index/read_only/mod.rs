@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use serde_json::Value;
@@ -47,10 +46,7 @@ pub enum ReadOnlyGeoIndex<S: UniversalRead> {
 impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     /// Produce a closure that maps a point id to its indexed geo values as
     /// JSON `Value`s. Mirrors `GeoIndex::value_retriever`.
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
             GeoIndexRead::get_values(self, point_id)
                 .into_iter()
@@ -85,7 +81,7 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use tempfile::TempDir;
 
@@ -102,17 +98,17 @@ mod tests {
     #[test]
     fn parent_open_gridstore_round_trip() {
         let dir = TempDir::with_prefix("ro_geo_parent_gridstore").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         {
             let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true)
                 .unwrap()
                 .unwrap();
             mutable
-                .add_many_geo_points(0, vec![GeoPoint::new_unchecked(13.41, 52.52)], &hw_counter)
+                .add_many_geo_points(0, vec![GeoPoint::new_unchecked(13.41, 52.52)])
                 .unwrap();
             mutable
-                .add_many_geo_points(1, vec![GeoPoint::new_unchecked(2.35, 48.85)], &hw_counter)
+                .add_many_geo_points(1, vec![GeoPoint::new_unchecked(2.35, 48.85)])
                 .unwrap();
             mutable
                 .add_many_geo_points(
@@ -121,7 +117,6 @@ mod tests {
                         GeoPoint::new_unchecked(1.0, 1.0),
                         GeoPoint::new_unchecked(2.0, 2.0),
                     ],
-                    &hw_counter,
                 )
                 .unwrap();
             mutable.flusher()().unwrap();

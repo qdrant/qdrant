@@ -3,7 +3,9 @@ use std::num::NonZeroUsize;
 use std::ops::Deref as _;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw;
+use common::counter::hw::{HwFutureExt, HwHandoff};
+use common::reason::reason;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
@@ -43,7 +45,6 @@ impl ShardReplicaSet {
         operation: OperationWithClockTag,
         wait: WaitUntil,
         timeout: Option<Duration>,
-        mut hw_measurement: HwMeasurementAcc,
         force: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
@@ -59,10 +60,11 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
-        // Don't measure hw when resharding
-        if state.is_resharding() && !hw_measurement.is_disposable() {
-            hw_measurement = HwMeasurementAcc::disposable();
-        }
+        let hw_acc = if state.is_resharding() {
+            HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
+        } else {
+            hw::current()
+        };
 
         // Decide whether to apply the operation in the current replica state.
         // `force` and a force-tagged clock both bypass the recovery-state guard.
@@ -111,7 +113,7 @@ impl ShardReplicaSet {
 
         // Rate limit update operations on Active replica.
         if state.is_write_rate_limitable() {
-            self.check_operation_write_rate_limiter(&hw_measurement, shard, &operation)
+            self.check_operation_write_rate_limiter(shard, &operation)
                 .await?;
         }
 
@@ -123,7 +125,8 @@ impl ShardReplicaSet {
         let result = match shard {
             Shard::Local(local_shard) => {
                 let outcome = local_shard
-                    .submit_update(operation, effective_wait, hw_measurement)
+                    .submit_update(operation, effective_wait)
+                    .in_hw(hw_acc)
                     .await?;
                 drop(local);
                 await_update_result(outcome, effective_timeout).await?
@@ -131,7 +134,8 @@ impl ShardReplicaSet {
             Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
                 shard
                     .get()
-                    .update(operation, effective_wait, effective_timeout, hw_measurement)
+                    .update(operation, effective_wait, effective_timeout)
+                    .in_hw(hw_acc)
                     .await?
             }
         };
@@ -149,7 +153,6 @@ impl ShardReplicaSet {
         timeout: Option<Duration>,
         ordering: WriteOrdering,
         update_only_existing: bool,
-        mut hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
 
@@ -160,11 +163,12 @@ impl ShardReplicaSet {
             )));
         };
 
-        // Don't measure hw when resharding
         let peer_state = self.peer_state(leader_peer);
-        if peer_state.is_some_and(|state| state.is_resharding()) {
-            hw_measurement_acc = HwMeasurementAcc::disposable();
-        }
+        let hw_acc = if peer_state.is_some_and(|state| state.is_resharding()) {
+            HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
+        } else {
+            hw::current()
+        };
 
         // If we are the leader, run the update from this replica set
         if leader_peer == self.this_peer_id() {
@@ -176,18 +180,13 @@ impl ShardReplicaSet {
                 WriteOrdering::Weak => None,
             };
 
-            self.update(
-                operation,
-                wait,
-                timeout,
-                update_only_existing,
-                hw_measurement_acc,
-            )
-            .await
+            self.update(operation, wait, timeout, update_only_existing)
+                .in_hw(hw_acc)
+                .await
         } else {
             // Forward the update to the designated leader
-            self.forward_update(leader_peer, operation, wait, timeout, ordering, hw_measurement_acc)
-                .await
+            self.forward_update(leader_peer, operation, wait, timeout, ordering).in_hw(hw_acc)
+            .await
                 .map_err(|err| {
                     if err.is_transient() {
                         // Deactivate the peer if forwarding failed with transient error
@@ -257,7 +256,6 @@ impl ShardReplicaSet {
         wait: WaitUntil,
         timeout: Option<Duration>,
         update_only_existing: bool,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `ShardRepilcaSet::update_impl` is not cancel safe, so this method is not cancel safe.
 
@@ -287,7 +285,6 @@ impl ShardReplicaSet {
                     timeout,
                     &mut clock,
                     update_only_existing,
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -329,7 +326,6 @@ impl ShardReplicaSet {
         timeout: Option<Duration>,
         clock: &mut clock_set::ClockGuard,
         update_only_existing: bool,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
@@ -393,7 +389,7 @@ impl ShardReplicaSet {
             && self.peer_is_write_rate_limitable(this_peer_id)
             && let Some(shard) = local.deref()
         {
-            self.check_operation_write_rate_limiter(&hw_measurement_acc, shard, &operation)
+            self.check_operation_write_rate_limiter(shard, &operation)
                 .await?;
         }
 
@@ -405,11 +401,10 @@ impl ShardReplicaSet {
             .into_iter()
             .map(|remote| {
                 let operation = operation.clone();
-                let hw_acc = hw_measurement_acc.clone();
                 async move {
                     let peer_id = remote.peer_id;
                     remote
-                        .update(operation, wait, timeout, hw_acc)
+                        .update(operation, wait, timeout)
                         .await
                         .map(|ok| (peer_id, ok))
                         .map_err(|err| (peer_id, err))
@@ -425,9 +420,7 @@ impl ShardReplicaSet {
         let mut all_res: Vec<Result<(PeerId, UpdateResult), (PeerId, CollectionError)>> =
             match local.deref() {
                 Some(Shard::Local(local_shard)) if local_is_updatable => {
-                    let outcome = local_shard
-                        .submit_update(operation, local_wait, hw_measurement_acc)
-                        .await?;
+                    let outcome = local_shard.submit_update(operation, local_wait).await?;
                     drop(local);
 
                     let mut update_futures = Vec::with_capacity(remote_futures.len() + 1);
@@ -456,7 +449,7 @@ impl ShardReplicaSet {
                         let local_update = async move {
                             shard
                                 .get()
-                                .update(operation, local_wait, timeout, hw_measurement_acc)
+                                .update(operation, local_wait, timeout)
                                 .await
                                 .map(|ok| (this_peer_id, ok))
                                 .map_err(|err| (this_peer_id, err))
@@ -666,7 +659,6 @@ impl ShardReplicaSet {
     /// uniformly via [`Shard::local_shard`]. `Dummy` shards have no limiter.
     async fn check_operation_write_rate_limiter(
         &self,
-        hw_measurement: &HwMeasurementAcc,
         local: &Shard,
         operation: &OperationWithClockTag,
     ) -> CollectionResult<()> {
@@ -674,12 +666,12 @@ impl ShardReplicaSet {
             return Ok(());
         };
         local_shard
-            .check_write_rate_limiter(hw_measurement, async || {
+            .check_write_rate_limiter(async || {
                 let mut ratelimiter_cost = 1;
 
                 // Estimate the cost based on affected points if filter is available.
                 match local
-                    .estimate_request_cardinality(&operation.operation, hw_measurement)
+                    .estimate_request_cardinality(&operation.operation)
                     .await
                 {
                     Ok(est) => ratelimiter_cost = 1.max(est.exp),
@@ -800,7 +792,6 @@ impl ShardReplicaSet {
         wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::forward_update` is cancel safe, so this method is cancel safe.
 
@@ -819,7 +810,6 @@ impl ShardReplicaSet {
                 wait,
                 timeout,
                 ordering,
-                hw_measurement_acc,
             ) // `clock_tag` *has to* be `None`!
             .await
     }

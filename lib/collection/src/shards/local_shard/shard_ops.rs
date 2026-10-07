@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -62,24 +62,20 @@ impl LocalShard {
         &self,
         operation: OperationWithClockTag,
         wait: WaitUntil,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<SubmitOutcome> {
         // Filter/condition-resolving operations must never reach the WAL as-is:
         // resolve them to concrete point ids first (issue #9575). Every replica
         // resolves against its own state; replicas holding the same data resolve
         // the same filter to the same point set.
         if shard::resolve::is_filter_resolving(&operation.operation) {
-            return self
-                .submit_update_filter_resolving(operation, wait, hw_measurement_acc)
-                .await;
+            return self.submit_update_filter_resolving(operation, wait).await;
         }
 
         self.check_wal_disk_space().await?;
 
         let _update_lock = self.update_lock.read().await;
 
-        self.append_and_dispatch(operation, wait, hw_measurement_acc)
-            .await
+        self.append_and_dispatch(operation, wait).await
     }
 
     /// Fail if the disk is too full to safely grow the WAL.
@@ -106,7 +102,6 @@ impl LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: WaitUntil,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<SubmitOutcome> {
         let (callback_sender, callback_receiver) = if wait.needs_callback() {
             let (tx, rx) = oneshot::channel();
@@ -147,7 +142,7 @@ impl LocalShard {
             operation: operation_in_ram,
             sender: callback_sender,
             wait_for_deferred: wait.wait_for_deferred(),
-            hw_measurements: hw_measurement_acc,
+            hw_measurements: hw::current(),
         }));
 
         Ok(SubmitOutcome::Submitted {
@@ -237,7 +232,6 @@ impl ShardOperation for LocalShard {
         operation: OperationWithClockTag,
         wait: WaitUntil,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
@@ -245,9 +239,7 @@ impl ShardOperation for LocalShard {
         // The filter-resolving fallback inside `submit_update` adds more awaits (fence, drain,
         // resolution scan), but nothing is appended or dispatched until its single WAL write, so
         // cancelling before that point leaves no partial state and the property still holds.
-        let outcome = self
-            .submit_update(operation, wait, hw_measurement_acc)
-            .await?;
+        let outcome = self.submit_update(operation, wait).await?;
         await_update_result(outcome, timeout).await
     }
 
@@ -257,7 +249,6 @@ impl ShardOperation for LocalShard {
         request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let ScrollRequestInternal {
             offset,
@@ -276,7 +267,7 @@ impl ShardOperation for LocalShard {
         };
 
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "scroll_by", || {
+        self.check_read_rate_limiter("scroll_by", || {
             let mut cost = BASE_COST;
             if let Some(filter) = &filter {
                 cost += filter_rate_cost(filter);
@@ -284,7 +275,7 @@ impl ShardOperation for LocalShard {
             cost
         })?;
         let start_time = Instant::now();
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
 
         let limit = limit.unwrap_or(ScrollRequestInternal::default_limit());
         let order_by = order_by.clone().map(OrderBy::from);
@@ -299,7 +290,6 @@ impl ShardOperation for LocalShard {
                     filter.as_ref(),
                     search_runtime_handle,
                     timeout,
-                    hw_measurement_acc,
                     DeferredBehavior::VisibleOnly,
                 )
                 .await
@@ -313,7 +303,6 @@ impl ShardOperation for LocalShard {
                     search_runtime_handle,
                     &order_by,
                     timeout,
-                    hw_measurement_acc,
                     DeferredBehavior::VisibleOnly,
                 )
                 .await
@@ -340,7 +329,6 @@ impl ShardOperation for LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let timeout = self.timeout_or_default_search_timeout(timeout);
@@ -352,7 +340,6 @@ impl ShardOperation for LocalShard {
             filter,
             search_runtime_handle,
             timeout,
-            hw_measurement_acc,
             deferred_behavior,
         )
         .await
@@ -369,14 +356,13 @@ impl ShardOperation for LocalShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
+        self.check_read_rate_limiter("core_search", || {
             request.searches.iter().map(|s| s.search_rate_cost()).sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
-        self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+        self.do_search(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -386,11 +372,10 @@ impl ShardOperation for LocalShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "count", || {
+        self.check_read_rate_limiter("count", || {
             let mut cost = BASE_COST;
             if let Some(filter) = &request.filter {
                 cost += filter_rate_cost(filter);
@@ -398,7 +383,7 @@ impl ShardOperation for LocalShard {
             cost
         })?;
         let start_time = Instant::now();
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
         let result: CollectionResult<usize> = if request.exact {
             let timeout = self.timeout_or_default_search_timeout(timeout);
             match tokio::time::timeout(
@@ -406,7 +391,6 @@ impl ShardOperation for LocalShard {
                 self.read_filtered(
                     request.filter.as_ref(),
                     search_runtime_handle,
-                    hw_measurement_acc,
                     Some(timeout),
                     deferred_behavior,
                 ),
@@ -418,7 +402,7 @@ impl ShardOperation for LocalShard {
                 Err(_elapsed) => Err(CollectionError::timeout(timeout, "count")),
             }
         } else {
-            self.estimate_cardinality(request.filter.as_ref(), &hw_measurement_acc)
+            self.estimate_cardinality(request.filter.as_ref())
                 .await
                 .map(|cardinality| cardinality.exp)
         };
@@ -441,15 +425,14 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
+        self.check_read_rate_limiter("retrieve", || request.ids.len())?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
 
         let start_time = Instant::now();
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
         let result = match tokio::time::timeout(
             timeout,
             SegmentsSearcher::retrieve(
@@ -459,7 +442,6 @@ impl ShardOperation for LocalShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             ),
         )
@@ -496,13 +478,12 @@ impl ShardOperation for LocalShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = Instant::now();
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "query_batch", || {
+        self.check_read_rate_limiter("query_batch", || {
             planned_query
                 .searches
                 .iter()
@@ -512,14 +493,9 @@ impl ShardOperation for LocalShard {
                 .sum()
         })?;
         let timeout = self.timeout_or_default_search_timeout(timeout);
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
         let result = self
-            .do_planned_query(
-                planned_query,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-            )
+            .do_planned_query(planned_query, search_runtime_handle, timeout)
             .await;
 
         let elapsed = start_time.elapsed();
@@ -542,10 +518,9 @@ impl ShardOperation for LocalShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "facet", || {
+        self.check_read_rate_limiter("facet", || {
             let mut cost = BASE_COST;
             if let Some(filter) = &request.filter {
                 cost += filter_rate_cost(filter);
@@ -555,23 +530,13 @@ impl ShardOperation for LocalShard {
 
         let start_time = Instant::now();
         let timeout = self.timeout_or_default_search_timeout(timeout);
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
         let result = if request.exact {
-            self.exact_facet(
-                request.clone(),
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-            )
-            .await
+            self.exact_facet(request.clone(), search_runtime_handle, timeout)
+                .await
         } else {
-            self.approx_facet(
-                request.clone(),
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-            )
-            .await
+            self.approx_facet(request.clone(), search_runtime_handle, timeout)
+                .await
         };
         let elapsed = start_time.elapsed();
         let cpu_ratio = cpu_utilization.ratio();
@@ -630,7 +595,6 @@ impl LocalShard {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<PointStructRawPersisted>> {
         let timeout = self.timeout_or_default_search_timeout(timeout);
@@ -642,7 +606,6 @@ impl LocalShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             ),
         )
@@ -670,7 +633,6 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<PointStructRawPersisted>> {
         let timeout = self.timeout_or_default_search_timeout(timeout);
@@ -681,7 +643,6 @@ impl LocalShard {
             filter,
             search_runtime_handle,
             timeout,
-            hw_measurement_acc,
             deferred_behavior,
         )
         .await

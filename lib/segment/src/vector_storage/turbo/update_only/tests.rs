@@ -1,7 +1,7 @@
 //! Writes through the update-only storage, then reads back through the ordinary
 //! appendable TurboQuant storage opened on the same directory.
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::universal_io::MmapFs;
 use quantization::turboquant::TQBits;
 use tempfile::TempDir;
@@ -22,7 +22,7 @@ const DIM: usize = 8;
 #[test]
 fn encoded_vectors_match_the_writable_side() {
     let vector: Vec<VectorElementType> = (0..DIM).map(|i| i as f32 + 0.5).collect();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     // Written by the update-only writer.
     let ours = TempDir::with_prefix("update_only_turbo").unwrap();
@@ -35,7 +35,6 @@ fn encoded_vectors_match_the_writable_side() {
                 VectorToStore::Decoded(VectorRef::from(vector.as_slice())),
                 VectorToStore::Missing,
             ],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
@@ -53,7 +52,7 @@ fn encoded_vectors_match_the_writable_side() {
     {
         use crate::vector_storage::VectorStorage as _;
         reference
-            .insert_vector(0, VectorRef::from(vector.as_slice()), &hw_counter)
+            .insert_vector(0, VectorRef::from(vector.as_slice()))
             .unwrap();
     }
 
@@ -77,7 +76,7 @@ fn encoded_vectors_match_the_writable_side() {
 #[test]
 fn batches_resume() {
     let dir = TempDir::with_prefix("update_only_turbo").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let vector: Vec<VectorElementType> = vec![1.0; DIM];
 
     for slot in 0..2 {
@@ -88,7 +87,6 @@ fn batches_resume() {
                 &MmapFs,
                 slot,
                 [VectorToStore::Decoded(VectorRef::from(vector.as_slice()))],
-                &hw_counter,
             )
             .unwrap();
     }

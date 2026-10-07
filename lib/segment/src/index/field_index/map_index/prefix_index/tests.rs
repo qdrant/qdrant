@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
@@ -25,10 +25,10 @@ fn build_and_open(entries: &BTreeMap<Vec<u8>, usize>) -> (TempDir, PrefixIndex) 
 }
 
 fn collect_prefix(index: &PrefixIndex, prefix: &[u8]) -> Vec<(Vec<u8>, usize)> {
-    let hw_counter = HardwareCounterCell::disposable();
+    let _hw = hw::test_guard();
     let mut result = Vec::new();
     index
-        .for_each_key_with_prefix(prefix, &hw_counter, &mut |key, count| {
+        .for_each_key_with_prefix(prefix, &mut |key, count| {
             result.push((key.to_vec(), count));
             Ok(())
         })
@@ -37,10 +37,10 @@ fn collect_prefix(index: &PrefixIndex, prefix: &[u8]) -> Vec<(Vec<u8>, usize)> {
 }
 
 fn collect_all(index: &PrefixIndex) -> Vec<(Vec<u8>, usize)> {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut result = Vec::new();
     index
-        .for_each_key(&hw_counter, &mut |key, count| {
+        .for_each_key(&mut |key, count| {
             result.push((key.to_vec(), count));
             Ok(())
         })
@@ -67,8 +67,8 @@ fn check_prefix(index: &PrefixIndex, entries: &BTreeMap<Vec<u8>, usize>, prefix:
     let expected = naive_prefix(entries, prefix);
     assert_eq!(collect_prefix(index, prefix), expected, "prefix {prefix:?}",);
 
-    let hw_counter = HardwareCounterCell::disposable();
-    let stats = index.prefix_stats(prefix, &hw_counter).unwrap();
+    let _hw = hw::test_guard();
+    let stats = index.prefix_stats(prefix).unwrap();
     assert_eq!(stats.keys, expected.len(), "prefix {prefix:?}");
     assert_eq!(
         stats.postings,

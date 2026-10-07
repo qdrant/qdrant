@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use std::mem::size_of;
 
 use bitpacking::BitPacker as _;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::counter::HwMeasurementIteratorExt;
+use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
@@ -46,7 +46,8 @@ pub struct CompressedPostingListView<'a, W: Weight> {
     remainders: &'a [GenericPostingElement<W>],
     last_id: Option<PointOffsetType>,
     multiplier: W::QuantizationParams,
-    hw_counter: &'a HardwareCounterCell,
+    /// Multiplier for [`HwMetric::VectorIoRead`] bumps, see [`PostingListIter::set_vector_io_read_unit`].
+    vector_io_read_unit: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, FromBytes, Immutable, KnownLayout)]
@@ -63,25 +64,19 @@ pub struct CompressedPostingChunk<W: Weight> {
 }
 
 impl<W: Weight> CompressedPostingList<W> {
-    pub(super) fn view<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> CompressedPostingListView<'a, W> {
+    pub(super) fn view<'a>(&'a self) -> CompressedPostingListView<'a, W> {
         CompressedPostingListView {
             id_data: &self.id_data,
             chunks: &self.chunks,
             remainders: &self.remainders,
             last_id: self.last_id,
             multiplier: self.quantization_params,
-            hw_counter,
+            vector_io_read_unit: 1,
         }
     }
 
-    pub fn iter<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> CompressedPostingListIterator<'a, W> {
-        self.view(hw_counter).iter()
+    pub fn iter<'a>(&'a self) -> CompressedPostingListIterator<'a, W> {
+        self.view().iter()
     }
 
     #[cfg(test)]
@@ -124,11 +119,7 @@ enum IdChunkPosition {
 }
 
 impl<'a, W: Weight> CompressedPostingListView<'a, W> {
-    pub(super) fn new(
-        header: PostingListFileHeader<W>,
-        data: &'a [u8],
-        hw_counter: &'a HardwareCounterCell,
-    ) -> Option<Self> {
+    pub(super) fn new(header: PostingListFileHeader<W>, data: &'a [u8]) -> Option<Self> {
         let ids_len = header.ids_len as usize;
         let chunks_bytes = header.chunks_count as usize * size_of::<CompressedPostingChunk<W>>();
         let id_data = data.get(..ids_len)?;
@@ -146,7 +137,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
             remainders,
             last_id: header.last_id.checked_sub(1),
             multiplier: header.quantization_params,
-            hw_counter,
+            vector_io_read_unit: 1,
         })
     }
 
@@ -201,7 +192,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     ) {
         let chunk = &self.chunks[chunk_index];
         let chunk_size = Self::get_chunk_size(self.chunks, self.id_data, chunk_index);
-        self.hw_counter.vector_io_read().incr_delta(chunk_size);
+        HwMetric::VectorIoRead.bump(chunk_size * self.vector_io_read_unit);
         let chunk_bits = chunk_size * u8::BITS as usize / CHUNK_SIZE;
         BitPackerImpl::new().decompress_strictly_sorted(
             chunk.initial.checked_sub(1),
@@ -288,9 +279,8 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
 
     #[inline]
     fn get_remainder_id(&self, index: usize) -> Option<&GenericPostingElement<W>> {
-        self.hw_counter
-            .vector_io_read()
-            .incr_delta(size_of::<GenericPostingElement<W>>());
+        HwMetric::VectorIoRead
+            .bump(size_of::<GenericPostingElement<W>>() * self.vector_io_read_unit);
         self.remainders.get(index)
     }
 
@@ -299,10 +289,9 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         &self,
         index: usize,
     ) -> impl Iterator<Item = &'_ GenericPostingElement<W>> + '_ {
-        self.remainders[index..].iter().measure_hw_with_cell(
-            self.hw_counter,
-            size_of::<GenericPostingElement<W>>(),
-            |hw_counter| hw_counter.vector_io_read(),
+        self.remainders[index..].iter().measure_hw(
+            HwMetric::VectorIoRead,
+            size_of::<GenericPostingElement<W>>() * self.vector_io_read_unit,
         )
     }
 
@@ -319,7 +308,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     /// Warning: This function panics if the index is out of bounds.
     #[inline]
     fn get_weight(&self, pos: usize) -> W {
-        self.hw_counter.vector_io_read().incr_delta(size_of::<W>());
+        HwMetric::VectorIoRead.bump(size_of::<W>() * self.vector_io_read_unit);
         let chunk = &self.chunks[pos / CHUNK_SIZE];
         chunk.weights[pos % CHUNK_SIZE]
     }
@@ -327,9 +316,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     #[inline]
     fn weights_range(&self, pos: usize, count: usize) -> &[W] {
         debug_assert!(count <= CHUNK_SIZE);
-        self.hw_counter
-            .vector_io_read()
-            .incr_delta(size_of::<W>() * count);
+        HwMetric::VectorIoRead.bump(size_of::<W>() * count * self.vector_io_read_unit);
 
         let chunk = &self.chunks[pos / CHUNK_SIZE];
         let start = pos % CHUNK_SIZE;
@@ -484,6 +471,10 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
 }
 
 impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
+    fn set_vector_io_read_unit(&mut self, unit: usize) {
+        self.list.vector_io_read_unit = unit;
+    }
+
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
         let pos = self.pos.0;
@@ -693,6 +684,8 @@ fn count_le_sorted<T: Copy + Eq + Ord>(val: T, data: &[T]) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hw;
+
     use super::*;
 
     const CASES: [usize; 6] = [0, 64, 128, 192, 256, 320];
@@ -711,9 +704,9 @@ mod tests {
     fn test_iter() {
         for case in cases() {
             let list = CompressedPostingList::<f32>::from(case.clone());
-            let hw_counter = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
 
-            let mut iter = list.iter(&hw_counter);
+            let mut iter = list.iter();
 
             let mut count = 0;
 
@@ -731,7 +724,7 @@ mod tests {
     #[test]
     #[allow(clippy::needless_range_loop)] // for consistency
     fn test_try_till_id() {
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         for i in 0..CASES.len() {
             for j in i..CASES.len() {
@@ -740,7 +733,7 @@ mod tests {
                     let case = mk_case(CASES[k]);
                     let pl = CompressedPostingList::<f32>::from(case.clone());
 
-                    let mut iter = pl.iter(&hw_counter);
+                    let mut iter = pl.iter();
 
                     let mut data = Vec::new();
                     let mut counter = 0;

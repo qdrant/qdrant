@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
@@ -161,17 +160,16 @@ impl MutableInvertedIndex {
         point_id: PointOffsetType,
         str_tokens: impl IntoIterator<Item = impl AsRef<str>>,
         doc_len: Option<u32>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let tokens = self.register_tokens(str_tokens);
         self.set_doc_len(point_id, doc_len);
 
         // If positions are enabled, store the ordered document for phrase matching
         if self.point_to_doc.is_some() {
-            self.index_document(point_id, Document::new(tokens.clone()), hw_counter)?;
+            self.index_document(point_id, Document::new(tokens.clone()))?;
         }
 
-        self.index_tokens(point_id, TokenSet::from_iter(tokens), hw_counter)
+        self.index_tokens(point_id, TokenSet::from_iter(tokens))
     }
 }
 
@@ -180,12 +178,7 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self.vocab
     }
 
-    fn index_tokens(
-        &mut self,
-        point_id: PointOffsetType,
-        tokens: TokenSet,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn index_tokens(&mut self, point_id: PointOffsetType, tokens: TokenSet) -> OperationResult<()> {
         // Counted as a transition rather than incremented, so that re-indexing
         // a point cannot count it twice, and so that a document rewritten to
         // nothing stops being one.
@@ -227,7 +220,6 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self,
         point_id: PointOffsetType,
         ordered_document: Document,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Some(point_to_doc) = &mut self.point_to_doc else {
             // Phrase matching is not enabled
@@ -286,7 +278,6 @@ impl InvertedIndex for MutableInvertedIndex {
     fn filter(
         &self,
         query: ParsedQuery,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match query {
             ParsedQuery::AllTokens(tokens) => Ok(Box::new(self.filter_has_all(tokens))),
@@ -295,11 +286,7 @@ impl InvertedIndex for MutableInvertedIndex {
         }
     }
 
-    fn get_posting_len(
-        &self,
-        token_id: TokenId,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
+    fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         Ok(self.postings.get(token_id as usize).map(|x| x.len()))
     }
 
@@ -309,7 +296,6 @@ impl InvertedIndex for MutableInvertedIndex {
         accept: &dyn Fn(PointOffsetType) -> bool,
         limit: usize,
         is_stopped: &AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let Some(documents) = self.point_to_doc.as_deref() else {
             return Err(OperationError::service_error(
@@ -408,7 +394,6 @@ impl InvertedIndex for MutableInvertedIndex {
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()> {
         let lens = self.point_to_doc_len.as_deref();
@@ -429,7 +414,6 @@ impl InvertedIndex for MutableInvertedIndex {
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
-        _: &HardwareCounterCell,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));

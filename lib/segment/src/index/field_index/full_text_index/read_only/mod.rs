@@ -46,7 +46,7 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
@@ -90,7 +90,7 @@ mod tests {
 
         let dir = TempDir::with_prefix("ro_fulltext_no_lengths").unwrap();
         let config = test_config();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         // `test_config` sets no `scoring`, so nothing records a length.
         {
@@ -99,7 +99,7 @@ mod tests {
                     .unwrap()
                     .unwrap();
             index
-                .add_point(0, &[&serde_json::json!("the quick brown fox")], &hw_counter)
+                .add_point(0, &[&serde_json::json!("the quick brown fox")])
                 .unwrap();
             index.flusher()().unwrap();
         }
@@ -149,7 +149,7 @@ mod tests {
             ..test_config()
         };
         let deleted = BitVec::new();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let build = |dir: &TempDir, scoring: bool| {
             let mut builder = FullTextIndex::builder_mmap(
                 dir.path().to_path_buf(),
@@ -160,7 +160,7 @@ mod tests {
             );
             builder.init().unwrap();
             builder
-                .add_many(0, vec!["the quick brown fox".to_string()], &hw_counter)
+                .add_many(0, vec!["the quick brown fox".to_string()])
                 .unwrap();
             drop(builder.finalize().unwrap());
         };
@@ -200,7 +200,7 @@ mod tests {
     fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_fulltext_parent_gridstore").unwrap();
         let config = test_config();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let payloads = [
             serde_json::json!("the quick brown fox jumps"),
@@ -214,9 +214,7 @@ mod tests {
                     .unwrap()
                     .unwrap();
             for (idx, payload) in payloads.iter().enumerate() {
-                index
-                    .add_point(idx as u32, &[payload], &hw_counter)
-                    .unwrap();
+                index.add_point(idx as u32, &[payload]).unwrap();
             }
             index.flusher()().unwrap();
         }
@@ -244,21 +242,10 @@ mod tests {
         let lazy = FieldCondition::new_match(key, Match::new_text("lazy"));
 
         assert_eq!(
-            index
-                .filter(&brown, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&brown).unwrap().unwrap().collect_vec(),
             vec![0, 2],
         );
-        assert_eq!(
-            index
-                .filter(&lazy, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
-            vec![1],
-        );
+        assert_eq!(index.filter(&lazy).unwrap().unwrap().collect_vec(), vec![1]);
     }
 
     /// The incremental `LiveReload` path must land on exactly the same state as
@@ -275,7 +262,7 @@ mod tests {
         let dir = TempDir::with_prefix("ro_fulltext_live_reload").unwrap();
         let mut config = test_config();
         config.phrase_matching = Some(phrase_matching);
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let initial = [
             serde_json::json!("the quick brown fox jumps"),
@@ -294,9 +281,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
         for (idx, payload) in initial.iter().enumerate() {
-            writer
-                .add_point(idx as u32, &[payload], &hw_counter)
-                .unwrap();
+            writer.add_point(idx as u32, &[payload]).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -312,9 +297,7 @@ mod tests {
         // Writer's delta: drop point 1, append points 3 and 4.
         writer.remove_point(1).unwrap();
         for (offset, payload) in appended.iter().enumerate() {
-            writer
-                .add_point((3 + offset) as u32, &[payload], &hw_counter)
-                .unwrap();
+            writer.add_point((3 + offset) as u32, &[payload]).unwrap();
         }
         writer.flusher()().unwrap();
 
@@ -325,7 +308,6 @@ mod tests {
                 &fs,
                 &SortedSlice::new(&deleted).unwrap(),
                 &SortedSlice::new(&added).unwrap(),
-                &hw_counter,
             )
             .unwrap();
 
@@ -366,16 +348,8 @@ mod tests {
         }
 
         for condition in &conditions {
-            let from_reload = reloaded
-                .filter(condition, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec();
-            let from_fresh = fresh
-                .filter(condition, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec();
+            let from_reload = reloaded.filter(condition).unwrap().unwrap().collect_vec();
+            let from_fresh = fresh.filter(condition).unwrap().unwrap().collect_vec();
             assert_eq!(from_reload, from_fresh, "diverged for {condition:?}");
             // The deleted point must not survive in either.
             assert!(
@@ -388,11 +362,7 @@ mod tests {
         // matches, so pin the results that must come from the reloaded delta.
         let key = JsonPath::new("test");
         let expect = |condition: &FieldCondition, want: Vec<PointOffsetType>| {
-            let got = reloaded
-                .filter(condition, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec();
+            let got = reloaded.filter(condition).unwrap().unwrap().collect_vec();
             assert_eq!(got, want, "unexpected hits for {condition:?}");
         };
 

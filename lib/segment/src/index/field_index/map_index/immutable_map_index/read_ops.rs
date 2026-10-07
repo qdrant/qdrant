@@ -2,7 +2,6 @@ use std::borrow::{Borrow as _, Cow};
 use std::iter;
 
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -21,7 +20,6 @@ where
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> OperationResult<bool> {
         Ok(self
@@ -29,11 +27,7 @@ where
             .check_values_any(idx, |v| check_fn(v.borrow())))
     }
 
-    fn get_values(
-        &'a self,
-        idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
+    fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         Some(
             self.point_to_values
                 .get_values(idx)?
@@ -57,13 +51,13 @@ where
         self.value_to_points.len()
     }
 
-    fn get_count_for_value(&self, value: &N, _hw_counter: &HardwareCounterCell) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N) -> Option<usize> {
         self.value_to_points
             .get(value)
             .map(|entry| entry.count as usize)
     }
 
-    fn get_iterator(&self, value: &N, _hw_counter: &HardwareCounterCell) -> IdIter<'_> {
+    fn get_iterator(&self, value: &N) -> IdIter<'_> {
         if let Some(entry) = self.value_to_points.get(value) {
             Box::new(self.get_entry_iterator(entry))
         } else {
@@ -91,7 +85,6 @@ where
 
     fn for_each_value_map(
         &self,
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         self.value_to_points

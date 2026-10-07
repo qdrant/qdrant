@@ -1,7 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -23,14 +23,13 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
 
     let mut volatile_sparse_vector_storage = VolatileSparseVectorStorage::default();
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _hw = hw::test_guard();
     group.bench_function("insert-volatile", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
                 let vec = &random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
                 volatile_sparse_vector_storage
-                    .insert_vector(idx as PointOffsetType, vec.into(), &hw_counter)
+                    .insert_vector(idx as PointOffsetType, vec.into())
                     .unwrap();
             }
         })
@@ -57,7 +56,7 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
             for idx in 0..NUM_VECTORS {
                 let vec = &random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
                 mmap_sparse_vector_storage
-                    .insert_vector(idx as PointOffsetType, vec.into(), &hw_counter)
+                    .insert_vector(idx as PointOffsetType, vec.into())
                     .unwrap();
             }
         })

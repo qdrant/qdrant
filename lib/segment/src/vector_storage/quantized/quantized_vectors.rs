@@ -12,7 +12,6 @@ mod turbo;
 
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
@@ -65,16 +64,13 @@ impl QuantizedVectors {
     pub fn raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         build_quantized_raw_scorer(
             &self.storage_impl,
             &self.config.quantization_config,
             &self.distance,
             self.datatype,
-            self.storage_impl.is_on_disk(),
             query,
-            hardware_counter,
         )
     }
 
@@ -83,10 +79,8 @@ impl QuantizedVectors {
     pub fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.storage_impl
-            .raw_internal_scorer(point_id, hardware_counter)
+        self.storage_impl.raw_internal_scorer(point_id)
     }
 
     pub(in crate::vector_storage::quantized) fn get_config_path(path: &Path) -> PathBuf {
@@ -316,20 +310,15 @@ impl QuantizedVectorsRead for QuantizedVectors {
         self.default_rescoring()
     }
 
-    fn raw_scorer<'a>(
-        &'a self,
-        query: QueryVector,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        self.raw_scorer(query, hardware_counter)
+    fn raw_scorer<'a>(&'a self, query: QueryVector) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        self.raw_scorer(query)
     }
 
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.raw_internal_scorer(point_id, hardware_counter)
+        self.raw_internal_scorer(point_id)
     }
 }
 

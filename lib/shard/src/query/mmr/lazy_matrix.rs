@@ -1,4 +1,3 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 #[cfg(debug_assertions)]
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
@@ -29,7 +28,6 @@ impl<'storage> LazyMatrix<'storage> {
     pub fn new(
         vectors: Vec<VectorInternal>,
         storage: &'storage VectorStorageEnum,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Self> {
         #[cfg(debug_assertions)]
         {
@@ -46,7 +44,7 @@ impl<'storage> LazyMatrix<'storage> {
             .into_iter()
             .map(|vector| {
                 let query = QueryVector::Nearest(vector);
-                new_raw_scorer(query, storage, hw_measurement_acc.get_counter_cell())
+                new_raw_scorer(query, storage)
             })
             .collect::<OperationResult<Vec<_>>>()?;
 

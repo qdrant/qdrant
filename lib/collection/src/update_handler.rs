@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use cancel::CancellationToken;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwHandoff;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;
@@ -47,7 +47,7 @@ pub struct OperationData {
     /// Only relevant when `sender` is `Some`.
     pub wait_for_deferred: bool,
     /// Hardware measurement for the operation
-    pub hw_measurements: HwMeasurementAcc,
+    pub hw_measurements: HwHandoff,
 }
 
 /// Signal, used to inform Updater process

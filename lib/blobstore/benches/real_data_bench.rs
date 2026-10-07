@@ -3,7 +3,8 @@ use std::io::BufReader;
 use std::path::Path;
 
 use blobstore::fixtures::{HM_FIELDS, Payload, empty_storage};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::counter::hw::HwMetric;
 use common::generic_consts::Random;
 use criterion::{Criterion, criterion_group, criterion_main};
 use fs_err as fs;
@@ -17,8 +18,7 @@ fn append_csv_data(storage: &mut blobstore::Blobstore<Payload>, csv_path: &Path)
     let csv_file = BufReader::new(File::open(csv_path).expect("file should open"));
     let mut rdr = csv::Reader::from_reader(csv_file);
     let mut point_offset = storage.max_point_offset();
-    let hw_counter = HardwareCounterCell::new();
-    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+    let _hw = hw::test_guard();
     #[allow(clippy::explicit_counter_loop)]
     for result in rdr.records() {
         let record = result.unwrap();
@@ -30,7 +30,7 @@ fn append_csv_data(storage: &mut blobstore::Blobstore<Payload>, csv_path: &Path)
             );
         }
         storage
-            .put_value(point_offset, &payload, hw_counter_ref)
+            .put_value(point_offset, &payload, HwMetric::PayloadIoWrite)
             .unwrap();
         point_offset += 1;
     }
@@ -89,13 +89,10 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     });
 
     c.bench_function("scan storage", |b| {
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         b.iter(|| {
             for i in 0..storage.max_point_offset() {
-                let res = storage
-                    .get_value::<Random>(i, &hw_counter)
-                    .unwrap()
-                    .unwrap();
+                let res = storage.get_value::<Random>(i).unwrap().unwrap();
                 assert!(res.0.contains_key("article_id"));
             }
         });

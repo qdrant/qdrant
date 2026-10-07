@@ -3,7 +3,6 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
@@ -167,12 +166,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileDenseVectorStorage
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for VolatileDenseVectorStorage<T> {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
         let vector = T::slice_from_float_cow(Cow::from(vector));
         self.vectors

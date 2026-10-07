@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::{Number, Value};
 use uuid::Uuid;
@@ -23,10 +22,9 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<IntPayloadType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
-            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values, hw_counter),
+            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values),
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
@@ -60,14 +58,11 @@ impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<DateTimePayloadType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
-            NumericIndexInner::Mutable(index) => index.add_many_to_list(
-                id,
-                values.into_iter().map(Self::into_inner_value).collect(),
-                hw_counter,
-            ),
+            NumericIndexInner::Mutable(index) => {
+                index.add_many_to_list(id, values.into_iter().map(Self::into_inner_value).collect())
+            }
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
@@ -101,10 +96,9 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<FloatPayloadType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
-            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values, hw_counter),
+            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values),
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
@@ -138,12 +132,11 @@ impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
             NumericIndexInner::Mutable(index) => {
                 let values: Vec<u128> = values.iter().map(|i| i.as_u128()).collect();
-                index.add_many_to_list(id, values, hw_counter)
+                index.add_many_to_list(id, values)
             }
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
@@ -177,10 +170,7 @@ impl NumericIndexIntoInnerValue<UuidIntType, UuidPayloadType>
 // impl. `FieldIndex::value_retriever` dispatches here per variant.
 
 impl NumericIndex<IntPayloadType, IntPayloadType> {
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
             self.get_values(point_id)
                 .into_iter()
@@ -192,10 +182,7 @@ impl NumericIndex<IntPayloadType, IntPayloadType> {
 }
 
 impl NumericIndex<IntPayloadType, DateTimePayloadType> {
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
             self.get_values(point_id)
                 .into_iter()
@@ -207,10 +194,7 @@ impl NumericIndex<IntPayloadType, DateTimePayloadType> {
 }
 
 impl NumericIndex<FloatPayloadType, FloatPayloadType> {
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
             self.get_values(point_id)
                 .into_iter()
@@ -222,10 +206,7 @@ impl NumericIndex<FloatPayloadType, FloatPayloadType> {
 }
 
 impl NumericIndex<UuidIntType, UuidPayloadType> {
-    pub fn value_retriever<'a>(
-        &'a self,
-        _hw_counter: &'a HardwareCounterCell,
-    ) -> VariableRetrieverFn<'a> {
+    pub fn value_retriever<'a>(&'a self) -> VariableRetrieverFn<'a> {
         Box::new(move |point_id: PointOffsetType| -> MultiValue<Value> {
             self.get_values(point_id)
                 .into_iter()

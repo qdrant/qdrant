@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
@@ -24,30 +23,20 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyAppendableGeoIndex<S> {
         self.in_memory_index.max_values_per_point()
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        self.in_memory_index.points_of_hash(hash, hw_counter)
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
+        self.in_memory_index.points_of_hash(hash)
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        self.in_memory_index.values_of_hash(hash, hw_counter)
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
+        self.in_memory_index.values_of_hash(hash)
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
-        self.in_memory_index
-            .check_values_any(idx, hw_counter, check_fn)
+        self.in_memory_index.check_values_any(idx, check_fn)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {

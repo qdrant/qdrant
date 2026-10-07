@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::DeferredBehavior;
 use rand::prelude::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -22,7 +22,7 @@ fn test_filtering_context_consistency() {
 
     let segment = random_segment(dir.path(), NUM_POINTS);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     for _ in 0..ATTEMPTS {
         let filter = random_filter(&mut rng, 3);
@@ -35,7 +35,6 @@ fn test_filtering_context_consistency() {
                 Some(10),
                 &filter,
                 &is_stopped,
-                &hw_counter,
                 DeferredBehavior::VisibleOnly,
             )
         });
@@ -45,7 +44,6 @@ fn test_filtering_context_consistency() {
                 Some(10),
                 &filter,
                 &is_stopped,
-                &hw_counter,
                 DeferredBehavior::VisibleOnly,
             )
         });

@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 #[expect(deprecated, reason = "legacy code")]
@@ -909,38 +909,22 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        self.score_bytes(True, query, encoded_vector, hw_counter)
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
+        self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(
-        &self,
-        query: &EncodedQueryBQ<TBitsStoreType>,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_point(&self, query: &EncodedQueryBQ<TBitsStoreType>, i: PointOffsetType) -> f32 {
         let vector_data = self.encoded_vectors.get_vector_data(i);
 
-        self.score_bytes(True, query, &vector_data, hw_counter)
+        self.score_bytes(True, query, &vector_data)
     }
 
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         let vector_data_1 = self.encoded_vectors.get_vector_data(i);
         let vector_data_2 = self.encoded_vectors.get_vector_data(j);
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(vector_data_1.len() + vector_data_2.len());
+        let mul = usize::from(self.encoded_vectors.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((vector_data_1.len() + vector_data_2.len()) * mul);
 
         // TODO Safety
         #[expect(deprecated, reason = "legacy code")]
@@ -949,9 +933,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         #[expect(deprecated, reason = "legacy code")]
         let vector_data_usize_2 = unsafe { transmute_from_u8_to_slice(&vector_data_2) };
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(vector_data_usize_2.len());
+        HwMetric::Cpu.bump(vector_data_usize_2.len());
 
         self.calculate_metric(vector_data_usize_1, vector_data_usize_2, 1)
     }
@@ -973,12 +955,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         }))
     }
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
         let encoded_vector = EncodedBinVector::<TBitsStoreType>::encode(
             vector,
             &self.metadata.vector_stats,
@@ -987,7 +964,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         self.encoded_vectors.upsert_vector(
             id,
             bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
-            hw_counter,
         )
     }
 
@@ -1028,18 +1004,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     type SupportsBytes = True;
 
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
         // TODO Safety
         #[expect(deprecated, reason = "legacy code")]
         let vector_data_usize = unsafe { transmute_from_u8_to_slice(bytes) };
 
-        hw_counter.cpu_counter().incr_delta(bytes.len());
+        HwMetric::Cpu.bump(bytes.len());
 
         match query {
             EncodedQueryBQ::Binary(encoded_vector) => {

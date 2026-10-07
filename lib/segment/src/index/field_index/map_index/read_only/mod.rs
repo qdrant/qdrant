@@ -41,7 +41,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_map_parent_gridstore").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         // Build via the writable gridstore builder (matches the existing map
         // tests' `IndexType::MutableGridstore` path).
@@ -77,7 +77,7 @@ mod tests {
             for (idx, values) in entries {
                 let values: Vec<Value> = values.iter().map(|v| Value::from(*v)).collect();
                 let values_ref: Vec<_> = values.iter().collect();
-                builder.add_point(*idx, &values_ref, &hw_counter).unwrap();
+                builder.add_point(*idx, &values_ref).unwrap();
             }
             builder.finalize().unwrap();
         }
@@ -105,20 +105,9 @@ mod tests {
         let blue = FieldCondition::new_match(key, Match::from("blue".to_string()));
 
         assert_eq!(
-            index
-                .filter(&red, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&red).unwrap().unwrap().collect_vec(),
             vec![0, 2],
         );
-        assert_eq!(
-            index
-                .filter(&blue, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
-            vec![2],
-        );
+        assert_eq!(index.filter(&blue).unwrap().unwrap().collect_vec(), vec![2]);
     }
 }

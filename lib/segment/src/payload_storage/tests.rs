@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::universal_io::MmapFile;
 use rstest::rstest;
 
@@ -18,20 +18,20 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
         "a": "some text",
     };
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     // set
-    storage.set(0, &payload, &hw_counter).unwrap();
-    assert_eq!(storage.get(0, &hw_counter).unwrap(), payload);
+    storage.set(0, &payload).unwrap();
+    assert_eq!(storage.get(0).unwrap(), payload);
 
     // set on existing
     let payload_to_merge = payload_json! {
         "zzz": "some other text",
     };
 
-    storage.set(0, &payload_to_merge, &hw_counter).unwrap();
+    storage.set(0, &payload_to_merge).unwrap();
 
-    let stored = storage.get(0, &hw_counter).unwrap();
+    let stored = storage.get(0).unwrap();
     assert_eq!(
         stored,
         payload_json! {
@@ -45,14 +45,9 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
         "layer2": true,
     };
     storage
-        .set_by_key(
-            0,
-            &nested_payload,
-            &"layer1".try_into().unwrap(),
-            &hw_counter,
-        )
+        .set_by_key(0, &nested_payload, &"layer1".try_into().unwrap())
         .unwrap();
-    let stored = storage.get(0, &hw_counter).unwrap();
+    let stored = storage.get(0).unwrap();
 
     assert_eq!(
         stored,
@@ -66,10 +61,8 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     );
 
     // delete key
-    storage
-        .delete(0, &"layer1".try_into().unwrap(), &hw_counter)
-        .unwrap();
-    let stored = storage.get(0, &hw_counter).unwrap();
+    storage.delete(0, &"layer1".try_into().unwrap()).unwrap();
+    let stored = storage.get(0).unwrap();
     assert_eq!(
         stored,
         payload_json! {
@@ -83,30 +76,27 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
         "new": "new text",
         "other_new": "other new text",
     };
-    storage.overwrite(0, &new_payload, &hw_counter).unwrap();
-    let stored = storage.get(0, &hw_counter).unwrap();
+    storage.overwrite(0, &new_payload).unwrap();
+    let stored = storage.get(0).unwrap();
     assert_eq!(stored, new_payload);
 
-    storage.clear(0, &hw_counter).unwrap();
-    assert_eq!(storage.get(0, &hw_counter).unwrap(), payload_json! {});
+    storage.clear(0).unwrap();
+    assert_eq!(storage.get(0).unwrap(), payload_json! {});
 
     for i in 1..10 {
-        storage.set(i, &payload, &hw_counter).unwrap();
+        storage.set(i, &payload).unwrap();
     }
 
     let assert_payloads = |storage: &S| {
         storage
-            .iter(
-                |key, value| {
-                    if key == 0 {
-                        assert_eq!(value, &payload_json! {});
-                        return Ok(true);
-                    }
-                    assert_eq!(value, &payload);
-                    Ok(true)
-                },
-                &hw_counter,
-            )
+            .iter(|key, value| {
+                if key == 0 {
+                    assert_eq!(value, &payload_json! {});
+                    return Ok(true);
+                }
+                assert_eq!(value, &payload);
+                Ok(true)
+            })
             .unwrap();
     };
 

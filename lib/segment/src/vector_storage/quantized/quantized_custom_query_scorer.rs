@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwScale};
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -15,9 +15,9 @@ where
     TEncodedVectors: quantization::EncodedVectors,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
+    hw: HwScale,
     query: TQuery,
     quantized_storage: &'a TEncodedVectors,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a, TEncodedVectors, TQuery> QuantizedCustomQueryScorer<'a, TEncodedVectors, TQuery>
@@ -29,7 +29,6 @@ where
         raw_query: TInputQuery,
         quantized_storage: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
-        mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
         TElement: PrimitiveVectorElement,
@@ -60,14 +59,13 @@ where
             })
             .unwrap();
 
-        hardware_counter.set_cpu_multiplier(size_of::<TElement>());
-
-        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_storage.is_on_disk()));
-
         Self {
+            hw: HwScale {
+                cpu: size_of::<TElement>(),
+                vector_io_read: usize::from(quantized_storage.is_on_disk()),
+            },
             query,
             quantized_storage,
-            hardware_counter,
         }
     }
 }
@@ -83,25 +81,25 @@ where
 
         let storage = self.quantized_storage;
 
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(ids.len() * storage.quantized_vector_size());
+        self.hw
+            .vector_io_read(ids.len() * storage.quantized_vector_size());
 
-        storage.for_each_batch(ids, |idx, vector| {
-            scores[idx] = self.query.score_by(|query| {
-                storage.score(query, &vector, &self.hardware_counter) // inhibit `rustfmt`
-            });
+        hw::scale_cpu(self.hw.cpu, || {
+            storage.for_each_batch(ids, |idx, vector| {
+                scores[idx] = self.query.score_by(|query| {
+                    storage.score(query, &vector) // inhibit `rustfmt`
+                });
+            })
         });
     }
 
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         // account for read outside of `score_by` because the closure is called once per example
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(self.quantized_storage.quantized_vector_size());
-        self.query.score_by(|this| {
-            self.quantized_storage
-                .score_point(this, idx, &self.hardware_counter)
+        self.hw
+            .vector_io_read(self.quantized_storage.quantized_vector_size());
+        hw::scale_cpu(self.hw.cpu, || {
+            self.query
+                .score_by(|this| self.quantized_storage.score_point(this, idx))
         })
     }
 
@@ -111,9 +109,9 @@ where
 
     type SupportsBytes = TEncodedVectors::SupportsBytes;
     fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
-        self.query.score_by(|this| {
-            self.quantized_storage
-                .score_bytes(enabled, this, bytes, &self.hardware_counter)
+        hw::scale_cpu(self.hw.cpu, || {
+            self.query
+                .score_by(|this| self.quantized_storage.score_bytes(enabled, this, bytes))
         })
     }
 }

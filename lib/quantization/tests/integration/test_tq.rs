@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ, ErrorCorrectionMetadata};
@@ -216,7 +216,7 @@ mod tests {
     fn test_tq_internal_score_matches_reference() {
         let dim = 128;
         let vectors_count = 32;
-        let counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         for &bits in BITS {
             for &distance in &[DistanceType::Dot, DistanceType::Cosine, DistanceType::L2] {
@@ -266,7 +266,7 @@ mod tests {
                     for i in 1..vectors_count {
                         let v1 = encoded.get_quantized_vector(0);
                         let v2 = encoded.get_quantized_vector(i as u32);
-                        let optimized = encoded.score_internal(0, i as u32, &counter);
+                        let optimized = encoded.score_internal(0, i as u32);
                         let reference = score_scalar_reference(&v1, &v2, bits, distance, mode, ec);
                         let tolerance = 1e-5 * reference.abs().max(1.0);
 
@@ -329,9 +329,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = dot_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -388,9 +388,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = cosine_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -443,9 +443,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = dot_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -499,9 +499,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = cosine_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -561,8 +561,8 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
-                let score = encoded.score_point(&query_u8, 0u32, &counter);
+                let _hw = hw::test_guard();
+                let score = encoded.score_point(&query_u8, 0u32);
                 assert!(
                     score.abs() < error,
                     "bits={bits:?}, dim={dim}, score={score} (expected ~0)"
@@ -617,9 +617,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for index in 0..VECTORS_COUNT {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     assert!(
                         score.abs() < error,
                         "bits={bits:?}, dim={dim}, index={index}, score={score} (expected ~0)"
@@ -682,8 +682,8 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
-                let score = encoded.score_point(&query_u8, 0u32, &counter);
+                let _hw = hw::test_guard();
+                let score = encoded.score_point(&query_u8, 0u32);
                 assert!(
                     score.abs() < error,
                     "bits={bits:?}, dim={dim}, score={score} (expected ~0)"
@@ -740,9 +740,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for index in 0..VECTORS_COUNT {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     assert!(
                         score.abs() < error,
                         "bits={bits:?}, dim={dim}, index={index}, score={score} (expected ~0)"
@@ -795,9 +795,9 @@ mod tests {
             .unwrap();
             let query_u8 = encoded.encode_query(&query);
 
-            let counter = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
             for index in 0..VECTORS_COUNT {
-                let score = encoded.score_point(&query_u8, index as u32, &counter);
+                let score = encoded.score_point(&query_u8, index as u32);
                 assert!(
                     score.is_finite() && score.abs() < 10.0,
                     "bits={bits:?}, index={index}, score={score}"
@@ -854,9 +854,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = l2_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -909,9 +909,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = l2_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -966,9 +966,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = l1_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -1021,9 +1021,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = l1_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -1088,7 +1088,7 @@ mod tests {
                 &AtomicBool::new(false),
             )
             .unwrap();
-            let counter = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
             let mut total = 0.0;
             for q in &queries {
                 let mut truth: Vec<(usize, f32)> = vectors
@@ -1101,7 +1101,7 @@ mod tests {
 
                 let qq = encoded.encode_query(q);
                 let mut q_scores: Vec<(usize, f32)> = (0..n)
-                    .map(|i| (i, encoded.score_point(&qq, i as u32, &counter)))
+                    .map(|i| (i, encoded.score_point(&qq, i as u32)))
                     .collect();
                 q_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
                 let q_top: Vec<usize> = q_scores.iter().take(topk).map(|x| x.0).collect();
@@ -1239,7 +1239,7 @@ mod tests {
                 )
                 .unwrap();
                 let encoded_query = encoded.encode_query(&query);
-                let counter = HardwareCounterCell::new();
+                let _hw = hw::test_guard();
 
                 let sequential: Vec<u32> = (0..VECTORS_COUNT as u32).collect();
                 let scattered: Vec<u32> = (0..VECTORS_COUNT as u32).step_by(3).collect();
@@ -1248,10 +1248,10 @@ mod tests {
                 for ids in [&sequential, &scattered, &descending] {
                     let expected: Vec<f32> = ids
                         .iter()
-                        .map(|&id| encoded.score_point(&encoded_query, id, &counter))
+                        .map(|&id| encoded.score_point(&encoded_query, id))
                         .collect();
                     let mut batched = vec![0.0f32; ids.len()];
-                    encoded.score_points(&encoded_query, ids, &mut batched, &counter);
+                    encoded.score_points(&encoded_query, ids, &mut batched);
                     assert_eq!(
                         expected, batched,
                         "score_points mismatch for bits={bits:?}, mode={mode:?}, distance={distance_type:?}",

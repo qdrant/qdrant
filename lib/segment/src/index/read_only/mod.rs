@@ -5,7 +5,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::low_memory::low_memory_mode;
 use common::storage_version::VERSION_FILE;
 use common::types::{ScoredPointOffset, TelemetryDetail};
@@ -461,31 +460,28 @@ impl<S: UniversalReadExt + 'static> VectorIndexRead for VectorIndexReadEnum<S> {
         idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         is_stopped: &std::sync::atomic::AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         match self {
-            Self::Plain(index) => index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter),
-            Self::Hnsw(index) => index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter),
-            Self::SparseMutableRam(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
-            }
+            Self::Plain(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
+            Self::Hnsw(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
+            Self::SparseMutableRam(index) => index.fill_idf_statistics(idf, corpus, is_stopped),
             Self::SparseCompressedImmutableRamF32(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedImmutableRamF16(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedImmutableRamU8(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedStoredF32(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedStoredF16(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
             Self::SparseCompressedStoredU8(index) => {
-                index.fill_idf_statistics(idf, corpus, is_stopped, hw_counter)
+                index.fill_idf_statistics(idf, corpus, is_stopped)
             }
         }
     }

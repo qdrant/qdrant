@@ -3,7 +3,6 @@ mod tests;
 
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 use quantization::turboquant::TQBits;
@@ -73,7 +72,6 @@ impl UpdateOnlyTurboVectorStorage {
         fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let encoded_size = self.quantizer.quantized_size();
         let mut run: Vec<Vec<u8>> = Vec::new();
@@ -109,13 +107,12 @@ impl UpdateOnlyTurboVectorStorage {
             fs,
             start_slot as VectorOffsetType,
             run.iter().map(Vec::as_slice),
-            hw_counter,
         )?;
 
         for slot in missing {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(fs, hw_counter)
+        self.deleted.flush(fs)
     }
 }

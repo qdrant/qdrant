@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::Flusher;
 use common::prefetch::{
     MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
@@ -80,12 +79,7 @@ impl QuantizedRamStorage {
 }
 
 impl quantization::EncodedStorageWrite for QuantizedRamStorage {
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         self.vectors
             .insert(id as usize, vector)

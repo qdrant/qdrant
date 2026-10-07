@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHashMap;
 use common::bitvec::BitSliceExt as _;
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
@@ -41,7 +40,6 @@ where
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
@@ -60,7 +58,6 @@ where
             &resolved_offsets,
             with_payload,
             with_vector,
-            hw_counter,
             is_stopped,
         )
     }
@@ -78,7 +75,6 @@ where
         resolved_offsets: &[PointOffsetType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         debug_assert_eq!(resolved_ids.len(), resolved_offsets.len());
@@ -100,7 +96,7 @@ where
 
         for vector_name in self.requested_vector_names(with_vector) {
             let keys = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
-            self.vectors_by_offsets(vector_name, keys, hw_counter, |id, _offset, vector| {
+            self.vectors_by_offsets(vector_name, keys, |id, _offset, vector| {
                 if let Some(record) = records.get_mut(&id) {
                     record
                         .vectors
@@ -111,13 +107,8 @@ where
             })?;
         }
 
-        let payloads = self.requested_payloads(
-            resolved_ids,
-            resolved_offsets,
-            with_payload,
-            is_stopped,
-            hw_counter,
-        )?;
+        let payloads =
+            self.requested_payloads(resolved_ids, resolved_offsets, with_payload, is_stopped)?;
         for (id, payload) in payloads {
             if let Some(record) = records.get_mut(&id) {
                 record.payload = Some(payload);
@@ -135,7 +126,6 @@ where
         &self,
         point_ids: &[PointIdType],
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
@@ -167,7 +157,7 @@ where
 
         for vector_name in self.requested_vector_names(with_vector) {
             let keys = resolved_keys(&resolved_ids, &resolved_offsets, is_stopped);
-            self.vector_bytes_by_offsets(vector_name, keys, hw_counter, |id, _offset, bytes| {
+            self.vector_bytes_by_offsets(vector_name, keys, |id, _offset, bytes| {
                 if let Some(record) = records.get_mut(&id) {
                     record
                         .vectors
@@ -178,8 +168,7 @@ where
             })?;
         }
 
-        let payloads =
-            self.requested_payloads_raw(&resolved_ids, &resolved_offsets, is_stopped, hw_counter)?;
+        let payloads = self.requested_payloads_raw(&resolved_ids, &resolved_offsets, is_stopped)?;
         for (id, payload) in payloads {
             if let Some(record) = records.get_mut(&id) {
                 record.payload = Some(payload);
@@ -213,7 +202,6 @@ where
         resolved_offsets: &[PointOffsetType],
         with_payload: &WithPayload,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(ExtendedPointId, Payload)>> {
         if !with_payload.enable {
             return Ok(Vec::new());
@@ -222,22 +210,18 @@ where
         let mut payloads = Vec::with_capacity(resolved_ids.len());
         let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
 
-        self.read_payloads::<Random, _>(
-            point_offsets,
-            |point_id, payload| {
-                check_stopped(is_stopped)?;
+        self.read_payloads::<Random, _>(point_offsets, |point_id, payload| {
+            check_stopped(is_stopped)?;
 
-                let payload = match &with_payload.payload_selector {
-                    Some(selector) => selector.process(payload),
-                    None => payload,
-                };
+            let payload = match &with_payload.payload_selector {
+                Some(selector) => selector.process(payload),
+                None => payload,
+            };
 
-                payloads.push((point_id, payload));
+            payloads.push((point_id, payload));
 
-                Ok(())
-            },
-            hw_counter,
-        )?;
+            Ok(())
+        })?;
 
         Ok(payloads)
     }
@@ -251,24 +235,19 @@ where
         resolved_ids: &[ExtendedPointId],
         resolved_offsets: &[PointOffsetType],
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(ExtendedPointId, RawPayload)>> {
         let mut payloads = Vec::with_capacity(resolved_ids.len());
         let point_offsets = resolved_keys(resolved_ids, resolved_offsets, is_stopped);
 
-        self.read_payloads_raw::<Random, _>(
-            point_offsets,
-            |point_id, bytes| {
-                check_stopped(is_stopped)?;
+        self.read_payloads_raw::<Random, _>(point_offsets, |point_id, bytes| {
+            check_stopped(is_stopped)?;
 
-                if let Some(bytes) = bytes {
-                    payloads.push((point_id, RawPayload::from_storage_bytes(bytes.to_vec())));
-                }
+            if let Some(bytes) = bytes {
+                payloads.push((point_id, RawPayload::from_storage_bytes(bytes.to_vec())));
+            }
 
-                Ok(())
-            },
-            hw_counter,
-        )?;
+            Ok(())
+        })?;
 
         Ok(payloads)
     }
@@ -280,7 +259,6 @@ where
         internal_result: Vec<ScoredPointOffset>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let mut external_ids = AHashMap::with_capacity(internal_result.len());
@@ -326,7 +304,6 @@ where
             &point_offsets,
             with_payload,
             with_vector,
-            hw_counter,
             is_stopped,
         )?;
 
@@ -397,6 +374,7 @@ where
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        let _hw = query_context.hardware_usage_accumulator().enter_guard();
         check_query_vectors(vector_name, query_vectors, self.segment_config)?;
         let vector_data = self
             .vector_data
@@ -416,8 +394,6 @@ where
 
         check_stopped(&vector_query_context.is_stopped())?;
 
-        let hw_counter = vector_query_context.hardware_counter();
-
         internal_results
             .into_iter()
             .map(|internal_result| {
@@ -425,7 +401,6 @@ where
                     internal_result,
                     with_payload,
                     with_vector,
-                    &hw_counter,
                     &vector_query_context.is_stopped(),
                 )
             })
@@ -454,15 +429,14 @@ where
         top: usize,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<ScoredPoint>> {
+        let _hw = query_context.hardware_usage_accumulator().enter_guard();
         let context = query_context.get_text_context(field).ok_or_else(|| {
             OperationError::service_error(format!(
                 "no text statistics were gathered for field {field}",
             ))
         })?;
-        let hw_counter = context.hardware_counter();
-
         let filter_context = filter
-            .map(|filter| self.payload_index.filter_context(filter, &hw_counter))
+            .map(|filter| self.payload_index.filter_context(filter))
             .transpose()?;
         let (cutoff, deleted, shadowed) = self.id_tracker.point_mappings().visible_scan_masks();
         let deleted = context.deleted_points().unwrap_or(deleted);
@@ -486,16 +460,14 @@ where
             internal_result,
             with_payload,
             with_vector,
-            &hw_counter,
             context.is_stopped(),
         )
     }
 
     pub fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         query_context.add_available_point_count(self.available_point_count_without_deferred());
-        let hw_counter = query_context
-            .hardware_usage_accumulator()
-            .get_counter_cell();
+        let hw_acc = query_context.hardware_usage_accumulator().clone();
+        let _hw = hw_acc.enter_guard();
         let is_stopped = query_context.is_stopped_handle();
 
         let QueryIdfStats { scopes } = query_context.mut_idf_stats();
@@ -513,7 +485,6 @@ where
                         idf,
                         corpus.as_ref(),
                         &is_stopped,
-                        &hw_counter,
                     )?;
 
                     if let Some(count) = indexed_vectors.get_mut(vector_name) {
@@ -527,7 +498,7 @@ where
 
         for (field, stats) in query_context.mut_text_stats().iter_mut() {
             self.payload_index
-                .fill_text_statistics(field, stats, &is_stopped, &hw_counter)?;
+                .fill_text_statistics(field, stats, &is_stopped)?;
         }
         Ok(())
     }
@@ -554,7 +525,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use blobstore::Blob as _;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::types::DeferredBehavior;
     use rstest::rstest;
     use sparse::common::sparse_vector::SparseVector;
@@ -607,7 +578,7 @@ mod tests {
             id_tracker_memory: None,
         };
         let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         // Point 1: dense + sparse vectors, with payload.
         let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
@@ -617,13 +588,9 @@ mod tests {
             VectorInternal::Dense(vec![0.1, 0.2, 0.3, 0.4]),
         );
         vectors.insert(SPARSE_NAME.to_owned(), VectorInternal::Sparse(sparse));
-        segment
-            .upsert_point(100, 1.into(), vectors, &hw_counter)
-            .unwrap();
+        segment.upsert_point(100, 1.into(), vectors).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"city": "Berlin", "count": 3}"#).unwrap();
-        segment
-            .set_full_payload(101, 1.into(), &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(101, 1.into(), &payload).unwrap();
 
         // Point 2: dense vector only, no payload.
         let mut vectors = NamedVectors::default();
@@ -631,9 +598,7 @@ mod tests {
             DENSE_NAME.to_owned(),
             VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         );
-        segment
-            .upsert_point(102, 2.into(), vectors, &hw_counter)
-            .unwrap();
+        segment.upsert_point(102, 2.into(), vectors).unwrap();
 
         (segment, payload)
     }
@@ -678,7 +643,7 @@ mod tests {
     ) {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (segment, payload) = build_two_point_segment(dir.path());
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         // Id 3 does not exist; both functions must skip it the same way.
         let point_ids = [1.into(), 2.into(), 3.into()];
@@ -696,7 +661,6 @@ mod tests {
                 &point_ids,
                 &with_payload,
                 &with_vector,
-                &hw_counter,
                 &is_stopped,
                 DeferredBehavior::VisibleOnly,
             )
@@ -705,7 +669,6 @@ mod tests {
             .retrieve_raw(
                 &point_ids,
                 &with_vector,
-                &hw_counter,
                 &is_stopped,
                 DeferredBehavior::VisibleOnly,
             )
@@ -784,7 +747,6 @@ mod tests {
     fn test_retrieve_and_retrieve_raw_unknown_vector_name_error() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (segment, _payload) = build_two_point_segment(dir.path());
-        let hw_counter = HardwareCounterCell::new();
         let is_stopped = AtomicBool::new(false);
 
         let point_ids = [1.into()];
@@ -799,7 +761,6 @@ mod tests {
                 &point_ids,
                 &with_payload,
                 &with_vector,
-                &hw_counter,
                 &is_stopped,
                 DeferredBehavior::VisibleOnly,
             )
@@ -809,7 +770,6 @@ mod tests {
             .retrieve_raw(
                 &point_ids,
                 &with_vector,
-                &hw_counter,
                 &is_stopped,
                 DeferredBehavior::VisibleOnly,
             )
@@ -828,7 +788,7 @@ mod tests {
     fn test_retrieve_and_retrieve_raw_deleted_vector_equivalence() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (mut segment, _payload) = build_two_point_segment(dir.path());
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let is_stopped = AtomicBool::new(false);
 
         assert!(segment.delete_vector(103, 1.into(), DENSE_NAME).unwrap());
@@ -845,7 +805,6 @@ mod tests {
                 &point_ids,
                 &with_payload,
                 &with_vector,
-                &hw_counter,
                 &is_stopped,
                 DeferredBehavior::VisibleOnly,
             )
@@ -854,7 +813,6 @@ mod tests {
             .retrieve_raw(
                 &point_ids,
                 &with_vector,
-                &hw_counter,
                 &is_stopped,
                 DeferredBehavior::VisibleOnly,
             )

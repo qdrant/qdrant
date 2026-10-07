@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
+use common::counter::hw::{HwFutureExt, HwMetric};
+use common::counter::{AmbientContext, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng, rng};
@@ -59,12 +60,8 @@ async fn test_hw_metrics_cancellation() {
 
     let upsert_ops = make_random_points_upsert_op(50_000, DIM);
     shard
-        .update(
-            upsert_ops.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .update(upsert_ops.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -91,12 +88,8 @@ async fn test_hw_metrics_cancellation() {
     // See https://github.com/qdrant/qdrant/pull/9233
     let warmup_started = std::time::Instant::now();
     shard
-        .do_search(
-            req.clone(),
-            &current_runtime,
-            Duration::from_secs(60),
-            HwMeasurementAcc::new(),
-        )
+        .do_search(req.clone(), &current_runtime, Duration::from_secs(60))
+        .measured(AmbientContext::new())
         .await
         .expect("warmup search should succeed");
     let baseline = warmup_started.elapsed();
@@ -110,9 +103,10 @@ async fn test_hw_metrics_cancellation() {
     for _ in 0..12 {
         let outer_hw = Arc::new(HwSharedDrain::default());
         {
-            let hw_counter = HwMeasurementAcc::new_with_metrics_drain(outer_hw.clone());
+            let hw_counter = AmbientContext::new_with_metrics_drain(outer_hw.clone());
             let search_res = shard
-                .do_search(req.clone(), &current_runtime, timeout, hw_counter)
+                .do_search(req.clone(), &current_runtime, timeout)
+                .measured(hw_counter)
                 .await;
 
             match search_res {
@@ -130,11 +124,11 @@ async fn test_hw_metrics_cancellation() {
         let wait_timeout = Duration::from_secs(2);
         let poll_interval = Duration::from_millis(10);
         let wait_started = std::time::Instant::now();
-        while outer_hw.get_cpu() == 0 && wait_started.elapsed() <= wait_timeout {
+        while outer_hw.load()[HwMetric::Cpu] == 0 && wait_started.elapsed() <= wait_timeout {
             tokio::time::sleep(poll_interval).await;
         }
 
-        if outer_hw.get_cpu() > 0 {
+        if outer_hw.load()[HwMetric::Cpu] > 0 {
             cancelled_with_cpu = true;
             break;
         }

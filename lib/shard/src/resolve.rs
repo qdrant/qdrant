@@ -14,7 +14,6 @@
 //! the append of the rewritten operation. Callers provide this via the shard
 //! update fence.
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::OperationResult;
 use segment::types::PointIdType;
 
@@ -84,17 +83,16 @@ pub fn is_filter_resolving(operation: &CollectionUpdateOperations) -> bool {
 pub fn resolve_operation(
     segments: &SegmentHolder,
     operation: CollectionUpdateOperations,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<CollectionUpdateOperations> {
     let resolved = match operation {
         CollectionUpdateOperations::PointOperation(op) => {
             CollectionUpdateOperations::PointOperation(match op {
                 PointOperations::DeletePointsByFilter(filter) => {
-                    let ids = matched_ids(segments, &filter, hw_counter)?;
+                    let ids = matched_ids(segments, &filter)?;
                     PointOperations::DeletePoints { ids }
                 }
                 PointOperations::UpsertPointsConditional(op) => {
-                    resolve_conditional_upsert(segments, op, hw_counter)?
+                    resolve_conditional_upsert(segments, op)?
                 }
                 op @ (PointOperations::UpsertPoints(_)
                 | PointOperations::UpsertPointsRaw(_)
@@ -106,7 +104,7 @@ pub fn resolve_operation(
         CollectionUpdateOperations::VectorOperation(op) => {
             CollectionUpdateOperations::VectorOperation(match op {
                 VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
-                    let ids = matched_ids(segments, &filter, hw_counter)?;
+                    let ids = matched_ids(segments, &filter)?;
                     VectorOperations::DeleteVectors(ids.into(), vector_names)
                 }
                 VectorOperations::UpdateVectors(update) => {
@@ -119,7 +117,7 @@ pub fn resolve_operation(
                         // exist but do not match the filter.
                         let point_ids = points.iter().map(|point| point.id).collect::<Vec<_>>();
                         let points_to_exclude =
-                            select_excluded_by_filter_ids(segments, point_ids, filter, hw_counter)?;
+                            select_excluded_by_filter_ids(segments, point_ids, filter)?;
                         points.retain(|point| !points_to_exclude.contains(&point.id));
                     }
                     VectorOperations::UpdateVectors(UpdateVectorsOp {
@@ -133,10 +131,10 @@ pub fn resolve_operation(
         CollectionUpdateOperations::PayloadOperation(op) => {
             CollectionUpdateOperations::PayloadOperation(match op {
                 PayloadOps::SetPayload(sp) => {
-                    PayloadOps::SetPayload(resolve_set_payload(segments, sp, hw_counter)?)
+                    PayloadOps::SetPayload(resolve_set_payload(segments, sp)?)
                 }
                 PayloadOps::OverwritePayload(sp) => {
-                    PayloadOps::OverwritePayload(resolve_set_payload(segments, sp, hw_counter)?)
+                    PayloadOps::OverwritePayload(resolve_set_payload(segments, sp)?)
                 }
                 PayloadOps::DeletePayload(dp) => {
                     let DeletePayloadOp {
@@ -144,7 +142,7 @@ pub fn resolve_operation(
                         points,
                         filter,
                     } = dp;
-                    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
+                    let points = resolve_points_or_filter(segments, points, filter)?;
                     PayloadOps::DeletePayload(DeletePayloadOp {
                         keys,
                         points,
@@ -152,7 +150,7 @@ pub fn resolve_operation(
                     })
                 }
                 PayloadOps::ClearPayloadByFilter(filter) => {
-                    let points = matched_ids(segments, &filter, hw_counter)?;
+                    let points = matched_ids(segments, &filter)?;
                     PayloadOps::ClearPayload { points }
                 }
                 op @ PayloadOps::ClearPayload { .. } => op,
@@ -172,11 +170,10 @@ pub fn resolve_operation(
 fn matched_ids(
     segments: &SegmentHolder,
     filter: &segment::types::Filter,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<PointIdType>> {
     // `points_by_filter` flattens per-segment matches, so a point with copies
     // in several segments can appear more than once.
-    let mut ids = points_by_filter(segments, filter, hw_counter)?;
+    let mut ids = points_by_filter(segments, filter)?;
     ids.sort_unstable();
     ids.dedup();
     Ok(ids)
@@ -189,10 +186,9 @@ fn resolve_points_or_filter(
     segments: &SegmentHolder,
     points: Option<Vec<PointIdType>>,
     filter: Option<segment::types::Filter>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<Vec<PointIdType>>> {
     match (points, filter) {
-        (None, Some(filter)) => Ok(Some(matched_ids(segments, &filter, hw_counter)?)),
+        (None, Some(filter)) => Ok(Some(matched_ids(segments, &filter)?)),
         (points, _) => Ok(points),
     }
 }
@@ -202,7 +198,6 @@ fn resolve_points_or_filter(
 fn resolve_conditional_upsert(
     segments: &SegmentHolder,
     operation: ConditionalInsertOperationInternal,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<PointOperations> {
     let ConditionalInsertOperationInternal {
         mut points_op,
@@ -210,7 +205,7 @@ fn resolve_conditional_upsert(
         update_mode,
     } = operation;
 
-    retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode, hw_counter)?;
+    retain_conditional_upsert_points(segments, &mut points_op, condition, update_mode)?;
 
     Ok(PointOperations::UpsertPoints(points_op))
 }
@@ -218,7 +213,6 @@ fn resolve_conditional_upsert(
 fn resolve_set_payload(
     segments: &SegmentHolder,
     operation: SetPayloadOp,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<SetPayloadOp> {
     let SetPayloadOp {
         payload,
@@ -226,7 +220,7 @@ fn resolve_set_payload(
         filter,
         key,
     } = operation;
-    let points = resolve_points_or_filter(segments, points, filter, hw_counter)?;
+    let points = resolve_points_or_filter(segments, points, filter)?;
     Ok(SetPayloadOp {
         payload,
         points,
@@ -237,7 +231,7 @@ fn resolve_set_payload(
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use segment::payload_json;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, MatchValue, Payload, ValueVariants,
@@ -278,7 +272,7 @@ mod tests {
     #[test]
     fn resolve_delete_by_filter_matches_apply() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         let holder = build_holder(dir.path());
         let twin_holder = build_holder(dir.path());
@@ -290,7 +284,6 @@ mod tests {
             CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
                 filter.clone(),
             )),
-            &hw_counter,
         )
         .unwrap();
 
@@ -304,7 +297,7 @@ mod tests {
         assert!(!ids.is_empty());
         assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
 
-        let mut expected = points_by_filter(&holder, &filter, &hw_counter).unwrap();
+        let mut expected = points_by_filter(&holder, &filter).unwrap();
         expected.sort_unstable();
         expected.dedup();
         assert_eq!(*ids, expected);
@@ -313,11 +306,11 @@ mod tests {
         let CollectionUpdateOperations::PointOperation(op) = resolved else {
             unreachable!()
         };
-        process_point_operation(&holder, 100, op, None, &hw_counter).unwrap();
-        delete_points_by_filter(&twin_holder, 100, &filter, &hw_counter).unwrap();
+        process_point_operation(&holder, 100, op, None).unwrap();
+        delete_points_by_filter(&twin_holder, 100, &filter).unwrap();
 
-        let remaining = points_by_filter(&holder, &filter, &hw_counter).unwrap();
-        let twin_remaining = points_by_filter(&twin_holder, &filter, &hw_counter).unwrap();
+        let remaining = points_by_filter(&holder, &filter).unwrap();
+        let twin_remaining = points_by_filter(&twin_holder, &filter).unwrap();
         assert!(remaining.is_empty(), "resolved delete left {remaining:?}");
         assert!(twin_remaining.is_empty());
     }
@@ -325,7 +318,6 @@ mod tests {
     #[test]
     fn resolve_conditional_insert_only_drops_existing_points() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
         let holder = build_holder(dir.path());
 
         // Point 1 exists, point 100 does not.
@@ -340,7 +332,7 @@ mod tests {
             }),
         );
 
-        let resolved = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        let resolved = resolve_operation(&holder, operation).unwrap();
 
         let CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(points_op)) =
             resolved
@@ -353,7 +345,7 @@ mod tests {
     #[test]
     fn resolve_set_payload_filter_to_points() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let holder = build_holder(dir.path());
 
         let operation =
@@ -364,7 +356,7 @@ mod tests {
                 key: None,
             }));
 
-        let resolved = resolve_operation(&holder, operation, &hw_counter).unwrap();
+        let resolved = resolve_operation(&holder, operation).unwrap();
 
         let CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(sp)) = resolved
         else {
@@ -374,7 +366,7 @@ mod tests {
         let points = sp.points.expect("points must be resolved");
         assert!(!points.is_empty());
 
-        let mut expected = points_by_filter(&holder, &color_filter("red"), &hw_counter).unwrap();
+        let mut expected = points_by_filter(&holder, &color_filter("red")).unwrap();
         expected.sort_unstable();
         expected.dedup();
         assert_eq!(points, expected);
@@ -383,7 +375,6 @@ mod tests {
     #[test]
     fn resolve_leaves_id_based_operations_unchanged() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
         let holder = build_holder(dir.path());
 
         let operation = CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
@@ -391,7 +382,7 @@ mod tests {
         });
         assert!(!is_filter_resolving(&operation));
 
-        let resolved = resolve_operation(&holder, operation.clone(), &hw_counter).unwrap();
+        let resolved = resolve_operation(&holder, operation.clone()).unwrap();
         assert_eq!(resolved, operation);
     }
 

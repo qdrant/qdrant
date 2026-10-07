@@ -4,7 +4,6 @@ mod tests;
 use std::borrow::Cow;
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 
@@ -49,7 +48,6 @@ impl<T: PrimitiveVectorElement> UpdateOnlyDenseVectorStorage<T> {
         fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Decoded whole rather than streamed: a chunk append takes the run as
         // one slice-of-slices, and the borrow of a decoded vector cannot
@@ -85,7 +83,6 @@ impl<T: PrimitiveVectorElement> UpdateOnlyDenseVectorStorage<T> {
             fs,
             start_slot as VectorOffsetType,
             run.iter().map(Vec::as_slice),
-            hw_counter,
         )?;
 
         // Only the missing ones are flagged. A slot this writer has not flagged
@@ -96,7 +93,7 @@ impl<T: PrimitiveVectorElement> UpdateOnlyDenseVectorStorage<T> {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(fs, hw_counter)
+        self.deleted.flush(fs)
     }
 
     /// Storage-native bytes are a packed `[T]` of exactly one vector, the form

@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use itertools::Itertools;
@@ -25,26 +24,17 @@ impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
         ImmutableGeoIndex::max_values_per_point(self)
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(ImmutableGeoIndex::points_of_hash(self, hash))
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(ImmutableGeoIndex::values_of_hash(self, hash))
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
         Ok(ImmutableGeoIndex::check_values_any(self, idx, check_fn))

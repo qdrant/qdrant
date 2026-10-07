@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
 use common::universal_io::{CachedReadFs, MmapFile, MmapFs};
@@ -48,7 +48,7 @@ fn build_immutable_segment(
     temp_path: &Path,
     inline_storage: bool,
 ) -> Segment {
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let source_dir = Builder::new().prefix("ro_source").tempdir().unwrap();
     let (mut source, _) = build_segment(
@@ -82,23 +82,20 @@ fn build_immutable_segment(
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        source.upsert_point(op_num, point_id, vectors, &hw).unwrap();
+        source.upsert_point(op_num, point_id, vectors).unwrap();
         let kw = ["red", "green", "blue"][i % 3];
         let payload = serde_json::from_value(serde_json::json!({
             "kw": kw,
             "num": i as i64,
         }))
         .unwrap();
-        source
-            .set_full_payload(op_num, point_id, &payload, &hw)
-            .unwrap();
+        source.set_full_payload(op_num, point_id, &payload).unwrap();
     }
     source
         .create_field_index(
             NUM_POINTS as u64 + 1,
             &JsonPath::new("kw"),
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-            &hw,
         )
         .unwrap();
     source
@@ -106,7 +103,6 @@ fn build_immutable_segment(
             NUM_POINTS as u64 + 2,
             &JsonPath::new("num"),
             Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
-            &hw,
         )
         .unwrap();
 
@@ -148,9 +144,7 @@ fn build_immutable_segment(
         FeatureFlags::default(),
     )
     .unwrap();
-    builder
-        .update(&[&source], &AtomicBool::new(false), &hw)
-        .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
     let built = builder.build_for_test(segments_path);
     let expected_storage_type = if inline_storage {
         VectorStorageType::GraphInline
@@ -172,14 +166,13 @@ fn keyword_filter(value: &str) -> Filter {
 }
 
 fn sorted_filtered(segment: &impl ReadSegmentEntry, filter: &Filter) -> Vec<PointIdType> {
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut ids = segment
         .read_filtered(
             None,
             None,
             Some(filter),
             &AtomicBool::new(false),
-            &hw,
             DeferredBehavior::WithDeferred,
         )
         .unwrap();
@@ -235,7 +228,7 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
         );
     }
 
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     for i in 0..NUM_POINTS {
         let point_id: PointIdType = (i as u64 + 1).into();
@@ -248,8 +241,8 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
             continue;
         }
         assert_eq!(
-            reference.payload(point_id, &hw).unwrap(),
-            candidate.payload(point_id, &hw).unwrap(),
+            reference.payload(point_id).unwrap(),
+            candidate.payload(point_id).unwrap(),
             "payload mismatch for point {point_id}",
         );
     }
@@ -281,12 +274,11 @@ fn read_only_segment_graph_inline_matches_mutable() {
     let temp_dir = Builder::new().prefix("ro_builder_gi").tempdir().unwrap();
 
     let mut mutable = build_immutable_segment(segments_dir.path(), temp_dir.path(), true);
-    let hw = HardwareCounterCell::new();
 
     let deleted: [PointIdType; 3] = [3.into(), 17.into(), 42.into()];
     for &point_id in &deleted {
         assert_matches!(
-            mutable.delete_point(NUM_POINTS as u64 + 3, point_id, &hw),
+            mutable.delete_point(NUM_POINTS as u64 + 3, point_id),
             Ok(true),
         );
     }
@@ -361,7 +353,7 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
 #[test]
 fn read_only_segment_load_profile_defers_points() {
     let dir = Builder::new().prefix("ro_deferred").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let (mut mutable, _) = build_segment(
         dir.path(),
@@ -390,7 +382,7 @@ fn read_only_segment_load_profile_defers_points() {
         let vector = vec![1.0; DIM];
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         mutable
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
             .unwrap();
     }
     mutable.flush(true).unwrap();
@@ -563,7 +555,7 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
     }
 
     let dir = Builder::new().prefix("ro_sparse_mut").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let (mut mutable, _) = build_segment(
         dir.path(),
@@ -593,7 +585,7 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
         let vector = sparse_vector(i);
         let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector));
         mutable
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
             .unwrap();
     }
     mutable.flush(true).unwrap();
@@ -616,24 +608,22 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
         vector.values.push(2.0 + (i % 4) as f32);
         let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector));
         mutable
-            .upsert_point(op_num, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point(op_num, (i as u64 + 1).into(), vectors)
             .unwrap();
         op_num += 1;
     }
     let updated = sparse_vector(NUM_POINTS + 20);
     let vectors = NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&updated));
-    mutable
-        .upsert_point(op_num, 3.into(), vectors, &hw)
-        .unwrap();
+    mutable.upsert_point(op_num, 3.into(), vectors).unwrap();
     op_num += 1;
     for point_id in [5, 17] {
-        mutable.delete_point(op_num, point_id.into(), &hw).unwrap();
+        mutable.delete_point(op_num, point_id.into()).unwrap();
         op_num += 1;
     }
     mutable.flush(true).unwrap();
 
     // A live reload folds the delta into the rebuilt sparse index.
-    preload_then_reload(&mut read_only, &hw).expect("read-only live reload");
+    preload_then_reload(&mut read_only).expect("read-only live reload");
     assert_eq!(read_only.available_point_count(), NUM_POINTS + 20 - 2);
 
     assert_sparse_search_matches(&mutable, &read_only, &query);
@@ -646,11 +636,10 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
 /// access), then the exclusive apply.
 fn preload_then_reload(
     segment: &mut ReadOnlySegment<MmapFile>,
-    hw_counter: &HardwareCounterCell,
 ) -> crate::common::operation_error::OperationResult<()> {
     let max_committed_id =
         futures::executor::block_on(segment.live_preload(&AtomicBool::new(false)))?;
-    segment.live_reload(max_committed_id, hw_counter)
+    segment.live_reload(max_committed_id)
 }
 
 /// Drive `config_reload_diff` + `apply_config_reload`: toggle the on-disk
@@ -764,7 +753,7 @@ fn vanished_segment_classifies_not_found() {
             .expect("read-only open");
     let points_before = read_only.available_point_count();
     fs_err::remove_dir_all(&segment_path).unwrap();
-    let err = preload_then_reload(&mut read_only, &HardwareCounterCell::disposable())
+    let err = hw::test(|| preload_then_reload(&mut read_only))
         .expect_err("live_reload over a removed directory must fail");
     assert!(err.is_not_found(), "expected not-found, got: {err}");
     assert_eq!(read_only.available_point_count(), points_before);
@@ -803,8 +792,8 @@ fn deferred_index_reads_nothing_at_open() {
 
     // Non-search reads never touch the deferred index.
     assert!(!sorted_filtered(&read_only, &filter).is_empty());
-    let hw = HardwareCounterCell::new();
-    assert!(read_only.payload(1.into(), &hw).unwrap() != Default::default());
+    let _hw = hw::test_guard();
+    assert!(read_only.payload(1.into()).unwrap() != Default::default());
 
     // A search runs the deferred open, which now hits the deleted files.
     let query = QueryVector::Nearest(VectorInternal::Dense(vec![0.5; DIM]));
@@ -924,7 +913,7 @@ fn schedule_open_and_finish_observe_the_stop_flag() {
 #[test]
 fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     let segments_dir = Builder::new().prefix("appendable_seg").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -958,9 +947,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        mutable
-            .upsert_point(op_num, point_id, vectors, &hw)
-            .unwrap();
+        mutable.upsert_point(op_num, point_id, vectors).unwrap();
     }
     mutable.flush(true).unwrap();
 
@@ -983,9 +970,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
             .collect();
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
-        mutable
-            .upsert_point(op_num, point_id, vectors, &hw)
-            .unwrap();
+        mutable.upsert_point(op_num, point_id, vectors).unwrap();
     }
     mutable.flush(true).unwrap();
 
@@ -993,7 +978,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     // Under the safe read sequence, this reload commits at most the state probed
     // before the LIST (i.e. NUM_POINTS), keeping all components consistent!
     read_only
-        .live_reload(max_committed_id, &hw)
+        .live_reload(max_committed_id)
         .expect("first live reload");
     assert_eq!(
         read_only.available_point_count(),
@@ -1004,7 +989,7 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     // All currently available points must have valid vectors.
     for point_id in 1..=read_only.available_point_count() as u64 {
         let vec = read_only
-            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .vector(DEFAULT_VECTOR_NAME, point_id.into())
             .unwrap();
         assert!(
             vec.is_some(),
@@ -1013,11 +998,11 @@ fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     }
 
     // A subsequent preload and reload cycle picks up the remaining points.
-    preload_then_reload(&mut read_only, &hw).expect("second live reload");
+    preload_then_reload(&mut read_only).expect("second live reload");
     assert_eq!(read_only.available_point_count(), 5000);
     for point_id in 1..=5000_u64 {
         let vec = read_only
-            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .vector(DEFAULT_VECTOR_NAME, point_id.into())
             .unwrap();
         assert!(
             vec.is_some(),
@@ -1034,7 +1019,7 @@ fn test_live_reload_pure_delete_without_inserts() {
         .prefix("appendable_seg_del")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1068,9 +1053,7 @@ fn test_live_reload_pure_delete_without_inserts() {
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         let point_id = (i as u64 + 1).into();
         let op_num = (i + 1) as u64;
-        mutable
-            .upsert_point(op_num, point_id, vectors, &hw)
-            .unwrap();
+        mutable.upsert_point(op_num, point_id, vectors).unwrap();
     }
     mutable.flush(true).unwrap();
 
@@ -1081,10 +1064,10 @@ fn test_live_reload_pure_delete_without_inserts() {
 
     // Delete a point without adding any new points (versions.dat length does not change)
     let op_num = NUM_POINTS as u64 + 1;
-    mutable.delete_point(op_num, 5.into(), &hw).unwrap();
+    mutable.delete_point(op_num, 5.into()).unwrap();
     mutable.flush(true).unwrap();
 
-    preload_then_reload(&mut read_only, &hw).expect("live reload after delete");
+    preload_then_reload(&mut read_only).expect("live reload after delete");
     assert_eq!(
         read_only.available_point_count(),
         NUM_POINTS - 1,
@@ -1104,7 +1087,7 @@ fn test_live_preload_skips_list_when_unchanged() {
         .prefix("appendable_seg_skip")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1135,7 +1118,7 @@ fn test_live_preload_skips_list_when_unchanged() {
         let vector: Vec<f32> = (0..DIM).map(|j| (i + j) as f32).collect();
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
         mutable
-            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors, &hw)
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
             .unwrap();
     }
     mutable.flush(true).unwrap();
@@ -1145,7 +1128,7 @@ fn test_live_preload_skips_list_when_unchanged() {
             .expect("read-only open");
 
     // First preload + reload
-    preload_then_reload(&mut read_only, &hw).expect("first reload");
+    preload_then_reload(&mut read_only).expect("first reload");
     assert_eq!(read_only.available_point_count(), 10);
 
     // After live_reload, files_info was rotated into previous_files_info, so cached_file_info is None
@@ -1176,7 +1159,7 @@ fn test_live_preload_skips_list_when_unchanged() {
 
     // live_reload is an instantaneous no-op
     read_only
-        .live_reload(max_committed_id, &hw)
+        .live_reload(max_committed_id)
         .expect("second reload");
     assert_eq!(read_only.available_point_count(), 10);
 }
@@ -1191,7 +1174,7 @@ fn test_live_preload_while_reader_holds_id_tracker() {
         .prefix("appendable_seg_shared_preload")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1223,7 +1206,7 @@ fn test_live_preload_while_reader_holds_id_tracker() {
             let vector: Vec<f32> = (0..DIM).map(|j| (i as usize + j) as f32).collect();
             let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
             mutable
-                .upsert_point(i + 1, (i + 1).into(), vectors, &hw)
+                .upsert_point(i + 1, (i + 1).into(), vectors)
                 .unwrap();
         }
         mutable.flush(true).unwrap();
@@ -1248,9 +1231,7 @@ fn test_live_preload_while_reader_holds_id_tracker() {
         max_committed_id
     };
 
-    read_only
-        .live_reload(max_committed_id, &hw)
-        .expect("reload");
+    read_only.live_reload(max_committed_id).expect("reload");
     assert_eq!(read_only.available_point_count(), 20);
 }
 
@@ -1266,7 +1247,7 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
         .prefix("appendable_seg_open")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1300,7 +1281,7 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
                 .collect();
             let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
             mutable
-                .upsert_point(i as u64 + 1, (i as u64 + 1).into(), vectors, &hw)
+                .upsert_point(i as u64 + 1, (i as u64 + 1).into(), vectors)
                 .unwrap();
         }
         mutable.flush(true).unwrap();
@@ -1335,7 +1316,7 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
     );
     for point_id in 1..=read_only.available_point_count() as u64 {
         let vector = read_only
-            .vector(DEFAULT_VECTOR_NAME, point_id.into(), &hw)
+            .vector(DEFAULT_VECTOR_NAME, point_id.into())
             .unwrap();
         assert!(
             vector.is_some(),
@@ -1344,6 +1325,6 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
     }
 
     // The next refresh picks up the rest.
-    preload_then_reload(&mut read_only, &hw).expect("reload");
+    preload_then_reload(&mut read_only).expect("reload");
     assert_eq!(read_only.available_point_count(), 5000);
 }

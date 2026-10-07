@@ -19,7 +19,8 @@ use collection::operations::types::{
 };
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::recommendations::recommend_by;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{NamedVector, VectorStructInternal};
 use segment::types::{Distance, VectorName, WithPayloadInterface, WithVector};
@@ -113,15 +114,10 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = HwMeasurementAcc::new();
+    let hw_counter = AmbientContext::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(hw_counter)
         .await
         .unwrap();
 
@@ -142,7 +138,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let result = collection
         .search(
             full_search_request.into(),
@@ -150,8 +146,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await
         .unwrap();
 
@@ -179,7 +175,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let result = collection
         .search(
             failed_search_request.into(),
@@ -187,8 +183,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await;
 
     assert_matches!(result, Err(CollectionError::BadInput { .. }));
@@ -208,7 +204,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let result = collection
         .search(
             full_search_request.into(),
@@ -216,8 +212,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(hw_acc)
         .await
         .unwrap();
 
@@ -243,8 +239,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -258,7 +254,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         }
     }
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let recommend_result = recommend_by(
         RecommendRequestInternal {
             positive: vec![6.into()],
@@ -273,8 +269,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        hw_acc,
     )
+    .measured(hw_acc)
     .await;
 
     match recommend_result {
@@ -286,7 +282,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
     }
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = AmbientContext::new();
     let recommend_result = recommend_by(
         RecommendRequestInternal {
             positive: vec![6.into()],
@@ -302,8 +298,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        hw_acc,
     )
+    .measured(hw_acc)
     .await
     .unwrap();
 

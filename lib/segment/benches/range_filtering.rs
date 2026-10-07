@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::PointOffsetType;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
@@ -47,7 +47,7 @@ fn range_filtering(c: &mut Criterion) {
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     // generate points with payload
@@ -58,7 +58,7 @@ fn range_filtering(c: &mut Criterion) {
             FLT_KEY: rng.random_range(0.0..MAX_RANGE),
         };
         payload_storage
-            .set(id as PointOffsetType, &payload, &hw_counter)
+            .set(id as PointOffsetType, &payload)
             .unwrap();
     }
 
@@ -77,20 +77,12 @@ fn range_filtering(c: &mut Criterion) {
 
     // add numeric float index
     index
-        .set_indexed(
-            &FLT_KEY.parse().unwrap(),
-            PayloadSchemaType::Float,
-            &hw_counter,
-        )
+        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float)
         .unwrap();
 
     // add numeric integer index
     index
-        .set_indexed(
-            &INT_KEY.parse().unwrap(),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer)
         .unwrap();
 
     // make sure all points are indexed
@@ -115,7 +107,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
+                    .with_view(|v| v.query_points(&filter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -129,7 +121,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
+                    .with_view(|v| v.query_points(&filter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -158,7 +150,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, FLT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
+                    .with_view(|v| v.query_points(&filter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;
@@ -172,7 +164,7 @@ fn range_filtering(c: &mut Criterion) {
             || random_range_filter(&mut rng, INT_KEY),
             |filter| {
                 result_size += index
-                    .with_view(|v| v.query_points(&filter, &hw_counter, &is_stopped))
+                    .with_view(|v| v.query_points(&filter, &is_stopped))
                     .unwrap()
                     .len();
                 query_count += 1;

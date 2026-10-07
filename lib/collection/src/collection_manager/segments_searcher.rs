@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw;
 use common::types::{DeferredBehavior, ScoreType};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
@@ -179,7 +179,6 @@ impl SegmentsSearcher {
         timeout: Duration,
         search_runtime_handle: &AdaptiveSearchHandle,
         is_stopped_guard: &StoppingGuard,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<QueryContext>> {
         let indexing_threshold_kb = collection_config
             .optimizer_config
@@ -188,12 +187,11 @@ impl SegmentsSearcher {
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
         let search_optimized_threshold_kb = indexing_threshold_kb.max(full_scan_threshold_kb);
 
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
         let query_context = init_query_context(
             &batch_request.searches,
             search_optimized_threshold_kb,
             is_stopped_guard,
-            hw_measurement_acc,
             |vector_name| {
                 collection_config
                     .params
@@ -257,7 +255,7 @@ impl SegmentsSearcher {
                     let timeout = timeout.saturating_sub(start.elapsed());
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                        let cpu_utilization = query_context_arc_segment
+                        let cpu_utilization = query_context_arc
                             .hardware_usage_accumulator()
                             .cpu_utilization();
                         move || {
@@ -324,7 +322,7 @@ impl SegmentsSearcher {
                     });
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
-                    let cpu_utilization = query_context_arc_segment
+                    let cpu_utilization = query_context_arc
                         .hardware_usage_accumulator()
                         .cpu_utilization();
                     let handle = runtime_handle.spawn_blocking(move || {
@@ -394,7 +392,6 @@ impl SegmentsSearcher {
         with_vector: &WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
@@ -404,8 +401,10 @@ impl SegmentsSearcher {
             let with_payload = with_payload.clone();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
+            let hw_acc = hw::current();
             // TODO create one Task per segment level retrieve
             move || {
+                let _hw = hw_acc.enter_guard();
                 retrieve_blocking(
                     segments,
                     &points,
@@ -413,7 +412,6 @@ impl SegmentsSearcher {
                     &with_vector,
                     timeout,
                     &is_stopped,
-                    hw_measurement_acc,
                     deferred_behavior,
                 )
             }
@@ -430,7 +428,6 @@ impl SegmentsSearcher {
         with_vector: &WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<PointIdType, SegmentRecordRaw>> {
         let stopping_guard = StoppingGuard::new();
@@ -439,14 +436,15 @@ impl SegmentsSearcher {
             let points = points.to_vec();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
+            let hw_acc = hw::current();
             move || {
+                let _hw = hw_acc.enter_guard();
                 retrieve_raw_blocking(
                     segments,
                     &points,
                     &with_vector,
                     timeout,
                     &is_stopped,
-                    hw_measurement_acc,
                     deferred_behavior,
                 )
             }
@@ -458,13 +456,13 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         filter: Option<&Filter>,
         runtime_handle: &AdaptiveSearchHandle,
-        hw_measurement_acc: HwMeasurementAcc,
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
+        let hw_acc = hw::current();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
 
@@ -480,7 +478,7 @@ impl SegmentsSearcher {
                 .collect()
             };
 
-            let hw_counter = hw_measurement_acc.get_counter_cell();
+            let _hw = hw_acc.enter_guard();
 
             let work = || -> CollectionResult<_> {
                 let all_points: BTreeSet<_> = segments
@@ -491,7 +489,6 @@ impl SegmentsSearcher {
                             None,
                             filter.as_ref(),
                             &is_stopped,
-                            &hw_counter,
                             deferred_behavior,
                         )
                     })
@@ -499,10 +496,7 @@ impl SegmentsSearcher {
                 Ok(all_points)
             };
 
-            match hw_counter.cpu_utilization() {
-                Some(cpu_util) => cpu_util.measure(work),
-                None => work(),
-            }
+            hw::cpu_utilization().measure(work)
         });
         AbortOnDropHandle::new(points).await?
     }
@@ -514,7 +508,6 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         arc_ctx: Arc<FormulaContext>,
         runtime_handle: &AdaptiveSearchHandle,
-        hw_measurement_acc: HwMeasurementAcc,
         timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let limit = arc_ctx.limit;
@@ -535,15 +528,12 @@ impl SegmentsSearcher {
                 .map(|segment| {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
-                        let hw_counter = hw_measurement_acc.get_counter_cell();
-                        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+                        let hw_acc = hw::current();
+                        let cpu_utilization = hw::cpu_utilization();
                         move || {
-                            cpu_utilization.measure(|| {
-                                segment
-                                    .get()
-                                    .read()
-                                    .rescore_with_formula(arc_ctx, &hw_counter)
-                            })
+                            let _hw = hw_acc.enter_guard();
+                            cpu_utilization
+                                .measure(|| segment.get().read().rescore_with_formula(arc_ctx))
                         }
                     });
                     AbortOnDropHandle::new(handle)
@@ -589,19 +579,14 @@ impl SegmentsSearcher {
         with_vector: WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         is_stopped_guard: &StoppingGuard,
-        hw_measurement_acc: HwMeasurementAcc,
         timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let start = Instant::now();
 
-        let query_context = init_text_query_context(
-            &field,
-            &terms,
-            is_stopped_guard.get_is_stopped(),
-            hw_measurement_acc.clone(),
-        );
+        let query_context =
+            init_text_query_context(&field, &terms, is_stopped_guard.get_is_stopped());
         let is_stopped = is_stopped_guard.get_is_stopped();
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let query_context = AbortOnDropHandle::new(runtime_handle.spawn_blocking({
             let segments = segments.clone();
@@ -639,7 +624,7 @@ impl SegmentsSearcher {
             .map(|segment| {
                 let query = query.clone();
                 let timeout = timeout.saturating_sub(start.elapsed());
-                let cpu_utilization = hw_measurement_acc.cpu_utilization();
+                let cpu_utilization = hw::cpu_utilization();
                 let handle = runtime_handle.spawn_blocking(move || {
                     cpu_utilization.measure(|| {
                         let SegmentBm25Query {
@@ -859,7 +844,8 @@ mod tests {
 
     use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::AmbientContext;
+    use common::counter::hw::{HwFutureExt, HwHandoff, HwMetric};
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
@@ -887,17 +873,17 @@ mod tests {
 
         let vector_index_borrow = vector_index.borrow();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         match &*vector_index_borrow {
             VectorIndexEnum::Plain(plain_index) => {
                 let res_1 = plain_index
-                    .is_small_enough_for_unindexed_search(25, None, &hw_counter)
+                    .is_small_enough_for_unindexed_search(25, None)
                     .unwrap();
                 assert!(!res_1);
 
                 let res_2 = plain_index
-                    .is_small_enough_for_unindexed_search(225, None, &hw_counter)
+                    .is_small_enough_for_unindexed_search(225, None)
                     .unwrap();
                 assert!(res_2);
 
@@ -906,7 +892,7 @@ mod tests {
                 let ids_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
                 let res_3 = plain_index
-                    .is_small_enough_for_unindexed_search(25, Some(&ids_filter), &hw_counter)
+                    .is_small_enough_for_unindexed_search(25, Some(&ids_filter))
                     .unwrap();
                 assert!(res_3);
             }
@@ -937,13 +923,13 @@ mod tests {
             searches: vec![req],
         };
 
-        let hw_acc = HwMeasurementAcc::new();
+        let hw_acc = AmbientContext::new();
         let result = SegmentsSearcher::search(
             segment_holder,
             Arc::new(batch_request),
             &AdaptiveSearchHandle::current_for_tests(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, HwHandoff::measured(hw_acc)),
             TEST_TIMEOUT,
         )
         .await
@@ -1004,9 +990,11 @@ mod tests {
 
             let batch_request = Arc::new(batch_request);
 
-            let hw_measurement_acc = HwMeasurementAcc::new();
-            let query_context =
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
+            let hw_measurement_acc = AmbientContext::new();
+            let query_context = QueryContext::new(
+                DEFAULT_INDEXING_THRESHOLD_KB,
+                HwHandoff::measured(AmbientContext::clone(&hw_measurement_acc)),
+            );
 
             let result_no_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),
@@ -1019,11 +1007,13 @@ mod tests {
             .await
             .unwrap();
 
-            assert_ne!(hw_measurement_acc.get_cpu(), 0);
+            assert_ne!(hw_measurement_acc.hw_data()[HwMetric::Cpu], 0);
 
-            let hw_measurement_acc = HwMeasurementAcc::new();
-            let query_context =
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
+            let hw_measurement_acc = AmbientContext::new();
+            let query_context = QueryContext::new(
+                DEFAULT_INDEXING_THRESHOLD_KB,
+                HwHandoff::measured(AmbientContext::clone(&hw_measurement_acc)),
+            );
 
             assert!(!result_no_sampling.is_empty());
 
@@ -1039,7 +1029,7 @@ mod tests {
             .unwrap();
             assert!(!result_sampling.is_empty());
 
-            assert_ne!(hw_measurement_acc.get_cpu(), 0);
+            assert_ne!(hw_measurement_acc.hw_data()[HwMetric::Cpu], 0);
 
             // assert equivalence in depth
             assert_eq!(result_no_sampling[0].len(), result_sampling[0].len());
@@ -1057,16 +1047,17 @@ mod tests {
     fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-        let records = retrieve_blocking(
-            segment_holder,
-            &[1.into(), 2.into(), 3.into()],
-            &WithPayload::from(true),
-            &true.into(),
-            Duration::from_secs(1),
-            &AtomicBool::new(false),
-            HwMeasurementAcc::new(),
-            DeferredBehavior::VisibleOnly,
-        )
+        let records = hw::test(|| {
+            retrieve_blocking(
+                segment_holder,
+                &[1.into(), 2.into(), 3.into()],
+                &WithPayload::from(true),
+                &true.into(),
+                Duration::from_secs(1),
+                &AtomicBool::new(false),
+                DeferredBehavior::VisibleOnly,
+            )
+        })
         .unwrap();
         assert_eq!(records.len(), 3);
     }
@@ -1084,7 +1075,6 @@ mod tests {
             &true.into(),
             Duration::from_secs(1),
             &AtomicBool::new(false),
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         );
         assert_matches!(records, Err(OperationError::Timeout { .. }));
@@ -1145,7 +1135,7 @@ mod tests {
         use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
         use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaParams};
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
         let params = TextIndexParams {
             phrase_matching: Some(true),
@@ -1158,22 +1148,13 @@ mod tests {
                 Some(&PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
                     params,
                 ))),
-                &hw_counter,
             )
             .unwrap();
         for (id, op_num, text) in docs {
             let vector = only_default_vector(&[1.0, 0.0, 0.0, 0.0]);
+            segment.upsert_point(op_num, id.into(), vector).unwrap();
             segment
-                .upsert_point(op_num, id.into(), vector, &hw_counter)
-                .unwrap();
-            segment
-                .set_payload(
-                    op_num,
-                    id.into(),
-                    &payload_json! { "text": text },
-                    &None,
-                    &hw_counter,
-                )
+                .set_payload(op_num, id.into(), &payload_json! { "text": text }, &None)
                 .unwrap();
         }
         segment
@@ -1226,7 +1207,7 @@ mod tests {
         // Reference: each segment ranked in full against both segments'
         // statistics, the older copy of the moved point dropped.
         let mut query_context =
-            init_text_query_context(&field, &terms, Default::default(), HwMeasurementAcc::new());
+            hw::test(|| init_text_query_context(&field, &terms, Default::default()));
         older.fill_query_context(&mut query_context).unwrap();
         newer.fill_query_context(&mut query_context).unwrap();
         let segment_context = query_context.get_segment_query_context();
@@ -1273,9 +1254,9 @@ mod tests {
             WithVector::Bool(false),
             &AdaptiveSearchHandle::current_for_tests(),
             &StoppingGuard::new(),
-            HwMeasurementAcc::new(),
             TEST_TIMEOUT,
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 

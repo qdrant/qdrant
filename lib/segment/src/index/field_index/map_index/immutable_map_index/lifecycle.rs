@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UniversalWrite};
 
@@ -26,7 +27,7 @@ where
     pub(in super::super) fn load_from_on_disk(
         index: OnDiskMapIndex<N, S>,
     ) -> OperationResult<Self> {
-        let hw_counter = HardwareCounterCell::disposable(); // Internal operation
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
 
         let mut indexed_points = 0;
         let mut values_count = 0;
@@ -41,7 +42,7 @@ where
         // `remove_idx_from_value_list`: `value_to_points` only ever contains
         // entries with `count > 0`.
         let mut value_to_points_container = Vec::with_capacity(index.get_values_count());
-        index.for_each_value_map(&hw_counter, |value, ids| {
+        index.for_each_value_map(|value, ids| {
             let range_start = value_to_points_container.len() as u32;
             for idx in ids {
                 if point_to_values.len() <= idx as usize {

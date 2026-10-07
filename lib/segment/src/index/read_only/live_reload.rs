@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalReadFs};
@@ -38,7 +37,6 @@ impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
         _fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             Self::SparseMutableRam(index) => index.live_reload(new_points),

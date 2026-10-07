@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, Flusher};
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalWrite, UserData};
 
@@ -79,14 +80,9 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorage<S> {
 impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageWrite
     for QuantizedChunkedStorage<S>
 {
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
         self.data
-            .insert(id as VectorOffsetType, vector, hw_counter)
+            .insert(id as VectorOffsetType, vector)
             .map_err(std::io::Error::other)
     }
 
@@ -170,7 +166,6 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
 
 pub struct QuantizedChunkedStorageBuilder<S: UniversalWrite + Send + 'static = MmapFile> {
     data: ChunkedVectors<u8, S>,
-    hw_counter: HardwareCounterCell,
 }
 
 impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorageBuilder<S> {
@@ -192,10 +187,7 @@ impl<S: UniversalWrite + Send + 'static> QuantizedChunkedStorageBuilder<S> {
             advice,
             Populate::from(in_ram),
         )?;
-        Ok(Self {
-            data,
-            hw_counter: HardwareCounterCell::disposable(),
-        })
+        Ok(Self { data })
     }
 }
 
@@ -206,10 +198,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
     type Error = std::io::Error;
 
     fn build(self) -> std::io::Result<QuantizedChunkedStorage<S>> {
-        let Self {
-            data,
-            hw_counter: _,
-        } = self;
+        let Self { data } = self;
 
         data.flusher()().map_err(|e| {
             std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
@@ -219,8 +208,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
-        self.data
-            .push(other, &self.hw_counter)
+        hw::unmeasured(reason("Internal operation"), || self.data.push(other))
             .map(|_| ())
             .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }

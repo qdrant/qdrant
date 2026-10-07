@@ -5,7 +5,8 @@ use std::path::Path;
 
 use blobstore::Blob;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::AmbientContext;
+use common::counter::hw::{self, HwMetric};
 use common::types::PointOffsetType;
 use ecow::EcoString;
 use rstest::rstest;
@@ -76,7 +77,7 @@ fn save_map_index_with<N>(
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
 {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     match index_type {
         IndexType::MutableGridstore => {
@@ -85,9 +86,7 @@ fn save_map_index_with<N>(
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
                 let values: Vec<_> = values.iter().collect();
-                builder
-                    .add_point(idx as PointOffsetType, &values, &hw_counter)
-                    .unwrap();
+                builder.add_point(idx as PointOffsetType, &values).unwrap();
             }
             builder.finalize().unwrap();
         }
@@ -98,9 +97,7 @@ fn save_map_index_with<N>(
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
                 let values: Vec<_> = values.iter().collect();
-                builder
-                    .add_point(idx as PointOffsetType, &values, &hw_counter)
-                    .unwrap();
+                builder.add_point(idx as PointOffsetType, &values).unwrap();
             }
             builder.finalize().unwrap();
         }
@@ -143,10 +140,10 @@ where
             .unwrap()
             .unwrap(),
     };
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     for (idx, values) in data.iter().enumerate() {
         let index_values: HashSet<<N as MapIndexKey>::Owned> = index
-            .get_values(idx as PointOffsetType, &hw_counter)
+            .get_values(idx as PointOffsetType)
             .unwrap()
             .map(|v| MapIndexKey::to_owned(v.as_ref()))
             .collect();
@@ -166,14 +163,12 @@ fn test_uuid_payload_index() {
 
     builder.init().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let uuid: Value = Value::String("baa56dfc-e746-4ec1-bf50-94822535a46c".to_string());
 
     for idx in 0..100 {
-        builder
-            .add_point(idx as PointOffsetType, &[&uuid], &hw_counter)
-            .unwrap();
+        builder.add_point(idx as PointOffsetType, &[&uuid]).unwrap();
     }
 
     let index = builder.finalize().unwrap();
@@ -201,24 +196,21 @@ fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
 
     let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     for (idx, values) in data.iter().enumerate().rev() {
         let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
         let values: Vec<_> = values.iter().collect();
-        builder
-            .add_point(idx as PointOffsetType, &values, &hw_counter)
-            .unwrap();
+        builder.add_point(idx as PointOffsetType, &values).unwrap();
     }
 
     let index = builder.finalize().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     for (idx, values) in data.into_iter().enumerate().rev() {
         // values themselves don't promise any particular order
         // so we only compare the set of values.
         let values = HashSet::from_iter(values);
         let res: HashSet<_> = index
-            .get_values(idx as u32, &hw_counter)
+            .get_values(idx as u32)
             .unwrap()
             .map(|i| *i as i32)
             .collect();
@@ -243,11 +235,9 @@ fn test_int_disk_map_index(#[case] index_type: IndexType) {
     save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
     let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
-    let hw_counter = HardwareCounterCell::new();
-
     assert!(
         !index
-            .except_cardinality(std::iter::empty(), &hw_counter)
+            .except_cardinality(std::iter::empty())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -285,11 +275,9 @@ fn test_string_disk_map_index(#[case] index_type: IndexType) {
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
-    let hw_counter = HardwareCounterCell::new();
-
     assert!(
         !index
-            .except_cardinality(vec![].into_iter(), &hw_counter)
+            .except_cardinality(vec![].into_iter())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -305,11 +293,9 @@ fn test_empty_index(#[case] index_type: IndexType) {
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
-    let hw_counter = HardwareCounterCell::new();
-
     assert!(
         index
-            .except_cardinality(std::iter::empty(), &hw_counter)
+            .except_cardinality(std::iter::empty())
             .equals_min_exp_max(&CardinalityEstimation::exact(0))
     );
 }
@@ -317,22 +303,19 @@ fn test_empty_index(#[case] index_type: IndexType) {
 /// Test that `get_values` on an on-disk mmap index actually increments the hardware counter.
 #[test]
 fn test_mmap_get_values_hw_counter() {
+    let _hw = AmbientContext::new().measure_guard_owned();
     let data = vec![vec![1i64, 2, 3], vec![4, 5], vec![6]];
 
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
     save_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap, |v| (*v).into());
     let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), IndexType::Mmap);
 
-    let hw_counter = HardwareCounterCell::new();
     for idx in 0..data.len() {
-        let _values: Vec<_> = index
-            .get_values(idx as PointOffsetType, &hw_counter)
-            .unwrap()
-            .collect();
+        let _values: Vec<_> = index.get_values(idx as PointOffsetType).unwrap().collect();
     }
 
     assert!(
-        hw_counter.payload_index_io_read_counter().get() > 0,
+        hw::pending()[HwMetric::PayloadIndexIoRead] > 0,
         "Expected on-disk mmap get_values to track payload index IO reads, but counter was 0"
     );
 
@@ -340,16 +323,13 @@ fn test_mmap_get_values_hw_counter() {
     save_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap, |v| (*v).into());
     let index2 = load_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap);
 
-    let hw_counter2 = HardwareCounterCell::new();
+    let _hw2 = AmbientContext::new().measure_guard_owned();
     for idx in 0..data.len() {
-        let _values: Vec<_> = index2
-            .get_values(idx as PointOffsetType, &hw_counter2)
-            .unwrap()
-            .collect();
+        let _values: Vec<_> = index2.get_values(idx as PointOffsetType).unwrap().collect();
     }
 
     assert_eq!(
-        hw_counter2.payload_index_io_read_counter().get(),
+        hw::pending()[HwMetric::PayloadIndexIoRead],
         0,
         "Expected RAM mmap get_values NOT to track IO reads, but counter was non-zero"
     );
@@ -408,7 +388,7 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
 
     assert_eq!(new_index.get_indexed_points(), 3);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     for id in [1u32, 2, 5] {
         assert_eq!(
             new_index.values_count(id),
@@ -423,15 +403,15 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
         );
     }
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&1, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&1).collect();
     hits.sort();
     assert_eq!(hits, vec![0, 3]);
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2).collect();
     hits.sort();
     assert_eq!(hits, vec![0, 4]);
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&3, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&3).collect();
     hits.sort();
     assert_eq!(hits, vec![3, 4]);
 }
@@ -476,7 +456,7 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
         IndexType::MutableGridstore => unreachable!(),
     };
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     assert!(new_index.values_count(0) > 0, "id 0 should be live");
     assert_eq!(new_index.values_count(1), 0, "id 1 deleted via bitslice");
@@ -494,7 +474,7 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
         "id 4 should be live (beyond bitslice)"
     );
 
-    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2, &hw_counter).collect();
+    let mut hits: Vec<PointOffsetType> = new_index.get_iterator(&2).collect();
     hits.sort();
     assert_eq!(hits, vec![3]);
 }
@@ -506,9 +486,9 @@ fn collect_for_values_map(
     index: &MapIndex<IntPayloadType>,
     keys: &[IntPayloadType],
 ) -> BTreeMap<IntPayloadType, Vec<PointOffsetType>> {
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     let mut out = BTreeMap::new();
-    MapIndexRead::for_values_map(index, keys.iter(), &hw_counter, |key, ids| {
+    MapIndexRead::for_values_map(index, keys.iter(), |key, ids| {
         let mut ids: Vec<PointOffsetType> = ids.collect();
         ids.sort_unstable();
         out.insert(*key, ids);
@@ -645,14 +625,13 @@ const PREFIX_PROBES: &[&str] = &[
 #[case(IndexType::RamMmap)]
 fn test_str_prefix_match(#[case] index_type: IndexType) {
     use common::condition_checker::ConditionChecker as _;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
 
     use crate::json_path::JsonPath;
     use crate::types::Match;
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let data = prefix_test_data();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -663,7 +642,7 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
 
         // Filter iterator parity with the naive scan.
         let mut result: Vec<PointOffsetType> = index
-            .filter(&condition, &hw_counter)
+            .filter(&condition)
             .unwrap()
             .unwrap_or_else(|| panic!("prefix {prefix:?} must be served by the index"))
             .collect();
@@ -673,7 +652,7 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
         // Cardinality bounds contain the true count (no deletions here, so
         // even on-disk counts are accurate).
         let estimation = index
-            .estimate_cardinality(&condition, &hw_counter)
+            .estimate_cardinality(&condition)
             .unwrap()
             .unwrap_or_else(|| panic!("prefix {prefix:?} must be estimated by the index"));
         assert!(
@@ -685,10 +664,7 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
         );
 
         // Condition checker parity (forward index path).
-        let checker = index
-            .condition_checker(&condition, HwMeasurementAcc::new())
-            .unwrap()
-            .unwrap();
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
         for idx in 0..data.len() as PointOffsetType {
             assert_eq!(
                 checker.check(idx).unwrap(),
@@ -733,7 +709,6 @@ const SUBSTRING_PROBES: &[&str] = &[
 #[case(IndexType::RamMmap)]
 fn test_str_substring_match(#[case] index_type: IndexType) {
     use common::condition_checker::ConditionChecker as _;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
 
     use crate::json_path::JsonPath;
     use crate::types::Match;
@@ -743,7 +718,7 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
         .tempdir()
         .unwrap();
     let data = prefix_test_data();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -754,7 +729,7 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
             FieldCondition::new_match(JsonPath::new("test"), Match::new_substring(substring));
 
         let mut result: Vec<PointOffsetType> = index
-            .filter(&condition, &hw_counter)
+            .filter(&condition)
             .unwrap()
             .unwrap_or_else(|| panic!("substring {substring:?} must be served by the index"))
             .collect();
@@ -765,7 +740,7 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
         // substring condition reports the uninformed estimate — it only
         // claims to be able to produce the points, not how many.
         let estimation = index
-            .estimate_cardinality(&condition, &hw_counter)
+            .estimate_cardinality(&condition)
             .unwrap()
             .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
         assert_eq!(
@@ -778,10 +753,7 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
             "substring {substring:?} must stay usable as a primary clause",
         );
 
-        let checker = index
-            .condition_checker(&condition, HwMeasurementAcc::new())
-            .unwrap()
-            .unwrap();
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
         for idx in 0..data.len() as PointOffsetType {
             assert_eq!(
                 checker.check(idx).unwrap(),
@@ -803,14 +775,13 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
 #[case(IndexType::RamMmap)]
 fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
     use common::condition_checker::ConditionChecker as _;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
 
     use crate::json_path::JsonPath;
     use crate::types::Match;
 
     let temp_dir = Builder::new().prefix("no_prefix_index").tempdir().unwrap();
     let data = prefix_test_data();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     save_map_index_with::<str>(
         &data,
@@ -826,22 +797,16 @@ fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
     for prefix in PREFIX_PROBES {
         let condition = FieldCondition::new_match(JsonPath::new("test"), Match::new_prefix(prefix));
         assert!(
-            index.filter(&condition, &hw_counter).unwrap().is_none(),
+            index.filter(&condition).unwrap().is_none(),
             "prefix {prefix:?}",
         );
         assert!(
-            index
-                .estimate_cardinality(&condition, &hw_counter)
-                .unwrap()
-                .is_none(),
+            index.estimate_cardinality(&condition).unwrap().is_none(),
             "prefix {prefix:?}",
         );
 
         let expected = naive_prefix_points(&data, prefix);
-        let checker = index
-            .condition_checker(&condition, HwMeasurementAcc::new())
-            .unwrap()
-            .unwrap();
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
         for idx in 0..data.len() as PointOffsetType {
             assert_eq!(
                 checker.check(idx).unwrap(),
@@ -859,7 +824,7 @@ fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
             FieldCondition::new_match(JsonPath::new("test"), Match::new_substring(substring));
 
         let mut result: Vec<PointOffsetType> = index
-            .filter(&condition, &hw_counter)
+            .filter(&condition)
             .unwrap()
             .unwrap_or_else(|| panic!("substring {substring:?} must be served by the index"))
             .collect();
@@ -870,7 +835,7 @@ fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
         // substring condition reports the uninformed estimate — it only
         // claims to be able to produce the points, not how many.
         let estimation = index
-            .estimate_cardinality(&condition, &hw_counter)
+            .estimate_cardinality(&condition)
             .unwrap()
             .unwrap_or_else(|| panic!("substring {substring:?} must be estimated by the index"));
         assert_eq!(
@@ -883,10 +848,7 @@ fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
             "substring {substring:?} must stay usable as a primary clause",
         );
 
-        let checker = index
-            .condition_checker(&condition, HwMeasurementAcc::new())
-            .unwrap()
-            .unwrap();
+        let checker = index.condition_checker(&condition).unwrap().unwrap();
         for idx in 0..data.len() as PointOffsetType {
             assert_eq!(
                 checker.check(idx).unwrap(),
@@ -907,7 +869,7 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let mut data = prefix_test_data();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let mut index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -922,7 +884,7 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
         let expected = naive_prefix_points(&data, prefix);
         let condition = FieldCondition::new_match(JsonPath::new("test"), Match::new_prefix(prefix));
         let mut result: Vec<PointOffsetType> = index
-            .filter(&condition, &hw_counter)
+            .filter(&condition)
             .unwrap()
             .unwrap_or_else(|| panic!("prefix {prefix:?} must be served by the index"))
             .collect();
@@ -1002,7 +964,7 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let data = prefix_test_data();
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut builder =
         MapIndex::<str>::builder_immutable(temp_dir.path(), false, &empty_deleted(), with_prefix);
@@ -1010,9 +972,7 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
     for (idx, values) in data.iter().enumerate() {
         let values: Vec<Value> = values.iter().map(|v| v.to_string().into()).collect();
         let values: Vec<_> = values.iter().collect();
-        builder
-            .add_point(idx as PointOffsetType, &values, &hw_counter)
-            .unwrap();
+        builder.add_point(idx as PointOffsetType, &values).unwrap();
     }
     let index = builder.finalize().unwrap();
 

@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -33,11 +32,9 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> LiveReload
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Offsets first: they say how many inner vectors the new points use.
-        self.offsets
-            .live_reload(fs, deleted_points, new_points, hw_counter)?;
+        self.offsets.live_reload(fs, deleted_points, new_points)?;
         // Rows are appended in point order; the last range determines the end.
         if let Some(&last_point) = new_points.last() {
             let offset = self

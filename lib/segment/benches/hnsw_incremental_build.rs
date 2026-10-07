@@ -13,7 +13,7 @@ use atomic_refcell::AtomicRefCell;
 use clap::Parser;
 use common::bench_cache::{cache_path, cached_json};
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::{FeatureFlags, feature_flags, init_feature_flags};
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -318,18 +318,12 @@ fn make_segment(
     let mut sequence = sliding_window.map(|x| x % all_vectors.len()).collect_vec();
     sequence.shuffle(rng);
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _hw = hw::test_guard();
     let mut segment = build_simple_segment(path, all_vectors[0].len(), distance).unwrap();
     for n in sequence {
         let vector = only_default_vector(all_vectors[n]);
         segment
-            .upsert_point(
-                n as SeqNumberType,
-                ExtendedPointId::NumId(n as u64),
-                vector,
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, ExtendedPointId::NumId(n as u64), vector)
             .unwrap();
     }
 

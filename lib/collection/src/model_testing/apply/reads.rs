@@ -3,7 +3,8 @@ use std::num::NonZeroU32;
 
 use ahash::{AHashMap, AHashSet};
 use api::rest::RecommendStrategy;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, OrderValue};
@@ -140,8 +141,8 @@ pub(super) async fn apply_retrieve(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("{ctx} failed: {e:?}"));
     let returned: AHashSet<PointIdType> = records.iter().map(|r| r.id).collect();
@@ -193,8 +194,8 @@ pub(super) async fn apply_retrieve_selective(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("RetrieveSelective failed");
 
@@ -407,8 +408,8 @@ async fn assert_nearest_size_invariant(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await;
     let retrieved_summary = match probe_retrieve {
         Ok(records) => records
@@ -444,8 +445,8 @@ async fn assert_nearest_size_invariant(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await;
     let count_summary = match probe_count {
         Ok(c) => format!("{}", c.count),
@@ -468,8 +469,8 @@ async fn assert_nearest_size_invariant(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await;
     let scroll_summary = match probe_scroll {
         Ok(s) => {
@@ -556,8 +557,8 @@ pub(super) async fn apply_search(
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("search failed")
             .iter()
@@ -638,8 +639,8 @@ pub(super) async fn apply_query(
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("query failed")
             .iter()
@@ -737,8 +738,8 @@ pub(super) async fn apply_query_fusion(
             None,
             ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("query fusion failed");
     // Collect ids as a Vec first so we can assert fusion actually deduplicated overlapping prefetch
@@ -806,8 +807,8 @@ pub(super) async fn apply_count_by_num(collection: &Collection, model: &Model, n
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("count by filter failed")
         .count;
@@ -834,8 +835,8 @@ pub(super) async fn apply_count_by_slice(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("count by slice failed")
         .count;
@@ -884,8 +885,8 @@ pub(super) async fn apply_facet(
             None,
             None,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("facet failed");
 
@@ -931,8 +932,8 @@ pub(super) async fn apply_scroll_filtered_by_num(collection: &Collection, model:
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll(filtered) failed");
     let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
@@ -955,8 +956,8 @@ pub(super) async fn apply_count_by_tag(collection: &Collection, model: &Model, t
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("count by tag failed")
         .count;
@@ -986,8 +987,8 @@ pub(super) async fn apply_scroll_filtered_by_tag(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll(filtered by tag) failed");
     let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
@@ -1014,8 +1015,8 @@ pub(super) async fn apply_count_by_url_prefix(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("count by url prefix failed")
         .count;
@@ -1045,8 +1046,8 @@ pub(super) async fn apply_scroll_filtered_by_url_prefix(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll(filtered by url prefix) failed");
     let returned: AHashSet<PointIdType> = scroll.points.iter().map(|r| r.id).collect();
@@ -1139,8 +1140,8 @@ pub(super) async fn apply_scroll_paged(
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("scroll(paged) failed");
 
@@ -1199,8 +1200,8 @@ pub(super) async fn apply_scroll_ordered(
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll(ordered) failed");
 
@@ -1287,8 +1288,8 @@ pub(super) async fn apply_recommend(
         None,
         ShardSelectorInternal::All,
         None,
-        HwMeasurementAcc::new(),
     )
+    .measured(AmbientContext::new())
     .await
     .expect("recommend failed");
 
@@ -1459,8 +1460,8 @@ pub(super) async fn apply_query_text(
                 None,
                 shards,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("text query {text:?} failed: {e:?}"))
     };
@@ -1877,8 +1878,8 @@ async fn shard_point_ids(collection: &Collection, shard_id: u32) -> Vec<PointIdT
             None,
             &ShardSelectorInternal::ShardId(shard_id),
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("scrolling shard {shard_id} failed: {e:?}"))
         .points

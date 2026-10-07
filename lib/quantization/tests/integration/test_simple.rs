@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8;
@@ -454,9 +454,9 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32, &counter);
+            let score = encoded.score_internal(0, i as u32);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }
@@ -496,9 +496,9 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         for i in 1..vectors_count {
-            let score = encoded.score_internal(0, i as u32, &counter);
+            let score = encoded.score_internal(0, i as u32);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }
@@ -587,16 +587,16 @@ mod tests {
             )
             .unwrap();
 
-            let hw = HardwareCounterCell::new();
+            let _hw = hw::test_guard();
             for (i, vector) in vector_data.iter().enumerate() {
                 // encode vector using the encode_query method
                 let query = encoded.encode_query(vector);
                 // encode vector using the encode_internal_vector method
                 let query_internal = encoded.encode_internal_vector(i as u32).unwrap();
 
-                let score_query = encoded.score_point(&query, 0, &hw);
-                let score_internal_query = encoded.score_point(&query_internal, 0, &hw);
-                let score_internal = encoded.score_internal(i as u32, 0, &hw);
+                let score_query = encoded.score_point(&query, 0);
+                let score_internal_query = encoded.score_point(&query_internal, 0);
+                let score_internal = encoded.score_internal(i as u32, 0);
 
                 assert!((score_query - score_internal).abs() < error);
                 assert!((score_internal_query - score_internal).abs() < error);

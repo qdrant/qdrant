@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::{self, HwMetric};
+use common::reason::reason;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::inner::InMemoryGeoIndex;
@@ -51,18 +52,18 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         };
 
         let mut in_memory_index = InMemoryGeoIndex::new();
-        let hw_counter = HardwareCounterCell::disposable();
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?,
                 |idx, values: Vec<RawGeoPoint>| {
                     let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
-                    in_memory_index.add_many_geo_points(idx, geo_points, &hw_counter)?;
+                    in_memory_index.add_many_geo_points(idx, geo_points)?;
                     Ok(true)
                 },
                 // Same counter the writable `open_gridstore` load uses; this is
                 // a disposable counter, so the exact metric is unobservable.
-                hw_counter.ref_payload_index_io_read_counter(),
+                HwMetric::PayloadIndexIoRead,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(

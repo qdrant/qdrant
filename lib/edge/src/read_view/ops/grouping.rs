@@ -1,5 +1,6 @@
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw;
+use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{ScoredPoint, WithVector};
 pub use shard::grouping::Group;
@@ -12,6 +13,7 @@ use crate::requests::GroupRequest;
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
         self.check_stopped()?;
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let GroupRequest {
             query,
             group_by,
@@ -63,7 +65,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 vec![bare_points.into_values().collect()],
                 with_payload,
                 with_vector,
-                HwMeasurementAcc::disposable_edge(),
             )?
             .try_into()
             .map_err(|unconverted: Vec<_>| {

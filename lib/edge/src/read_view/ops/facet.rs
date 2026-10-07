@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::reason::Reason;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::entry::ReadSegmentEntry;
@@ -19,6 +19,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     /// optionally filtering by the given conditions.
     pub(crate) fn facet(&self, request: FacetRequestInternal) -> OperationResult<FacetResponse> {
         self.check_stopped()?;
+        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let FacetRequestInternal {
             key,
             limit,
@@ -30,8 +31,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             return self.exact_facet(key, limit, filter);
         }
 
-        let hw_acc = HwMeasurementAcc::disposable_edge();
-
         let facet_params = FacetParams {
             key,
             limit,
@@ -41,11 +40,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         // Facet every segment in parallel, then merge the per-segment counts sequentially.
         let per_segment = self.par_map_segments(|segment| {
-            segment.read_segment().facet(
-                &facet_params,
-                &self.is_stopped,
-                &hw_acc.get_counter_cell(),
-            )
+            segment
+                .read_segment()
+                .facet(&facet_params, &self.is_stopped)
         })?;
 
         let mut merged_counts = HashMap::new();
@@ -68,12 +65,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         filter: Option<Filter>,
     ) -> OperationResult<FacetResponse> {
         let per_segment = self.par_map_segments(|segment| {
-            segment.read_segment().unique_values(
-                &key,
-                filter.as_ref(),
-                &self.is_stopped,
-                &HardwareCounterCell::disposable(),
-            )
+            segment
+                .read_segment()
+                .unique_values(&key, filter.as_ref(), &self.is_stopped)
         })?;
         let unique_values: BTreeSet<_> = per_segment.into_iter().flatten().collect();
 

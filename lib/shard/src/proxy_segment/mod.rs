@@ -9,7 +9,6 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use segment::common::operation_error::OperationResult;
 use segment::pending_changes::PendingChanges;
@@ -128,11 +127,9 @@ impl UnsyncedProxySegment {
     pub fn replicate_field_indexes(
         &self,
         op_num: SeqNumberType,
-        hw_counter: &HardwareCounterCell,
         segment_to_update: &LockedSegment,
     ) -> OperationResult<()> {
-        self.0
-            .replicate_field_indexes(op_num, hw_counter, segment_to_update)
+        self.0.replicate_field_indexes(op_num, segment_to_update)
     }
 }
 
@@ -187,7 +184,6 @@ impl ProxySegment {
     pub fn replicate_field_indexes(
         &self,
         op_num: SeqNumberType,
-        hw_counter: &HardwareCounterCell,
         segment_to_update: &LockedSegment,
     ) -> OperationResult<()> {
         let existing_indexes = segment_to_update.get().read().get_indexed_fields();
@@ -208,7 +204,6 @@ impl ProxySegment {
                     op_num,
                     expected_field,
                     Some(expected_schema),
-                    hw_counter,
                 )?;
             }
         }

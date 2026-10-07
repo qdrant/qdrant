@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
 use super::payload_field_index::PayloadFieldIndexRead;
@@ -58,10 +57,7 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// Used by rescore-formula value lookup; mirrors the shape of
     /// [`PayloadFieldIndexRead::condition_checker`] (build a closure
     /// once, invoke per point).
-    fn value_retriever<'a, 'q>(
-        &'a self,
-        hw_counter: &'q HardwareCounterCell,
-    ) -> OperationResult<Option<VariableRetrieverFn<'q>>>
+    fn value_retriever<'a, 'q>(&'a self) -> OperationResult<Option<VariableRetrieverFn<'q>>>
     where
         'a: 'q;
 
@@ -79,7 +75,6 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
         &self,
         stats: &mut TextFieldStats,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     /// Score `terms` by BM25 against this index and return the `limit` best

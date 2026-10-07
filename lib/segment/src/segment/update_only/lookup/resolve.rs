@@ -4,7 +4,6 @@
 //! at once, one pass per component rather than one round-trip per point.
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalReadFsAsync;
@@ -55,7 +54,6 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     pub fn read_stored_points(
         &self,
         internal_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<StoredPoint>> {
         let mut stored: Vec<StoredPoint> = internal_ids
             .iter()
@@ -74,7 +72,6 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                     stored[position].payload = payload;
                     Ok(())
                 },
-                hw_counter,
             )?;
 
         for (vector_name, vector_storage) in &self.vector_data {

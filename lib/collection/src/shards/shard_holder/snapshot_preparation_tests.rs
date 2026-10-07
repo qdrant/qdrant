@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use fs_err as fs;
 use rstest::rstest;
 use segment::types::StrictModeConfig;
@@ -92,13 +93,8 @@ async fn snapshot_preparation_releases_shard_holder(
         .cloned()
         .unwrap();
     original
-        .update_local(
-            upsert_operation().into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::disposable(),
-            false,
-        )
+        .update_local(upsert_operation().into(), WaitUntil::Visible, None, false)
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     let original_points = original.info(true).await.unwrap().points_count;

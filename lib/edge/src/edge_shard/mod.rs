@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
+use common::reason::Reason;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
 use parking_lot::Mutex;
@@ -528,9 +529,9 @@ fn ensure_appendable_segment(
 
     let (mut segment, token) =
         build_segment(segments_path, &config.plain_segment_config(), None, true)?;
-    let hw_counter = HardwareCounterCell::disposable();
+    let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
     for (key, schema) in &indexed_fields {
-        segment.create_field_index(0, key, Some(schema), &hw_counter)?;
+        segment.create_field_index(0, key, Some(schema))?;
     }
     segments.sync_segment_manifest(Some(token))?;
     segments.add_new(segment);

@@ -631,7 +631,7 @@ fn nth<'a>(link_vectors: &std::slice::ChunksExact<'a, u8>, position: usize) -> &
 #[cfg(test)]
 mod tests {
     use common::bitvec::BitVec;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::universal_io::MmapFs;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -693,6 +693,7 @@ mod tests {
             num_points, 8, DIM, false, false, DISTANCE, &mut rng,
         );
 
+        let _hw = hw::test_guard();
         let mut additional = GraphLayersBuilder::new(num_points, hnsw_m, 16, 10, false);
         for idx in (0..num_points as PointOffsetType).step_by(2) {
             additional.set_levels(idx, 0);
@@ -728,7 +729,6 @@ mod tests {
                     vector_holder.quantized_vectors(),
                     None,
                     deleted,
-                    HardwareCounterCell::new(),
                 )
                 .unwrap();
                 for algorithm in [SearchAlgorithm::Hnsw, SearchAlgorithm::Acorn] {
@@ -799,11 +799,12 @@ mod tests {
         for _ in 0..10 {
             let query = random_vector(rng, DIM);
             let query = DISTANCE.preprocess_vector::<VectorElementType>(query);
+            let _hw = hw::test_guard();
             let links_scorer = vector_holder.scorer(query.clone());
             let links_scorer_bytes = links_scorer.scorer_bytes().unwrap();
             let base_scorer = vector_holder
                 .storage()
-                .build_raw_scorer(query.clone().into(), HardwareCounterCell::new())
+                .build_raw_scorer(query.clone().into())
                 .unwrap();
             let scorers = GraphWithVectorsScorers {
                 links: &links_scorer,
@@ -848,13 +849,13 @@ mod tests {
             let query = random_vector(rng, DIM);
             let entry = graph.unfiltered_entry_point();
             for deleted in [&none_deleted, &some_deleted] {
+                let _hw = hw::test_guard();
                 let mut scorer = FilteredScorer::new(
                     query.clone().into(),
                     vector_holder.storage(),
                     vector_holder.quantized_vectors(),
                     None,
                     deleted,
-                    HardwareCounterCell::new(),
                 )
                 .unwrap();
                 let deleted_count = deleted.count_ones();

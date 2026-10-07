@@ -54,7 +54,7 @@ impl<S: UniversalRead> std::fmt::Debug for ReadOnlyChunkedMultiTurboVectorStorag
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
@@ -78,7 +78,7 @@ mod tests {
             .prefix("ro_multi_turbo_appended_deleted")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let multi = |value: VectorElementType| {
             MultiDenseVectorInternal::try_from(vec![vec![value; DIM]]).unwrap()
@@ -94,7 +94,7 @@ mod tests {
         )
         .unwrap();
         writer
-            .insert_vector(0, VectorRef::from(&multi(1.0)), &hw)
+            .insert_vector(0, VectorRef::from(&multi(1.0)))
             .unwrap();
         writer.flusher()().unwrap();
 
@@ -111,7 +111,7 @@ mod tests {
         .unwrap();
 
         writer
-            .insert_vector(1, VectorRef::from(&multi(0.0)), &hw)
+            .insert_vector(1, VectorRef::from(&multi(0.0)))
             .unwrap();
         writer.delete_vector(1).unwrap();
         writer.flusher()().unwrap();
@@ -123,7 +123,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 

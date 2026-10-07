@@ -6,6 +6,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
+use common::counter::hw::HwFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
@@ -74,8 +75,8 @@ async fn search_points(
         shard_selection,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(|scored_points| {
         scored_points
@@ -146,8 +147,8 @@ async fn batch_search_points(
         routing_token,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(|batch_scored_points| {
         batch_scored_points
@@ -214,8 +215,8 @@ async fn search_point_groups(
         shard_selection,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(result, timing, request_hw_counter.to_rest_api())
@@ -271,8 +272,8 @@ async fn search_points_matrix_pairs(
         shard_selection,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(SearchMatrixPairsResponse::from);
 
@@ -329,8 +330,8 @@ async fn search_points_matrix_offsets(
         shard_selection,
         auth,
         params.timeout(),
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(SearchMatrixOffsetsResponse::from);
 

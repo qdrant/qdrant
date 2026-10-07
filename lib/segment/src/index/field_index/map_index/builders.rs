@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use ahash::HashMap;
 use blobstore::Blob;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use itertools::Itertools;
@@ -38,13 +38,8 @@ where
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        values: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, values, hw_counter)
+    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -73,12 +68,7 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let mut flatten_values: Vec<_> = vec![];
         for value in payload {
             let payload_values = <MapIndex<N> as ValueIndexer>::get_values(value);
@@ -93,19 +83,15 @@ where
 
         self.point_to_values[id as usize].extend(flatten_values.clone());
 
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_write_counter()
-            .write_back_counter();
-
         for value in flatten_values {
             let entry = self.values_to_points.entry(value);
 
             if let Entry::Vacant(e) = &entry {
                 let size = N::stored_size(e.key().borrow());
-                hw_cell_wb.incr_delta(size);
+                HwMetric::PayloadIndexIoWrite.bump(size);
             }
 
-            hw_cell_wb.incr_delta(size_of_val(&id));
+            HwMetric::PayloadIndexIoWrite.bump(size_of_val(&id));
             entry.or_default().push(id);
         }
 
@@ -185,18 +171,13 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "MapIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

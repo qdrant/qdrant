@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
@@ -226,7 +226,6 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         query: &[EncodedQueryTQ],
         key: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let Some(offset) = self.get_offset::<Random>(key) else {
             log::error!("Multivector not found");
@@ -238,10 +237,9 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
             .get_many::<Random>(offset.offset, offset.count as usize)
             .expect("Multivector not found");
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(records.len() * query.len());
-        hw_counter.vector_io_read().incr_delta(records.len());
+        HwMetric::Cpu.bump(records.len() * query.len());
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(records.len() * mul);
 
         self.score_records_max_similarity(query, &records)
     }
@@ -250,7 +248,6 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         point_a: PointOffsetType,
         point_b: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let (Some(offset_a), Some(offset_b)) = (
             self.get_offset::<Random>(point_a),
@@ -270,12 +267,9 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
             .get_many::<Random>(offset_b.offset, offset_b.count as usize)
             .expect("Multivector not found");
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(records_a.len() * offset_b.count as usize);
-        hw_counter
-            .vector_io_read()
-            .incr_delta(records_a.len() + records_b.len());
+        HwMetric::Cpu.bump(records_a.len() * offset_b.count as usize);
+        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
         let quantized_size = self.quantizer.quantized_size();
         let mut sum = 0.0;

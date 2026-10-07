@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, MmapFs, Populate, UniversalRead, UniversalReadFs};
 use fs_err as fs;
@@ -134,7 +133,6 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
@@ -155,7 +153,7 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             .then(|| FullTextIndex::document_length(&str_tokens, phrase_matching, &values));
 
         self.mutable_index
-            .index_str_tokens(id, &str_tokens, doc_len, hw_counter)
+            .index_str_tokens(id, &str_tokens, doc_len)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -172,13 +170,8 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        ValueIndexer::add_point(self, id, payload, hw_counter)
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        ValueIndexer::add_point(self, id, payload)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {

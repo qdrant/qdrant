@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -9,36 +9,32 @@ use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
 
 pub struct SparseMetricQueryScorer<'a> {
+    hw: HwScale,
     vector_storage: &'a VolatileSparseVectorStorage,
     query: SparseVector,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> SparseMetricQueryScorer<'a> {
-    pub fn new(
-        query: SparseVector,
-        vector_storage: &'a VolatileSparseVectorStorage,
-        mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    pub fn new(query: SparseVector, vector_storage: &'a VolatileSparseVectorStorage) -> Self {
         // We will count the number of intersections per pair of vectors.
-        hardware_counter.set_cpu_multiplier(1);
         // We don't measure `vector_io_read` because we are dealing with a volatile storage,
         //   which is always in memory.
         //   If we refactor this into accepting on_disk storages, we would set `vector_io_read_multiplier`
         //   to 0 or 1 here, and measure it accordingly.
 
         Self {
+            hw: HwScale {
+                cpu: 1,
+                vector_io_read: 1,
+            },
             vector_storage,
             query,
-            hardware_counter,
         }
     }
 
     fn score_sparse(&self, a: &SparseVector, b: &SparseVector) -> ScoreType {
-        self.hardware_counter
-            .cpu_counter()
-            // Calculate the amount of comparisons needed for sparse vector scoring.
-            .incr_delta(std::cmp::min(a.len(), b.len()));
+        // Calculate the amount of comparisons needed for sparse vector scoring.
+        self.hw.cpu(std::cmp::min(a.len(), b.len()));
 
         a.score(b).unwrap_or_default()
     }

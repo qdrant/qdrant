@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use blobstore::Blob;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use serde_json::Value;
@@ -41,13 +41,8 @@ where
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, payload)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -98,12 +93,7 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         self.in_memory_index.remove_point(id);
         let mut flatten_values: Vec<_> = vec![];
         for value in payload {
@@ -115,9 +105,7 @@ where
             .map(NumericIndex::into_inner_value)
             .collect();
 
-        hw_counter
-            .payload_index_io_write_counter()
-            .incr_delta(size_of_val(&flatten_values));
+        HwMetric::PayloadIndexIoWrite.bump(size_of_val(&flatten_values));
 
         self.in_memory_index.add_many_to_list(id, flatten_values);
         Ok(())
@@ -200,18 +188,13 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "NumericIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

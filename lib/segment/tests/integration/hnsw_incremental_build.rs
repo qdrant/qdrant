@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use itertools::Itertools as _;
@@ -108,13 +108,13 @@ fn make_segment(
     let mut sequence = (0..ids.len()).collect_vec();
     sequence.shuffle(rng);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let mut segment = build_simple_segment(path, DIM, DISTANCE).unwrap();
     for n in sequence {
         let vector = only_default_vector(vectors[n]);
         segment
-            .upsert_point(n as SeqNumberType, ids[n], vector, &hw_counter)
+            .upsert_point(n as SeqNumberType, ids[n], vector)
             .unwrap();
     }
 

@@ -408,7 +408,8 @@ mod test {
 
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
     use common::budget::ResourceBudget;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::counter::AmbientContext;
+    use common::counter::hw::HwFutureExt;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
@@ -864,8 +865,8 @@ mod test {
             .create_payload_index(
                 INDEXED_KEY.parse().unwrap(),
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("failed to create payload index");
 

@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::numeric_index_read::NumericIndexRead;
@@ -99,9 +98,8 @@ where
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.inner.check_values_any(idx, check_fn, hw_counter)
+        self.inner.check_values_any(idx, check_fn)
     }
 
     pub fn wipe(self) -> OperationResult<()> {

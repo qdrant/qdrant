@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
@@ -52,12 +52,12 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
 
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     // Insert all points
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vec.into())
             .unwrap();
     }
     // Check that all points are inserted
@@ -216,7 +216,7 @@ fn do_test_update_from_delete_points(
 
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     {
         let mut storage2 = new_volatile_multi_dense_vector_storage(
@@ -227,7 +227,7 @@ fn do_test_update_from_delete_points(
         {
             points.iter().enumerate().for_each(|(i, vec)| {
                 storage2
-                    .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
+                    .insert_vector(i as PointOffsetType, vec.into())
                     .unwrap();
                 if delete_mask[i] {
                     storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -370,9 +370,9 @@ fn test_large_multi_dense_vector_storage(#[case] storage_type: MultiDenseStorage
         .collect();
     let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
     storage
-        .insert_vector(0, VectorRef::from(&multivec), &hw_counter)
+        .insert_vector(0, VectorRef::from(&multivec))
         .unwrap();
 
     let stored = storage.get_vector::<Random>(0);
@@ -439,9 +439,8 @@ fn test_large_volatile_multi_dense_vector_storage() {
         .collect();
     let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
     storage
-        .insert_vector(0, VectorRef::from(&multivec), &hw_counter)
+        .insert_vector(0, VectorRef::from(&multivec))
         .unwrap();
 
     let stored = storage.get_vector::<Random>(0);

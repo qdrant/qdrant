@@ -17,7 +17,7 @@
 use std::hint::black_box;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::hw;
 use common::types::PointOffsetType;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use quantization::turboquant::TQBits;
@@ -60,7 +60,7 @@ struct Dataset {
 
 fn build_dataset(dim: usize) -> Dataset {
     let mut rng = SmallRng::seed_from_u64(dim as u64);
-    let hw_counter = HardwareCounterCell::new();
+    let _hw = hw::test_guard();
 
     let turbo_dir = TempDir::new().expect("turbo tempdir created");
     let mut turbo = VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(
@@ -71,10 +71,10 @@ fn build_dataset(dim: usize) -> Dataset {
     for i in 0..VECTORS as PointOffsetType {
         let vector = random_unit_vector(&mut rng, dim);
         dense
-            .insert_vector(i, vector.as_slice().into(), &hw_counter)
+            .insert_vector(i, vector.as_slice().into())
             .expect("dense vector inserted");
         turbo
-            .insert_vector(i, vector.as_slice().into(), &hw_counter)
+            .insert_vector(i, vector.as_slice().into())
             .expect("turbo vector inserted");
     }
 
@@ -109,6 +109,7 @@ fn build_dataset(dim: usize) -> Dataset {
 /// One exhaustive search: build the searcher (query preprocessing) and scan
 /// every point through the visible-scan driver.
 fn full_scan(dataset: &Dataset, quantized: bool) {
+    let _hw = hw::test_guard();
     let queries = [&dataset.query];
     let empty = BitVec::new();
     let searcher = if quantized {
@@ -119,7 +120,6 @@ fn full_scan(dataset: &Dataset, quantized: bool) {
             None,
             TOP,
             &dataset.point_deleted,
-            HardwareCounterCell::new(),
         )
     } else {
         BatchFilteredSearcher::new(
@@ -129,7 +129,6 @@ fn full_scan(dataset: &Dataset, quantized: bool) {
             None,
             TOP,
             &dataset.point_deleted,
-            HardwareCounterCell::new(),
         )
     }
     .expect("searcher created");

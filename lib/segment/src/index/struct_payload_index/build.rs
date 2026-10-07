@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::StructPayloadIndex;
@@ -15,7 +14,6 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
         // A build must start from a clean slate: files can be left behind by a build
         // that crashed before its config entry was written, or by an index that
@@ -54,16 +52,13 @@ impl StructPayloadIndex {
             }
         }
 
-        payload_storage.iter(
-            |point_id, point_payload| {
-                let field_value = &point_payload.get_value(field);
-                for builder in builders.iter_mut() {
-                    builder.add_point(point_id, field_value, hw_counter)?;
-                }
-                Ok(true)
-            },
-            hw_counter,
-        )?;
+        payload_storage.iter(|point_id, point_payload| {
+            let field_value = &point_payload.get_value(field);
+            for builder in builders.iter_mut() {
+                builder.add_point(point_id, field_value)?;
+            }
+            Ok(true)
+        })?;
 
         builders
             .into_iter()
@@ -79,7 +74,6 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildIndexResult> {
         let loaded = {
             let selector = self.selector(payload_schema);
@@ -103,11 +97,9 @@ impl StructPayloadIndex {
 
         match loaded {
             Some(indexes) => Ok(BuildIndexResult::Built(indexes)),
-            None => Ok(BuildIndexResult::Built(self.build_field_indexes(
-                field,
-                payload_schema,
-                hw_counter,
-            )?)),
+            None => Ok(BuildIndexResult::Built(
+                self.build_field_indexes(field, payload_schema)?,
+            )),
         }
     }
 

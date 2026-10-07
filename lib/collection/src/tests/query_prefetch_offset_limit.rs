@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::AmbientContext;
+use common::counter::hw::HwFutureExt;
 use rand::{RngExt, rng};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
@@ -127,8 +128,8 @@ async fn fixture() -> Collection {
             None,
             WriteOrdering::Weak,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("failed to insert points");
 
@@ -171,8 +172,8 @@ async fn test_limit_offset_with_prefetch() {
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("failed to query")
     };
@@ -229,8 +230,8 @@ async fn test_limit_offset_with_prefetch() {
                 None,
                 ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("failed to query")
     };

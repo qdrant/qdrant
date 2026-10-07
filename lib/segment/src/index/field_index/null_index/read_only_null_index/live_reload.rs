@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
@@ -25,7 +24,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyNullIndex<S> {
         fs: &Fs,
         _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Resync each flag set from its on-disk state; the point deltas are
         // irrelevant, the flag files are the source of truth.

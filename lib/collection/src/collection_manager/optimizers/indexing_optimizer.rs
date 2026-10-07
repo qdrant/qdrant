@@ -15,7 +15,7 @@ mod tests {
     use std::num::{NonZeroU64, NonZeroUsize};
     use std::path::PathBuf;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use exhaustive::Exhaustive;
     use fs_err as fs;
     use itertools::Itertools;
@@ -309,7 +309,7 @@ mod tests {
         .unwrap();
 
         let mut rnd = rng();
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         for n in 0..NUM_POINTS {
             let multi_vec = random_multi_vector(&mut rnd, DIM, 1);
             let mut named = NamedVectors::default();
@@ -317,9 +317,7 @@ mod tests {
                 VECTOR_NAME.to_owned(),
                 VectorInternal::MultiDense(multi_vec),
             );
-            segment
-                .upsert_point(n, n.into(), named, &hw_counter)
-                .unwrap();
+            segment.upsert_point(n, n.into(), named).unwrap();
         }
 
         // The segment holds deferred points, yet its vectors stay below the indexing threshold.
@@ -513,7 +511,7 @@ mod tests {
             .indexing_threshold_kb = 50;
 
         // ----- CREATE AN INDEXED FIELD ------
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         process_field_index_operation(
             &locked_holder.read(),
@@ -522,7 +520,6 @@ mod tests {
                 field_name: payload_field.clone(),
                 field_schema: Some(PayloadSchemaType::Integer.into()),
             }),
-            &hw_counter,
         )
         .unwrap();
 
@@ -633,14 +630,13 @@ mod tests {
             .unwrap()
             .num_vectors;
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
 
         process_point_operation(
             &locked_holder.read(),
             opnum.next().unwrap(),
             insert_point_ops,
             None,
-            &hw_counter,
         )
         .unwrap();
 
@@ -706,7 +702,6 @@ mod tests {
             opnum.next().unwrap(),
             insert_point_ops,
             None,
-            &hw_counter,
         )
         .unwrap();
     }
@@ -1202,7 +1197,7 @@ mod tests {
             build_segment_optimizer_config(&collection_params, &hnsw_config, &None);
         let segment_config = segment_optimizer_config.plain_segment_config();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _hw = hw::test_guard();
         let (mut segment, _) = build_segment(
             segments_dir.path(),
             &segment_config,
@@ -1219,9 +1214,7 @@ mod tests {
                     MultiDenseVectorInternal::try_from_matrix(vec![vec![0.5; dim]]).unwrap(),
                 ),
             );
-            segment
-                .upsert_point(100, (i + 1).into(), vectors, &hw_counter)
-                .unwrap();
+            segment.upsert_point(100, (i + 1).into(), vectors).unwrap();
         }
 
         // Sanity: the segment has deferred points but stays below the indexing threshold.

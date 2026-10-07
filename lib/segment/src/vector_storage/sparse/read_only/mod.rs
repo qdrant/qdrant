@@ -18,7 +18,7 @@ pub struct ReadOnlySparseVectorStorage<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::hw;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
@@ -44,7 +44,7 @@ mod tests {
         const POINT_COUNT: PointOffsetType = 500;
 
         let dir = Builder::new().prefix("ro_sparse").tempdir().unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let sparse_vectors: Vec<SparseVector> = (0..POINT_COUNT)
             .map(|id| {
@@ -61,7 +61,7 @@ mod tests {
             let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
             for (id, vector) in sparse_vectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             for id in (0..POINT_COUNT).step_by(7) {
@@ -118,7 +118,7 @@ mod tests {
             .prefix("ro_sparse_preopen")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         let sparse_vectors: Vec<SparseVector> = (0..POINT_COUNT)
             .map(|id| {
@@ -134,7 +134,7 @@ mod tests {
             let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
             for (id, vector) in sparse_vectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             storage.flusher()().unwrap();
@@ -186,7 +186,7 @@ mod tests {
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let dir = Builder::new().prefix("ro_sparse_reload").tempdir().unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         fn make(id: usize) -> SparseVector {
             SparseVector {
@@ -200,7 +200,7 @@ mod tests {
         let mut writer = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
         for (id, vector) in first.iter().enumerate() {
             writer
-                .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -215,7 +215,6 @@ mod tests {
                 .insert_vector(
                     (first.len() + offset) as PointOffsetType,
                     VectorRef::from(vector),
-                    &hw,
                 )
                 .unwrap();
         }
@@ -239,9 +238,9 @@ mod tests {
 
             fs_err::remove_dir_all(dir.path()).unwrap();
 
-            reader.live_reload(&cached_fs, &deleted, &new, &hw).unwrap();
+            reader.live_reload(&cached_fs, &deleted, &new).unwrap();
         } else {
-            reader.live_reload(&MmapFs, &deleted, &new, &hw).unwrap();
+            reader.live_reload(&MmapFs, &deleted, &new).unwrap();
         }
 
         assert_eq!(reader.total_vector_count(), first.len() + second.len());
@@ -264,7 +263,7 @@ mod tests {
             .prefix("ro_sparse_appended_deleted")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
 
         fn make(id: usize) -> SparseVector {
             SparseVector {
@@ -274,18 +273,14 @@ mod tests {
         }
 
         let mut writer = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
-        writer
-            .insert_vector(0, VectorRef::from(&make(0)), &hw)
-            .unwrap();
+        writer.insert_vector(0, VectorRef::from(&make(0))).unwrap();
         writer.flusher()().unwrap();
 
         let mut reader =
             ReadOnlySparseVectorStorage::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
                 .unwrap();
 
-        writer
-            .insert_vector(1, VectorRef::from(&make(1)), &hw)
-            .unwrap();
+        writer.insert_vector(1, VectorRef::from(&make(1))).unwrap();
         writer.delete_vector(1).unwrap();
         writer.flusher()().unwrap();
 
@@ -296,7 +291,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 

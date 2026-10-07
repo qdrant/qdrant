@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
 
@@ -24,35 +23,25 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         OnDiskGeoIndex::max_values_per_point(self)
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        OnDiskGeoIndex::points_of_hash(self, hash, hw_counter)
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
+        OnDiskGeoIndex::points_of_hash(self, hash)
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
-        OnDiskGeoIndex::values_of_hash(self, hash, hw_counter)
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
+        OnDiskGeoIndex::values_of_hash(self, hash)
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
-        OnDiskGeoIndex::check_values_any(self, idx, hw_counter, |p| check_fn(p))
+        OnDiskGeoIndex::check_values_any(self, idx, |p| check_fn(p))
     }
 
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,
-        hw_counter: &HardwareCounterCell,
         check_fn: F,
         on_match: M,
     ) -> OperationResult<()>
@@ -62,7 +51,7 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         F: Fn(&GeoPoint) -> bool,
         M: FnMut(U, bool),
     {
-        OnDiskGeoIndex::for_each_matching_value(self, items, hw_counter, check_fn, on_match)
+        OnDiskGeoIndex::for_each_matching_value(self, items, check_fn, on_match)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {

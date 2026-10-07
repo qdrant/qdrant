@@ -98,14 +98,11 @@ where
 
                 let available_vector_count = self.vector_storage.available_vector_count();
 
-                let hw_counter = query_context.hardware_counter();
-
                 // Estimated once for every strategy below: for a filter whose conditions
                 // resolve ids (`has_id`), the estimation performs the external->internal
                 // resolution, and the plain search reuses the resolved offsets.
-                let query_point_cardinality = self
-                    .payload_index
-                    .estimate_cardinality(query_filter, &hw_counter)?;
+                let query_point_cardinality =
+                    self.payload_index.estimate_cardinality(query_filter)?;
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
@@ -162,9 +159,7 @@ where
                 // The filter context's lifetime is tied to the payload view, which is already
                 // held by this read view.
                 let use_graph = {
-                    let filter_context = self
-                        .payload_index
-                        .filter_context(query_filter, &hw_counter)?;
+                    let filter_context = self.payload_index.filter_context(query_filter)?;
                     sample_check_cardinality(
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),

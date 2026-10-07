@@ -6,7 +6,8 @@ use api::rest::schema::PointInsertOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::PointsSelector;
 use collection::operations::vector_ops::DeleteVectors;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hw::HwFutureExt;
+use common::reason::reason;
 use segment::json_path::JsonPath;
 use serde::Deserialize;
 use storage::dispatcher::Dispatcher;
@@ -59,8 +60,8 @@ async fn upsert_points(
         params.into_inner(),
         auth,
         inference_params,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     let (res, inference_usage) = match result_with_usage {
@@ -102,8 +103,8 @@ async fn delete_points(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(res, timing, request_hw_counter.to_rest_api())
@@ -139,8 +140,8 @@ async fn update_vectors(
         params.into_inner(),
         auth,
         inference_params,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     let (res, inference_usage) = match res {
@@ -182,8 +183,8 @@ async fn delete_vectors(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(response, timing, request_hw_counter.to_rest_api())
@@ -215,8 +216,8 @@ async fn set_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(res, timing, request_hw_counter.to_rest_api())
@@ -248,8 +249,8 @@ async fn overwrite_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(res, timing, request_hw_counter.to_rest_api())
@@ -281,8 +282,8 @@ async fn delete_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(res, timing, request_hw_counter.to_rest_api())
@@ -314,8 +315,8 @@ async fn clear_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(res, timing, request_hw_counter.to_rest_api())
@@ -351,8 +352,8 @@ async fn update_batch(
         params.into_inner(),
         auth,
         inference_params,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     let (response_data, inference_usage) = match result_with_usage {
@@ -394,8 +395,8 @@ async fn create_field_index(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(
@@ -421,8 +422,8 @@ async fn delete_field_index(
         InternalUpdateParams::default(),
         params.into_inner(),
         auth,
-        HwMeasurementAcc::disposable(), // API unmeasured
     )
+    .unmeasured(reason("API unmeasured"))
     .await;
     process_response(response, timing, None)
 }
@@ -460,8 +461,8 @@ async fn staging_operation(
         params.into_inner(),
         None, // shard_key
         auth,
-        HwMeasurementAcc::disposable(),
     )
+    .unmeasured(reason("This API isn't measured"))
     .await;
 
     process_response(result, timing, None)
