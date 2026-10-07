@@ -333,10 +333,12 @@ fn array_of_empty_values_is_not_a_document(#[values(false, true)] phrase_matchin
             .unwrap();
     }
 
+    // Every point offset has a length slot, so the empty ones read as zero.
     assert_eq!(doc_lens(&index), (vec![2, 0, 0, 1], 3));
     let FullTextIndex::Mutable(inner) = &index else {
         panic!("expected a mutable (gridstore) index");
     };
+    // Only points 0 and 3 hold tokens, so they are the only documents.
     assert_eq!(inner.inner.inverted_index.points_count(), 2);
     assert!(inner.get_doc(2).unwrap().is_empty());
 }
