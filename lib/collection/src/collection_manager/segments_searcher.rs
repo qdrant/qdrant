@@ -926,7 +926,7 @@ mod tests {
             Arc::new(batch_request),
             &AdaptiveSearchHandle::current_for_tests(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, Handoff::measured(ctx)),
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, Handoff::Measured(ctx)),
             TEST_TIMEOUT,
         )
         .await
@@ -990,7 +990,7 @@ mod tests {
             let ctx = AmbientContext::new();
             let query_context = QueryContext::new(
                 DEFAULT_INDEXING_THRESHOLD_KB,
-                Handoff::measured(AmbientContext::clone(&ctx)),
+                Handoff::Measured(AmbientContext::clone(&ctx)),
             );
 
             let result_no_sampling = SegmentsSearcher::search(
@@ -1009,7 +1009,7 @@ mod tests {
             let ctx = AmbientContext::new();
             let query_context = QueryContext::new(
                 DEFAULT_INDEXING_THRESHOLD_KB,
-                Handoff::measured(AmbientContext::clone(&ctx)),
+                Handoff::Measured(AmbientContext::clone(&ctx)),
             );
 
             assert!(!result_no_sampling.is_empty());

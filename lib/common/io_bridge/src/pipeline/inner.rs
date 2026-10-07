@@ -2,7 +2,7 @@ use std::future::Future;
 use std::panic::AssertUnwindSafe;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use common::ambient::trace;
+use common::ambient::AmbientFutureExt as _;
 use common::universal_io::{UioResult, UniversalIoError, UserData};
 use futures::FutureExt as _;
 use slab::Slab;
@@ -128,7 +128,7 @@ where
         // scroll), where queueing delay is part of the real per-request cost.
         let started = std::time::Instant::now();
         let reply_tx = self.tx.clone();
-        let future = trace::Context::current().wrap(future);
+        let future = future.in_current_ambient();
         runtime.handle().spawn(async move {
             // Catch a panic in the read future and turn it into an error reply,
             // so every scheduled slot is always answered. Without this, a

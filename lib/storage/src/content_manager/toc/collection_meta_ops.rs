@@ -737,6 +737,7 @@ impl TableOfContent {
         // We measure hardware on collection level here to not touch consensus for measurements but still
         // measure hw for payload index creation on all nodes.
         let collection_ctx = AmbientContext::request(
+            &operation.collection_name,
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
@@ -767,6 +768,7 @@ impl TableOfContent {
 
     async fn create_named_vector(&self, operation: CreateNamedVector) -> Result<(), StorageError> {
         let collection_ctx = AmbientContext::request(
+            &operation.collection_name,
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 

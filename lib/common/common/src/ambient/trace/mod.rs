@@ -1,16 +1,24 @@
-//! Network request tracing for UIO.
+//! Tracing: spans, marks, file sections, IO requests and CPU samples of a
+//! request.
 //!
-//! Visualize with `tools/uio-trace-visualizer.html`.
+//! Produces jsonl files that can be visualized with
+//! `tools/uio-trace-visualizer.html`.
 
+mod clock;
 mod cpu;
 mod event;
 mod record;
 mod request;
 mod sink;
-mod span;
+#[cfg(test)]
+pub(super) mod testing;
 
-pub use event::{Op, Outcome};
-pub use record::{file_sections, mark, record_mark};
+pub(super) use clock::{next_id, now};
+pub use cpu::CpuSampler;
+#[doc(hidden)]
+pub use ecow::eco_format as __eco_format;
+pub(super) use event::SpanId;
+pub use event::{Event, Op, Outcome};
+pub use record::{file_sections, mark, record_mark, span};
 pub use request::IoRequest;
-pub use sink::{FlushGuard, enabled, start};
-pub use span::{Context, Phase, WithCtx};
+pub use sink::{Sink, global, install};
