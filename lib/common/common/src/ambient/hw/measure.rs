@@ -15,18 +15,23 @@ impl AmbientContext {
 }
 
 /// Whether the current scope is measured.
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn is_measured() -> bool {
-    slot::with_measured(|ctx| ctx.is_some())
+    slot::with_measured("hw::is_measured()", |ctx| ctx.is_some())
 }
 
 /// CPU utilization of the current context; a fresh one when unmeasured.
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn cpu_utilization() -> CpuUtilization {
-    slot::with_measured(|ctx| ctx.map_or_else(CpuUtilization::new, AmbientContext::cpu_utilization))
+    slot::with_measured("hw::cpu_utilization()", |ctx| {
+        ctx.map_or_else(CpuUtilization::new, AmbientContext::cpu_utilization)
+    })
 }
 
 /// [`AmbientContext::accumulate_request`] on the current context, if measured.
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn accumulate_request(src: HardwareData) {
-    slot::with_measured(|ctx| {
+    slot::with_measured("hw::accumulate_request()", |ctx| {
         if let Some(ctx) = ctx {
             ctx.accumulate_request(src);
         }
