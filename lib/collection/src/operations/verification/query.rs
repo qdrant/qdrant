@@ -51,6 +51,8 @@ impl Query {
                 Query::Fusion(_) | Query::OrderBy(_) | Query::Formula(_) | Query::Sample(_) => (),
                 // A text index, always indexed.
                 Query::Text(_) => (),
+                // Scores the prefetch results, not an index.
+                Query::Rerank(_) => (),
                 Query::Vector(_) => {
                     let config = collection.collection_config.read().await;
 

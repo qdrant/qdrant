@@ -64,7 +64,9 @@ use crate::operations::types::{
     CountResult, LocalShardInfo, OptimizersStatus, RecommendRequestInternal, RemoteShardInfo,
     ShardTransferInfo, UpdateQueueInfo, UpdateResult, UpdateStatus, VectorParams, VectorsConfig,
 };
-use crate::operations::universal_query::collection_query::FeedbackStrategy;
+use crate::operations::universal_query::collection_query::{
+    FeedbackStrategy, RerankDocumentInternal, RerankInternal,
+};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::remote_shard::CollectionCoreSearchRequest;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
@@ -2086,5 +2088,70 @@ impl TryFrom<grpc::FeedbackStrategy> for FeedbackStrategy {
         };
 
         Ok(strategy)
+    }
+}
+
+impl From<rest::RerankInput> for RerankInternal {
+    fn from(rerank: rest::RerankInput) -> Self {
+        let rest::RerankInput {
+            model,
+            query,
+            document,
+            options,
+        } = rerank;
+
+        let document = match document {
+            rest::RerankDocument::Path(path) => RerankDocumentInternal::Path(path),
+            rest::RerankDocument::Fields(fields) => RerankDocumentInternal::Fields(fields),
+            rest::RerankDocument::Template(rest::RerankTemplate { template }) => {
+                RerankDocumentInternal::Template(template)
+            }
+        };
+
+        RerankInternal {
+            model,
+            query,
+            document,
+            options: options.unwrap_or_default(),
+        }
+    }
+}
+
+impl TryFrom<grpc::RerankQuery> for RerankInternal {
+    type Error = Status;
+
+    fn try_from(rerank: grpc::RerankQuery) -> Result<Self, Self::Error> {
+        use grpc::rerank_document::Variant;
+
+        let grpc::RerankQuery {
+            model,
+            query,
+            document,
+            options,
+        } = rerank;
+
+        let variant = document
+            .and_then(|document| document.variant)
+            .ok_or_else(|| Status::invalid_argument("rerank document is missing"))?;
+
+        let document = match variant {
+            Variant::Path(path) => RerankDocumentInternal::Path(json_path_from_proto(&path)?),
+            Variant::Fields(grpc::RerankDocumentFields { paths }) => {
+                RerankDocumentInternal::Fields(
+                    paths
+                        .iter()
+                        .map(|path| json_path_from_proto(path))
+                        .collect::<Result<_, _>>()?,
+                )
+            }
+            Variant::Template(template) => RerankDocumentInternal::Template(template),
+        };
+
+        Ok(RerankInternal {
+            model,
+            query,
+            document,
+            options: api::conversions::json::proto_dict_to_json(options)?,
+        })
     }
 }

@@ -15179,6 +15179,9 @@
           },
           {
             "$ref": "#/components/schemas/TextQuery"
+          },
+          {
+            "$ref": "#/components/schemas/RerankQuery"
           }
         ]
       },
@@ -15973,6 +15976,76 @@
             "maximum": 1,
             "minimum": 0,
             "nullable": true
+          }
+        }
+      },
+      "RerankQuery": {
+        "type": "object",
+        "required": [
+          "rerank"
+        ],
+        "properties": {
+          "rerank": {
+            "$ref": "#/components/schemas/RerankInput"
+          }
+        }
+      },
+      "RerankInput": {
+        "description": "Re-rank the merged results of the prefetches with a re-ranker model, served by the inference service. The re-ranker score replaces the score of each point.",
+        "type": "object",
+        "required": [
+          "document",
+          "model",
+          "query"
+        ],
+        "properties": {
+          "model": {
+            "description": "Name of the re-ranker model. List of available models depends on a provider.",
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "description": "Query text to score the candidates against.",
+            "type": "string"
+          },
+          "document": {
+            "$ref": "#/components/schemas/RerankDocument"
+          },
+          "options": {
+            "description": "Additional options for the model, will be passed to the inference service as-is. See model cards for available options.",
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
+      },
+      "RerankDocument": {
+        "description": "How each candidate is presented to the re-ranker model:\n\n* a payload path - the text of this field\n\n* a list of payload paths - a structured object of these fields, with their JSON types kept\n\n* a template - text with `{path}` placeholders replaced by payload values",
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/RerankTemplate"
+          }
+        ]
+      },
+      "RerankTemplate": {
+        "type": "object",
+        "required": [
+          "template"
+        ],
+        "properties": {
+          "template": {
+            "description": "Text the model sees for each candidate. `{path}` placeholders are replaced by the payload values at these paths, a missing value renders as an empty string.",
+            "type": "string",
+            "minLength": 1
           }
         }
       },

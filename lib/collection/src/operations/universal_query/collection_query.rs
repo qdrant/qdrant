@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ahash::AHashSet;
 use api::rest::{self, LookupLocation};
 use common::types::ScoreType;
@@ -108,6 +110,29 @@ pub enum Query {
 
     /// BM25 over the text index of the payload field named by `using`
     Text(TextQueryInternal),
+
+    /// Re-rank the merged results of the prefetches with a re-ranker model
+    Rerank(RerankInternal),
+}
+
+/// A re-ranker model call over the merged results of the prefetches.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RerankInternal {
+    pub model: String,
+    pub query: String,
+    pub document: RerankDocumentInternal,
+    pub options: HashMap<String, serde_json::Value>,
+}
+
+/// How each candidate is presented to the re-ranker model.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RerankDocumentInternal {
+    /// Text of one payload field
+    Path(JsonPath),
+    /// Structured object of several payload fields
+    Fields(Vec<JsonPath>),
+    /// Text with `{path}` placeholders replaced by payload values
+    Template(String),
 }
 
 /// A text query before `using` names its field.
@@ -171,6 +196,11 @@ impl Query {
                     params,
                 })
             }
+            Query::Rerank(_) => {
+                return Err(CollectionError::bad_request(
+                    "rerank query is not supported yet",
+                ));
+            }
         };
 
         Ok(scoring_query)
@@ -187,7 +217,8 @@ impl Query {
             | Self::OrderBy(_)
             | Self::Formula(_)
             | Self::Sample(_)
-            | Self::Text(_) => Vec::new(),
+            | Self::Text(_)
+            | Self::Rerank(_) => Vec::new(),
         }
     }
 }
