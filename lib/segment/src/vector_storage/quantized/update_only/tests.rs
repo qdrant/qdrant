@@ -35,7 +35,7 @@ use crate::types::{
     VectorStorageType,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
-    QuantizedChunkedStorage, UpdateOnlyQuantizedChunkedStorageBuilder,
+    QuantizedChunkedStorage, QuantizedChunkedStorageBuilder,
 };
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorageBuilder;
 use crate::vector_storage::quantized::quantized_vectors::{
@@ -116,10 +116,11 @@ fn create_empty_overlay(
                     vector_parameters.dim,
                     encoding,
                 );
-            let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
+            let storage_builder = QuantizedChunkedStorageBuilder::<MmapFile>::new(
                 MmapFs,
                 data_path.as_path(),
                 quantized_vector_size,
+                false,
             )
             .unwrap();
             EncodedVectorsBin::<u128, _>::encode(
@@ -138,10 +139,11 @@ fn create_empty_overlay(
             let mode = QuantizedVectors::tq_mode(bits);
             let quantized_vector_size =
                 encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
-            let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
+            let storage_builder = QuantizedChunkedStorageBuilder::<MmapFile>::new(
                 MmapFs,
                 data_path.as_path(),
                 quantized_vector_size,
+                false,
             )
             .unwrap();
             EncodedVectorsTQ::encode(

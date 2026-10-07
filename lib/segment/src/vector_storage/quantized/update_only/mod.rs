@@ -19,7 +19,6 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, read_json_via};
-use quantization::EncodedStorageWrite as _;
 use quantization::encoded_vectors_binary::EncoderBin;
 use quantization::encoded_vectors_tq::EncoderTQ;
 
@@ -27,7 +26,8 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::types::{Distance, QuantizationConfig, VectorDataConfig, VectorStorageDatatype};
-use crate::vector_storage::quantized::quantized_chunked_mmap_storage::UpdateOnlyQuantizedChunkedStorage;
+use crate::vector_storage::VectorOffsetType;
+use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVectors;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsConfig,
 };
@@ -54,7 +54,8 @@ impl Encoder {
 /// [`UpdateOnlyDenseVectorStorage`]: crate::vector_storage::dense::update_only::UpdateOnlyDenseVectorStorage
 pub struct UpdateOnlyQuantizedVectors<Fs: UniversalAppendFs> {
     encoder: Encoder,
-    storage: UpdateOnlyQuantizedChunkedStorage<Fs>,
+    vectors: UpdateOnlyChunkedVectors<u8>,
+    fs: Fs,
     config: QuantizedVectorsConfig,
     /// Raw-storage properties, needed to decode a [`VectorToStore::Raw`].
     distance: Distance,
@@ -116,15 +117,13 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
                 ));
             }
         };
-        let storage = UpdateOnlyQuantizedChunkedStorage::open(
-            fs,
-            &data_path,
-            config.quantized_vector_size(false),
-        )?;
+        let vectors =
+            UpdateOnlyChunkedVectors::open(&fs, &data_path, config.quantized_vector_size(false))?;
 
         Ok(Self {
             encoder,
-            storage,
+            vectors,
+            fs,
             config,
             distance,
             datatype,
@@ -157,9 +156,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyQuantizedVectors<Fs> {
             .iter()
             .map(|vector| self.encoder.encode(vector))
             .collect();
-        self.storage
-            .upsert_many(start_slot, rows.iter().map(Vec::as_slice), hw_counter)?;
-        Ok(())
+        self.vectors.append_many(
+            &self.fs,
+            start_slot as VectorOffsetType,
+            rows.iter().map(Vec::as_slice),
+            hw_counter,
+        )
     }
 
     /// The dimensionality of the (dense, unrotated) vector this overlay quantizes.
