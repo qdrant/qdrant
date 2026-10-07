@@ -99,6 +99,28 @@ pub struct ErrorCorrectionMetadata {
     pub scale: Vec<f32>,
 }
 
+/// Encodes vectors the way the storage whose metadata is persisted at a given path
+/// does, for a writer that stores the encoded rows itself.
+pub struct EncoderTQ {
+    quantizer: TurboQuantizer,
+    encoding_buffer: Vec<f64>,
+}
+
+impl EncoderTQ {
+    pub fn load<Fs: UniversalReadFs>(fs: &Fs, meta_path: &Path) -> UioResult<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
+        Ok(Self {
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
+            quantizer,
+        })
+    }
+
+    pub fn encode(&mut self, vector: &[f32]) -> Vec<u8> {
+        self.quantizer.quantize(vector, &mut self.encoding_buffer)
+    }
+}
+
 impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
