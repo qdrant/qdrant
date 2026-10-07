@@ -682,63 +682,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
             bits_store_type: PhantomData,
         })
     }
-
-    /// Resume appending to a previously-persisted storage: reads the fitted metadata a writer
-    /// needs to keep encoding consistently, but — unlike [`Self::load`] — never reads a vector
-    /// back from `encoded_vectors` to validate it. A pure appender doesn't need that guarantee:
-    /// every vector it will ever write is sized from this same metadata, so the invariant
-    /// `load`'s check protects (every stored vector has the size the scoring hot path assumes)
-    /// holds by construction, not by verification. Intended for storage backends that can only
-    /// append and cannot serve that read at all (see `EncodedStorage` implementers that are
-    /// write-only).
-    pub fn reopen_for_write<Fs: UniversalReadFs>(
-        fs: &Fs,
-        encoded_vectors: TStorage,
-        meta_path: &Path,
-    ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
-        Ok(Self {
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-            encoded_vectors,
-            bits_store_type: PhantomData,
-        })
-    }
-
-    /// Encode and persist `vectors` on consecutive ids from `start_id`, handing the storage the
-    /// whole run as one batch. Inherent rather than on the [`EncodedVectors`] trait, so a
-    /// write-only [`EncodedStorageWrite`] storage can call it.
-    pub fn append_many<'a>(
-        &mut self,
-        start_id: PointOffsetType,
-        vectors: impl IntoIterator<Item = &'a [f32]>,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        // Encoded whole rather than streamed: the storage borrows the encoded rows.
-        let encoded: Vec<_> = vectors
-            .into_iter()
-            .map(|vector| {
-                EncodedBinVector::<TBitsStoreType>::encode(
-                    vector,
-                    &self.metadata.vector_stats,
-                    self.metadata.encoding,
-                )
-            })
-            .collect();
-        self.encoded_vectors.upsert_many(
-            start_id,
-            encoded
-                .iter()
-                .map(|vector| bytemuck::cast_slice(vector.encoded_vector.as_slice())),
-            hw_counter,
-        )
-    }
-
-    /// See [`Self::append_many`]: an inherent counterpart of the [`EncodedVectors`] trait's
-    /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
-    pub fn flusher(&self) -> Flusher {
-        self.encoded_vectors.flusher()
-    }
 }
 
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>

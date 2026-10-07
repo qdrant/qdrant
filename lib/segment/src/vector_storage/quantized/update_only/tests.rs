@@ -27,12 +27,12 @@ use quantization::{EncodedStorage as _, EncodedVectors as _};
 use rstest::rstest;
 use tempfile::TempDir;
 
-use super::{UpdateOnlyQuantizedVectorStorage, UpdateOnlyQuantizedVectors};
+use super::UpdateOnlyQuantizedVectors;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, Distance, Indexes, QuantizationConfig,
     TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization, VectorDataConfig,
-    VectorStorageDatatype, VectorStorageType,
+    VectorStorageType,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
     QuantizedChunkedStorage, UpdateOnlyQuantizedChunkedStorageBuilder,
@@ -106,7 +106,7 @@ fn create_empty_overlay(
     let stopped = AtomicBool::new(false);
     let no_vectors = std::iter::empty::<&[f32]>();
 
-    let storage = match config {
+    match config {
         QuantizationConfig::Binary(BinaryQuantization { binary }) => {
             let encoding = QuantizedVectors::convert_binary_encoding(binary.encoding);
             let query_encoding =
@@ -122,7 +122,7 @@ fn create_empty_overlay(
                 quantized_vector_size,
             )
             .unwrap();
-            let encoded = EncodedVectorsBin::encode(
+            EncodedVectorsBin::<u128, _>::encode(
                 no_vectors,
                 storage_builder,
                 &vector_parameters,
@@ -132,7 +132,6 @@ fn create_empty_overlay(
                 &stopped,
             )
             .unwrap();
-            UpdateOnlyQuantizedVectorStorage::Binary(Box::new(encoded))
         }
         QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
             let bits = QuantizedVectors::convert_tq_bits(turbo.bits.unwrap_or_default());
@@ -145,7 +144,7 @@ fn create_empty_overlay(
                 quantized_vector_size,
             )
             .unwrap();
-            let encoded = EncodedVectorsTQ::encode(
+            EncodedVectorsTQ::encode(
                 no_vectors,
                 storage_builder,
                 &vector_parameters,
@@ -159,12 +158,11 @@ fn create_empty_overlay(
                 &stopped,
             )
             .unwrap();
-            UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(encoded))
         }
         QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {
             panic!("test fixture only builds Binary/Turbo overlays")
         }
-    };
+    }
 
     let overlay_config = QuantizedVectorsConfig {
         quantization_config: config.clone(),
@@ -176,19 +174,14 @@ fn create_empty_overlay(
         .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
         .unwrap();
 
-    UpdateOnlyQuantizedVectors {
-        storage,
-        config: overlay_config,
-        distance: Distance::Dot,
-        datatype: VectorStorageDatatype::Float32,
-    }
+    UpdateOnlyQuantizedVectors::open(MmapFs, path, &dense_vector_config())
+        .unwrap()
+        .expect("overlay was just created")
 }
 
 /// First writer: created fresh (as whatever builds a new segment would), writes half the batch,
 /// then dropped, then reopened through `open` — proving a second writer resumes correctly,
-/// mirroring `dense/update_only/tests.rs::batches_resume`. Reopening goes through
-/// `EncodedVectorsBin`/`TQ::reopen_for_write`, not `load`: a resuming writer only needs the
-/// fitted metadata, not a validating read of already-stored data.
+/// mirroring `dense/update_only/tests.rs::batches_resume`.
 fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec<f32>]) {
     let hw_counter = HardwareCounterCell::new();
 
@@ -380,8 +373,7 @@ fn open_returns_none_when_nothing_persisted() {
     assert!(overlay.is_none());
 }
 
-/// Reopening an overlay that already has data works, through `reopen_for_write` rather than
-/// `load` — covered end to end by `write_all`'s two-writer split (used by both byte-comparison
+/// Reopening an overlay that already has data works — covered end to end by `write_all`'s two-writer split (used by both byte-comparison
 /// tests above). This test isolates just the `open` call: it must return `Some`, not error or
 /// panic, once a prior writer already stored vectors.
 #[test]

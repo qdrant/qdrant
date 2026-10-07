@@ -332,31 +332,6 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         })
     }
 
-    /// Resume appending to a previously-persisted storage: reads the fitted metadata (quantizer,
-    /// rotation) a writer needs to keep encoding consistently, but — unlike [`Self::load`] —
-    /// never reads a vector back from `encoded_vectors` to validate it. A pure appender doesn't
-    /// need that guarantee: every vector it will ever write is sized from this same metadata, so
-    /// the invariant `load`'s check protects (every stored vector has the size the scoring hot
-    /// path assumes) holds by construction, not by verification. Intended for storage backends
-    /// that can only append and cannot serve that read at all (see `EncodedStorage` implementers
-    /// that are write-only).
-    pub fn reopen_for_write<Fs: UniversalReadFs>(
-        fs: &Fs,
-        encoded_vectors: TStorage,
-        meta_path: &Path,
-    ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
-        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
-
-        Ok(Self {
-            encoded_vectors,
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
-            quantizer,
-        })
-    }
-
     fn encode_vector(
         vector_data: &[f32],
         turbo_quantizer: &TurboQuantizer,
@@ -367,32 +342,6 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
 
     pub fn get_metadata(&self) -> &Metadata {
         &self.metadata
-    }
-
-    /// Encode and persist `vectors` on consecutive ids from `start_id`, handing the storage the
-    /// whole run as one batch. Inherent rather than on the [`EncodedVectors`] trait, so a
-    /// write-only [`EncodedStorageWrite`] storage can call it.
-    pub fn append_many<'a>(
-        &mut self,
-        start_id: PointOffsetType,
-        vectors: impl IntoIterator<Item = &'a [f32]>,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        // Encoded whole rather than streamed: the storage borrows the encoded rows.
-        let quantizer = &self.quantizer;
-        let encoding_buffer = &mut self.encoding_buffer;
-        let encoded: Vec<_> = vectors
-            .into_iter()
-            .map(|vector| Self::encode_vector(vector, quantizer, encoding_buffer))
-            .collect();
-        self.encoded_vectors
-            .upsert_many(start_id, encoded.iter().map(Vec::as_slice), hw_counter)
-    }
-
-    /// See [`Self::append_many`]: an inherent counterpart of the [`EncodedVectors`] trait's
-    /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
-    pub fn flusher(&self) -> Flusher {
-        self.encoded_vectors.flusher()
     }
 }
 
