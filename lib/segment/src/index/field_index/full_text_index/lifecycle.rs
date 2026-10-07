@@ -124,6 +124,10 @@ impl FullTextIndex {
     ///
     /// With phrase matching on, a sentinel separates the values of an array, so
     /// that no phrase matches across two of them.
+    ///
+    /// A stream made only of those boundaries is returned empty, so that an
+    /// array whose values all tokenize to nothing is not a document, the same
+    /// as a single value that tokenizes to nothing.
     pub(super) fn tokenize_document<'a>(
         tokenizer: &'a Tokenizer,
         phrase_matching: bool,
@@ -140,6 +144,10 @@ impl FullTextIndex {
             tokenizer.tokenize_doc(value, |token| {
                 str_tokens.push(token);
             });
+        }
+
+        if Self::document_length(&str_tokens, phrase_matching, values) == 0 {
+            str_tokens.clear();
         }
 
         str_tokens

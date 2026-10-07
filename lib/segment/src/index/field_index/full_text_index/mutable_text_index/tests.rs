@@ -303,6 +303,44 @@ fn doc_len_excludes_array_boundary_sentinels() {
     }
 }
 
+/// An array whose values all tokenize to nothing is not a document, like a
+/// single value that tokenizes to nothing. Otherwise its boundary sentinels
+/// would count it in BM25's `N` and `avgdl` with phrase matching on.
+#[rstest]
+fn array_of_empty_values_is_not_a_document(#[values(false, true)] phrase_matching: bool) {
+    use crate::index::field_index::full_text_index::inverted_index::InvertedIndex;
+
+    let temp_dir = Builder::new().prefix("doc_len_empty").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let mut index = gridstore_index(
+        temp_dir.path().join("index"),
+        length_config(phrase_matching),
+        true,
+        true,
+    )
+    .unwrap()
+    .unwrap();
+    let payloads = [
+        serde_json::json!("alpha beta"),
+        serde_json::json!(""),
+        serde_json::json!(["", ""]),
+        serde_json::json!(["", "gamma", ""]),
+    ];
+    for (idx, payload) in payloads.iter().enumerate() {
+        index
+            .add_point(idx as PointOffsetType, &[payload], &hw_counter)
+            .unwrap();
+    }
+
+    assert_eq!(doc_lens(&index), (vec![2, 0, 0, 1], 3));
+    let FullTextIndex::Mutable(inner) = &index else {
+        panic!("expected a mutable (gridstore) index");
+    };
+    assert_eq!(inner.inner.inverted_index.points_count(), 2);
+    assert!(inner.get_doc(2).unwrap().is_empty());
+}
+
 /// `tokenize_doc` does not strip the sentinel's own character from user text,
 /// so those tokens are indexed and must be counted. Filtering the count by
 /// value rather than by inserted count reads this document as two tokens long.
