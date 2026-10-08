@@ -424,6 +424,121 @@ fn update_collection_replica_changes() {
 }
 
 #[test]
+fn update_collection_replica_change_aborts_transfer_before_removal() {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+
+    let mut state = transfer_state();
+    let transfer = shard_transfer(
+        PEER_ID,
+        OTHER_PEER_ID,
+        false,
+        ShardTransferMethod::StreamRecords,
+    );
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::Partial);
+    collection.transfers.insert(transfer);
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&collection_meta_op(
+        CollectionMetaOperations::UpdateCollection(operation),
+    ));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("removing a transfer destination should be accepted, got {outcome:?}");
+    };
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::StopTransferDriver { .. },
+            Action::RevertProxyShard { .. },
+            Action::UnregisterTransfer { .. },
+            Action::RemoveReplica {
+                shard_id: 0,
+                peer_id: OTHER_PEER_ID,
+                ..
+            },
+        ]
+    ));
+}
+
+#[test]
+fn update_collection_replica_change_guard_rejects_partial_replay() {
+    for sync in [false, true] {
+        for source_state in [ReplicaState::Initializing, ReplicaState::Active] {
+            update_collection_replica_change_guard_rejects_partial_replay_case(sync, source_state);
+        }
+    }
+}
+
+fn update_collection_replica_change_guard_rejects_partial_replay_case(
+    sync: bool,
+    source_state: ReplicaState,
+) {
+    let mut state = transfer_state();
+    let transfer = shard_transfer(PEER_ID, OTHER_PEER_ID, sync, ShardTransferMethod::Snapshot);
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.shards.get_mut(&0).expect("shard").replicas = HashMap::from([
+        (PEER_ID, source_state),
+        (OTHER_PEER_ID, ReplicaState::Active),
+    ]);
+    collection.transfers.insert(transfer);
+
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, PEER_ID)]);
+    let operation = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
+    let mut machine = state_machine(state.clone());
+    let ApplyOutcome::Accepted(actions) = machine.apply(&operation) else {
+        panic!("removing a replica with another active replica should be accepted");
+    };
+    let goal = machine.state().clone();
+
+    let mut partial_rejections = 0;
+    for crash_after in 0..=actions.len() {
+        let mut crashed = state.clone();
+        for action in &actions[..crash_after] {
+            crashed.apply_action(action);
+        }
+        let reached_goal = crashed == goal;
+        let mut replay = state_machine(crashed);
+        match replay.apply(&operation) {
+            ApplyOutcome::Accepted(_) => assert_eq!(replay.state(), &goal),
+            ApplyOutcome::Rejected(error) if !reached_goal => {
+                partial_rejections += 1;
+                assert!(super::replay::replica_removal_guard_may_reject(
+                    &state,
+                    &operation,
+                    &actions[..crash_after],
+                    &error,
+                ));
+                assert!(!super::replay::replica_removal_guard_may_reject(
+                    &state,
+                    &operation,
+                    &actions[..1],
+                    &error,
+                ));
+                let unrelated_error =
+                    StorageError::bad_request(format!("Peer {PEER_ID} has no replica of shard 0"));
+                assert!(!super::replay::replica_removal_guard_may_reject(
+                    &state,
+                    &operation,
+                    &actions[..crash_after],
+                    &unrelated_error,
+                ));
+            }
+            ApplyOutcome::Rejected(_) => {}
+            ApplyOutcome::NotCovered => panic!("replica removal should be covered"),
+        }
+    }
+    assert_eq!(partial_rejections, 3);
+}
+
+#[test]
 fn update_collection_replica_change_order() {
     let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
     operation.update_collection.hnsw_config = Some(hnsw_diff(8));

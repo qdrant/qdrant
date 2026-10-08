@@ -32,6 +32,11 @@ struct AbortReshardingScope {
     skip_transfer: Option<ShardTransferKey>,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct AbortTransferScope {
+    skip_replica: Option<(ShardId, PeerId)>,
+}
+
 impl ClusterState {
     /// One action: `Collection::new` saves the config as its last step, and a collection whose
     /// config is missing does not load, so creation is atomic already.
@@ -259,7 +264,14 @@ impl ClusterState {
                     continue;
                 }
 
-                let abort = planned.plan_abort_transfer(context, collection.into(), key)?;
+                let abort = planned.plan_abort_transfer_scoped(
+                    context,
+                    collection.into(),
+                    key,
+                    AbortTransferScope {
+                        skip_replica: Some((shard_id, peer_id)),
+                    },
+                )?;
                 apply_actions(&mut planned, &abort);
                 actions.extend(abort);
             }
@@ -1350,6 +1362,16 @@ impl ClusterState {
         collection: String,
         key: ShardTransferKey,
     ) -> StorageResult<Actions> {
+        self.plan_abort_transfer_scoped(context, collection, key, AbortTransferScope::default())
+    }
+
+    fn plan_abort_transfer_scoped(
+        &self,
+        context: &NodeContext,
+        collection: String,
+        key: ShardTransferKey,
+        scope: AbortTransferScope,
+    ) -> StorageResult<Actions> {
         let state = self.collection(&collection).expect("collection exists");
         let Some(transfer) = transfer_by_key(state, key).cloned() else {
             return Err(missing_transfer(key));
@@ -1371,7 +1393,7 @@ impl ClusterState {
             )?);
         }
 
-        actions.extend(self.plan_abort_transfer_record(context, collection, &transfer));
+        actions.extend(self.plan_abort_transfer_record(context, collection, &transfer, scope));
         Ok(actions)
     }
 
@@ -1380,6 +1402,7 @@ impl ClusterState {
         context: &NodeContext,
         collection: String,
         transfer: &ShardTransfer,
+        scope: AbortTransferScope,
     ) -> Actions {
         let state = self.collection(&collection).expect("collection exists");
         let key = transfer.key();
@@ -1389,10 +1412,11 @@ impl ClusterState {
             key,
         }];
 
-        if state
-            .shards
-            .get(&destination_shard)
-            .is_some_and(|shard| shard.replicas.contains_key(&transfer.to))
+        if scope.skip_replica != Some((destination_shard, transfer.to))
+            && state
+                .shards
+                .get(&destination_shard)
+                .is_some_and(|shard| shard.replicas.contains_key(&transfer.to))
         {
             if transfer.is_resharding() {
                 // Resharding abort restores replica state as part of its own cascade

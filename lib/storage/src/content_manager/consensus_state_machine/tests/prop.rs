@@ -509,6 +509,18 @@ fn arb_shard_transfer_key() -> impl Strategy<Value = ShardTransferKey> {
         arb_peer_id(),
         arb_peer_id(),
     )
+        .prop_filter(
+            "valid shard transfer peer pair",
+            |(shard_id, to_shard_id, from, to)| {
+                common::validation::validate_shard_different_peers(
+                    *from,
+                    *to,
+                    *shard_id,
+                    *to_shard_id,
+                )
+                .is_ok()
+            },
+        )
         .prop_map(|(shard_id, to_shard_id, from, to)| ShardTransferKey {
             shard_id,
             to_shard_id,

@@ -11,6 +11,7 @@ use shard::count::CountRequestInternal;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 
 use super::Collection;
+use super::shard_transfer::AbortShardTransferScope;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -295,8 +296,13 @@ impl Collection {
 
         for (replica_set, peer_id, transfers) in to_remove {
             for transfer in transfers {
-                self.abort_shard_transfer_and_resharding(transfer.key())
-                    .await?;
+                self.abort_shard_transfer_and_resharding_scoped(
+                    transfer.key(),
+                    AbortShardTransferScope {
+                        skip_replica: Some((replica_set.shard_id, peer_id)),
+                    },
+                )
+                .await?;
             }
 
             replica_set.remove_peer(peer_id).await?;
