@@ -137,7 +137,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(storage, quantizer, path, dim, distance, populate, !populate)
     }
 }
 
@@ -158,7 +158,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(storage, quantizer, path, dim, distance, populate, !populate)
     }
 }
 
@@ -188,6 +188,12 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
 impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
     /// Shared tail of the backend-specific `open_*` constructors: open the
     /// deletion flags and assemble the storage.
+    ///
+    /// `on_disk` is what [`VectorStorage::is_on_disk`] reports. A file backend
+    /// opened with `populate` is the in-RAM placement, so it passes
+    /// `!populate`, as the dense storages do: the segment builder drops the
+    /// page cache of on-disk storages after building the index, and an in-RAM
+    /// storage would then have to be read back from disk when the segment loads.
     fn finalize(
         storage: B,
         quantizer: TurboQuantizer,
