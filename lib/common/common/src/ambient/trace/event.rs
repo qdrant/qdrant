@@ -1,34 +1,43 @@
+//! Types that would go into JSON.
+//!
+//! No logic.
+
+use std::collections::VecDeque;
+
+use ecow::EcoString;
 use serde::Serialize;
+use strum::{EnumCount, EnumIter, IntoStaticStr};
 
 /// A single event in the log.
-/// Timestamps are relative to the trace start.
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(super) enum Event {
-    /// Span-like event. Can be nested.
-    /// Create with [`super::Phase::start`].
-    Phase {
-        /// Other events can have `parent` set to this ID.
-        id: u64,
-        start_ns: Nanoseconds,
-        end_ns: Nanoseconds,
-        name: &'static str,
+pub enum Event {
+    /// A span opens; other events have `parent` set to its `id`, a root's own `parent` is `0`.
+    /// Any event outside a span, recorded into the global sink, has `parent` set to `0` too.
+    /// Create with [`super::span!`] or [`crate::ambient::AmbientContext::root`].
+    SpanStart {
+        id: SpanId,
+        parent: SpanId,
+        timestamp: Timestamp,
+        name: EcoString,
     },
+    /// The span closes. Created automatically on drop.
+    SpanEnd { id: SpanId, timestamp: Timestamp },
     /// Text log-like event.
     /// Create with [`super::mark!`].
     Mark {
-        parent: u64,
-        at_ns: Nanoseconds,
-        text: String,
+        parent: SpanId,
+        timestamp: Timestamp,
+        text: EcoString,
     },
     /// Single remote request.
     /// Created by UIO backend implementations, with [`super::IoRequest::new`].
     Request {
-        parent: u64,
-        start_ns: Nanoseconds,
-        end_ns: Nanoseconds,
+        parent: SpanId,
+        started: Timestamp,
+        ended: Timestamp,
         op: Op,
-        path: String,
+        path: EcoString,
         offset: u64,
         length: u64,
         outcome: Outcome,
@@ -37,38 +46,26 @@ pub(super) enum Event {
     /// Lets the visualizer distinguish offsets and links within the same file.
     /// Create with [`super::file_sections`].
     Sections {
-        path: String,
+        path: EcoString,
         sections: Vec<(&'static str, u64)>,
     },
     /// CPU usage.
-    /// Written automatically.
+    /// Create with [`super::CpuSampler`] and append to trace manually.
     Cpu {
-        at_ns: Nanoseconds,
-        cpu_ns: Nanoseconds,
+        timestamps: VecDeque<Timestamp>,
+        cpu_ns: VecDeque<u64>,
     },
     /// Emitted when can't keep up.
     /// Written automatically.
     Dropped { count: u64 },
 }
 
-pub(super) type Nanoseconds = u64;
+/// Nanoseconds since the Unix epoch.
+pub(super) type Timestamp = u64;
+pub(in super::super) type SpanId = u64;
 
 /// Request operation kind.
-///
-/// Fieldless with implicit discriminants, so `op as usize` indexes an array of
-/// [`Op::COUNT`](strum::EnumCount::COUNT) entries in [`Op::iter`](strum::IntoEnumIterator::iter)
-/// order.
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    Serialize,
-    strum::EnumCount,
-    strum::EnumIter,
-    strum::IntoStaticStr,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, EnumCount, EnumIter, IntoStaticStr)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum Op {

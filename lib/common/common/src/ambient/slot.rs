@@ -1,19 +1,18 @@
-//! Unsafe/thread-local implementation details for the [`super`] module.
+//! Scary unsafe implementation details for the [`crate::ambient`] module.
 
 use std::cell::Cell;
-use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use strum::EnumCount;
 
-use super::context::{AmbientContext, Root};
+use super::Handoff;
+use super::context::{AmbientContext, Node};
 use super::hw::{HardwareData, HwMetric};
 
 #[inline]
 pub(super) fn bump(metric: HwMetric, delta: usize) {
     SLOT.with(|slot| {
-        #[cfg(debug_assertions)]
-        slot.check_bump(metric);
+        _ = slot.target(); // trigger `debug_assertions`
         let counter = &slot.counters[metric as usize];
         counter.set(counter.get().wrapping_add(delta));
     });
@@ -30,52 +29,35 @@ pub(super) fn pending() -> HardwareData {
     SLOT.with(|slot| HardwareData(slot.counters.each_ref().map(Cell::get)))
 }
 
-pub(super) fn enter_measured(ctx: &AmbientContext) -> Scope<'_> {
-    Scope::enter(Target::Measured(ctx.as_ptr()), None)
+/// Run `f` in the scope of `handoff`.
+pub(super) fn enter<R>(handoff: &Handoff, f: impl FnOnce() -> R) -> R {
+    // SAFETY: `_scope` is dropped before `handoff`, which owns the node.
+    let _scope = unsafe { Scope::new(Target::of(handoff), None) };
+    f()
 }
 
-pub(super) fn enter_measured_owned(ctx: AmbientContext) -> Scope<'static> {
-    let target = Target::Measured(ctx.as_ptr());
-    Scope::enter(target, Some(ctx))
+/// Run `f`, measuring it into `ctx`.
+pub(super) fn measure<R>(ctx: &AmbientContext, f: impl FnOnce() -> R) -> R {
+    // SAFETY: `_scope` is dropped before `ctx`.
+    let _scope = unsafe { Scope::new(Target::Measured(ctx.as_ptr()), None) };
+    f()
 }
 
-pub(super) fn enter_unmeasured() -> Scope<'static> {
-    Scope::enter(Target::Unmeasured, None)
+/// Run `f` on the context of the current scope, measured or not.
+pub(super) fn with_context<R>(f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
+    borrow(Target::current().node(), f)
 }
 
-/// Mask the current scope, see [`super::parallel`].
-pub(super) fn enter_masked() -> Scope<'static> {
-    Scope::enter(Target::Unset, None)
+/// Run `f` on the context of the current scope, if measured.
+pub(super) fn with_measured<R>(f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
+    borrow(Target::current().measured(), f)
 }
 
-pub(super) fn current_ctx() -> Option<AmbientContext> {
-    SLOT.with(|slot| {
-        #[cfg(debug_assertions)]
-        slot.check_access("ambient::current()");
-        match slot.target.get() {
-            // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
-            Target::Measured(node) => Some(unsafe { AmbientContext::from_ptr(node) }),
-            Target::Unset | Target::Unmeasured => None,
-        }
-    })
-}
-
-pub(super) fn is_measured() -> bool {
-    SLOT.with(|slot| {
-        #[cfg(debug_assertions)]
-        slot.check_access("hw::is_measured()");
-        matches!(slot.target.get(), Target::Measured(_))
-    })
-}
-
-/// [`AmbientContext::accumulate_request`] on the current context, if measured.
-pub(super) fn accumulate_request(src: HardwareData) {
-    SLOT.with(|slot| {
-        if let Target::Measured(node) = slot.target.get() {
-            // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
-            unsafe { node.as_ref() }.accumulate_request(src);
-        }
-    });
+fn borrow<R>(node: Option<NonNull<Node>>, f: impl FnOnce(Option<&AmbientContext>) -> R) -> R {
+    // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
+    f(node
+        .map(|node| unsafe { AmbientContext::borrow_ptr(node) })
+        .as_deref())
 }
 
 thread_local! {
@@ -96,95 +78,179 @@ struct Slot {
 }
 
 impl Slot {
-    #[cfg(debug_assertions)]
-    #[inline]
-    fn check_bump(&self, metric: HwMetric) {
-        if self.target.get() == Target::Unset {
-            self.check_access(metric);
+    /// The target, checked to be set: outside of any scope is a misuse.
+    fn target(&self) -> Target {
+        let target = self.target.get();
+        #[cfg(debug_assertions)]
+        match target {
+            Target::Unset => unset(),
+            Target::Unmeasured(_) | Target::Measured(_) => (),
         }
-    }
-
-    #[cfg(debug_assertions)]
-    #[cold]
-    fn check_access(&self, what: impl std::fmt::Debug) {
-        if self.target.get() == Target::Unset {
-            panic!(
-                "{what:?} outside of any ambient scope: a spawned/stolen job forgot to enter its \
-                 context, or code inside ambient::parallel() didn't enter the provided one",
-            );
-        }
+        target
     }
 
     /// Drop the measurements and make every active scope stale.
     #[cold]
     fn poison(&self) {
         self.depth.set(self.depth.get() + (1 << 32));
-        self.target.set(Target::Unmeasured);
+        self.target.set(Target::Unmeasured(None));
         self.counters.iter().for_each(|c| c.set(0));
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(debug_assertions)]
+#[cold]
+fn unset() -> ! {
+    panic!(
+        "outside of any ambient scope: a spawned/stolen job forgot to enter its context, \
+         or code inside ambient::parallel() didn't enter the provided one",
+    );
+}
+
+impl Handoff {
+    /// The current scope, to enter it elsewhere.
+    pub(super) fn current() -> Self {
+        Target::current().to_handoff()
+    }
+
+    /// [`Self::current`] without the misuse check: outside of any scope is unmeasured.
+    pub(super) fn current_unchecked() -> Self {
+        Target::current_unchecked().to_handoff()
+    }
+}
+
+/// A snapshot of the slot, valid until the next scope change on this thread.
+#[derive(Clone, Copy)]
 enum Target {
     /// The default state of a thread-local slot.
-    /// Bumping counters in this state is a misuse:
+    /// Touching the slot in this state is a misuse:
     ///   it will panic in debug builds and unmeasured in release builds.
     Unset,
     /// Explicitly unmeasured.
-    Unmeasured,
-    Measured(NonNull<Root>),
+    Unmeasured(Option<NonNull<Node>>),
+    Measured(NonNull<Node>),
+}
+
+impl Target {
+    /// The slot of this thread, checked to be set: outside of any scope is a misuse.
+    fn current() -> Self {
+        SLOT.with(Slot::target)
+    }
+
+    fn current_unchecked() -> Self {
+        SLOT.with(|slot| slot.target.get())
+    }
+
+    fn of(handoff: &Handoff) -> Self {
+        match handoff {
+            Handoff::Unmeasured(ctx) => {
+                Target::Unmeasured(ctx.as_ref().map(AmbientContext::as_ptr))
+            }
+            Handoff::Measured(ctx) => Target::Measured(ctx.as_ptr()),
+        }
+    }
+
+    fn to_handoff(self) -> Handoff {
+        let clone = |node| {
+            // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
+            let ctx = unsafe { AmbientContext::borrow_ptr(node) };
+            AmbientContext::clone(&*ctx)
+        };
+        match self {
+            Target::Unset => Handoff::Unmeasured(None),
+            Target::Unmeasured(node) => Handoff::Unmeasured(node.map(clone)),
+            Target::Measured(node) => Handoff::Measured(clone(node)),
+        }
+    }
+
+    fn node(self) -> Option<NonNull<Node>> {
+        match self {
+            Target::Unset => None,
+            Target::Unmeasured(node) => node,
+            Target::Measured(node) => Some(node),
+        }
+    }
+
+    fn measured(self) -> Option<NonNull<Node>> {
+        match self {
+            Target::Unset | Target::Unmeasured(_) => None,
+            Target::Measured(node) => Some(node),
+        }
+    }
 }
 
 /// An active scope. Restores the outer one on drop/panic.
 #[must_use]
-pub struct Scope<'a> {
+pub struct Scope {
     depth: u64,
-    /// The target of the outer scope, restored on drop.
+    /// Restored on drop.
     outer_target: Target,
+    /// Restored on drop.
     outer_counters: [usize; HwMetric::COUNT],
-    /// Keeps [`Target::Measured`] alive for owned guard scopes.
-    _owned: Option<AmbientContext>,
-    /// Keeps [`Target::Measured`] alive for borrowed guard scopes.
-    _borrow: PhantomData<&'a Root>,
+    /// Keeps the target alive for owned guard scopes.
+    _owned: Option<Handoff>,
 }
 
 #[cfg(test)]
 // Make sure that a future holding Scope across `.await` can't be spawned on a
 // multi-threaded runtime.
-static_assertions::assert_not_impl_any!(Scope<'static>: Send);
+static_assertions::assert_not_impl_any!(Scope: Send);
 
-impl<'a> Scope<'a> {
-    fn enter(target: Target, owned: Option<AmbientContext>) -> Self {
+impl Scope {
+    pub(super) fn enter_owned(handoff: Handoff) -> Self {
+        // SAFETY: the handoff is moved into the scope.
+        unsafe { Self::new(Target::of(&handoff), Some(handoff)) }
+    }
+
+    pub(super) fn unmeasured() -> Self {
+        // SAFETY: the node belongs to the outer scope; dropping that first poisons the slot.
+        unsafe { Self::new(Target::Unmeasured(Target::current_unchecked().node()), None) }
+    }
+
+    /// Mask the current scope, see [`super::parallel`].
+    pub(super) fn masked() -> Self {
+        // SAFETY: no node.
+        unsafe { Self::new(Target::Unset, None) }
+    }
+
+    /// # Safety
+    /// The node in `target` must outlive the scope, either:
+    /// - via `owned`
+    /// - via a borrow the caller holds for the scope's whole life
+    /// - via an outer scope (dropping that first poisons the slot).
+    unsafe fn new(target: Target, owned: Option<Handoff>) -> Self {
         SLOT.with(|slot| Self {
             depth: slot.depth.replace(slot.depth.get() + 1),
             outer_target: slot.target.replace(target),
             outer_counters: std::array::from_fn(|i| slot.counters[i].take()),
             _owned: owned,
-            _borrow: PhantomData,
         })
     }
 }
 
-impl Drop for Scope<'_> {
+impl Drop for Scope {
     fn drop(&mut self) {
         SLOT.with(|slot| {
-            let in_order = slot.depth.get() == self.depth + 1;
-            debug_assert!(
-                in_order || std::thread::panicking(),
-                "ambient scopes exited out of order"
-            );
-            if !in_order {
-                return slot.poison();
+            if slot.depth.get() != self.depth + 1 {
+                slot.poison();
+                debug_assert!(
+                    std::thread::panicking(),
+                    "ambient scopes exited out of order"
+                );
+                return;
             }
             slot.depth.set(self.depth);
             let counters: [usize; HwMetric::COUNT] =
                 std::array::from_fn(|i| slot.counters[i].replace(self.outer_counters[i]));
-            let target = slot.target.replace(self.outer_target);
-            if let Target::Measured(node) = target
-                && counters.iter().any(|&c| c != 0)
-            {
-                // SAFETY: exited in order, so `node` belongs to this scope, which keeps it alive.
-                unsafe { node.as_ref() }.accumulate(HardwareData(counters));
+            match slot.target.replace(self.outer_target) {
+                Target::Measured(node) => {
+                    if counters.iter().any(|&c| c != 0) {
+                        // SAFETY: exited in order, so `node` belongs to this scope, which keeps it alive.
+                        unsafe { AmbientContext::borrow_ptr(node) }
+                            .accumulate(HardwareData(counters));
+                    }
+                }
+                Target::Unset | Target::Unmeasured(_) => {}
             }
         });
     }
