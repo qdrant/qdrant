@@ -672,7 +672,7 @@ mod tests {
             );
 
             // Check same count
-            assert_eq!(mmap_counts[point_id], *count);
+            assert_eq!(mmap_counts[point_id], *count as usize);
             assert_eq!(imm_mmap.point_to_tokens_count[point_id], *count);
 
             // Check same document length, masked identically

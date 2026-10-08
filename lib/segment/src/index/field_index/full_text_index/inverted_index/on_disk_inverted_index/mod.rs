@@ -165,7 +165,7 @@ impl OnDiskInvertedIndex<MmapFile> {
         )?;
 
         // The actual values go in the slice
-        let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
+        let point_to_tokens_count_iter = point_to_tokens_count.iter().map(|&count| count as usize);
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
