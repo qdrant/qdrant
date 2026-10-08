@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use common::ambient::{self, HwHandoff};
+use common::ambient::{self, Handoff};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
 use rayon::ThreadPool;
@@ -66,7 +66,7 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
         points: &[FullyQualifiedPoint],
         start_slot: u32,
         fs: &Fs,
-        hw_acc: &HwHandoff,
+        hw_acc: &Handoff,
         vector_name: &String,
     ) -> OperationResult<()> {
         let vectors: Vec<VectorToStore> = points

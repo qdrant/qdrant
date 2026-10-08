@@ -256,9 +256,7 @@ impl SegmentsSearcher {
                     let timeout = timeout.saturating_sub(start.elapsed());
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                        let cpu_utilization = query_context_arc
-                            .hardware_usage_accumulator()
-                            .cpu_utilization();
+                        let cpu_utilization = query_context_arc.handoff().cpu_utilization();
                         move || {
                             cpu_utilization.measure(|| {
                                 let segment_query_context =
@@ -323,9 +321,7 @@ impl SegmentsSearcher {
                     });
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
-                    let cpu_utilization = query_context_arc
-                        .hardware_usage_accumulator()
-                        .cpu_utilization();
+                    let cpu_utilization = query_context_arc.handoff().cpu_utilization();
                     let handle = runtime_handle.spawn_blocking(move || {
                         cpu_utilization.measure(|| {
                             let segment_query_context =
@@ -846,7 +842,7 @@ mod tests {
     use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
     use common::ambient::hw::HwMetric;
-    use common::ambient::{AmbientContext, HwFutureExt, HwHandoff};
+    use common::ambient::{AmbientContext, AmbientFutureExt, Handoff};
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
@@ -930,7 +926,7 @@ mod tests {
             Arc::new(batch_request),
             &AdaptiveSearchHandle::current_for_tests(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, HwHandoff::measured(hw_acc)),
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, Handoff::measured(hw_acc)),
             TEST_TIMEOUT,
         )
         .await
@@ -994,7 +990,7 @@ mod tests {
             let hw_measurement_acc = AmbientContext::new();
             let query_context = QueryContext::new(
                 DEFAULT_INDEXING_THRESHOLD_KB,
-                HwHandoff::measured(AmbientContext::clone(&hw_measurement_acc)),
+                Handoff::measured(AmbientContext::clone(&hw_measurement_acc)),
             );
 
             let result_no_sampling = SegmentsSearcher::search(
@@ -1013,7 +1009,7 @@ mod tests {
             let hw_measurement_acc = AmbientContext::new();
             let query_context = QueryContext::new(
                 DEFAULT_INDEXING_THRESHOLD_KB,
-                HwHandoff::measured(AmbientContext::clone(&hw_measurement_acc)),
+                Handoff::measured(AmbientContext::clone(&hw_measurement_acc)),
             );
 
             assert!(!result_no_sampling.is_empty());

@@ -4,7 +4,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use ahash::AHashMap;
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use fs_err as fs;
 use rstest::rstest;

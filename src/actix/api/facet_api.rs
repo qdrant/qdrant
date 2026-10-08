@@ -2,7 +2,7 @@ use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{FacetRequest, FacetResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use segment::types::ShardKey;
 

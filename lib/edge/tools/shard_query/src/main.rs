@@ -159,7 +159,7 @@ where
 
     let before_open = stats.snapshot();
     let shard = trace::Phase::start("open")
-        .in_scope(|| {
+        .enter(|| {
             ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(
                 cached_fs,
                 prefix,
@@ -173,12 +173,12 @@ where
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
     let before_prepare = stats.snapshot();
-    let result = trace::Phase::start("prepare").in_scope(|| request.fill_random_vector(&shard));
+    let result = trace::Phase::start("prepare").enter(|| request.fill_random_vector(&shard));
     print_io_stats("prepare", &stats.snapshot().delta_since(&before_prepare));
     result?;
 
     let before_query = stats.snapshot();
-    let result = trace::Phase::start("query").in_scope(|| request.run(&shard));
+    let result = trace::Phase::start("query").enter(|| request.run(&shard));
     print_io_stats("query", &stats.snapshot().delta_since(&before_query));
     let (rows, next_offset) = result?;
     request.print_full(&rows, next_offset.as_ref())?;
@@ -199,7 +199,7 @@ where
         }
 
         let before_reload = stats.snapshot();
-        let result = trace::Phase::start("reload").in_scope(|| shard.live_reload());
+        let result = trace::Phase::start("reload").enter(|| shard.live_reload());
         print_io_stats("reload", &stats.snapshot().delta_since(&before_reload));
         if let Err(err) = result {
             // The shard keeps serving its previous state; retry on the next trigger.
@@ -212,7 +212,7 @@ where
         );
 
         let before_query = stats.snapshot();
-        let result = trace::Phase::start("query").in_scope(|| request.run(&shard));
+        let result = trace::Phase::start("query").enter(|| request.run(&shard));
         print_io_stats("query", &stats.snapshot().delta_since(&before_query));
         let (rows, _) = result?;
         println!("--- live_reload #{iteration}: diff vs previous results ---");

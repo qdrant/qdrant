@@ -21,9 +21,7 @@ pub fn get_request_hardware_counter(
 ) -> RequestHwCounter {
     let report_to_api = report_to_api && wait != Some(false);
     RequestHwCounter::new(
-        AmbientContext::new_with_metrics_drain(
-            dispatcher.get_collection_hw_metrics(collection_name),
-        ),
+        AmbientContext::request(dispatcher.get_collection_hw_metrics(collection_name)),
         report_to_api,
     )
 }

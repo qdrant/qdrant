@@ -12,7 +12,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{SparseVectorParams, UpdateStatus};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::{CollectionUpdateOperations, point_ops};
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::vectors::NamedSparseVector;
 use segment::json_path::JsonPath;

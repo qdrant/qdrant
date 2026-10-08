@@ -8,7 +8,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::fs::safe_delete_in_tmp;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
@@ -736,7 +736,7 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         // We measure hardware on collection level here to not touch consensus for measurements but still
         // measure hw for payload index creation on all nodes.
-        let collection_hw_acc = AmbientContext::new_with_metrics_drain(
+        let collection_hw_acc = AmbientContext::request(
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
@@ -766,7 +766,7 @@ impl TableOfContent {
     }
 
     async fn create_named_vector(&self, operation: CreateNamedVector) -> Result<(), StorageError> {
-        let collection_hw_acc = AmbientContext::new_with_metrics_drain(
+        let collection_hw_acc = AmbientContext::request(
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 

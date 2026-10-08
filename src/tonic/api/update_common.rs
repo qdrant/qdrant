@@ -22,7 +22,7 @@ use collection::operations::point_ops::{
     self, PointOperations, PointStructRawPersisted, PointSyncOperation, PointSyncRawOperation,
 };
 use collection::operations::vector_ops::DeleteVectors;
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use itertools::Itertools;
 use segment::types::{

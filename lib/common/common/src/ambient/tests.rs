@@ -1,8 +1,8 @@
 use super::hw::HwMetric;
-use super::{AmbientContext, HwFutureExt as _, current, parallel, test, test_guard};
+use super::{AmbientContext, AmbientFutureExt as _, current, parallel, test, test_guard};
 
 #[test]
-fn test_context_across_threads() {
+fn handoff_enters_on_another_thread() {
     let ctx = AmbientContext::new();
     ctx.measure(|| {
         parallel(|hw| {
@@ -18,12 +18,12 @@ fn test_context_across_threads() {
 }
 
 #[test]
-fn test_measured_future() {
+fn future_enters_on_every_poll() {
     let ctx = AmbientContext::new();
     let future = async {
         HwMetric::Cpu.bump(1);
         std::future::ready(()).await;
-        async { HwMetric::Cpu.bump(10) }.in_current_hw().await;
+        async { HwMetric::Cpu.bump(10) }.in_current_ambient().await;
         test(|| HwMetric::Cpu.bump(100));
     }
     .measured(AmbientContext::clone(&ctx));
@@ -33,16 +33,16 @@ fn test_measured_future() {
 }
 
 #[test]
-#[should_panic(expected = "outside of any hw scope")]
-fn test_unscoped_bump_panics() {
+#[should_panic(expected = "outside of any ambient scope")]
+fn unscoped_bump_panics() {
     AmbientContext::new().measure(|| HwMetric::Cpu.bump(1));
     test(|| HwMetric::Cpu.bump(1));
     HwMetric::Cpu.bump(1);
 }
 
 #[test]
-#[should_panic(expected = "outside of any hw scope")]
-fn test_forgotten_enter_panics() {
+#[should_panic(expected = "outside of any ambient scope")]
+fn parallel_masks_the_scope() {
     AmbientContext::new().measure(|| {
         parallel(|_ctx| {
             std::thread::scope(|s| {
@@ -55,7 +55,7 @@ fn test_forgotten_enter_panics() {
 }
 
 #[test]
-fn test_restored_on_panic() {
+fn scope_restored_on_panic() {
     let ctx = AmbientContext::new();
     ctx.measure(|| {
         let _ = std::panic::catch_unwind(|| AmbientContext::new().measure(|| panic!()));
@@ -66,7 +66,7 @@ fn test_restored_on_panic() {
 
 #[test]
 #[cfg_attr(debug_assertions, should_panic(expected = "exited out of order"))]
-fn test_escaped_guard_is_discarded() {
+fn escaped_guard_is_discarded() {
     let ctx = AmbientContext::new();
     let guard = ctx.measure(|| {
         HwMetric::Cpu.bump(1);

@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 
 use ahash::{AHashMap, AHashSet};
 use api::rest::RecommendStrategy;
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::order_by::{Direction, OrderBy, OrderByInterface, OrderValue};

@@ -5,7 +5,7 @@ pub use api::HTTP_HEADER_API_KEY;
 use chrono::Utc;
 use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};

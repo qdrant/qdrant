@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use segment::data_types::index::{
     Language, Snowball, SnowballLanguage, SnowballParams, StemmingAlgorithm, StopwordsInterface,

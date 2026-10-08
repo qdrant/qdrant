@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io::Read as _;
 use std::sync::Arc;
 
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::File;

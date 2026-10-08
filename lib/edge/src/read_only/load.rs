@@ -67,7 +67,7 @@ where
             while let Some((index, uuid, segment_path, cached_fs)) = listed_futs.next().await {
                 check_process_stopped(is_stopped)?;
                 scope.spawn(move |_| {
-                    let staged_open = ctx.in_scope(|| {
+                    let staged_open = ctx.enter(|| {
                         cached_fs.and_then(|cached_fs| {
                             ReadOnlySegment::<S>::schedule_open_with_cached_fs(
                                 cached_fs,
@@ -113,7 +113,7 @@ where
     let loaded = pool.install(|| {
         staged
             .into_par_iter()
-            .filter_map(|(uuid, staged)| match ctx.in_scope(|| staged.finish(fs)) {
+            .filter_map(|(uuid, staged)| match ctx.enter(|| staged.finish(fs)) {
                 Ok(segment) => Some(Ok((uuid, segment))),
                 Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
                 Err(err) => {
@@ -200,7 +200,7 @@ where
                 .map(|((uuid, segment), (_, max_committed_id_res))| {
                     check_process_stopped(is_stopped)?;
                     let _hw = acc.enter_guard();
-                    let result = ctx.in_scope(|| {
+                    let result = ctx.enter(|| {
                         max_committed_id_res.and_then(|max_committed_id| {
                             segment.write().live_reload(max_committed_id)
                         })

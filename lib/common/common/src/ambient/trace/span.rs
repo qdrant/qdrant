@@ -40,12 +40,12 @@ impl Context {
         Self(Self::slot().get())
     }
 
-    fn enter(self) -> ContextGuard {
+    fn enter_guard(self) -> ContextGuard {
         ContextGuard(Self::slot().replace(self.0))
     }
 
-    pub fn in_scope<R>(self, f: impl FnOnce() -> R) -> R {
-        let _entered = self.enter();
+    pub fn enter<R>(self, f: impl FnOnce() -> R) -> R {
+        let _entered = self.enter_guard();
         f()
     }
 
@@ -67,7 +67,7 @@ impl<F: Future> Future for WithCtx<F> {
         // SAFETY: `future` is pinned through `self` and never moved out of it.
         let this = unsafe { self.get_unchecked_mut() };
         let future = unsafe { Pin::new_unchecked(&mut this.future) };
-        let _entered = this.ctx.enter();
+        let _entered = this.ctx.enter_guard();
         future.poll(cx)
     }
 }
@@ -81,8 +81,8 @@ impl Phase {
         }))
     }
 
-    pub fn in_scope<R>(&self, f: impl FnOnce() -> R) -> R {
-        Context(self.0.as_ref().map_or(0, |active| active.id)).in_scope(f)
+    pub fn enter<R>(&self, f: impl FnOnce() -> R) -> R {
+        Context(self.0.as_ref().map_or(0, |active| active.id)).enter(f)
     }
 }
 
@@ -105,7 +105,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::ambient::trace::{Op, Outcome, Request, mark, start};
+    use crate::ambient::trace::{IoRequest, Op, Outcome, mark, start};
 
     #[test]
     fn records_nested_spans_from_every_thread() {
@@ -114,16 +114,16 @@ mod tests {
         let guard = start(&path).expect("output file");
 
         let phase = Phase::start("open");
-        phase.in_scope(|| {
+        phase.enter(|| {
             mark!("round 0 begin ({} points)", 3);
-            let mut request = Request::new(Op::Read, Path::new("links.bin"), 4_096..8_192);
+            let mut request = IoRequest::new(Op::Read, Path::new("links.bin"), 4_096..8_192);
             request.start();
-            request.set(Outcome::Ok);
-            drop(Request::new(Op::Read, Path::new("unsent.bin"), 0..1));
+            request.finish(Outcome::Ok);
+            drop(IoRequest::new(Op::Read, Path::new("unsent.bin"), 0..1));
         });
-        let ctx = phase.in_scope(Context::current);
+        let ctx = phase.enter(Context::current);
         std::thread::spawn(move || {
-            ctx.in_scope(|| Request::new(Op::Len, Path::new("meta.json"), 0..0).start())
+            ctx.enter(|| IoRequest::new(Op::Len, Path::new("meta.json"), 0..0).start())
         })
         .join()
         .expect("thread");

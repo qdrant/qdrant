@@ -1,7 +1,7 @@
 use std::cmp;
 use std::sync::{Arc, LazyLock};
 
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};

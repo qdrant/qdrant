@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
 use arc_swap::ArcSwap;
-use common::ambient::{self, HwHandoff, hw};
+use common::ambient::{self, Handoff, hw};
 use common::budget::ResourceBudget;
 use common::defaults::log_load_timing;
 use common::rate_limiting::RateLimiter;
@@ -1041,7 +1041,7 @@ impl LocalShard {
                         operation: None,
                         sender: None,
                         wait_for_deferred: false,
-                        hw_measurements: HwHandoff::unmeasured(reason(
+                        handoff: Handoff::unmeasured(reason(
                             "TODO use proper collection's hardware measurement",
                         )),
                     }))
