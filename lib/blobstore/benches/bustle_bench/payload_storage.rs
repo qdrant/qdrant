@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use blobstore::fixtures::{Payload, empty_storage};
 use bustle::Collection;
-use common::counter::hw;
-use common::counter::hw::HwMetric;
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Random;
 use parking_lot::RwLock;
 
@@ -33,12 +33,12 @@ impl Collection for ArcStorage<PayloadStorage> {
 
 impl SequentialCollectionHandle for PayloadStorage {
     fn get(&self, key: &u32) -> bool {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         self.get_value::<Random>(*key).unwrap().is_some()
     }
 
     fn insert(&mut self, key: u32, payload: &Payload) -> bool {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         !self
             .put_value(key, payload, HwMetric::PayloadIoWrite)
             .unwrap()
@@ -49,7 +49,7 @@ impl SequentialCollectionHandle for PayloadStorage {
     }
 
     fn update(&mut self, key: &u32, payload: &Payload) -> bool {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         self.put_value(*key, payload, HwMetric::PayloadIoWrite)
             .unwrap()
     }

@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::ambient::trace;
-use common::counter::hw;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::StreamExt;
 use futures::future::join_all;
@@ -193,7 +193,7 @@ where
 
     let reloads: Vec<_> = segments.into_iter().zip(preloads).collect();
     let ctx = trace::Context::current();
-    let results = hw::parallel(|acc| {
+    let results = ambient::parallel(|acc| {
         pool.install(|| {
             reloads
                 .into_par_iter()

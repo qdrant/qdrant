@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use common::counter::hw;
+use common::ambient;
+use common::ambient::hw;
 use common::types::{DeferredBehavior, ScoreType};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
@@ -401,7 +402,7 @@ impl SegmentsSearcher {
             let with_payload = with_payload.clone();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             // TODO create one Task per segment level retrieve
             move || {
                 let _hw = hw_acc.enter_guard();
@@ -436,7 +437,7 @@ impl SegmentsSearcher {
             let points = points.to_vec();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             move || {
                 let _hw = hw_acc.enter_guard();
                 retrieve_raw_blocking(
@@ -462,7 +463,7 @@ impl SegmentsSearcher {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
-        let hw_acc = hw::current();
+        let hw_acc = ambient::current();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
 
@@ -528,7 +529,7 @@ impl SegmentsSearcher {
                 .map(|segment| {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
-                        let hw_acc = hw::current();
+                        let hw_acc = ambient::current();
                         let cpu_utilization = hw::cpu_utilization();
                         move || {
                             let _hw = hw_acc.enter_guard();
@@ -844,8 +845,8 @@ mod tests {
 
     use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
-    use common::counter::AmbientContext;
-    use common::counter::hw::{HwFutureExt, HwHandoff, HwMetric};
+    use common::ambient::hw::HwMetric;
+    use common::ambient::{AmbientContext, HwFutureExt, HwHandoff};
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
@@ -873,7 +874,7 @@ mod tests {
 
         let vector_index_borrow = vector_index.borrow();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         match &*vector_index_borrow {
             VectorIndexEnum::Plain(plain_index) => {
@@ -1047,7 +1048,7 @@ mod tests {
     fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-        let records = hw::test(|| {
+        let records = ambient::test(|| {
             retrieve_blocking(
                 segment_holder,
                 &[1.into(), 2.into(), 3.into()],
@@ -1135,7 +1136,7 @@ mod tests {
         use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
         use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaParams};
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
         let params = TextIndexParams {
             phrase_matching: Some(true),
@@ -1207,7 +1208,7 @@ mod tests {
         // Reference: each segment ranked in full against both segments'
         // statistics, the older copy of the moved point dropped.
         let mut query_context =
-            hw::test(|| init_text_query_context(&field, &terms, Default::default()));
+            ambient::test(|| init_text_query_context(&field, &terms, Default::default()));
         older.fill_query_context(&mut query_context).unwrap();
         newer.fill_query_context(&mut query_context).unwrap();
         let segment_context = query_context.get_segment_query_context();

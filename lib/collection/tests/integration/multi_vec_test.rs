@@ -19,8 +19,7 @@ use collection::operations::types::{
 };
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::recommendations::recommend_by;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{NamedVector, VectorStructInternal};
 use segment::types::{Distance, VectorName, WithPayloadInterface, WithVector};

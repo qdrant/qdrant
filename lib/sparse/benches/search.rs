@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bench_cache::{build_once, cache_path};
-use common::counter::hw;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use criterion::measurement::Measurement;
@@ -190,7 +190,7 @@ fn run_bench2(
 
     let mut it = query_vectors.iter().cycle();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     group.bench_function("basic", |b| {
         b.iter_batched(
             || it.next().unwrap().clone().into_remapped(),
@@ -204,7 +204,7 @@ fn run_bench2(
         )
     });
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let mut it = hottest_query_vectors.iter().cycle();
     group.bench_function("hottest", |b| {
         b.iter_batched(

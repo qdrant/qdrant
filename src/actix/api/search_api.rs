@@ -6,7 +6,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
-use common::counter::hw::HwFutureExt;
+use common::ambient::HwFutureExt;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;

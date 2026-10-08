@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hw;
+use common::ambient;
 use common::fs::safe_delete_with_suffix;
 use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType, TelemetryDetail};
@@ -931,7 +931,7 @@ impl SegmentEntry for Segment {
             .vector_storage
             .borrow()
             .is_deleted_vector(internal_id);
-        let _hw = hw::unmeasured_guard(reason("Vector deletions are not measured"));
+        let _hw = ambient::unmeasured_guard(reason("Vector deletions are not measured"));
         let is_deleted = self.handle_point_mutate(
             op_num,
             point_id,

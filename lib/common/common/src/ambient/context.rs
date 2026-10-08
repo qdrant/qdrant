@@ -1,27 +1,8 @@
 use std::ptr::NonNull;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-use strum::EnumCount;
-
-use super::hardware_data::{HardwareData, HwMetric};
+use super::hw::{HardwareData, HwSharedDrain};
 use crate::cpu_utilization::CpuUtilization;
-
-/// Thread-safe counters, shared as the per-collection drain of multiple [`AmbientContext`]s.
-#[derive(Debug, Default)]
-pub struct HwSharedDrain([AtomicUsize; HwMetric::COUNT]);
-
-impl HwSharedDrain {
-    pub fn load(&self) -> HardwareData {
-        HardwareData(self.0.each_ref().map(|c| c.load(Ordering::Relaxed)))
-    }
-
-    fn add(&self, src: HardwareData) {
-        for (counter, value) in self.0.iter().zip(src.0) {
-            counter.fetch_add(value, Ordering::Relaxed);
-        }
-    }
-}
 
 /// One per request; [`super::hw`] scopes flush into it.
 /// Reference-counted: clones read and write the same counters.

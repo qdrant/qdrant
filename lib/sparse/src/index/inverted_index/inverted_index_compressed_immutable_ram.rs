@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use blink_alloc::Blink;
-use common::counter::hw;
+use common::ambient;
 use common::ext::VecExt;
 use common::reason::reason;
 use common::types::PointOffsetType;
@@ -62,7 +62,7 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             postings.push(new_posting_list.build());
         }
 
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
 
         let total_sparse_size = postings.iter().map(|p| p.view().store_size().total).sum();
 
@@ -159,7 +159,7 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
     where
         S: UniversalRead + 'static,
     {
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
         let mut postings = vec![None; mmap_inverted_index.file_header.posting_count];
         mmap_inverted_index.for_each_view(|id, view| {
             postings[id as usize] = Some(view.to_owned());

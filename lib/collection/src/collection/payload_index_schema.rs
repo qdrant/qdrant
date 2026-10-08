@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hw::HwFutureExt;
+use common::ambient::HwFutureExt;
 use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use segment::json_path::JsonPath;

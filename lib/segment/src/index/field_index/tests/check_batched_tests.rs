@@ -1,6 +1,6 @@
+use common::ambient;
 use common::bitvec::BitVec;
 use common::condition_checker::{ConditionChecker, assert_congruence};
-use common::counter::hw;
 use common::universal_io::MmapFs;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -202,7 +202,7 @@ fn check_index<T: Serialize>(
             assert_eq!(builders.len(), 1);
             let mut builder = builders.pop().unwrap();
             builder.init().unwrap();
-            let _hw = hw::test_guard();
+            let _hw = ambient::test_guard();
             for (id, (row, _, _, _)) in (0u32..).zip(points) {
                 builder.add_point(id, &row.iter().collect_vec()).unwrap();
             }

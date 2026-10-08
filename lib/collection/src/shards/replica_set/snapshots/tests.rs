@@ -2,9 +2,8 @@ use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use common::ambient::{AmbientContext, HwFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::types::Distance;

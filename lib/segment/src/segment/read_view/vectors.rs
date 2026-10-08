@@ -1,4 +1,4 @@
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Random;
 use common::types::{DeferredBehavior, PointOffsetType};
 

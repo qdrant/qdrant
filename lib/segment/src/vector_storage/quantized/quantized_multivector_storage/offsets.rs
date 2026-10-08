@@ -1,7 +1,7 @@
 use std::ops::DerefMut as _;
 use std::path::{Path, PathBuf};
 
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, Flusher, MmapSlice};
 use common::reason::reason;
@@ -296,7 +296,7 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
         offsets: impl Iterator<Item = MultivectorOffset>,
         in_ram: bool,
     ) -> OperationResult<Self> {
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
         let mut offsets_storage = Self::load(fs, path, in_ram)?;
         for (id, offset) in offsets.enumerate() {
             offsets_storage.upsert_offset(id as PointOffsetType, offset)?;

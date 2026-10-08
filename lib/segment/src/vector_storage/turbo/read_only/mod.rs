@@ -69,7 +69,7 @@ impl<S: UniversalRead> std::fmt::Debug for ReadOnlyChunkedTurboVectorStorage<S> 
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -92,7 +92,7 @@ mod tests {
             .prefix("ro_turbo_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut writer = open_appendable_turbo_vector_storage(
             dir.path(),
@@ -147,7 +147,7 @@ mod tests {
             .prefix("ro_turbo_appended_batch")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut writer = open_appendable_turbo_vector_storage(
             dir.path(),

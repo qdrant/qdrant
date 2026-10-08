@@ -54,7 +54,7 @@ impl<S: UniversalRead> std::fmt::Debug for ReadOnlyChunkedMultiTurboVectorStorag
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
@@ -78,7 +78,7 @@ mod tests {
             .prefix("ro_multi_turbo_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let multi = |value: VectorElementType| {
             MultiDenseVectorInternal::try_from(vec![vec![value; DIM]]).unwrap()

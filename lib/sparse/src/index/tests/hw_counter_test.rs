@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::AmbientContext;
-use common::counter::hw::HwMetric;
+use common::ambient::AmbientContext;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 

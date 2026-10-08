@@ -3,7 +3,7 @@ use std::collections::btree_map::Entry;
 use std::path::PathBuf;
 
 use ahash::AHashSet;
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 

@@ -3,7 +3,7 @@ const NUM_VECTORS_2: u64 = 500;
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::flags::FeatureFlags;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
@@ -25,7 +25,7 @@ fn test_rebuild_with_removed_vectors() {
     let mut segment1 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
     let mut segment2 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for i in 0..NUM_VECTORS_1 {
         segment1

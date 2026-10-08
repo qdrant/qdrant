@@ -3,8 +3,7 @@ use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{RngExt, SeedableRng};

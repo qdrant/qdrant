@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hw;
+use common::ambient;
 use common::types::PointOffsetType;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
@@ -47,7 +47,7 @@ fn range_filtering(c: &mut Criterion) {
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     // generate points with payload

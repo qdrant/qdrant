@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use blink_alloc::Blink;
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::ext::aligned_vec::ACow;
 use common::fs::atomic_save_json;
 use common::generic_consts::{Random, Sequential};
@@ -107,7 +108,7 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
 
         if index.file_header.total_sparse_size.is_none() {
             // legacy header: compute in memory, never write back
-            let _hw = hw::unmeasured_guard(reason("Internal operation"));
+            let _hw = ambient::unmeasured_guard(reason("Internal operation"));
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
         }
 
@@ -144,7 +145,7 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             _phantom: PhantomData,
         };
 
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
 
         if index.file_header.total_sparse_size.is_none() {
             index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size()?);
@@ -471,7 +472,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         let total_posting_headers_size =
             index.postings.as_slice().len() * size_of::<PostingListFileHeader<W>>();
 
-        let _hw = hw::unmeasured_guard(reason("Ignore HW on load"));
+        let _hw = ambient::unmeasured_guard(reason("Ignore HW on load"));
 
         let file_length = total_posting_headers_size
             + index
@@ -586,7 +587,7 @@ mod tests {
         inverted_index_ram: &InvertedIndexCompressedImmutableRam<W>,
         inverted_index_mmap: &InvertedIndexCompressedMmap<W, S>,
     ) {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let arena = Blink::new();
         for id in 0..inverted_index_ram.postings.len() as DimId {
             let posting_list_ram = inverted_index_ram.postings.get(id as usize).unwrap().view();
@@ -620,7 +621,7 @@ mod tests {
     where
         S::Fs: Default,
     {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         // skip 4th dimension
         let mut builder = InvertedIndexBuilder::new();
@@ -730,7 +731,7 @@ mod tests {
             InvertedIndexCompressedMmap::<f32, MmapFile>::open_ro(&cached_fs, dir.path()).unwrap();
         compare_indexes(&inverted_index_ram, &index);
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let arena = Blink::new();
         assert_eq!(index.get(1, &arena).unwrap().len(), 2);
         assert_eq!(index.get(2, &arena).unwrap().len(), 2);

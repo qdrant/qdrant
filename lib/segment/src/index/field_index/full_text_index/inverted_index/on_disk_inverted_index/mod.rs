@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient::hw::HwMetric;
 use common::bitvec::{BitSlice, DeletedBitVec};
-use common::counter::hw::HwMetric;
 use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapSlice};

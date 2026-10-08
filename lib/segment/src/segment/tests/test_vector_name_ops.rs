@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::flags::FeatureFlags;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
@@ -81,7 +81,7 @@ fn build_appendable_segment_with_data(path: &std::path::Path) -> Segment {
     )
     .unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     for i in 0..NUM_POINTS {
         let vec = vec![(i + 1) as f32; DIM];
         let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.as_slice().into());
@@ -135,7 +135,7 @@ fn build_immutable_segment_with_data(
 fn test_create_dense_vector_on_appendable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     assert_eq!(segment.available_point_count(), NUM_POINTS);
 
@@ -175,7 +175,7 @@ fn test_create_dense_vector_on_appendable_segment() {
 fn test_create_sparse_vector_on_appendable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let result = segment
         .create_vector_name(100, "sparse1", &sparse_vector_name_config())
@@ -207,7 +207,7 @@ fn test_create_dense_vector_on_immutable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp").tempdir().unwrap();
     let mut segment = build_immutable_segment_with_data(dir.path(), temp_dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     assert!(!segment.appendable_flag);
     assert_eq!(segment.available_point_count(), NUM_POINTS);
@@ -248,7 +248,7 @@ fn test_create_sparse_vector_on_immutable_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp").tempdir().unwrap();
     let mut segment = build_immutable_segment_with_data(dir.path(), temp_dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     assert!(!segment.appendable_flag);
     assert_eq!(segment.available_point_count(), NUM_POINTS);
@@ -325,7 +325,7 @@ fn test_delete_vector_idempotent() {
 fn test_delete_dense_vector_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Create vector and insert data
     let new_dim = 8;
@@ -362,7 +362,7 @@ fn test_delete_dense_vector_with_data() {
 fn test_delete_sparse_vector_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     segment
         .create_vector_name(100, "sp", &sparse_vector_name_config())
@@ -395,7 +395,7 @@ fn test_delete_sparse_vector_with_data() {
 fn test_persistence_after_create_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let new_dim = 6;
     segment
@@ -473,7 +473,7 @@ fn check_recreate_does_not_resurrect(
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let backup = Builder::new().prefix("stale_backup").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let new_point = (NUM_POINTS as u64 + 1).into();
 
@@ -547,7 +547,7 @@ fn test_recreate_sparse_vector_name_does_not_resurrect_stale_data() {
 fn test_persistence_after_delete_with_data() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let new_dim = 8;
     segment

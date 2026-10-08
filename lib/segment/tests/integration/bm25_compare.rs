@@ -22,8 +22,8 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use bm25::{Bm25, Bm25Params as SparseBm25Params};
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs};
 use rand::SeedableRng;
@@ -143,7 +143,7 @@ fn build_text(shape: TextShape, documents: &[Vec<String>]) -> (FullTextIndex, te
         .prefix("bm25_compare_text")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let empty_deleted = BitVec::new();
 
     fn fill<B: FieldIndexBuilderTrait<FieldIndexType = FullTextIndex>>(
@@ -181,7 +181,7 @@ fn text_search(
     field: &JsonPath,
     terms: &[String],
 ) -> Vec<ScoredPointOffset> {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut query_context = QueryContext::default();
     query_context.init_text_stats(field, terms.iter().cloned());
@@ -221,7 +221,7 @@ fn sparse_search<I: sparse::index::inverted_index::InvertedIndex>(
     bm25: &Bm25,
     terms: &[String],
 ) -> Vec<ScoredPointOffset> {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let tokens: Vec<_> = terms.iter().map(|t| t.as_str().into()).collect();
     let mut query = bm25.embed_query(&tokens);

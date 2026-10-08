@@ -1,7 +1,7 @@
 //! Writes through the update-only storage, then reads back through the ordinary
 //! appendable TurboQuant storage opened on the same directory.
 
-use common::counter::hw;
+use common::ambient;
 use common::universal_io::MmapFs;
 use quantization::turboquant::TQBits;
 use tempfile::TempDir;
@@ -22,7 +22,7 @@ const DIM: usize = 8;
 #[test]
 fn encoded_vectors_match_the_writable_side() {
     let vector: Vec<VectorElementType> = (0..DIM).map(|i| i as f32 + 0.5).collect();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Written by the update-only writer.
     let ours = TempDir::with_prefix("update_only_turbo").unwrap();
@@ -76,7 +76,7 @@ fn encoded_vectors_match_the_writable_side() {
 #[test]
 fn batches_resume() {
     let dir = TempDir::with_prefix("update_only_turbo").unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let vector: Vec<VectorElementType> = vec![1.0; DIM];
 
     for slot in 0..2 {

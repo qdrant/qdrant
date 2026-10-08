@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{ScoreType, ScoredPointOffset};
@@ -100,7 +100,7 @@ fn hnsw_quantized_search_test(
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
@@ -229,7 +229,7 @@ pub fn check_matches(
     ef: usize,
     top: usize,
 ) {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let exact_search_results = query_vectors
         .iter()
         .map(|query| {
@@ -829,7 +829,7 @@ fn hnsw_quantized_low_bit_compare_test(
     let mut tq_total_loss: f64 = 0.0;
     let mut bq_total_loss: f64 = 0.0;
     for query in &queries {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let exact_result = tq_segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
@@ -922,7 +922,7 @@ fn build_quantized_hnsw_for_compare(
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let quantized_dir = Builder::new().prefix("quantized_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut segment = build_simple_segment(segment_dir.path(), dim, distance).unwrap();
     let mut op_num: u64 = 0;

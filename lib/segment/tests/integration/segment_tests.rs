@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
-use common::counter::hw;
+use common::ambient;
 use fs_err as fs;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
@@ -138,7 +138,7 @@ fn test_missed_vector_name() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_segment_3(dir.path());
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let exists = segment
         .upsert_point(
@@ -280,7 +280,7 @@ fn test_update_named_vector() {
         .map(|_| random_vector(&mut rng, dim))
         .collect_vec();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();

@@ -1,4 +1,4 @@
-use super::hw::HwMetric;
+use super::HwMetric;
 use crate::iterator_ext::on_final_count::OnFinalCount;
 
 pub trait HwMeasurementIteratorExt: Iterator {

@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use blobstore::Blobstore;
 use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
@@ -53,7 +54,7 @@ impl MutableGeoIndex {
 
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryGeoIndex::new();
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, OperationError>(
                 |idx, values: Vec<RawGeoPoint>| {

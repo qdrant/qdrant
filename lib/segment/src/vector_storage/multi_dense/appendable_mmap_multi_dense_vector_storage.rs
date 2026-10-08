@@ -3,8 +3,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hw;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::reason::reason;
@@ -296,7 +296,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.offsets.len() as PointOffsetType;
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.offsets.len() as PointOffsetType;
@@ -675,7 +675,7 @@ mod tests {
         .unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {
@@ -728,7 +728,7 @@ mod tests {
         const DIM: usize = 4;
 
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let open = || {
             open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
@@ -799,7 +799,7 @@ mod tests {
 
         const DIM: usize = 128;
         let dir = Builder::new().prefix("legacy_pad").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let padded = multivec(3, 7.0, DIM);
         let per_chunk = CHUNK_SIZE / (DIM * std::mem::size_of::<VectorElementType>());
 

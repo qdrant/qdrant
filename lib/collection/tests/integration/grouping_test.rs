@@ -3,7 +3,7 @@ use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
-use common::counter::hw::HwFutureExt;
+use common::ambient::HwFutureExt;
 use itertools::Itertools;
 use rand::RngExt;
 use rand::distr::Uniform;
@@ -27,7 +27,7 @@ mod group_by {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
-    use common::counter::AmbientContext;
+    use common::ambient::AmbientContext;
     use segment::payload_json;
 
     use super::*;
@@ -448,7 +448,7 @@ mod group_by_builder {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
-    use common::counter::AmbientContext;
+    use common::ambient::AmbientContext;
     use segment::json_path::JsonPath;
     use segment::payload_json;
 

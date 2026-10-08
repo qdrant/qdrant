@@ -1,6 +1,6 @@
 use blobstore::fixtures::{empty_storage, random_payload};
-use common::counter::hw;
-use common::counter::hw::HwMetric;
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Random;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
@@ -12,7 +12,7 @@ pub fn random_data_bench(c: &mut Criterion) {
     let (_dir, mut storage) = empty_storage();
     let mut rng = rand::make_rng::<SmallRng>();
     c.bench_function("write random payload", |b| {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         b.iter_batched_ref(
             || random_payload(&mut rng, 2),
             |payload| {
@@ -27,7 +27,7 @@ pub fn random_data_bench(c: &mut Criterion) {
     });
 
     c.bench_function("read random payload", |b| {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         b.iter(|| {
             for i in 0..PAYLOAD_COUNT {
                 let res = storage.get_value::<Random>(i).unwrap();

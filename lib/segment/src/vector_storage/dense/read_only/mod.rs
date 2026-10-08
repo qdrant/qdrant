@@ -22,7 +22,7 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
@@ -47,7 +47,7 @@ mod tests {
 
         let dir = Builder::new().prefix("ro_dense").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT)
             .map(|_| {
@@ -127,7 +127,7 @@ mod tests {
         const DIM: usize = 64;
         let dir = Builder::new().prefix("ro_dense_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(7);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let rand_vec = |rng: &mut StdRng| -> DenseVector {
             std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
@@ -222,7 +222,7 @@ mod tests {
             .prefix("ro_dense_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
             dir.path(),
@@ -274,7 +274,7 @@ mod tests {
             .prefix("ro_dense_appended_batch")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
             dir.path(),
@@ -344,7 +344,7 @@ mod tests {
         const DIM: usize = 16;
 
         let dir = Builder::new().prefix("ro_dense_err").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         {
             let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
                 dir.path(),

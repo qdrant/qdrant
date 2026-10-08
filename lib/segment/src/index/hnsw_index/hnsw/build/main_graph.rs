@@ -1,7 +1,7 @@
 use std::ops::Deref as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hw;
+use common::ambient;
 use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
 use log::debug;
@@ -93,7 +93,7 @@ pub(super) fn build_main_graph_on_cpu(
 
     let insert_point = |vector_id| {
         check_process_stopped(stopped)?;
-        let _hw = hw::unmeasured_guard(reason(
+        let _hw = ambient::unmeasured_guard(reason(
             "No need to accumulate hardware, since this is an internal operation",
         ));
 

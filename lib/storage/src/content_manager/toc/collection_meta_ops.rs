@@ -8,8 +8,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use common::fs::safe_delete_in_tmp;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};

@@ -18,7 +18,7 @@ pub struct ReadOnlySparseVectorStorage<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
@@ -44,7 +44,7 @@ mod tests {
         const POINT_COUNT: PointOffsetType = 500;
 
         let dir = Builder::new().prefix("ro_sparse").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let sparse_vectors: Vec<SparseVector> = (0..POINT_COUNT)
             .map(|id| {
@@ -118,7 +118,7 @@ mod tests {
             .prefix("ro_sparse_preopen")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let sparse_vectors: Vec<SparseVector> = (0..POINT_COUNT)
             .map(|id| {
@@ -186,7 +186,7 @@ mod tests {
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let dir = Builder::new().prefix("ro_sparse_reload").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         fn make(id: usize) -> SparseVector {
             SparseVector {
@@ -263,7 +263,7 @@ mod tests {
             .prefix("ro_sparse_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         fn make(id: usize) -> SparseVector {
             SparseVector {

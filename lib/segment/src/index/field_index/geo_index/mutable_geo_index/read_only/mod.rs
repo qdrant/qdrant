@@ -27,7 +27,7 @@ pub struct ReadOnlyAppendableGeoIndex<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use tempfile::TempDir;
@@ -43,7 +43,7 @@ mod tests {
     #[test]
     fn read_only_appendable_geo_round_trip() {
         let dir = TempDir::with_prefix("read_only_geo").unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         {
             let mut mutable = MutableGeoIndex::open(dir.path().to_path_buf(), true)

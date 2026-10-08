@@ -1,8 +1,8 @@
 use std::collections::{BTreeSet, HashSet};
 use std::ops::Range;
 
+use common::ambient::{self, AmbientContext};
 use common::bitvec::BitVec;
-use common::counter::{AmbientContext, hw};
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use itertools::Itertools;
@@ -178,7 +178,7 @@ fn build_random_index(
     for idx in 0..num_points {
         let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
         let array_payload = serde_json::Value::Array(geo_points);
-        hw::test(|| builder.add_point(idx as PointOffsetType, &[&array_payload])).unwrap();
+        ambient::test(|| builder.add_point(idx as PointOffsetType, &[&array_payload])).unwrap();
     }
 
     let index = builder.finalize().unwrap();
@@ -251,7 +251,7 @@ fn radius_to_polygon(circle: &GeoRadius) -> GeoPolygon {
 fn test_polygon_interior_exceeds_exterior_cardinality(#[case] index_type: IndexType) {
     let (mut builder, _temp_dir, _db) = create_builder(index_type);
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // A single indexed point in New York.
     builder.add_point(0, &[&json!([NYC])]).unwrap();
@@ -382,7 +382,7 @@ fn check_cardinality_match(
     let exact_points_for_hashes = field_index.iterator(hashes).unwrap().collect_vec();
     let real_cardinality = exact_points_for_hashes.len();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let card = field_index.estimate_cardinality(&field_condition).unwrap();
     let card = card.unwrap();
 
@@ -410,7 +410,7 @@ fn geo_indexed_filtering(#[case] index_type: IndexType) {
     {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let mut matched_points = (0..field_index.count_indexed_points().unwrap()
             as PointOffsetType)
             .filter_map(|idx| {
@@ -465,7 +465,7 @@ fn geo_indexed_filtering(#[case] index_type: IndexType) {
 #[case(IndexType::Immutable)]
 fn test_payload_blocks(#[case] index_type: IndexType) {
     let (field_index, _, _) = build_random_index(1000, 5, index_type);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let top_level_points = field_index.points_of_hash(Default::default()).unwrap();
     assert_eq!(top_level_points, 1_000);
     let block_hashes = field_index.large_hashes(100).unwrap().collect_vec();
@@ -498,7 +498,7 @@ fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexT
 
     let r_meters = 100.0;
     let geo_values = json!([BERLIN, NYC]);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     builder.add_point(1, &[&geo_values]).unwrap();
     let index = builder.finalize().unwrap();
 
@@ -514,7 +514,7 @@ fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexT
 fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: IndexType) {
     let (mut builder, _temp_dir, _) = create_builder(index_type);
     let geo_values = json!([BERLIN, POTSDAM]);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     builder.add_point(1, &[&geo_values]).unwrap();
     let index = builder.finalize().unwrap();
 
@@ -530,7 +530,7 @@ fn load_from_disk(#[case] index_type: IndexType) {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
         let geo_values = json!([BERLIN, POTSDAM]);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         builder.add_point(1, &[&geo_values]).unwrap();
         builder.finalize().unwrap();
         temp_dir
@@ -561,7 +561,7 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
         let geo_values = json!([BERLIN, POTSDAM]);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let payload = [&geo_values];
         builder.add_point(1, &payload).unwrap();
         builder.add_point(2, &payload).unwrap();
@@ -594,7 +594,7 @@ fn same_geo_index_between_points_with_dups_test(#[case] index_type: IndexType) {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
         let geo_values = json!([BERLIN, BERLIN, POTSDAM]); // Berlin twice
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let payload = [&geo_values];
         builder.add_point(1, &payload).unwrap();
         builder.add_point(2, &payload).unwrap();
@@ -616,7 +616,7 @@ fn same_geo_index_between_points_with_dups_test(#[case] index_type: IndexType) {
     if index_type != IndexType::OnDisk {
         assert_eq!(new_index.points_values_count(), 3);
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let berlin_hash = encode_max_precision(BERLIN.lon.0, BERLIN.lat.0).unwrap();
         assert_eq!(new_index.values_of_hash(berlin_hash).unwrap(), 2);
         assert_eq!(new_index.points_of_hash(berlin_hash).unwrap(), 1);
@@ -654,7 +654,7 @@ fn test_empty_index_cardinality(#[case] index_type: IndexType) {
     let hashes_with_interior =
         polygon_hashes(&polygon_with_interior, GEO_QUERY_MAX_REGION).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let (field_index, _, _) = build_random_index(0, 0, index_type);
     assert!(
@@ -706,7 +706,7 @@ fn test_empty_index_cardinality(#[case] index_type: IndexType) {
 fn query_across_antimeridian(#[case] index_type: IndexType) {
     let (mut builder, _temp_dir, _) = create_builder(index_type);
     let geo_values = json!([BERLIN]);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     builder.add_point(1, &[&geo_values]).unwrap();
 
@@ -736,7 +736,7 @@ fn query_across_antimeridian(#[case] index_type: IndexType) {
 #[case(IndexType::Mutable)]
 fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
     let (mut builder, _temp_dir, _db) = create_builder(index_type);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let duplicate_geo = json!([BERLIN, BERLIN]);
     builder.add_point(0, &[&duplicate_geo]).unwrap();
@@ -775,7 +775,7 @@ fn test_remove_point_with_duplicate_geo_values(#[case] index_type: IndexType) {
 #[test]
 fn test_values_per_hash_drift_on_duplicate_geo_removal() {
     let (mut builder, _temp_dir, _db) = create_builder(IndexType::Mutable);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Point 0 has 3 identical geo values (same geohash produced 3 times).
     let triple_duplicate = json!([BERLIN, BERLIN, BERLIN]);
@@ -823,7 +823,7 @@ fn test_values_per_hash_drift_on_duplicate_geo_removal() {
 #[case(IndexType::Mutable)]
 fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
     let (mut builder, _temp_dir, _db) = create_builder(index_type);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let berlin_geo = json!(BERLIN);
     builder.add_point(0, &[&berlin_geo]).unwrap();
@@ -908,7 +908,7 @@ fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
             indices[0].max_values_per_point(),
             index.max_values_per_point(),
         );
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         for &hash in &hashes {
             assert_eq!(
                 indices[0].points_of_hash(hash).unwrap(),
@@ -1102,7 +1102,7 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let berlin = json!(BERLIN);
         let potsdam = json!(POTSDAM);
@@ -1167,7 +1167,7 @@ fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let berlin = json!(BERLIN);
 
@@ -1203,7 +1203,7 @@ fn test_block_index_fallback_equivalence() {
         index: &GeoIndex,
         conditions: &[FieldCondition],
     ) -> Vec<(usize, usize, usize, Vec<PointOffsetType>)> {
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         conditions
             .iter()
             .map(|condition| {

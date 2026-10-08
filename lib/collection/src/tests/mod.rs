@@ -21,8 +21,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use common::ambient;
 use common::budget::ResourceBudget;
-use common::counter::hw;
 use common::save_on_disk::SaveOnDisk;
 use futures::future::join_all;
 use itertools::Itertools;
@@ -397,7 +397,7 @@ async fn test_new_segment_when_all_over_capacity() {
 
     assert_eq!(segments.read().len(), 6);
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Insert some points in the smallest segment to fill capacity
     {

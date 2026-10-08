@@ -1,9 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::{AmbientContext, HwFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use rand::rng;
 use segment::data_types::vectors::VectorStructInternal;

@@ -18,7 +18,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::universal_io::{MmapFile, MmapFs, UniversalWriteFs as _};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
@@ -185,7 +185,7 @@ fn create_empty_overlay(
 /// then dropped, then reopened through `open` — proving a second writer resumes correctly,
 /// mirroring `dense/update_only/tests.rs::batches_resume`.
 fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec<f32>]) {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     fn as_batch(vectors: &[Vec<f32>]) -> impl Iterator<Item = VectorToStore<'_>> {
         vectors
@@ -267,7 +267,7 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     for (id, vector) in vectors.iter().enumerate() {
         reference.upsert_vector(id as u32, vector).unwrap();
     }
@@ -344,7 +344,7 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
         &AtomicBool::new(false),
     )
     .unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     for (id, vector) in vectors.iter().enumerate() {
         reference.upsert_vector(id as u32, vector).unwrap();
     }
@@ -376,7 +376,7 @@ fn open_returns_none_when_nothing_persisted() {
 fn reopening_a_nonempty_overlay_works() {
     let dir = TempDir::with_prefix("update_only_quantized_reopen_nonempty").unwrap();
     let config = binary_config();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut writer = create_empty_overlay(&config, dir.path());
     let vector = some_vectors(1).remove(0);

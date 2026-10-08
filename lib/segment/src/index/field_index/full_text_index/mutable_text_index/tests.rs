@@ -2,7 +2,7 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
-use common::counter::hw;
+use common::ambient;
 use common::types::PointOffsetType;
 use rstest::rstest;
 use tempfile::Builder;
@@ -19,7 +19,7 @@ fn filter_request(text: &str) -> FieldCondition {
 
 #[test]
 fn test_full_text_indexing() {
-    use common::counter::AmbientContext;
+    use common::ambient::AmbientContext;
 
     use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 
@@ -63,7 +63,7 @@ fn test_full_text_indexing() {
                 .unwrap()
                 .unwrap();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         for (idx, payload) in payloads.iter().enumerate() {
             index.add_point(idx as PointOffsetType, &[payload]).unwrap();
@@ -214,7 +214,7 @@ fn length_config(phrase_matching: bool) -> TextIndexParams {
 fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: bool) {
     let temp_dir = Builder::new().prefix("doc_len_reload").tempdir().unwrap();
     let path = temp_dir.path().join("index");
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
     let payloads = [
@@ -249,7 +249,7 @@ fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: boo
 #[test]
 fn doc_len_excludes_array_boundary_sentinels() {
     let temp_dir = Builder::new().prefix("doc_len_sentinel").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Two elements, three tokens each, one sentinel between them with phrase
     // matching on. The length must be six either way.
@@ -276,7 +276,7 @@ fn array_of_empty_values_is_not_a_document(#[values(false, true)] phrase_matchin
     use crate::index::field_index::full_text_index::inverted_index::InvertedIndex;
 
     let temp_dir = Builder::new().prefix("doc_len_empty").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut index = gridstore_index(
         temp_dir.path().join("index"),
@@ -313,7 +313,7 @@ fn array_of_empty_values_is_not_a_document(#[values(false, true)] phrase_matchin
 #[test]
 fn doc_len_counts_sentinel_characters_in_user_text() {
     let temp_dir = Builder::new().prefix("doc_len_nul").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut index = gridstore_index(
         temp_dir.path().join("index"),
@@ -338,7 +338,7 @@ fn doc_len_counts_sentinel_characters_in_user_text() {
 #[test]
 fn removing_a_point_discounts_its_length() {
     let temp_dir = Builder::new().prefix("doc_len_remove").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut index = gridstore_index(
         temp_dir.path().join("index"),
@@ -404,7 +404,7 @@ fn overwriting_a_point_replaces_its_length() {
 fn scoring_off_records_no_lengths(#[values(false, true)] phrase_matching: bool) {
     let temp_dir = Builder::new().prefix("doc_len_off").tempdir().unwrap();
     let path = temp_dir.path().join("index");
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     {
         let mut index = gridstore_index(path.clone(), length_config(phrase_matching), true, false)

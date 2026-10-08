@@ -141,7 +141,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hw;
+    use common::ambient;
     use tempfile::Builder;
 
     use crate::data_types::named_vectors::NamedVectors;
@@ -174,7 +174,7 @@ mod tests {
     fn rescore_keeps_every_prefetch_score_with_its_own_point() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         for id in [1, 2, 3] {
             let mut vectors = NamedVectors::default();

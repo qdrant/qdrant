@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
 use tempfile::{Builder, TempDir};
@@ -58,7 +58,7 @@ fn build_segment() -> (TempDir, Segment) {
 /// Build a fixture of `n` points, each with a `colour` (3 uniques), a unique
 /// `tag`, and a `seq` equal to its index (for filters of exact selectivity).
 fn build_segment_n(n: usize) -> (TempDir, Segment) {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let dir = Builder::new().prefix("facet_segment").tempdir().unwrap();
 
     let dim = 2;

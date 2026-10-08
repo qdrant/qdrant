@@ -303,7 +303,7 @@ impl PayloadStorageEnum {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::universal_io::MmapFile;
     use rstest::rstest;
     use tempfile::Builder;
@@ -315,7 +315,7 @@ mod tests {
     fn test_mmap_storage(#[values(false, true)] populate: bool) {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut storage: PayloadStorageEnum =
             PayloadStorageImpl::<MmapFile>::open_or_create(dir.path().to_path_buf(), populate)

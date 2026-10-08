@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
@@ -82,7 +82,7 @@ fn make_payload(i: usize) -> Payload {
 }
 
 fn build_immutable_segment_with_indexed_payload(segments_path: &Path, temp_path: &Path) -> Segment {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Step 1: appendable source segment with payload + field indices.
     let source_dir = Builder::new().prefix("source_seg").tempdir().unwrap();
@@ -340,7 +340,7 @@ fn indexed_queries() -> Vec<IndexedQuery> {
 /// For each indexed query, run `read_filtered` and assert the returned count
 /// matches the count predicted from the live set.
 fn assert_query_counts(segment: &Segment, live: &[bool], queries: &[IndexedQuery], stage: &str) {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     for q in queries {
         let actual = segment
             .read_filtered(
@@ -422,7 +422,7 @@ fn payload_index_files_are_immutable_after_build() {
     // Operation 1: runtime point deletions. delete_point lives on
     // NonAppendableSegmentEntry — it routes through the in-memory id_tracker
     // bitvec only and must not touch payload_index/ files.
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let mut op_num = 1_000_u64;
     for (i, alive) in live.iter_mut().enumerate().take(NUM_POINTS / 2) {
         segment

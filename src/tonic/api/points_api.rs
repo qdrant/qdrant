@@ -17,8 +17,7 @@ use api::grpc::qdrant::{
 };
 use api::grpc::{PointsOperationResponseInternal, Usage};
 use collection::operations::types::CoreSearchRequest;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};

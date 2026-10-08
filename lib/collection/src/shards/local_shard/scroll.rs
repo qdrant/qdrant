@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use common::counter::hw;
+use common::ambient;
+use common::ambient::hw;
 use common::types::DeferredBehavior;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
@@ -154,7 +155,7 @@ impl LocalShard {
         let read_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let _hw = hw_acc.enter_guard();
@@ -244,7 +245,7 @@ impl LocalShard {
         let read_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let _hw = hw_acc.enter_guard();
@@ -338,7 +339,7 @@ impl LocalShard {
             let filter = filter.cloned();
             let order_by = order_by.clone();
 
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
                 let _hw = hw_acc.enter_guard();
@@ -436,7 +437,7 @@ impl LocalShard {
             let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
 
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
                 let _hw = hw_acc.enter_guard();

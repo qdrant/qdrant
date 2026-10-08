@@ -270,7 +270,7 @@ impl ValueIndexer for BoolIndex {
 mod tests {
     use std::path::Path;
 
-    use common::counter::{AmbientContext, hw};
+    use common::ambient::{self, AmbientContext};
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -569,7 +569,7 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut builder = I::builder(tmp_dir.path());
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         bools_fixture()
             .into_iter()

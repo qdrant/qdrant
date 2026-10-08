@@ -1,4 +1,4 @@
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;

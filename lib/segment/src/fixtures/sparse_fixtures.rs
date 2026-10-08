@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hw;
+use common::ambient;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use rand::Rng;
@@ -59,7 +59,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndexReadWrite<MmapFile>>(
 
     let num_vectors = vectors.len();
     let mut num_vectors_not_empty = 0;
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     for (idx, vec) in vectors.enumerate() {
         borrowed_storage
             .insert_vector(idx as PointOffsetType, (&vec).into())

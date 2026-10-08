@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::bitvec::BitSlice;
 #[cfg(feature = "testing")]
-use common::counter::AmbientContext;
-use common::counter::hw::HwHandoff;
+use common::ambient::AmbientContext;
+use common::ambient::HwHandoff;
+use common::bitvec::BitSlice;
 use common::cow::SimpleCow;
 use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};

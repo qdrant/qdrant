@@ -4,9 +4,10 @@ use std::hint::black_box;
 use std::path::Path;
 
 use blobstore::Blob;
+use common::ambient;
+use common::ambient::AmbientContext;
+use common::ambient::hw::{self, HwMetric};
 use common::bitvec::BitVec;
-use common::counter::AmbientContext;
-use common::counter::hw::{self, HwMetric};
 use common::types::PointOffsetType;
 use ecow::EcoString;
 use rstest::rstest;
@@ -77,7 +78,7 @@ fn save_map_index_with<N>(
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
 {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     match index_type {
         IndexType::MutableGridstore => {
@@ -144,7 +145,7 @@ where
             .unwrap()
             .unwrap(),
     };
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     for (idx, values) in data.iter().enumerate() {
         let index_values: HashSet<<N as MapIndexKey>::Owned> = index
             .get_values(idx as PointOffsetType)
@@ -171,7 +172,7 @@ fn test_uuid_payload_index() {
 
     builder.init().unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let uuid: Value = Value::String("baa56dfc-e746-4ec1-bf50-94822535a46c".to_string());
 
@@ -204,7 +205,7 @@ fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
 
     let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for (idx, values) in data.iter().enumerate().rev() {
         let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
@@ -396,7 +397,7 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
 
     assert_eq!(new_index.get_indexed_points(), 3);
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     for id in [1u32, 2, 5] {
         assert_eq!(
             new_index.values_count(id),
@@ -464,7 +465,7 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
         IndexType::MutableGridstore => unreachable!(),
     };
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     assert!(new_index.values_count(0) > 0, "id 0 should be live");
     assert_eq!(new_index.values_count(1), 0, "id 1 deleted via bitslice");
@@ -494,7 +495,7 @@ fn collect_for_values_map(
     index: &MapIndex<IntPayloadType>,
     keys: &[IntPayloadType],
 ) -> BTreeMap<IntPayloadType, Vec<PointOffsetType>> {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let mut out = BTreeMap::new();
     MapIndexRead::for_values_map(index, keys.iter(), |key, ids| {
         let mut ids: Vec<PointOffsetType> = ids.collect();
@@ -639,7 +640,7 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let data = prefix_test_data();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -726,7 +727,7 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
         .tempdir()
         .unwrap();
     let data = prefix_test_data();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -789,7 +790,7 @@ fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
 
     let temp_dir = Builder::new().prefix("no_prefix_index").tempdir().unwrap();
     let data = prefix_test_data();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     save_map_index_with::<str>(
         &data,
@@ -877,7 +878,7 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let mut data = prefix_test_data();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let mut index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -972,7 +973,7 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let data = prefix_test_data();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut builder = MapIndex::<str>::builder_immutable(
         temp_dir.path(),

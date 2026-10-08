@@ -10,8 +10,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::shard::ShardId;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, RngExt, SeedableRng};

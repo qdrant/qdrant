@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::counter::hw;
+use common::ambient;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::ReadSegmentEntry as _;
@@ -30,7 +30,7 @@ fn test_delete_by_filter_version_bump() {
     let segment1 = build_segment_1(dir.path());
     let segment2 = build_segment_2(dir.path());
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut holder = SegmentHolder::default();
 
@@ -113,7 +113,7 @@ fn stored_payload(
 #[test]
 fn test_upsert_points_raw_moves_point_from_non_appendable() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut non_appendable = build_segment_1(dir.path()); // points 1-5
     non_appendable.appendable_flag = false;
@@ -204,7 +204,7 @@ fn test_apply_refuses_an_undecoded_payload_blob() {
 #[test]
 fn test_sync_points_raw() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let segment = build_segment_1(dir.path()); // points 1-5
     let mut holder = SegmentHolder::default();
@@ -276,7 +276,7 @@ fn build_non_appendable_with_city(
     version: u64,
     city: &str,
 ) -> segment::segment::Segment {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let mut seg = empty_segment(path);
     seg.upsert_point(
         version,
@@ -299,7 +299,7 @@ fn build_deferred_with_city(
     version: u64,
     city: &str,
 ) -> segment::segment::Segment {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     // threshold 0 => every point is deferred
     let mut seg = empty_segment_with_deferred(path, 0);
     seg.upsert_point(
@@ -336,7 +336,7 @@ fn city_filter(city: &str) -> Filter {
 #[test]
 fn test_delete_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -377,7 +377,7 @@ fn test_delete_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_delete_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -418,7 +418,7 @@ fn test_delete_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -443,7 +443,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -487,7 +487,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -512,7 +512,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -556,7 +556,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -580,7 +580,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -623,7 +623,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -648,7 +648,7 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -692,7 +692,7 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -717,7 +717,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -774,7 +774,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
 
     const DIM: usize = 4;
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let point_id: PointIdType = 7.into();
 
     // Old record: both named vectors plus a payload.
@@ -869,7 +869,7 @@ fn create_field_index_pins_pending_payload_state() {
     use uuid::Uuid;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let key: PayloadKeyType = "city".parse().unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let is_stopped = AtomicBool::new(false);
@@ -947,7 +947,7 @@ fn create_field_index_flushes_cow_destinations_before_source() {
     use crate::update::set_payload;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let key: PayloadKeyType = "color".parse().unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
@@ -1029,7 +1029,7 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let is_stopped = AtomicBool::new(false);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut segment = empty_segment(dir.path());
     let segment_path = segment.segment_path.clone();

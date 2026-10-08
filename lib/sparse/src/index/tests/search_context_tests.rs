@@ -2,8 +2,9 @@ use std::any::TypeId;
 use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::AmbientContext;
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::AmbientContext;
+use common::ambient::hw::HwMetric;
 use common::types::{PointOffsetType, ScoredPointOffset};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
@@ -90,7 +91,7 @@ mod test_mod {
     fn test_empty_query() {
         let index = TestIndex::from_ram(InvertedIndexRam::empty());
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let is_stopped = AtomicBool::new(false);
         let mut scratch = SearchScratch::new_for_test();

@@ -117,7 +117,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::AmbientContext;
+    use common::ambient::AmbientContext;
     use common::sorted_slice::SortedSlice;
     use common::universal_io::{
         CachedFs, CachedReadFs, MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs,

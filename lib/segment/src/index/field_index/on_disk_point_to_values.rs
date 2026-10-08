@@ -3,8 +3,9 @@ use std::cmp::max;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::{BitVec, DeletedBitVec};
-use common::counter::hw::{self, HwMetric};
 use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
@@ -406,7 +407,7 @@ where
     ) -> OperationResult<()> {
         // Report deleted points with values too.
         let blank_bitmask = DeletedBitVec::new(BitVec::repeat(false, self.len()));
-        hw::unmeasured(reason("TODO: Propagate counter upwards"), || {
+        ambient::unmeasured(reason("TODO: Propagate counter upwards"), || {
             self.values_iter_batch(
                 (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
                 &blank_bitmask,
@@ -554,7 +555,7 @@ mod tests {
 
         // Roundtrip check
         for (idx, values) in values.iter().enumerate() {
-            let v = hw::test(|| ppv.values_iter(idx as PointOffsetType))
+            let v = ambient::test(|| ppv.values_iter(idx as PointOffsetType))
                 .unwrap()
                 .unwrap()
                 .map(Cow::into_owned)
@@ -578,7 +579,7 @@ mod tests {
 
             // Run `values_iter_batch` and store its results into
             let mut reported = Vec::new();
-            hw::test(|| {
+            ambient::test(|| {
                 ppv.values_iter_batch(
                     (0..values.len()).chain([large_id]).map(|id| (id, id as _)),
                     &deleted,

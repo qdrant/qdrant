@@ -13,7 +13,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hw;
+    use common::ambient;
     use common::mmap::Flusher;
     use common::types::PointOffsetType;
     use quantization::encoded_storage::{
@@ -149,7 +149,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         // Offset + code accessor must return identical data through owning and borrowed
         // storages, and the code must have the quantized vector size minus the offset constant.
