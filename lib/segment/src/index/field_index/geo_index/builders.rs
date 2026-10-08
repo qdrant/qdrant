@@ -11,11 +11,12 @@ use super::on_disk_geo_index::OnDiskGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
+use crate::types::Memory;
 
 pub struct GeoIndexMmapBuilder {
     pub(super) path: PathBuf,
     pub(super) in_memory_index: InMemoryGeoIndex,
-    pub(super) is_on_disk: bool,
+    pub(super) memory: Memory,
     pub(super) deleted_points: BitVec,
 }
 
@@ -35,7 +36,7 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(!self.is_on_disk);
+        let populate = Populate::from(self.memory.is_heap());
         let on_disk_index = OnDiskGeoIndex::build(
             &MmapFs,
             self.in_memory_index,
@@ -44,10 +45,10 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
             &self.deleted_points,
         )?;
 
-        let index = if self.is_on_disk {
-            GeoIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if self.memory.is_heap() {
             GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            GeoIndex::OnDisk(on_disk_index)
         };
         Ok(index)
     }

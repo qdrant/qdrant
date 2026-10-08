@@ -333,7 +333,7 @@ impl IndexSelector<'_> {
         match self {
             IndexSelector::NonAppendable { dir, memory } => make_mmap(MapIndex::builder_immutable(
                 &map_dir(dir, field),
-                !memory.is_heap(),
+                *memory,
                 deleted_points,
                 prefix_index,
             )),
@@ -376,7 +376,7 @@ impl IndexSelector<'_> {
         match self {
             IndexSelector::NonAppendable { dir, memory } => make_mmap(NumericIndex::builder_mmap(
                 &numeric_dir(dir, field),
-                !memory.is_heap(),
+                *memory,
                 deleted_points,
             )),
             IndexSelector::Appendable { dir } => {
@@ -411,7 +411,7 @@ impl IndexSelector<'_> {
         match self {
             IndexSelector::NonAppendable { dir, memory } => make_mmap(GeoIndex::builder_mmap(
                 &map_dir(dir, field),
-                !memory.is_heap(),
+                *memory,
                 deleted_points,
             )),
             IndexSelector::Appendable { dir } => {
@@ -516,7 +516,7 @@ impl IndexSelector<'_> {
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),
                     config,
-                    !memory.is_heap(),
+                    *memory,
                     deleted_points,
                     scoring,
                 ))

@@ -52,13 +52,13 @@ where
 
     pub fn builder_mmap(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> NumericIndexMmapBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
     {
-        NumericIndexMmapBuilder::new(path.to_owned(), is_on_disk, deleted_points.to_owned())
+        NumericIndexMmapBuilder::new(path.to_owned(), memory, deleted_points.to_owned())
     }
 
     pub fn builder_gridstore(dir: PathBuf) -> NumericIndexGridstoreBuilder<T, P>
@@ -88,7 +88,9 @@ where
         match &self.inner {
             NumericIndexInner::Mutable(index) => index.storage_type(),
             NumericIndexInner::Immutable(index) => index.storage_type(),
-            NumericIndexInner::OnDisk(_) => StorageType::Mmap { is_on_disk: true },
+            NumericIndexInner::OnDisk(_) => StorageType::Mmap {
+                on_disk_variant: true,
+            },
         }
     }
 

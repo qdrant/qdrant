@@ -7,7 +7,7 @@ use common::universal_io::{OkNotFound, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
-use crate::types::{PayloadFieldSchema, PayloadKeyType};
+use crate::types::{Memory, PayloadFieldSchema, PayloadKeyType};
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 
@@ -182,7 +182,32 @@ pub enum IndexMutability {
 #[serde(rename_all = "snake_case")]
 pub enum StorageType {
     Gridstore,
-    Mmap { is_on_disk: bool },
+    Mmap {
+        /// Built as the variant that reads straight from the mmap (`OnDisk`)
+        /// rather than the one loaded into heap (`Immutable`).
+        #[serde(rename = "is_on_disk")]
+        on_disk_variant: bool,
+    },
+}
+
+impl StorageType {
+    /// Placement to open an immutable index with, `None` for the appendable
+    /// format: the built variant decides heap vs mmap, and the schema's
+    /// requested placement refines cold vs cached for the mmap variant.
+    pub fn immutable_memory(self, schema_memory: Memory) -> Option<Memory> {
+        match self {
+            StorageType::Gridstore => None,
+            StorageType::Mmap {
+                on_disk_variant: true,
+            } => Some(match schema_memory {
+                Memory::Cached => Memory::Cached,
+                Memory::Cold | Memory::Pinned => Memory::Cold,
+            }),
+            StorageType::Mmap {
+                on_disk_variant: false,
+            } => Some(Memory::Pinned),
+        }
+    }
 }
 
 #[cfg(test)]

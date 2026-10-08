@@ -17,6 +17,7 @@ use crate::index::field_index::numeric_index::immutable_numeric_index::Immutable
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
+use crate::types::Memory;
 
 pub struct NumericIndexBuilder<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
     NumericIndex<T, P>,
@@ -59,7 +60,7 @@ where
 {
     path: PathBuf,
     in_memory_index: InMemoryNumericIndex<T>,
-    is_on_disk: bool,
+    memory: Memory,
     deleted_points: BitVec,
     _phantom: PhantomData<P>,
 }
@@ -70,11 +71,11 @@ where
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
     Vec<T>: Blob,
 {
-    pub(super) fn new(path: PathBuf, is_on_disk: bool, deleted_points: BitVec) -> Self {
+    pub(super) fn new(path: PathBuf, memory: Memory, deleted_points: BitVec) -> Self {
         Self {
             path,
             in_memory_index: InMemoryNumericIndex::default(),
-            is_on_disk,
+            memory,
             deleted_points,
             _phantom: PhantomData,
         }
@@ -112,7 +113,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(!self.is_on_disk);
+        let populate = Populate::from(self.memory.is_heap());
         let on_disk_index = OnDiskNumericIndex::build(
             &MmapFs,
             self.in_memory_index,
@@ -121,10 +122,10 @@ where
             &self.deleted_points,
         )?;
 
-        let inner = if self.is_on_disk {
-            NumericIndexInner::OnDisk(on_disk_index)
-        } else {
+        let inner = if self.memory.is_heap() {
             NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(on_disk_index))
+        } else {
+            NumericIndexInner::OnDisk(on_disk_index)
         };
 
         Ok(NumericIndex {

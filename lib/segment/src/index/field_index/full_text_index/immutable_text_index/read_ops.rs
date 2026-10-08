@@ -108,7 +108,9 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: false }
+        StorageType::Mmap {
+            on_disk_variant: false,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {

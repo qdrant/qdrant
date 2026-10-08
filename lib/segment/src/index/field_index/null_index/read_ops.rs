@@ -88,7 +88,9 @@ pub trait NullIndexRead {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: false }
+        StorageType::Mmap {
+            on_disk_variant: false,
+        }
     }
 
     fn get_telemetry_data(&self) -> PayloadIndexTelemetry {

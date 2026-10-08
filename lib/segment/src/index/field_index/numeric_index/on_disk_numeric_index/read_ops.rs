@@ -126,7 +126,9 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: true }
+        StorageType::Mmap {
+            on_disk_variant: true,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {

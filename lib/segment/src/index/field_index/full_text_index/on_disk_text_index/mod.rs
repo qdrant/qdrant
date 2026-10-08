@@ -7,6 +7,7 @@ use super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::tokenizers::Tokenizer;
 use crate::data_types::index::TextIndexParams;
+use crate::types::Memory;
 
 mod lifecycle;
 mod live_reload;
@@ -23,7 +24,7 @@ pub struct FullTextMmapIndexBuilder {
     pub(super) path: PathBuf,
     pub(super) mutable_index: MutableInvertedIndex,
     pub(super) config: TextIndexParams,
-    pub(super) is_on_disk: bool,
+    pub(super) memory: Memory,
     pub(super) tokenizer: Tokenizer,
     pub(super) deleted_points: BitVec,
 }

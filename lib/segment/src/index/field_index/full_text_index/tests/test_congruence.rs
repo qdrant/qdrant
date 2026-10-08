@@ -89,14 +89,14 @@ fn create_builder(
         IndexType::OnDisk => IndexBuilder::OnDisk(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
-            true,
+            Memory::Cold,
             &empty_deleted,
             true,
         )),
         IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_mmap(
             temp_dir.path().to_path_buf(),
             config,
-            false,
+            Memory::Pinned,
             &empty_deleted,
             true,
         )),
