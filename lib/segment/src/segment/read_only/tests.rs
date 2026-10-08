@@ -1145,16 +1145,13 @@ fn test_failed_live_reload_keeps_new_points_invisible() {
         futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
     {
         let fs = &*read_only.reload_fs.get_mut();
-        let staged = read_only
+        let fresh = read_only
             .id_tracker
             .borrow_mut()
             .live_reload(fs, max_committed_id)
             .unwrap();
-        assert_eq!(staged.delta().inserted.len(), NUM_POINTS - half);
-        read_only
-            .pending_reload
-            .borrow_mut()
-            .reconcile(staged.delta());
+        assert_eq!(fresh.inserted.len(), NUM_POINTS - half);
+        read_only.pending_reload.borrow_mut().merge(fresh);
     }
 
     let query = QueryVector::Nearest(VectorInternal::Dense(

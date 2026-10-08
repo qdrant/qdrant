@@ -12,7 +12,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
-    CommitReload, ReadOnlyAppendableIdTracker, StagedReload, TrackerProbe,
+    LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
 };
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
@@ -142,26 +142,21 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         &mut self,
         fs: &Fs,
         max_committed_id: Option<PointOffsetType>,
-    ) -> OperationResult<StagedReload> {
+    ) -> OperationResult<LiveReloadResult> {
         match self {
             Self::Appendable(id_tracker) => id_tracker.live_reload(fs, max_committed_id),
-            Self::Immutable(id_tracker) => id_tracker
-                .live_reload(fs)
-                .map(StagedReload::without_inserts),
-            Self::DiskResident(id_tracker) => id_tracker
-                .live_reload(fs)
-                .map(StagedReload::without_inserts),
+            Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
+            Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
         }
     }
-}
 
-impl<S: UniversalRead> CommitReload for ReadOnlyIdTrackerEnum<S> {
-    fn commit_reload(&mut self, commit_bound: PointOffsetType) {
+    /// Make the inserts reported by the last [`Self::live_reload`] visible to readers. Call once
+    /// every component has ingested them.
+    pub fn publish_staged(&mut self) {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.commit_reload(commit_bound),
-            Self::Immutable(_) | Self::DiskResident(_) => {
-                debug_assert!(false, "staged reload committed to the wrong tracker kind");
-            }
+            Self::Appendable(id_tracker) => id_tracker.publish_staged(),
+            // Never report inserts
+            Self::Immutable(_) | Self::DiskResident(_) => {}
         }
     }
 }

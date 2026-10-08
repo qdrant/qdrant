@@ -12,8 +12,7 @@ use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 use futures::lock::Mutex;
 
-pub(crate) use self::live_reload::CommitReload;
-pub use self::live_reload::{LiveReloadResult, StagedReload, TrackerProbe};
+pub use self::live_reload::{LiveReloadResult, TrackerProbe};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -35,25 +34,30 @@ use crate::types::{PointIdType, SeqNumberType};
 ///
 /// The mapping only ever contains *committed* points. The writer flushes mappings before data
 /// before versions, so a point is fully written only once its version is present. An insert read
-/// from the mappings log is therefore held in [`Self::pending_inserts`] until its version is
-/// flushed and the reload is committed, and only then linked into [`Self::mappings`].
+/// from the mappings log is held in [`Self::unversioned_inserts`] until its version is flushed,
+/// then in [`Self::staged_inserts`] until every component has ingested it, and only then linked
+/// into [`Self::mappings`].
 pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     segment_path: PathBuf,
     internal_to_version: Vec<SeqNumberType>,
     mappings: PointMappings,
 
-    /// Inserts read from the mappings log not linked yet, keyed by external id.
+    /// Inserts read from the mappings log whose version is not flushed yet, keyed by external id.
     ///
-    /// These points are intentionally absent from [`Self::mappings`] (their data may be partially
-    /// written). Each is linked in by committing a [`StagedReload`] once its offset is covered by the
-    /// versions file, or dropped if a delete for it arrives first.
-    pending_inserts: HashMap<PointIdType, PointOffsetType>,
+    /// Their data may be partially written. Each moves to [`Self::staged_inserts`] once its offset
+    /// is covered by the versions file, or is dropped if a delete for it arrives first.
+    unversioned_inserts: HashMap<PointIdType, PointOffsetType>,
+
+    /// Fully written inserts reported by a reload but not linked yet, keyed by external id.
+    ///
+    /// Reported again by every reload until [`Self::publish_staged`] links them.
+    staged_inserts: HashMap<PointIdType, PointOffsetType>,
 
     /// Highest slot any insert in the mappings log has ever claimed, `None` while the log has
     /// claimed none. This is the slot a writer resumes above.
     ///
     /// Neither structure above can answer that: [`Self::mappings`] holds only committed points, and
-    /// [`Self::pending_inserts`] drops an entry as soon as a delete for its external id arrives, so
+    /// [`Self::unversioned_inserts`] drops an entry as soon as a delete for its external id arrives, so
     /// an `Insert(p, n)` followed by a `Delete(p)` leaves slot `n` claimed on disk yet named nowhere
     /// else. Its data may be half-written, so handing it out again would write a second point over
     /// the remains of the first.

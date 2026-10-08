@@ -31,14 +31,13 @@ fn insert(
     tracker.set_internal_version(internal, version).unwrap();
 }
 
-/// Live-reload and commit, as a reload whose components all succeed does.
+/// Live-reload and publish, as a reload whose components all succeed does.
 fn reload(
     read_only: &mut ReadOnlyTracker,
     max_committed_id: Option<PointOffsetType>,
 ) -> LiveReloadResult {
-    let staged = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
-    let result = staged.delta().clone();
-    staged.commit(read_only);
+    let result = read_only.live_reload(&MmapFs, max_committed_id).unwrap();
+    read_only.publish_staged();
     result
 }
 
@@ -412,54 +411,57 @@ fn test_live_reload_withholds_partially_written_version() {
 }
 
 #[test]
-fn test_reconcile_keeps_deletes_and_takes_fresh_inserts() {
-    // Deletes are drained from the tracker, so both sides are kept. Inserts are reported again
-    // until committed, so `fresh` is authoritative for them.
+fn test_merge_accumulates_unapplied_delta() {
+    // A delete folded into an earlier insert/delete delta keeps both lists sorted
+    // and deduplicated, and survives so a failed reload can replay it.
     let mut pending = LiveReloadResult {
-        inserted: vec![1, 3, 5],
-        deleted: vec![2, 10],
+        inserted: vec![5, 1, 3],
+        deleted: vec![10, 2],
     };
-    pending.reconcile(&LiveReloadResult {
-        inserted: vec![1, 3, 5, 7],
-        deleted: vec![2, 8],
+    pending.merge(LiveReloadResult {
+        inserted: vec![7],
+        deleted: vec![8, 2],
     });
     assert_eq!(pending.inserted, vec![1, 3, 5, 7]);
     assert_eq!(pending.deleted, vec![2, 8, 10]);
 }
 
 #[test]
-fn test_reconcile_deletes_vanished_insert() {
-    // Offset 4 was attempted but is no longer reported: it was deleted or re-linked before being
-    // committed, so a component that already ingested it must drop it.
+fn test_merge_cancels_insert_then_delete() {
+    // An offset inserted (but not yet applied) and then deleted is ultimately gone:
+    // dropped from `inserted`, kept in `deleted` so a partially-applied component
+    // drops it on replay.
     let mut pending = LiveReloadResult {
         inserted: vec![3, 4],
         deleted: vec![],
     };
-    pending.reconcile(&LiveReloadResult {
-        inserted: vec![3],
-        deleted: vec![],
+    pending.merge(LiveReloadResult {
+        inserted: vec![],
+        deleted: vec![4],
     });
     assert_eq!(pending.inserted, vec![3]);
     assert_eq!(pending.deleted, vec![4]);
+    assert!(!pending.is_empty());
 }
 
 #[test]
-fn test_reconcile_empty() {
-    let mut empty = LiveReloadResult::default();
-    empty.reconcile(&LiveReloadResult::default());
-    assert!(empty.is_empty());
-
+fn test_merge_empty_is_noop() {
     let mut pending = LiveReloadResult {
-        inserted: vec![],
+        inserted: vec![1],
         deleted: vec![2],
     };
-    pending.reconcile(&LiveReloadResult::default());
-    assert_eq!(pending.inserted, Vec::<PointOffsetType>::new());
+    pending.merge(LiveReloadResult::default());
+    assert_eq!(pending.inserted, vec![1]);
     assert_eq!(pending.deleted, vec![2]);
+
+    let mut empty = LiveReloadResult::default();
+    assert!(empty.is_empty());
+    empty.merge(LiveReloadResult::default());
+    assert!(empty.is_empty());
 }
 
 #[test]
-fn test_inserts_invisible_until_commit() {
+fn test_inserts_invisible_until_publish() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
@@ -471,10 +473,9 @@ fn test_inserts_invisible_until_commit() {
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
-    // Reported, but not reachable before the commit. Dropping the staged reload leaves it pending.
-    let staged = read_only.live_reload(&MmapFs, None).unwrap();
-    assert_eq!(staged.delta().inserted, vec![1]);
-    drop(staged);
+    // Reported, but not reachable before it is published
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
     assert_eq!(read_only.available_point_count(), 1);
     assert!(read_only.is_deleted_point(1));
     assert_eq!(read_only.external_id(1), None);
@@ -486,16 +487,16 @@ fn test_inserts_invisible_until_commit() {
     // Fully written, so a resuming writer must not retire it
     assert_eq!(read_only.pending_inserts().count(), 0);
 
-    // An uncommitted insert is reported again by a retried reload
-    let staged = read_only.live_reload(&MmapFs, None).unwrap();
-    assert_eq!(staged.delta().inserted, vec![1]);
+    // An unpublished insert is reported again by a retried reload
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
 
-    staged.commit(&mut read_only);
+    read_only.publish_staged();
     assert_in_sync(&read_only, &mutable);
 }
 
 #[test]
-fn test_upsert_keeps_old_offset_until_commit() {
+fn test_upsert_keeps_old_offset_until_publish() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
@@ -509,16 +510,16 @@ fn test_upsert_keeps_old_offset_until_commit() {
     insert(&mut mutable, 100.into(), 1, 11);
     flush(&mutable);
 
-    let staged = read_only.live_reload(&MmapFs, None).unwrap();
-    assert_eq!(staged.delta().inserted, vec![1]);
-    assert_eq!(staged.delta().deleted, vec![0]);
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
+    assert_eq!(delta.deleted, vec![0]);
 
-    staged.commit(&mut read_only);
+    read_only.publish_staged();
     assert_in_sync(&read_only, &mutable);
 }
 
 #[test]
-fn test_upsert_without_delete_keeps_old_offset_until_commit() {
+fn test_upsert_without_delete_keeps_old_offset_until_publish() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
@@ -531,11 +532,11 @@ fn test_upsert_without_delete_keeps_old_offset_until_commit() {
     insert(&mut mutable, 100.into(), 1, 11);
     flush(&mutable);
 
-    let staged = read_only.live_reload(&MmapFs, None).unwrap();
-    assert_eq!(staged.delta().inserted, vec![1]);
-    assert_eq!(staged.delta().deleted, vec![0]);
+    let delta = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(delta.inserted, vec![1]);
+    assert_eq!(delta.deleted, vec![0]);
 
-    // The old offset keeps serving the point until the commit
+    // The old offset keeps serving the point until published
     assert_eq!(
         read_only
             .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
@@ -543,7 +544,7 @@ fn test_upsert_without_delete_keeps_old_offset_until_commit() {
     );
     assert!(!read_only.is_deleted_point(0));
 
-    staged.commit(&mut read_only);
+    read_only.publish_staged();
     assert_eq!(
         read_only
             .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
@@ -553,7 +554,7 @@ fn test_upsert_without_delete_keeps_old_offset_until_commit() {
 }
 
 #[test]
-fn test_retry_after_uncommitted_insert_was_deleted() {
+fn test_retry_after_unpublished_insert_was_deleted() {
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
     let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
@@ -565,26 +566,24 @@ fn test_retry_after_uncommitted_insert_was_deleted() {
     insert(&mut mutable, 200.into(), 1, 11);
     flush(&mutable);
 
-    // Attempted reload whose components fail: no commit
-    let mut pending = read_only
-        .live_reload(&MmapFs, None)
-        .unwrap()
-        .delta()
-        .clone();
+    // Attempted reload whose components fail: not published
+    let mut pending = read_only.live_reload(&MmapFs, None).unwrap();
     assert_eq!(pending.inserted, vec![1]);
 
     // The writer deletes the point before the retry
     mutable.drop(200.into()).unwrap();
     flush(&mutable);
 
-    let staged = read_only.live_reload(&MmapFs, None).unwrap();
-    assert_eq!(*staged.delta(), LiveReloadResult::default());
+    // The staged offset is reported as deleted, so a component that already ingested it drops it
+    let fresh = read_only.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(fresh.inserted, Vec::<PointOffsetType>::new());
+    assert_eq!(fresh.deleted, vec![1]);
 
-    pending.reconcile(staged.delta());
+    pending.merge(fresh);
     assert_eq!(pending.inserted, Vec::<PointOffsetType>::new());
     assert_eq!(pending.deleted, vec![1]);
 
-    staged.commit(&mut read_only);
+    read_only.publish_staged();
     assert_in_sync(&read_only, &mutable);
 }
 

@@ -22,9 +22,8 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
             futures::join!(fs.wait_all(), futures::future::join_all(futs))
         });
 
-        id_tracker
-            .live_reload(fs, max_committed_id)?
-            .commit(id_tracker);
+        id_tracker.live_reload(fs, max_committed_id)?;
+        id_tracker.publish_staged();
 
         fs.rotate_cache_file_info();
         Ok(())

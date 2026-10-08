@@ -73,12 +73,14 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// what it staged, and files that appeared since its listing snapshot are
     /// not visible.
     ///
-    /// The id-tracker publishes new inserts only once every component has
-    /// reloaded, so readers never reach an offset a component cannot serve. Its
-    /// deletes are drained eagerly and cannot be replayed, so the attempted delta
-    /// is kept in `pending_reload` until every component has reloaded. If a
-    /// component fails mid-way, a later reload reconciles it with the tracker's
-    /// fresh delta and replays the result.
+    /// Draining the id-tracker advances its internal state and cannot be replayed,
+    /// so the delta is accumulated into `pending_reload` and only cleared once
+    /// every component has reloaded successfully. If a component fails mid-way the
+    /// delta is retained, and a later reload folds in the tracker's new changes and
+    /// replays the union — no component is left drifting on a partial reload.
+    ///
+    /// New inserts are published to the id-tracker's readers only after that, so
+    /// readers never reach an offset a component cannot serve.
     pub fn live_reload(
         &mut self,
         max_committed_id: Option<PointOffsetType>,
@@ -98,25 +100,25 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         let fs = &mut *reload_fs.get_mut();
 
-        // Read the tracker delta and reconcile it with whatever a previous reload left
+        // Drain the tracker delta and fold it into whatever a previous reload left
         // unapplied. This must happen before any component reload can fail, so the
         // accumulated delta survives an error and is replayed on the next call.
-        let staged = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
+        let fresh = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
         let mut pending = pending_reload.borrow_mut();
-        pending.reconcile(staged.delta());
+        pending.merge(fresh);
 
         log::trace!(target: "live-reload", "Pending live-reload in {} changes: {:?}", self.uuid, pending);
 
         if pending.is_empty() {
-            staged.commit(&mut *id_tracker.borrow_mut());
+            id_tracker.borrow_mut().publish_staged();
             fs.rotate_cache_file_info();
             return Ok(());
         }
 
         // Replay the full accumulated delta to every component. Bail on the first
-        // error without clearing `pending`, so the next reload retries it.
+        // error without clearing `pending`, so the next reload retries the union.
         {
-            // SAFETY: `reconcile` keeps both lists sorted ascending.
+            // SAFETY: `merge` keeps both lists sorted ascending.
             let deleted = unsafe { SortedSlice::new_unchecked(&pending.deleted) };
             let inserted = unsafe { SortedSlice::new_unchecked(&pending.inserted) };
 
@@ -134,7 +136,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
 
         // Every component is now in sync; publish the inserts, discard the applied
         // delta and rotate file info.
-        staged.commit(&mut *id_tracker.borrow_mut());
+        id_tracker.borrow_mut().publish_staged();
         *pending = LiveReloadResult::default();
         fs.rotate_cache_file_info();
 
