@@ -61,7 +61,7 @@ atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = { workspace = true }
 async-trait = { workspace = true }
-arc-swap = "1.9.1"
+arc-swap = { workspace = true }
 tonic = { workspace = true }
 uuid = { workspace = true }
 url = { workspace = true }

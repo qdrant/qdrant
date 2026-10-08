@@ -3,9 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
 use rand::{RngExt, rng};
 use segment::data_types::order_by::OrderByInterface;
 use segment::data_types::vectors::NamedQuery;
@@ -263,7 +262,7 @@ async fn test_retrieve_dedup() {
 async fn test_search_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let points = collection
         .search(
             CoreSearchRequest {
@@ -284,7 +283,7 @@ async fn test_search_dedup() {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .expect("failed to search");
     assert!(!points.is_empty(), "expected some points");

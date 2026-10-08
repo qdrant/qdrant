@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common::counter::hw::HwScale;
+use common::ambient::hw::HwScale;
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;

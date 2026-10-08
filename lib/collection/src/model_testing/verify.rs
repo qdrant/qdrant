@@ -2,8 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use api::rest::{VectorOutput, VectorStructOutput};
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::types::{DetailsLevel, TelemetryDetail};
 use segment::types::{PointIdType, VectorNameBuf, WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;

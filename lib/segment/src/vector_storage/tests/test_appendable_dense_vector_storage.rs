@@ -4,7 +4,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -37,7 +37,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for (i, vec) in points.iter().enumerate() {
         storage
@@ -153,7 +153,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
 
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     {
         let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
         {
@@ -216,7 +216,7 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     ];
     let mut id_tracker = create_id_tracker_fixture(points.len());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for (i, vec) in points.iter().enumerate() {
         storage
@@ -313,7 +313,7 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         vec![1.0, 0.0, 0.0, 0.0],
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     for (i, vec) in points.iter().enumerate() {
         storage
             .insert_vector(i as PointOffsetType, vec.as_slice().into())

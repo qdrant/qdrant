@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
 use blobstore::Blob;
-use common::counter::hw;
+use common::ambient;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UniversalWrite};
@@ -27,7 +27,7 @@ where
     pub(in super::super) fn load_from_on_disk(
         index: OnDiskMapIndex<N, S>,
     ) -> OperationResult<Self> {
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         let mut indexed_points = 0;
         let mut values_count = 0;

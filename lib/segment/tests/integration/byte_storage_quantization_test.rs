@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -341,7 +341,7 @@ fn test_quantization_over_typed_storage_hnsw(
         }
     }
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();

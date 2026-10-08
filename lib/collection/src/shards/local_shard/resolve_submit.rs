@@ -26,7 +26,7 @@
 //! and one tag can cover only one record — untagged or tag-sharing records
 //! break WAL-delta recovery. Splitting oversized resolutions is a follow-up.
 
-use common::counter::hw;
+use common::ambient;
 use shard::resolve::resolve_operation;
 use tokio::sync::oneshot;
 
@@ -101,10 +101,10 @@ impl LocalShard {
         // 3. Resolve the filter against segment state and rewrite the
         // operation to its id-based form.
         let segments = self.segments.clone();
-        let hw_acc = hw::current();
+        let handoff = ambient::current();
         let resolved = tokio::task::spawn_blocking(move || {
             let segments = segments.read();
-            let _hw = hw_acc.enter_guard();
+            let _scope = handoff.enter_guard();
             resolve_operation(&segments, operation)
         })
         .await??;

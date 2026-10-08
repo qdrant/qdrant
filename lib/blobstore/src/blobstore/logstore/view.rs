@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{UniversalRead, UserData};
 

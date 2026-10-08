@@ -1,4 +1,4 @@
-use common::counter::hw::HwScale;
+use common::ambient::hw::HwScale;
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;

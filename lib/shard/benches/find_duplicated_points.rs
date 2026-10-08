@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use common::counter::hw;
+use common::ambient;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::seq::IndexedMutRandom;
@@ -21,7 +21,7 @@ pub fn duplicate_bench(c: &mut Criterion) {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut segments = std::iter::repeat_with(|| empty_segment(dir.path()))
         .take(SEGMENT_COUNT)
         .collect::<Vec<_>>();

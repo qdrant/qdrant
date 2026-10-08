@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use ahash::HashSet;
 use async_trait::async_trait;
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::flags::feature_flags;
 use common::reason::reason;
 use common::tar_ext;

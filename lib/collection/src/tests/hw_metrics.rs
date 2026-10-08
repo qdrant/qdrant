@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::hw::{HwMetric, HwSharedDrain};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hw::{HwFutureExt, HwMetric};
-use common::counter::{AmbientContext, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng, rng};
@@ -103,10 +103,10 @@ async fn test_hw_metrics_cancellation() {
     for _ in 0..12 {
         let outer_hw = Arc::new(HwSharedDrain::default());
         {
-            let hw_counter = AmbientContext::new_with_metrics_drain(outer_hw.clone());
+            let ctx = AmbientContext::request(outer_hw.clone());
             let search_res = shard
                 .do_search(req.clone(), &current_runtime, timeout)
-                .measured(hw_counter)
+                .measured(ctx)
                 .await;
 
             match search_res {

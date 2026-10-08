@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use cancel::{CancellationToken, DropGuard};
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use common::types::DeferredBehavior;
 use parking_lot::RwLock;

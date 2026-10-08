@@ -3,7 +3,7 @@ use std::fmt;
 use std::ops::Deref as _;
 use std::sync::Arc;
 
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use common::types::DeferredBehavior;
 use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey};

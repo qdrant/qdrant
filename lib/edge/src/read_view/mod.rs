@@ -7,8 +7,8 @@ mod shard_read_with_cancellation;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
-use common::uio_trace;
+use common::ambient;
+use common::ambient::trace;
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -75,12 +75,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         R: Send,
     {
         self.check_stopped()?;
-        let ctx = uio_trace::Context::current();
-        let result = hw::parallel(|acc| {
+        let ctx = trace::Context::current();
+        let result = ambient::parallel(|handoff| {
             let checked = |segment: &H| {
                 self.check_stopped()?;
-                let _hw = acc.enter_guard();
-                let result = ctx.in_scope(|| f(segment));
+                let _scope = handoff.enter_guard();
+                let result = ctx.enter(|| f(segment));
                 self.check_stopped()?;
                 result
             };

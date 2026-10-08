@@ -3,8 +3,7 @@ use std::num::NonZeroUsize;
 use std::ops::Deref as _;
 use std::time::Duration;
 
-use common::counter::hw;
-use common::counter::hw::{HwFutureExt, HwHandoff};
+use common::ambient::{self, AmbientFutureExt as _, Handoff};
 use common::reason::reason;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
@@ -60,10 +59,10 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
-        let hw_acc = if state.is_resharding() {
-            HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
+        let handoff = if state.is_resharding() {
+            Handoff::unmeasured(reason("Don't measure hw when resharding"))
         } else {
-            hw::current()
+            ambient::current()
         };
 
         // Decide whether to apply the operation in the current replica state.
@@ -126,7 +125,7 @@ impl ShardReplicaSet {
             Shard::Local(local_shard) => {
                 let outcome = local_shard
                     .submit_update(operation, effective_wait)
-                    .in_hw(hw_acc)
+                    .in_ambient(handoff)
                     .await?;
                 drop(local);
                 await_update_result(outcome, effective_timeout).await?
@@ -135,7 +134,7 @@ impl ShardReplicaSet {
                 shard
                     .get()
                     .update(operation, effective_wait, effective_timeout)
-                    .in_hw(hw_acc)
+                    .in_ambient(handoff)
                     .await?
             }
         };
@@ -164,10 +163,10 @@ impl ShardReplicaSet {
         };
 
         let peer_state = self.peer_state(leader_peer);
-        let hw_acc = if peer_state.is_some_and(|state| state.is_resharding()) {
-            HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
+        let handoff = if peer_state.is_some_and(|state| state.is_resharding()) {
+            Handoff::unmeasured(reason("Don't measure hw when resharding"))
         } else {
-            hw::current()
+            ambient::current()
         };
 
         // If we are the leader, run the update from this replica set
@@ -181,11 +180,11 @@ impl ShardReplicaSet {
             };
 
             self.update(operation, wait, timeout, update_only_existing)
-                .in_hw(hw_acc)
+                .in_ambient(handoff)
                 .await
         } else {
             // Forward the update to the designated leader
-            self.forward_update(leader_peer, operation, wait, timeout, ordering).in_hw(hw_acc)
+            self.forward_update(leader_peer, operation, wait, timeout, ordering).in_ambient(handoff)
             .await
                 .map_err(|err| {
                     if err.is_transient() {

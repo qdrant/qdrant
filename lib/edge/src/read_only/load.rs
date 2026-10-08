@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
-use common::uio_trace;
+use common::ambient;
+use common::ambient::trace;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::StreamExt;
 use futures::future::join_all;
@@ -56,18 +56,21 @@ where
             (index, uuid, path, cached_fs)
         })
         .collect();
-    let ctx = uio_trace::Context::current();
+    let ctx = trace::Context::current();
+    let handoff = ambient::current();
     let staged_opens = Mutex::new(Vec::new());
     // Keep polling all listings on the caller while workers stage each ready segment.
     // An in-place scope leaves every pool worker available, including in a single-thread pool.
     pool.in_place_scope(|scope| {
         let ctx = &ctx;
+        let handoff = &handoff;
         let staged_opens = &staged_opens;
         futures::executor::block_on(async {
             while let Some((index, uuid, segment_path, cached_fs)) = listed_futs.next().await {
                 check_process_stopped(is_stopped)?;
                 scope.spawn(move |_| {
-                    let staged_open = ctx.in_scope(|| {
+                    let _scope = handoff.enter_guard();
+                    let staged_open = ctx.enter(|| {
                         cached_fs.and_then(|cached_fs| {
                             ReadOnlySegment::<S>::schedule_open_with_cached_fs(
                                 cached_fs,
@@ -110,21 +113,26 @@ where
     check_process_stopped(is_stopped)?;
 
     // Assemble from the resolved handles on the pool.
-    let loaded = pool.install(|| {
-        staged
-            .into_par_iter()
-            .filter_map(|(uuid, staged)| match ctx.in_scope(|| staged.finish(fs)) {
-                Ok(segment) => Some(Ok((uuid, segment))),
-                Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
-                Err(err) => {
-                    log::log!(
-                        skip_level(&err),
-                        "read-only open: skipping unloadable segment {uuid}: {err}"
-                    );
-                    None
-                }
-            })
-            .collect::<OperationResult<Vec<_>>>()
+    let loaded = ambient::parallel(|handoff| {
+        pool.install(|| {
+            staged
+                .into_par_iter()
+                .filter_map(|(uuid, staged)| {
+                    let _scope = handoff.enter_guard();
+                    match ctx.enter(|| staged.finish(fs)) {
+                        Ok(segment) => Some(Ok((uuid, segment))),
+                        Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
+                        Err(err) => {
+                            log::log!(
+                                skip_level(&err),
+                                "read-only open: skipping unloadable segment {uuid}: {err}"
+                            );
+                            None
+                        }
+                    }
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })
     })?;
     check_process_stopped(is_stopped)?;
     Ok(loaded)
@@ -192,15 +200,15 @@ where
     check_process_stopped(is_stopped)?;
 
     let reloads: Vec<_> = segments.into_iter().zip(preloads).collect();
-    let ctx = uio_trace::Context::current();
-    let results = hw::parallel(|acc| {
+    let ctx = trace::Context::current();
+    let results = ambient::parallel(|handoff| {
         pool.install(|| {
             reloads
                 .into_par_iter()
                 .map(|((uuid, segment), (_, max_committed_id_res))| {
                     check_process_stopped(is_stopped)?;
-                    let _hw = acc.enter_guard();
-                    let result = ctx.in_scope(|| {
+                    let _scope = handoff.enter_guard();
+                    let result = ctx.enter(|| {
                         max_committed_id_res.and_then(|max_committed_id| {
                             segment.write().live_reload(max_committed_id)
                         })

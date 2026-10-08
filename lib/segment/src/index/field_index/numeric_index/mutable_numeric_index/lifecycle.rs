@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate, UniversalRead};
@@ -181,7 +182,7 @@ where
 
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryNumericIndex::default();
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, BlobstoreError>(
                 |idx, values: Vec<T>| {

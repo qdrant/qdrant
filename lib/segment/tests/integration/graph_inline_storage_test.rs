@@ -2,7 +2,7 @@ use std::assert_matches;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::flags::FeatureFlags;
 use common::generic_consts::Random;
 use common::types::DeferredBehavior;
@@ -122,7 +122,7 @@ fn plain_segment(
         payload_storage_type: PayloadStorageType::default(),
         id_tracker_memory: None,
     };
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let (mut segment, _) = build_segment(dir, &config, None, true).unwrap();
     for (idx, vector) in vectors.iter().enumerate() {
         segment
@@ -193,7 +193,7 @@ fn search_with(
 }
 
 fn stored_vector(segment: &impl ReadSegmentEntry, id: u64) -> Vec<f32> {
-    let vector = hw::test(|| segment.vector(DEFAULT_VECTOR_NAME, id.into()))
+    let vector = ambient::test(|| segment.vector(DEFAULT_VECTOR_NAME, id.into()))
         .unwrap()
         .unwrap();
     match vector {
@@ -282,7 +282,7 @@ fn test_graph_inline_storage_contract(
         );
     }
 
-    let scrolled = hw::test(|| {
+    let scrolled = ambient::test(|| {
         graph_backed.retrieve(
             &[0.into(), 7.into(), 99.into()],
             &WithPayload::default(),
@@ -294,7 +294,7 @@ fn test_graph_inline_storage_contract(
     .unwrap();
     assert_eq!(scrolled.len(), 3);
 
-    let ids = hw::test(|| {
+    let ids = ambient::test(|| {
         graph_backed.read_filtered(
             None,
             Some(NUM_VECTORS),

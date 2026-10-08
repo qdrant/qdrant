@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 #[expect(deprecated, reason = "legacy code")]

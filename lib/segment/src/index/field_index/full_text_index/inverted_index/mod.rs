@@ -439,9 +439,10 @@ pub trait InvertedIndex {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
+    use common::ambient::AmbientContext;
+    use common::ambient::hw::{self, HwMetric};
     use common::bitvec::BitVec;
-    use common::counter::AmbientContext;
-    use common::counter::hw::{self, HwMetric};
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::RngExt;
@@ -593,7 +594,7 @@ mod tests {
 
         let mmap_dir = tempfile::tempdir().unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
@@ -799,7 +800,7 @@ mod tests {
         // loaded copy sums the masked lengths.
         let build_total: u64 = lens_at_build.iter().copied().map(u64::from).sum();
         let live_total = build_total - u64::from(lens_at_build[victim]);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         assert_eq!(
             mmap.total_tokens(),
             Some(build_total),
@@ -967,7 +968,7 @@ mod tests {
     fn doc_len_and_total_tokens_agree_across_backends(
         #[values(false, true)] phrase_matching: bool,
     ) {
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
@@ -1074,7 +1075,7 @@ mod tests {
         let indexed_count = 10000;
         let deleted_count = 500;
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let mmap_dir = tempfile::tempdir().unwrap();
 
         let mut mut_index = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);

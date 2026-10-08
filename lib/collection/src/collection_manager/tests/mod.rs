@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hw;
+use common::ambient;
 use common::types::DeferredBehavior;
 use itertools::Itertools;
 use parking_lot::RwLock;
@@ -60,7 +60,7 @@ fn test_update_proxy_segments() {
         only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for i in 1..10 {
         let points = vec![
@@ -119,7 +119,7 @@ fn test_move_points_to_copy_on_write() {
 
     let proxy_id = wrap_proxy(segments.clone(), sid1);
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let points = vec![
         PointStructPersisted {
@@ -209,7 +209,7 @@ fn test_upsert_points_in_smallest_segment() {
     let mut segment2 = build_segment_2(dir.path());
     let segment3 = empty_segment(dir.path());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Fill segment 1 and 2 to the capacity
     for point_id in 0..100 {
@@ -273,7 +273,7 @@ fn test_upsert_points_in_smallest_segment() {
 #[test]
 fn test_delete_all_point_versions() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let point_id = ExtendedPointId::from(123);
     let old_vector = vec![0.0, 1.0, 2.0, 3.0];
@@ -414,7 +414,7 @@ fn test_proxy_shared_updates() {
     let idx1 = PointIdType::from(1);
     let idx2 = PointIdType::from(2);
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .upsert_point(10, idx1, only_default_vector(&old_vec))
@@ -542,7 +542,7 @@ fn test_proxy_shared_updates_same_version() {
     let idx1 = PointIdType::from(1);
     let idx2 = PointIdType::from(2);
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .upsert_point(10, idx1, only_default_vector(&old_vec))

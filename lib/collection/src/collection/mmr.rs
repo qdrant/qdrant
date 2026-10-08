@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use common::counter::hw;
+use common::ambient;
+use common::ambient::hw;
 use segment::types::ScoredPoint;
 use shard::query::MmrInternal;
 use shard::query::mmr::mmr_from_points_with_vector as mmr_from_points_with_vector_impl;
@@ -24,9 +25,9 @@ pub async fn mmr_from_points_with_vector(
         .get_params(&mmr.using)
         .and_then(|vector_params| vector_params.multivector_config);
 
-    let hw_acc = hw::current();
+    let handoff = ambient::current();
     let handle = search_runtime_handle.spawn_blocking(move || {
-        let _hw = hw_acc.enter_guard();
+        let _scope = handoff.enter_guard();
         hw::cpu_utilization().measure(|| {
             mmr_from_points_with_vector_impl(
                 points_with_vector,

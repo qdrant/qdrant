@@ -33,7 +33,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use serde_json::Value;
     use tempfile::TempDir;
@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn read_only_appendable_numeric_round_trip() {
         let dir = TempDir::with_prefix("read_only_numeric").unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut builder = NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_gridstore(

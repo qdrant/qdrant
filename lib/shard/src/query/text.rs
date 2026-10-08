@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::types::ScoreType;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::query_context::QueryContext;
@@ -101,7 +101,7 @@ pub fn init_text_query_context(
 ) -> QueryContext {
     // The threshold only picks between plain and indexed vector search.
     let mut query_context =
-        QueryContext::new(usize::MAX, hw::current()).with_is_stopped(is_stopped);
+        QueryContext::new(usize::MAX, ambient::current()).with_is_stopped(is_stopped);
     query_context.init_text_stats(field, terms.iter().cloned());
     query_context
 }

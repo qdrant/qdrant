@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
+use common::ambient;
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::bytes::bytes_to_human;
-use common::counter::hw;
 use common::disk::dir_disk_size;
 use common::fs::safe_delete_with_suffix;
 use common::progress_tracker::ProgressTracker;
@@ -695,7 +695,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     on_successful_start();
 
-    let _hw = hw::unmeasured_guard(reason("Internal operation"));
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     // Building the cow segment yields a `NewSegmentToken`; we register it below, once it is added to
     // the holder, and before the slow build can route writes into it.

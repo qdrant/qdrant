@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::condition_checker::ConditionChecker;
-use common::counter::HwMeasurementIteratorExt;
-use common::counter::hw::HwMetric;
 use common::either_variant::EitherVariant;
 use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
