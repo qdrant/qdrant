@@ -17,11 +17,13 @@
 //! | symmetric, 1      | AVX-512 VPOPCNTDQ, AVX2, SSE4.1+SSSE3 | NEON              |
 //! | symmetric, 2/4    | AVX-512 VNNI, AVX2, SSE4.1+SSSE3      | NEON + SDOT, NEON |
 //! | symmetric, 8      | AVX-512 VNNI, AVX2, SSE4.1            | NEON + SDOT, NEON |
+//! | 16, both paths    | AVX-512BW, AVX2, SSE4.1               | NEON              |
 //!
 //! On any other target the scalar reference kernels take over.
 
 pub mod hadamard;
 pub mod query;
+pub mod query16bit;
 pub mod query1bit;
 pub mod query2bit;
 pub mod query4bit;
@@ -120,6 +122,13 @@ pub use query8bit::{
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub use query8bit::{score_8bit_internal_neon, score_8bit_internal_neon_sdot};
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub use query16bit::score_16bit_internal_neon;
+pub use query16bit::{Query16bitSimd, score_16bit_internal, score_16bit_internal_scalar};
+#[cfg(target_arch = "x86_64")]
+pub use query16bit::{
+    score_16bit_internal_avx2, score_16bit_internal_avx512, score_16bit_internal_sse,
+};
 
 /// Test-only helpers shared by every `query{N}bit` submodule.
 ///

@@ -35,6 +35,7 @@ pub fn datatype_bits(datatype: VectorStorageDatatype) -> Option<TQBits> {
     match datatype {
         VectorStorageDatatype::Turbo4 => Some(TQBits::Bits4),
         VectorStorageDatatype::Turbo8 => Some(TQBits::Bits8),
+        VectorStorageDatatype::Turbo16 => Some(TQBits::Bits16),
         VectorStorageDatatype::Float32
         | VectorStorageDatatype::Float16
         | VectorStorageDatatype::Uint8 => None,
@@ -52,6 +53,7 @@ pub fn tq_bits(datatype: VectorStorageDatatype) -> TQBits {
 /// The datatype of a storage encoded with `quantizer`.
 pub(crate) fn storage_datatype(quantizer: &TurboQuantizer) -> VectorStorageDatatype {
     match quantizer.bits() {
+        TQBits::Bits16 => VectorStorageDatatype::Turbo16,
         TQBits::Bits8 => VectorStorageDatatype::Turbo8,
         TQBits::Bits4 => VectorStorageDatatype::Turbo4,
         bits @ (TQBits::Bits2 | TQBits::Bits1_5 | TQBits::Bits1) => {
@@ -255,7 +257,7 @@ mod tests {
             Distance::Dot,
             Distance::Manhattan,
         ];
-        for bits in [TQBits::Bits4, TQBits::Bits8] {
+        for bits in [TQBits::Bits4, TQBits::Bits8, TQBits::Bits16] {
             for distance in distances {
                 for dim in [1, 4, 5, 127, 256, 1023] {
                     assert_eq!(

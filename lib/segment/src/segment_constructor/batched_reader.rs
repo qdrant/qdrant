@@ -942,7 +942,8 @@ mod tests {
             VectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8,
             VectorStorageDatatype::Turbo4,
-            VectorStorageDatatype::Turbo8
+            VectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16
         )]
         datatype: VectorStorageDatatype,
         #[values(false, true)] multi: bool,

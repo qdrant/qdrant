@@ -51,6 +51,7 @@ pub fn deferred_point_offset(
         // Mirroring Uint8 (1 byte) until accurate accounting is implemented.
         Some(VectorStorageDatatype::Turbo4) => 1,
         Some(VectorStorageDatatype::Turbo8) => 1,
+        Some(VectorStorageDatatype::Turbo16) => 2,
         Some(VectorStorageDatatype::Float32) | None => 4,
     };
 

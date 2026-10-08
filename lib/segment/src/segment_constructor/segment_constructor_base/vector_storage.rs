@@ -57,15 +57,15 @@ fn open_mmap_vector_storage(
                 vector_config.distance,
                 memory,
             ),
-            VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
-                open_turbo_vector_storage(
-                    vector_storage_path,
-                    vector_config.size,
-                    vector_config.distance,
-                    tq_bits(storage_element_type),
-                    memory,
-                )
-            }
+            VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => open_turbo_vector_storage(
+                vector_storage_path,
+                vector_config.size,
+                vector_config.distance,
+                tq_bits(storage_element_type),
+                memory,
+            ),
         }
     }
 }

@@ -6,6 +6,7 @@ use quantization::turboquant::simd::{
     Query1bitSimd, Query1bitWideSimd, QuerySimd, score_1bit_internal, score_1bit_internal_scalar,
     score_2bit_internal, score_2bit_internal_scalar, score_4bit_internal,
     score_4bit_internal_scalar, score_8bit_internal, score_8bit_internal_scalar,
+    score_16bit_internal, score_16bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 use quantization::turboquant::simd::{
@@ -13,12 +14,13 @@ use quantization::turboquant::simd::{
     score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
     score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
     score_8bit_internal_avx2, score_8bit_internal_avx512_vnni, score_8bit_internal_sse,
+    score_16bit_internal_avx2, score_16bit_internal_avx512, score_16bit_internal_sse,
 };
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use quantization::turboquant::simd::{
     score_1bit_internal_neon, score_2bit_internal_neon, score_2bit_internal_neon_sdot,
     score_4bit_internal_neon, score_4bit_internal_neon_sdot, score_8bit_internal_neon,
-    score_8bit_internal_neon_sdot,
+    score_8bit_internal_neon_sdot, score_16bit_internal_neon,
 };
 use rand::prelude::SmallRng;
 use rand::seq::SliceRandom;
@@ -30,6 +32,7 @@ use rand::{RngExt, SeedableRng};
 ///   • odd chunk count → SDOT / AVX2 / AVX-512 leftover branch fires.
 ///   • `dim % chunk_dim` at its maximum → scalar tail helper does the most work.
 const DIMS_8BIT: &[usize] = &[128, 1535, 1536]; // 1535 = odd block count + maximal tail
+const DIMS_16BIT: &[usize] = &[128, 1535, 1536]; // 1535 = every tail path
 const DIMS_4BIT: &[usize] = &[128, 1534, 1536]; // 1534 = 95 chunks (odd) + 14-dim tail
 const DIMS_2BIT: &[usize] = &[128, 1532, 1536]; // 1532 = 95 chunks (odd) + 12-dim tail
 const DIMS_1BIT: &[usize] = &[128, 1528, 1536]; // 1528 = 11 blocks (odd) + 120-dim tail
@@ -792,8 +795,52 @@ fn bench_score_8bit_cold(c: &mut Criterion) {
     group.finish();
 }
 
+/// [`score_16bit_internal`] with both vectors cold from DRAM, as in
+/// [`bench_score_cold`].
+fn bench_score_16bit_cold(c: &mut Criterion) {
+    type Kernel = unsafe fn(&[u8], &[u8]) -> f32;
+    let mut kernels: Vec<(&str, Kernel)> = vec![
+        ("scalar", score_16bit_internal_scalar),
+        ("dispatch", score_16bit_internal),
+    ];
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    kernels.push(("neon", score_16bit_internal_neon));
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::is_x86_feature_detected!("sse4.1") {
+            kernels.push(("sse", score_16bit_internal_sse));
+        }
+        if std::is_x86_feature_detected!("avx2") {
+            kernels.push(("avx2", score_16bit_internal_avx2));
+        }
+        if std::is_x86_feature_detected!("avx512f") && std::is_x86_feature_detected!("avx512bw") {
+            kernels.push(("avx512", score_16bit_internal_avx512));
+        }
+    }
+
+    let mut group = c.benchmark_group("query16bit_score_cold");
+    for dim in dims(DIMS_16BIT) {
+        let pool = VectorPool::with_packed_bytes(2 * dim, 7);
+        group.throughput(Throughput::Elements(dim as u64));
+        for &(name, kernel) in &kernels {
+            group.bench_with_input(BenchmarkId::new(name, dim), &dim, |b, _| {
+                let mut cursor = 0usize;
+                b.iter(|| {
+                    let va = pool.vector(cursor);
+                    let vb = pool.vector(cursor + 1);
+                    cursor = cursor.wrapping_add(2);
+                    // SAFETY: only kernels the host supports are listed.
+                    unsafe { kernel(black_box(va), black_box(vb)) }
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
+    bench_score_16bit_cold,
     bench_score_8bit_cold,
     bench_dotprod_cold,
     bench_dotprod_scan,

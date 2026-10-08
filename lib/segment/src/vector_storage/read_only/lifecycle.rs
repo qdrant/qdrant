@@ -112,7 +112,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         fs, path, advice, populate,
                     )
                 }
-                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16 => {
                     ReadOnlyChunkedMultiTurboVectorStorage::<S>::preopen(fs, path, advice, populate)
                 }
             };
@@ -136,7 +138,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         fs, path, advice, populate,
                     )
                 }
-                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16 => {
                     ReadOnlyChunkedTurboVectorStorage::<S>::preopen(fs, path, populate)
                 }
             }
@@ -151,7 +155,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                 VectorStorageDatatype::Float16 => ReadOnlyImmutableDenseVectorStorage::<
                     ImmutableDenseVectorData<VectorElementTypeHalf, S>,
                 >::preopen(fs, path, populate),
-                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16 => {
                     ReadOnlyImmutableTurboVectorStorage::preopen(fs, path, populate)
                 }
             }
@@ -198,18 +204,18 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                             fs, path, graph, dim, distance,
                         )?,
                     )),
-                    VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
-                        Self::DenseTurboGraphInline(Box::new(
-                            ReadOnlyImmutableTurboVectorStorage::open_graph(
-                                fs,
-                                path,
-                                graph,
-                                dim,
-                                distance,
-                                tq_bits(datatype),
-                            )?,
-                        ))
-                    }
+                    VectorStorageDatatype::Turbo4
+                    | VectorStorageDatatype::Turbo8
+                    | VectorStorageDatatype::Turbo16 => Self::DenseTurboGraphInline(Box::new(
+                        ReadOnlyImmutableTurboVectorStorage::open_graph(
+                            fs,
+                            path,
+                            graph,
+                            dim,
+                            distance,
+                            tq_bits(datatype),
+                        )?,
+                    )),
                 }));
             }
             ReadOnlyLayout::Files {
@@ -256,7 +262,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         populate,
                     )?,
                 )),
-                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16 => {
                     Self::MultiDenseTurbo(Box::new(ReadOnlyChunkedMultiTurboVectorStorage::open(
                         fs,
                         path,
@@ -289,7 +297,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                         fs, path, dim, distance, advice, populate,
                     )?))
                 }
-                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16 => {
                     Self::DenseTurboChunked(Box::new(ReadOnlyChunkedTurboVectorStorage::open(
                         fs,
                         path,
@@ -311,7 +321,9 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
                 VectorStorageDatatype::Float16 => Self::DenseHalf(Box::new(
                     ReadOnlyImmutableDenseVectorStorage::open(fs, path, dim, distance, populate)?,
                 )),
-                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16 => {
                     Self::DenseTurbo(Box::new(ReadOnlyImmutableTurboVectorStorage::open(
                         fs,
                         path,

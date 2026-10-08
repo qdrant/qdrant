@@ -456,16 +456,19 @@ impl CollectionConfigInternal {
 
 impl CollectionParams {
     /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`,
-    /// `Turbo8`) storage datatype.
+    /// `Turbo8`, `Turbo16`) storage datatype.
     ///
     /// Its primary vector storage keeps TurboQuant-encoded codes in-place, so
     /// reading storage-native bytes yields those codes. Relocating them verbatim
     /// (raw shard transfer) avoids a lossy decode→encode round-trip that would
     /// otherwise drift the encoding.
     pub fn has_turbo_vector_storage(&self) -> bool {
-        self.vectors
-            .params_iter()
-            .any(|(_, params)| matches!(params.datatype, Some(Datatype::Turbo4 | Datatype::Turbo8)))
+        self.vectors.params_iter().any(|(_, params)| {
+            matches!(
+                params.datatype,
+                Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16)
+            )
+        })
     }
 
     pub fn empty() -> Self {
@@ -811,6 +814,7 @@ mod tests {
         // TurboQuant storage datatype.
         assert!(single(Some(Datatype::Turbo4)).has_turbo_vector_storage());
         assert!(single(Some(Datatype::Turbo8)).has_turbo_vector_storage());
+        assert!(single(Some(Datatype::Turbo16)).has_turbo_vector_storage());
     }
 
     #[test]

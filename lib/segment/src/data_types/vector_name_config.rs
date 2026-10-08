@@ -65,7 +65,7 @@ pub struct DenseVectorConfig {
     /// Configuration for multi-vector points (e.g., ColBERT)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multivector_config: Option<MultiVectorConfig>,
-    /// Element storage type (Float32, Float16, Uint8, Turbo4, Turbo8)
+    /// Element storage type (Float32, Float16, Uint8, Turbo4, Turbo8, Turbo16)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
 }
@@ -95,6 +95,9 @@ fn validate_sparse_datatype(datatype: &VectorStorageDatatype) -> Result<(), Vali
         }
         VectorStorageDatatype::Turbo8 => {
             return Err(common::validation::sparse_turbo8_unsupported_error());
+        }
+        VectorStorageDatatype::Turbo16 => {
+            return Err(common::validation::sparse_turbo16_unsupported_error());
         }
         VectorStorageDatatype::Float32
         | VectorStorageDatatype::Float16

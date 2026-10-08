@@ -86,6 +86,7 @@ pub enum VectorStorageDatatype {
     Turbo4,
     /// TurboQuant 8-bit storage.
     Turbo8,
+    Turbo16,
 }
 
 impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
@@ -96,6 +97,7 @@ impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
             VectorStorageDatatype::Uint8 => SegmentVectorStorageDatatype::Uint8,
             VectorStorageDatatype::Turbo4 => SegmentVectorStorageDatatype::Turbo4,
             VectorStorageDatatype::Turbo8 => SegmentVectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16 => SegmentVectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -108,6 +110,7 @@ impl From<SegmentVectorStorageDatatype> for VectorStorageDatatype {
             SegmentVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
             SegmentVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Turbo4,
             SegmentVectorStorageDatatype::Turbo8 => VectorStorageDatatype::Turbo8,
+            SegmentVectorStorageDatatype::Turbo16 => VectorStorageDatatype::Turbo16,
         }
     }
 }

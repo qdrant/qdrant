@@ -1021,9 +1021,13 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
         (VectorKind::Dense(_), VectorValue::Dense(v)) => {
             let stored = metric_preprocess(candidate, v);
             match candidate.datatype {
-                Some(datatype @ (Datatype::Turbo4 | Datatype::Turbo8)) => VectorValue::Dense(
-                    turbo_storage_roundtrip(&stored, candidate.distance, tq_bits(datatype.into())),
-                ),
+                Some(datatype @ (Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16)) => {
+                    VectorValue::Dense(turbo_storage_roundtrip(
+                        &stored,
+                        candidate.distance,
+                        tq_bits(datatype.into()),
+                    ))
+                }
                 datatype => match scalar_storage_roundtrip(datatype) {
                     Some(roundtrip) => VectorValue::Dense(roundtrip(&stored)),
                     None => VectorValue::Dense(stored),
@@ -1065,7 +1069,8 @@ pub(super) fn model_vector(name: &str, value: &VectorValue) -> VectorValue {
 fn metric_preprocess(candidate: &VectorCandidate, v: &[f32]) -> Vec<f32> {
     let v = v.to_vec();
     match candidate.datatype {
-        None | Some(Datatype::Float32 | Datatype::Turbo4 | Datatype::Turbo8) => {
+        None
+        | Some(Datatype::Float32 | Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16) => {
             candidate.distance.preprocess_vector::<VectorElementType>(v)
         }
         Some(Datatype::Float16) => candidate
@@ -1088,7 +1093,7 @@ fn scalar_storage_roundtrip(datatype: Option<Datatype>) -> Option<SliceRoundtrip
         Some(Datatype::Float16) => Some(primitive_storage_roundtrip::<VectorElementTypeHalf>),
         Some(Datatype::Uint8) => Some(primitive_storage_roundtrip::<VectorElementTypeByte>),
         Some(Datatype::Float32) | None => None,
-        Some(Datatype::Turbo4 | Datatype::Turbo8) => {
+        Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16) => {
             panic!("TurboQuant datatypes have no per-component scalar round-trip")
         }
     }
@@ -1117,10 +1122,12 @@ pub(super) fn dense_matches(name: &str, actual: &[f32], expected: &[f32]) -> boo
         return false;
     }
     match candidate_of(name).datatype {
-        Some(Datatype::Turbo4 | Datatype::Turbo8) => actual.iter().zip(expected).all(|(&a, &e)| {
-            let tol = 16.0 * f32::EPSILON * f32::max(a.abs(), e.abs());
-            (a - e).abs() <= tol
-        }),
+        Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16) => {
+            actual.iter().zip(expected).all(|(&a, &e)| {
+                let tol = 16.0 * f32::EPSILON * f32::max(a.abs(), e.abs());
+                (a - e).abs() <= tol
+            })
+        }
         // Float16 / Uint8 read-backs are exact: `model_vector` records the storage
         // round-trip, and re-storing a read-back reproduces it bit-for-bit.
         Some(Datatype::Float16 | Datatype::Uint8 | Datatype::Float32) | None => actual == expected,

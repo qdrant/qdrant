@@ -10,7 +10,7 @@ mod tests {
         CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, score_1bit_internal_scalar,
         score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
         score_4bit_internal_scalar, score_4bit_internal_weighted_scalar,
-        score_8bit_internal_scalar,
+        score_8bit_internal_scalar, score_16bit_internal_scalar,
     };
     use quantization::turboquant::{TQBits, TQMode, TQRotation};
     use rand::{RngExt, SeedableRng};
@@ -21,6 +21,7 @@ mod tests {
 
     const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512];
     const BITS: &[TQBits] = &[
+        TQBits::Bits16,
         TQBits::Bits8,
         TQBits::Bits4,
         TQBits::Bits2,
@@ -28,9 +29,9 @@ mod tests {
         TQBits::Bits1,
     ];
 
-    /// Bits8 has no TQ+ mode.
+    /// The grid widths (Bits8, Bits16) have no TQ+ mode.
     fn supported(bits: TQBits, mode: TQMode) -> bool {
-        !(bits == TQBits::Bits8 && mode == TQMode::Plus)
+        !(matches!(bits, TQBits::Bits8 | TQBits::Bits16) && mode == TQMode::Plus)
     }
 
     /// Absolute tolerance for an approximate score: an empirical per-bit
@@ -46,6 +47,7 @@ mod tests {
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.9,
             TQBits::Bits8 => 0.1,
+            TQBits::Bits16 => 0.01,
         };
         coef * signal_std
     }
@@ -85,6 +87,7 @@ mod tests {
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.7,
             TQBits::Bits8 => 0.08,
+            TQBits::Bits16 => 0.01,
         };
         per_sqrt_dim * (dim as f32).sqrt()
     }
@@ -99,7 +102,7 @@ mod tests {
             TQBits::Bits1_5 => 48,
             TQBits::Bits2 => 32,
             TQBits::Bits4 => 8,
-            TQBits::Bits8 => 1,
+            TQBits::Bits8 | TQBits::Bits16 => 1,
         };
         dim >= min_dim
     }
@@ -198,6 +201,7 @@ mod tests {
             (_, TQBits::Bits2) => score_2bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits4) => score_4bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits8) => score_8bit_internal_scalar(data_v1, data_v2),
+            (_, TQBits::Bits16) => score_16bit_internal_scalar(data_v1, data_v2),
         };
         let v1_scale = read_f32(extra_v1, 0);
         let v2_scale = read_f32(extra_v2, 0);

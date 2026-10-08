@@ -120,6 +120,16 @@ impl TurboQuantizer {
 
         let mut out = Vec::with_capacity(self.quantized_size());
 
+        if self.bits == TQBits::Bits16 {
+            // Already scaled onto the grid by `quantize_impl`.
+            for val in scaled {
+                let code = val.round().clamp(-32767.0, 32767.0) as i16;
+                out.extend_from_slice(&code.to_le_bytes());
+            }
+            out.extend_from_slice(extras.as_bytes());
+            return out;
+        }
+
         if self.bits == TQBits::Bits8 {
             // Already scaled onto the grid by `quantize_impl`.
             out.extend(scaled.into_iter().map(|val| {
@@ -170,10 +180,17 @@ impl TurboQuantizer {
         let (dim_part, extras) = self.split_vector(vec);
 
         let centroids = self.bits.get_centroids();
+        let wide = self.bits == TQBits::Bits16;
         let mut reader = BitReader::new(dim_part);
-        reader.set_bits(self.bits.bit_size());
+        if !wide {
+            reader.set_bits(self.bits.bit_size());
+        }
 
-        let iter = (0..self.padded_dim).map(move |_| {
+        let iter = (0..self.padded_dim).map(move |i| {
+            if wide {
+                // 16-bit codes are the grid values themselves.
+                return f64::from(i16::from_le_bytes([dim_part[2 * i], dim_part[2 * i + 1]]));
+            }
             let idx: u8 = reader.read();
             f64::from(centroids[idx as usize])
         });
@@ -211,6 +228,7 @@ impl TurboQuantizer {
             TQBits::Bits2 => dim.next_multiple_of(4), // 4 elements per byte
             TQBits::Bits4 => dim.next_multiple_of(2), // 2 elements per byte
             TQBits::Bits8 => dim,                     // 1 element per byte
+            TQBits::Bits16 => dim,                    // 2 bytes per element
         }
     }
 

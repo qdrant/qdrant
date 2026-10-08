@@ -79,7 +79,9 @@ impl UpdateOnlyQuantizedVectors {
         if vector_config.multivector_config.is_some()
             || matches!(
                 datatype,
-                VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8
+                VectorStorageDatatype::Turbo4
+                    | VectorStorageDatatype::Turbo8
+                    | VectorStorageDatatype::Turbo16
             )
         {
             return Ok(None);
@@ -172,7 +174,9 @@ impl UpdateOnlyQuantizedVectors {
             VectorStorageDatatype::Float32 => self.decode_raw_as::<VectorElementType>(bytes),
             VectorStorageDatatype::Uint8 => self.decode_raw_as::<VectorElementTypeByte>(bytes),
             VectorStorageDatatype::Float16 => self.decode_raw_as::<VectorElementTypeHalf>(bytes),
-            VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
+            VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => {
                 unreachable!("`Self::open` opens no overlay for a TurboQuant-datatype vector")
             }
         }

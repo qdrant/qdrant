@@ -17,7 +17,7 @@ pub(crate) fn open_graph_inline_vector_storage(
     index_path: &Path,
     vector_config: &VectorDataConfig,
 ) -> OperationResult<VectorStorageEnum> {
-    use VectorStorageDatatype::{Float16, Float32, Turbo4, Turbo8, Uint8};
+    use VectorStorageDatatype::{Float16, Float32, Turbo4, Turbo8, Turbo16, Uint8};
 
     let graph = HnswGraph::open(index_path, vector_config.storage_memory())?;
     let dim = vector_config.size;
@@ -33,7 +33,7 @@ pub(crate) fn open_graph_inline_vector_storage(
         Uint8 => VectorStorageEnum::DenseGraphInlineByte(
             GraphInlineDenseVectorStorage::open(graph, path, dim, distance).map(Box::new)?,
         ),
-        Turbo4 | Turbo8 => VectorStorageEnum::DenseTurboGraphInline(
+        Turbo4 | Turbo8 | Turbo16 => VectorStorageEnum::DenseTurboGraphInline(
             TurboVectorStorageImpl::open_graph(graph, path, dim, distance, tq_bits(datatype))
                 .map(Box::new)?,
         ),
