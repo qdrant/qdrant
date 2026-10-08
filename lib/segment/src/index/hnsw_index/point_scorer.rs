@@ -69,7 +69,11 @@ struct RemappedRawScorer<'a> {
 }
 
 impl RawScorer for RemappedRawScorer<'_> {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         let mut global = [0; VECTOR_READ_BATCH_SIZE];
         for (points, scores) in points
             .chunks(VECTOR_READ_BATCH_SIZE)
@@ -79,11 +83,12 @@ impl RawScorer for RemappedRawScorer<'_> {
             for (global, &local) in global.iter_mut().zip(points) {
                 *global = self.to_global[local as usize];
             }
-            self.inner.score_points(global, scores);
+            self.inner.score_points(global, scores)?;
         }
+        Ok(())
     }
 
-    fn score_point(&self, point: PointOffsetType) -> ScoreType {
+    fn score_point(&self, point: PointOffsetType) -> OperationResult<ScoreType> {
         self.inner.score_point(self.to_global[point as usize])
     }
 
