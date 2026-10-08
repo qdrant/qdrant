@@ -272,6 +272,6 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> OnDiskMapIndex<N, S> {
     }
 
     pub fn is_cold(&self) -> bool {
-        true
+        self.cold
     }
 }

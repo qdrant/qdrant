@@ -15,6 +15,8 @@ mod read_ops;
 pub struct OnDiskFullTextIndex<S: UniversalRead = MmapFile> {
     pub(in super::super) inverted_index: OnDiskInvertedIndex<S>,
     pub(in super::super) tokenizer: Tokenizer,
+    /// Whether the pages were left on disk at open rather than populated.
+    pub(super) cold: bool,
 }
 
 pub struct FullTextMmapIndexBuilder {

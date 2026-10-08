@@ -179,9 +179,7 @@ pub trait BoolIndexRead {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap {
-            is_on_disk: self.is_cold(),
-        }
+        StorageType::Mmap { is_on_disk: false }
     }
 
     /// Materializes both bitmaps for its counts, unlike the null index's

@@ -260,6 +260,6 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     pub fn is_cold(&self) -> bool {
-        true
+        self.cold
     }
 }

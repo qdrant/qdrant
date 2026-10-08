@@ -47,6 +47,7 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 
@@ -203,6 +204,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let on_disk_index = OnDiskFullTextIndex {
             inverted_index,
             tokenizer,
+            cold: is_on_disk,
         };
 
         let text_index = if is_on_disk {

@@ -297,7 +297,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
     }
 
     pub fn is_cold(&self) -> bool {
-        !self.config.populate.unwrap_or(false)
+        !self.populate.to_bool::<S>()
     }
 
     pub fn heap_size_bytes(&self) -> usize {

@@ -88,9 +88,7 @@ where
         match &self.inner {
             NumericIndexInner::Mutable(index) => index.storage_type(),
             NumericIndexInner::Immutable(index) => index.storage_type(),
-            NumericIndexInner::OnDisk(index) => StorageType::Mmap {
-                is_on_disk: index.is_cold(),
-            },
+            NumericIndexInner::OnDisk(_) => StorageType::Mmap { is_on_disk: true },
         }
     }
 

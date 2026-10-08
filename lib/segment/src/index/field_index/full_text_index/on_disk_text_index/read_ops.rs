@@ -117,6 +117,6 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     }
 
     fn is_cold(&self) -> bool {
-        true
+        self.cold
     }
 }
