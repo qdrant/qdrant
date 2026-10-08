@@ -255,12 +255,12 @@ impl ClusterState {
 
         for (shard_id, peer_id, transfers) in validated {
             for key in transfers {
-                if transfer_by_key(
+                let transfer = transfer_by_key(
                     planned.collection(collection).expect("collection exists"),
                     key,
-                )
-                .is_none()
-                {
+                );
+
+                if transfer.is_none() {
                     continue;
                 }
 
@@ -462,9 +462,10 @@ impl ClusterState {
         let base_id = max_id + 1;
 
         let init_state = initial_state.unwrap_or_else(|| {
-            if context.is_distributed
-                && self.all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE)
-            {
+            let use_initializing = context.is_distributed
+                && self.all_peers_at_version(&CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE);
+
+            if use_initializing {
                 ReplicaState::Initializing
             } else {
                 ReplicaState::Active
@@ -512,10 +513,9 @@ impl ClusterState {
         let mut planned = self.clone();
         let mut actions = Actions::new();
 
-        if let Some(resharding) = collection_state
-            .resharding
-            .as_ref()
-            .filter(|resharding| resharding.shard_key.as_ref() == Some(shard_key))
+        if let Some(resharding) = &collection_state.resharding
+            && let Some(resharding_shard_key) = &resharding.shard_key
+            && resharding_shard_key == shard_key
         {
             let abort = self.plan_abort_resharding(
                 context,
@@ -524,11 +524,13 @@ impl ClusterState {
                 true,
                 AbortReshardingScope::default(),
             )?;
+
             apply_actions(&mut planned, &abort);
             actions.extend(abort);
         }
 
         let collection_state = planned.collection(&collection).expect("collection exists");
+
         let Some(shard_ids) = collection_state.shards_key_mapping.get(shard_key) else {
             return Ok(actions);
         };
@@ -848,32 +850,7 @@ impl ClusterState {
         }];
 
         if key.direction == ReshardingDirection::Down {
-            for (&shard_id, shard) in &state.shards {
-                if !shard_belongs_to_key(state, shard_id, key.shard_key.as_ref()) {
-                    continue;
-                }
-
-                if shard_id == key.shard_id {
-                    continue;
-                }
-
-                for (&peer_id, &replica_state) in &shard.replicas {
-                    if !replica_state.is_resharding() {
-                        continue;
-                    }
-
-                    if scope.skip_replica == Some((shard_id, peer_id)) {
-                        continue;
-                    }
-
-                    actions.push(Action::SetReplicaState {
-                        collection: collection.clone(),
-                        shard_id,
-                        peer_id,
-                        state: ReplicaState::Active,
-                    });
-                }
-            }
+            actions.extend(self.plan_restore_resharding_replicas(&collection, key, scope));
 
             actions.push(Action::DeleteMigratedPoints {
                 collection: collection.clone(),
@@ -887,40 +864,7 @@ impl ClusterState {
         });
 
         if key.direction == ReshardingDirection::Up {
-            let is_auto_sharding =
-                state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
-
-            if is_auto_sharding {
-                // TODO: When starting resharding, validate that auto-sharding scale-up targets
-                // the next shard ID, so a malformed entry targeting shard 0 cannot panic here
-                let shard_number = NonZeroU32::new(key.shard_id)
-                    .expect("cannot have zero shards after aborting resharding up");
-
-                if state.config.params.shard_number != shard_number {
-                    actions.push(Action::SetShardNumber {
-                        collection: collection.clone(),
-                        shard_number,
-                    });
-                }
-            } else if let Some(shard_key) = &key.shard_key
-                && state
-                    .shards_key_mapping
-                    .get(shard_key)
-                    .is_some_and(|shard_ids| shard_ids.contains(&key.shard_id))
-            {
-                actions.push(Action::RemoveShardFromKeyMapping {
-                    collection: collection.clone(),
-                    shard_id: key.shard_id,
-                    shard_key: shard_key.clone(),
-                });
-            }
-
-            if state.shards.contains_key(&key.shard_id) {
-                actions.push(Action::DropShard {
-                    collection: collection.clone(),
-                    shard_id: key.shard_id,
-                });
-            }
+            actions.extend(self.plan_abort_resharding_up(&collection, key));
         }
 
         let mut transfers: Vec<_> = state
@@ -966,6 +910,86 @@ impl ClusterState {
         });
 
         Ok(actions)
+    }
+
+    fn plan_restore_resharding_replicas(
+        &self,
+        collection: &str,
+        key: &ReshardKey,
+        scope: AbortReshardingScope,
+    ) -> Actions {
+        let state = self.collection(collection).expect("collection exists");
+
+        let mut actions = Actions::new();
+        for (&shard_id, shard) in &state.shards {
+            if !shard_belongs_to_key(state, shard_id, key.shard_key.as_ref()) {
+                continue;
+            }
+
+            if shard_id == key.shard_id {
+                continue;
+            }
+
+            for (&peer_id, &replica_state) in &shard.replicas {
+                if !replica_state.is_resharding() {
+                    continue;
+                }
+
+                if scope.skip_replica == Some((shard_id, peer_id)) {
+                    continue;
+                }
+
+                actions.push(Action::SetReplicaState {
+                    collection: collection.into(),
+                    shard_id,
+                    peer_id,
+                    state: ReplicaState::Active,
+                });
+            }
+        }
+
+        actions
+    }
+
+    fn plan_abort_resharding_up(&self, collection: &str, key: &ReshardKey) -> Actions {
+        let state = self.collection(collection).expect("collection exists");
+
+        let mut actions = Actions::new();
+
+        let is_auto_sharding =
+            state.config.params.sharding_method.unwrap_or_default() == ShardingMethod::Auto;
+
+        if is_auto_sharding {
+            // TODO: When starting resharding, validate that auto-sharding scale-up targets
+            //       the next shard ID, so a malformed entry targeting shard 0 cannot panic here
+            let shard_number = NonZeroU32::new(key.shard_id)
+                .expect("cannot have zero shards after aborting resharding up");
+
+            if state.config.params.shard_number != shard_number {
+                actions.push(Action::SetShardNumber {
+                    collection: collection.into(),
+                    shard_number,
+                });
+            }
+        } else if let Some(shard_key) = &key.shard_key
+            && let Some(shard_ids) = state.shards_key_mapping.get(shard_key)
+            && shard_ids.contains(&key.shard_id)
+        {
+            actions.push(Action::RemoveShardFromKeyMapping {
+                collection: collection.into(),
+                shard_id: key.shard_id,
+                shard_key: shard_key.clone(),
+            });
+        }
+
+        if state.shards.contains_key(&key.shard_id) {
+            actions.push(Action::DropShard {
+                collection: collection.into(),
+                shard_id: key.shard_id,
+            });
+        }
+
+        actions
     }
 
     pub fn plan_transfer(
@@ -1089,17 +1113,18 @@ impl ClusterState {
             Some(overwrite) => state.config.optimizer_config.update(overwrite),
             None => state.config.optimizer_config.clone(),
         };
+
         let prevent_unoptimized = optimizers.prevent_unoptimized.unwrap_or(false);
 
-        if prevent_unoptimized {
-            Ok(ShardTransferMethod::Snapshot)
+        let method = if prevent_unoptimized {
+            ShardTransferMethod::Snapshot
         } else {
-            let method = context
+            context
                 .default_shard_transfer_method
-                .unwrap_or(ShardTransferMethod::StreamRecords);
+                .unwrap_or(ShardTransferMethod::StreamRecords)
+        };
 
-            Ok(method)
-        }
+        Ok(method)
     }
 
     fn plan_restart_transfer(
@@ -1219,7 +1244,9 @@ impl ClusterState {
         transfer: &ShardTransfer,
     ) -> StorageResult<Actions> {
         let state = self.collection(&collection).expect("collection exists");
+
         let key = transfer.key();
+
         if transfer_by_key(state, key).is_none() {
             return Err(missing_transfer(key));
         }
@@ -1228,14 +1255,14 @@ impl ClusterState {
             collection: collection.clone(),
             key,
         }];
+
         let is_resharding = transfer.is_resharding();
         let destination_shard = transfer.to_shard_id.unwrap_or(transfer.shard_id);
-        let mut destination_active = false;
 
-        if state
-            .shards
-            .get(&destination_shard)
-            .is_some_and(|shard| shard.replicas.contains_key(&transfer.to))
+        let mut is_destination_active = false;
+
+        if let Some(shard) = state.shards.get(&destination_shard)
+            && shard.replicas.contains_key(&transfer.to)
         {
             let replica_state = if is_resharding {
                 match state.resharding.as_ref().map(|state| state.direction) {
@@ -1246,37 +1273,40 @@ impl ClusterState {
             } else {
                 ReplicaState::Active
             };
-            destination_active = replica_state == ReplicaState::Active;
+
             actions.push(Action::SetReplicaState {
                 collection: collection.clone(),
                 shard_id: destination_shard,
                 peer_id: transfer.to,
                 state: replica_state,
             });
+
+            is_destination_active = replica_state == ReplicaState::Active;
         }
 
-        if state.shards.contains_key(&transfer.shard_id) {
-            if transfer.sync || is_resharding {
-                if context.peer_id == transfer.from {
-                    actions.push(Action::UnproxifyShard {
-                        collection: collection.clone(),
-                        shard_id: transfer.shard_id,
-                    });
-                }
-            } else if destination_active {
-                if context.peer_id == transfer.from {
-                    actions.push(Action::InvalidateCleanLocalShards {
-                        collection: collection.clone(),
-                        shard_ids: vec![transfer.shard_id],
-                    });
-                }
+        let source_exists = state.shards.contains_key(&transfer.shard_id);
+        let keep_source = transfer.sync || is_resharding;
 
-                actions.push(Action::RemoveReplica {
+        if source_exists && keep_source && context.peer_id == transfer.from {
+            actions.push(Action::UnproxifyShard {
+                collection: collection.clone(),
+                shard_id: transfer.shard_id,
+            });
+        }
+
+        if source_exists && !keep_source && is_destination_active {
+            if context.peer_id == transfer.from {
+                actions.push(Action::InvalidateCleanLocalShards {
                     collection: collection.clone(),
-                    shard_id: transfer.shard_id,
-                    peer_id: transfer.from,
+                    shard_ids: vec![transfer.shard_id],
                 });
             }
+
+            actions.push(Action::RemoveReplica {
+                collection: collection.clone(),
+                shard_id: transfer.shard_id,
+                peer_id: transfer.from,
+            });
         }
 
         actions.push(Action::UnregisterTransfer {
@@ -1373,15 +1403,17 @@ impl ClusterState {
         scope: AbortTransferScope,
     ) -> StorageResult<Actions> {
         let state = self.collection(&collection).expect("collection exists");
+
         let Some(transfer) = transfer_by_key(state, key).cloned() else {
             return Err(missing_transfer(key));
         };
 
         let mut actions = Actions::new();
+
         if transfer.is_resharding()
             && let Some(resharding) = &state.resharding
         {
-            actions.extend(self.plan_abort_resharding(
+            let abort = self.plan_abort_resharding(
                 context,
                 collection.clone(),
                 &resharding.key(),
@@ -1390,7 +1422,9 @@ impl ClusterState {
                     skip_transfer: Some(key),
                     ..Default::default()
                 },
-            )?);
+            )?;
+
+            actions.extend(abort);
         }
 
         actions.extend(self.plan_abort_transfer_record(context, collection, &transfer, scope));
@@ -1405,22 +1439,27 @@ impl ClusterState {
         scope: AbortTransferScope,
     ) -> Actions {
         let state = self.collection(&collection).expect("collection exists");
+
         let key = transfer.key();
-        let destination_shard = key.to_shard_id.unwrap_or(key.shard_id);
+
         let mut actions = vec![Action::StopTransferDriver {
             collection: collection.clone(),
             key,
         }];
 
-        if scope.skip_replica != Some((destination_shard, transfer.to))
-            && state
-                .shards
-                .get(&destination_shard)
-                .is_some_and(|shard| shard.replicas.contains_key(&transfer.to))
+        let destination_shard = key.to_shard_id.unwrap_or(key.shard_id);
+
+        // Mark an existing destination replica `Dead` for a sync transfer,
+        // or remove it for a move, unless the caller removes it.
+        //
+        // Resharding transfers skip this step because `plan_abort_resharding`
+        // restores replica states or drops the new shard.
+        if !transfer.is_resharding()
+            && scope.skip_replica != Some((destination_shard, transfer.to))
+            && let Some(shard) = state.shards.get(&destination_shard)
+            && shard.replicas.contains_key(&transfer.to)
         {
-            if transfer.is_resharding() {
-                // Resharding abort restores replica state as part of its own cascade
-            } else if transfer.sync {
+            if transfer.sync {
                 actions.push(Action::SetReplicaState {
                     collection: collection.clone(),
                     shard_id: destination_shard,
@@ -1470,41 +1509,44 @@ impl ClusterState {
             state: new_state,
             from_state,
         } = op;
+
         let collection = self.resolve_collection(collection_name)?;
         let state = self.collection(&collection).expect("collection exists");
 
         let Some(shard) = state.shards.get(&shard_id) else {
             if new_state == ReplicaState::Dead
-                && let Some(resharding) = state
-                    .resharding
-                    .as_ref()
-                    .filter(|resharding| resharding.shard_id == shard_id)
+                && let Some(resharding) = &state.resharding
+                && resharding.shard_id == shard_id
             {
-                return self.plan_abort_resharding(
+                let abort = self.plan_abort_resharding(
                     context,
                     collection,
                     &resharding.key(),
                     false,
                     AbortReshardingScope::default(),
-                );
+                )?;
+
+                return Ok(abort);
             }
 
             return Err(StorageError::not_found(format!("shard {shard_id}")));
         };
 
-        let current_state = shard.replicas.get(&peer_id).copied();
         let peer_exists = self.peer_address_by_id.contains_key(&peer_id);
+        let current_state = shard.replicas.get(&peer_id).copied();
+
         if !peer_exists && current_state.is_none() {
             return Err(StorageError::bad_input(format!(
-                "Can't set replica {peer_id}:{shard_id} state to {new_state:?}, because replica \
-                 {peer_id}:{shard_id} does not exist and peer {peer_id} is not part of the cluster",
+                "Can't set replica {peer_id}:{shard_id} state to {new_state:?}, \
+                 because replica {peer_id}:{shard_id} does not exist \
+                 and peer {peer_id} is not part of the cluster",
             )));
         }
 
         if from_state.is_some() && current_state != from_state {
             return Err(StorageError::bad_input(format!(
-                "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected \
-                 {from_state:?}"
+                "Replica {peer_id} of shard {shard_id} has state {current_state:?}, \
+                 but expected {from_state:?}"
             )));
         }
 
@@ -1518,7 +1560,8 @@ impl ClusterState {
         let mut actions = Actions::new();
 
         if new_state == ReplicaState::Dead
-            && current_state.is_some_and(|state| state.is_resharding())
+            && let Some(current_state) = current_state
+            && current_state.is_resharding()
             && let Some(resharding) = &state.resharding
         {
             let abort = self.plan_abort_resharding(
@@ -1531,23 +1574,27 @@ impl ClusterState {
                     ..Default::default()
                 },
             )?;
+
             apply_actions(&mut planned, &abort);
             actions.extend(abort);
 
-            if !planned
+            let shard_exists = planned
                 .collection(&collection)
                 .expect("collection exists")
                 .shards
-                .contains_key(&shard_id)
-            {
+                .contains_key(&shard_id);
+
+            if !shard_exists {
                 return Ok(actions);
             }
         }
 
         if new_state == ReplicaState::Dead {
             let planned_collection = planned.collection(&collection).expect("collection exists");
+
             let fixed_cancellation =
                 planned.all_peers_at_version(&ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION);
+
             let mut transfers: Vec<_> = planned_collection
                 .transfers
                 .iter()
@@ -1561,6 +1608,7 @@ impl ClusterState {
                 })
                 .map(ShardTransfer::key)
                 .collect();
+
             transfers.sort_by_key(|key| (key.shard_id, key.to_shard_id, key.from, key.to));
 
             for key in transfers {
@@ -1708,9 +1756,8 @@ fn is_last_source_of_truth(
         .collect();
 
     if active_peers.is_empty()
-        && replicas.get(&peer_id).is_some_and(|state| {
-            matches!(state, ReplicaState::Initializing | ReplicaState::Listener)
-        })
+        && let Some(state) = replicas.get(&peer_id)
+        && matches!(state, ReplicaState::Initializing | ReplicaState::Listener)
     {
         return true;
     }
@@ -1756,11 +1803,12 @@ fn validate_transfer(
     peer_addresses: &crate::types::PeerAddressById,
     state: &collection::collection_state::State,
 ) -> StorageResult<()> {
-    let Some(source_replicas) = state
+    let source_replicas = state
         .shards
         .get(&transfer.shard_id)
-        .map(|shard| &shard.replicas)
-    else {
+        .map(|shard| &shard.replicas);
+
+    let Some(source_replicas) = source_replicas else {
         return Err(StorageError::bad_request(format!(
             "Shard {} does not exist",
             transfer.shard_id,
@@ -1780,10 +1828,12 @@ fn validate_transfer(
         )));
     }
 
-    if !matches!(
+    let is_active_or_resharding_scale_down = matches!(
         source_replicas.get(&transfer.from),
         Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown),
-    ) {
+    );
+
+    if !is_active_or_resharding_scale_down {
         return Err(StorageError::bad_request(format!(
             "Shard {} is not active on peer {}",
             transfer.shard_id, transfer.from,
@@ -1797,9 +1847,9 @@ fn validate_transfer(
 
     if transfer_by_key(state, transfer.key()).is_some() {
         let destination_replicas = destination_replicas.unwrap_or(source_replicas);
-        if destination_replicas
-            .get(&transfer.to)
-            .is_some_and(|state| state.is_partial_or_recovery())
+
+        if let Some(replica_state) = destination_replicas.get(&transfer.to)
+            && replica_state.is_partial_or_recovery()
         {
             return Err(StorageError::bad_request(format!(
                 "Shard {} is already involved in transfer {} -> {}",
@@ -1808,7 +1858,7 @@ fn validate_transfer(
         }
     }
 
-    if let Some(existing) = state
+    let conflicting_transfer = state
         .transfers
         .iter()
         .filter(|existing| {
@@ -1819,84 +1869,79 @@ fn validate_transfer(
                 || existing.to == transfer.from
                 || existing.from == transfer.to
                 || existing.to == transfer.to
-        })
-    {
+        });
+
+    if let Some(existing) = conflicting_transfer {
         return Err(StorageError::bad_request(format!(
             "Shard {} is already involved in transfer {} -> {}",
             transfer.shard_id, existing.from, existing.to,
         )));
     }
 
-    if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
-        let Some(to_shard_id) = transfer.to_shard_id else {
-            return Err(StorageError::bad_request(
-                "Target shard is not set for resharding transfer",
-            ));
-        };
-        let Some(destination_replicas) = destination_replicas else {
-            return Err(StorageError::bad_request(format!(
-                "Destination shard {to_shard_id} does not exist",
-            )));
-        };
-        if transfer.shard_id == to_shard_id {
-            return Err(StorageError::bad_request(format!(
-                "Source and target shard must be different for resharding transfer, both are \
-                 {to_shard_id}",
-            )));
-        }
-        if destination_replicas.get(&transfer.to) == Some(&ReplicaState::Dead) {
-            return Err(StorageError::bad_request(format!(
-                "Resharding shard transfer can't be started, because destination shard {}/{to_shard_id} is dead",
-                transfer.to,
-            )));
-        }
+    let is_resharding = transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords);
 
-        let source_key = state
-            .shards_key_mapping
-            .iter()
-            .find(|(_, shard_ids)| shard_ids.contains(&transfer.shard_id))
-            .map(|(key, _)| key);
-
-        let target_key = state
-            .shards_key_mapping
-            .iter()
-            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
-            .map(|(key, _)| key);
-
-        if source_key != target_key {
-            return Err(StorageError::bad_request(format!(
-                "Source and target shard must have the same shard key, but they have \
-                 {source_key:?} and {target_key:?}",
-            )));
-        }
+    let (transfer_kind, transfer_name) = if is_resharding {
+        ("resharding", "Resharding")
     } else if transfer.filter.is_some() {
-        let Some(to_shard_id) = transfer.to_shard_id else {
-            return Err(StorageError::bad_request(
-                "Target shard is not set for filtered points transfer",
-            ));
-        };
-        let Some(destination_replicas) = destination_replicas else {
+        ("filtered points", "Filtered")
+    } else {
+        if let Some(to_shard_id) = transfer.to_shard_id {
             return Err(StorageError::bad_request(format!(
-                "Destination shard {to_shard_id} does not exist",
-            )));
-        };
-        if transfer.shard_id == to_shard_id {
-            return Err(StorageError::bad_request(format!(
-                "Source and target shard must be different for filtered points transfer, both are \
-                 {to_shard_id}",
+                "Target shard {to_shard_id} can only be set for {:?} \
+                 or filtered streaming records transfers",
+                ShardTransferMethod::ReshardingStreamRecords,
             )));
         }
-        if destination_replicas.get(&transfer.to) == Some(&ReplicaState::Dead) {
-            return Err(StorageError::bad_request(format!(
-                "Filtered shard transfer can't be started, because destination shard {}/{to_shard_id} is dead",
-                transfer.to,
-            )));
-        }
-    } else if let Some(to_shard_id) = transfer.to_shard_id {
+
+        return Ok(());
+    };
+
+    let Some(to_shard_id) = transfer.to_shard_id else {
         return Err(StorageError::bad_request(format!(
-            "Target shard {to_shard_id} can only be set for {:?} or filtered streaming records \
-             transfers",
-            ShardTransferMethod::ReshardingStreamRecords,
+            "Target shard is not set for {transfer_kind} transfer",
+        )));
+    };
+
+    let Some(destination_replicas) = destination_replicas else {
+        return Err(StorageError::bad_request(format!(
+            "Destination shard {to_shard_id} does not exist",
+        )));
+    };
+
+    if transfer.shard_id == to_shard_id {
+        return Err(StorageError::bad_request(format!(
+            "Source and target shard must be different for {transfer_kind} transfer, both are \
+             {to_shard_id}",
+        )));
+    }
+
+    if destination_replicas.get(&transfer.to) == Some(&ReplicaState::Dead) {
+        return Err(StorageError::bad_request(format!(
+            "{transfer_name} shard transfer can't be started, because destination shard {}/{to_shard_id} is dead",
+            transfer.to,
+        )));
+    }
+
+    if !is_resharding {
+        return Ok(());
+    }
+
+    let source_key = state
+        .shards_key_mapping
+        .iter()
+        .find(|(_, shard_ids)| shard_ids.contains(&transfer.shard_id))
+        .map(|(key, _)| key);
+
+    let target_key = state
+        .shards_key_mapping
+        .iter()
+        .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+        .map(|(key, _)| key);
+
+    if source_key != target_key {
+        return Err(StorageError::bad_request(format!(
+            "Source and target shard must have the same shard key, but they have \
+             {source_key:?} and {target_key:?}",
         )));
     }
 
