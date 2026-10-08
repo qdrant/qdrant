@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_geo_index::read_only::ReadOnlyAppendableGeoIndex;
@@ -51,8 +52,9 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        max_point_offset: PointOffsetType,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableGeoIndex::open(fs, dir)?.map(Self::Appendable))
+        Ok(ReadOnlyAppendableGeoIndex::open(fs, dir, max_point_offset)?.map(Self::Appendable))
     }
 
     /// Read-only mirror of [`GeoIndex::new_immutable`][1]: open the immutable

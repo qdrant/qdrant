@@ -88,7 +88,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> =
-            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf())
+            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf(), PointOffsetType::MAX)
                 .unwrap()
                 .unwrap();
 

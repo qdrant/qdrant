@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
 
 use super::super::Encodable;
@@ -45,11 +46,14 @@ where
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        max_point_offset: PointOffsetType,
     ) -> OperationResult<Option<Self>> {
         Ok(
-            ReadOnlyNumericIndexInner::open_appendable(fs, dir)?.map(|inner| Self {
-                inner,
-                _phantom: PhantomData,
+            ReadOnlyNumericIndexInner::open_appendable(fs, dir, max_point_offset)?.map(|inner| {
+                Self {
+                    inner,
+                    _phantom: PhantomData,
+                }
             }),
         )
     }

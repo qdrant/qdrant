@@ -28,6 +28,7 @@ pub struct ReadOnlyAppendableGeoIndex<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::counter::hw;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use tempfile::TempDir;
 
@@ -76,7 +77,7 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyAppendableGeoIndex<ReadOnly<MmapFile>> =
-            ReadOnlyAppendableGeoIndex::open(&fs, dir.path().to_path_buf())
+            ReadOnlyAppendableGeoIndex::open(&fs, dir.path().to_path_buf(), PointOffsetType::MAX)
                 .unwrap()
                 .unwrap();
 
