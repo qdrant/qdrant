@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::mutable_text_index::read_only::ReadOnlyAppendableFullTextIndex;
@@ -37,10 +38,14 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn open_appendable(
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
+        max_point_offset: PointOffsetType,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
         let scoring = config.scoring();
-        Ok(ReadOnlyAppendableFullTextIndex::open(fs, dir, config, scoring)?.map(Self::Appendable))
+        Ok(
+            ReadOnlyAppendableFullTextIndex::open(fs, dir, max_point_offset, config, scoring)?
+                .map(Self::Appendable),
+        )
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.
