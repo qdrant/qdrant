@@ -181,8 +181,8 @@ pub async fn handle_existing_collections(
         }
     }
 
-    if !alias_actions.is_empty() {
-        if let Err(error) = dispatcher_arc
+    if !alias_actions.is_empty()
+        && let Err(error) = dispatcher_arc
             .submit_collection_meta_op(
                 CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation {
                     actions: alias_actions,
@@ -191,8 +191,7 @@ pub async fn handle_existing_collections(
                 None,
             )
             .await
-        {
-            log::error!("Failed to migrate collection aliases to consensus: {error}");
-        }
+    {
+        log::error!("Failed to migrate collection aliases to consensus: {error}");
     }
 }
