@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use posting_list::CHUNK_LEN;
 
-use super::inverted_index::bm25::{Bm25Params, Bm25Query, Bm25Term};
+use super::inverted_index::bm25::{Bm25Accept, Bm25Params, Bm25Query, Bm25Term};
 use super::inverted_index::{Document, ParsedQuery, TokenId, TokenSet};
 use super::tokenizers::{Tokenizer, TokenizerTextKind};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
@@ -156,7 +156,7 @@ pub fn score_bm25<T: FullTextIndexRead>(
     terms: &[String],
     context: &TextQueryContext<'_>,
     params: Bm25Params,
-    accept: &dyn Fn(PointOffsetType) -> bool,
+    accept: &Bm25Accept<'_>,
     limit: usize,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -266,7 +266,7 @@ pub trait FullTextIndexRead {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>>;
