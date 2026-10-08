@@ -283,7 +283,7 @@ pub trait SegmentOptimizer: Sync {
                 // If we explicitly configure the placement, but the segment storage type uses
                 // something that doesn't match, warn about it
                 if let Some(config_memory) = config_memory
-                    && config_memory.is_on_disk() != config.is_on_disk()
+                    && config_memory.is_cold() != config.is_cold()
                 {
                     log::warn!(
                         "Collection config for vector {vector_name} has memory placement {config_memory:?} configured, but storage type for segment doesn't match it"

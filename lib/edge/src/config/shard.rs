@@ -223,7 +223,7 @@ impl EdgeConfig {
             })
             .collect();
 
-        let on_disk_payload = payload_storage_type.is_on_disk();
+        let on_disk_payload = payload_storage_type.is_cold();
 
         // Infer global hnsw_config from per-vector HNSW configs when all agree
         let hnsw_configs: Vec<HnswConfig> = vector_data

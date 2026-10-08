@@ -147,7 +147,7 @@ fn reopen_index(
                 .expect("Failed to reopen MutableGridstore index")
         }
         IndexType::OnDisk => {
-            // Reopen with is_on_disk = true (mmap directly)
+            // Reopen cold (mmap directly)
             FullTextIndex::new_mmap(
                 temp_dir.path().to_path_buf(),
                 config,
@@ -158,7 +158,7 @@ fn reopen_index(
             .expect("Failed to reopen ImmMmap index")
         }
         IndexType::Immutable => {
-            // Reopen with is_on_disk = false (load into RAM)
+            // Reopen pinned (load into RAM)
             // This is the path that will call ImmutableFullTextIndex::open_mmap
             FullTextIndex::new_mmap(
                 temp_dir.path().to_path_buf(),

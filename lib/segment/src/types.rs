@@ -799,7 +799,7 @@ impl Indexes {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             Indexes::Plain {} => false,
             Indexes::Hnsw(config) => config.memory_placement().is_cold(),
@@ -1710,7 +1710,7 @@ impl PayloadStorageType {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadStorageType::Mmap => true,
             PayloadStorageType::InRamMmap => false,
@@ -1772,11 +1772,11 @@ impl SegmentConfig {
 
     /// Check if any vector storage is on-disk
     pub fn is_any_on_disk(&self) -> bool {
-        self.vector_data.values().any(|config| config.is_on_disk())
+        self.vector_data.values().any(|config| config.is_cold())
             || self
                 .sparse_vector_data
                 .values()
-                .any(|config| config.index.index_type.is_on_disk())
+                .any(|config| config.index.index_type.is_mmap())
     }
 
     pub fn is_appendable(&self) -> bool {
@@ -1903,14 +1903,6 @@ impl Memory {
     /// in-RAM data is fully materialized on heap and never evicted.
     pub fn from_on_disk_heap(on_disk: bool) -> Self {
         if on_disk { Self::Cold } else { Self::Pinned }
-    }
-
-    /// Whether this placement corresponds to `on_disk = true` in the legacy options.
-    pub fn is_on_disk(self) -> bool {
-        match self {
-            Self::Cold => true,
-            Self::Cached | Self::Pinned => false,
-        }
     }
 
     /// Whether data is left on disk and paged in on demand, rather than held in RAM. Reads of
@@ -2286,7 +2278,7 @@ impl VectorDataConfig {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         self.storage_memory().is_cold()
     }
 }
@@ -2302,8 +2294,8 @@ pub enum SparseVectorStorageType {
 }
 
 impl SparseVectorStorageType {
-    /// Whether this storage type is a mmap on disk
-    pub fn is_on_disk(&self) -> bool {
+    /// Whether this storage type is left on disk, see [`Memory::is_cold`]
+    pub fn is_cold(&self) -> bool {
         match self {
             // On disk; kept explicit for the case if someone adds a new storage
             // type in the future.
@@ -2729,7 +2721,7 @@ impl PayloadSchemaParams {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         self.memory_placement().is_cold()
     }
 
@@ -2911,10 +2903,10 @@ impl PayloadFieldSchema {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
-            PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
+            PayloadFieldSchema::FieldParams(params) => params.is_cold(),
         }
     }
 

@@ -68,11 +68,8 @@ impl ConfigMismatchOptimizer {
     fn has_config_mismatch(&self, segment: &dyn ReadSegmentEntry) -> bool {
         let segment_config = segment.config();
 
-        if self
-            .segment_optimizer_config
-            .payload_storage_type
-            .is_on_disk()
-            != segment_config.payload_storage_type.is_on_disk()
+        if self.segment_optimizer_config.payload_storage_type.is_cold()
+            != segment_config.payload_storage_type.is_cold()
         {
             return true; // Optimize segment due to payload storage mismatch
         }

@@ -121,7 +121,7 @@ fn assert_congruent(
 ) {
     assert_eq!(dense.distance(), multi.distance(), "{ctx}: distance");
     assert_eq!(dense.datatype(), multi.datatype(), "{ctx}: datatype");
-    assert_eq!(dense.is_cold(), multi.is_cold(), "{ctx}: is_on_disk");
+    assert_eq!(dense.is_cold(), multi.is_cold(), "{ctx}: is_cold");
     assert_eq!(dense.vector_dim(), multi.vector_dim(), "{ctx}: vector_dim");
     assert_eq!(
         DenseTQVectorStorageRead::quantized_vector_size(dense),

@@ -31,7 +31,7 @@ pub struct EmptyDenseVectorStorage {
     distance: Distance,
     dim: usize,
     datatype: VectorStorageDatatype,
-    is_on_disk: bool,
+    cold: bool,
     multi_vector_config: Option<MultiVectorConfig>,
     /// Number of points in this storage (all reported as deleted)
     num_points: usize,
@@ -44,7 +44,7 @@ impl EmptyDenseVectorStorage {
         dim: usize,
         distance: Distance,
         datatype: VectorStorageDatatype,
-        is_on_disk: bool,
+        cold: bool,
         multi_vector_config: Option<MultiVectorConfig>,
         num_points: usize,
     ) -> Self {
@@ -52,7 +52,7 @@ impl EmptyDenseVectorStorage {
             distance,
             dim,
             datatype,
-            is_on_disk,
+            cold,
             multi_vector_config,
             num_points,
             deleted_bitvec: BitVec::repeat(true, num_points),
@@ -74,7 +74,7 @@ pub fn new_empty_dense_vector_storage(
     dim: usize,
     distance: Distance,
     datatype: VectorStorageDatatype,
-    is_on_disk: bool,
+    cold: bool,
     multi_vector_config: Option<MultiVectorConfig>,
     num_points: usize,
 ) -> VectorStorageEnum {
@@ -82,7 +82,7 @@ pub fn new_empty_dense_vector_storage(
         dim,
         distance,
         datatype,
-        is_on_disk,
+        cold,
         multi_vector_config,
         num_points,
     ))
@@ -183,7 +183,7 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
     }
 
     fn is_cold(&self) -> bool {
-        self.is_on_disk
+        self.cold
     }
 
     fn total_vector_count(&self) -> usize {

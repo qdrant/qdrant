@@ -9,8 +9,8 @@ use crate::vector_storage::vector_storage_base::{
 ///
 /// `is_cold() == true` means data is not populated — rely on OS page cache.
 /// `is_cold() == false` means data was populated on load — expected to be cached.
-fn from_files_with_on_disk(files: Vec<PathBuf>, is_on_disk: bool) -> ComponentMemoryUsage {
-    let intent = if is_on_disk {
+fn from_files_with_on_disk(files: Vec<PathBuf>, cold: bool) -> ComponentMemoryUsage {
+    let intent = if cold {
         FileStorageIntent::OnDisk
     } else {
         FileStorageIntent::Cached
