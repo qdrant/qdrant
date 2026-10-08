@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient::trace;
 use common::counter::hw;
-use common::uio_trace;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::StreamExt;
 use futures::future::join_all;
@@ -56,7 +56,7 @@ where
             (index, uuid, path, cached_fs)
         })
         .collect();
-    let ctx = uio_trace::Context::current();
+    let ctx = trace::Context::current();
     let staged_opens = Mutex::new(Vec::new());
     // Keep polling all listings on the caller while workers stage each ready segment.
     // An in-place scope leaves every pool worker available, including in a single-thread pool.
@@ -192,7 +192,7 @@ where
     check_process_stopped(is_stopped)?;
 
     let reloads: Vec<_> = segments.into_iter().zip(preloads).collect();
-    let ctx = uio_trace::Context::current();
+    let ctx = trace::Context::current();
     let results = hw::parallel(|acc| {
         pool.install(|| {
             reloads

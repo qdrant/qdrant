@@ -534,7 +534,7 @@ mod tests {
     /// `BlobFile`'s disambiguation turns that into an empty read.
     #[test]
     fn read_from_past_eof_errors_raw_but_disambiguates_in_file() {
-        use common::uio_trace::Op;
+        use common::ambient::trace::Op;
 
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("empty", b"")]);

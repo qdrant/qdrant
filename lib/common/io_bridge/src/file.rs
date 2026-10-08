@@ -3,9 +3,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::ambient::trace::Op;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::uio_trace::Op;
 use common::universal_io::{
     ByteOffset, Flusher, Item, UioResult, UniversalFlush, UniversalIoError, UniversalKind,
     UniversalRead, UserData,
@@ -714,7 +714,7 @@ mod tests {
     /// length of successful transfers.
     #[test]
     fn remote_requests_are_counted_per_op() {
-        use common::uio_trace::Op;
+        use common::ambient::trace::Op;
         use common::universal_io::{OpenOptions, UniversalReadFs as _};
 
         let source = MutableMockSource::default();

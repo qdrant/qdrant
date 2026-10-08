@@ -1,4 +1,5 @@
 pub mod aligned_buf;
+pub mod ambient;
 #[cfg(feature = "testing")]
 pub mod bench_cache;
 pub mod binary_search;
@@ -58,7 +59,6 @@ pub mod top_k;
 pub mod toposort;
 pub mod typelevel;
 pub mod types;
-pub mod uio_trace;
 pub mod universal_io;
 pub mod validation;
 pub mod zeros;
