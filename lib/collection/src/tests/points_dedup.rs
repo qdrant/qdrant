@@ -262,7 +262,7 @@ async fn test_retrieve_dedup() {
 async fn test_search_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let points = collection
         .search(
             CoreSearchRequest {
@@ -283,7 +283,7 @@ async fn test_search_dedup() {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .expect("failed to search");
     assert!(!points.is_empty(), "expected some points");

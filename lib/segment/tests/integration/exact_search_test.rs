@@ -50,7 +50,7 @@ fn exact_search_test() {
 
     let int_key = "int";
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();

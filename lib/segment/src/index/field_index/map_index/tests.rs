@@ -78,7 +78,7 @@ fn save_map_index_with<N>(
     MapIndex<N>: PayloadFieldIndex + ValueIndexer,
     <MapIndex<N> as ValueIndexer>::ValueType: Into<<N as MapIndexKey>::Owned>,
 {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     match index_type {
         IndexType::MutableGridstore => {
@@ -141,7 +141,7 @@ where
             .unwrap()
             .unwrap(),
     };
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for (idx, values) in data.iter().enumerate() {
         let index_values: HashSet<<N as MapIndexKey>::Owned> = index
             .get_values(idx as PointOffsetType)
@@ -164,7 +164,7 @@ fn test_uuid_payload_index() {
 
     builder.init().unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let uuid: Value = Value::String("baa56dfc-e746-4ec1-bf50-94822535a46c".to_string());
 
@@ -197,7 +197,7 @@ fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
 
     let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for (idx, values) in data.iter().enumerate().rev() {
         let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
@@ -304,7 +304,7 @@ fn test_empty_index(#[case] index_type: IndexType) {
 /// Test that `get_values` on an on-disk mmap index actually increments the hardware counter.
 #[test]
 fn test_mmap_get_values_hw_counter() {
-    let _hw = AmbientContext::new().measure_guard_owned();
+    let _scope = AmbientContext::new().measure_guard_owned();
     let data = vec![vec![1i64, 2, 3], vec![4, 5], vec![6]];
 
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
@@ -324,7 +324,7 @@ fn test_mmap_get_values_hw_counter() {
     save_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap, |v| (*v).into());
     let index2 = load_map_index::<IntPayloadType>(&data, temp_dir2.path(), IndexType::RamMmap);
 
-    let _hw2 = AmbientContext::new().measure_guard_owned();
+    let _scope2 = AmbientContext::new().measure_guard_owned();
     for idx in 0..data.len() {
         let _values: Vec<_> = index2.get_values(idx as PointOffsetType).unwrap().collect();
     }
@@ -389,7 +389,7 @@ fn test_map_index_reload(#[case] index_type: IndexType) {
 
     assert_eq!(new_index.get_indexed_points(), 3);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for id in [1u32, 2, 5] {
         assert_eq!(
             new_index.values_count(id),
@@ -457,7 +457,7 @@ fn test_map_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
         IndexType::MutableGridstore => unreachable!(),
     };
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     assert!(new_index.values_count(0) > 0, "id 0 should be live");
     assert_eq!(new_index.values_count(1), 0, "id 1 deleted via bitslice");
@@ -487,7 +487,7 @@ fn collect_for_values_map(
     index: &MapIndex<IntPayloadType>,
     keys: &[IntPayloadType],
 ) -> BTreeMap<IntPayloadType, Vec<PointOffsetType>> {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut out = BTreeMap::new();
     MapIndexRead::for_values_map(index, keys.iter(), |key, ids| {
         let mut ids: Vec<PointOffsetType> = ids.collect();
@@ -632,7 +632,7 @@ fn test_str_prefix_match(#[case] index_type: IndexType) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let data = prefix_test_data();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -719,7 +719,7 @@ fn test_str_substring_match(#[case] index_type: IndexType) {
         .tempdir()
         .unwrap();
     let data = prefix_test_data();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -782,7 +782,7 @@ fn test_str_match_without_dictionary(#[case] index_type: IndexType) {
 
     let temp_dir = Builder::new().prefix("no_prefix_index").tempdir().unwrap();
     let data = prefix_test_data();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     save_map_index_with::<str>(
         &data,
@@ -870,7 +870,7 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let mut data = prefix_test_data();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
     let mut index: MapIndex<str> = load_map_index(&data, temp_dir.path(), index_type);
@@ -965,7 +965,7 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
 
     let temp_dir = Builder::new().prefix("prefix_index_dir").tempdir().unwrap();
     let data = prefix_test_data();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut builder =
         MapIndex::<str>::builder_immutable(temp_dir.path(), false, &empty_deleted(), with_prefix);

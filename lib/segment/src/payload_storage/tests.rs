@@ -18,7 +18,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
         "a": "some text",
     };
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // set
     storage.set(0, &payload).unwrap();

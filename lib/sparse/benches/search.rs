@@ -190,7 +190,7 @@ fn run_bench2(
 
     let mut it = query_vectors.iter().cycle();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     group.bench_function("basic", |b| {
         b.iter_batched(
             || it.next().unwrap().clone().into_remapped(),
@@ -204,7 +204,7 @@ fn run_bench2(
         )
     });
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut it = hottest_query_vectors.iter().cycle();
     group.bench_function("hottest", |b| {
         b.iter_batched(

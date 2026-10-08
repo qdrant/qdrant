@@ -398,10 +398,10 @@ impl SegmentsSearcher {
             let with_payload = with_payload.clone();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
-            let hw_acc = ambient::current();
+            let handoff = ambient::current();
             // TODO create one Task per segment level retrieve
             move || {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 retrieve_blocking(
                     segments,
                     &points,
@@ -433,9 +433,9 @@ impl SegmentsSearcher {
             let points = points.to_vec();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
-            let hw_acc = ambient::current();
+            let handoff = ambient::current();
             move || {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 retrieve_raw_blocking(
                     segments,
                     &points,
@@ -459,7 +459,7 @@ impl SegmentsSearcher {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
-        let hw_acc = ambient::current();
+        let handoff = ambient::current();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
 
@@ -475,7 +475,7 @@ impl SegmentsSearcher {
                 .collect()
             };
 
-            let _hw = hw_acc.enter_guard();
+            let _scope = handoff.enter_guard();
 
             let work = || -> CollectionResult<_> {
                 let all_points: BTreeSet<_> = segments
@@ -525,10 +525,10 @@ impl SegmentsSearcher {
                 .map(|segment| {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
-                        let hw_acc = ambient::current();
+                        let handoff = ambient::current();
                         let cpu_utilization = hw::cpu_utilization();
                         move || {
-                            let _hw = hw_acc.enter_guard();
+                            let _scope = handoff.enter_guard();
                             cpu_utilization
                                 .measure(|| segment.get().read().rescore_with_formula(arc_ctx))
                         }
@@ -870,7 +870,7 @@ mod tests {
 
         let vector_index_borrow = vector_index.borrow();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         match &*vector_index_borrow {
             VectorIndexEnum::Plain(plain_index) => {
@@ -920,13 +920,13 @@ mod tests {
             searches: vec![req],
         };
 
-        let hw_acc = AmbientContext::new();
+        let ctx = AmbientContext::new();
         let result = SegmentsSearcher::search(
             segment_holder,
             Arc::new(batch_request),
             &AdaptiveSearchHandle::current_for_tests(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, Handoff::measured(hw_acc)),
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, Handoff::measured(ctx)),
             TEST_TIMEOUT,
         )
         .await
@@ -987,10 +987,10 @@ mod tests {
 
             let batch_request = Arc::new(batch_request);
 
-            let hw_measurement_acc = AmbientContext::new();
+            let ctx = AmbientContext::new();
             let query_context = QueryContext::new(
                 DEFAULT_INDEXING_THRESHOLD_KB,
-                Handoff::measured(AmbientContext::clone(&hw_measurement_acc)),
+                Handoff::measured(AmbientContext::clone(&ctx)),
             );
 
             let result_no_sampling = SegmentsSearcher::search(
@@ -1004,12 +1004,12 @@ mod tests {
             .await
             .unwrap();
 
-            assert_ne!(hw_measurement_acc.hw_data()[HwMetric::Cpu], 0);
+            assert_ne!(ctx.hw_data()[HwMetric::Cpu], 0);
 
-            let hw_measurement_acc = AmbientContext::new();
+            let ctx = AmbientContext::new();
             let query_context = QueryContext::new(
                 DEFAULT_INDEXING_THRESHOLD_KB,
-                Handoff::measured(AmbientContext::clone(&hw_measurement_acc)),
+                Handoff::measured(AmbientContext::clone(&ctx)),
             );
 
             assert!(!result_no_sampling.is_empty());
@@ -1026,7 +1026,7 @@ mod tests {
             .unwrap();
             assert!(!result_sampling.is_empty());
 
-            assert_ne!(hw_measurement_acc.hw_data()[HwMetric::Cpu], 0);
+            assert_ne!(ctx.hw_data()[HwMetric::Cpu], 0);
 
             // assert equivalence in depth
             assert_eq!(result_no_sampling[0].len(), result_sampling[0].len());
@@ -1132,7 +1132,7 @@ mod tests {
         use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
         use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaParams};
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
         let params = TextIndexParams {
             phrase_matching: Some(true),

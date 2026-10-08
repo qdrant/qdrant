@@ -581,7 +581,7 @@ mod tests {
         const TOP: usize = 20;
 
         let mut rng = StdRng::seed_from_u64(42);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage = new_volatile_dense_vector_storage(DIM, Distance::Dot);
         for i in 0..TOTAL {

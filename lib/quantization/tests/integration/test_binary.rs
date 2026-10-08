@@ -65,7 +65,7 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_encoded = encoded.encode_query(&query);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_encoded, index as u32);
             let orginal_score = dot_similarity(&query, vector);
@@ -117,7 +117,7 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_encoded = encoded.encode_query(&query);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_encoded, index as u32);
             let original_score = -dot_similarity(&query, vector);
@@ -166,7 +166,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         for i in 1..vectors_count {
             let score = encoded.score_internal(0, i as u32);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
@@ -215,7 +215,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         for i in 1..vectors_count {
             let score = encoded.score_internal(0, i as u32);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
@@ -266,7 +266,7 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
@@ -333,7 +333,7 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
@@ -397,7 +397,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
@@ -461,7 +461,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
@@ -528,7 +528,7 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
@@ -595,7 +595,7 @@ mod tests {
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
         let query_b = encoded.encode_query(&query);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
@@ -659,7 +659,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()
@@ -723,7 +723,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scores: Vec<_> = vector_data
             .iter()
             .enumerate()

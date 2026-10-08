@@ -55,7 +55,7 @@ fn stored(storage: &crate::vector_storage::VectorStorageEnum, slot: u32) -> Vec<
 #[test]
 fn multi_vectors_round_trip() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let first = multi(&[[1.0, 2.0], [3.0, 4.0]]);
     let second = multi(&[[5.0, 6.0]]);
@@ -83,7 +83,7 @@ fn multi_vectors_round_trip() {
 #[test]
 fn missing_multi_vectors_own_no_rows() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let present = multi(&[[1.0, 2.0]]);
     let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
@@ -114,7 +114,7 @@ fn missing_multi_vectors_own_no_rows() {
 #[test]
 fn batches_resume_at_the_row_space_end() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let first = multi(&[[1.0, 1.0], [2.0, 2.0]]);
     let second = multi(&[[3.0, 3.0]]);
@@ -153,7 +153,7 @@ fn batches_resume_at_the_row_space_end() {
 #[test]
 fn raw_multi_bytes_round_trip() {
     let dir = TempDir::with_prefix("update_only_multi").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let flattened: Vec<VectorElementType> = vec![1.0, 2.0, 3.0, 4.0];
     let bytes = bytemuck::cast_slice(&flattened).to_vec();

@@ -61,7 +61,7 @@ fn test_filtering_context_consistency() {
 
     let mut points = HashMap::new();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     for (idx, payload) in nested_payloads().into_iter().enumerate() {

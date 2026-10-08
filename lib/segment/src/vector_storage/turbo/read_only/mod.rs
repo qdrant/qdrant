@@ -92,7 +92,7 @@ mod tests {
             .prefix("ro_turbo_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = open_appendable_turbo_vector_storage(
             dir.path(),
@@ -147,7 +147,7 @@ mod tests {
             .prefix("ro_turbo_appended_batch")
             .tempdir()
             .unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = open_appendable_turbo_vector_storage(
             dir.path(),

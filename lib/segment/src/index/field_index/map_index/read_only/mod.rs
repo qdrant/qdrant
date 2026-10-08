@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_map_parent_gridstore").unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         // Build via the writable gridstore builder (matches the existing map
         // tests' `IndexType::MutableGridstore` path).

@@ -59,7 +59,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
 
     let mut vector_storage = new_volatile_sparse_vector_storage();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     // add points to storage only once
     for idx in 0..NUM_VECTORS {
         let vec = &random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);

@@ -57,7 +57,7 @@ fn write_config(segment_path: &Path, types: Vec<FullPayloadIndexType>) {
 #[test]
 fn batch_reaches_every_index_of_a_field() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     write_config(
         dir.path(),
         vec![
@@ -117,7 +117,7 @@ fn batch_reaches_every_index_of_a_field() {
 #[test]
 fn batches_resume() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     write_config(
         dir.path(),
         vec![
@@ -166,7 +166,7 @@ fn batches_resume() {
 #[test]
 fn segment_without_indexes_opens_empty() {
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let payload = payload_json! { "f": "alpha" };
     let mut index = Index::par_open(&MmapFs, dir.path()).unwrap();

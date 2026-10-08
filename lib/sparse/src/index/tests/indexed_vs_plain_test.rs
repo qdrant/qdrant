@@ -10,7 +10,7 @@ use crate::index::tests::common::{build_index, match_all};
 
 fn query<I: InvertedIndex>(index: &I, query: RemappedSparseVector) {
     let is_stopped = AtomicBool::new(false);
-    let _hw = AmbientContext::new().measure_guard_owned();
+    let _scope = AmbientContext::new().measure_guard_owned();
     let top = 10;
     let mut scratch = SearchScratch::new_for_test();
     let mut search_context =

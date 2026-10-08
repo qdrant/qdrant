@@ -32,7 +32,7 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .upsert_point(1, 1.into(), only_default_vector(&vec1))
@@ -84,7 +84,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec4 = vec![-1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![-1.0, 0.0, 0.0, 0.0];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment2
         .upsert_point(11, 11.into(), only_default_vector(&vec1))
@@ -212,7 +212,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
         vec![-1.0, 0.0, 1.0, 1.0],
     ];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment3
         .upsert_point(1, 1.into(), collect_points_data(&vec1))
@@ -282,7 +282,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
     let vec4 = SparseVector::new(vec![0, 1, 2, 3], vec![1.0, 1.0, 0.0, 1.0]).unwrap();
     let vec5 = SparseVector::new(vec![0, 1, 2, 3], vec![1.0, 0.0, 0.0, 0.0]).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .upsert_point(
@@ -366,7 +366,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
     )
     .unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec1 = SparseVector::new(vec![0, 1, 2, 3], vec![-1.0, 0.0, 1.0, 1.0]).unwrap();
     let vec2 = SparseVector::new(vec![0, 1, 2, 3], vec![-1.0, 0.0, 1.0, 0.0]).unwrap();

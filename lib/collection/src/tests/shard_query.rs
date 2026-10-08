@@ -76,10 +76,10 @@ async fn test_shard_query_rrf_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await;
     let expected_error = CollectionError::bad_input(
         "Validation failed: cannot apply Fusion without prefetches".to_string(),
@@ -116,10 +116,10 @@ async fn test_shard_query_rrf_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap()
         .pop()
@@ -167,10 +167,10 @@ async fn test_shard_query_rrf_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap()
         .pop()
@@ -215,10 +215,10 @@ async fn test_shard_query_rrf_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap()
         .pop()
@@ -300,10 +300,10 @@ async fn test_shard_query_vector_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap()
         .pop()
@@ -328,10 +328,10 @@ async fn test_shard_query_vector_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap()
         .pop()
@@ -359,10 +359,10 @@ async fn test_shard_query_vector_rescoring() {
         with_payload: WithPayloadInterface::Bool(false),
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap()
         .pop()
@@ -433,10 +433,10 @@ async fn test_shard_query_payload_vector() {
         with_payload: WithPayloadInterface::Bool(true), // requesting payload
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sources_scores = shard
         .query_batch(Arc::new(vec![query]), &current_runtime, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap()
         .pop()

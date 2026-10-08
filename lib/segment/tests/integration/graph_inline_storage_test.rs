@@ -122,7 +122,7 @@ fn plain_segment(
         payload_storage_type: PayloadStorageType::default(),
         id_tracker_memory: None,
     };
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let (mut segment, _) = build_segment(dir, &config, None, true).unwrap();
     for (idx, vector) in vectors.iter().enumerate() {
         segment

@@ -59,7 +59,7 @@ fn test_building_new_segment() {
     )
     .unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Include overlapping with segment1 to check the
     segment2
@@ -113,7 +113,7 @@ fn test_building_new_defragmented_segment() {
 
     let defragment_key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
@@ -196,7 +196,7 @@ fn check_points_defragmented(
     // keeps track of groups/values that have already been seen while iterating
     let mut seen_values: Vec<Value> = vec![];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for internal_id in id_tracker.point_mappings().iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
@@ -242,7 +242,7 @@ fn test_building_new_sparse_segment() {
 
     let stopped = AtomicBool::new(false);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let segment1 = build_segment_sparse_1(dir.path());
     let mut segment2 = build_segment_sparse_2(dir.path());
@@ -375,7 +375,7 @@ fn test_building_new_segment_bug_5614() {
     let vector_100_high = only_default_vector(&[3., 3., 0., 0.]);
     let vector_101_high = only_default_vector(&[4., 4., 0., 0.]);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert point 100 and 101 in both segments
     // Do this in a specific order so that:
@@ -421,7 +421,7 @@ const CANCELLATION_TEST_POINTS: u64 = 10_000;
 fn cancellation_test_segment(path: &Path) -> Segment {
     let mut rng = StdRng::seed_from_u64(42);
     let mut segment = empty_segment(path);
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for idx in 0..CANCELLATION_TEST_POINTS {
         let vector = random_vector(&mut rng, 4);
         segment
@@ -776,7 +776,7 @@ fn test_segment_builder_rejects_source_with_extra_vector_name() {
     // CreateVectorName-vs-optimizer race, where dropping the vector would corrupt the next round.
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let extra_vector_name = "extra_vec";
 
     let (source, target_config, _dirs) = build_source_with_extra_vector(extra_vector_name);
@@ -806,7 +806,7 @@ fn test_segment_builder_drops_deleted_source_vector_name() {
     let build_dir = Builder::new().prefix("segment_build").tempdir().unwrap();
     let out_dir = Builder::new().prefix("segment_out").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let extra_vector_name = "extra_vec";
 
     let (source, target_config, _dirs) = build_source_with_extra_vector(extra_vector_name);
@@ -844,7 +844,7 @@ fn test_segment_builder_rejects_source_when_extra_vector_still_live() {
     // next round, so the merge must cancel even with a live schema set.
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let extra_vector_name = "extra_vec";
 
     let (source, target_config, _dirs) = build_source_with_extra_vector(extra_vector_name);
@@ -891,7 +891,7 @@ fn test_building_new_segment_with_mmap_payload() {
         PayloadStorageType::Mmap
     );
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // add one point
     segment1
@@ -931,7 +931,7 @@ fn test_building_new_segment_leaves_no_tracker_journal() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
     let stopped = AtomicBool::new(false);
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Payloads, sparse vectors and a keyword index, all stored in a Gridstore
     let mut segment = build_segment_sparse_1(dir.path());

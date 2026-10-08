@@ -45,12 +45,12 @@ async fn test_fix_payload_indices() {
     .await
     .unwrap();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     let upsert_ops = upsert_operation();
     shard
         .update(upsert_ops.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -58,14 +58,14 @@ async fn test_fix_payload_indices() {
     let index_op = create_payload_index_operation();
     shard
         .update(index_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard
         .update(delete_point_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 

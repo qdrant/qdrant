@@ -47,7 +47,7 @@ fn range_filtering(c: &mut Criterion) {
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     // generate points with payload

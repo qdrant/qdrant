@@ -27,7 +27,7 @@ where
     pub(in super::super) fn load_from_on_disk(
         index: OnDiskMapIndex<N, S>,
     ) -> OperationResult<Self> {
-        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         let mut indexed_points = 0;
         let mut values_count = 0;

@@ -25,9 +25,9 @@ pub async fn mmr_from_points_with_vector(
         .get_params(&mmr.using)
         .and_then(|vector_params| vector_params.multivector_config);
 
-    let hw_acc = ambient::current();
+    let handoff = ambient::current();
     let handle = search_runtime_handle.spawn_blocking(move || {
-        let _hw = hw_acc.enter_guard();
+        let _scope = handoff.enter_guard();
         hw::cpu_utilization().measure(|| {
             mmr_from_points_with_vector_impl(
                 points_with_vector,

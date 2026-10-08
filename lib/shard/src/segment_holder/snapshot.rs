@@ -44,7 +44,7 @@ impl SegmentHolder {
         SegmentId,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
-        let _hw = ambient::unmeasured_guard(reason(
+        let _scope = ambient::unmeasured_guard(reason(
             "This counter will be used to measure operations on temp segment, \
              which is part of internal process and can be ignored",
         ));

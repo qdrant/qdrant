@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn full_text_index_round_trip() {
         let dir = TempDir::with_prefix("update_only_text").unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let field = JsonPath::new("f");
 
         let params = TextIndexParams {

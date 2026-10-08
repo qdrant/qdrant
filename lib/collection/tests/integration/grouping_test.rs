@@ -483,7 +483,7 @@ mod group_by_builder {
         let collection_dir = tempfile::Builder::new().prefix("chunks").tempdir().unwrap();
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
-        let hw_counter = AmbientContext::new();
+        let ctx = AmbientContext::new();
 
         // insert chunk points
         {
@@ -508,7 +508,7 @@ mod group_by_builder {
 
             let insert_result = collection
                 .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
-                .measured(AmbientContext::clone(&hw_counter))
+                .measured(AmbientContext::clone(&ctx))
                 .await
                 .expect("insert failed");
 
@@ -538,7 +538,7 @@ mod group_by_builder {
             );
             let insert_result = lookup_collection
                 .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
-                .measured(AmbientContext::clone(&hw_counter))
+                .measured(AmbientContext::clone(&ctx))
                 .await
                 .expect("insert failed");
 

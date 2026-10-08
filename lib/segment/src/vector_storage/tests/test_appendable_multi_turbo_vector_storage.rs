@@ -238,7 +238,7 @@ fn congruent_upsert_read_all_distances() {
                 let mut rng = SmallRng::seed_from_u64(seed);
                 let dense_dir = Builder::new().prefix("tq_congr_dense").tempdir().unwrap();
                 let multi_dir = Builder::new().prefix("tq_congr_multi").tempdir().unwrap();
-                let _hw = ambient::test_guard();
+                let _scope = ambient::test_guard();
 
                 let (mut dense, mut multi) =
                     open_both_appendable(dense_dir.path(), multi_dir.path(), dim, distance, true);
@@ -278,7 +278,7 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
         .prefix("tq_congr_multi_dst")
         .tempdir()
         .unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let stopped = AtomicBool::new(false);
 
     let mut count: PointOffsetType = 0;

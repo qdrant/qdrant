@@ -250,7 +250,7 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let _hw = ambient::unmeasured_guard(reason(
+        let _scope = ambient::unmeasured_guard(reason(
             "This function is only used for internal operations. No need to measure.",
         ));
         let start_index = self.next_point_offset as PointOffsetType;
@@ -403,7 +403,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     ) -> crate::common::operation_error::OperationResult<bool> {
         let was_deleted = !self.set_deleted(key, true);
 
-        let _hw = ambient::unmeasured_guard(reason("Deletions not measured"));
+        let _scope = ambient::unmeasured_guard(reason("Deletions not measured"));
         self.update_stored(key, None)?;
 
         Ok(was_deleted)
@@ -526,7 +526,7 @@ mod test {
             values: vec![0.1, 0.2, 0.3],
         };
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
@@ -558,7 +558,7 @@ mod test {
         let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {

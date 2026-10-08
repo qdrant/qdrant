@@ -64,7 +64,7 @@ where
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(prefix_index);
 
-        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, BlobstoreError>(
                 |idx, values: Vec<_>| {

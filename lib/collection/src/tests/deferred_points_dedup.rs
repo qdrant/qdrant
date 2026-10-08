@@ -227,13 +227,13 @@ async fn test_deferred_points_dedup_after_optimization() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let (shard, _tmp_dir) = build_shard().await;
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let timeout = Duration::from_secs(30);
 
     // Step 1: Insert initial batch of points (wait=true to ensure they are persisted)
     shard
         .update(upsert_op(random_points()), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -246,7 +246,7 @@ async fn test_deferred_points_dedup_after_optimization() {
     // Then use plunge_async to ensure the update is actually applied before checking.
     shard
         .update(upsert_op(random_points()), WaitUntil::Wal, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -271,7 +271,7 @@ async fn test_deferred_points_dedup_after_optimization() {
     // previous deferred points, stressing the deduplication logic further.
     shard
         .update(upsert_op(random_points()), WaitUntil::Wal, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -324,13 +324,13 @@ fn total_point_count(shard: &LocalShard) -> usize {
 /// 3. Plunge to apply update, verify deferred points exist
 async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
     let (shard, tmp_dir) = build_shard().await;
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let timeout = Duration::from_secs(30);
 
     // Insert initial points and wait for optimization so they are non-deferred in optimized segment
     shard
         .update(upsert_op(random_points()), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     wait_optimization(&shard, timeout).await;
@@ -339,7 +339,7 @@ async fn setup_shard_with_deferred_points() -> (LocalShard, TempDir) {
     // while old non-deferred copies remain in the optimized segment
     shard
         .update(upsert_op(random_points()), WaitUntil::Wal, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     shard.plunge_async().await.unwrap().await.unwrap();

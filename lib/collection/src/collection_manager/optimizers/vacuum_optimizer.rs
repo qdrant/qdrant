@@ -105,7 +105,7 @@ mod tests {
 
         let segment = holder.get(segment_id).unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let original_segment = match segment {
             LockedSegment::Original(s) => s,
@@ -286,7 +286,7 @@ mod tests {
             vector2_dim as usize,
         );
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         segment
             .create_field_index(

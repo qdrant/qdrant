@@ -62,7 +62,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 
@@ -117,7 +117,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let mut rng = StdRng::seed_from_u64(7);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 

@@ -736,7 +736,7 @@ mod tests {
         use crate::index::field_index::full_text_index::FullTextIndex;
         use crate::types::{Condition, MatchTextAny, Nested, NestedCondition};
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         // --- build payloads with nested objects ---
         // Point 0: nested title "goodness only" (should NOT match "good cheap")

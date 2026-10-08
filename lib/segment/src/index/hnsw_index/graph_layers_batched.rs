@@ -693,7 +693,7 @@ mod tests {
             num_points, 8, DIM, false, false, DISTANCE, &mut rng,
         );
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut additional = GraphLayersBuilder::new(num_points, hnsw_m, 16, 10, false);
         for idx in (0..num_points as PointOffsetType).step_by(2) {
             additional.set_levels(idx, 0);
@@ -799,7 +799,7 @@ mod tests {
         for _ in 0..10 {
             let query = random_vector(rng, DIM);
             let query = DISTANCE.preprocess_vector::<VectorElementType>(query);
-            let _hw = ambient::test_guard();
+            let _scope = ambient::test_guard();
             let links_scorer = vector_holder.scorer(query.clone());
             let links_scorer_bytes = links_scorer.scorer_bytes().unwrap();
             let base_scorer = vector_holder
@@ -849,7 +849,7 @@ mod tests {
             let query = random_vector(rng, DIM);
             let entry = graph.unfiltered_entry_point();
             for deleted in [&none_deleted, &some_deleted] {
-                let _hw = ambient::test_guard();
+                let _scope = ambient::test_guard();
                 let mut scorer = FilteredScorer::new(
                     query.clone().into(),
                     vector_holder.storage(),

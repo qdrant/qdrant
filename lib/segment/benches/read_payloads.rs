@@ -87,7 +87,7 @@ where
 
     if !storage_exists {
         let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         for point_id in 0..POINT_COUNT as PointOffsetType {
             let payload = random_payload(&mut rng, point_id);
@@ -125,7 +125,7 @@ where
     S: PayloadStorageRead,
 {
     let point_offsets = point_offsets.iter().map(|&point_offset| ((), point_offset));
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut fields_read = 0;
     storage

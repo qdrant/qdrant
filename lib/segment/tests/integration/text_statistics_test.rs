@@ -35,7 +35,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
     };
 
     let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut op_num: SeqNumberType = 0;
     segment

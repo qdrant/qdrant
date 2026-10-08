@@ -72,7 +72,7 @@ pub fn random_multi_vec_segment(
     let mut rnd = rand::rng();
     let payload_key = "number";
     let keyword_key = "keyword";
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for _ in 0..num_vectors {
         let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.random_range(0.0..1.0)).collect();
         let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.random_range(0.0..1.0)).collect();
@@ -120,7 +120,7 @@ fn fill_random(
     let mut id_gen = PointIdGenerator::default();
     let mut rnd = rand::rng();
     let payload_key = "number";
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for _ in 0..num_vectors {
         let random_vector: Vec<_> = (0..dim).map(|_| rnd.random_range(0.0..1.0)).collect();
         let point_id: PointIdType = id_gen.unique();
@@ -145,7 +145,7 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .upsert_point(1, 1.into(), only_default_vector(&vec1))
@@ -200,7 +200,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec14 = vec![1.0, 0.0, 0.0, 1.0];
     let vec15 = vec![1.0, 1.0, 0.0, 0.0];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment2
         .upsert_point(7, 4.into(), only_default_vector(&vec4))

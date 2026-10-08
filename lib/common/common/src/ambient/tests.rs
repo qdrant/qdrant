@@ -5,9 +5,9 @@ use super::{AmbientContext, AmbientFutureExt as _, current, parallel, test, test
 fn handoff_enters_on_another_thread() {
     let ctx = AmbientContext::new();
     ctx.measure(|| {
-        parallel(|hw| {
+        parallel(|handoff| {
             std::thread::scope(|s| {
-                s.spawn(|| hw.enter(|| HwMetric::PayloadIoRead.bump(7)));
+                s.spawn(|| handoff.enter(|| HwMetric::PayloadIoRead.bump(7)));
                 s.spawn(|| test(|| HwMetric::PayloadIoRead.bump(1000)));
             });
             test(|| HwMetric::PayloadIoRead.bump(1000));
@@ -44,7 +44,7 @@ fn unscoped_bump_panics() {
 #[should_panic(expected = "outside of any ambient scope")]
 fn parallel_masks_the_scope() {
     AmbientContext::new().measure(|| {
-        parallel(|_ctx| {
+        parallel(|_handoff| {
             std::thread::scope(|s| {
                 s.spawn(|| HwMetric::Cpu.bump(1))
                     .join()

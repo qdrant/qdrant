@@ -18,7 +18,7 @@ fn append_csv_data(storage: &mut blobstore::Blobstore<Payload>, csv_path: &Path)
     let csv_file = BufReader::new(File::open(csv_path).expect("file should open"));
     let mut rdr = csv::Reader::from_reader(csv_file);
     let mut point_offset = storage.max_point_offset();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     #[allow(clippy::explicit_counter_loop)]
     for result in rdr.records() {
         let record = result.unwrap();
@@ -89,7 +89,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     });
 
     c.bench_function("scan storage", |b| {
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         b.iter(|| {
             for i in 0..storage.max_point_offset() {
                 let res = storage.get_value::<Random>(i).unwrap().unwrap();

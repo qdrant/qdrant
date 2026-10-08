@@ -58,7 +58,7 @@ fn test_on_disk_segment_snapshot(
 
     let mut segment = build_simple_segment(segment_builder_dir.path(), 2, Distance::Dot).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment
         .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))

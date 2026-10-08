@@ -188,7 +188,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = AmbientContext::new().measure_guard_owned();
 
         assert_eq!(
             index
@@ -309,7 +309,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = AmbientContext::new().measure_guard_owned();
 
         let reloaded_true = reloaded
             .filter(&match_bool(true))
@@ -486,7 +486,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = AmbientContext::new().measure_guard_owned();
         assert_eq!(
             index
                 .filter(&match_bool(true))

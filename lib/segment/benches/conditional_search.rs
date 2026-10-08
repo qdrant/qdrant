@@ -29,7 +29,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     let mut result_size = 0;
@@ -134,7 +134,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
 
     let seed = 42;
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();

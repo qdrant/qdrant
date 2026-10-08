@@ -83,7 +83,7 @@ fn build_text_segment_deferred(
         id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(path, &config, deferred_internal_id, true).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut op_num: SeqNumberType = 0;
     segment
         .create_field_index(

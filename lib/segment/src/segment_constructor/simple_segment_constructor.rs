@@ -159,7 +159,7 @@ mod tests {
         let vec4 = vec![1.0, 1.0, 0.0, 1.0];
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec)) {
             Err(OperationError::WrongVectorDimension { .. }) => (),

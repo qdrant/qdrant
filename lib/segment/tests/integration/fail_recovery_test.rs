@@ -15,7 +15,7 @@ fn test_insert_fail_recovery() {
 
     let mut segment = empty_segment(dir.path());
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment
         .upsert_point(1, 1.into(), only_default_vector(&vec1))

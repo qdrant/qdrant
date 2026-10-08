@@ -93,7 +93,7 @@ pub(super) fn build_main_graph_on_cpu(
 
     let insert_point = |vector_id| {
         check_process_stopped(stopped)?;
-        let _hw = ambient::unmeasured_guard(reason(
+        let _scope = ambient::unmeasured_guard(reason(
             "No need to accumulate hardware, since this is an internal operation",
         ));
 

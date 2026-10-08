@@ -44,7 +44,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         .collect::<OperationResult<InMemoryNumericIndex<_>>>()
         .unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut count = 0;
     group.bench_function("numeric-index", |b| {
         b.iter(|| {

@@ -116,10 +116,10 @@ async fn test_continuous_snapshot() {
                     CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
                         ids: (0..points_count).map(u64::into).collect(),
                     });
-                let hw_counter = AmbientContext::new();
+                let ctx = AmbientContext::new();
                 collection
                     .update_from_client_simple(delete_points, true, None, WriteOrdering::default())
-                    .measured(hw_counter)
+                    .measured(ctx)
                     .await?;
 
                 // Insert one point at a time
@@ -133,7 +133,7 @@ async fn test_continuous_snapshot() {
                         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                             PointInsertOperationsInternal::PointsList(vec![point]),
                         ));
-                    let hw_counter = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let insert = collection
                         .update_from_client_simple(
                             insert_points,
@@ -141,7 +141,7 @@ async fn test_continuous_snapshot() {
                             None,
                             WriteOrdering::default(),
                         )
-                        .measured(hw_counter)
+                        .measured(ctx)
                         .await?;
                     assert_eq!(insert.status, UpdateStatus::Completed);
                 }
@@ -153,7 +153,7 @@ async fn test_continuous_snapshot() {
                         with_payload: None,
                         with_vector: WithVector::Bool(false),
                     };
-                    let hw_counter = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let retrieve_result = collection
                         .retrieve(
                             retrieve_point,
@@ -162,7 +162,7 @@ async fn test_continuous_snapshot() {
                             &ShardSelectorInternal::All,
                             None,
                         )
-                        .measured(hw_counter)
+                        .measured(ctx)
                         .await?;
                     assert_eq!(retrieve_result.len(), 1);
                 }
@@ -180,7 +180,7 @@ async fn test_continuous_snapshot() {
                             key: None,
                         }),
                     );
-                    let hw_counter = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let set_result = collection
                         .update_from_client_simple(
                             set_payload,
@@ -188,7 +188,7 @@ async fn test_continuous_snapshot() {
                             None,
                             WriteOrdering::default(),
                         )
-                        .measured(hw_counter)
+                        .measured(ctx)
                         .await?;
                     assert_eq!(set_result.status, UpdateStatus::Completed);
                 }
@@ -200,7 +200,7 @@ async fn test_continuous_snapshot() {
                         with_payload: Some(true.into()),
                         with_vector: WithVector::Bool(true),
                     };
-                    let hw_counter = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let retrieve_result = collection
                         .retrieve(
                             retrieve_point,
@@ -209,7 +209,7 @@ async fn test_continuous_snapshot() {
                             &ShardSelectorInternal::All,
                             None,
                         )
-                        .measured(hw_counter)
+                        .measured(ctx)
                         .await?;
                     assert_eq!(retrieve_result.len(), 1);
                     assert!(retrieve_result[0].vector.is_some(), "missing vector");

@@ -55,7 +55,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         requests: Vec<ShardQueryRequest>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // The planner fetches `limit + offset` points; the offset is cut off here.
         let offsets: Vec<_> = requests.iter().map(|request| request.offset).collect();
         let planned_query = PlannedQuery::try_from(requests)?;

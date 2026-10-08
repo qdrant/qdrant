@@ -65,7 +65,7 @@ fn test_search_batch_equivalence_single() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
@@ -128,7 +128,7 @@ fn test_from_filter_attributes() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let dim = 2;
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment
@@ -212,7 +212,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
 
@@ -334,7 +334,7 @@ fn test_snapshot_streamable_without_files_wrapper() {
 
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
 
@@ -428,7 +428,7 @@ fn test_check_consistency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
@@ -514,7 +514,7 @@ fn test_point_vector_count() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert point ID 4 and 6, assert counts
     segment
@@ -557,7 +557,7 @@ fn test_point_vector_count_multivec() {
     let mut segment =
         build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert point ID 4 and 6 fully, 8 and 10 partially, assert counts
     segment
@@ -662,7 +662,7 @@ fn test_retrieve_raw_dense_bytes() {
     let dim = 4;
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
     segment
@@ -722,7 +722,7 @@ fn test_retrieve_raw_multivec_bytes() {
         true,
     )
     .unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Two inner vectors of `dim` elements each, flattened.
     let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
@@ -784,7 +784,7 @@ fn test_retrieve_raw_sparse_bytes() {
     )
     .unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
     let mut vectors = NamedVectors::default();
     vectors.insert(
@@ -846,7 +846,7 @@ fn test_upsert_raw_dense_roundtrip() {
 
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
     src.upsert_point(100, 7.into(), only_default_vector(&vec))
@@ -896,7 +896,7 @@ fn test_upsert_raw_append_only_replace() {
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
     dst.append_only_mutations = true;
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let old_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     dst.upsert_point(100, 7.into(), only_default_vector(&old_vec))
@@ -951,7 +951,7 @@ fn test_append_only_clone_stamps_payload_version() {
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut segment = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
     segment.append_only_mutations = true;
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     segment
@@ -1011,7 +1011,7 @@ fn test_append_only_delete_is_tombstone_only_on_non_appendable() {
     let dim = 4;
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     segment
@@ -1056,7 +1056,7 @@ fn test_upsert_moved_point_single_slot() {
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
     dst.append_only_mutations = true;
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let raw_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     src.upsert_point(100, 7.into(), only_default_vector(&raw_vec))
@@ -1118,7 +1118,7 @@ fn test_append_only_every_step_clones() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment.append_only_mutations = true;
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // A whole point in one operation: one slot.
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
@@ -1168,7 +1168,7 @@ fn test_upsert_raw_multivec_roundtrip() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Two inner vectors of `dim` elements each, flattened.
     let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
@@ -1217,7 +1217,7 @@ fn test_upsert_raw_sparse_roundtrip() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
     let mut vectors = NamedVectors::default();
@@ -1268,7 +1268,7 @@ fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
         let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
         let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
         let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         // Values exactly representable in both u8 and f16.
         let vec = vec![0.0_f32, 1.0, 128.0, 255.0];
@@ -1362,7 +1362,7 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut rng = StdRng::seed_from_u64(42);
     for i in 0..num_points {
@@ -1444,7 +1444,7 @@ fn test_upsert_raw_dense_turbo_bytes() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
     src.upsert_point(100, 7.into(), only_default_vector(&vec))
@@ -1497,7 +1497,7 @@ fn test_upsert_raw_multivec_turbo_bytes() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Three inner vectors of `dim` elements each, flattened.
     let flattened: Vec<f32> = (0..3 * dim).map(|i| (i as f32).cos()).collect();
@@ -1571,7 +1571,7 @@ fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
     segment.append_only_mutations = true;
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let point_id: PointIdType = 7.into();
     let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
     segment
@@ -1640,7 +1640,7 @@ fn test_vector_compatibility_checks() {
 
     let mut segment = build_segment_with_two_named_vecs(dir.path(), 4, 2, Distance::Dot).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert one point for a reference internal ID
     let point_id = 4.into();
@@ -1795,7 +1795,7 @@ fn test_handle_point_version() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment
@@ -1841,7 +1841,7 @@ fn create_deferred_segment(
     n_vectors: usize,
     n_deferred: usize,
 ) -> Segment {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let deferred_internal_id = (n_deferred > 0).then_some(n_vectors as PointOffsetType);
 
@@ -2162,7 +2162,7 @@ fn test_deferred_point_estimation_with_filter() {
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_read_operations() {
     init_logger();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Search
     assert_deferred_points_excluded(
@@ -2277,7 +2277,7 @@ fn test_deferred_point_read_operations() {
 /// `prevent_unoptimized` whose internal id is beyond the deferred threshold).
 #[test]
 fn test_deferred_point_with_deferred_reads() {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
@@ -2457,7 +2457,7 @@ fn test_deferred_point_sparse() {
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_facets() {
     init_logger();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let key = JsonPath::new("color-indexed");
 
@@ -2743,7 +2743,7 @@ fn test_deleted_deferred_point_count() {
 fn test_flush_does_not_claim_an_unfinished_operation() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
     segment
@@ -2779,7 +2779,7 @@ fn test_flush_does_not_claim_an_unfinished_operation() {
 fn test_flush_of_unfinished_operation_reloads_dirty() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
     let segment_path = segment.segment_path.clone();
 
@@ -2819,7 +2819,7 @@ fn test_flush_survives_concurrent_field_index_drop() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment
         .upsert_point(1, 1.into(), only_default_vector(&[1.0, 0.0, 0.0, 0.0]))

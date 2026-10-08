@@ -385,7 +385,7 @@ mod tests {
             MultiDenseVectorInternal::new(vec![1.0; 8], 4),
         ));
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let scorer = new_raw_scorer(query, &storage)
             .expect("multivector query on an empty placeholder must not fail");
 

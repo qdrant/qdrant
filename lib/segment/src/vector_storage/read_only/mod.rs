@@ -193,7 +193,7 @@ mod tests {
     fn open_routes_chunked_mmap_to_dense_chunked() {
         let dir = Builder::new().prefix("disp_chunked").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(1);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..300).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -238,7 +238,7 @@ mod tests {
     fn open_routes_mmap_to_dense() {
         let dir = Builder::new().prefix("disp_mmap").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(2);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..3).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -281,7 +281,7 @@ mod tests {
     fn open_routes_multivector_to_multi_dense_chunked() {
         let dir = Builder::new().prefix("disp_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(3);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let multis: Vec<MultiDenseVectorInternal> = (0..200)
             .map(|_| {
                 let inner = rng.random_range(1..=3);
@@ -357,7 +357,7 @@ mod tests {
     fn preopen_then_open_chunked_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_chunked").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(4);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..300).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -416,7 +416,7 @@ mod tests {
     fn preopen_then_open_mmap_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_mmap").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(5);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..3).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -473,7 +473,7 @@ mod tests {
     fn preopen_then_open_multi_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(6);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let multis: Vec<MultiDenseVectorInternal> = (0..200)
             .map(|_| {
                 let inner = rng.random_range(1..=3);
@@ -543,7 +543,7 @@ mod tests {
     fn live_reload_dispatches_to_active_variant() {
         let dir = Builder::new().prefix("disp_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(9);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let first: Vec<DenseVector> = (0..200).map(|_| rand_vec(&mut rng)).collect();
         let second: Vec<DenseVector> = (0..100).map(|_| rand_vec(&mut rng)).collect();
 
@@ -648,7 +648,7 @@ mod tests {
         const COUNT: PointOffsetType = 300;
 
         let mut rng = StdRng::seed_from_u64(17);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let stopped = AtomicBool::new(false);
         let vectors: Vec<DenseVector> = (0..COUNT).map(|_| rand_vec(&mut rng)).collect();
         let mut deleted_ids = Vec::new();
@@ -798,7 +798,7 @@ mod tests {
         let multivector_config = MultiVectorConfig::default();
         let dir = Builder::new().prefix("ro_turbo_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(23);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let multis: Vec<MultiDenseVectorInternal> = (0..COUNT)
             .map(|_| {

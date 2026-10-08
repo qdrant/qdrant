@@ -93,7 +93,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
     // compares results with and without filters
     // expects the filter to have no effect on the results because the filter matches everything
     for query in query_vectors {
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let maximum_number_of_results = sparse_vector_index.max_result_count(&query).unwrap();
         // get all results minus 10 to force a bit of pruning
         let top = max(1, maximum_number_of_results.saturating_sub(10));
@@ -158,7 +158,7 @@ fn sparse_vector_index_fallback_plain_search() {
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage().borrow();
     let point_count = borrowed_vector_storage.available_vector_count();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
         let vector = borrowed_vector_storage.get_vector::<Random>(id);
@@ -323,7 +323,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
 
     // query index
     let query_vector: QueryVector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let before_deletion_results: Vec<_> = sparse_vector_index
         .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
@@ -394,7 +394,7 @@ fn sparse_vector_index_ram_filtered_search() {
 
     // query all sparse dimension to get all points
     let query_vector: QueryVector = random_full_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let before_result = sparse_vector_index
         .search(
             &[&query_vector],
@@ -488,7 +488,7 @@ fn sparse_vector_index_plain_search() {
     let query_vector: QueryVector = random_full_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
 
     // empty when searching payload index directly
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let before_plain_results = sparse_vector_index
         .search(
             &[&query_vector],
@@ -552,7 +552,7 @@ fn handling_empty_sparse_vectors() {
         .unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage().borrow_mut();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     // add empty points to storage
     for idx in 0..NUM_VECTORS {
         let vec = &SparseVector::new(vec![], vec![]).unwrap();
@@ -615,7 +615,7 @@ fn sparse_vector_index_persistence_test() {
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let vector: VectorInternal = random_sparse_vector(&mut rnd, dim).into();
@@ -794,7 +794,7 @@ fn sparse_vector_test_large_index() {
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let vector: VectorInternal = SparseVector {
         indices: vec![DimId::MAX],

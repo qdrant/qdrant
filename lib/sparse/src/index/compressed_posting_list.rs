@@ -703,7 +703,7 @@ mod tests {
     fn test_iter() {
         for case in cases() {
             let list = CompressedPostingList::<f32>::from(case.clone());
-            let _hw = ambient::test_guard();
+            let _scope = ambient::test_guard();
 
             let mut iter = list.iter();
 
@@ -723,7 +723,7 @@ mod tests {
     #[test]
     #[allow(clippy::needless_range_loop)] // for consistency
     fn test_try_till_id() {
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         for i in 0..CASES.len() {
             for j in i..CASES.len() {

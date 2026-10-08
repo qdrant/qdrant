@@ -37,10 +37,10 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = AmbientContext::new();
+    let ctx = AmbientContext::new();
     collection
         .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
-        .measured(hw_counter)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -57,7 +57,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let reference_result = collection
         .search(
             full_search_request.into(),
@@ -66,7 +66,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -86,7 +86,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let page_1_result = collection
         .search(
             page_1_request.into(),
@@ -95,7 +95,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -116,7 +116,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let page_9_result = collection
         .search(
             page_9_request.into(),
@@ -125,7 +125,7 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 

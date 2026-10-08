@@ -22,7 +22,7 @@ fn test_filtering_context_consistency() {
 
     let segment = random_segment(dir.path(), NUM_POINTS);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for _ in 0..ATTEMPTS {
         let filter = random_filter(&mut rng, 3);

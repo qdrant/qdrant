@@ -341,7 +341,7 @@ fn test_quantization_over_typed_storage_hnsw(
         }
     }
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();

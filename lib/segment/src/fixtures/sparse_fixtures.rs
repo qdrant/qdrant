@@ -59,7 +59,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndexReadWrite<MmapFile>>(
 
     let num_vectors = vectors.len();
     let mut num_vectors_not_empty = 0;
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for (idx, vec) in vectors.enumerate() {
         borrowed_storage
             .insert_vector(idx as PointOffsetType, (&vec).into())

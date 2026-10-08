@@ -183,10 +183,10 @@ fn batch_search_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let hw_acc = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let result = shard
                         .query_batch(Arc::new(searches), &search_runtime_handle, None)
-                        .measured(hw_acc)
+                        .measured(ctx)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -214,11 +214,11 @@ fn batch_search_bench(c: &mut Criterion) {
                         searches.push(search_query.into());
                     }
 
-                    let hw_acc = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
                         .core_search(Arc::new(search_query), &search_runtime_handle, None)
-                        .measured(hw_acc)
+                        .measured(ctx)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -286,10 +286,10 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let hw_acc = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let result = shard
                         .query_batch(Arc::new(searches), &search_runtime_handle, None)
-                        .measured(hw_acc)
+                        .measured(ctx)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
@@ -344,10 +344,10 @@ fn batch_rescore_bench(c: &mut Criterion) {
                         searches.push(search_query);
                     }
 
-                    let hw_acc = AmbientContext::new();
+                    let ctx = AmbientContext::new();
                     let result = shard
                         .query_batch(Arc::new(searches), &search_runtime_handle, None)
-                        .measured(hw_acc)
+                        .measured(ctx)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());

@@ -53,7 +53,7 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         };
 
         let mut in_memory_index = InMemoryGeoIndex::new();
-        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?,

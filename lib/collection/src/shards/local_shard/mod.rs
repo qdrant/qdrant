@@ -1108,11 +1108,11 @@ impl LocalShard {
         filter: Option<&'a Filter>,
     ) -> CollectionResult<CardinalityEstimation> {
         let segments = self.segments.clone();
-        let hw_acc = ambient::current();
+        let handoff = ambient::current();
         // clone filter for spawning task
         let filter = filter.cloned();
         let cardinality = tokio::task::spawn_blocking(move || -> OperationResult<_> {
-            let _hw = hw_acc.enter_guard();
+            let _scope = handoff.enter_guard();
             // Collect the segments first so we don't lock the segment holder during the operations.
             let segments = segments
                 .read()

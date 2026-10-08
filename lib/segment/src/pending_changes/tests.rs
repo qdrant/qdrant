@@ -49,7 +49,7 @@ fn delete_change(point_id: u64, version: SeqNumberType) -> PendingChange {
 
 /// Build a segment with points 1..=5 at versions 1..=5, flushed to disk.
 fn build_segment(path: &Path) -> Segment {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
     for point_id in 1..=5u64 {
         segment
@@ -823,7 +823,7 @@ fn test_recover_delete_if_incompatible_index_change() {
 #[test]
 fn test_recover_superseding_vector_name_change() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = build_segment(dir.path());
 
     segment

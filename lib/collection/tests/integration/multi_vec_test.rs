@@ -113,10 +113,10 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = AmbientContext::new();
+    let ctx = AmbientContext::new();
     collection
         .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
-        .measured(hw_counter)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -137,7 +137,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let result = collection
         .search(
             full_search_request.into(),
@@ -146,7 +146,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -174,7 +174,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let result = collection
         .search(
             failed_search_request.into(),
@@ -183,7 +183,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await;
 
     assert_matches!(result, Err(CollectionError::BadInput { .. }));
@@ -203,7 +203,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let result = collection
         .search(
             full_search_request.into(),
@@ -212,7 +212,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -253,7 +253,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         }
     }
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let recommend_result = recommend_by(
         RecommendRequestInternal {
             positive: vec![6.into()],
@@ -269,7 +269,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         ShardSelectorInternal::All,
         None,
     )
-    .measured(hw_acc)
+    .measured(ctx)
     .await;
 
     match recommend_result {
@@ -281,7 +281,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         },
     }
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let recommend_result = recommend_by(
         RecommendRequestInternal {
             positive: vec![6.into()],
@@ -298,7 +298,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         ShardSelectorInternal::All,
         None,
     )
-    .measured(hw_acc)
+    .measured(ctx)
     .await
     .unwrap();
 

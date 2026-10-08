@@ -373,7 +373,7 @@ impl UpdateWorkers {
         let cpu_utilization = handoff.cpu_utilization();
 
         let result = cpu_utilization.measure(|| {
-            let _hw = handoff.enter_guard();
+            let _scope = handoff.enter_guard();
             CollectionUpdater::update(
                 &segments,
                 op_num,

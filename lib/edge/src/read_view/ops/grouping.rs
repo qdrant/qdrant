@@ -13,7 +13,7 @@ use crate::requests::GroupRequest;
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
         self.check_stopped()?;
-        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let GroupRequest {
             query,
             group_by,

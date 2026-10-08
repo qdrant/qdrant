@@ -78,7 +78,7 @@ mod tests {
             .prefix("ro_multi_turbo_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let multi = |value: VectorElementType| {
             MultiDenseVectorInternal::try_from(vec![vec![value; DIM]]).unwrap()

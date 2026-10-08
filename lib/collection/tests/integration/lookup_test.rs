@@ -70,11 +70,11 @@ async fn setup() -> Resources {
         PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
     );
 
-    let hw_counter = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     collection
         .update_from_client_simple(upsert_points, true, None, WriteOrdering::default())
-        .measured(hw_counter)
+        .measured(ctx)
         .await
         .unwrap();
 

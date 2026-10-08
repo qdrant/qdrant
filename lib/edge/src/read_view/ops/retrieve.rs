@@ -16,7 +16,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         with_vector: Option<WithVector>,
     ) -> OperationResult<Vec<RecordInternal>> {
         self.check_stopped()?;
-        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let with_payload =
             WithPayload::from(with_payload.unwrap_or(WithPayloadInterface::Bool(true)));
         let with_vector = with_vector.unwrap_or(WithVector::Bool(false));

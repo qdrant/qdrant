@@ -13,8 +13,8 @@ use crate::index::tests::common::{build_index, match_all};
 
 fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> AmbientContext {
     let is_stopped = AtomicBool::new(false);
-    let accumulator = AmbientContext::new();
-    accumulator.measure(|| {
+    let ctx = AmbientContext::new();
+    ctx.measure(|| {
         let top = 10;
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context =
@@ -26,7 +26,7 @@ fn do_search<I: InvertedIndex>(index: &I, query: RemappedSparseVector) -> Ambien
         assert!(result.len() <= top);
     });
 
-    accumulator
+    ctx
 }
 
 fn do_plain_search<I: InvertedIndex>(
@@ -35,8 +35,8 @@ fn do_plain_search<I: InvertedIndex>(
     docs: &[PointOffsetType],
 ) -> AmbientContext {
     let is_stopped = AtomicBool::new(false);
-    let accumulator = AmbientContext::new();
-    accumulator.measure(|| {
+    let ctx = AmbientContext::new();
+    ctx.measure(|| {
         let top = 10;
         let mut scratch = SearchScratch::new_for_test();
         let mut search_context =
@@ -49,7 +49,7 @@ fn do_plain_search<I: InvertedIndex>(
         assert!(result.len() <= top);
     });
 
-    accumulator
+    ctx
 }
 
 #[test]

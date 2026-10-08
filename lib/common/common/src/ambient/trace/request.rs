@@ -69,10 +69,12 @@ impl Drop for IoRequest {
         let (Some(active), Some(sink)) = (self.0.take(), SINK.get()) else {
             return;
         };
-        let Some(start) = active.started else { return };
+        let Some(started) = active.started else {
+            return;
+        };
         sink.send(Event::Request {
             parent: active.parent,
-            start_ns: elapsed_ns(sink.origin, start),
+            start_ns: elapsed_ns(sink.origin, started),
             end_ns: elapsed_ns(sink.origin, Instant::now()),
             op: active.op,
             path: active.path,

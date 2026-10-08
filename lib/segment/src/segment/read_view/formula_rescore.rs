@@ -174,7 +174,7 @@ mod tests {
     fn rescore_keeps_every_prefetch_score_with_its_own_point() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         for id in [1, 2, 3] {
             let mut vectors = NamedVectors::default();

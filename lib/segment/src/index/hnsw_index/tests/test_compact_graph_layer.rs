@@ -80,7 +80,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         .map(|_| random_vector(&mut rng, dim))
         .collect_vec();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let reference_results = queries
         .iter()
         .map(|query| {

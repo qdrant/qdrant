@@ -32,7 +32,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let delete_mask = [false, false, true, true, false];
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert all points
     for (i, vec) in points.iter().enumerate() {
@@ -124,7 +124,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     .map(|opt| opt.map(|v| v.try_into().unwrap()))
     .collect();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let id_tracker = create_id_tracker_fixture(points.len());
     {
@@ -209,7 +209,7 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
     .map(|v| v.try_into().unwrap())
     .collect::<Vec<SparseVector>>();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     points.iter().enumerate().for_each(|(i, vec)| {
         storage

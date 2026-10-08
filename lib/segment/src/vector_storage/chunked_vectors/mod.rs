@@ -87,7 +87,7 @@ mod tests {
         let num_vectors = 1000;
         let mut rng = StdRng::seed_from_u64(42);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut vectors: Vec<_> = (0..num_vectors)
             .map(|_| random_vector(&mut rng, dim))
@@ -158,7 +158,7 @@ mod tests {
     fn run_across_chunk_boundary_round_trips() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let dim = 500;
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
 
         let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> = ChunkedVectors::open(
@@ -201,7 +201,7 @@ mod tests {
     fn for_each_vector_stitches_straddling_runs() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let dim = 500;
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut rng = StdRng::seed_from_u64(42);
 
         let mut chunked_mmap: ChunkedVectors<VectorElementType, MmapFile> = ChunkedVectors::open(
