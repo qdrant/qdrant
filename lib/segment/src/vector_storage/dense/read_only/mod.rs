@@ -333,9 +333,7 @@ mod tests {
         assert!(!reader.is_deleted_vector(0));
     }
 
-    /// A failed storage read has to reach the caller as an error. The scorer
-    /// runs inside the rayon search pool, where a panic takes the query down
-    /// and reports nothing the caller can act on.
+    /// A panic here takes down a rayon search worker instead of failing the query.
     #[test]
     fn score_stored_batch_reports_a_failed_read() {
         use crate::spaces::simple::DotProductMetric;
@@ -346,7 +344,7 @@ mod tests {
         const DIM: usize = 16;
 
         let dir = Builder::new().prefix("ro_dense_err").tempdir().unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _hw = hw::test_guard();
         {
             let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
                 dir.path(),
@@ -358,9 +356,7 @@ mod tests {
             .unwrap();
             for id in 0..POINT_COUNT {
                 let vector: DenseVector = vec![id as VectorElementType; DIM];
-                storage
-                    .insert_vector(id, VectorRef::from(&vector), &hw)
-                    .unwrap();
+                storage.insert_vector(id, VectorRef::from(&vector)).unwrap();
             }
             storage.flusher()().unwrap();
         }
@@ -376,11 +372,8 @@ mod tests {
         .unwrap();
 
         let query: DenseVector = vec![1.0; DIM];
-        let scorer = MetricQueryScorer::<VectorElementType, DotProductMetric, _>::new(
-            query,
-            &storage,
-            HardwareCounterCell::disposable(),
-        );
+        let scorer =
+            MetricQueryScorer::<VectorElementType, DotProductMetric, _>::new(query, &storage);
 
         let mut scores = [0.0; 1];
         assert!(

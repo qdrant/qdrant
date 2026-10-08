@@ -135,7 +135,7 @@ fn relevance_similarities(
     // get similarity between candidates and query
     let ids: Vec<_> = (0..volatile_storage.total_vector_count() as u32).collect();
     let mut similarities = vec![0.0; ids.len()];
-    let _ = query_scorer.score_points(&ids, &mut similarities);
+    query_scorer.score_points(&ids, &mut similarities)?;
 
     Ok(similarities)
 }
