@@ -189,6 +189,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// withheld (its data may be partial) and reported on a later reload once its version lands.
     /// Deletes are driven by the mapping and need no version, a deleted point's version is
     /// considered gone.
+    ///
+    /// Deletes apply immediately, but reported inserts stay staged, invisible to readers, until
+    /// [`Self::publish_staged`]; reloading again before that reports them again.
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
@@ -214,13 +217,21 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 MappingChange::Insert(external_id, internal_id) => {
                     self.max_claimed_internal_id =
                         self.max_claimed_internal_id.max(Some(internal_id));
-                    self.pending_inserts.insert(external_id, internal_id);
+                    // A re-insert supersedes a staged one, which a failed reload may have handed to
+                    // components already
+                    if let Some(staged) = self.staged_inserts.remove(&external_id) {
+                        deleted.push(staged);
+                    }
+                    self.unversioned_inserts.insert(external_id, internal_id);
                 }
                 MappingChange::Delete(external_id) => {
                     // A point can be both committed (an old offset) and pending (a not-yet-committed
                     // re-insert at a new offset). A delete removes it from both. Report the deleted
-                    // offset only if it was committed (and therefore previously reported).
-                    self.pending_inserts.remove(&external_id);
+                    // offset only if it was previously reported, linked or staged.
+                    self.unversioned_inserts.remove(&external_id);
+                    if let Some(staged) = self.staged_inserts.remove(&external_id) {
+                        deleted.push(staged);
+                    }
                     if let Some(internal_id) = self.mappings.drop(external_id) {
                         deleted.push(internal_id);
                     }
@@ -228,14 +239,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             }
         }
 
-        let drained = self
-            .pending_inserts
+        let versioned = self
+            .unversioned_inserts
             .extract_if(|_, &mut internal_id| internal_id < committed);
+        self.staged_inserts.extend(versioned);
+
+        // Every staged insert is reported, including those an unpublished reload reported before.
         let mut inserted = Vec::new();
-        for (external_id, internal_id) in drained {
+        for (external_id, &internal_id) in &self.staged_inserts {
             // An upsert re-links an existing external id to a new offset; the previously-committed
-            // offset it displaces is now dead and must be reported as deleted.
-            if let Some(previous) = self.mappings.set_link(external_id, internal_id)
+            // offset it displaces is dead once linked and must be reported as deleted.
+            if let Some(previous) = self.mappings.peek_link(external_id, internal_id)
                 && previous != internal_id
             {
                 deleted.push(previous);
@@ -243,12 +257,22 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             inserted.push(internal_id);
         }
 
-        // `extract_if` drains in arbitrary hash order; both result lists are sorted ascending.
+        // `staged_inserts` iterates in arbitrary hash order; both result lists are sorted ascending.
         inserted.sort_unstable();
         deleted.sort_unstable();
         deleted.dedup();
 
         Ok(LiveReloadResult { inserted, deleted })
+    }
+
+    /// Link the inserts the last reload reported, making them visible to readers.
+    ///
+    /// Call once every component has ingested that reload's delta, so the tracker never exposes an
+    /// offset a component cannot serve.
+    pub fn publish_staged(&mut self) {
+        for (external_id, internal_id) in self.staged_inserts.drain() {
+            self.mappings.set_link(external_id, internal_id);
+        }
     }
 
     /// Read mapping changes appended after the last consumed offset, advancing `mappings_read_to`.

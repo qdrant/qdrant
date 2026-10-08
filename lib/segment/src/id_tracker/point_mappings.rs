@@ -489,6 +489,23 @@ impl PointMappings {
         self.deleted[key]
     }
 
+    /// The head [`Self::set_link`] would return for this link, without linking.
+    pub(crate) fn peek_link(
+        &self,
+        external_id: &PointIdType,
+        internal_id: PointOffsetType,
+    ) -> Option<PointOffsetType> {
+        let is_deferred = self
+            .deferred_internal_id
+            .is_some_and(|cutoff| internal_id >= cutoff);
+
+        if is_deferred {
+            self.internal_id_deferred(external_id)
+        } else {
+            self.internal_id_active(external_id)
+        }
+    }
+
     /// Sets the link between an external and internal id.
     /// Returns the previous head for the same track if it existed.
     ///

@@ -78,6 +78,9 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// every component has reloaded successfully. If a component fails mid-way the
     /// delta is retained, and a later reload folds in the tracker's new changes and
     /// replays the union — no component is left drifting on a partial reload.
+    ///
+    /// New inserts are published to the id-tracker's readers only after that, so
+    /// readers never reach an offset a component cannot serve.
     pub fn live_reload(
         &mut self,
         max_committed_id: Option<PointOffsetType>,
@@ -107,6 +110,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         log::trace!(target: "live-reload", "Pending live-reload in {} changes: {:?}", self.uuid, pending);
 
         if pending.is_empty() {
+            id_tracker.borrow_mut().publish_staged();
             fs.rotate_cache_file_info();
             return Ok(());
         }
@@ -130,8 +134,9 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             }
         }
 
-        // Every component is now in sync; discard the applied delta and rotate
-        // file info.
+        // Every component is now in sync; publish the inserts, discard the applied
+        // delta and rotate file info.
+        id_tracker.borrow_mut().publish_staged();
         *pending = LiveReloadResult::default();
         fs.rotate_cache_file_info();
 
