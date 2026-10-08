@@ -116,7 +116,7 @@ const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
 fn upsert_flush_reload_in_ram_matches_independent_oracle(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     const COUNT: usize = 64;
     // Max direction error tolerated on a round-trip, and the separation we
@@ -230,7 +230,7 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle(
 /// stays unsupported. Verified against the same independent oracle.
 #[rstest]
 fn mmap_update_from_builds_and_matches_independent_oracle(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     const COUNT: usize = 64;
     const TOL: f32 = 2e-2;
@@ -665,7 +665,7 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
 
 #[rstest]
 fn deleted_placeholders_load_and_score_without_panic(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     const COUNT: usize = 4;
     let stopped = AtomicBool::new(false);
@@ -724,7 +724,9 @@ fn deleted_placeholders_load_and_score_without_panic(
 /// arithmetic and the "higher = better" sign convention must all line up so
 /// that a stored vector scores best against itself.
 #[rstest]
-fn nearest_scorer_ranks_self_first(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn nearest_scorer_ranks_self_first(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 
@@ -789,7 +791,9 @@ fn nearest_scorer_ranks_self_first(#[values(TQBits::Bits4, TQBits::Bits8)] bits:
 /// the inline-rescoring path scores the exact same TQ bytes the storage
 /// holds, so the two must produce identical scores.
 #[rstest]
-fn score_bytes_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn score_bytes_matches_score_stored(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use common::typelevel::True;
 
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
@@ -854,7 +858,9 @@ fn score_bytes_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits
 /// which exercises query transform/preprocessing and `score_by` plumbing on
 /// top of the same asymmetric scoring used by the nearest path.
 #[rstest]
-fn custom_reco_scorer_ranks_positive_first(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn custom_reco_scorer_ranks_positive_first(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_custom_query_scorer::TurboCustomQueryScorer;
@@ -1203,7 +1209,9 @@ const OPS: usize = 60;
 /// Sweep dims and distances with several randomized scenarios each.
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
-fn turbo_model_test_random_ops_dot(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn turbo_model_test_random_ops_dot(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
         for seed in 0..SEEDS_PER_CELL {
             // Mix dim/distance into the seed so cells don't share a stream.
@@ -1218,7 +1226,9 @@ fn turbo_model_test_random_ops_dot(#[values(TQBits::Bits4, TQBits::Bits8)] bits:
 /// Sweep dims and distances with several randomized scenarios each.
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 #[rstest]
-fn turbo_model_test_random_ops_cosine(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn turbo_model_test_random_ops_cosine(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
         for seed in 0..SEEDS_PER_CELL {
             // Mix dim/distance into the seed so cells don't share a stream.
@@ -1260,7 +1270,9 @@ fn build_single_file(
 /// dequantized reads.
 #[cfg(target_os = "linux")]
 #[rstest]
-fn uring_backend_matches_mmap_and_oracle(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn uring_backend_matches_mmap_and_oracle(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     const COUNT: usize = 80;
 
     for (seed, dim) in [(SEEDS[0], 127), (SEEDS[1], 128), (SEEDS[2], 1024)] {
@@ -1315,7 +1327,9 @@ fn uring_backend_matches_mmap_and_oracle(#[values(TQBits::Bits4, TQBits::Bits8)]
 /// duplicates, and exceed `VECTOR_READ_BATCH_SIZE`, so chunking and the
 /// idx→key mapping are actually exercised.
 #[rstest]
-fn score_stored_batch_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn score_stored_batch_matches_score_stored(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use rand::seq::SliceRandom;
 
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
@@ -1421,7 +1435,9 @@ fn score_stored_batch_matches_score_stored(#[values(TQBits::Bits4, TQBits::Bits8
 /// `VECTOR_READ_BATCH_SIZE`, so chunking and the idx→key mapping are
 /// actually exercised.
 #[rstest]
-fn batched_retrieval_matches_per_point_reads(#[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits) {
+fn batched_retrieval_matches_per_point_reads(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use rand::seq::SliceRandom;
 
     const DIM: usize = 128;
@@ -1531,7 +1547,7 @@ fn batched_retrieval_matches_per_point_reads(#[values(TQBits::Bits4, TQBits::Bit
 /// scoring the same keys one by one.
 #[rstest]
 fn batch_scoring_accumulates_same_hw_counters(
-    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     use common::counter::AmbientContext;
 

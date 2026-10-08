@@ -52,6 +52,8 @@ impl TQBits {
             TQBits::Bits2 => &CENTROIDS_2BIT,
             TQBits::Bits4 => &CENTROIDS_4BIT,
             TQBits::Bits8 => &CENTROIDS_8BIT,
+            // Too wide for a table; its codes are read directly as `i16`.
+            TQBits::Bits16 => &[],
         }
     }
 
@@ -67,6 +69,7 @@ impl TQBits {
             TQBits::Bits2 => &CENTROIDS_2BIT_BOUNDARIES,
             TQBits::Bits4 => &CENTROIDS_4BIT_BOUNDARIES,
             TQBits::Bits8 => &CENTROIDS_8BIT_BOUNDARIES,
+            TQBits::Bits16 => &[],
         }
     }
 }

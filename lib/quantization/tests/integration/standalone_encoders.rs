@@ -82,6 +82,7 @@ mod tests {
             (TQBits::Bits4, TQMode::Normal),
             (TQBits::Bits2, TQMode::Plus),
             (TQBits::Bits8, TQMode::Normal),
+            (TQBits::Bits16, TQMode::Normal),
         ] {
             let dir = Builder::new().prefix("encoder_tq").tempdir().unwrap();
             let meta_path = dir.path().join("meta.json");

@@ -451,16 +451,16 @@ pub fn open_appendable_memmap_vector_storage(
             madvise,
             populate,
         ),
-        VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
-            open_appendable_turbo_vector_storage(
-                vector_storage_path,
-                size,
-                distance,
-                tq_bits(storage_element_type),
-                populate,
-            )
-            .map(|s| VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(s)))
-        }
+        VectorStorageDatatype::Turbo4
+        | VectorStorageDatatype::Turbo8
+        | VectorStorageDatatype::Turbo16 => open_appendable_turbo_vector_storage(
+            vector_storage_path,
+            size,
+            distance,
+            tq_bits(storage_element_type),
+            populate,
+        )
+        .map(|s| VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(s))),
     }
 }
 
@@ -498,17 +498,17 @@ pub fn open_appendable_memmap_multi_vector_storage(
             madvise,
             populate,
         ),
-        VectorStorageDatatype::Turbo4 | VectorStorageDatatype::Turbo8 => {
-            open_appendable_turbo_multi_vector_storage(
-                path,
-                dim,
-                distance,
-                tq_bits(storage_element_type),
-                multi_vector_config,
-                populate,
-            )
-            .map(|s| VectorStorageEnum::MultiDenseTurbo(Box::new(s)))
-        }
+        VectorStorageDatatype::Turbo4
+        | VectorStorageDatatype::Turbo8
+        | VectorStorageDatatype::Turbo16 => open_appendable_turbo_multi_vector_storage(
+            path,
+            dim,
+            distance,
+            tq_bits(storage_element_type),
+            multi_vector_config,
+            populate,
+        )
+        .map(|s| VectorStorageEnum::MultiDenseTurbo(Box::new(s))),
     }
 }
 
