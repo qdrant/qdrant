@@ -99,6 +99,13 @@ impl BoolIndexRead for BoolIndex {
             BoolIndex::Immutable(index) => index.falses_count(),
         }
     }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            BoolIndex::Mutable(_) => Vec::new(),
+            BoolIndex::Immutable(_) => BoolIndexRead::files(self),
+        }
+    }
 }
 
 impl PayloadFieldIndexRead for BoolIndex {
@@ -160,10 +167,7 @@ impl PayloadFieldIndex for BoolIndex {
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            BoolIndex::Mutable(index) => index.immutable_files(),
-            BoolIndex::Immutable(index) => index.immutable_files(),
-        }
+        BoolIndexRead::immutable_files(self)
     }
 }
 

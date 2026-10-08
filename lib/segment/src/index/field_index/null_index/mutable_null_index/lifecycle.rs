@@ -180,7 +180,7 @@ impl PayloadFieldIndex for MutableNullIndex {
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new() // everything is mutable
+        NullIndexRead::immutable_files(self)
     }
 }
 

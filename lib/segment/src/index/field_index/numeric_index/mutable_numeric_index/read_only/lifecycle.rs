@@ -81,4 +81,17 @@ where
             storage,
         }))
     }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear read-only appendable numeric index gridstore cache: {err}"
+            ))
+        })
+    }
 }

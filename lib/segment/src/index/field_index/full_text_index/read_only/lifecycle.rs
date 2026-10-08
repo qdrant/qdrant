@@ -143,4 +143,39 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             Self::Immutable(_) => IndexMutability::Immutable,
         }
     }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(index) => index.files(),
+            Self::Immutable(index) => index.files(),
+            Self::OnDisk(index) => index.files(),
+        }
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(_) => Vec::new(),
+            Self::Immutable(index) => index.immutable_files(),
+            Self::OnDisk(index) => index.immutable_files(),
+        }
+    }
+
+    /// Populate all pages in the mmap. Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            // Appendable / Immutable keep their inverted index fully in RAM —
+            // there is nothing to populate.
+            Self::Appendable(_) | Self::Immutable(_) => Ok(()),
+            Self::OnDisk(index) => index.populate(),
+        }
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Appendable(index) => index.clear_cache(),
+            Self::Immutable(index) => index.clear_cache(),
+            Self::OnDisk(index) => index.clear_cache(),
+        }
+    }
 }
