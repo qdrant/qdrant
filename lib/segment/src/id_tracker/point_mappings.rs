@@ -554,6 +554,8 @@ impl PointMappings {
             .is_some_and(|cutoff| internal_id >= cutoff);
 
         let internal_id_usize = internal_id as usize;
+        // A slot past the end is fresh: the sentinel it is filled with must not pass for a point.
+        let was_claimed = internal_id_usize < self.internal_to_external.len();
         if internal_id_usize >= self.internal_to_external.len() {
             self.internal_to_external
                 .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
@@ -657,7 +659,8 @@ impl PointMappings {
         // Linking a tombstoned slot back to the point it held revives it, as when a writer points
         // an id back at its committed slot after abandoning an insert: undo the deferred deletion
         // that tombstoning it counted.
-        if self.deleted[internal_id_usize]
+        if was_claimed
+            && self.deleted[internal_id_usize]
             && replaced_external_id == external_id
             && is_deferred
         {
