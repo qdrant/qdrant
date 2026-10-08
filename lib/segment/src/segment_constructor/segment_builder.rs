@@ -42,7 +42,7 @@ use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndexEnum};
-use crate::payload_storage::PayloadStorage;
+use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::batched_reader::{PointData, merge_from};
@@ -800,13 +800,13 @@ impl SegmentBuilder {
                     tick_progress: || (),
                 })?;
 
-                if sparse_vector_config.storage_type.is_on_disk() {
+                if vector_storage_arc.borrow().is_on_disk() {
                     // If vector storage is expected to be on-disk, we need to clear cache
                     // to avoid cache pollution
                     vector_storage_arc.borrow().clear_cache()?;
                 }
 
-                if sparse_vector_config.index.index_type.is_on_disk() {
+                if index.is_on_disk() {
                     index.clear_cache()?;
                 }
 
@@ -815,7 +815,7 @@ impl SegmentBuilder {
             }
             drop(progress_sparse_vector_index);
 
-            if segment_config.payload_storage_type.is_on_disk() {
+            if payload_storage_arc.borrow().is_on_disk() {
                 // If payload storage is expected to be on-disk, we need to clear cache
                 // to avoid cache pollution
                 payload_storage_arc.borrow().clear_cache()?;
