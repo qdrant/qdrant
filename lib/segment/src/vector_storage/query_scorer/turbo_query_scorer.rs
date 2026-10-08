@@ -27,7 +27,7 @@ impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
         Self {
             hw: HwScale {
                 cpu: storage.quantized_vector_size(),
-                vector_io_read: if storage.is_on_disk() {
+                vector_io_read: if storage.is_cold() {
                     storage.quantized_vector_size()
                 } else {
                     0

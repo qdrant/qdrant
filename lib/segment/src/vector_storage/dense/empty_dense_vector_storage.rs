@@ -31,7 +31,7 @@ pub struct EmptyDenseVectorStorage {
     distance: Distance,
     dim: usize,
     datatype: VectorStorageDatatype,
-    is_on_disk: bool,
+    cold: bool,
     multi_vector_config: Option<MultiVectorConfig>,
     /// Number of points in this storage (all reported as deleted)
     num_points: usize,
@@ -44,7 +44,7 @@ impl EmptyDenseVectorStorage {
         dim: usize,
         distance: Distance,
         datatype: VectorStorageDatatype,
-        is_on_disk: bool,
+        cold: bool,
         multi_vector_config: Option<MultiVectorConfig>,
         num_points: usize,
     ) -> Self {
@@ -52,7 +52,7 @@ impl EmptyDenseVectorStorage {
             distance,
             dim,
             datatype,
-            is_on_disk,
+            cold,
             multi_vector_config,
             num_points,
             deleted_bitvec: BitVec::repeat(true, num_points),
@@ -74,7 +74,7 @@ pub fn new_empty_dense_vector_storage(
     dim: usize,
     distance: Distance,
     datatype: VectorStorageDatatype,
-    is_on_disk: bool,
+    cold: bool,
     multi_vector_config: Option<MultiVectorConfig>,
     num_points: usize,
 ) -> VectorStorageEnum {
@@ -82,7 +82,7 @@ pub fn new_empty_dense_vector_storage(
         dim,
         distance,
         datatype,
-        is_on_disk,
+        cold,
         multi_vector_config,
         num_points,
     ))
@@ -182,8 +182,8 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
         self.datatype
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+    fn is_cold(&self) -> bool {
+        self.cold
     }
 
     fn total_vector_count(&self) -> usize {
@@ -263,7 +263,7 @@ mod tests {
 
         assert_eq!(storage.distance(), Distance::Cosine);
         assert_eq!(storage.datatype(), VectorStorageDatatype::Float32);
-        assert!(storage.is_on_disk());
+        assert!(storage.is_cold());
         assert_eq!(storage.total_vector_count(), 1000);
         assert_eq!(storage.available_vector_count(), 0);
         assert_eq!(storage.deleted_vector_count(), 1000);
@@ -289,7 +289,7 @@ mod tests {
             None,
             0,
         );
-        assert!(storage_on_disk.is_on_disk());
+        assert!(storage_on_disk.is_cold());
 
         let storage_in_ram = EmptyDenseVectorStorage::new(
             64,
@@ -299,7 +299,7 @@ mod tests {
             None,
             0,
         );
-        assert!(!storage_in_ram.is_on_disk());
+        assert!(!storage_in_ram.is_cold());
     }
 
     #[test]

@@ -49,7 +49,9 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     type Version: StorageVersion;
 
-    fn is_on_disk(&self) -> bool;
+    /// Whether the index was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    fn is_cold(&self) -> bool;
 
     /// Open existing index based on path.
     fn open_ro<Fs: UniversalReadFs>(fs: &Fs, path: &Path) -> UioResult<Self>

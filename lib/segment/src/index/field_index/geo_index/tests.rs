@@ -150,12 +150,12 @@ fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Database) {
         )),
         IndexType::OnDisk => IndexBuilder::Mmap(GeoIndex::builder_mmap(
             temp_dir.path(),
-            true,
+            Memory::Cold,
             &empty_deleted(),
         )),
         IndexType::Immutable => IndexBuilder::Immutable(GeoIndex::builder_mmap(
             temp_dir.path(),
-            false,
+            Memory::Pinned,
             &empty_deleted(),
         )),
     };

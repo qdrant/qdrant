@@ -101,7 +101,7 @@ pub trait GeoIndexRead {
 
     fn ram_usage_bytes(&self) -> usize;
 
-    fn is_on_disk(&self) -> bool;
+    fn is_cold(&self) -> bool;
 
     fn populate(&self) -> OperationResult<()>;
 

@@ -115,7 +115,7 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
         self.inner.ram_usage_bytes()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.inner.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.inner.is_cold()
     }
 }

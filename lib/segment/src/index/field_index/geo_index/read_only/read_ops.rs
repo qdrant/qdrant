@@ -161,11 +161,11 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
-            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::is_on_disk(index),
-            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::is_on_disk(index),
-            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::is_on_disk(index),
+            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::is_cold(index),
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::is_cold(index),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::is_cold(index),
         }
     }
 

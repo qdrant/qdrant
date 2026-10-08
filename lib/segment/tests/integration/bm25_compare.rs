@@ -44,6 +44,7 @@ use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use segment::json_path::JsonPath;
+use segment::types::Memory;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
@@ -164,11 +165,11 @@ fn build_text(shape: TextShape, documents: &[Vec<String>]) -> (FullTextIndex, te
             documents,
         ),
         TextShape::Immutable => fill(
-            FullTextIndex::builder_mmap(path, text_config(), false, &empty_deleted, true),
+            FullTextIndex::builder_mmap(path, text_config(), Memory::Pinned, &empty_deleted, true),
             documents,
         ),
         TextShape::OnDisk => fill(
-            FullTextIndex::builder_mmap(path, text_config(), true, &empty_deleted, true),
+            FullTextIndex::builder_mmap(path, text_config(), Memory::Cold, &empty_deleted, true),
             documents,
         ),
     };

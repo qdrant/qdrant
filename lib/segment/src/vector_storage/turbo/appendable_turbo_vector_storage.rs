@@ -208,8 +208,8 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.storage.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {

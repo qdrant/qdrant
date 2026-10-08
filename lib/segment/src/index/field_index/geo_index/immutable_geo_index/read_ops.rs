@@ -78,7 +78,7 @@ impl<S: UniversalRead> GeoIndexRead for ImmutableGeoIndex<S> {
         ImmutableGeoIndex::ram_usage_bytes(self)
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

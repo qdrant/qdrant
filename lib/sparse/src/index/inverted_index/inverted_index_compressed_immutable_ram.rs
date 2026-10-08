@@ -79,7 +79,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
 
     type Version = Version;
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

@@ -35,7 +35,7 @@ impl<
         Self {
             hw: HwScale {
                 cpu: size_of::<DimWeight>(),
-                vector_io_read: if vector_storage.is_on_disk() {
+                vector_io_read: if vector_storage.is_cold() {
                     size_of::<DimId>()
                 } else {
                     0

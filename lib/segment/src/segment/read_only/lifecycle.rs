@@ -569,7 +569,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
         let quantized_vectors = if segment_config.quantization_config(vector_name).is_some() {
             let (distance, datatype, on_disk) = {
                 let storage = vector_storage.borrow();
-                (storage.distance(), storage.datatype(), storage.is_on_disk())
+                (storage.distance(), storage.datatype(), storage.is_cold())
             };
             let quantized_populate =
                 load_profile.and_then(|profile| profile.quantized_vectors_placement(vector_name));

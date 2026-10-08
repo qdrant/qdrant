@@ -197,6 +197,7 @@ where
             histogram,
             max_values_per_point: config.max_values_per_point,
             compact_deleted_mask,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 }
@@ -276,6 +277,7 @@ where
             histogram: _,
             max_values_per_point: _,
             compact_deleted_mask,
+            cold: _,
         } = self;
         let Storage {
             deleted: _,
@@ -303,6 +305,7 @@ where
             histogram,
             max_values_per_point: _,
             compact_deleted_mask: _,
+            cold: _,
         } = self;
 
         histogram.ram_usage_bytes() + storage.ram_usage_bytes()

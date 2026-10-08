@@ -61,7 +61,7 @@ mod tests {
         LiveReload, PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer,
     };
     use crate::json_path::JsonPath;
-    use crate::types::{FieldCondition, Match, MatchPhrase};
+    use crate::types::{FieldCondition, Match, MatchPhrase, Memory};
 
     fn test_config() -> TextIndexParams {
         TextIndexParams {
@@ -140,7 +140,9 @@ mod tests {
     /// dropped until the writer has, rather than served without lengths.
     /// Without scoring the same files open, and with the sidecar both do.
     #[rstest]
-    fn immutable_without_lengths_is_absent_under_scoring(#[values(false, true)] is_on_disk: bool) {
+    fn immutable_without_lengths_is_absent_under_scoring(
+        #[values(Memory::Cold, Memory::Pinned)] memory: Memory,
+    ) {
         use common::bitvec::BitVec;
 
         use crate::data_types::index::TextScoringParams;
@@ -156,7 +158,7 @@ mod tests {
             let mut builder = FullTextIndex::builder_mmap(
                 dir.path().to_path_buf(),
                 test_config(),
-                true,
+                Memory::Cold,
                 &deleted,
                 scoring,
             );
@@ -174,7 +176,7 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 config(scoring),
-                is_on_disk,
+                memory,
                 &deleted,
             )
             .unwrap()

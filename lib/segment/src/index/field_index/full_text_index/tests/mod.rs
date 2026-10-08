@@ -17,6 +17,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::FullTextIn
 use crate::index::field_index::{
     FieldIndex, FieldIndexBuilderTrait as _, PayloadFieldIndexRead, ValueIndexer,
 };
+use crate::types::Memory;
 
 fn movie_titles() -> Vec<String> {
     vec![
@@ -242,7 +243,7 @@ fn test_phrase_matching() {
     let mut mmap_builder = FullTextIndex::builder_mmap(
         temp_dir.path().to_path_buf(),
         config.clone(),
-        true,
+        Memory::Cold,
         &empty_deleted,
         true,
     );
@@ -532,7 +533,8 @@ fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
     };
 
     let empty_deleted = BitVec::new();
-    let mut builder = FullTextIndex::builder_mmap(path, config, true, &empty_deleted, scoring);
+    let mut builder =
+        FullTextIndex::builder_mmap(path, config, Memory::Cold, &empty_deleted, scoring);
     builder.init().unwrap();
     // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
     builder

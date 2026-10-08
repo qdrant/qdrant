@@ -171,19 +171,19 @@ impl FieldIndex {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
-            FieldIndex::IntIndex(index) => index.is_on_disk(),
-            FieldIndex::DatetimeIndex(index) => index.is_on_disk(),
-            FieldIndex::IntMapIndex(index) => index.is_on_disk(),
-            FieldIndex::KeywordIndex(index) => index.is_on_disk(),
-            FieldIndex::FloatIndex(index) => index.is_on_disk(),
-            FieldIndex::GeoIndex(index) => index.is_on_disk(),
-            FieldIndex::BoolIndex(index) => index.is_on_disk(),
-            FieldIndex::FullTextIndex(index) => index.is_on_disk(),
-            FieldIndex::UuidIndex(index) => index.is_on_disk(),
-            FieldIndex::UuidMapIndex(index) => index.is_on_disk(),
-            FieldIndex::NullIndex(index) => index.is_on_disk(),
+            FieldIndex::IntIndex(index) => index.is_cold(),
+            FieldIndex::DatetimeIndex(index) => index.is_cold(),
+            FieldIndex::IntMapIndex(index) => index.is_cold(),
+            FieldIndex::KeywordIndex(index) => index.is_cold(),
+            FieldIndex::FloatIndex(index) => index.is_cold(),
+            FieldIndex::GeoIndex(index) => index.is_cold(),
+            FieldIndex::BoolIndex(index) => index.is_cold(),
+            FieldIndex::FullTextIndex(index) => index.is_cold(),
+            FieldIndex::UuidIndex(index) => index.is_cold(),
+            FieldIndex::UuidMapIndex(index) => index.is_cold(),
+            FieldIndex::NullIndex(index) => index.is_cold(),
         }
     }
 

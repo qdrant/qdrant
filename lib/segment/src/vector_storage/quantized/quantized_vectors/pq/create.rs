@@ -23,7 +23,7 @@ impl QuantizedVectors {
         pq_config: &ProductQuantizationConfig,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
@@ -38,7 +38,7 @@ impl QuantizedVectors {
             encoded_vectors_pq::get_quantized_vector_size(vector_parameters, bucket_size);
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
-        let in_ram = Self::is_ram(pq_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(pq_config.memory_placement(), cold_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
                 data_path.as_path(),
@@ -85,7 +85,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
@@ -101,7 +101,7 @@ impl QuantizedVectors {
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
         let offsets_path = Self::get_offsets_path(path, storage_type);
-        let in_ram = Self::is_ram(pq_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(pq_config.memory_placement(), cold_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
                 data_path.as_path(),

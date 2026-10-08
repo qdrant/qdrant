@@ -91,8 +91,12 @@ fn save_map_index_with<N>(
             builder.finalize().unwrap();
         }
         IndexType::Mmap | IndexType::RamMmap => {
-            let mut builder =
-                MapIndex::<N>::builder_immutable(path, false, &empty_deleted(), prefix_index);
+            let mut builder = MapIndex::<N>::builder_immutable(
+                path,
+                Memory::Pinned,
+                &empty_deleted(),
+                prefix_index,
+            );
             builder.init().unwrap();
             for (idx, values) in data.iter().enumerate() {
                 let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -158,8 +162,12 @@ where
 #[test]
 fn test_uuid_payload_index() {
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-    let mut builder =
-        MapIndex::<UuidIntType>::builder_immutable(temp_dir.path(), false, &empty_deleted(), false);
+    let mut builder = MapIndex::<UuidIntType>::builder_immutable(
+        temp_dir.path(),
+        Memory::Pinned,
+        &empty_deleted(),
+        false,
+    );
 
     builder.init().unwrap();
 
@@ -188,7 +196,7 @@ fn test_index_non_ascending_insertion(#[case] on_disk: bool) {
     let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
     let mut builder = MapIndex::<IntPayloadType>::builder_immutable(
         temp_dir.path(),
-        on_disk,
+        Memory::from_on_disk_heap(on_disk),
         &empty_deleted(),
         false,
     );
@@ -966,8 +974,12 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
     let data = prefix_test_data();
     let _hw = hw::test_guard();
 
-    let mut builder =
-        MapIndex::<str>::builder_immutable(temp_dir.path(), false, &empty_deleted(), with_prefix);
+    let mut builder = MapIndex::<str>::builder_immutable(
+        temp_dir.path(),
+        Memory::Pinned,
+        &empty_deleted(),
+        with_prefix,
+    );
     builder.init().unwrap();
     for (idx, values) in data.iter().enumerate() {
         let values: Vec<Value> = values.iter().map(|v| v.to_string().into()).collect();

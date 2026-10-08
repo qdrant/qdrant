@@ -90,8 +90,8 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageWrite
         ChunkedVectors::<u8, S>::storage_kind().is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.data.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.data.is_cold()
     }
 
     fn vectors_count(&self) -> usize {

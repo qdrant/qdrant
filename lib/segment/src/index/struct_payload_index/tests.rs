@@ -523,7 +523,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
     match index.build_index(&field, &on_disk_schema).unwrap() {
         BuildIndexResult::Built(indexes) => {
             assert!(
-                indexes.iter().any(|i| i.is_on_disk()),
+                indexes.iter().any(|i| i.is_cold()),
                 "an on_disk-only change must reload the existing index in on-disk mode",
             );
             let after_count: usize = indexes

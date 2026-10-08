@@ -4,6 +4,7 @@ use std::io::{BufWriter, Write as _};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use blink_alloc::Blink;
 use common::counter::hw::{self, HwMetric};
@@ -100,6 +101,7 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndexReadOnly<S>
             path: path.to_owned(),
             storage,
             file_header,
+            cold: AtomicBool::new(true),
             _phantom: PhantomData,
         };
 
@@ -138,6 +140,7 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             path: path.to_owned(),
             storage,
             file_header,
+            cold: AtomicBool::new(true),
             _phantom: PhantomData,
         };
 
@@ -183,6 +186,9 @@ pub struct InvertedIndexCompressedMmap<W, S: UniversalRead> {
     path: PathBuf,
     storage: S,
     pub file_header: InvertedIndexFileHeader,
+    /// Whether the page cache is left to fill on demand: set until [`Self::populate`]
+    /// primes it, and again after [`Self::clear_cache`] drops it.
+    cold: AtomicBool,
     _phantom: PhantomData<W>,
 }
 
@@ -218,8 +224,8 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompr
 
     type Version = Version;
 
-    fn is_on_disk(&self) -> bool {
-        true
+    fn is_cold(&self) -> bool {
+        self.cold.load(Ordering::Relaxed)
     }
 
     fn save(&self, path: &Path) -> UioResult<()> {
@@ -539,6 +545,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
             path: path.as_ref().to_owned(),
             storage,
             file_header,
+            cold: AtomicBool::new(true),
             _phantom: PhantomData,
         })
     }
@@ -554,11 +561,14 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
 
     /// Populate the underlying storage in RAM cache. Block until completed.
     pub fn populate(&self) -> UioResult<()> {
-        self.storage.populate()
+        self.storage.populate()?;
+        self.cold.store(false, Ordering::Relaxed);
+        Ok(())
     }
 
     /// Drop disk cache.
     pub fn clear_cache(&self) -> UioResult<()> {
+        self.cold.store(true, Ordering::Relaxed);
         self.storage.clear_ram_cache()
     }
 }

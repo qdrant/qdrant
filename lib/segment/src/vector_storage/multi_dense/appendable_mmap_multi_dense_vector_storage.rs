@@ -322,8 +322,8 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.vectors.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {

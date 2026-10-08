@@ -212,11 +212,11 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
-            ReadOnlyFullTextIndex::Appendable(index) => index.is_on_disk(),
-            ReadOnlyFullTextIndex::OnDisk(index) => index.is_on_disk(),
-            ReadOnlyFullTextIndex::Immutable(index) => index.is_on_disk(),
+            ReadOnlyFullTextIndex::Appendable(index) => index.is_cold(),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.is_cold(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.is_cold(),
         }
     }
 }

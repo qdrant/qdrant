@@ -236,10 +236,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
 
 impl<V, S: UniversalRead> BlobstoreReader<V, S> {
     /// Returns `true` if BlobstoreReader is on disk, i.e. not populated on start/reload
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
-            Self::Gridstore(reader) => reader.is_on_disk(),
-            Self::Logstore(reader) => reader.is_on_disk(),
+            Self::Gridstore(reader) => reader.is_cold(),
+            Self::Logstore(reader) => reader.is_cold(),
         }
     }
 

@@ -887,8 +887,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         TStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.encoded_vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.encoded_vectors.is_cold()
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryBQ<TBitsStoreType> {
@@ -923,7 +923,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         let vector_data_1 = self.encoded_vectors.get_vector_data(i);
         let vector_data_2 = self.encoded_vectors.get_vector_data(j);
 
-        let mul = usize::from(self.encoded_vectors.is_on_disk()); // Reads from RAM don't count as IO.
+        let mul = usize::from(self.encoded_vectors.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump((vector_data_1.len() + vector_data_2.len()) * mul);
 
         // TODO Safety

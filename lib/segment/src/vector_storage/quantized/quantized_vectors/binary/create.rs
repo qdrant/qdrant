@@ -27,7 +27,7 @@ impl QuantizedVectors {
         binary_config: &BinaryQuantizationConfig,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let encoding = Self::convert_binary_encoding(binary_config.encoding);
@@ -37,7 +37,7 @@ impl QuantizedVectors {
         >(vector_parameters.dim, encoding);
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
-        let in_ram = Self::is_ram(binary_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(binary_config.memory_placement(), cold_vector_storage);
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {
@@ -109,7 +109,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let encoding = Self::convert_binary_encoding(binary_config.encoding);
@@ -120,7 +120,7 @@ impl QuantizedVectors {
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
         let offsets_path = Self::get_offsets_path(path, storage_type);
-        let in_ram = Self::is_ram(binary_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(binary_config.memory_placement(), cold_vector_storage);
 
         match (in_ram, storage_type) {
             (_, QuantizedVectorsStorageType::Mutable) => {

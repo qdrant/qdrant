@@ -57,7 +57,7 @@ where
             fs.create_dir(directory)?;
             fs.atomic_save(&status_path, bytemuck::bytes_of(&Status { len: 0 }))?;
         }
-        let config = ensure_config::<T, _>(fs, directory, dim, false)?;
+        let config = ensure_config::<T, _>(fs, directory, dim)?;
 
         Ok(Self {
             directory: directory.to_owned(),

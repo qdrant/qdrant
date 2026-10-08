@@ -59,7 +59,7 @@ where
         vector_storage.read_vectors::<Random, U>(
             live_keys,
             |user_data, point_offset, cow_vector| {
-                if vector_storage.is_on_disk() {
+                if vector_storage.is_cold() {
                     HwMetric::VectorIoRead.bump(cow_vector.estimate_size_in_bytes());
                 }
                 callback(user_data, point_offset, cow_vector.to_owned());
@@ -85,7 +85,7 @@ where
 
         vector_storage
             .read_vector_bytes::<Random, U>(live_keys, |user_data, point_offset, bytes| {
-                if vector_storage.is_on_disk() {
+                if vector_storage.is_cold() {
                     HwMetric::VectorIoRead.bump(bytes.len());
                 }
                 callback(user_data, point_offset, bytes);

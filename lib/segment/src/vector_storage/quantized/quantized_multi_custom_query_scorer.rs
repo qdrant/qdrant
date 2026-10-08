@@ -82,7 +82,7 @@ where
         Self {
             hw: HwScale {
                 cpu: size_of::<TElement>(),
-                vector_io_read: usize::from(quantized_multivector_storage.is_on_disk()),
+                vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
             },
             query,
             quantized_multivector_storage,

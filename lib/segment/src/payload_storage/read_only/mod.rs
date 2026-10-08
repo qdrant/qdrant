@@ -64,7 +64,7 @@ mod tests {
         let storage: ReadOnlyPayloadStorage<ReadOnly<MmapFile>> =
             ReadOnlyPayloadStorage::open(&fs, dir.path().to_path_buf(), populate).unwrap();
 
-        assert_eq!(storage.is_on_disk(), !populate.to_bool::<MmapFile>());
+        assert_eq!(storage.is_cold(), !populate.to_bool::<MmapFile>());
         for i in 0..5 {
             assert_eq!(storage.get(i).unwrap(), payload);
         }

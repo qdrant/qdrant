@@ -554,7 +554,7 @@ fn test_reader_on_append_only_storage() {
         BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 5);
-    assert!(reader.is_on_disk());
+    assert!(reader.is_cold());
     // Three values, packed back to back: point offset gaps take no page space
     assert_eq!(reader.get_storage_size_bytes(), 3 * 10);
     reader.clear_cache().unwrap();

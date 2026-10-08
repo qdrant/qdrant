@@ -242,7 +242,7 @@ impl HNSWIndex {
 
         // Always skip loading graph to RAM on build
         // as it will be discarded anyway
-        let is_on_disk = true;
+        let cold = true;
 
         let graph = save_graph(
             graph_layers_builder,
@@ -250,7 +250,7 @@ impl HNSWIndex {
             inline_vectors,
             &vector_storage_ref,
             quantized_vectors_ref.as_ref(),
-            is_on_disk,
+            cold,
         )?;
         debug_assert!(
             deleted_points_unlinked(&graph, deleted_bitslice),
@@ -275,7 +275,6 @@ impl HNSWIndex {
             path: path.to_owned(),
             graph: HnswGraph::Direct(Arc::new(graph)),
             searches_telemetry: HNSWSearchesTelemetry::new(),
-            is_on_disk,
         })
     }
 }
@@ -318,7 +317,7 @@ fn save_graph(
     inline_vectors: bool,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: Option<&QuantizedVectors>,
-    on_disk: bool,
+    cold: bool,
 ) -> OperationResult<GraphLayers> {
     let graph_links_vectors = inline_vectors
         .then(|| {
@@ -333,7 +332,7 @@ fn save_graph(
         Some(v) => GraphLinksFormatParam::CompressedWithVectors(v),
         None => GraphLinksFormatParam::Compressed,
     };
-    graph_layers_builder.into_graph_layers(path, format_param, on_disk)
+    graph_layers_builder.into_graph_layers(path, format_param, cold)
 }
 
 /// Whether no deleted point has links on level 0.

@@ -45,7 +45,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> GraphInlineDenseVectorStorage<
             MmapFs,
             &path.join(DELETED_DIR_PATH),
             FlagsMode::from_feature_flags(),
-            Populate::from(!graph.is_on_disk()),
+            Populate::from(!graph.is_cold()),
         )?;
         let deleted_count = deleted.count_trues();
         Ok(Self {
@@ -136,8 +136,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.vectors.graph().is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.vectors.graph().is_cold()
     }
 
     fn io_backend(&self) -> Option<IoBackend> {

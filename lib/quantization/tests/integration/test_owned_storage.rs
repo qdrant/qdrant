@@ -33,9 +33,9 @@ mod tests {
             TestEncodedStorage::is_in_ram_or_mmap()
         }
 
-        fn is_on_disk(&self) -> bool {
+        fn is_cold(&self) -> bool {
             let Self(inner) = self;
-            inner.is_on_disk()
+            inner.is_cold()
         }
 
         fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {

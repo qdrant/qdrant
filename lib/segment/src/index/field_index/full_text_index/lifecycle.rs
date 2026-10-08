@@ -103,11 +103,11 @@ impl FullTextIndex {
     pub fn builder_mmap(
         path: PathBuf,
         config: TextIndexParams,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
         scoring: bool,
     ) -> FullTextMmapIndexBuilder {
-        FullTextMmapIndexBuilder::new(path, config, is_on_disk, deleted_points, scoring)
+        FullTextMmapIndexBuilder::new(path, config, memory, deleted_points, scoring)
     }
 
     pub fn builder_gridstore(

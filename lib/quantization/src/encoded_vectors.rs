@@ -41,7 +41,10 @@ pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
     fn is_in_ram_or_mmap() -> bool;
-    fn is_on_disk(&self) -> bool;
+    /// Whether the encoded data was opened cold, see [`EncodedStorageWrite::is_cold`].
+    ///
+    /// [`EncodedStorageWrite::is_cold`]: crate::encoded_storage::EncodedStorageWrite::is_cold
+    fn is_cold(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
