@@ -7,17 +7,17 @@ use super::span::Context;
 /// `println!`-like macro to record a [Event::Mark] in the trace.
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __uio_trace_mark {
+macro_rules! __ambient_mark {
     ($($arg:tt)*) => {
         if $crate::ambient::trace::enabled() {
-            $crate::ambient::trace::__record_mark(format!($($arg)*));
+            $crate::ambient::trace::record_mark(format!($($arg)*));
         }
     };
 }
-pub use __uio_trace_mark as mark;
+pub use __ambient_mark as mark;
 
 #[doc(hidden)]
-pub fn __record_mark(text: String) {
+pub fn record_mark(text: String) {
     let Some(sink) = SINK.get() else { return };
     sink.send(Event::Mark {
         parent: Context::current().0,

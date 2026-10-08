@@ -407,7 +407,7 @@ mod test {
     use std::sync::Arc;
 
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
-    use common::ambient::{AmbientContext, HwFutureExt};
+    use common::ambient::{AmbientContext, AmbientFutureExt};
     use common::budget::ResourceBudget;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,

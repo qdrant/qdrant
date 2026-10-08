@@ -8,7 +8,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::collection_verification::{

@@ -20,7 +20,7 @@ use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CoreSearchRequest, PointRequestInternal};
 use collection::shards::shard::ShardId;
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::{OrderBy, OrderByInterface};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};

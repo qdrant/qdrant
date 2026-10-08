@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use std::ops::Deref as _;
 use std::time::Duration;
 
-use common::ambient::{self, HwFutureExt as _, HwHandoff};
+use common::ambient::{self, AmbientFutureExt as _, Handoff};
 use common::reason::reason;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
@@ -60,7 +60,7 @@ impl ShardReplicaSet {
         };
 
         let hw_acc = if state.is_resharding() {
-            HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
+            Handoff::unmeasured(reason("Don't measure hw when resharding"))
         } else {
             ambient::current()
         };
@@ -125,7 +125,7 @@ impl ShardReplicaSet {
             Shard::Local(local_shard) => {
                 let outcome = local_shard
                     .submit_update(operation, effective_wait)
-                    .in_hw(hw_acc)
+                    .in_ambient(hw_acc)
                     .await?;
                 drop(local);
                 await_update_result(outcome, effective_timeout).await?
@@ -134,7 +134,7 @@ impl ShardReplicaSet {
                 shard
                     .get()
                     .update(operation, effective_wait, effective_timeout)
-                    .in_hw(hw_acc)
+                    .in_ambient(hw_acc)
                     .await?
             }
         };
@@ -164,7 +164,7 @@ impl ShardReplicaSet {
 
         let peer_state = self.peer_state(leader_peer);
         let hw_acc = if peer_state.is_some_and(|state| state.is_resharding()) {
-            HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
+            Handoff::unmeasured(reason("Don't measure hw when resharding"))
         } else {
             ambient::current()
         };
@@ -180,11 +180,11 @@ impl ShardReplicaSet {
             };
 
             self.update(operation, wait, timeout, update_only_existing)
-                .in_hw(hw_acc)
+                .in_ambient(hw_acc)
                 .await
         } else {
             // Forward the update to the designated leader
-            self.forward_update(leader_peer, operation, wait, timeout, ordering).in_hw(hw_acc)
+            self.forward_update(leader_peer, operation, wait, timeout, ordering).in_ambient(hw_acc)
             .await
                 .map_err(|err| {
                     if err.is_transient() {

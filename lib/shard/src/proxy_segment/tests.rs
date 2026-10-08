@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::ambient::hw::HwMetric;
-use common::ambient::{AmbientContext, HwHandoff};
+use common::ambient::{AmbientContext, Handoff};
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::types::DeferredBehavior;
 use common::{ambient, tar_ext};
@@ -189,7 +189,7 @@ fn test_search_batch_equivalence_single() {
     let hardware_accumulator = AmbientContext::new();
     let query_context = QueryContext::new(
         10000,
-        HwHandoff::measured(AmbientContext::clone(&hardware_accumulator)),
+        Handoff::measured(AmbientContext::clone(&hardware_accumulator)),
     );
     let segment_query_context = query_context.get_segment_query_context();
 

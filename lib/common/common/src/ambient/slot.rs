@@ -6,7 +6,7 @@ use std::ptr::NonNull;
 
 use strum::EnumCount;
 
-use super::context::{AmbientContext, Inner};
+use super::context::{AmbientContext, Root};
 use super::hw::{HardwareData, HwMetric};
 
 #[inline]
@@ -30,22 +30,22 @@ pub(super) fn pending() -> HardwareData {
     SLOT.with(|slot| HardwareData(slot.counters.each_ref().map(Cell::get)))
 }
 
-pub(super) fn enter_measured(ctx: &AmbientContext) -> HwScope<'_> {
-    HwScope::enter(Target::Measured(ctx.inner_ptr()), None)
+pub(super) fn enter_measured(ctx: &AmbientContext) -> Scope<'_> {
+    Scope::enter(Target::Measured(ctx.as_ptr()), None)
 }
 
-pub(super) fn enter_measured_owned(ctx: AmbientContext) -> HwScope<'static> {
-    let target = Target::Measured(ctx.inner_ptr());
-    HwScope::enter(target, Some(ctx))
+pub(super) fn enter_measured_owned(ctx: AmbientContext) -> Scope<'static> {
+    let target = Target::Measured(ctx.as_ptr());
+    Scope::enter(target, Some(ctx))
 }
 
-pub(super) fn enter_unmeasured() -> HwScope<'static> {
-    HwScope::enter(Target::Unmeasured, None)
+pub(super) fn enter_unmeasured() -> Scope<'static> {
+    Scope::enter(Target::Unmeasured, None)
 }
 
 /// Mask the current scope, see [`super::parallel`].
-pub(super) fn enter_masked() -> HwScope<'static> {
-    HwScope::enter(Target::Unset, None)
+pub(super) fn enter_masked() -> Scope<'static> {
+    Scope::enter(Target::Unset, None)
 }
 
 pub(super) fn current_ctx() -> Option<AmbientContext> {
@@ -54,7 +54,7 @@ pub(super) fn current_ctx() -> Option<AmbientContext> {
         slot.check_access("ambient::current()");
         match slot.target.get() {
             // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
-            Target::Measured(acc) => Some(unsafe { AmbientContext::from_inner_ptr(acc) }),
+            Target::Measured(acc) => Some(unsafe { AmbientContext::from_ptr(acc) }),
             Target::Unset | Target::Unmeasured => None,
         }
     })
@@ -109,7 +109,7 @@ impl Slot {
     fn check_access(&self, what: impl std::fmt::Debug) {
         if self.target.get() == Target::Unset {
             panic!(
-                "{what:?} outside of any hw scope: a spawned/stolen job forgot to enter its \
+                "{what:?} outside of any ambient scope: a spawned/stolen job forgot to enter its \
                  context, or code inside ambient::parallel() didn't enter the provided one",
             );
         }
@@ -132,54 +132,54 @@ enum Target {
     Unset,
     /// Explicitly unmeasured.
     Unmeasured,
-    Measured(NonNull<Inner>),
+    Measured(NonNull<Root>),
 }
 
 /// An active scope. Restores the outer one on drop/panic.
 #[must_use]
-pub struct HwScope<'a> {
+pub struct Scope<'a> {
     depth: u64,
     /// The target of the outer scope, restored on drop.
-    outer: Target,
-    counters: [usize; HwMetric::COUNT],
+    outer_target: Target,
+    outer_counters: [usize; HwMetric::COUNT],
     /// Keeps [`Target::Measured`] alive for owned guard scopes.
-    _ctx: Option<AmbientContext>,
+    _owned: Option<AmbientContext>,
     /// Keeps [`Target::Measured`] alive for borrowed guard scopes.
-    _borrow: PhantomData<&'a Inner>,
+    _borrow: PhantomData<&'a Root>,
 }
 
 #[cfg(test)]
-// Make sure that a future holding HwScope across `.await` can't be spawned on a
+// Make sure that a future holding Scope across `.await` can't be spawned on a
 // multi-threaded runtime.
-static_assertions::assert_not_impl_any!(HwScope<'static>: Send);
+static_assertions::assert_not_impl_any!(Scope<'static>: Send);
 
-impl<'a> HwScope<'a> {
+impl<'a> Scope<'a> {
     fn enter(target: Target, ctx: Option<AmbientContext>) -> Self {
         SLOT.with(|slot| Self {
             depth: slot.depth.replace(slot.depth.get() + 1),
-            outer: slot.target.replace(target),
-            counters: std::array::from_fn(|i| slot.counters[i].take()),
-            _ctx: ctx,
+            outer_target: slot.target.replace(target),
+            outer_counters: std::array::from_fn(|i| slot.counters[i].take()),
+            _owned: ctx,
             _borrow: PhantomData,
         })
     }
 }
 
-impl Drop for HwScope<'_> {
+impl Drop for Scope<'_> {
     fn drop(&mut self) {
         SLOT.with(|slot| {
             let in_order = slot.depth.get() == self.depth + 1;
             debug_assert!(
                 in_order || std::thread::panicking(),
-                "hw scopes exited out of order"
+                "ambient scopes exited out of order"
             );
             if !in_order {
                 return slot.poison();
             }
             slot.depth.set(self.depth);
             let counters: [usize; HwMetric::COUNT] =
-                std::array::from_fn(|i| slot.counters[i].replace(self.counters[i]));
-            let target = slot.target.replace(self.outer);
+                std::array::from_fn(|i| slot.counters[i].replace(self.outer_counters[i]));
+            let target = slot.target.replace(self.outer_target);
             if let Target::Measured(acc) = target
                 && counters.iter().any(|&c| c != 0)
             {

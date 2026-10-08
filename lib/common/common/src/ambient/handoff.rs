@@ -1,15 +1,15 @@
-use super::{AmbientContext, HwScope, slot};
+use super::{AmbientContext, Scope, slot};
 use crate::cpu_utilization::CpuUtilization;
 use crate::reason::Reason;
 
 /// The context of the current scope, to enter it on another thread or task.
-pub fn current() -> HwHandoff {
-    HwHandoff(slot::current_ctx())
+pub fn current() -> Handoff {
+    Handoff(slot::current_ctx())
 }
 
 /// Run rayon (or any other work-stealing) calls.
-/// Closures passed to rayon must enter the provided context, see [`HwHandoff::enter`].
-pub fn parallel<R>(f: impl FnOnce(&HwHandoff) -> R) -> R {
+/// Closures passed to rayon must enter the provided context, see [`Handoff::enter`].
+pub fn parallel<R>(f: impl FnOnce(&Handoff) -> R) -> R {
     let ctx = current();
     let _scope = slot::enter_masked();
     f(&ctx)
@@ -22,7 +22,7 @@ pub fn unmeasured<R>(_: Reason, f: impl FnOnce() -> R) -> R {
 }
 
 /// Guard version of [`unmeasured`]. Don't hold it across `.await`.
-pub fn unmeasured_guard(_: Reason) -> HwScope<'static> {
+pub fn unmeasured_guard(_: Reason) -> Scope<'static> {
     slot::enter_unmeasured()
 }
 
@@ -32,14 +32,14 @@ pub fn test<R>(f: impl FnOnce() -> R) -> R {
 }
 
 #[cfg(any(test, feature = "testing"))]
-pub fn test_guard() -> HwScope<'static> {
+pub fn test_guard() -> Scope<'static> {
     unmeasured_guard(crate::reason::reason("Test code"))
 }
 
 #[derive(Clone, Debug)]
-pub struct HwHandoff(Option<AmbientContext>);
+pub struct Handoff(Option<AmbientContext>);
 
-impl HwHandoff {
+impl Handoff {
     pub fn measured(ctx: AmbientContext) -> Self {
         Self(Some(ctx))
     }
@@ -56,7 +56,7 @@ impl HwHandoff {
     }
 
     /// Guard version of [`Self::enter`]. Don't hold it across `.await`.
-    pub fn enter_guard(&self) -> HwScope<'_> {
+    pub fn enter_guard(&self) -> Scope<'_> {
         match &self.0 {
             Some(ctx) => slot::enter_measured(ctx),
             None => slot::enter_unmeasured(),

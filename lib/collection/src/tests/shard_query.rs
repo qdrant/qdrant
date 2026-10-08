@@ -1,7 +1,7 @@
 use std::assert_matches;
 use std::sync::Arc;
 
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use segment::common::reciprocal_rank_fusion::DEFAULT_RRF_K;

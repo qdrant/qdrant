@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use rand::{RngExt, rng};
 use segment::data_types::vectors::NamedQuery;

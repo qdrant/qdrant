@@ -19,7 +19,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::types::{Distance, WithPayloadInterface, WithVector};

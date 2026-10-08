@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use rand::rng;

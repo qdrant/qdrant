@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use cancel::CancellationToken;
-use common::ambient::HwHandoff;
+use common::ambient::Handoff;
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
@@ -47,7 +47,7 @@ pub struct OperationData {
     /// Only relevant when `sender` is `Some`.
     pub wait_for_deferred: bool,
     /// Hardware measurement for the operation
-    pub hw_measurements: HwHandoff,
+    pub handoff: Handoff,
 }
 
 /// Signal, used to inform Updater process

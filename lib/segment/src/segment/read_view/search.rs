@@ -374,7 +374,7 @@ where
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        let _hw = query_context.hardware_usage_accumulator().enter_guard();
+        let _hw = query_context.handoff().enter_guard();
         check_query_vectors(vector_name, query_vectors, self.segment_config)?;
         let vector_data = self
             .vector_data
@@ -429,7 +429,7 @@ where
         top: usize,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let _hw = query_context.hardware_usage_accumulator().enter_guard();
+        let _hw = query_context.handoff().enter_guard();
         let context = query_context.get_text_context(field).ok_or_else(|| {
             OperationError::service_error(format!(
                 "no text statistics were gathered for field {field}",
@@ -466,7 +466,7 @@ where
 
     pub fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         query_context.add_available_point_count(self.available_point_count_without_deferred());
-        let hw_acc = query_context.hardware_usage_accumulator().clone();
+        let hw_acc = query_context.handoff().clone();
         let _hw = hw_acc.enter_guard();
         let is_stopped = query_context.is_stopped_handle();
 

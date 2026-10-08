@@ -80,7 +80,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             let checked = |segment: &H| {
                 self.check_stopped()?;
                 let _hw = acc.enter_guard();
-                let result = ctx.in_scope(|| f(segment));
+                let result = ctx.enter(|| f(segment));
                 self.check_stopped()?;
                 result
             };

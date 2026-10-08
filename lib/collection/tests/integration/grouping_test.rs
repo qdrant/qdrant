@@ -3,7 +3,7 @@ use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
-use common::ambient::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use itertools::Itertools;
 use rand::RngExt;
 use rand::distr::Uniform;

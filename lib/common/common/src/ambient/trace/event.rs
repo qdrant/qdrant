@@ -22,7 +22,7 @@ pub(super) enum Event {
         text: String,
     },
     /// Single remote request.
-    /// Created by UIO backend implementations, with [`super::Request::new`].
+    /// Created by UIO backend implementations, with [`super::IoRequest::new`].
     Request {
         parent: u64,
         start_ns: Nanoseconds,

@@ -20,7 +20,7 @@ use api::grpc::update_operation::Update;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::json_path::JsonPath;
@@ -528,9 +528,7 @@ impl PointsInternalService {
         &self,
         collection_name: String,
     ) -> RequestHwCounter {
-        let counter = AmbientContext::new_with_metrics_drain(
-            self.toc.get_collection_hw_metrics(collection_name),
-        );
+        let counter = AmbientContext::request(self.toc.get_collection_hw_metrics(collection_name));
 
         RequestHwCounter::new(counter, self.service_config.hardware_reporting())
     }

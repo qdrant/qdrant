@@ -8,22 +8,22 @@ use super::sink::{SINK, elapsed_ns, enabled};
 use super::span::Context;
 use super::{Op, Outcome};
 
-pub struct Request(Option<ActiveRequest>);
+pub struct IoRequest(Option<Active>);
 
-struct ActiveRequest {
+struct Active {
     parent: u64,
-    start: Option<Instant>,
+    started: Option<Instant>,
     op: Op,
     path: String,
     range: Range<u64>,
     outcome: Option<Outcome>,
 }
 
-impl Request {
+impl IoRequest {
     pub fn new(op: Op, path: &Path, range: Range<u64>) -> Self {
-        Self(enabled().then(|| ActiveRequest {
+        Self(enabled().then(|| Active {
             parent: Context::current().0,
-            start: None,
+            started: None,
             op,
             path: path.to_string_lossy().into_owned(),
             range,
@@ -33,18 +33,18 @@ impl Request {
 
     pub fn start(&mut self) {
         if let Some(active) = &mut self.0 {
-            active.start.get_or_insert_with(Instant::now);
+            active.started.get_or_insert_with(Instant::now);
         }
     }
 
-    pub fn set(&mut self, outcome: Outcome) {
+    pub fn finish(&mut self, outcome: Outcome) {
         if let Some(active) = &mut self.0 {
             active.outcome.get_or_insert(outcome);
         }
     }
 
     pub fn set_result<T, E>(&mut self, result: &Result<T, E>) {
-        self.set(match result {
+        self.finish(match result {
             Ok(_) => Outcome::Ok,
             Err(_) => Outcome::Err,
         });
@@ -64,12 +64,12 @@ impl Request {
     }
 }
 
-impl Drop for Request {
+impl Drop for IoRequest {
     fn drop(&mut self) {
         let (Some(active), Some(sink)) = (self.0.take(), SINK.get()) else {
             return;
         };
-        let Some(start) = active.start else { return };
+        let Some(start) = active.started else { return };
         sink.send(Event::Request {
             parent: active.parent,
             start_ns: elapsed_ns(sink.origin, start),

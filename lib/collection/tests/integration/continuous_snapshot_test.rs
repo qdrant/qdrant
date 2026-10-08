@@ -18,7 +18,7 @@ use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
-use common::ambient::{AmbientContext, HwFutureExt};
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::flags::{FeatureFlags, init_feature_flags};
 use segment::payload_json;

@@ -1,5 +1,5 @@
 use super::{HardwareData, HwMetric};
-use crate::ambient::{AmbientContext, HwScope, current, slot};
+use crate::ambient::{AmbientContext, Scope, current, slot};
 use crate::cpu_utilization::CpuUtilization;
 
 impl AmbientContext {
@@ -10,12 +10,12 @@ impl AmbientContext {
     }
 
     /// Guard version of [`Self::measure`]. Don't hold it across `.await`.
-    pub fn measure_guard(&self) -> HwScope<'_> {
+    pub fn measure_guard(&self) -> Scope<'_> {
         slot::enter_measured(self)
     }
 
     /// Like [`Self::measure_guard`], but keeps the context alive by owning it.
-    pub fn measure_guard_owned(self) -> HwScope<'static> {
+    pub fn measure_guard_owned(self) -> Scope<'static> {
         slot::enter_measured_owned(self)
     }
 }
@@ -94,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn test_current() {
+    fn test_accumulate() {
         let ctx = AmbientContext::new();
         ctx.measure(|| {
             current()

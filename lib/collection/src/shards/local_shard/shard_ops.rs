@@ -143,7 +143,7 @@ impl LocalShard {
             operation: operation_in_ram,
             sender: callback_sender,
             wait_for_deferred: wait.wait_for_deferred(),
-            hw_measurements: ambient::current(),
+            handoff: ambient::current(),
         }));
 
         Ok(SubmitOutcome::Submitted {
