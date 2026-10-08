@@ -82,11 +82,11 @@ async fn test_delete_from_indexed_payload() {
 
     let upsert_ops = upsert_operation();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     shard
         .update(upsert_ops.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -102,14 +102,14 @@ async fn test_delete_from_indexed_payload() {
         .unwrap();
     shard
         .update(index_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
     let delete_point_op = delete_point_operation(4);
     shard
         .update(delete_point_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -146,7 +146,7 @@ async fn test_delete_from_indexed_payload() {
     let delete_point_op = delete_point_operation(5);
     shard
         .update(delete_point_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -217,11 +217,11 @@ async fn test_partial_flush_recovery() {
 
     let upsert_ops = upsert_operation();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     shard
         .update(upsert_ops.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -238,7 +238,7 @@ async fn test_partial_flush_recovery() {
 
     shard
         .update(index_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -249,7 +249,7 @@ async fn test_partial_flush_recovery() {
     let delete_point_op = delete_point_operation(4);
     shard
         .update(delete_point_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -329,7 +329,7 @@ async fn test_truncate_unapplied_wal() {
         "Expected 0 records removed on an empty WAL"
     );
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     // Insert many individual points with wait=false to fill up the WAL.
     // We need more than APPLIED_SEQ_SAVE_INTERVAL + 1 updates to potentially have something to truncate.
@@ -352,7 +352,7 @@ async fn test_truncate_unapplied_wal() {
         update_futures.push(
             shard
                 .update(op.into(), WaitUntil::Wal, None)
-                .measured(AmbientContext::clone(&hw_acc)),
+                .measured(AmbientContext::clone(&ctx)),
         );
     }
 
@@ -390,7 +390,7 @@ async fn test_truncate_unapplied_wal() {
             None,
             DeferredBehavior::VisibleOnly,
         )
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -434,7 +434,7 @@ async fn test_truncate_unapplied_wal() {
     // Use wait=true to ensure the update is fully applied
     let update_result = shard
         .update(op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1214,12 +1214,12 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
     .await
     .unwrap();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     // Points 1..=5
     shard
         .update(upsert_operation().into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1245,7 +1245,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
     );
     shard
         .update(conditional.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1264,7 +1264,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
             WaitUntil::Visible,
             None,
         )
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1340,7 +1340,7 @@ async fn test_filter_ops_resolved_to_ids_in_wal() {
             None,
             DeferredBehavior::VisibleOnly,
         )
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1393,12 +1393,12 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
     .await
     .unwrap();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     // Points 1..=5, applied in this run.
     shard
         .update(upsert_operation().into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1452,7 +1452,7 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
     });
     shard
         .update(barrier.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1470,7 +1470,7 @@ async fn test_old_wal_filter_op_replays_with_apply_semantics() {
             None,
             DeferredBehavior::VisibleOnly,
         )
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -1524,17 +1524,17 @@ async fn assert_bad_op_skipped_on_wal_replay(
     .await
     .unwrap();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     shard
         .update(valid_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .expect("valid op should succeed");
 
     let err = shard
         .update(bad_op.into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .expect_err("bad op must be rejected");
 
@@ -1571,7 +1571,7 @@ async fn assert_bad_op_skipped_on_wal_replay(
             None,
             DeferredBehavior::VisibleOnly,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -1801,7 +1801,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
     // Keep flushing and WAL acknowledging under the test's control
     shard.stop_flush_worker().await;
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     // Insert points; WAL indices: fake operation at 0, then one entry per upsert (1..=total)
     let total_points = 10u64;
@@ -1816,7 +1816,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
         ));
         shard
             .update(op.into(), WaitUntil::Visible, None)
-            .measured(AmbientContext::clone(&hw_acc))
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -1854,7 +1854,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
                 WaitUntil::Visible,
                 None,
             )
-            .measured(AmbientContext::clone(&hw_acc))
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -1964,7 +1964,7 @@ async fn test_proxy_pending_changes_crash_recovery() {
             None,
             DeferredBehavior::VisibleOnly,
         )
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     let retrieved_ids: Vec<_> = retrieved.iter().map(|point| point.id).collect();

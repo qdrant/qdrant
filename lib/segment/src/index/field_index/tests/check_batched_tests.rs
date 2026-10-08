@@ -202,7 +202,7 @@ fn check_index<T: Serialize>(
             assert_eq!(builders.len(), 1);
             let mut builder = builders.pop().unwrap();
             builder.init().unwrap();
-            let _hw = ambient::test_guard();
+            let _scope = ambient::test_guard();
             for (id, (row, _, _, _)) in (0u32..).zip(points) {
                 builder.add_point(id, &row.iter().collect_vec()).unwrap();
             }

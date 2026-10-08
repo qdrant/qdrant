@@ -143,7 +143,7 @@ where
             .map_err(|err| OperationError::service_error(format!("create scratch dir: {err}")))?;
         let (mut segment, token) = build_segment(scratch.path(), config, None, true)?;
         let uuid = token.id();
-        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         for (key, schema) in indexed_fields {
             segment.create_field_index(0, key, Some(schema))?;
         }

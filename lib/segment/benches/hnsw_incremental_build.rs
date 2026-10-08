@@ -318,7 +318,7 @@ fn make_segment(
     let mut sequence = sliding_window.map(|x| x % all_vectors.len()).collect_vec();
     sequence.shuffle(rng);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = build_simple_segment(path, all_vectors[0].len(), distance).unwrap();
     for n in sequence {
         let vector = only_default_vector(all_vectors[n]);

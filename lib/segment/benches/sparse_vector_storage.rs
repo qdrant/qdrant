@@ -23,7 +23,7 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
 
     let mut volatile_sparse_vector_storage = VolatileSparseVectorStorage::default();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     group.bench_function("insert-volatile", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {

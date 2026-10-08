@@ -269,7 +269,7 @@ fn condition_points(
 ) -> OperationResult<Vec<PointOffsetType>> {
     let filter = Filter::new_must(Field(condition));
 
-    let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
@@ -335,7 +335,7 @@ fn build_filtered_graph(
     let insert_points = |block_point_id| {
         check_process_stopped(stopped)?;
 
-        let _hw = ambient::unmeasured_guard(reason(
+        let _scope = ambient::unmeasured_guard(reason(
             "This hardware counter can be discarded, since it is only used for internal operations",
         ));
 

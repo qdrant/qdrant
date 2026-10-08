@@ -18,7 +18,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut payload: Map<String, Value> = Map::default();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for i in 0..3 {
         let key = format!("key{i}");
         payload.insert(key.clone(), "value".to_string().into());

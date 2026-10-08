@@ -10,9 +10,9 @@ pub fn current() -> Handoff {
 /// Run rayon (or any other work-stealing) calls.
 /// Closures passed to rayon must enter the provided context, see [`Handoff::enter`].
 pub fn parallel<R>(f: impl FnOnce(&Handoff) -> R) -> R {
-    let ctx = current();
+    let handoff = current();
     let _scope = slot::enter_masked();
-    f(&ctx)
+    f(&handoff)
 }
 
 /// Run `f` without measuring it.

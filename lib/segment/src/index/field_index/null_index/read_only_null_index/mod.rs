@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn read_only_null_index_round_trip() {
         let dir = TempDir::with_prefix("read_only_null_index").unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
         let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
@@ -182,7 +182,7 @@ mod tests {
 
     fn live_reload_matches_fresh_open(materialize_before_reload: bool) {
         let dir = TempDir::with_prefix("read_only_null_index_live_reload").unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         // Initial on-disk state: points 0..=3 (total 4).
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
@@ -292,7 +292,7 @@ mod tests {
 
         let build = || {
             let dir = TempDir::with_prefix("read_only_null_inconsistent").unwrap();
-            let _hw = ambient::test_guard();
+            let _scope = ambient::test_guard();
             let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
             let value = json!(true);
             builder.add_point(0, &[&value]).unwrap();

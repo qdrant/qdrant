@@ -126,7 +126,7 @@ fn test_byte_storage_hnsw(
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         segment_float
             .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
@@ -142,7 +142,7 @@ fn test_byte_storage_hnsw(
             .unwrap();
     }
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment_float
         .payload_index

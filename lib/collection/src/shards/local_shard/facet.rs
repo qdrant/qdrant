@@ -33,10 +33,10 @@ impl LocalShard {
             let request = Arc::clone(&request);
             let is_stopped = stopping_guard.get_is_stopped();
 
-            let hw_acc = ambient::current();
+            let handoff = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
@@ -152,10 +152,10 @@ impl LocalShard {
 
             let is_stopped = stopping_guard.get_is_stopped();
 
-            let hw_acc = ambient::current();
+            let handoff = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = handle.spawn_blocking(move || {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();

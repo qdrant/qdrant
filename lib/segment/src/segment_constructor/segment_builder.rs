@@ -446,7 +446,8 @@ impl SegmentBuilder {
             }
         }
 
-        let _hw = ambient::unmeasured_guard(reason("Disposable counter for internal operations."));
+        let _scope =
+            ambient::unmeasured_guard(reason("Disposable counter for internal operations."));
 
         let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
 

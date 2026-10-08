@@ -358,7 +358,7 @@ pub fn apply_change<S>(segment: &mut S, change: &PendingChange) -> OperationResu
 where
     S: NonAppendableSegmentEntry + ?Sized,
 {
-    let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     match change {
         PendingChange::DeletePoint { point_id, versions } => {

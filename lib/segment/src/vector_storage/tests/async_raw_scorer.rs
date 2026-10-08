@@ -92,7 +92,7 @@ fn test_random_score(
 ) -> Result<()> {
     let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut scorer = FilteredScorer::new_for_test(query.clone(), storage, deleted_points);
 
     let mut async_scorer = FilteredScorer::new(

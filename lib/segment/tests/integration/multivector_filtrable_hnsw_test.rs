@@ -93,7 +93,7 @@ fn test_multi_filterable_hnsw(
 
     let int_key = "int";
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
     for n in 0..num_points {

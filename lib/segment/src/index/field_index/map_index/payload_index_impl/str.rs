@@ -351,7 +351,7 @@ fn for_each_prefix_payload_block<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefi
     key: &PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
-    let _hw = ambient::unmeasured_guard(reason(
+    let _scope = ambient::unmeasured_guard(reason(
         "HNSW build; hardware measurement intentionally bypassed (see above).",
     ));
     let Some(entries) = index.prefix_keys_with_counts("")? else {

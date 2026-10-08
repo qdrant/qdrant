@@ -48,7 +48,7 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
     let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
     let mut rnd = rand::rng();
     let payload_key = "number";
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     for _ in 0..num_vectors {
         let random_vector: Vec<_> = (0..dim).map(|_| rnd.random_range(0.0..1.0)).collect();
         let point_id: PointIdType = id_gen.unique();
@@ -73,7 +73,7 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec4 = vec![1.0, 1.0, 0.0, 1.0];
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .upsert_point(1, 1.into(), only_default_vector(&vec1))
@@ -128,7 +128,7 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec14 = vec![1.0, 0.0, 0.0, 1.0];
     let vec15 = vec![1.0, 1.0, 0.0, 0.0];
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment2
         .upsert_point(7, 4.into(), only_default_vector(&vec4))
@@ -201,7 +201,7 @@ pub fn build_segment_with_deferred_1(path: &Path) -> Segment {
 
     let dim = 4;
     let deferred_internal_id = 3;
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Build segment with deferred threshold
     let (mut segment, _) = build_segment(

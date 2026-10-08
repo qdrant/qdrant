@@ -19,7 +19,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     /// optionally filtering by the given conditions.
     pub(crate) fn facet(&self, request: FacetRequestInternal) -> OperationResult<FacetResponse> {
         self.check_stopped()?;
-        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let FacetRequestInternal {
             key,
             limit,

@@ -18,7 +18,7 @@ pub fn flush_bench(c: &mut Criterion) {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
             let mut rng = rand::make_rng::<SmallRng>();
-            let _hw = ambient::test_guard();
+            let _scope = ambient::test_guard();
             let hw_metric = HwMetric::PayloadIoWrite;
 
             // Pre-populate storage with sequential random data
@@ -56,7 +56,7 @@ pub fn flush_bench(c: &mut Criterion) {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
             let mut rng = rand::make_rng::<SmallRng>();
-            let _hw = ambient::test_guard();
+            let _scope = ambient::test_guard();
             let hw_metric = HwMetric::PayloadIoWrite;
 
             // Pre-populate storage with random data

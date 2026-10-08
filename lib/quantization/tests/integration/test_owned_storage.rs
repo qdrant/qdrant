@@ -149,7 +149,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         // Offset + code accessor must return identical data through owning and borrowed
         // storages, and the code must have the quantized vector size minus the offset constant.

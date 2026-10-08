@@ -114,7 +114,7 @@ pub fn create_struct_payload_index(
     )
     .unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     index
         .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)

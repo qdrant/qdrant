@@ -111,10 +111,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = AmbientContext::new();
+    let ctx = AmbientContext::new();
     collection
         .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
-        .measured(hw_counter)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -162,7 +162,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         score_threshold: None,
     };
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let reference_result = collection
         .search(
             full_search_request.clone().into(),
@@ -171,11 +171,11 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let recovered_result = recovered_collection
         .search(
             full_search_request.into(),
@@ -184,7 +184,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             &ShardSelectorInternal::All,
             None,
         )
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 

@@ -236,7 +236,7 @@ impl<'a> GraphLayersHealer<'a> {
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
-                    let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
                     let query = vector_storage
                         .get_vector::<Random>(offset)
                         .as_vec_ref()

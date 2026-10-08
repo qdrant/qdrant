@@ -60,7 +60,7 @@ struct Dataset {
 
 fn build_dataset(dim: usize) -> Dataset {
     let mut rng = SmallRng::seed_from_u64(dim as u64);
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let turbo_dir = TempDir::new().expect("turbo tempdir created");
     let mut turbo = VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(
@@ -109,7 +109,7 @@ fn build_dataset(dim: usize) -> Dataset {
 /// One exhaustive search: build the searcher (query preprocessing) and scan
 /// every point through the visible-scan driver.
 fn full_scan(dataset: &Dataset, quantized: bool) {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let queries = [&dataset.query];
     let empty = BitVec::new();
     let searcher = if quantized {

@@ -49,7 +49,7 @@ fn write(
     schema: &PayloadFieldSchema,
     points: &[(PointOffsetType, Value)],
 ) -> PathBuf {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let storage = kind.storage_dir(dir, &field());
     let index_type = index_type(kind);
 
@@ -207,7 +207,7 @@ fn geo_index_round_trip() {
 #[test]
 fn rewriting_a_slot_is_rejected() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let schema = schema(PayloadSchemaType::Integer);
 
     let mut writer = Writer::open(

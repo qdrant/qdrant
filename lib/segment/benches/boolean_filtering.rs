@@ -41,7 +41,7 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
 
     let is_stopped = AtomicBool::new(false);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     group.bench_function("plain", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
@@ -66,7 +66,7 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
     let mut group = c.benchmark_group("boolean-query-points");
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let is_stopped = AtomicBool::new(false);
 
@@ -100,7 +100,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(create_id_tracker_fixture(NUM_POINTS)));
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let mut index = StructPayloadIndex::open(
         payload_storage,
         id_tracker,

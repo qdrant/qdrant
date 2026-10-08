@@ -397,7 +397,7 @@ async fn test_new_segment_when_all_over_capacity() {
 
     assert_eq!(segments.read().len(), 6);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert some points in the smallest segment to fill capacity
     {

@@ -76,10 +76,10 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     {
         self.check_stopped()?;
         let ctx = trace::Context::current();
-        let result = ambient::parallel(|acc| {
+        let result = ambient::parallel(|handoff| {
             let checked = |segment: &H| {
                 self.check_stopped()?;
-                let _hw = acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 let result = ctx.enter(|| f(segment));
                 self.check_stopped()?;
                 result

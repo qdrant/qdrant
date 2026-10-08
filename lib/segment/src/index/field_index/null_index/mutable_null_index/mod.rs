@@ -55,7 +55,7 @@ mod tests {
 
         let mut builder = MutableNullIndex::builder(dir.path(), n as usize).unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         for i in 0..n {
             match i % 4 {
@@ -88,7 +88,7 @@ mod tests {
             is_null: None,
         };
 
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = AmbientContext::new().measure_guard_owned();
 
         let is_null_values: Vec<_> = null_index
             .filter(&filter_is_null)
@@ -173,7 +173,7 @@ mod tests {
         let dir = TempDir::with_prefix("test_manual_buffer_flushing").unwrap();
         let mut index = MutableNullIndex::builder(dir.path(), 10).unwrap().0;
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         for i in 0..10 {
             index

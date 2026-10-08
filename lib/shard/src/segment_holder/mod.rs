@@ -1323,7 +1323,7 @@ impl SegmentHolder {
         let (mut segment, token) =
             build_segment(segments_path, &config, deferred_internal_id, save_version)?;
 
-        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         let payload_schema_lock = payload_index_schema.read();
         for (key, schema) in payload_schema_lock.schema.iter() {
@@ -1398,7 +1398,7 @@ impl SegmentHolder {
                     let segment_arc = locked_segment.get();
                     let mut write_segment = segment_arc.write();
 
-                    let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
                     for &point_id in &points {
                         if let Some(point_version) = write_segment.point_version(point_id) {

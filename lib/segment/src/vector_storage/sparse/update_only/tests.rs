@@ -24,7 +24,7 @@ fn sparse(indices: &[u32], values: &[f32]) -> SparseVector {
 #[test]
 fn sparse_vectors_round_trip() {
     let dir = TempDir::with_prefix("update_only_sparse").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let first = sparse(&[1, 5], &[1.0, 2.0]);
     let second = sparse(&[3], &[3.0]);
@@ -55,7 +55,7 @@ fn sparse_vectors_round_trip() {
 #[test]
 fn batches_resume() {
     let dir = TempDir::with_prefix("update_only_sparse").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let first = sparse(&[1], &[1.0]);
     let second = sparse(&[2], &[2.0]);

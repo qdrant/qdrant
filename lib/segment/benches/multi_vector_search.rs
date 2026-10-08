@@ -94,7 +94,7 @@ fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWI
         id_tracker_memory: None,
     };
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let (mut segment, _) = build_segment(segment_dir.path(), &segment_config, None, true).unwrap();
     for n in 0..NUM_POINTS {
         let idx = (n as u64).into();

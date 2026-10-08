@@ -237,7 +237,7 @@ fn test_multivector_quantization_hnsw(
 
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();

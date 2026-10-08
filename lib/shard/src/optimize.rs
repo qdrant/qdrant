@@ -695,7 +695,7 @@ pub fn execute_optimization<F: ?Sized + OptimizationStrategy>(
 
     on_successful_start();
 
-    let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     // Building the cow segment yields a `NewSegmentToken`; we register it below, once it is added to
     // the holder, and before the slow build can route writes into it.

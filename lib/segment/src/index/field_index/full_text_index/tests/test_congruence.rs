@@ -228,7 +228,7 @@ fn build_random_index(
 }
 
 pub fn parse_query(query: &[String], is_phrase: bool, index: &FullTextIndex) -> ParsedQuery {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let tokens = resolve_tokens(index, query).into_iter();
     match is_phrase {
         false => ParsedQuery::AllTokens(tokens.collect::<Option<TokenSet>>().unwrap()),
@@ -256,7 +256,7 @@ fn test_congruence(
     const KEYWORD_COUNT: usize = 20;
     const KEYWORD_LEN: usize = 2;
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut indices, _data): (Vec<_>, Vec<_>) = TYPES
         .iter()
@@ -495,7 +495,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
         phrases.push(phrase);
     }
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for (index, index_type) in check_indexes {
         eprintln!("Checking index type: {index_type:?}");
@@ -529,7 +529,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
 fn test_phrase_matching_respects_array_boundaries(
     #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
 
     // ID 1: ["quick", "brown"] — words in separate elements
@@ -596,7 +596,7 @@ fn test_phrase_matching_respects_array_boundaries(
 fn test_phrase_matching_single_element_array(
     #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
 
     let p1 = serde_json::json!(["the quick brown fox"]);
@@ -623,7 +623,7 @@ fn test_phrase_matching_single_element_array(
 /// segment had been optimized yet.
 #[rstest]
 fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matching: bool) {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let payloads = [
         Value::String("alpha beta".to_string()),
         // Punctuation only: indexed, but no tokens survive.
@@ -660,7 +660,7 @@ fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matchi
 /// decrement for every point it found.
 #[rstest]
 fn removing_a_value_without_tokens_keeps_the_count(#[values(false, true)] phrase_matching: bool) {
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(IndexType::Mutable, phrase_matching);
     for (idx, payload) in [
         Value::String("alpha beta".to_string()),

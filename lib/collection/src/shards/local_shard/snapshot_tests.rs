@@ -233,7 +233,7 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
     // Keep flushing and WAL acknowledging under the test's control
     shard.stop_flush_worker().await;
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     // Insert points; WAL indices: fake operation at 0, then one entry per upsert (1..=total)
     let total_points = 10u64;
@@ -248,7 +248,7 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
         ));
         shard
             .update(op.into(), WaitUntil::Visible, None)
-            .measured(AmbientContext::clone(&hw_acc))
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -263,7 +263,7 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
     let delete_op_num = total_points + 1;
     shard
         .update(delete_point_operation(3).into(), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     let confirmed = shard
@@ -349,7 +349,7 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
 
     shard.stop_flush_worker().await;
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let upsert = |id: u64, tick: u64| {
         let point = PointStructPersisted {
             id: id.into(),
@@ -364,7 +364,7 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
 
     shard
         .update(upsert(1, 1), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -419,7 +419,7 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
     drop(pin);
     shard
         .update(upsert(2, 2), WaitUntil::Visible, None)
-        .measured(AmbientContext::clone(&hw_acc))
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     flush_pass().await.unwrap();

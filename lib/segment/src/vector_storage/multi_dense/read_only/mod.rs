@@ -93,7 +93,7 @@ mod tests {
 
         let dir = Builder::new().prefix("ro_multi_dense").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let multivectors: Vec<MultiDenseVectorInternal> = (0..POINT_COUNT)
             .map(|_| {
@@ -170,7 +170,7 @@ mod tests {
         const DIM: usize = 48;
         let dir = Builder::new().prefix("ro_multi_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(11);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let rand_multi = |rng: &mut StdRng| -> MultiDenseVectorInternal {
             let inner = rng.random_range(1..=3);
@@ -263,7 +263,7 @@ mod tests {
             .prefix("ro_multi_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         let multi = |value: VectorElementType| {
             MultiDenseVectorInternal::try_from(vec![vec![value; DIM]]).unwrap()

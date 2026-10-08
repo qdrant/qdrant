@@ -523,7 +523,7 @@ mod tests {
                 .expect("storage is missing required file");
         }
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -620,7 +620,7 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -746,7 +746,7 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -816,7 +816,7 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -885,7 +885,7 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);

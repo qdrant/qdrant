@@ -54,7 +54,7 @@ pub(super) fn current_ctx() -> Option<AmbientContext> {
         slot.check_access("ambient::current()");
         match slot.target.get() {
             // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
-            Target::Measured(acc) => Some(unsafe { AmbientContext::from_ptr(acc) }),
+            Target::Measured(node) => Some(unsafe { AmbientContext::from_ptr(node) }),
             Target::Unset | Target::Unmeasured => None,
         }
     })
@@ -71,9 +71,9 @@ pub(super) fn is_measured() -> bool {
 /// [`AmbientContext::accumulate_request`] on the current context, if measured.
 pub(super) fn accumulate_request(src: HardwareData) {
     SLOT.with(|slot| {
-        if let Target::Measured(acc) = slot.target.get() {
+        if let Target::Measured(node) = slot.target.get() {
             // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
-            unsafe { acc.as_ref() }.accumulate_request(src);
+            unsafe { node.as_ref() }.accumulate_request(src);
         }
     });
 }
@@ -154,12 +154,12 @@ pub struct Scope<'a> {
 static_assertions::assert_not_impl_any!(Scope<'static>: Send);
 
 impl<'a> Scope<'a> {
-    fn enter(target: Target, ctx: Option<AmbientContext>) -> Self {
+    fn enter(target: Target, owned: Option<AmbientContext>) -> Self {
         SLOT.with(|slot| Self {
             depth: slot.depth.replace(slot.depth.get() + 1),
             outer_target: slot.target.replace(target),
             outer_counters: std::array::from_fn(|i| slot.counters[i].take()),
-            _owned: ctx,
+            _owned: owned,
             _borrow: PhantomData,
         })
     }
@@ -180,11 +180,11 @@ impl Drop for Scope<'_> {
             let counters: [usize; HwMetric::COUNT] =
                 std::array::from_fn(|i| slot.counters[i].replace(self.outer_counters[i]));
             let target = slot.target.replace(self.outer_target);
-            if let Target::Measured(acc) = target
+            if let Target::Measured(node) = target
                 && counters.iter().any(|&c| c != 0)
             {
-                // SAFETY: exited in order, so `acc` belongs to this scope, which keeps it alive.
-                unsafe { acc.as_ref() }.accumulate(HardwareData(counters));
+                // SAFETY: exited in order, so `node` belongs to this scope, which keeps it alive.
+                unsafe { node.as_ref() }.accumulate(HardwareData(counters));
             }
         });
     }

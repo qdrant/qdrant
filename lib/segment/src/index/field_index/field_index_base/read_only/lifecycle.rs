@@ -417,7 +417,7 @@ mod tests {
         .unwrap();
         let mut builder = builders.pop().unwrap();
         builder.init().unwrap();
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         builder.add_point(0, &[&json!("a")]).unwrap();
         let index_type = builder.finalize().unwrap().get_full_index_type();
 

@@ -50,7 +50,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     segment
         .create_field_index(

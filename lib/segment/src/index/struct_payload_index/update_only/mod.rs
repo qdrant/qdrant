@@ -94,9 +94,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
             .iter_mut()
             .flat_map(|(field, indexes)| indexes.iter_mut().map(move |index| (field, index)))
             .collect::<Vec<_>>();
-        ambient::parallel(|hw_acc| {
+        ambient::parallel(|handoff| {
             indexes.into_par_iter().try_for_each(|(field, index)| {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 for (slot, payload) in &points {
                     let values = payload.get_value(field);
                     index.add_point(fs, *slot, &values)?;

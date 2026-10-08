@@ -42,7 +42,7 @@ fn read_back(
 #[test]
 fn batches_are_durable_and_resume() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let first: Vec<Payload> = (0..3).map(payload).collect();
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
@@ -77,7 +77,7 @@ fn batches_are_durable_and_resume() {
 #[test]
 fn empty_payloads_and_gaps_read_back_empty() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let empty = Payload::default();
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
@@ -104,7 +104,7 @@ fn empty_payloads_and_gaps_read_back_empty() {
 #[test]
 fn first_payload_may_land_on_a_high_slot() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer
@@ -123,7 +123,7 @@ fn first_payload_may_land_on_a_high_slot() {
 #[test]
 fn rewriting_a_slot_is_rejected() {
     let dir = TempDir::with_prefix("update_only_payload").unwrap();
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut writer = Writer::open(&MmapFs, dir.path()).unwrap();
     writer

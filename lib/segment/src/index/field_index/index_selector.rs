@@ -652,7 +652,7 @@ mod tests {
     fn non_appendable_build_applies_placement() {
         let field = JsonPath::new("field");
         let deleted = BitVec::repeat(false, 1);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
 
         for memory in [Memory::Cold, Memory::Cached, Memory::Pinned] {
             let cases: [(PayloadSchemaParams, Value); 4] = [

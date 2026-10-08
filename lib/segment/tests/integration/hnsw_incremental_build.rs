@@ -108,7 +108,7 @@ fn make_segment(
     let mut sequence = (0..ids.len()).collect_vec();
     sequence.shuffle(rng);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(path, DIM, DISTANCE).unwrap();
     for n in sequence {

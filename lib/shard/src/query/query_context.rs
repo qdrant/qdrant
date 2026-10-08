@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn caller_owned_cancellation_reaches_segment_query_context() {
         let stopped = Arc::new(AtomicBool::new(false));
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let context =
             init_query_context_with_stopping_flag(&[], 0, stopped.clone(), |_| false).unwrap();
         assert!(Arc::ptr_eq(&context.is_stopped_handle(), &stopped));

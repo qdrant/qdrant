@@ -19,7 +19,7 @@ pub fn random_segment(path: &Path, num_points: usize) -> Segment {
 
     let mut segment = build_simple_segment(path, dim, distance).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for point_id in 0..num_points {
         let vector = random_vector(&mut rnd_gen, dim);

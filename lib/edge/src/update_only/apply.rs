@@ -130,7 +130,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             return Ok((self, UpdateBatchOutcome::default()));
         }
 
-        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let segments = self.segments.read();
 
         // 1-3. Locate, read, materialize — the decision stage shared with
@@ -307,7 +307,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         let segments = self.segments.read();
         self.pool.install(|| {
             written.par_iter().try_for_each(|&uuid| {
-                let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
                 segments.get(uuid)?.write().live_reload()
             })
         })
@@ -378,7 +378,7 @@ pub(super) fn read_stored_points<Fs: UniversalReadFsAsync>(
                     .iter()
                     .map(|(_, internal_id)| *internal_id)
                     .collect();
-                let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
                 let points = segment.read_stored_points(&internal_ids)?;
 
                 Ok(entries.into_iter().map(|(id, _)| id).zip(points).collect())

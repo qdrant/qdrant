@@ -58,7 +58,7 @@ fn binary_bench(c: &mut Criterion) {
     let query = generate_vector(vector_dim, &mut rng);
     let encoded_query = encoded_u128.encode_query(&query);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     group.bench_function("score binary linear access u128", |b| {
         b.iter(|| {
             for i in 0..vectors_count as u32 {
@@ -168,7 +168,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     let query = generate_vector(vector_dim, &mut rng);
     let encoded_query = encoded_u128.encode_query(&query);
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     let permutation: Vec<u32> =
         rand::seq::index::sample(&mut rand::rng(), vectors_count, vectors_count)
             .into_iter()

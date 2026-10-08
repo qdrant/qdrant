@@ -175,7 +175,7 @@ fn scoring_equivalency(
     for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &gen_sampler);
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scorer = FilteredScorer::new_for_test(
             query.clone(),
             &raw_storage,

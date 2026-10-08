@@ -193,13 +193,13 @@ where
 
     let reloads: Vec<_> = segments.into_iter().zip(preloads).collect();
     let ctx = trace::Context::current();
-    let results = ambient::parallel(|acc| {
+    let results = ambient::parallel(|handoff| {
         pool.install(|| {
             reloads
                 .into_par_iter()
                 .map(|((uuid, segment), (_, max_committed_id_res))| {
                     check_process_stopped(is_stopped)?;
-                    let _hw = acc.enter_guard();
+                    let _scope = handoff.enter_guard();
                     let result = ctx.enter(|| {
                         max_committed_id_res.and_then(|max_committed_id| {
                             segment.write().live_reload(max_committed_id)

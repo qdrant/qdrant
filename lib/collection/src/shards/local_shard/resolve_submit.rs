@@ -101,10 +101,10 @@ impl LocalShard {
         // 3. Resolve the filter against segment state and rewrite the
         // operation to its id-based form.
         let segments = self.segments.clone();
-        let hw_acc = ambient::current();
+        let handoff = ambient::current();
         let resolved = tokio::task::spawn_blocking(move || {
             let segments = segments.read();
-            let _hw = hw_acc.enter_guard();
+            let _scope = handoff.enter_guard();
             resolve_operation(&segments, operation)
         })
         .await??;

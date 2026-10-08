@@ -206,7 +206,7 @@ impl BufferedOffsets {
 
                 let mut inner = inner.write();
 
-                let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+                let _scope = ambient::unmeasured_guard(reason("Internal operation"));
                 for (key, entry) in &items {
                     inner.store.insert(*key, &[*entry])?;
                 }

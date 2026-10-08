@@ -25,7 +25,7 @@ fn test_rebuild_with_removed_vectors() {
     let mut segment1 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
     let mut segment2 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
 
     for i in 0..NUM_VECTORS_1 {
         segment1

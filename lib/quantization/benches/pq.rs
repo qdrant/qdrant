@@ -45,7 +45,7 @@ fn encode_bench(c: &mut Criterion) {
 
     let mut total = 0.0;
 
-    let _hw = ambient::test_guard();
+    let _scope = ambient::test_guard();
     group.bench_function("score random access pq", |b| {
         b.iter(|| {
             let random_idx = rng.random_range(0..vectors_count as u32);

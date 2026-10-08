@@ -759,7 +759,7 @@ impl Segment {
         // After that we need to set internal version to 0, so that
         // we won't need to clean them again.
 
-        let _hw = ambient::unmeasured_guard(reason(
+        let _scope = ambient::unmeasured_guard(reason(
             "This is internal operation, no hw measurement needed",
         ));
         if !ids_to_clean.is_empty() {

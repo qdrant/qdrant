@@ -54,7 +54,7 @@ impl MutableGeoIndex {
 
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryGeoIndex::new();
-        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, OperationError>(
                 |idx, values: Vec<RawGeoPoint>| {

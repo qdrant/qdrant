@@ -863,7 +863,7 @@ mod tests {
         vector_storage: &TestRawScorerProducer,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scorer = vector_storage.scorer(query.to_owned());
 
         let ef = 16;
@@ -916,7 +916,7 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut scorer = vector_holder.internal_scorer(linking_idx);
 
         let nearest_on_level = graph_layers
@@ -1062,7 +1062,7 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = distance.preprocess_vector::<VectorElementType>(query.clone());
         let scorer = vector_holder.scorer(processed_query);
-        let _hw = ambient::test_guard();
+        let _scope = ambient::test_guard();
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
             let score = scorer.score_point(idx);
