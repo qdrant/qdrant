@@ -52,7 +52,7 @@ fn record_here(event: impl FnOnce(SpanId) -> Event) {
 /// Run `f` on the sink and parent span of the current scope:
 /// the span of its context, or the [`global`] sink with no parent.
 pub(super) fn with_sink<R>(f: impl FnOnce(&Sink, SpanId) -> R) -> Option<R> {
-    slot::with_context(|ctx| match ctx.and_then(AmbientContext::traced) {
+    slot::with_context("trace", |ctx| match ctx.and_then(AmbientContext::traced) {
         Some((sink, parent)) => Some(f(sink, parent)),
         None => global().map(|sink| f(sink, 0)),
     })

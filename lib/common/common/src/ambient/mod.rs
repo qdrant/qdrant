@@ -4,6 +4,8 @@ mod context;
 mod future;
 mod handoff;
 pub mod hw;
+#[cfg(debug_assertions)]
+mod missing_scope;
 mod slot;
 #[cfg(test)]
 mod tests;
