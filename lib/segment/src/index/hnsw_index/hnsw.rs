@@ -58,7 +58,6 @@ pub struct HNSWIndex {
     path: PathBuf,
     graph: HnswGraph<HnswLinksStorage>,
     searches_telemetry: HNSWSearchesTelemetry,
-    is_on_disk: bool,
 }
 
 pub struct HnswIndexOpenArgs<'a> {
@@ -95,14 +94,13 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            is_on_disk: graph.is_cold(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
         })
     }
 
     pub fn is_cold(&self) -> bool {
-        self.is_on_disk
+        self.graph.is_cold()
     }
 
     /// Heap RAM held by the graph links, in bytes.
@@ -139,7 +137,6 @@ impl HNSWIndex {
             path: _,
             graph,
             searches_telemetry: _,
-            is_on_disk: _,
         } = self;
         graph.clear_cache()?;
         Ok(())

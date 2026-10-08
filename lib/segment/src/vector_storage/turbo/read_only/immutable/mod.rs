@@ -28,7 +28,8 @@ pub struct ReadOnlyImmutableTurboVectorStorage<B: TurboVectorBlob> {
     quantizer: TurboQuantizer,
     /// Persisted soft-deletion flags, materialized in memory.
     deleted: InMemoryBitvecFlags,
-    on_disk: bool,
+    /// Whether the vectors were opened without populating.
+    cold: bool,
     /// Distance used for scoring / query preprocessing.
     distance: Distance,
     /// Original (un-padded) vector dimensionality.

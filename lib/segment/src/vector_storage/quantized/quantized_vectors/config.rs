@@ -109,21 +109,18 @@ impl QuantizedVectorsConfig {
     /// on disk.
     pub(in crate::vector_storage::quantized) fn memory_placement(
         &self,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> Memory {
         QuantizedVectors::memory_placement(
             self.quantization_config.memory_placement(),
-            on_disk_vector_storage,
+            cold_vector_storage,
         )
     }
 
     /// Whether this config should be materialized in RAM (vs. kept as a read-only mmap),
     /// given whether the source vector storage is on disk.
-    pub(in crate::vector_storage::quantized) fn is_ram(
-        &self,
-        on_disk_vector_storage: bool,
-    ) -> bool {
-        self.memory_placement(on_disk_vector_storage) == Memory::Pinned
+    pub(in crate::vector_storage::quantized) fn is_ram(&self, cold_vector_storage: bool) -> bool {
+        self.memory_placement(cold_vector_storage) == Memory::Pinned
     }
 
     /// Resolve which storage variant this config selects, given whether the source
@@ -134,10 +131,10 @@ impl QuantizedVectorsConfig {
     /// layout only exists for Binary/TurboQuant; Scalar/Product are always immutable.
     pub(in crate::vector_storage::quantized) fn storage_kind(
         &self,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> OperationResult<QuantizedStorageKind> {
         let mutable = !self.storage_type.is_immutable();
-        let in_ram = self.is_ram(on_disk_vector_storage);
+        let in_ram = self.is_ram(cold_vector_storage);
         let kind = match &self.quantization_config {
             QuantizationConfig::Scalar(_) => {
                 if mutable {

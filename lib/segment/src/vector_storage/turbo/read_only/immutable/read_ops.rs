@@ -30,7 +30,7 @@ impl<B: TurboVectorBlob> VectorStorageRead for ReadOnlyImmutableTurboVectorStora
     }
 
     fn is_cold(&self) -> bool {
-        self.on_disk
+        self.cold
     }
 
     fn total_vector_count(&self) -> usize {
