@@ -477,7 +477,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
                 let score = match metadata.vector_parameters.distance_type {
                     DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
-                        score_dot_x86(q_ptr, v_ptr, metadata.actual_dim)
+                        impl_score_dot_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
                     },
                     DistanceType::L1 => unsafe {
                         impl_score_l1_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
@@ -501,7 +501,101 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
                 let score = match metadata.vector_parameters.distance_type {
                     DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
-                        score_dot_x86(q_ptr, v_ptr, metadata.actual_dim)
+                        impl_score_dot_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
+                    },
+                    DistanceType::L1 => unsafe {
+                        impl_score_l1_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
+                    },
+                };
+                self.metadata
+                    .postprocess_internal_score(score, query_offset, vector_offset)
+            }
+        }
+    }
+
+    /// Requires `avx512vnni` and `avx512bw`. L1 has no VNNI form and runs the AVX2 kernel.
+    #[cfg(target_arch = "x86_64")]
+    pub fn score_point_avx512_vnni(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
+        match &self.metadata {
+            Metadata::Int8(metadata) => {
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let q_ptr = query.encoded_query.as_ptr();
+                let v_ptr = v_code.as_ptr();
+
+                let score = match metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
+                        impl_score_dot_avx512_vnni(q_ptr, v_ptr, metadata.actual_dim)
+                    },
+                    DistanceType::L1 => unsafe {
+                        impl_score_l1_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
+                    },
+                };
+                self.metadata
+                    .postprocess_score(score, query.offset, vector_offset)
+            }
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn score_point_avx512_vnni_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
+        match &self.metadata {
+            Metadata::Int8(metadata) => {
+                let query_data = self.encoded_vectors.get_vector_data(i);
+                let vector_data = self.encoded_vectors.get_vector_data(j);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
+                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
+
+                let score = match metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
+                        impl_score_dot_avx512_vnni(q_ptr, v_ptr, metadata.actual_dim)
+                    },
+                    DistanceType::L1 => unsafe {
+                        impl_score_l1_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
+                    },
+                };
+                self.metadata
+                    .postprocess_internal_score(score, query_offset, vector_offset)
+            }
+        }
+    }
+
+    /// Requires `avxvnni` and `avx2`. L1 has no VNNI form and runs the AVX2 kernel.
+    #[cfg(target_arch = "x86_64")]
+    pub fn score_point_avx_vnni(&self, query: &EncodedQueryU8, bytes: &[u8]) -> f32 {
+        match &self.metadata {
+            Metadata::Int8(metadata) => {
+                let (vector_offset, v_code) = Self::parse_vec_data(bytes);
+                let q_ptr = query.encoded_query.as_ptr();
+                let v_ptr = v_code.as_ptr();
+
+                let score = match metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
+                        impl_score_dot_avx_vnni(q_ptr, v_ptr, metadata.actual_dim)
+                    },
+                    DistanceType::L1 => unsafe {
+                        impl_score_l1_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
+                    },
+                };
+                self.metadata
+                    .postprocess_score(score, query.offset, vector_offset)
+            }
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn score_point_avx_vnni_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
+        match &self.metadata {
+            Metadata::Int8(metadata) => {
+                let query_data = self.encoded_vectors.get_vector_data(i);
+                let vector_data = self.encoded_vectors.get_vector_data(j);
+                let (query_offset, q_code) = Self::parse_vec_data(&query_data);
+                let (vector_offset, v_code) = Self::parse_vec_data(&vector_data);
+                let (q_ptr, v_ptr) = (q_code.as_ptr(), v_code.as_ptr());
+
+                let score = match metadata.vector_parameters.distance_type {
+                    DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => unsafe {
+                        impl_score_dot_avx_vnni(q_ptr, v_ptr, metadata.actual_dim)
                     },
                     DistanceType::L1 => unsafe {
                         impl_score_l1_avx(q_ptr, v_ptr, metadata.actual_dim as u32)
@@ -687,6 +781,16 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
             .incr_delta(self.metadata.vector_parameters().dim * 2);
 
         #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+            return self.score_point_avx512_vnni_internal(i, j);
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avxvnni") {
+            return self.score_point_avx_vnni_internal(i, j);
+        }
+
+        #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             return self.score_point_avx_internal(i, j);
         }
@@ -792,6 +896,16 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         debug_assert!(bytes.len() >= ADDITIONAL_CONSTANT_SIZE + self.metadata.actual_dim());
 
         #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+            return self.score_point_avx512_vnni(query, bytes);
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avxvnni") {
+            return self.score_point_avx_vnni(query, bytes);
+        }
+
+        #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
             return self.score_point_avx(query, bytes);
         }
@@ -810,27 +924,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
     }
 }
 
-/// The u8 dot product on x86, with the widest kernel the CPU has.
+/// 64 bytes per `vpdpbusd`, two accumulators, and a masked load for the last
+/// 16 to 48 bytes.
 ///
 /// Codes are clamped to `0..=127` at encoding, so `vpdpbusd`'s unsigned-by-signed
 /// byte products are exact, and its non-saturating i32 accumulation gives the
-/// same integer as `impl_score_dot`. `actual_dim` is a multiple of `ALIGNMENT`.
-#[cfg(target_arch = "x86_64")]
-unsafe fn score_dot_x86(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> f32 {
-    debug_assert!(actual_dim.is_multiple_of(ALIGNMENT));
-    unsafe {
-        if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
-            return impl_score_dot_avx512_vnni(q_ptr, v_ptr, actual_dim);
-        }
-        if is_x86_feature_detected!("avxvnni") {
-            return impl_score_dot_avx_vnni(q_ptr, v_ptr, actual_dim);
-        }
-        impl_score_dot_avx(q_ptr, v_ptr, actual_dim as u32)
-    }
-}
-
-/// 64 bytes per `vpdpbusd`, two accumulators, and a masked load for the last
-/// 16 to 48 bytes.
+/// same integer as `impl_score_dot`. `dim` is a multiple of `ALIGNMENT`.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
 unsafe fn impl_score_dot_avx512_vnni(q_ptr: *const u8, v_ptr: *const u8, dim: usize) -> f32 {
@@ -1002,15 +1101,5 @@ mod vnni_tests {
             return;
         }
         check(impl_score_dot_avx_vnni);
-    }
-
-    /// The dispatcher agrees with the scalar kernel whichever path it takes.
-    #[test]
-    fn test_score_dot_x86_matches_scalar() {
-        if !(is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma")) {
-            println!("avx2 test skipped");
-            return;
-        }
-        check(score_dot_x86);
     }
 }
