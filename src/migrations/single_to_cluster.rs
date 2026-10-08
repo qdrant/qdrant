@@ -9,7 +9,8 @@ use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
 use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateCollection, CreateCollectionOperation, CreateShardKey,
+    AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
+    CreateAliasOperation, CreateCollection, CreateCollectionOperation, CreateShardKey,
     SetShardReplicaState,
 };
 use storage::content_manager::consensus_manager::ConsensusStateRef;
@@ -162,5 +163,54 @@ pub async fn handle_existing_collections(
                     .await;
             }
         }
+
+        // Migrate aliases: pre-fix, handle_existing_collections submitted
+        // CreateCollection / CreateShardKey / SetShardReplicaState ops but
+        // no AliasOperations, so any aliases that existed when the single
+        // node was switched to cluster mode stayed on this peer only. Peers
+        // that joined later saw the collections but not the aliases, and
+        // requests through an alias failed with
+        //   `Not found: Collection <alias> doesn't exist!`
+        // The aliases-to-consensus migration was missing. Fix: after the
+        // shard-replica-state ops, fetch the aliases from the local
+        // alias_persistence and replay each as a CreateAlias action in a
+        // single ChangeAliases op per collection. See issue #10966.
+        let collection_pass = multipass.issue_pass(&collection_name);
+        let aliases = match toc_arc
+            .collection_aliases(&collection_pass, &full_access)
+            .await
+        {
+            Ok(aliases) => aliases,
+            Err(err) => {
+                log::warn!(
+                    "Failed to list aliases for {collection_name} during single-to-cluster migration: {err}"
+                );
+                continue;
+            }
+        };
+
+        if aliases.is_empty() {
+            continue;
+        }
+
+        let actions: Vec<_> = aliases
+            .into_iter()
+            .map(|alias_name| {
+                AliasOperations::CreateAlias(CreateAliasOperation {
+                    create_alias: CreateAlias {
+                        collection_name: collection_name.clone(),
+                        alias_name,
+                    },
+                })
+            })
+            .collect();
+
+        let _res = dispatcher_arc
+            .submit_collection_meta_op(
+                CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation { actions }),
+                full_auth.clone(),
+                None,
+            )
+            .await;
     }
 }
