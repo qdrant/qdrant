@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use common::uio_trace::{self, Op, Outcome};
+use common::ambient::trace::{self, Op, Outcome};
 use common::universal_io::{IsNotFound, OpGuard, OpStats, OpStatsSnapshot};
 use strum::{EnumCount as _, IntoEnumIterator as _};
 
@@ -33,7 +33,7 @@ impl RemoteIoStats {
     /// payload the request transfers; its length is counted as bytes on success.
     pub(crate) fn request(&self, op: Op, path: &Path, range: Range<u64>) -> RequestObserver {
         RequestObserver {
-            trace: uio_trace::Request::new(op, path, range.clone()),
+            trace: trace::Request::new(op, path, range.clone()),
             stats: self.op(op).clone(),
             guard: None,
             range,
@@ -89,11 +89,11 @@ impl RemoteIoStatsSnapshot {
     }
 }
 
-/// One remote request under observation. Mirrors the [`uio_trace::Request`] lifecycle so
+/// One remote request under observation. Mirrors the [`trace::Request`] lifecycle so
 /// both the trace and the statistics see the same start, outcome and payload length; a
 /// started request dropped without an outcome counts as abandoned.
 pub(crate) struct RequestObserver {
-    trace: uio_trace::Request,
+    trace: trace::Request,
     stats: OpStats,
     guard: Option<OpGuard>,
     range: Range<u64>,

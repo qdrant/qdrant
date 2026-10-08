@@ -180,11 +180,9 @@ def main() -> None:
         (r"^#\[macro_export]$\n", ""),
     )
     substitute(
-        AMALGAMATION / "src/common/uio_trace.rs",
-        (
-            r"^pub use __uio_trace_mark as mark;$",
-            "pub(crate) use __uio_trace_mark as mark;",
-        ),
+        AMALGAMATION.glob("src/common/ambient/trace/*.rs"),
+        # Non-`#[macro_export]` macros can't be re-exported as `pub`.
+        (r"^pub use (__\w+ as \w+|record::\{.*\});$", r"pub(crate) use \1;"),
     )
 
     # Fix doctests

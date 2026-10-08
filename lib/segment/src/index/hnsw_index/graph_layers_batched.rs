@@ -4,10 +4,10 @@ use std::cmp::max;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient::trace;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::uio_trace;
 use common::universal_io::{UniversalRead, UniversalReadFs, read_bin_via};
 use itertools::Itertools;
 
@@ -55,7 +55,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             Default::default(),
         )?;
         let links = GraphLinksFile::open(file, format)?;
-        uio_trace::file_sections(
+        trace::file_sections(
             &links_path.to_string_lossy(),
             links.uio_trace_sections(format),
         );
@@ -88,13 +88,13 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
         let entry: &[_] = match entry {
             SearchEntry::Point(entry_point) => {
-                uio_trace::mark!("search_entry begin (from level {})", entry_point.level);
+                trace::mark!("search_entry begin (from level {})", entry_point.level);
                 &[self.search_entry(*entry_point, 0, scorer, is_stopped, &mut arena)?]
             }
             SearchEntry::Seeds(seeds) => seeds,
         };
         let ef = max(ef, top);
-        uio_trace::mark!("level0 begin (bs={batch_size})");
+        trace::mark!("level0 begin (bs={batch_size})");
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
                 self.search_on_level(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)
@@ -118,7 +118,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut arena = stumpalo::Arena::new();
         let level_entries: &[_] = match entry {
             SearchEntry::Point(entry_point) => {
-                uio_trace::mark!("search_entry begin (from level {})", entry_point.level);
+                trace::mark!("search_entry begin (from level {})", entry_point.level);
                 &[self.search_entry_with_vectors(
                     *entry_point,
                     0,
@@ -130,7 +130,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             }
             SearchEntry::Seeds(seeds) => seeds,
         };
-        uio_trace::mark!("level0 begin (bs={links_batch_size}, inline vectors)");
+        trace::mark!("level0 begin (bs={links_batch_size}, inline vectors)");
         let nearest = self.search_on_level_with_vectors(
             level_entries,
             0,
@@ -159,7 +159,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             score: points_scorer.score_point(entry_point.point_id),
         };
         for level in rev_range(entry_point.level, target_level) {
-            uio_trace::mark!("entry_level {level} begin");
+            trace::mark!("entry_level {level} begin");
             let limit = self.hnsw_m.level_m(level);
 
             let mut changed = true;
@@ -204,7 +204,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             score: links_scorer_raw.score_point(entry_point.point_id),
         };
         for level in rev_range(entry_point.level, target_level) {
-            uio_trace::mark!("entry_level {level} begin");
+            trace::mark!("entry_level {level} begin");
             let limit = self.hnsw_m.level_m(level);
             let member_limit = if limit == 0 { usize::MAX } else { limit };
 
@@ -293,7 +293,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 break;
             }
             let expand_count = batch.len() - usize::from(terminal);
-            uio_trace::mark!("round {round} begin ({} points)", batch.len());
+            trace::mark!("round {round} begin ({} points)", batch.len());
             round += 1;
 
             arena.reset();
@@ -375,7 +375,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
             check_process_stopped(is_stopped)?;
-            uio_trace::mark!("round {round} begin ({} points)", batch.len());
+            trace::mark!("round {round} begin ({} points)", batch.len());
             round += 1;
 
             arena.reset();
@@ -403,7 +403,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
             let quotas = arena.alloc_slice_fill_with(batch.len(), |_| member_limit);
             admit_matches(matches, quotas, &mut visited_list, |id| points_ids.push(id));
-            uio_trace::mark!("round links done ({} to score)", points_ids.len());
+            trace::mark!("round links done ({} to score)", points_ids.len());
 
             points_scorer
                 .score_points_unfiltered(&points_ids)
@@ -460,7 +460,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
             check_process_stopped(is_stopped)?;
-            uio_trace::mark!("round {round} begin ({} points)", batch.len());
+            trace::mark!("round {round} begin ({} points)", batch.len());
             round += 1;
 
             arena.reset();

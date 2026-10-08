@@ -190,7 +190,7 @@ fn rewrite_append_at_offset_zero_creates_the_missing_object() {
 /// the object rebuild as a save.
 #[test]
 fn rewrite_appends_are_counted_as_remote_requests() {
-    use common::uio_trace::Op;
+    use common::ambient::trace::Op;
 
     let tmp = tempfile::tempdir().unwrap();
     let source = ThresholdMockSource::default();

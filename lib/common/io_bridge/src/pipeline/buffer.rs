@@ -2,7 +2,7 @@ use std::future::Future;
 use std::ops::Range;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use common::uio_trace::Op;
+use common::ambient::trace::Op;
 use common::universal_io::{ChunkSink, IsNotFound as _, UioResult, UniversalIoError};
 use futures::StreamExt as _;
 
