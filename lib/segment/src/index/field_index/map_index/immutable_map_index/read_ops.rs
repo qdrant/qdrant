@@ -9,7 +9,7 @@ use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::{ContainerSegment, ImmutableMapIndex};
 use crate::common::operation_error::OperationResult;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<'a, N, S> MapIndexRead<'a, N> for ImmutableMapIndex<N, S>
 where
@@ -94,7 +94,7 @@ where
 
     fn storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            on_disk_variant: false,
+            layout: ImmutableLayout::Heap,
         }
     }
 

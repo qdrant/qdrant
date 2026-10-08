@@ -16,7 +16,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
     NumericIndexRead<T> for OnDiskNumericIndex<T, S>
@@ -127,7 +127,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
 
     fn storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            on_disk_variant: true,
+            layout: ImmutableLayout::Mmap,
         }
     }
 

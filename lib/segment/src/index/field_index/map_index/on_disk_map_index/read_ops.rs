@@ -14,7 +14,7 @@ use super::super::{IdIter, MapIndexKey};
 use super::OnDiskMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::on_disk_point_to_values::ValuesIter;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, N>
     for OnDiskMapIndex<N, S>
@@ -247,7 +247,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
 
     fn storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            on_disk_variant: true,
+            layout: ImmutableLayout::Mmap,
         }
     }
 

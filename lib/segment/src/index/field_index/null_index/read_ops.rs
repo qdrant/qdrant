@@ -24,7 +24,7 @@ use common::types::PointOffsetType;
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::FieldCondition;
 
@@ -89,7 +89,7 @@ pub trait NullIndexRead {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            on_disk_variant: false,
+            layout: ImmutableLayout::Heap,
         }
     }
 

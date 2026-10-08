@@ -7,7 +7,7 @@ use super::super::read_ops::GeoIndexRead;
 use super::OnDiskGeoIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::types::GeoPoint;
 
 impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
@@ -80,7 +80,7 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            on_disk_variant: true,
+            layout: ImmutableLayout::Mmap,
         }
     }
 

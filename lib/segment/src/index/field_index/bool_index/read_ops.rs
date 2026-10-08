@@ -28,7 +28,7 @@ use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -180,7 +180,7 @@ pub trait BoolIndexRead {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            on_disk_variant: false,
+            layout: ImmutableLayout::Heap,
         }
     }
 

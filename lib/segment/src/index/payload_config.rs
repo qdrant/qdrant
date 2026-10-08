@@ -183,11 +183,36 @@ pub enum IndexMutability {
 pub enum StorageType {
     Gridstore,
     Mmap {
-        /// Built as the variant that reads straight from the mmap (`OnDisk`)
-        /// rather than the one loaded into heap (`Immutable`).
         #[serde(rename = "is_on_disk")]
-        on_disk_variant: bool,
+        layout: ImmutableLayout,
     },
+}
+
+/// In-memory layout an immutable index was built for.
+///
+/// Persisted as the legacy `is_on_disk` bool: `true` is [`Self::Mmap`].
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(from = "bool", into = "bool")]
+pub enum ImmutableLayout {
+    /// Reads go straight to the mmap files (`OnDisk*` index types).
+    Mmap,
+    /// Files are loaded into heap at open (`Immutable*` index types).
+    Heap,
+}
+
+impl From<bool> for ImmutableLayout {
+    fn from(is_on_disk: bool) -> Self {
+        if is_on_disk { Self::Mmap } else { Self::Heap }
+    }
+}
+
+impl From<ImmutableLayout> for bool {
+    fn from(layout: ImmutableLayout) -> Self {
+        match layout {
+            ImmutableLayout::Mmap => true,
+            ImmutableLayout::Heap => false,
+        }
+    }
 }
 
 impl StorageType {
@@ -198,13 +223,13 @@ impl StorageType {
         match self {
             StorageType::Gridstore => None,
             StorageType::Mmap {
-                on_disk_variant: true,
+                layout: ImmutableLayout::Mmap,
             } => Some(match schema_memory {
                 Memory::Cached => Memory::Cached,
                 Memory::Cold | Memory::Pinned => Memory::Cold,
             }),
             StorageType::Mmap {
-                on_disk_variant: false,
+                layout: ImmutableLayout::Heap,
             } => Some(Memory::Pinned),
         }
     }
@@ -245,5 +270,20 @@ mod test {
                 .schema,
             old_config
         );
+    }
+
+    #[test]
+    fn storage_type_layout_wire_format() {
+        for (layout, json) in [
+            (ImmutableLayout::Mmap, r#"{"mmap":{"is_on_disk":true}}"#),
+            (ImmutableLayout::Heap, r#"{"mmap":{"is_on_disk":false}}"#),
+        ] {
+            let storage_type = StorageType::Mmap { layout };
+            assert_eq!(serde_json::to_string(&storage_type).unwrap(), json);
+            assert_eq!(
+                serde_json::from_str::<StorageType>(json).unwrap(),
+                storage_type,
+            );
+        }
     }
 }

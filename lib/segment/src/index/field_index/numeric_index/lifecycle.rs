@@ -16,7 +16,7 @@ use super::{
 };
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
-use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::payload_config::{ImmutableLayout, IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::Memory;
 
@@ -89,7 +89,7 @@ where
             NumericIndexInner::Mutable(index) => index.storage_type(),
             NumericIndexInner::Immutable(index) => index.storage_type(),
             NumericIndexInner::OnDisk(_) => StorageType::Mmap {
-                on_disk_variant: true,
+                layout: ImmutableLayout::Mmap,
             },
         }
     }

@@ -11,7 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<T, S> ImmutableNumericIndex<T, S>
 where
@@ -106,7 +106,7 @@ where
 
     fn storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            on_disk_variant: false,
+            layout: ImmutableLayout::Heap,
         }
     }
 
