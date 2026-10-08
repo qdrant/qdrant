@@ -80,7 +80,7 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: self.is_on_disk(),
+            is_on_disk: self.is_cold(),
         }
     }
 
@@ -88,7 +88,7 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         OnDiskGeoIndex::ram_usage_bytes(self)
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         true
     }
 

@@ -158,7 +158,7 @@ pub trait BoolIndexRead {
     /// Whether the index keeps its primary data on disk. Default `false` —
     /// every current variant serves reads from an in-RAM bitmap (the read-only
     /// one materializes it on first use).
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 
@@ -180,7 +180,7 @@ pub trait BoolIndexRead {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: self.is_on_disk(),
+            is_on_disk: self.is_cold(),
         }
     }
 

@@ -261,7 +261,7 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
         true
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         true
     }
 

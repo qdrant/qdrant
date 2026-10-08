@@ -251,7 +251,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
 
 impl<V, S: UniversalRead> GridstoreReader<V, S> {
     /// Returns `true` if the reader is on disk, i.e. not populated on start/reload
-    pub(crate) fn is_on_disk(&self) -> bool {
+    pub(crate) fn is_cold(&self) -> bool {
         !self.populate.to_bool::<S>()
     }
 

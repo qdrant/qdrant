@@ -69,7 +69,7 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyAppendableGeoIndex<S> {
         self.in_memory_index.ram_usage_bytes()
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

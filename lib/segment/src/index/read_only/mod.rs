@@ -328,17 +328,17 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
     }
 
     /// Returns true if underlying index files are configured to stay on disk.
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             Self::Plain(_) => false,
-            Self::Hnsw(index) => index.is_on_disk(),
-            Self::SparseMutableRam(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedStoredF32(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedStoredF16(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedStoredU8(index) => index.inverted_index().is_on_disk(),
+            Self::Hnsw(index) => index.is_cold(),
+            Self::SparseMutableRam(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedStoredF32(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedStoredF16(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedStoredU8(index) => index.inverted_index().is_cold(),
         }
     }
 

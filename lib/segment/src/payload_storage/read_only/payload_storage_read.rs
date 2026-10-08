@@ -77,7 +77,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
         Ok(self.storage.get_storage_size_bytes())
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.storage.is_cold()
     }
 }

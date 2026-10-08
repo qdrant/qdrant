@@ -111,7 +111,7 @@ impl ConfigMismatchOptimizer {
 
                     if let Some(required_memory) = self.requested_vectors_memory(vector_name)
                         && let Some(memory) = vector_data.storage_type.memory()
-                        && required_memory.is_on_disk() != memory.is_on_disk()
+                        && required_memory.is_cold() != memory.is_cold()
                     {
                         return true;
                     }

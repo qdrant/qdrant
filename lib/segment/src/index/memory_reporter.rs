@@ -22,7 +22,7 @@ impl MemoryReporter for VectorIndexEnum {
                 } else {
                     // Links are backed by a live mmap handle: residency is
                     // tracked via the page cache, intent depends on on_disk config.
-                    let intent = if index.is_on_disk() {
+                    let intent = if index.is_cold() {
                         FileStorageIntent::OnDisk
                     } else {
                         FileStorageIntent::Cached

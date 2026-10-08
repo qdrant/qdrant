@@ -491,7 +491,7 @@ fn insert_overwrites_existing_key_in_place() {
     }
 }
 
-/// `datatype` and `is_on_disk` for both in-RAM and on-disk openings, for the
+/// `datatype` and `is_cold` for both in-RAM and on-disk openings, for the
 /// appendable and the single-file storages.
 #[test]
 fn metadata_accessors_report_expected_values() {
@@ -502,7 +502,7 @@ fn metadata_accessors_report_expected_values() {
     let distance = Distance::Dot;
     let _hw = hw::test_guard();
 
-    // `in_ram` drives `populate`, which is exactly what `is_on_disk` reports.
+    // `in_ram` drives `populate`, which is exactly what `is_cold` reports.
     for (in_ram, expect_on_disk) in [(true, false), (false, true)] {
         let dir = Builder::new().prefix("turbo_meta").tempdir().unwrap();
         let mut storage =
@@ -511,7 +511,7 @@ fn metadata_accessors_report_expected_values() {
         insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED));
 
         assert_eq!(storage.datatype(), VectorStorageDatatype::Turbo4);
-        assert_eq!(storage.is_on_disk(), expect_on_disk);
+        assert_eq!(storage.is_cold(), expect_on_disk);
 
         // The single-file storages the optimizer builds into report it the same
         // way: the segment builder drops the page cache of on-disk storages.
@@ -521,11 +521,7 @@ fn metadata_accessors_report_expected_values() {
             .unwrap();
         let storage =
             open_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, in_ram).unwrap();
-        assert_eq!(
-            storage.is_on_disk(),
-            expect_on_disk,
-            "mmap, in_ram {in_ram}"
-        );
+        assert_eq!(storage.is_cold(), expect_on_disk, "mmap, in_ram {in_ram}");
 
         #[cfg(target_os = "linux")]
         {
@@ -534,7 +530,7 @@ fn metadata_accessors_report_expected_values() {
                 open_turbo_single_uring(dir.path(), DIM, distance, TQBits::Bits4, in_ram)
             {
                 assert_eq!(
-                    storage.is_on_disk(),
+                    storage.is_cold(),
                     expect_on_disk,
                     "io_uring, in_ram {in_ram}"
                 );

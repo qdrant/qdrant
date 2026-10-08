@@ -19,7 +19,7 @@ pub struct ReadOnlyImmutableDenseVectorStorage<B: DenseVectorBlob> {
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
-    /// Whether vector data is populated into RAM (drives `is_on_disk`).
+    /// Whether vector data is populated into RAM (drives `is_cold`).
     populate: Populate,
 }
 

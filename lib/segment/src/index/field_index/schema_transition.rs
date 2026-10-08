@@ -94,7 +94,7 @@ fn compatible_diff(old: &PayloadSchemaParams, new: &PayloadSchemaParams) -> Opti
     }
 
     Some(CompatibleDiff {
-        // Placeholder; `classify` overwrites with `new.is_on_disk()`.
+        // Placeholder; `classify` overwrites with `new.is_cold()`.
         on_disk: on_disk_changed.then_some(false),
         metadata: metadata_changed,
     })

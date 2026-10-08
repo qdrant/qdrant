@@ -76,7 +76,9 @@ pub trait VectorStorageRead {
 
     fn datatype(&self) -> VectorStorageDatatype;
 
-    fn is_on_disk(&self) -> bool;
+    /// Whether the data was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    fn is_cold(&self) -> bool;
 
     /// Backend this storage reads through, `None` when it can only be opened on one. Surfaced
     /// as `vector_data[name].io_backend` in [`SegmentInfo`](crate::types::SegmentInfo).
@@ -1527,50 +1529,48 @@ impl VectorStorageRead for VectorStorageEnum {
         }
     }
 
-    /// If false - data is stored in RAM (and persisted on disk)
-    /// If true - data is stored on disk, and is not forced to be in RAM
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
-            VectorStorageEnum::DenseVolatile(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseVolatile(v) => v.is_cold(),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileByte(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseVolatileByte(v) => v.is_cold(),
             #[cfg(test)]
-            VectorStorageEnum::DenseVolatileHalf(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseMemmap(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseMemmapByte(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseGraphInline(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseGraphInlineByte(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseGraphInlineHalf(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseVolatileHalf(v) => v.is_cold(),
+            VectorStorageEnum::DenseMemmap(v) => v.is_cold(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.is_cold(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.is_cold(),
+            VectorStorageEnum::DenseGraphInline(v) => v.is_cold(),
+            VectorStorageEnum::DenseGraphInlineByte(v) => v.is_cold(),
+            VectorStorageEnum::DenseGraphInlineHalf(v) => v.is_cold(),
 
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUring(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseUring(v) => v.is_cold(),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringByte(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseUringByte(v) => v.is_cold(),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseUringHalf(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseUringHalf(v) => v.is_cold(),
 
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseTurboMemmap(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseTurboGraphInline(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.is_cold(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.is_cold(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.is_cold(),
+            VectorStorageEnum::DenseTurboMemmap(v) => v.is_cold(),
+            VectorStorageEnum::DenseTurboGraphInline(v) => v.is_cold(),
             #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(v) => v.is_on_disk(),
-            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.is_on_disk(),
-            VectorStorageEnum::SparseVolatile(v) => v.is_on_disk(),
-            VectorStorageEnum::SparseMmap(v) => v.is_on_disk(),
-            VectorStorageEnum::MultiDenseVolatile(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseTurboUring(v) => v.is_cold(),
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.is_cold(),
+            VectorStorageEnum::SparseVolatile(v) => v.is_cold(),
+            VectorStorageEnum::SparseMmap(v) => v.is_cold(),
+            VectorStorageEnum::MultiDenseVolatile(v) => v.is_cold(),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileByte(v) => v.is_on_disk(),
+            VectorStorageEnum::MultiDenseVolatileByte(v) => v.is_cold(),
             #[cfg(test)]
-            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.is_on_disk(),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.is_on_disk(),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.is_on_disk(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.is_on_disk(),
-            VectorStorageEnum::MultiDenseTurbo(v) => v.is_on_disk(),
-            VectorStorageEnum::EmptyDense(v) => v.is_on_disk(),
-            VectorStorageEnum::EmptySparse(v) => v.is_on_disk(),
+            VectorStorageEnum::MultiDenseVolatileHalf(v) => v.is_cold(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.is_cold(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.is_cold(),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.is_cold(),
+            VectorStorageEnum::MultiDenseTurbo(v) => v.is_cold(),
+            VectorStorageEnum::EmptyDense(v) => v.is_cold(),
+            VectorStorageEnum::EmptySparse(v) => v.is_cold(),
         }
     }
 

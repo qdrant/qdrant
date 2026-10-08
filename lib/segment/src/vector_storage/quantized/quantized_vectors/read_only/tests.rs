@@ -123,7 +123,7 @@ fn read_only_matches_read_write(
     let mut rng = StdRng::seed_from_u64(SEED);
 
     let storage = build_on_disk_storage(dir.path(), &mut rng);
-    let on_disk = storage.is_on_disk();
+    let on_disk = storage.is_cold();
 
     let rw = QuantizedVectors::create(
         &storage,
@@ -148,7 +148,7 @@ fn read_only_matches_read_write(
     .expect("quantization config exists");
 
     assert_eq!(ro.default_rescoring(), rw.default_rescoring());
-    assert_eq!(ro.is_on_disk(), rw.get_storage().is_on_disk());
+    assert_eq!(ro.is_cold(), rw.get_storage().is_cold());
 
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
 
@@ -187,7 +187,7 @@ fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
     let mut rng = StdRng::seed_from_u64(SEED);
 
     let storage = build_on_disk_storage(dir.path(), &mut rng);
-    let on_disk = storage.is_on_disk();
+    let on_disk = storage.is_cold();
 
     let rw = QuantizedVectors::create(
         &storage,
@@ -213,8 +213,8 @@ fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
 
     // The pinned (always_ram) config materializes in RAM; the demoted open
     // stays mmap-backed.
-    assert!(!rw.get_storage().is_on_disk());
-    assert!(ro.is_on_disk());
+    assert!(!rw.get_storage().is_cold());
+    assert!(ro.is_cold());
 
     let sample: Vec<PointOffsetType> = (0..NUM_POINTS as PointOffsetType).step_by(7).collect();
 
@@ -267,7 +267,7 @@ fn read_only_matches_read_write_multivector(
         let multi = random_multi_vector(&mut rng, DIMS, count);
         storage.insert_vector(id, VectorRef::from(&multi)).unwrap();
     }
-    let on_disk = storage.is_on_disk();
+    let on_disk = storage.is_cold();
 
     let rw = QuantizedVectors::create(
         &storage,
@@ -383,7 +383,7 @@ fn preopen_then_open_through_cached_fs(
     let mut rng = StdRng::seed_from_u64(SEED);
 
     let storage = build_on_disk_storage(dir.path(), &mut rng);
-    let on_disk = storage.is_on_disk();
+    let on_disk = storage.is_cold();
 
     let rw = QuantizedVectors::create(
         &storage,
@@ -453,7 +453,7 @@ fn preopen_then_open_multivector_through_cached_fs(
         let multi = random_multi_vector(&mut rng, DIMS, count);
         storage.insert_vector(id, VectorRef::from(&multi)).unwrap();
     }
-    let on_disk = storage.is_on_disk();
+    let on_disk = storage.is_cold();
 
     let rw = QuantizedVectors::create(
         &storage,
@@ -541,7 +541,7 @@ fn reload_chunked_preserves_scores(preload: bool) {
     let mut rng = StdRng::seed_from_u64(SEED);
 
     let storage = build_on_disk_storage(dir.path(), &mut rng);
-    let on_disk = storage.is_on_disk();
+    let on_disk = storage.is_cold();
 
     // Binary quantization with the mutable storage type produces the chunked
     // (appendable) layout — the only one `live_reload` acts on.

@@ -635,8 +635,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         TStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.encoded_vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.encoded_vectors.is_cold()
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryU8 {
@@ -667,7 +667,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
 
         HwMetric::VectorIoRead.bump(
             (self.metadata.vector_parameters().dim * 2)
-                * usize::from(self.encoded_vectors.is_on_disk()),
+                * usize::from(self.encoded_vectors.is_cold()),
         );
 
         #[cfg(target_arch = "x86_64")]

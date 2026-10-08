@@ -182,7 +182,7 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
         self.datatype
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         self.is_on_disk
     }
 
@@ -263,7 +263,7 @@ mod tests {
 
         assert_eq!(storage.distance(), Distance::Cosine);
         assert_eq!(storage.datatype(), VectorStorageDatatype::Float32);
-        assert!(storage.is_on_disk());
+        assert!(storage.is_cold());
         assert_eq!(storage.total_vector_count(), 1000);
         assert_eq!(storage.available_vector_count(), 0);
         assert_eq!(storage.deleted_vector_count(), 1000);
@@ -289,7 +289,7 @@ mod tests {
             None,
             0,
         );
-        assert!(storage_on_disk.is_on_disk());
+        assert!(storage_on_disk.is_cold());
 
         let storage_in_ram = EmptyDenseVectorStorage::new(
             64,
@@ -299,7 +299,7 @@ mod tests {
             None,
             0,
         );
-        assert!(!storage_in_ram.is_on_disk());
+        assert!(!storage_in_ram.is_cold());
     }
 
     #[test]

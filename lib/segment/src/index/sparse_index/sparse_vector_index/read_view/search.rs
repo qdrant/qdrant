@@ -182,7 +182,7 @@ where
             self.inverted_index,
             &mut scratch,
             &is_stopped,
-            usize::from(self.inverted_index.is_on_disk()),
+            usize::from(self.inverted_index.is_cold()),
         )?;
         let search_result = search_context.plain_search(&ids);
         Ok(search_result)
@@ -214,7 +214,7 @@ where
             self.inverted_index,
             &mut scratch,
             &is_stopped,
-            usize::from(self.inverted_index.is_on_disk()),
+            usize::from(self.inverted_index.is_cold()),
         )?;
 
         match filter {

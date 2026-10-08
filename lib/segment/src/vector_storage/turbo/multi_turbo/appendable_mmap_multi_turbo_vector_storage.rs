@@ -454,7 +454,7 @@ impl AppendableMmapMultiTurboVectorStorage {
 
         HwMetric::Cpu.bump(records.len() * query.len());
 
-        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump(records.len() * mul);
 
         self.score_records_max_similarity(query, &records)
@@ -486,7 +486,7 @@ impl AppendableMmapMultiTurboVectorStorage {
             .expect("Multivector not found");
 
         HwMetric::Cpu.bump(records_a.len() * offset_b.count as usize);
-        let mul = usize::from(self.storage.is_on_disk()); // Reads from RAM don't count as IO.
+        let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
         let quantized_size = self.quantizer.quantized_size();
@@ -514,8 +514,8 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.storage.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {

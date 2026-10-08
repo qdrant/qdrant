@@ -251,7 +251,7 @@ pub trait FullTextIndexRead {
 
     fn ram_usage_bytes(&self) -> usize;
 
-    fn is_on_disk(&self) -> bool;
+    fn is_cold(&self) -> bool;
 
     /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
     /// Returns [`None`] if there are any unseen tokens.

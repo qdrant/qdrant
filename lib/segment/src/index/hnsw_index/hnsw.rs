@@ -95,13 +95,13 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            is_on_disk: graph.is_on_disk(),
+            is_on_disk: graph.is_cold(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
         })
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         self.is_on_disk
     }
 

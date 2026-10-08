@@ -78,7 +78,7 @@ impl<S: UniversalRead> ReadOnlyImmutableTurboVectorStorage<GraphVectors<u8, S>> 
     ) -> OperationResult<Self> {
         let quantizer = shared::build_quantizer(dim, distance, bits);
         Ok(Self {
-            on_disk: graph.is_on_disk(),
+            on_disk: graph.is_cold(),
             storage: GraphVectors::new(graph, quantizer.quantized_size())?,
             quantizer,
             deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?,

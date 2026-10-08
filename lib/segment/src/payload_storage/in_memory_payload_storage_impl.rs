@@ -85,7 +85,7 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         Ok(estimated_size)
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 }

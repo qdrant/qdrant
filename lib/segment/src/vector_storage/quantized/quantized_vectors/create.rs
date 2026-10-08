@@ -283,7 +283,7 @@ impl QuantizedVectors {
             let vector = vector_storage.get_dense::<Sequential>(i);
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let on_disk_vector_storage = vector_storage.is_cold();
 
         Self::quantize_dense(
             vectors,
@@ -312,7 +312,7 @@ impl QuantizedVectors {
         let dim = vector_storage.vector_dim();
         let count = vector_storage.total_vector_count();
         let distance = vector_storage.distance();
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let on_disk_vector_storage = vector_storage.is_cold();
 
         let datatype = vector_storage.datatype();
         let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
@@ -454,7 +454,7 @@ impl QuantizedVectors {
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let on_disk_vector_storage = vector_storage.is_cold();
 
         let offsets = (0..vectors_count as PointOffsetType)
             .map(|idx| {
@@ -497,7 +497,7 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let multi_vector_config = *vector_storage.multi_vector_config();
         let vectors_count = vector_storage.total_vector_count();
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let on_disk_vector_storage = vector_storage.is_cold();
 
         let datatype = vector_storage.datatype();
         let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);

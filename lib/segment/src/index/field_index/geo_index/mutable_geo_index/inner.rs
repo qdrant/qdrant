@@ -344,7 +344,7 @@ impl GeoIndexRead for InMemoryGeoIndex {
         pph_bytes + vph_bytes + pm_bytes + ptv_bytes
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

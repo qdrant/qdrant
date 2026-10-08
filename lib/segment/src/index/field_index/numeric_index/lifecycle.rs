@@ -89,7 +89,7 @@ where
             NumericIndexInner::Mutable(index) => index.storage_type(),
             NumericIndexInner::Immutable(index) => index.storage_type(),
             NumericIndexInner::OnDisk(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
+                is_on_disk: index.is_cold(),
             },
         }
     }
@@ -122,8 +122,8 @@ where
         self.inner.values_is_empty(idx)
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.inner.is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.inner.is_cold()
     }
 
     pub fn populate(&self) -> OperationResult<()> {

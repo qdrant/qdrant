@@ -402,8 +402,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         TStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.encoded_vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.encoded_vectors.is_cold()
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
@@ -467,7 +467,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         let v1 = self.encoded_vectors.get_vector_data(i);
         let v2 = self.encoded_vectors.get_vector_data(j);
 
-        let mul = usize::from(self.encoded_vectors.is_on_disk()); // Reads from RAM don't count as IO.
+        let mul = usize::from(self.encoded_vectors.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump((v1.len() + v2.len()) * mul);
 
         let score = self.quantizer.score_symmetric(&v1, &v2);

@@ -115,7 +115,7 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
         self.cached_ram_usage_bytes
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 }

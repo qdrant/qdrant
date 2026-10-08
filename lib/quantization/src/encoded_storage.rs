@@ -22,7 +22,9 @@ use fs_err::File;
 /// segment) implement only this, instead of faking the read methods on [`EncodedStorage`].
 pub trait EncodedStorageWrite {
     fn is_in_ram_or_mmap() -> bool;
-    fn is_on_disk(&self) -> bool;
+    /// Whether the data was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    fn is_cold(&self) -> bool;
 
     fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()>;
 
@@ -326,7 +328,7 @@ impl EncodedStorageWrite for TestEncodedStorage {
         true
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

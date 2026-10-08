@@ -156,7 +156,7 @@ mod test_mod {
         // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
         drop(hw_scope);
         assert!(accumulator.hw_data()[HwMetric::Cpu] > 0);
-        if index.index.is_on_disk() {
+        if index.index.is_cold() {
             assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
     }
@@ -315,7 +315,7 @@ mod test_mod {
         drop(hw_scope);
         let cpu_cost = accumulator.hw_data()[HwMetric::Cpu];
         assert!(cpu_cost > 0);
-        if index.index.is_on_disk() {
+        if index.index.is_cold() {
             assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
 
@@ -558,7 +558,7 @@ mod test_mod {
 
         drop(hw_scope);
         assert!(accumulator.hw_data()[HwMetric::Cpu] > 0);
-        if index.index.is_on_disk() {
+        if index.index.is_cold() {
             assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
     }
@@ -614,7 +614,7 @@ mod test_mod {
 
         drop(hw_scope);
         assert!(accumulator.hw_data()[HwMetric::Cpu] > 0);
-        if index.index.is_on_disk() {
+        if index.index.is_cold() {
             assert!(accumulator.hw_data()[HwMetric::VectorIoRead] > 0);
         }
     }

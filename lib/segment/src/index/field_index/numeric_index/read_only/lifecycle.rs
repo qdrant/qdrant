@@ -89,7 +89,7 @@ where
         self.inner.get_mutability_type()
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.inner.is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.inner.is_cold()
     }
 }

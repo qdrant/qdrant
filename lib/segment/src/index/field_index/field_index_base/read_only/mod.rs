@@ -74,7 +74,7 @@ impl<S: UniversalReadExt> Debug for ReadOnlyFieldIndex<S> {
 /// Mirrored here:
 /// - [`Self::files`] / [`Self::immutable_files`] — file enumeration for
 ///   cache management.
-/// - [`Self::is_on_disk`] / [`Self::ram_usage_bytes`] — telemetry /
+/// - [`Self::is_cold`] / [`Self::ram_usage_bytes`] — telemetry /
 ///   placement queries.
 /// - [`Self::populate`] / [`Self::clear_cache`] — OS page-cache control.
 /// - [`Self::get_full_index_type`] / [`Self::get_mutability_type`] /
@@ -150,19 +150,19 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(index) => index.is_on_disk(),
-            ReadOnlyFieldIndex::KeywordIndex(index) => index.is_on_disk(),
-            ReadOnlyFieldIndex::UuidMapIndex(index) => index.is_on_disk(),
-            ReadOnlyFieldIndex::IntIndex(index) => index.is_on_disk(),
-            ReadOnlyFieldIndex::DatetimeIndex(index) => index.is_on_disk(),
-            ReadOnlyFieldIndex::FloatIndex(index) => index.is_on_disk(),
-            ReadOnlyFieldIndex::UuidIndex(index) => index.is_on_disk(),
-            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::is_on_disk(index),
-            ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::is_on_disk(index),
-            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_on_disk(index),
-            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::is_on_disk(index),
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::IntIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::is_cold(index),
         }
     }
 

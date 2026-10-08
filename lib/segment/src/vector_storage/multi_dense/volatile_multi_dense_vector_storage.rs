@@ -273,7 +273,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorSt
         VectorStorageDatatype::Float32
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

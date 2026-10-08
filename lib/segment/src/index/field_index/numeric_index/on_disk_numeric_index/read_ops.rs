@@ -259,7 +259,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         Ok(iter.filter(move |point| deleted.is_active(point.idx)))
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         true
     }
 }

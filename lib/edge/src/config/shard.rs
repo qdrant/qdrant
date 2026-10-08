@@ -98,7 +98,7 @@ impl EdgeConfig {
     /// Effective payload storage location: on-disk unless explicitly set to `false`
     /// via `on_disk_payload`, or overridden by `payload_memory`.
     pub fn on_disk_payload(&self) -> bool {
-        self.payload_memory_placement().is_on_disk()
+        self.payload_memory_placement().is_cold()
     }
 
     /// Effective memory placement of the payload storage: [`Self::requested_payload_memory`],

@@ -29,7 +29,7 @@ impl<B: TurboVectorBlob> VectorStorageRead for ReadOnlyImmutableTurboVectorStora
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         self.on_disk
     }
 

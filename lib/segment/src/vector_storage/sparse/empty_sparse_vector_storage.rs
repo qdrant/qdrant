@@ -101,7 +101,7 @@ impl VectorStorageRead for EmptySparseVectorStorage {
         VectorStorageDatatype::Float32
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         true
     }
 
@@ -171,7 +171,7 @@ mod tests {
 
         assert_eq!(storage.distance(), Distance::Dot);
         assert_eq!(storage.datatype(), VectorStorageDatatype::Float32);
-        assert!(storage.is_on_disk());
+        assert!(storage.is_cold());
         assert_eq!(storage.total_vector_count(), 500);
         assert_eq!(storage.available_vector_count(), 0);
         assert_eq!(storage.deleted_vector_count(), 500);

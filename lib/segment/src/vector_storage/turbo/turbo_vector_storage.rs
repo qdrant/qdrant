@@ -170,7 +170,7 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
         distance: Distance,
         bits: TQBits,
     ) -> OperationResult<Self> {
-        let on_disk = graph.is_on_disk();
+        let on_disk = graph.is_cold();
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = GraphVectors::new(graph, quantizer.quantized_size())?;
         Self::finalize(storage, quantizer, path, dim, distance, !on_disk, on_disk)
@@ -189,7 +189,7 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
     /// Shared tail of the backend-specific `open_*` constructors: open the
     /// deletion flags and assemble the storage.
     ///
-    /// `on_disk` is what [`VectorStorage::is_on_disk`] reports. A file backend
+    /// `on_disk` is what [`VectorStorage::is_cold`] reports. A file backend
     /// opened with `populate` is the in-RAM placement, so it passes
     /// `!populate`, as the dense storages do: the segment builder drops the
     /// page cache of on-disk storages after building the index, and an in-RAM
@@ -315,7 +315,7 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         self.on_disk
     }
 

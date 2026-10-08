@@ -164,7 +164,7 @@ impl VectorStorageRead for VolatileSparseVectorStorage {
         VectorStorageDatatype::Float32
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

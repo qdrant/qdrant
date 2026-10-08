@@ -190,9 +190,9 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
 
     /// Residency of the loaded graph, which may be borrowed from a
     /// graph-inline vector storage; a deferred graph will load cold.
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self.graph.get() {
-            Some(graph) => graph.is_on_disk(),
+            Some(graph) => graph.is_cold(),
             None => self.residency == GraphLinksResidency::Cold,
         }
     }

@@ -116,11 +116,11 @@ where
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             Self::Appendable(_) => false,
             Self::Immutable(_) => false,
-            Self::OnDisk(index) => index.is_on_disk(),
+            Self::OnDisk(index) => index.is_cold(),
         }
     }
 }

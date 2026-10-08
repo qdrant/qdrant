@@ -377,7 +377,7 @@ impl StructPayloadIndex {
     pub fn clear_cache_if_on_disk(&self) -> OperationResult<()> {
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                if index.is_on_disk() {
+                if index.is_cold() {
                     index.clear_cache()?;
                 }
             }

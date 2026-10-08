@@ -70,7 +70,7 @@ impl QuantizedVectors {
         vector_storage: &VectorStorageEnum,
         path: &Path,
     ) -> OperationResult<Self> {
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let on_disk_vector_storage = vector_storage.is_cold();
         let quantized_store = match vector_storage.try_multi_vector_config() {
             Some(multivector_config) => {
                 Self::load_multi(&config, path, multivector_config, on_disk_vector_storage)?

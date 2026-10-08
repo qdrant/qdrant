@@ -121,17 +121,17 @@ pub enum VectorIndexEnum {
 impl VectorIndexEnum {
     /// Returns true if underlying storage is configured to be stored on disk without
     /// actively holding data in RAM
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             Self::Plain(_) => false,
-            Self::Hnsw(index) => index.is_on_disk(),
-            Self::SparseRam(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedMmapF32(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedMmapF16(index) => index.inverted_index().is_on_disk(),
-            Self::SparseCompressedMmapU8(index) => index.inverted_index().is_on_disk(),
+            Self::Hnsw(index) => index.is_cold(),
+            Self::SparseRam(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedMmapF32(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedMmapF16(index) => index.inverted_index().is_cold(),
+            Self::SparseCompressedMmapU8(index) => index.inverted_index().is_cold(),
         }
     }
 

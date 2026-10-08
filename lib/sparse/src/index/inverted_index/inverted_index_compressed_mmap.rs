@@ -218,7 +218,7 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompr
 
     type Version = Version;
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         true
     }
 

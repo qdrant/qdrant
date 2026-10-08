@@ -43,7 +43,7 @@ where
         Self {
             hw: HwScale {
                 cpu: 1,
-                vector_io_read: usize::from(storage.is_on_disk()),
+                vector_io_read: usize::from(storage.is_cold()),
             },
             query,
             storage,

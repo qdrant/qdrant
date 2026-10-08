@@ -202,7 +202,7 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
             GeoIndex::Mutable(_) => false,
             GeoIndex::Immutable(_) => false,

@@ -802,7 +802,7 @@ impl Indexes {
     pub fn is_on_disk(&self) -> bool {
         match self {
             Indexes::Plain {} => false,
-            Indexes::Hnsw(config) => config.memory_placement().is_on_disk(),
+            Indexes::Hnsw(config) => config.memory_placement().is_cold(),
         }
     }
 }
@@ -2287,7 +2287,7 @@ impl VectorDataConfig {
     }
 
     pub fn is_on_disk(&self) -> bool {
-        self.storage_memory().is_on_disk()
+        self.storage_memory().is_cold()
     }
 }
 
@@ -2730,7 +2730,7 @@ impl PayloadSchemaParams {
     }
 
     pub fn is_on_disk(&self) -> bool {
-        self.memory_placement().is_on_disk()
+        self.memory_placement().is_cold()
     }
 
     /// Effective memory placement of the field index, resolving the new `memory` parameter
@@ -4904,9 +4904,9 @@ mod tests {
         assert_eq!(Memory::from_on_disk_heap(true), Memory::Cold);
         assert_eq!(Memory::from_on_disk_heap(false), Memory::Pinned);
 
-        assert!(Memory::Cold.is_on_disk());
-        assert!(!Memory::Cached.is_on_disk());
-        assert!(!Memory::Pinned.is_on_disk());
+        assert!(Memory::Cold.is_cold());
+        assert!(!Memory::Cached.is_cold());
+        assert!(!Memory::Pinned.is_cold());
 
         assert!(!Memory::Cold.is_heap());
         assert!(!Memory::Cached.is_heap());
