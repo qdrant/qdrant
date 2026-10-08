@@ -192,7 +192,9 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         OnDiskInvertedIndex::create(path.clone(), &immutable)?;
 
-        let populate = Populate::from(memory.is_heap());
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let has_positions = config.phrase_matching.unwrap_or_default();
         let inverted_index =
             OnDiskInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
@@ -205,7 +207,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let on_disk_index = OnDiskFullTextIndex {
             inverted_index,
             tokenizer,
-            cold: !memory.is_heap(),
+            cold: !memory.populate_on_open(),
         };
 
         let text_index = if memory.is_heap() {

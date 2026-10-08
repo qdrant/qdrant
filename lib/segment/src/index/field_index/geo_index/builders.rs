@@ -36,7 +36,9 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(self.memory.is_heap());
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = self.memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let on_disk_index = OnDiskGeoIndex::build(
             &MmapFs,
             self.in_memory_index,
@@ -45,7 +47,7 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
             &self.deleted_points,
         )?;
 
-        let index = if self.memory.is_heap() {
+        let index = if memory.is_heap() {
             GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
         } else {
             GeoIndex::OnDisk(on_disk_index)

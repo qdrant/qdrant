@@ -113,7 +113,9 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(self.memory.is_heap());
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = self.memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let on_disk_index = OnDiskNumericIndex::build(
             &MmapFs,
             self.in_memory_index,
@@ -122,7 +124,7 @@ where
             &self.deleted_points,
         )?;
 
-        let inner = if self.memory.is_heap() {
+        let inner = if memory.is_heap() {
             NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(on_disk_index))
         } else {
             NumericIndexInner::OnDisk(on_disk_index)

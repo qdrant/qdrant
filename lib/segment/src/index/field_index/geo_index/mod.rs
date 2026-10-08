@@ -206,7 +206,7 @@ impl GeoIndexRead for GeoIndex {
         match self {
             GeoIndex::Mutable(_) => false,
             GeoIndex::Immutable(_) => false,
-            GeoIndex::OnDisk(_) => true,
+            GeoIndex::OnDisk(index) => index.is_cold(),
         }
     }
 

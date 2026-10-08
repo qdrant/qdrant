@@ -633,3 +633,74 @@ pub(crate) fn bool_dir(dir: &Path, field: &JsonPath) -> PathBuf {
 pub(crate) fn null_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-null", field.filename()))
 }
+
+#[cfg(test)]
+mod tests {
+    use common::bitvec::BitVec;
+    use common::counter::hw;
+    use serde_json::{Value, json};
+
+    use super::*;
+    use crate::data_types::index::{
+        GeoIndexParams, IntegerIndexParams, KeywordIndexParams, TextIndexParams,
+    };
+    use crate::index::field_index::FieldIndexBuilderTrait;
+
+    /// A non-appendable build serves as-is (live index creation installs it), so it
+    /// must apply the placement like an open: only the cold one is left on disk.
+    #[test]
+    fn non_appendable_build_applies_placement() {
+        let field = JsonPath::new("field");
+        let deleted = BitVec::repeat(false, 1);
+        let _hw = hw::test_guard();
+
+        for memory in [Memory::Cold, Memory::Cached, Memory::Pinned] {
+            let cases: [(PayloadSchemaParams, Value); 4] = [
+                (
+                    PayloadSchemaParams::Keyword(KeywordIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!("a"),
+                ),
+                (
+                    PayloadSchemaParams::Integer(IntegerIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!(1),
+                ),
+                (
+                    PayloadSchemaParams::Geo(GeoIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!({"lon": 1.0, "lat": 2.0}),
+                ),
+                (
+                    PayloadSchemaParams::Text(TextIndexParams {
+                        memory: Some(memory),
+                        ..Default::default()
+                    }),
+                    json!("hello world"),
+                ),
+            ];
+            for (params, value) in cases {
+                let dir = tempfile::tempdir().unwrap();
+                let schema = PayloadFieldSchema::FieldParams(params);
+                let builders = IndexSelector::NonAppendable {
+                    dir: dir.path(),
+                    memory,
+                }
+                .index_builder(&field, &schema, &deleted)
+                .unwrap();
+                for mut builder in builders {
+                    builder.init().unwrap();
+                    builder.add_point(0, &[&value]).unwrap();
+                    let index = builder.finalize().unwrap();
+                    assert_eq!(index.is_cold(), memory == Memory::Cold, "{schema:?}");
+                }
+            }
+        }
+    }
+}

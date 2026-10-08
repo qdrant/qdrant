@@ -327,7 +327,8 @@ impl<S: UniversalReadExt + 'static> VectorIndexReadEnum<S> {
         Ok(index)
     }
 
-    /// Returns true if underlying index files are configured to stay on disk.
+    /// Whether the index was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
     pub fn is_cold(&self) -> bool {
         match self {
             Self::Plain(_) => false,

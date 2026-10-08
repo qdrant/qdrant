@@ -119,8 +119,8 @@ pub enum VectorIndexEnum {
 }
 
 impl VectorIndexEnum {
-    /// Returns true if underlying storage is configured to be stored on disk without
-    /// actively holding data in RAM
+    /// Whether the index was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
     pub fn is_cold(&self) -> bool {
         match self {
             Self::Plain(_) => false,
