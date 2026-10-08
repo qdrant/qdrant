@@ -276,7 +276,6 @@ fn array_of_empty_values_is_not_a_document(#[values(false, true)] phrase_matchin
     use crate::index::field_index::full_text_index::inverted_index::InvertedIndex;
 
     let temp_dir = Builder::new().prefix("doc_len_empty").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
 
     let mut index = gridstore_index(
         temp_dir.path().join("index"),
@@ -293,9 +292,7 @@ fn array_of_empty_values_is_not_a_document(#[values(false, true)] phrase_matchin
         serde_json::json!(["", "gamma", ""]),
     ];
     for (idx, payload) in payloads.iter().enumerate() {
-        index
-            .add_point(idx as PointOffsetType, &[payload], &hw_counter)
-            .unwrap();
+        index.add_point(idx as PointOffsetType, &[payload]).unwrap();
     }
 
     // Every point offset has a length slot, so the empty ones read as zero.
