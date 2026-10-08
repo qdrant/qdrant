@@ -152,17 +152,13 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
 
     pub fn is_on_disk(&self) -> bool {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: forward `is_on_disk` through `ReadOnlyMapIndex`")
-            }
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("follow-up: forward `is_on_disk` through `ReadOnlyNumericIndex`")
-            }
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.is_on_disk(),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.is_on_disk(),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.is_on_disk(),
+            ReadOnlyFieldIndex::IntIndex(index) => index.is_on_disk(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.is_on_disk(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.is_on_disk(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.is_on_disk(),
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::is_on_disk(index),
             ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::is_on_disk(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_on_disk(index),

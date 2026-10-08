@@ -123,4 +123,12 @@ where
             Self::OnDisk(_) => IndexMutability::Immutable,
         }
     }
+
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            Self::Appendable(_) => false,
+            Self::Immutable(_) => false,
+            Self::OnDisk(index) => index.is_on_disk(),
+        }
+    }
 }

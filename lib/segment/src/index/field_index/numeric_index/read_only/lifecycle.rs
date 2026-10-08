@@ -88,4 +88,8 @@ where
     pub fn get_mutability_type(&self) -> IndexMutability {
         self.inner.get_mutability_type()
     }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.inner.is_on_disk()
+    }
 }
