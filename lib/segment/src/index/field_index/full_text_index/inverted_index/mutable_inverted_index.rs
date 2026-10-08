@@ -361,7 +361,8 @@ impl InvertedIndex for MutableInvertedIndex {
                 }
                 Ok(())
             },
-            |point_id| accept.check(point_id),
+            |_| true,
+            accept,
             limit,
             is_stopped,
         )

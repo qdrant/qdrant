@@ -17,7 +17,7 @@ mod positional_cursors;
 mod tests;
 mod top_k;
 
-use common::condition_checker::ConditionChecker as _;
+use common::condition_checker::{CheckItem, ConditionChecker as _, Rest, Select};
 use common::types::{PointOffsetType, ScoreType};
 pub use mutable_cursors::MutableCursors;
 pub use positional_cursors::PositionalCursors;
@@ -58,15 +58,28 @@ impl<'a> Bm25Accept<'a> {
         Self { visible, filter }
     }
 
-    /// Whether `point_id` may be scored. A filter that fails to read reports
-    /// the error rather than leaving the point out.
-    pub fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        if !(self.visible)(point_id) {
-            return Ok(false);
-        }
+    /// Whether a query sees `point_id`. In memory, so asked per point.
+    pub fn is_visible(&self, point_id: PointOffsetType) -> bool {
+        (self.visible)(point_id)
+    }
+
+    /// Whether the filter allows `point_id`. A filter that fails to read
+    /// reports the error rather than leaving the point out.
+    pub fn filter(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         match self.filter {
             Some(filter) => filter.check(point_id),
             None => Ok(true),
+        }
+    }
+
+    /// [`Self::filter`] over a batch: move the `items` the filter allows to the front, in no particular
+    /// order, and return how many there are. One batch, so that a filter
+    /// reading storage reads it once for all of them. A filter that fails to
+    /// read reports the error rather than leaving the points out.
+    pub fn filter_batched<K: CheckItem>(&self, items: &mut [K]) -> OperationResult<usize> {
+        match self.filter {
+            Some(filter) => filter.check_batched(items, Select::Matches, Rest::Discard),
+            None => Ok(items.len()),
         }
     }
 }
