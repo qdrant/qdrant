@@ -21,10 +21,11 @@ fn main() {
         builder.file("cpp/avx2.c");
 
         if builder.get_compiler().is_like_msvc() {
-            builder.flag("/arch:AVX");
+            // Only one `/arch:` is effective (last wins). `/arch:AVX2` enables AVX2 and
+            // lower ISAs (haswell-equivalent), matching `-march=haswell` below.
+            // Passing `/arch:SSE`/`SSE2` after `/arch:AVX2` downgrades the ISA and breaks
+            // clang-cl (e.g. cargo-xwin), which requires target features for intrinsics.
             builder.flag("/arch:AVX2");
-            builder.flag("/arch:SSE");
-            builder.flag("/arch:SSE2");
         } else {
             builder.flag("-march=haswell");
         }
