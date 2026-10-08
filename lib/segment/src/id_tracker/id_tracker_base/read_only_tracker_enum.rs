@@ -149,6 +149,16 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
         }
     }
+
+    /// Make the inserts reported by the last [`Self::live_reload`] visible to readers. Call once
+    /// every component has ingested them.
+    pub fn publish_staged(&mut self) {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.publish_staged(),
+            // Never report inserts
+            Self::Immutable(_) | Self::DiskResident(_) => {}
+        }
+    }
 }
 
 impl<S: UniversalRead> IdTrackerRead for ReadOnlyIdTrackerEnum<S> {

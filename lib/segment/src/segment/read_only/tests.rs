@@ -1079,6 +1079,115 @@ fn test_live_reload_pure_delete_without_inserts() {
     );
 }
 
+/// A reload whose components fail after the id tracker read its delta must not
+/// expose the new points: their vectors are not loaded yet.
+#[test]
+fn test_failed_live_reload_keeps_new_points_invisible() {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_fail")
+        .tempdir()
+        .unwrap();
+    let _hw = hw::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let upsert = |segment: &mut Segment, i: usize| {
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        segment
+            .upsert_point((i + 1) as u64, (i as u64 + 1).into(), vectors)
+            .unwrap();
+    };
+
+    let half = NUM_POINTS / 2;
+    for i in 0..half {
+        upsert(&mut mutable, i);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_eq!(read_only.available_point_count(), half);
+
+    for i in half..NUM_POINTS {
+        upsert(&mut mutable, i);
+    }
+    mutable.flush(true).unwrap();
+
+    // Run the tracker half of `live_reload`, as if every component then failed
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
+    {
+        let fs = &*read_only.reload_fs.get_mut();
+        let fresh = read_only
+            .id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id)
+            .unwrap();
+        assert_eq!(fresh.inserted.len(), NUM_POINTS - half);
+        read_only.pending_reload.borrow_mut().merge(fresh);
+    }
+
+    let query = QueryVector::Nearest(VectorInternal::Dense(
+        (0..DIM).map(|j| (j % 5) as f32 + 0.25).collect(),
+    ));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let search = |segment: &ReadOnlySegment<MmapFile>| {
+        segment
+            .search_batch(
+                DEFAULT_VECTOR_NAME,
+                &[&query],
+                &WithPayload::default(),
+                &true.into(),
+                None,
+                NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .expect("search must not hit unloaded vectors")
+    };
+
+    assert_eq!(read_only.available_point_count(), half);
+    assert_eq!(search(&read_only)[0].len(), half);
+    for i in half..NUM_POINTS {
+        assert!(!read_only.has_point((i as u64 + 1).into(), DeferredBehavior::VisibleOnly));
+    }
+
+    // The retry applies the retained delta and publishes the points
+    preload_then_reload(&mut read_only).expect("retried live reload");
+    assert!(read_only.pending_reload.borrow().is_empty());
+    assert_eq!(read_only.available_point_count(), NUM_POINTS);
+    assert_eq!(search(&read_only)[0].len(), NUM_POINTS);
+    assert_query_equivalence(&mutable, &read_only);
+}
+
 /// Verify that `live_preload` short-circuits and skips the directory LIST
 /// when the tracker files are unchanged.
 #[test]

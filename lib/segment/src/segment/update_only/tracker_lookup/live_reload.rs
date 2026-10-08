@@ -23,6 +23,7 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
         });
 
         id_tracker.live_reload(fs, max_committed_id)?;
+        id_tracker.publish_staged();
 
         fs.rotate_cache_file_info();
         Ok(())

@@ -65,6 +65,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                 .live_reload(fs, &deleted, &inserted)?;
         }
 
+        id_tracker.borrow_mut().publish_staged();
         fs.rotate_cache_file_info();
         Ok(())
     }
