@@ -226,6 +226,17 @@ impl PointMappings {
             .map(Into::into)
     }
 
+    /// The slots [`Self::drop`] would tombstone for `external_id`: its active and
+    /// deferred heads, if any.
+    pub(crate) fn heads(&self, external_id: &PointIdType) -> impl Iterator<Item = PointOffsetType> {
+        [
+            self.internal_id_active(external_id),
+            self.internal_id_deferred(external_id),
+        ]
+        .into_iter()
+        .flatten()
+    }
+
     pub(crate) fn drop(&mut self, external_id: PointIdType) -> Option<PointOffsetType> {
         // Drop from both tracks: an ext can be shadowed (active + deferred
         // head for the same external id), and `drop` must tombstone both.
@@ -593,6 +604,11 @@ impl PointMappings {
             {
                 self.tombstone_slot(old);
             }
+            // With no deferred head left nothing shadows this one, including a slot linked
+            // again after a deferred head superseded it.
+            if internal_id_usize < self.shadowed.len() {
+                self.shadowed.set(internal_id_usize, false);
+            }
         }
 
         // Tombstone the same-track prior head.
@@ -636,6 +652,16 @@ impl PointMappings {
                     }
                 }
             }
+        }
+
+        // Linking a tombstoned slot back to the point it held revives it, as when a writer points
+        // an id back at its committed slot after abandoning an insert: undo the deferred deletion
+        // that tombstoning it counted.
+        if self.deleted[internal_id_usize]
+            && replaced_external_id == external_id
+            && is_deferred
+        {
+            self.deferred_deleted_count = self.deferred_deleted_count.saturating_sub(1);
         }
 
         self.internal_to_external[internal_id_usize] = external_id;

@@ -84,7 +84,9 @@ impl WriterIdTrackerState {
 ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
 pub struct AppendableIdTrackerState {
     pub max_claimed_internal_id: Option<PointOffsetType>,
-    pub pending_inserts: Vec<PointIdType>,
+    /// Each point on a claimed but unversioned slot, with the committed slots
+    /// it still holds in the segment.
+    pub pending_inserts: Vec<(PointIdType, Vec<PointOffsetType>)>,
     pub mappings_end: u64,
 }
 

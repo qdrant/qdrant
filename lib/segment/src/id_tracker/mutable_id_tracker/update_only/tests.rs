@@ -323,7 +323,8 @@ fn retires_inherited_pending_inserts() {
     let inherited = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
     assert_eq!(
         inherited.pending_inserts().collect::<Vec<_>>(),
-        vec![num(11)],
+        vec![(num(11), vec![])],
+        "a point new to the segment has no committed slot to fall back to",
     );
 
     // Construction alone retired it, before this writer has been asked to do anything.
@@ -364,11 +365,12 @@ fn retires_inherited_pending_inserts() {
     assert_eq!(reader.available_point_count(), 2);
 }
 
-/// An update whose new slot is abandoned costs the point, not just the unacknowledged update: the
-/// same partial write that abandoned the new slot has likely tombstoned the old one in the
-/// components already, so there is no earlier state to fall back to.
+/// An update whose new slot is abandoned costs only the update, not the point: the insert
+/// superseded the committed slot in the mappings log alone, and no component tombstones a slot it
+/// stores over, so the writer that inherits it points the id back at that slot. Readers and the
+/// mutable tracker's own load, which replays the log through `set_link`, both resolve it there.
 #[test]
-fn an_abandoned_update_retires_the_point() {
+fn an_abandoned_update_falls_back_to_the_committed_slot() {
     let dir = Builder::new().prefix("update_only").tempdir().unwrap();
 
     let mut crashed = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
@@ -385,6 +387,70 @@ fn an_abandoned_update_retires_the_point() {
         Ok(vec![(num(10), 1)]),
     );
 
+    let inherited = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    assert_eq!(
+        inherited.pending_inserts().collect::<Vec<_>>(),
+        vec![(num(10), vec![0])],
+    );
+    assert_eq!(
+        inherited.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        Some(0),
+        "readers keep serving the committed slot while the new one is pending",
+    );
+
+    let mut resumed = resume(dir.path());
+    resumed
+        .insert_operations(&MmapFs, &[Insert(num(11))])
+        .unwrap();
+    // Covers the abandoned slot 1 as well.
+    resumed
+        .set_internal_versions(&MmapFs, &[2], &[102])
+        .unwrap();
+
+    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    assert_eq!(reader.pending_inserts().count(), 0);
+    assert_eq!(
+        reader.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        Some(0),
+        "the point falls back to its committed slot",
+    );
+    assert_eq!(reader.internal_version(0), Some(100));
+    assert!(reader.is_deleted_point(1));
+    assert_eq!(
+        reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
+        Some(2),
+    );
+    assert_eq!(reader.available_point_count(), 2);
+
+    let core = MutableIdTracker::open(dir.path(), None).unwrap();
+    assert_eq!(
+        core.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
+        Some(0),
+    );
+    assert!(!core.is_deleted_point(0));
+    assert!(core.is_deleted_point(1));
+    assert_eq!(core.available_point_count(), 2);
+}
+
+/// A reader that saw the abandoned insert pending goes on serving the committed slot, and reloading
+/// past the writer's relink changes nothing it has to tell its components about.
+#[test]
+fn a_reader_reloads_past_a_relink_without_a_change() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+
+    let mut crashed = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    crashed
+        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .unwrap();
+    crashed
+        .set_internal_versions(&MmapFs, &[0], &[100])
+        .unwrap();
+    crashed
+        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .unwrap();
+
+    let mut reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+
     let mut resumed = resume(dir.path());
     resumed
         .insert_operations(&MmapFs, &[Insert(num(11))])
@@ -393,17 +459,87 @@ fn an_abandoned_update_retires_the_point() {
         .set_internal_versions(&MmapFs, &[2], &[102])
         .unwrap();
 
-    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    let reloaded = reader.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(reloaded.inserted, vec![2], "only the new point is reported");
+    assert_eq!(reloaded.deleted, Vec::<PointOffsetType>::new());
+    reader.publish_staged();
     assert_eq!(
         reader.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),
-        None,
-        "neither the abandoned slot nor the one it superseded may be served",
+        Some(0),
     );
-    assert!(reader.is_deleted_point(0));
-    assert!(reader.is_deleted_point(1));
     assert_eq!(
         reader.internal_id_with_behavior(num(11), DeferredBehavior::VisibleOnly),
         Some(2),
+    );
+}
+
+/// A point with both an active and a deferred head resolves as it did before an update to it was
+/// abandoned, and the mutable tracker's load, replaying the relink through `set_link`, counts only
+/// the abandoned slot as a deleted deferred one.
+#[test]
+fn an_abandoned_update_keeps_both_heads_of_a_shadowed_point() {
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+    // Slot 0 is active, every slot from 1 on is deferred.
+    let cutoff = Some(1);
+
+    let mut crashed = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    crashed
+        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .unwrap();
+    crashed
+        .set_internal_versions(&MmapFs, &[0], &[100])
+        .unwrap();
+    crashed
+        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .unwrap();
+    crashed
+        .set_internal_versions(&MmapFs, &[1], &[101])
+        .unwrap();
+    let before = ReadOnlyTracker::open(&MmapFs, dir.path(), cutoff).unwrap();
+    let core_before = MutableIdTracker::open(dir.path(), cutoff).unwrap();
+    // The update that gets abandoned: a third copy, deferred like the second.
+    crashed
+        .insert_operations(&MmapFs, &[Insert(num(10))])
+        .unwrap();
+
+    let reader_tracker = ReadOnlyTracker::open(&MmapFs, dir.path(), cutoff).unwrap();
+    let mut resumed = Tracker::new(
+        &MmapFs,
+        dir.path(),
+        reader_tracker.max_claimed_internal_id(),
+        reader_tracker.pending_inserts(),
+        reader_tracker.mappings_read_to(),
+    )
+    .unwrap();
+    resumed
+        .insert_operations(&MmapFs, &[Insert(num(11))])
+        .unwrap();
+    resumed
+        .set_internal_versions(&MmapFs, &[3], &[103])
+        .unwrap();
+
+    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), cutoff).unwrap();
+    let core = MutableIdTracker::open(dir.path(), cutoff).unwrap();
+    for (label, behavior) in [
+        ("visible only", DeferredBehavior::VisibleOnly),
+        ("with deferred", DeferredBehavior::WithDeferred),
+    ] {
+        assert_eq!(
+            reader.internal_id_with_behavior(num(10), behavior),
+            before.internal_id_with_behavior(num(10), behavior),
+            "reader, {label}",
+        );
+        assert_eq!(
+            core.internal_id_with_behavior(num(10), behavior),
+            core_before.internal_id_with_behavior(num(10), behavior),
+            "core, {label}",
+        );
+    }
+    assert!(core.is_deleted_point(2));
+    // Slot 2, the abandoned one, is the only deferred slot deleted since.
+    assert_eq!(
+        core.deferred_deleted_count(),
+        core_before.deferred_deleted_count() + 1,
     );
 }
 

@@ -136,12 +136,24 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     }
 
     /// External ids the mappings log has inserted whose slots the versions array does not cover, in
-    /// arbitrary order.
+    /// arbitrary order, each with the committed slots the id still holds in this segment: the
+    /// versioned slot a reload staged for it if there is one, its active and deferred heads
+    /// otherwise, none for a point new to the segment.
     ///
-    /// Each is a point this view withholds because its data may be half-written. A writer resuming
-    /// from this view retires them.
-    pub fn pending_inserts(&self) -> impl Iterator<Item = PointIdType> + '_ {
-        self.unversioned_inserts.keys().copied()
+    /// The new slot is withheld because its data may be half-written, while the committed ones go
+    /// on serving: the insert superseded them in the log only, no component tombstones a slot it
+    /// stores over. A writer resuming from this view points each id back at them, or retires it
+    /// when there are none.
+    pub fn pending_inserts(
+        &self,
+    ) -> impl Iterator<Item = (PointIdType, Vec<PointOffsetType>)> + '_ {
+        self.unversioned_inserts.keys().map(|external_id| {
+            let committed = match self.staged_inserts.get(external_id) {
+                Some(&staged) => vec![staged],
+                None => self.mappings.heads(external_id).collect(),
+            };
+            (*external_id, committed)
+        })
     }
 
     /// Open the file at `path` read-only, returning `None` if it does not exist.

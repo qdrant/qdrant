@@ -1120,3 +1120,120 @@ mod copy_dir {
         assert_eq!(tree(&target), tree(local.path()));
     }
 }
+
+#[cfg(unix)]
+fn walkdir_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in fs_err::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            out.extend(walkdir_files(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}
+
+#[cfg(unix)]
+fn lock_files(paths: &[std::path::PathBuf], locked: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = if locked { 0o000 } else { 0o644 };
+    for path in paths {
+        fs_err::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+}
+
+#[cfg(unix)]
+fn segment_files(dir: &std::path::Path, segment: uuid::Uuid) -> Vec<std::path::PathBuf> {
+    walkdir_files(
+        &dir.join(shard::files::SEGMENTS_PATH)
+            .join(segment.to_string()),
+    )
+}
+
+/// Regression test: updating a point that already
+/// sits in the write target claims a fresh slot there, and the store fails
+/// after the id tracker recorded it. The writer that resumes the segment must
+/// point the id back at its committed slot: the point keeps its last committed
+/// state, and replaying the update applies it. Retiring the id instead lost
+/// the point for good, and the replayed update found nothing to update.
+#[cfg(unix)]
+#[test]
+fn an_update_whose_store_fails_keeps_the_point() {
+    use segment::types::{Payload, WithPayloadInterface, WithVector};
+    use shard::files::segment_manifest_path;
+    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use shard::segment_manifest::SegmentsManifest;
+
+    use crate::RetrieveRequestBuilder;
+    use crate::read_only::ManifestSegmentEnumerator;
+    use crate::read_view::EdgeShardRead;
+
+    init_serverless_feature_flags();
+    let dir = leader_with_ten_points("edge-abandoned-update");
+    let manifest: SegmentsManifest =
+        serde_json::from_slice(&fs_err::read(segment_manifest_path(dir.path())).unwrap()).unwrap();
+    let target = *manifest.iter().next().unwrap().0;
+    let open = || {
+        UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+            None,
+        )
+        .unwrap()
+    };
+    let set_payload = |version: SeqNumberType| {
+        let payload: Payload = serde_json::from_value(serde_json::json!({"v": 1})).unwrap();
+        [(
+            version,
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload,
+                points: Some(vec![ExtendedPointId::NumId(3)]),
+                filter: None,
+                key: None,
+            })),
+        )]
+    };
+
+    // The writer resolves point 3 through what it opened, then cannot write the
+    // payload storage: the new slot's mapping lands, its data does not.
+    let writer = open();
+    let payload_files: Vec<_> = segment_files(dir.path(), target)
+        .into_iter()
+        .filter(|path| path.to_string_lossy().contains("payload_storage"))
+        .collect();
+    assert!(!payload_files.is_empty());
+    lock_files(&payload_files, true);
+    let failed = writer.apply_batch(set_payload(100));
+    lock_files(&payload_files, false);
+    assert!(
+        failed.is_err(),
+        "the store must fail for this test to mean anything"
+    );
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10, "the point is still committed");
+
+    let (_writer, outcome) = open().apply_batch(set_payload(100)).unwrap();
+    assert_eq!(
+        outcome.points[0].kind,
+        PointApplyKind::Stored,
+        "the replayed update finds the point: {outcome:?}",
+    );
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10);
+    let records = follower
+        .retrieve(
+            RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(3)])
+                .with_payload(WithPayloadInterface::Bool(true))
+                .with_vector(WithVector::Bool(false))
+                .build(),
+        )
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    let payload = records[0].payload.as_ref().expect("payload requested");
+    assert_eq!(serde_json::to_value(payload).unwrap()["v"], 1);
+}
