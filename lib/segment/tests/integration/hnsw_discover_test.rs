@@ -5,8 +5,8 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use itertools::Itertools;
@@ -74,7 +74,7 @@ fn hnsw_discover_precision() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();
@@ -179,7 +179,7 @@ fn filtered_hnsw_discover_precision() {
 
     let mut rng = StdRng::seed_from_u64(42);
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();

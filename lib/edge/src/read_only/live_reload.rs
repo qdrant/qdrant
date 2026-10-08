@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
@@ -87,7 +87,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.live_reload_impl(is_stopped)
     }
 

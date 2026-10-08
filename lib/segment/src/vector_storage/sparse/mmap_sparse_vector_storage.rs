@@ -7,8 +7,9 @@ use blobstore::config::{
     Compression, CreateOptions, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_PAGE_SIZE_BYTES,
 };
 use blobstore::{Blob, Blobstore};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hw::{self, HwMetric};
 use common::generic_consts::{AccessPattern, Random};
 use common::iterator_ext::IteratorExt;
 use common::reason::reason;
@@ -213,7 +214,7 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        hw::unmeasured(reason("Vector storage read IO not measured"), || {
+        ambient::unmeasured(reason("Vector storage read IO not measured"), || {
             self.storage.get_value::<P>(key)
         })?
         .map(SparseVector::try_from)
@@ -249,7 +250,7 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let _hw = hw::unmeasured_guard(reason(
+        let _hw = ambient::unmeasured_guard(reason(
             "This function is only used for internal operations. No need to measure.",
         ));
         let start_index = self.next_point_offset as PointOffsetType;
@@ -402,7 +403,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     ) -> crate::common::operation_error::OperationResult<bool> {
         let was_deleted = !self.set_deleted(key, true);
 
-        let _hw = hw::unmeasured_guard(reason("Deletions not measured"));
+        let _hw = ambient::unmeasured_guard(reason("Deletions not measured"));
         self.update_stored(key, None)?;
 
         Ok(was_deleted)
@@ -525,7 +526,7 @@ mod test {
             values: vec![0.1, 0.2, 0.3],
         };
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         {
             let mut storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
@@ -557,7 +558,7 @@ mod test {
         let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {

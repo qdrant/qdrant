@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::types::TelemetryDetail;
 use common::universal_io::MmapFs;
 use itertools::Itertools;
@@ -159,7 +160,7 @@ fn sparse_index_discover_test() {
     let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
     let (mut dense_segment, _) = build_segment(dir.path(), &dense_config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for n in 0..num_vectors {
         let (sparse_vector, dense_vector) = random_named_vector(&mut rnd, dim);
@@ -289,7 +290,7 @@ fn sparse_index_hardware_measurement_test() {
 
     let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for n in 0..num_vectors {
         let (sparse_vector, _) = random_named_vector(&mut rnd, dim);

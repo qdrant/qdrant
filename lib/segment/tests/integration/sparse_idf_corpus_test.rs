@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::counter::hw;
+use common::ambient;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::VectorRef;
@@ -64,7 +64,7 @@ fn build_tenant_segment(path: &std::path::Path) -> Segment {
     };
 
     let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut op_num: SeqNumberType = 0;
     segment
@@ -233,7 +233,7 @@ fn sparse_idf_statistics_corpus_strategies() {
         id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     segment
         .create_field_index(

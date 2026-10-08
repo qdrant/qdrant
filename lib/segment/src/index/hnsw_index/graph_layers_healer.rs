@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use common::counter::hw;
+use common::ambient;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
 use common::reason::reason;
@@ -230,7 +230,7 @@ impl<'a> GraphLayersHealer<'a> {
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
-                    let _hw = hw::unmeasured_guard(reason("Internal operation"));
+                    let _hw = ambient::unmeasured_guard(reason("Internal operation"));
                     let query = vector_storage
                         .get_vector::<Random>(offset)
                         .as_vec_ref()

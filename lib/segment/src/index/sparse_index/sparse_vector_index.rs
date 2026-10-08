@@ -333,7 +333,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         use sparse::index::posting_list_common::PostingListIter as _;
 
         // For tests only
-        let _hw = common::counter::hw::test_guard();
+        let _hw = common::ambient::test_guard();
 
         let mut unique_record_ids = std::collections::HashSet::new();
         let arena = blink_alloc::Blink::new();

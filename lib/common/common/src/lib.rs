@@ -11,7 +11,6 @@ pub mod bitvec;
 pub mod budget;
 pub mod bytes;
 pub mod condition_checker;
-pub mod counter;
 pub mod cow;
 pub mod cpu;
 pub mod cpu_utilization;

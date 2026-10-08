@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io::Read as _;
 use std::sync::Arc;
 
-use common::counter::hw::HwFutureExt;
+use common::ambient::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::File;
@@ -185,8 +185,8 @@ fn test_snapshot_includes_segment_manifest() {
 /// flush worker would acknowledge.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
+    use common::ambient::AmbientContext;
     use common::budget::ResourceBudget;
-    use common::counter::AmbientContext;
     use segment::data_types::vectors::VectorStructInternal;
     use shard::operations::CollectionUpdateOperations;
     use shard::operations::point_ops::{
@@ -299,8 +299,8 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
 /// that never acknowledged, and it is held for the entire snapshot.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
+    use common::ambient::AmbientContext;
     use common::budget::ResourceBudget;
-    use common::counter::AmbientContext;
     use segment::data_types::vectors::VectorStructInternal;
     use shard::files::NEWEST_CLOCKS_PATH;
     use shard::operations::point_ops::{

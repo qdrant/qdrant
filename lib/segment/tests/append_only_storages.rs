@@ -10,7 +10,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::{VectorRef, only_default_vector};
@@ -48,7 +48,7 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
         .prefix("append_only_storages")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // The segment lives in a uuid subdirectory of `dir`.
     let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
@@ -157,7 +157,7 @@ fn sparse_storage_is_append_only() {
         .prefix("append_only_sparse")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut storage = MmapSparseVectorStorage::open_or_create(dir.path()).unwrap();
     assert_eq!(storage_mode(&dir.path().join("store")), "append_only");
@@ -214,7 +214,7 @@ fn optimizer_makes_non_appendable_payload_storage_immutable() {
         .prefix("make_immutable_temp")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let stopped = AtomicBool::new(false);
 
     let config = |storage_type, sparse_index_type| SegmentConfig {

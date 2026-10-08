@@ -7,7 +7,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, ResponseError, http};
 use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, InferenceUsage, Usage};
 use collection::operations::types::CollectionError;
-use common::counter::AmbientContext;
+use common::ambient::AmbientContext;
 use serde::Serialize;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;

@@ -1,7 +1,7 @@
 use actix_web::rt::time::Instant;
 use actix_web::{Responder, delete, put, web};
 use actix_web_validator::{Json, Path, Query};
-use common::counter::hw::HwFutureExt;
+use common::ambient::HwFutureExt;
 use common::validation::validate_vector_name;
 use serde::Deserialize;
 use storage::dispatcher::Dispatcher;

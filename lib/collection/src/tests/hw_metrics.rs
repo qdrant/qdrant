@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::hw::{HwMetric, HwSharedDrain};
+use common::ambient::{AmbientContext, HwFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hw::{HwFutureExt, HwMetric};
-use common::counter::{AmbientContext, HwSharedDrain};
 use common::save_on_disk::SaveOnDisk;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng, rng};

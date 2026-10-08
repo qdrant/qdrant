@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::ScoredPointOffset;
@@ -237,7 +237,7 @@ fn test_multivector_quantization_hnsw(
 
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();

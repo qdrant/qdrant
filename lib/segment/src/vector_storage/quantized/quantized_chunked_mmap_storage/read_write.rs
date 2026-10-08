@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, Flusher};
 use common::reason::reason;
@@ -208,7 +208,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
-        hw::unmeasured(reason("Internal operation"), || self.data.push(other))
+        ambient::unmeasured(reason("Internal operation"), || self.data.push(other))
             .map(|_| ())
             .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }

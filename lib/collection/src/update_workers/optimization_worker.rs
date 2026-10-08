@@ -5,10 +5,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hw;
-use common::panic;
 use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
+use common::{ambient, panic};
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -540,7 +539,7 @@ impl UpdateWorkers {
                             "Failed to read WAL during recovery: {e}"
                         ))
                     })?;
-                    hw::unmeasured(reason("Internal operation"), || {
+                    ambient::unmeasured(reason("Internal operation"), || {
                         CollectionUpdater::update(
                             &segments,
                             op_num,

@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hw;
+use common::ambient;
+use common::ambient::hw;
 use common::types::DeferredBehavior;
 use futures::future;
 use futures::future::try_join_all;
@@ -32,7 +33,7 @@ impl LocalShard {
             let request = Arc::clone(&request);
             let is_stopped = stopping_guard.get_is_stopped();
 
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
                 let _hw = hw_acc.enter_guard();
@@ -151,7 +152,7 @@ impl LocalShard {
 
             let is_stopped = stopping_guard.get_is_stopped();
 
-            let hw_acc = hw::current();
+            let hw_acc = ambient::current();
             let cpu_utilization = hw::cpu_utilization();
             let task = handle.spawn_blocking(move || {
                 let _hw = hw_acc.enter_guard();

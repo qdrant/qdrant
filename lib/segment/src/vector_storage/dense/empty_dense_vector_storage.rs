@@ -242,7 +242,7 @@ impl VectorStorage for EmptyDenseVectorStorage {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
 
     use super::*;
@@ -348,7 +348,7 @@ mod tests {
             10,
         );
         let vector = vec![1.0, 2.0, 3.0, 4.0];
-        let result = hw::test(|| storage.insert_vector(0, VectorRef::from(&vector)));
+        let result = ambient::test(|| storage.insert_vector(0, VectorRef::from(&vector)));
         assert!(result.is_err());
     }
 
@@ -385,7 +385,7 @@ mod tests {
             MultiDenseVectorInternal::new(vec![1.0; 8], 4),
         ));
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let scorer = new_raw_scorer(query, &storage)
             .expect("multivector query on an empty placeholder must not fail");
 

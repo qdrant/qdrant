@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use cancel::CancellationToken;
-use common::counter::hw::HwHandoff;
+use common::ambient::HwHandoff;
 use common::save_on_disk::SaveOnDisk;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
@@ -405,7 +405,7 @@ mod tests {
     use std::sync::Arc;
 
     use cancel::CancellationToken;
-    use common::counter::{AmbientContext, hw};
+    use common::ambient::{self, AmbientContext};
     use common::save_on_disk::SaveOnDisk;
     use segment::common::BYTES_IN_KB;
     use segment::entry::entry_point::SegmentEntry as _;
@@ -442,7 +442,7 @@ mod tests {
         let mut holder = SegmentHolder::default();
         let full_id = holder.add_new(random_segment(dir.path(), 100, 3, DIM));
         let mut source = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
-        hw::test(|| {
+        ambient::test(|| {
             source
                 .upsert_point(
                     1,

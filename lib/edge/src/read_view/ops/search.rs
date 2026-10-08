@@ -1,7 +1,7 @@
 use std::cmp;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::modifier::Modifier;
@@ -46,7 +46,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if searches.is_empty() {
             return Ok(Vec::new());
         }

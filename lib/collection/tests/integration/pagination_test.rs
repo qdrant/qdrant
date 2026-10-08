@@ -5,8 +5,7 @@ use collection::operations::point_ops::{
     WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 

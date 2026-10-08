@@ -16,8 +16,7 @@ use collection::operations::types::{
 };
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use fs_err::File;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;

@@ -25,7 +25,7 @@ pub struct ReadOnlyImmutableDenseVectorStorage<B: DenseVectorBlob> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
@@ -62,7 +62,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 
@@ -117,7 +117,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let mut rng = StdRng::seed_from_u64(7);
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 

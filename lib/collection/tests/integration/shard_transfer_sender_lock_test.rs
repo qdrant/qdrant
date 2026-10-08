@@ -36,8 +36,7 @@ use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use collection::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, HwFutureExt};
 use parking_lot::Mutex;
 use rstest::rstest;
 use segment::types::StrictModeConfig;

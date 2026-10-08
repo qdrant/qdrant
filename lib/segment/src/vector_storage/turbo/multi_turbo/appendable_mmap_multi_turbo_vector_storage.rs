@@ -14,8 +14,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hw::{self, HwMetric};
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
 use common::reason::reason;
@@ -676,7 +677,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let record_size = self.quantizer.quantized_size();
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
         let start_index = self.offsets.len() as PointOffsetType;
 
         for (blob, deleted) in other_vectors {
@@ -829,7 +830,7 @@ mod tests {
             for dim in [1, 127, 128, 1025] {
                 let distance = Distance::Dot;
                 let dir = Builder::new().prefix("turbo_multi").tempdir().unwrap();
-                let _hw = hw::test_guard();
+                let _hw = ambient::test_guard();
 
                 let oracle = Oracle::new(dim, distance);
                 let inputs = make_multi_vectors(dim, COUNT, seed);
@@ -1028,7 +1029,7 @@ mod tests {
             let distance = Distance::Dot;
             let src_dir = Builder::new().prefix("turbo_multi_src").tempdir().unwrap();
             let dst_dir = Builder::new().prefix("turbo_multi_dst").tempdir().unwrap();
-            let _hw = hw::test_guard();
+            let _hw = ambient::test_guard();
             let stopped = AtomicBool::new(false);
 
             let mut src = open_appendable_turbo_multi_vector_storage(
@@ -1125,7 +1126,7 @@ mod tests {
         const DIM: usize = 128;
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_multi_cap").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
             dir.path(),
@@ -1209,7 +1210,7 @@ mod tests {
             .prefix("turbo_multi_straddle")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
@@ -1284,7 +1285,7 @@ mod tests {
             .prefix("turbo_multi_oversized")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
@@ -1333,7 +1334,7 @@ mod tests {
                 .prefix("turbo_multi_reinsert")
                 .tempdir()
                 .unwrap();
-            let _hw = hw::test_guard();
+            let _hw = ambient::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1376,7 +1377,7 @@ mod tests {
                 .prefix("turbo_multi_avail")
                 .tempdir()
                 .unwrap();
-            let _hw = hw::test_guard();
+            let _hw = ambient::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1452,7 +1453,7 @@ mod tests {
                 .prefix("turbo_multi_read_batch")
                 .tempdir()
                 .unwrap();
-            let _hw = hw::test_guard();
+            let _hw = ambient::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1588,7 +1589,7 @@ mod tests {
             .prefix("turbo_multi_model_dst")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut model: Vec<Slot> = Vec::new();
@@ -1762,7 +1763,7 @@ mod tests {
             .prefix("turbo_multi_files")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
             dir.path(),
@@ -1829,7 +1830,7 @@ mod tests {
                         .prefix("turbo_multi_score")
                         .tempdir()
                         .unwrap();
-                    let _hw = hw::test_guard();
+                    let _hw = ambient::test_guard();
                     let mut storage = open_appendable_turbo_multi_vector_storage(
                         dir.path(),
                         dim,
@@ -1891,7 +1892,7 @@ mod tests {
             for dim in [32, 128] {
                 for seed in SEEDS {
                     let dir = Builder::new().prefix("turbo_multi_reco").tempdir().unwrap();
-                    let _hw = hw::test_guard();
+                    let _hw = ambient::test_guard();
                     let mut storage = open_appendable_turbo_multi_vector_storage(
                         dir.path(),
                         dim,

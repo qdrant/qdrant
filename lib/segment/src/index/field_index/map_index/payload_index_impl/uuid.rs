@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use blobstore::Blob;
-use common::counter::hw;
+use common::ambient;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use indexmap::IndexSet;
@@ -267,7 +267,7 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
     index.for_each_value(|value| {
-        let count = hw::unmeasured(
+        let count = ambient::unmeasured(
             reason("payload_blocks only used in HNSW building, which is unmeasured."),
             || index.get_count_for_value(value),
         )

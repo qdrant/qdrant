@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+use common::ambient;
 use common::bitvec::{BitSliceExt as _, BitVec};
-use common::counter::hw;
 use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
@@ -269,7 +269,7 @@ fn condition_points(
 ) -> OperationResult<Vec<PointOffsetType>> {
     let filter = Filter::new_must(Field(condition));
 
-    let _hw = hw::unmeasured_guard(reason("Internal operation"));
+    let _hw = ambient::unmeasured_guard(reason("Internal operation"));
 
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
@@ -335,7 +335,7 @@ fn build_filtered_graph(
     let insert_points = |block_point_id| {
         check_process_stopped(stopped)?;
 
-        let _hw = hw::unmeasured_guard(reason(
+        let _hw = ambient::unmeasured_guard(reason(
             "This hardware counter can be discarded, since it is only used for internal operations",
         ));
 

@@ -9,8 +9,8 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::condition_checker::ConditionChecker;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::types::{DeferredBehavior, PointOffsetType};
 use fnv::FnvBuildHasher;
@@ -88,7 +88,7 @@ impl TestSegments {
     fn new() -> Self {
         let base_dir = Builder::new().prefix("test_segments").tempdir().unwrap();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let mut rng = StdRng::seed_from_u64(42);
 
@@ -412,7 +412,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         STR_ROOT_PROJ_KEY, "nested_1", "nested_2"
     ));
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut opnum = 0;
     struct_segment
@@ -605,7 +605,7 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         },
     }));
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     let estimation_struct = test_segments
@@ -838,7 +838,7 @@ fn test_root_nested_array_filter_cardinality_estimation() {
         Filter::new_must(Condition::Field(nested_match)),
     ));
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let estimation = struct_segment
         .payload_index
@@ -904,7 +904,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
         )),
     ));
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let estimation = struct_segment
         .payload_index
@@ -1245,7 +1245,7 @@ fn test_update_payload_index_type() {
         payloads.push(payload_json! {"field": i});
     }
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for (idx, payload) in payloads.into_iter().enumerate() {
         points.insert(idx, payload.clone());
@@ -1305,7 +1305,7 @@ fn test_update_payload_index_type() {
 fn test_bool_index_appendable_reopen_accepts_updates() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let field = JsonPath::new("flag");
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     {
         let mut payload_storage = InMemoryPayloadStorage::default();
@@ -1367,7 +1367,7 @@ fn test_bool_index_appendable_reopen_accepts_updates() {
 fn test_null_index_appendable_reopen_loads_and_accepts_updates() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let field = JsonPath::new("name");
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     {
         let mut payload_storage = InMemoryPayloadStorage::default();
@@ -1496,7 +1496,7 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
 /// fallback), the appendable struct segment (mutable prefix structure) and
 /// the mmap segment (on-disk prefix index).
 fn test_prefix_match(test_segments: &TestSegments) -> Result<()> {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let read_with_prefix = |segment: &Segment, prefix: &str| {
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
@@ -1558,7 +1558,7 @@ fn validate_facet_result(
     facet_hits: HashMap<FacetValue, usize>,
     filter: Option<Filter>,
 ) -> Result<()> {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     for (value, count) in facet_hits.iter() {
         // Compare against exact count
@@ -1625,7 +1625,7 @@ fn test_struct_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()
         let filter = random_filter(&mut rand::rng(), 3);
         request.filter = Some(filter.clone());
 
-        let facet_hits = hw::test(|| {
+        let facet_hits = ambient::test(|| {
             test_segments
                 .struct_segment
                 .facet(&request, &Default::default())
@@ -1645,7 +1645,7 @@ fn test_mmap_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()> 
         let filter = random_filter(&mut rand::rng(), 3);
         request.filter = Some(filter.clone());
 
-        let facet_hits = hw::test(|| {
+        let facet_hits = ambient::test(|| {
             test_segments
                 .mmap_segment
                 .facet(&request, &Default::default())

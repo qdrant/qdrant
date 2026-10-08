@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::ops::Bound;
 
-use common::counter::HwMeasurementIteratorExt;
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::generic_consts::Random;
 use common::reason::reason;
 use common::types::PointOffsetType;
@@ -57,7 +57,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
         if self.storage.deleted.is_active(idx) {
             Some(Box::new(
-                hw::unmeasured(reason("TODO: Propagate counter upwards"), || {
+                ambient::unmeasured(reason("TODO: Propagate counter upwards"), || {
                     self.storage.point_to_values.values_iter(idx)
                 })
                 .ok()??

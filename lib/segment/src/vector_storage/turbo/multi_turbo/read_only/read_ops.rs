@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};

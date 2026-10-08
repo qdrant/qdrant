@@ -1,4 +1,4 @@
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -20,7 +20,7 @@ const COUNT: usize = 9000;
 /// the first directory, `UpdateOnlyChunkedVectors` into the second — the
 /// latter over two sessions to also exercise reopening mid-chunk.
 fn write_both() -> (TempDir, TempDir) {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let plain_dir = Builder::new().prefix("chunked_plain").tempdir().unwrap();
     let appended_dir = Builder::new().prefix("chunked_appended").tempdir().unwrap();
 
@@ -124,7 +124,7 @@ fn directory_reads_congruently() {
 /// to the data, after which appends continue where the count left off.
 #[test]
 fn repairs_preallocated_chunks() {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let dir = Builder::new().prefix("chunked_prealloc").tempdir().unwrap();
 
     let mut plain = ChunkedVectors::<f32, MmapFile>::open(
@@ -182,7 +182,7 @@ fn repairs_preallocated_chunks() {
 /// existing data and corrupting the offset-to-vector mapping.
 #[test]
 fn replaying_an_already_applied_range_overwrites_it() {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let dir = Builder::new().prefix("chunked_replay").tempdir().unwrap();
 
     let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
@@ -230,7 +230,7 @@ fn replaying_an_already_applied_range_overwrites_it() {
 /// offsets down to close it.
 #[test]
 fn extends_across_a_gap_with_zeroes() {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let dir = Builder::new().prefix("chunked_gap").tempdir().unwrap();
 
     let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();

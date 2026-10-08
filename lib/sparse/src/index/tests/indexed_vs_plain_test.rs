@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::AmbientContext;
+use common::ambient::AmbientContext;
 
 use crate::SearchScratch;
 use crate::common::sparse_vector::RemappedSparseVector;

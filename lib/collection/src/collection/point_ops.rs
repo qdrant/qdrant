@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hw::HwFutureExt;
+use common::ambient::HwFutureExt as _;
 use common::types::DeferredBehavior;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt as _, TryFutureExt, TryStreamExt as _, future};

@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, BlobstoreReader};
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::reason::reason;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
@@ -62,7 +63,7 @@ where
         // the gridstore carries no prefix marker, and this open path has no
         // schema access. Prefix conditions fall back to slower checks.
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _hw = ambient::unmeasured_guard(reason("Internal operation"));
         storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?,
             |idx, values: Vec<_>| {

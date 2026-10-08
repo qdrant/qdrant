@@ -3,8 +3,7 @@ use std::num::NonZeroUsize;
 use std::ops::Deref as _;
 use std::time::Duration;
 
-use common::counter::hw;
-use common::counter::hw::{HwFutureExt, HwHandoff};
+use common::ambient::{self, HwFutureExt as _, HwHandoff};
 use common::reason::reason;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
@@ -63,7 +62,7 @@ impl ShardReplicaSet {
         let hw_acc = if state.is_resharding() {
             HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
         } else {
-            hw::current()
+            ambient::current()
         };
 
         // Decide whether to apply the operation in the current replica state.
@@ -167,7 +166,7 @@ impl ShardReplicaSet {
         let hw_acc = if peer_state.is_some_and(|state| state.is_resharding()) {
             HwHandoff::unmeasured(reason("Don't measure hw when resharding"))
         } else {
-            hw::current()
+            ambient::current()
         };
 
         // If we are the leader, run the update from this replica set

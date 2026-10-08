@@ -525,7 +525,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use blobstore::Blob as _;
-    use common::counter::hw;
+    use common::ambient;
     use common::types::DeferredBehavior;
     use rstest::rstest;
     use sparse::common::sparse_vector::SparseVector;
@@ -578,7 +578,7 @@ mod tests {
             id_tracker_memory: None,
         };
         let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         // Point 1: dense + sparse vectors, with payload.
         let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
@@ -643,7 +643,7 @@ mod tests {
     ) {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (segment, payload) = build_two_point_segment(dir.path());
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         // Id 3 does not exist; both functions must skip it the same way.
         let point_ids = [1.into(), 2.into(), 3.into()];
@@ -788,7 +788,7 @@ mod tests {
     fn test_retrieve_and_retrieve_raw_deleted_vector_equivalence() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (mut segment, _payload) = build_two_point_segment(dir.path());
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         let is_stopped = AtomicBool::new(false);
 
         assert!(segment.delete_vector(103, 1.into(), DENSE_NAME).unwrap());

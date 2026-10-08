@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::counter::hw::HwFutureExt;
+use common::ambient::HwFutureExt;
 use common::reason::reason;
 use common::types::DeferredBehavior;
 use parking_lot::Mutex;

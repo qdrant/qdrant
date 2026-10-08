@@ -51,7 +51,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::AccessPattern;
 use common::is_alive_lock::IsAliveLock;
 use common::reason::reason;
@@ -206,7 +206,7 @@ impl BufferedOffsets {
 
                 let mut inner = inner.write();
 
-                let _hw = hw::unmeasured_guard(reason("Internal operation"));
+                let _hw = ambient::unmeasured_guard(reason("Internal operation"));
                 for (key, entry) in &items {
                     inner.store.insert(*key, &[*entry])?;
                 }

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use cancel::CancellationToken;
+use common::ambient::HwHandoff;
 use common::budget::ResourceBudget;
-use common::counter::hw::HwHandoff;
 use common::save_on_disk::SaveOnDisk;
 use parking_lot::Mutex;
 use segment::types::SeqNumberType;

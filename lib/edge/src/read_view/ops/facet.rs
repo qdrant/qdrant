@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use common::counter::hw;
+use common::ambient;
 use common::reason::Reason;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::facets::{FacetParams, FacetResponse};
@@ -19,7 +19,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     /// optionally filtering by the given conditions.
     pub(crate) fn facet(&self, request: FacetRequestInternal) -> OperationResult<FacetResponse> {
         self.check_stopped()?;
-        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _hw = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let FacetRequestInternal {
             key,
             limit,

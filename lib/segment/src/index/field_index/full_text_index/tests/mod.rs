@@ -6,8 +6,8 @@ mod test_congruence;
 
 use std::path::PathBuf;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
@@ -185,7 +185,7 @@ fn test_prefix_search() {
             .unwrap()
             .unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let texts = movie_titles();
 
@@ -213,7 +213,7 @@ fn test_prefix_search() {
 
 #[test]
 fn test_phrase_matching() {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Create a text index with phrase matching enabled
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
@@ -331,7 +331,7 @@ fn test_phrase_matching() {
 
 #[test]
 fn test_ascii_folding_in_full_text_index_word() {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config_enabled = TextIndexParams {
@@ -428,7 +428,7 @@ fn test_special_check_condition_match_text_any() {
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, Match, MatchTextAny};
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
@@ -625,7 +625,7 @@ fn read_surface_exposes_doc_len_and_total() {
     let temp_dir = Builder::new().prefix("doc_len_reads").tempdir().unwrap();
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), true);
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     // The third is outside the index. Not a zero-length document.
     assert_eq!(doc_lens(&index, &[0, 1, 2]), [Some(3), Some(7), None]);
     assert_eq!(index.total_tokens(), Some(10));
@@ -652,7 +652,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
 
     let scoring_dir = Builder::new().prefix("stats_scoring").tempdir().unwrap();
     let index = two_document_mmap_index(scoring_dir.path().to_path_buf(), true);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let is_stopped = std::sync::atomic::AtomicBool::new(false);
 
     let mut stats = TextFieldStats {

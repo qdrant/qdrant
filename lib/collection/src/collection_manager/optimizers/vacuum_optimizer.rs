@@ -17,7 +17,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
-    use common::counter::hw;
+    use common::ambient;
     use itertools::Itertools;
     use segment::entry::NonAppendableSegmentEntry as _;
     use segment::id_tracker::IdTrackerRead;
@@ -105,7 +105,7 @@ mod tests {
 
         let segment = holder.get(segment_id).unwrap();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         let original_segment = match segment {
             LockedSegment::Original(s) => s,
@@ -286,7 +286,7 @@ mod tests {
             vector2_dim as usize,
         );
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
 
         segment
             .create_field_index(

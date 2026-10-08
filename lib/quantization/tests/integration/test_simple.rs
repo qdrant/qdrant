@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hw;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8;
@@ -454,7 +454,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         for i in 1..vectors_count {
             let score = encoded.score_internal(0, i as u32);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
@@ -496,7 +496,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = hw::test_guard();
+        let _hw = ambient::test_guard();
         for i in 1..vectors_count {
             let score = encoded.score_internal(0, i as u32);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
@@ -587,7 +587,7 @@ mod tests {
             )
             .unwrap();
 
-            let _hw = hw::test_guard();
+            let _hw = ambient::test_guard();
             for (i, vector) in vector_data.iter().enumerate() {
                 // encode vector using the encode_query method
                 let query = encoded.encode_query(vector);

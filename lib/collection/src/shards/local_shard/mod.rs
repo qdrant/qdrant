@@ -32,8 +32,8 @@ use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
 use arc_swap::ArcSwap;
+use common::ambient::{self, HwHandoff, hw};
 use common::budget::ResourceBudget;
-use common::counter::hw::{self, HwHandoff};
 use common::defaults::log_load_timing;
 use common::rate_limiting::RateLimiter;
 use common::reason::reason;
@@ -918,7 +918,7 @@ impl LocalShard {
             let op_started = Instant::now();
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &hw::unmeasured(reason("Internal operation"), || {
+            match &ambient::unmeasured(reason("Internal operation"), || {
                 CollectionUpdater::update(
                     &self.segments,
                     op_num,
@@ -1108,7 +1108,7 @@ impl LocalShard {
         filter: Option<&'a Filter>,
     ) -> CollectionResult<CardinalityEstimation> {
         let segments = self.segments.clone();
-        let hw_acc = hw::current();
+        let hw_acc = ambient::current();
         // clone filter for spawning task
         let filter = filter.cloned();
         let cardinality = tokio::task::spawn_blocking(move || -> OperationResult<_> {

@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use itertools::Itertools as _;
@@ -108,7 +108,7 @@ fn make_segment(
     let mut sequence = (0..ids.len()).collect_vec();
     sequence.shuffle(rng);
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let mut segment = build_simple_segment(path, DIM, DISTANCE).unwrap();
     for n in sequence {

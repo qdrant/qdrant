@@ -5,7 +5,7 @@
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use tempfile::Builder;
 use uuid::Uuid;
 
@@ -34,7 +34,7 @@ fn test_load_payload_index() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let dim = 2;
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let key = JsonPath::from_str("name").unwrap();
 
@@ -119,7 +119,7 @@ fn name_filter(key: &JsonPath, value: &str) -> Filter {
 #[test]
 fn create_field_index_persists_index_data_with_config() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let payload: Payload = serde_json::from_str(r#"{ "name": "John Doe" }"#).unwrap();
@@ -182,7 +182,7 @@ fn create_field_index_persists_index_data_with_config() {
 #[test]
 fn switch_incompatible_index_type_survives_crash() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let keyword_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let text_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Text);
@@ -279,7 +279,7 @@ fn drop_index_if_incompatible_keeps_non_appendable_index_on_on_disk_only_change(
     .unwrap();
 
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    hw::test(|| index.set_indexed(&field, PayloadSchemaType::Integer)).unwrap();
+    ambient::test(|| index.set_indexed(&field, PayloadSchemaType::Integer)).unwrap();
 
     // Same integer index, but with on_disk flipped to true.
     let on_disk_schema =
@@ -436,7 +436,7 @@ fn set_indexed_enable_hnsw_change_keeps_unflushed_appendable_updates() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let mut index = create_struct_payload_index(dir.path(), 100, 42);
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     // Not flushed: only the live index handles know about this value.
     let payload: Payload = serde_json::from_str(r#"{"int": 123456789}"#).unwrap();
@@ -498,7 +498,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
     .unwrap();
 
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     index
         .set_indexed(&field, PayloadSchemaType::Integer)
         .unwrap();
@@ -555,7 +555,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
 #[test]
 fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
@@ -641,7 +641,7 @@ fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
 #[test]
 fn test_build_field_index_without_journal() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
     let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();

@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use common::counter::hw::{self, HwHandoff};
+use common::ambient::{self, HwHandoff};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
 use rayon::ThreadPool;
@@ -278,7 +278,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let mut vectors_res = Ok(());
         let mut payload_res = Ok(());
         let mut indexes_res = Ok(());
-        hw::parallel(|hw_acc| {
+        ambient::parallel(|hw_acc| {
             pool.scope(|s| {
                 s.spawn(|_| {
                     vectors_res =

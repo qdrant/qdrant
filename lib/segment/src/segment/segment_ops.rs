@@ -2,8 +2,8 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::path::Path;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::Random;
 use common::reason::reason;
@@ -759,7 +759,7 @@ impl Segment {
         // After that we need to set internal version to 0, so that
         // we won't need to clean them again.
 
-        let _hw = hw::unmeasured_guard(reason(
+        let _hw = ambient::unmeasured_guard(reason(
             "This is internal operation, no hw measurement needed",
         ));
         if !ids_to_clean.is_empty() {
@@ -816,7 +816,7 @@ impl Segment {
                 ),
             }
 
-            let created = hw::unmeasured(
+            let created = ambient::unmeasured(
                 reason("This function is only used in Segment::load which is unmeasured."),
                 || self.create_field_index(self.version(), key, Some(schema)),
             )?;

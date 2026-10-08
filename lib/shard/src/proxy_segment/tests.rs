@@ -1,10 +1,10 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::AmbientContext;
-use common::counter::hw::{self, HwHandoff, HwMetric};
+use common::ambient::hw::HwMetric;
+use common::ambient::{AmbientContext, HwHandoff};
 use common::flags::{FeatureFlags, init_feature_flags};
-use common::tar_ext;
 use common::types::DeferredBehavior;
+use common::{ambient, tar_ext};
 use fs_err::File;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -66,7 +66,7 @@ impl ProxySegment {
 /// finalize-after-race (fixed) — entirely at the proxy level, no model-testing harness involved.
 #[test]
 fn test_proxy_deleted_mask_resync_after_race_window_write() {
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let query_vector: QueryVector = [1.0, 1.0, 1.0, 1.0].into();
 
     // Build a wrapped segment with 2 points (internal offsets 0 and 1) and an unsynced proxy
@@ -152,7 +152,7 @@ fn test_proxy_deleted_mask_resync_after_race_window_write() {
 fn test_search_batch_equivalence_single() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     original_segment
@@ -320,7 +320,7 @@ fn test_read_filter() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
         "color".parse().unwrap(),
@@ -403,7 +403,7 @@ fn test_sync_indexes() {
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
     let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     original_segment
         .get()
@@ -598,7 +598,7 @@ fn test_point_vector_count_multivec() {
     let mut original_segment =
         build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     original_segment
         .upsert_point(
@@ -1239,7 +1239,7 @@ fn build_text_segment(path: &std::path::Path, count: u64) -> segment::segment::S
     use segment::payload_json;
     use segment::types::{PayloadFieldSchema, PayloadSchemaParams};
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let mut segment = empty_segment(path);
     let params = TextIndexParams {
         phrase_matching: Some(true),
@@ -1284,7 +1284,7 @@ fn test_score_bm25_hides_proxy_deletions() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let count = 60;
     let original_segment = LockedSegment::new(build_text_segment(dir.path(), count));
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     let field = JsonPath::new("text");
     let terms = ["alpha".to_owned(), "gamma".to_owned()];
@@ -1354,7 +1354,7 @@ fn test_bm25_skips_a_stale_wrapped_text_index() {
     use segment::types::{PayloadFieldSchema, PayloadSchemaParams};
 
     let _scoring = TextIndexParams::override_scoring(true);
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
     let field = JsonPath::new("text");
     let terms = ["alpha".to_owned(), "gamma".to_owned()];
     let count = 20;

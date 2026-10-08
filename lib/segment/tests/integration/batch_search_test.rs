@@ -5,8 +5,8 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use rand::SeedableRng;
@@ -44,7 +44,7 @@ fn test_batch_and_single_request_equivalency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
-    let _hw = hw::test_guard();
+    let _hw = ambient::test_guard();
 
     segment
         .create_field_index(

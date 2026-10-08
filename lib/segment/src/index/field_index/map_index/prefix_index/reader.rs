@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::path::Path;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::universal_io::{

@@ -1,4 +1,4 @@
-//! Unsafe/thread-local implementation details for the [`super::hw`] module.
+//! Unsafe/thread-local implementation details for the [`super`] module.
 
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -6,8 +6,8 @@ use std::ptr::NonNull;
 
 use strum::EnumCount;
 
-use super::ambient_context::{AmbientContext, Inner};
-use super::hardware_data::{HardwareData, HwMetric};
+use super::context::{AmbientContext, Inner};
+use super::hw::{HardwareData, HwMetric};
 
 #[inline]
 pub(super) fn bump(metric: HwMetric, delta: usize) {
@@ -43,7 +43,7 @@ pub(super) fn enter_unmeasured() -> HwScope<'static> {
     HwScope::enter(Target::Unmeasured, None)
 }
 
-/// Mask the current scope, see [`super::hw::parallel`].
+/// Mask the current scope, see [`super::parallel`].
 pub(super) fn enter_masked() -> HwScope<'static> {
     HwScope::enter(Target::Unset, None)
 }
@@ -51,7 +51,7 @@ pub(super) fn enter_masked() -> HwScope<'static> {
 pub(super) fn current_ctx() -> Option<AmbientContext> {
     SLOT.with(|slot| {
         #[cfg(debug_assertions)]
-        slot.check_access("hw::current()");
+        slot.check_access("ambient::current()");
         match slot.target.get() {
             // SAFETY: the pointer belongs to the innermost scope, which keeps it alive.
             Target::Measured(acc) => Some(unsafe { AmbientContext::from_inner_ptr(acc) }),
@@ -88,17 +88,6 @@ thread_local! {
     };
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Target {
-    /// The default state of a thread-local slot.
-    /// Bumping counters in this state is a misuse:
-    ///   it will panic in debug builds and unmeasured in release builds.
-    Unset,
-    /// Explicitly unmeasured.
-    Unmeasured,
-    Measured(NonNull<Inner>),
-}
-
 struct Slot {
     target: Cell<Target>,
     /// Number of active scopes, to check they are exited in reverse order.
@@ -121,7 +110,7 @@ impl Slot {
         if self.target.get() == Target::Unset {
             panic!(
                 "{what:?} outside of any hw scope: a spawned/stolen job forgot to enter its \
-                 context, or code inside hw::parallel() didn't enter the provided one",
+                 context, or code inside ambient::parallel() didn't enter the provided one",
             );
         }
     }
@@ -133,6 +122,17 @@ impl Slot {
         self.target.set(Target::Unmeasured);
         self.counters.iter().for_each(|c| c.set(0));
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Target {
+    /// The default state of a thread-local slot.
+    /// Bumping counters in this state is a misuse:
+    ///   it will panic in debug builds and unmeasured in release builds.
+    Unset,
+    /// Explicitly unmeasured.
+    Unmeasured,
+    Measured(NonNull<Inner>),
 }
 
 /// An active scope. Restores the outer one on drop/panic.
