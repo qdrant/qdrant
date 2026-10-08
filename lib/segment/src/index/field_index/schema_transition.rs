@@ -60,9 +60,9 @@ pub fn classify(old: &PayloadFieldSchema, new: &PayloadFieldSchema) -> SchemaTra
     }
 
     if let Some(mut diff) = compatible_diff(old, new) {
-        // Resolve through `is_on_disk()` so `memory` placement is respected.
+        // Resolve through `is_cold()` so `memory` placement is respected.
         if diff.on_disk.is_some() {
-            diff.on_disk = Some(new.is_on_disk());
+            diff.on_disk = Some(new.is_cold());
         }
         return SchemaTransition::Compatible(diff);
     }
@@ -94,7 +94,7 @@ fn compatible_diff(old: &PayloadSchemaParams, new: &PayloadSchemaParams) -> Opti
     }
 
     Some(CompatibleDiff {
-        // Placeholder; `classify` overwrites with `new.is_on_disk()`.
+        // Placeholder; `classify` overwrites with `new.is_cold()`.
         on_disk: on_disk_changed.then_some(false),
         metadata: metadata_changed,
     })
@@ -494,7 +494,7 @@ mod tests {
 
         // None vs Some(false) — both mean "false", so they are Identical.
         // The field-level comparison (`Option<bool>`) sees them as different,
-        // but `is_on_disk()` reads `unwrap_or_default()` so they're semantically equal.
+        // but `is_cold()` reads `unwrap_or_default()` so they're semantically equal.
         //
         // We choose to surface this as `Compatible { on_disk: Some(false) }` rather than
         // Identical, because the persisted on_disk value differs (None vs Some(false)) and the

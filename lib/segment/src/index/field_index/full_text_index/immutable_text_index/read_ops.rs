@@ -10,7 +10,7 @@ use super::ImmutableFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
@@ -108,14 +108,16 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: false }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Heap,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {
         self.cached_ram_usage_bytes
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 }

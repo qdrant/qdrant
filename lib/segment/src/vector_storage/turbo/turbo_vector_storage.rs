@@ -56,8 +56,8 @@ pub struct TurboVectorStorageImpl<B: TurboVectorBlob> {
     deleted: BitvecFlags<MmapFile>,
     /// Number of vectors currently flagged as deleted.
     deleted_count: usize,
-
-    on_disk: bool,
+    /// Whether the vectors were opened without populating.
+    cold: bool,
 
     /// Distance used for scoring / query preprocessing.
     distance: Distance,
@@ -137,7 +137,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(storage, quantizer, path, dim, distance, !populate)
     }
 }
 
@@ -158,7 +158,7 @@ impl TurboVectorStorageImpl<QuantizedStorage<IoUringFile>> {
             quantizer.quantized_size(),
             populate,
         )?;
-        Self::finalize(storage, quantizer, path, dim, distance, populate, true)
+        Self::finalize(storage, quantizer, path, dim, distance, !populate)
     }
 }
 
@@ -170,10 +170,10 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
         distance: Distance,
         bits: TQBits,
     ) -> OperationResult<Self> {
-        let on_disk = graph.is_on_disk();
+        let cold = graph.is_cold();
         let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = GraphVectors::new(graph, quantizer.quantized_size())?;
-        Self::finalize(storage, quantizer, path, dim, distance, !on_disk, on_disk)
+        Self::finalize(storage, quantizer, path, dim, distance, cold)
     }
 
     pub fn io_backend(&self) -> Option<IoBackend> {
@@ -188,21 +188,23 @@ impl<S: UniversalRead> TurboVectorStorageImpl<GraphVectors<u8, S>> {
 impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
     /// Shared tail of the backend-specific `open_*` constructors: open the
     /// deletion flags and assemble the storage.
+    ///
+    /// `cold` is whether `storage` was opened without populating, which the
+    /// deletion flags follow and [`VectorStorage::is_cold`] reports.
     fn finalize(
         storage: B,
         quantizer: TurboQuantizer,
         path: &Path,
         dim: usize,
         distance: Distance,
-        populate: bool,
-        on_disk: bool,
+        cold: bool,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
         let deleted = BitvecFlags::open_or_create(
             MmapFs,
             &path.join(DELETED_DIR_PATH),
             FlagsMode::from_feature_flags(),
-            Populate::from(populate),
+            Populate::from(!cold),
         )?;
         let deleted_count = deleted.count_trues();
 
@@ -211,7 +213,7 @@ impl<B: TurboVectorBlob> TurboVectorStorageImpl<B> {
             quantizer,
             deleted,
             deleted_count,
-            on_disk,
+            cold,
             distance,
             dim,
         })
@@ -309,8 +311,8 @@ impl<B: TurboVectorBlob> VectorStorageRead for TurboVectorStorageImpl<B> {
         shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.on_disk
+    fn is_cold(&self) -> bool {
+        self.cold
     }
 
     fn total_vector_count(&self) -> usize {

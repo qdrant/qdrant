@@ -263,6 +263,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
             compact_deleted_mask,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 
@@ -622,6 +623,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
             points_values_count: _,
             max_values_per_point: _,
             compact_deleted_mask,
+            cold: _,
         } = self;
         let Storage {
             counts_per_hash,

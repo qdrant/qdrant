@@ -24,7 +24,7 @@ use common::types::PointOffsetType;
 use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::FieldCondition;
 
@@ -67,7 +67,7 @@ pub trait NullIndexRead {
     /// Whether the index keeps its primary data on disk. Default `false` —
     /// every current variant serves reads from an in-RAM bitmap (the read-only
     /// one materializes it on first use).
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 
@@ -89,7 +89,7 @@ pub trait NullIndexRead {
 
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: self.is_on_disk(),
+            layout: ImmutableLayout::Heap,
         }
     }
 

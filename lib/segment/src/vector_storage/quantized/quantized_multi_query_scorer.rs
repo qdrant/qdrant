@@ -60,7 +60,7 @@ where
         Self {
             hw: HwScale {
                 cpu: 1,
-                vector_io_read: usize::from(quantized_multivector_storage.is_on_disk()),
+                vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
             },
             query,
             quantized_multivector_storage,
@@ -81,7 +81,7 @@ where
         Ok(Self {
             hw: HwScale {
                 cpu: 1,
-                vector_io_read: usize::from(quantized_multivector_storage.is_on_disk()),
+                vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
             },
             query,
             quantized_multivector_storage,

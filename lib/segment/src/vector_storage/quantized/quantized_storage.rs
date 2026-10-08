@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
@@ -30,13 +31,17 @@ pub struct QuantizedStorage<S: UniversalRead> {
     storage: ReadOnly<S>,
     quantized_vector_size: NonZeroUsize,
     path: PathBuf,
+    /// Whether the page cache is left to fill on demand: set until [`Self::populate`]
+    /// primes it, and again after [`Self::clear_cache`] drops it.
+    cold: AtomicBool,
 }
 
 impl<S: UniversalRead> QuantizedStorage<S> {
     pub fn populate(&self) {
-        if let Err(err) = self.storage.populate() {
-            log::warn!("Failed to populate quantized storage: {err}")
-        };
+        match self.storage.populate() {
+            Ok(()) => self.cold.store(false, Ordering::Relaxed),
+            Err(err) => log::warn!("Failed to populate quantized storage: {err}"),
+        }
     }
 
     pub fn clear_cache(&self) {
@@ -44,7 +49,9 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             storage: mmap,
             quantized_vector_size: _,
             path: _,
+            cold,
         } = self;
+        cold.store(true, Ordering::Relaxed);
         if let Err(err) = mmap.clear_ram_cache() {
             log::warn!("Failed to clear quantized storage RAM cache: {err}")
         }
@@ -217,6 +224,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
             storage,
             quantized_vector_size,
             path: path.to_path_buf(),
+            cold: AtomicBool::new(true),
         })
     }
 
@@ -261,8 +269,8 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
         true
     }
 
-    fn is_on_disk(&self) -> bool {
-        true
+    fn is_cold(&self) -> bool {
+        self.cold.load(Ordering::Relaxed)
     }
 
     fn vectors_count(&self) -> usize {
@@ -279,6 +287,7 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
             storage: _,
             quantized_vector_size: _,
             path: _,
+            cold: _,
         } = self;
 
         0
@@ -398,6 +407,7 @@ impl quantization::EncodedStorageBuilder for QuantizedStorageBuilder<MmapFile> {
             storage,
             quantized_vector_size: self.quantized_vector_size,
             path: self.path,
+            cold: AtomicBool::new(true),
         })
     }
 

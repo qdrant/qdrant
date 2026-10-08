@@ -497,11 +497,11 @@ where
         <Self as MapIndexRead<'_, N>>::ram_usage_bytes(self)
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             MapIndex::Mutable(_) => false,
             MapIndex::Immutable(_) => false,
-            MapIndex::OnDisk(index) => index.is_on_disk(),
+            MapIndex::OnDisk(index) => index.is_cold(),
         }
     }
 

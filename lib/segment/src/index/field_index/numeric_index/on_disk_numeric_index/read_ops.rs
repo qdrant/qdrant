@@ -16,7 +16,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::Histogram;
 use crate::index::field_index::numeric_point::{Numericable, Point};
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalRead>
     NumericIndexRead<T> for OnDiskNumericIndex<T, S>
@@ -126,7 +126,9 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: true }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Mmap,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -259,7 +261,7 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         Ok(iter.filter(move |point| deleted.is_active(point.idx)))
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        true
+    pub fn is_cold(&self) -> bool {
+        self.cold
     }
 }

@@ -47,7 +47,7 @@ where
             Default::default(),
         )?;
 
-        let config = ensure_config::<T, _>(&fs, directory, dim, populate.to_bool::<S>())?;
+        let config = ensure_config::<T, _>(&fs, directory, dim)?;
         let chunks = read_chunks(&fs, directory, advice, populate, true)?;
         let inner = ReadOnlyChunkedVectors {
             config,

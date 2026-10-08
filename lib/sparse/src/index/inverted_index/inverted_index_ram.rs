@@ -58,7 +58,7 @@ impl InvertedIndex for InvertedIndexRam {
 
     type Version = Version;
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

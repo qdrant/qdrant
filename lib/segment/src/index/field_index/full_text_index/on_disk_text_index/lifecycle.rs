@@ -18,6 +18,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
+use crate::types::Memory;
 
 impl<S: UniversalRead> OnDiskFullTextIndex<S> {
     /// Schedule background prefetch of every file [`open`](Self::open) will read.
@@ -47,6 +48,7 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         Ok(inverted_index.map(|inverted_index| Self {
             inverted_index,
             tokenizer,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 
@@ -98,7 +100,7 @@ impl FullTextMmapIndexBuilder {
     pub fn new(
         path: PathBuf,
         config: TextIndexParams,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
         scoring: bool,
     ) -> Self {
@@ -108,7 +110,7 @@ impl FullTextMmapIndexBuilder {
             path,
             mutable_index: MutableInvertedIndex::new(with_positions, scoring),
             config,
-            is_on_disk,
+            memory,
             tokenizer,
             deleted_points: deleted_points.to_owned(),
         }
@@ -179,7 +181,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             path,
             mutable_index,
             config,
-            is_on_disk,
+            memory,
             tokenizer,
             deleted_points,
         } = self;
@@ -190,7 +192,9 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         OnDiskInvertedIndex::create(path.clone(), &immutable)?;
 
-        let populate = Populate::from(!is_on_disk);
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let has_positions = config.phrase_matching.unwrap_or_default();
         let inverted_index =
             OnDiskInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
@@ -203,12 +207,13 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         let on_disk_index = OnDiskFullTextIndex {
             inverted_index,
             tokenizer,
+            cold: !memory.populate_on_open(),
         };
 
-        let text_index = if is_on_disk {
-            FullTextIndex::OnDisk(on_disk_index)
-        } else {
+        let text_index = if memory.is_heap() {
             FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            FullTextIndex::OnDisk(on_disk_index)
         };
 
         Ok(text_index)

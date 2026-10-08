@@ -61,7 +61,7 @@ impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStora
         B::Element::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         !self.populate.to_bool::<B::File>()
     }
 

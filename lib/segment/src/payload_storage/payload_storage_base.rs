@@ -55,8 +55,9 @@ pub trait PayloadStorageRead {
     /// Return storage size in bytes
     fn get_storage_size_bytes(&self) -> OperationResult<usize>;
 
-    /// Whether this storage is on-disk or in-memory.
-    fn is_on_disk(&self) -> bool;
+    /// Whether the data was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    fn is_cold(&self) -> bool;
 
     /// Backend this storage reads through, `None` when it can only be opened on one. Surfaced
     /// as `payload_storage_io_backend` in [`SegmentInfo`](crate::types::SegmentInfo).

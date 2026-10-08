@@ -283,7 +283,7 @@ impl QuantizedVectors {
             let vector = vector_storage.get_dense::<Sequential>(i);
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let cold_vector_storage = vector_storage.is_cold();
 
         Self::quantize_dense(
             vectors,
@@ -293,7 +293,7 @@ impl QuantizedVectors {
             false,
             dim,
             count,
-            on_disk_vector_storage,
+            cold_vector_storage,
             storage_type,
             path,
             max_threads,
@@ -312,7 +312,7 @@ impl QuantizedVectors {
         let dim = vector_storage.vector_dim();
         let count = vector_storage.total_vector_count();
         let distance = vector_storage.distance();
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let cold_vector_storage = vector_storage.is_cold();
 
         let datatype = vector_storage.datatype();
         let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
@@ -328,7 +328,7 @@ impl QuantizedVectors {
             keep_rotated,
             dim,
             count,
-            on_disk_vector_storage,
+            cold_vector_storage,
             storage_type,
             path,
             max_threads,
@@ -345,7 +345,7 @@ impl QuantizedVectors {
         keep_rotated: bool,
         dim: usize,
         count: usize,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
@@ -371,7 +371,7 @@ impl QuantizedVectors {
                 scalar_config,
                 storage_type,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
@@ -382,7 +382,7 @@ impl QuantizedVectors {
                     pq_config,
                     storage_type,
                     path,
-                    on_disk_vector_storage,
+                    cold_vector_storage,
                     max_threads,
                     stopped,
                 )?
@@ -396,7 +396,7 @@ impl QuantizedVectors {
                 binary_config,
                 storage_type,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
@@ -410,7 +410,7 @@ impl QuantizedVectors {
                 input_already_rotated,
                 storage_type,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 max_threads,
                 stopped,
             )?,
@@ -454,7 +454,7 @@ impl QuantizedVectors {
         });
         let inner_vectors_count = vectors.clone().count();
         let vectors_count = vector_storage.total_vector_count();
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let cold_vector_storage = vector_storage.is_cold();
 
         let offsets = (0..vectors_count as PointOffsetType)
             .map(|idx| {
@@ -476,7 +476,7 @@ impl QuantizedVectors {
             vectors_count,
             inner_vectors_count,
             multi_vector_config,
-            on_disk_vector_storage,
+            cold_vector_storage,
             storage_type,
             path,
             max_threads,
@@ -497,7 +497,7 @@ impl QuantizedVectors {
         let distance = vector_storage.distance();
         let multi_vector_config = *vector_storage.multi_vector_config();
         let vectors_count = vector_storage.total_vector_count();
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let cold_vector_storage = vector_storage.is_cold();
 
         let datatype = vector_storage.datatype();
         let keep_rotated = should_keep_source_rotated(datatype, quantization_config, distance);
@@ -524,7 +524,7 @@ impl QuantizedVectors {
             vectors_count,
             inner_vectors_count,
             multi_vector_config,
-            on_disk_vector_storage,
+            cold_vector_storage,
             storage_type,
             path,
             max_threads,
@@ -545,7 +545,7 @@ impl QuantizedVectors {
         vectors_count: usize,
         inner_vectors_count: usize,
         multi_vector_config: MultiVectorConfig,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
         max_threads: usize,
@@ -574,7 +574,7 @@ impl QuantizedVectors {
                 storage_type,
                 multi_vector_config,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
@@ -588,7 +588,7 @@ impl QuantizedVectors {
                     storage_type,
                     multi_vector_config,
                     path,
-                    on_disk_vector_storage,
+                    cold_vector_storage,
                     max_threads,
                     stopped,
                 )?
@@ -605,7 +605,7 @@ impl QuantizedVectors {
                 storage_type,
                 multi_vector_config,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 stopped,
             )?,
             QuantizationConfig::Turbo(TurboQuantization {
@@ -622,7 +622,7 @@ impl QuantizedVectors {
                 storage_type,
                 multi_vector_config,
                 path,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 max_threads,
                 stopped,
             )?,

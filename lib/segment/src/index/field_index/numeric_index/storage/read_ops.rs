@@ -165,11 +165,11 @@ where
         self.values_range(start, end)
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             NumericIndexInner::Mutable(_) => false,
             NumericIndexInner::Immutable(_) => false,
-            NumericIndexInner::OnDisk(index) => index.is_on_disk(),
+            NumericIndexInner::OnDisk(index) => index.is_cold(),
         }
     }
 }

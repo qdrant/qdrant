@@ -87,7 +87,7 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
             FloatPayloadType,
         >::builder_mmap(
             temp_dir.path(),
-            false,
+            Memory::Pinned,
             &empty_deleted(),
         )),
     };

@@ -10,7 +10,7 @@ use super::OnDiskFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
@@ -109,14 +109,16 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: true }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Mmap,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {
         self.inverted_index.ram_usage_bytes()
     }
 
-    fn is_on_disk(&self) -> bool {
-        true
+    fn is_cold(&self) -> bool {
+        self.cold
     }
 }

@@ -231,7 +231,7 @@ where
             })
             .expect("multi-vector offsets read");
 
-        let mul = usize::from(self.quantized_storage.is_on_disk()); // Reads from RAM don't count as IO.
+        let mul = usize::from(self.quantized_storage.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump(sub_vector_offsets.len() * self.quantized_vector_size() * mul);
 
         // Reads may complete in any order, so we buffer each point's sub-vectors
@@ -387,8 +387,8 @@ where
         QuantizedStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.quantized_storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.quantized_storage.is_cold()
     }
 
     fn encode_query(&self, query: &[VectorElementType]) -> Vec<QuantizedStorage::EncodedQuery> {

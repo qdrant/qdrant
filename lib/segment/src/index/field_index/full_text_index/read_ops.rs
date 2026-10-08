@@ -191,11 +191,11 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
-            Self::Mutable(index) => FullTextIndexRead::is_on_disk(index),
-            Self::Immutable(index) => FullTextIndexRead::is_on_disk(index),
-            Self::OnDisk(index) => FullTextIndexRead::is_on_disk(index),
+            Self::Mutable(index) => FullTextIndexRead::is_cold(index),
+            Self::Immutable(index) => FullTextIndexRead::is_cold(index),
+            Self::OnDisk(index) => FullTextIndexRead::is_cold(index),
         }
     }
 }

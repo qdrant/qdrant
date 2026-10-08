@@ -92,7 +92,7 @@ mod tests {
     use crate::index::query_optimization::payload_provider::PayloadProvider;
     use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
     use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-    use crate::types::Payload;
+    use crate::types::{Memory, Payload};
 
     pub fn fixture_payload_provider() -> PayloadProvider<PayloadStorageEnum> {
         // Create an in-memory payload storage and populate it with some payload maps containing numbers and geo points.
@@ -203,7 +203,7 @@ mod tests {
 
         // Create a field index for a number.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = NumericIndex::builder_mmap(dir.path(), false, &deleted_points);
+        let mut builder = NumericIndex::builder_mmap(dir.path(), Memory::Pinned, &deleted_points);
         builder.add_point(0, &[&42.into()]).unwrap();
         builder.add_point(1, &[]).unwrap();
         builder.add_point(2, &[&99.into(), &55.into()]).unwrap();
@@ -212,7 +212,7 @@ mod tests {
 
         // Create a field index for a geo point.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = GeoIndex::builder_mmap(dir.path(), false, &deleted_points);
+        let mut builder = GeoIndex::builder_mmap(dir.path(), Memory::Pinned, &deleted_points);
 
         builder.add_point(0, &[]).unwrap();
         builder
@@ -226,7 +226,7 @@ mod tests {
 
         // Create a field index for datetime
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = NumericIndex::builder_mmap(dir.path(), false, &deleted_points);
+        let mut builder = NumericIndex::builder_mmap(dir.path(), Memory::Pinned, &deleted_points);
 
         builder
             .add_point(0, &[&json!("2023-01-01T00:00:00Z")])

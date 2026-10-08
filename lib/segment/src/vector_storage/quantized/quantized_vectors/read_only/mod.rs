@@ -71,8 +71,8 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         self.datatype
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.storage_impl.is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.storage_impl.is_cold()
     }
 
     pub fn raw_scorer<'a>(

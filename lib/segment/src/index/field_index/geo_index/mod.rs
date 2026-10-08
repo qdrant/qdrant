@@ -71,13 +71,13 @@ impl GeoIndex {
 
     pub fn builder_mmap(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> GeoIndexMmapBuilder {
         GeoIndexMmapBuilder {
             path: path.to_owned(),
             in_memory_index: InMemoryGeoIndex::new(),
-            is_on_disk,
+            memory,
             deleted_points: deleted_points.to_owned(),
         }
     }
@@ -202,11 +202,11 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
             GeoIndex::Mutable(_) => false,
             GeoIndex::Immutable(_) => false,
-            GeoIndex::OnDisk(_) => true,
+            GeoIndex::OnDisk(index) => index.is_cold(),
         }
     }
 

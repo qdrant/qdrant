@@ -70,12 +70,12 @@ impl QuantizedVectors {
         vector_storage: &VectorStorageEnum,
         path: &Path,
     ) -> OperationResult<Self> {
-        let on_disk_vector_storage = vector_storage.is_on_disk();
+        let cold_vector_storage = vector_storage.is_cold();
         let quantized_store = match vector_storage.try_multi_vector_config() {
             Some(multivector_config) => {
-                Self::load_multi(&config, path, multivector_config, on_disk_vector_storage)?
+                Self::load_multi(&config, path, multivector_config, cold_vector_storage)?
             }
-            None => Self::load_single(&config, path, on_disk_vector_storage)?,
+            None => Self::load_single(&config, path, cold_vector_storage)?,
         };
 
         let distance = vector_storage.distance();
@@ -92,7 +92,7 @@ impl QuantizedVectors {
         // primed on load
         if quantized_vectors
             .config
-            .memory_placement(on_disk_vector_storage)
+            .memory_placement(cold_vector_storage)
             == Memory::Cached
         {
             quantized_vectors.populate()?;
@@ -104,12 +104,12 @@ impl QuantizedVectors {
     fn load_single(
         config: &QuantizedVectorsConfig,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         let size = config.quantized_vector_size(false);
-        let in_ram = config.is_ram(on_disk_vector_storage);
+        let in_ram = config.is_ram(cold_vector_storage);
 
         // Open the flat (RAM / mmap) or appendable chunked storage selected for this config.
         let ram =
@@ -119,7 +119,7 @@ impl QuantizedVectors {
             || QuantizedChunkedStorage::<ReadFile>::new(READ_FS, data_path.as_path(), size, in_ram);
 
         let storage =
-            match config.storage_kind(on_disk_vector_storage)? {
+            match config.storage_kind(cold_vector_storage)? {
                 QuantizedStorageKind::ScalarRam => QuantizedVectorStorage::ScalarRam(
                     EncodedVectorsU8::load(&READ_FS, ram()?, &meta_path)?,
                 ),
@@ -158,14 +158,14 @@ impl QuantizedVectors {
         config: &QuantizedVectorsConfig,
         path: &Path,
         multivector_config: &MultiVectorConfig,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> OperationResult<QuantizedVectorStorage> {
         let data_path = Self::get_data_path(path, config.storage_type);
         let meta_path = Self::get_meta_path(path);
         let offsets_path = Self::get_offsets_path(path, config.storage_type);
         let dim = config.vector_parameters.dim;
         let size = config.quantized_vector_size(true);
-        let in_ram = config.is_ram(on_disk_vector_storage);
+        let in_ram = config.is_ram(cold_vector_storage);
 
         // Open the inner quantized storage and the matching offsets storage for the
         // selected backend.
@@ -179,7 +179,7 @@ impl QuantizedVectors {
         let chunked_offsets =
             || MultivectorOffsetsStorageChunked::<ReadFile>::load(READ_FS, &offsets_path, in_ram);
 
-        let storage = match config.storage_kind(on_disk_vector_storage)? {
+        let storage = match config.storage_kind(cold_vector_storage)? {
             QuantizedStorageKind::ScalarRam => {
                 let inner = EncodedVectorsU8::load(&READ_FS, ram()?, &meta_path)?;
                 QuantizedVectorStorage::ScalarRamMulti(QuantizedMultivectorStorage::new(

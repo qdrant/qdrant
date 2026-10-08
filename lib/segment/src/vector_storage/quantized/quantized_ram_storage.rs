@@ -91,7 +91,7 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
         true
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

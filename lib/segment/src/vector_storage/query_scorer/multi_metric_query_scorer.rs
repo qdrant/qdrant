@@ -44,7 +44,7 @@ impl<
         Self {
             hw: HwScale {
                 cpu: query.dim * size_of::<TElement>(),
-                vector_io_read: if vector_storage.is_on_disk() {
+                vector_io_read: if vector_storage.is_cold() {
                     query.dim * size_of::<TElement>()
                 } else {
                     0

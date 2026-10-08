@@ -112,28 +112,28 @@ impl<S: UniversalRead> fmt::Debug for ReadOnlyQuantizedVectorStorage<S> {
 }
 
 impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
-            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::ScalarRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => q.is_on_disk(),
+            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::ScalarRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => q.is_cold(),
         }
     }
 

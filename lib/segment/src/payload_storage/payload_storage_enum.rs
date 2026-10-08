@@ -128,13 +128,13 @@ impl PayloadStorageRead for PayloadStorageEnum {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemory(s) => s.is_on_disk(),
-            PayloadStorageEnum::Mmap(s) => s.is_on_disk(),
+            PayloadStorageEnum::InMemory(s) => s.is_cold(),
+            PayloadStorageEnum::Mmap(s) => s.is_cold(),
             #[cfg(target_os = "linux")]
-            PayloadStorageEnum::IoUring(s) => s.is_on_disk(),
+            PayloadStorageEnum::IoUring(s) => s.is_cold(),
         }
     }
 

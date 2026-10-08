@@ -368,7 +368,7 @@ where
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         !self.populated
     }
 

@@ -18,6 +18,7 @@ use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
+use crate::types::Memory;
 
 pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(pub(super) MapIndex<N>)
 where
@@ -51,7 +52,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
     pub(super) path: PathBuf,
     pub(super) point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>>,
     pub(super) values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
-    pub(super) is_on_disk: bool,
+    pub(super) memory: Memory,
     pub(super) deleted_points: BitVec,
     pub(super) prefix_index: bool,
 }
@@ -99,7 +100,9 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(!self.is_on_disk);
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = self.memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let on_disk_index = OnDiskMapIndex::build(
             &MmapFs,
             &self.path,
@@ -110,10 +113,10 @@ where
             self.prefix_index,
         )?;
 
-        let index = if self.is_on_disk {
-            MapIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            MapIndex::OnDisk(on_disk_index)
         };
 
         Ok(index)

@@ -357,7 +357,7 @@ impl<S: UniversalRead> HnswGraph<S> {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         self.residency() == GraphLinksResidency::Cold
     }
 

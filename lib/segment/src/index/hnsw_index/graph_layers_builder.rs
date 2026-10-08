@@ -214,7 +214,7 @@ impl GraphLayersBuilder {
         self,
         path: &Path,
         format_param: GraphLinksFormatParam,
-        on_disk: bool,
+        cold: bool,
     ) -> OperationResult<GraphLayers> {
         let links_path = GraphLayers::get_links_path(path, format_param.as_format());
 
@@ -227,7 +227,7 @@ impl GraphLayersBuilder {
         // pre-populate the page cache (cheap: the pages were just written).
         // Never pin the links in heap here, so that the just-built index has
         // the same, single-copy residency as one loaded from disk.
-        let residency = if on_disk {
+        let residency = if cold {
             GraphLinksResidency::Cold
         } else {
             GraphLinksResidency::Cached
