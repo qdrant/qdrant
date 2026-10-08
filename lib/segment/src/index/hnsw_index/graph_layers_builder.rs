@@ -419,6 +419,31 @@ impl GraphLayersBuilder {
         }
     }
 
+    /// Merge the links of a payload block built in its own id space: `block` numbers the
+    /// block's points `0..to_global.len()`, and `to_global` maps them to segment ids.
+    ///
+    /// Same result as merging a segment-sized builder with [`Self::merge_from_other`], but visits
+    /// only the block's points.
+    pub fn merge_block(&mut self, block: GraphLayersBuilder, to_global: &[PointOffsetType]) {
+        debug_assert_eq!(block.links_layers.len(), to_global.len());
+        for (local_id, layers) in block.links_layers.into_iter().enumerate() {
+            let current_layers = &mut self.links_layers[to_global[local_id] as usize];
+            for (level, block_links) in layers.into_iter().enumerate() {
+                let current_links = current_layers[level].get_mut();
+                for local_link in block_links.into_inner().into_vec() {
+                    let link = to_global[local_link as usize];
+                    // A point holds a few dozen links at most, so a scan is cheap.
+                    if !current_links.links().contains(&link) {
+                        current_links.push(link);
+                    }
+                }
+            }
+        }
+        self.entry_points
+            .get_mut()
+            .merge_translated(block.entry_points.into_inner(), to_global);
+    }
+
     fn num_points(&self) -> usize {
         self.links_layers.len()
     }

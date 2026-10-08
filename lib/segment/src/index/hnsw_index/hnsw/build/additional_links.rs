@@ -158,6 +158,10 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     // leaves the builder empty for the next block.
     let mut block_graph: Option<GraphLayersBuilder> = None;
 
+    // On CPU, blocks are built in their own id space instead (see `build_block_compact`).
+    // The GPU builder needs a segment-sized builder, so it keeps the path above.
+    let compact_blocks = gpu_insert_context.is_none() && !force_segment_wide_blocks();
+
     for (index_pos, (field_progress, field)) in indexed_fields.into_iter().enumerate() {
         field_progress.start();
 
@@ -221,6 +225,27 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 trace!("graph connectivity: {graph_connectivity} for {field}");
             }
 
+            if compact_blocks {
+                build_block_compact(
+                    id_tracker,
+                    vector_storage,
+                    quantized_vectors,
+                    pool,
+                    stopped,
+                    graph_layers_builder,
+                    &points_to_index,
+                    payload_m,
+                    config.ef_construct,
+                    &counter,
+                )?;
+                if !indexed_vectors_set.is_empty() {
+                    for &point_id in &points_to_index {
+                        indexed_vectors_set.set(point_id as usize, true);
+                    }
+                }
+                return Ok(());
+            }
+
             let additional_graph = block_graph.get_or_insert_with(|| {
                 GraphLayersBuilder::new_with_params(
                     total_vector_count,
@@ -258,6 +283,95 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         })?;
     }
     Ok(indexed_vectors_set.count_ones())
+}
+
+/// Build one payload block in a builder sized to the block, and merge it into
+/// `graph_layers_builder`.
+///
+/// Block points are numbered `0..points_to_index.len()`, so the builder's links and visited
+/// lists are sized to the block, not the segment, and a search can only reach block points,
+/// which makes the per-candidate block filter unnecessary. The graph is the one
+/// [`build_filtered_graph`] builds into a segment-sized builder.
+#[allow(clippy::too_many_arguments)]
+fn build_block_compact(
+    id_tracker: &IdTrackerEnum,
+    vector_storage: &VectorStorageEnum,
+    quantized_vectors: &Option<QuantizedVectors>,
+    pool: &ThreadPool,
+    stopped: &AtomicBool,
+    graph_layers_builder: &mut GraphLayersBuilder,
+    points_to_index: &[PointOffsetType],
+    payload_m: HnswM,
+    ef_construct: usize,
+    counter: &AtomicU64,
+) -> OperationResult<()> {
+    let vector_deleted = vector_storage.deleted_vector_bitslice();
+    let point_deleted = id_tracker.deleted_point_bitslice();
+    let block_deleted: BitVec = points_to_index
+        .iter()
+        .map(|&point_id| {
+            vector_deleted.get_bit(point_id as usize).unwrap_or(false)
+                || point_deleted.get_bit(point_id as usize).unwrap_or(true)
+        })
+        .collect();
+
+    let block_graph = GraphLayersBuilder::new_with_params(
+        points_to_index.len(),
+        payload_m,
+        ef_construct,
+        1,
+        HNSW_USE_HEURISTIC,
+        false,
+    );
+
+    let insert_point = |local_id: PointOffsetType| {
+        check_process_stopped(stopped)?;
+        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let points_scorer = FilteredScorer::new_block_scorer(
+            points_to_index[local_id as usize],
+            points_to_index,
+            vector_storage,
+            quantized_vectors.as_ref(),
+            &block_deleted,
+        )?;
+        block_graph.link_new_point(local_id, points_scorer);
+        counter.fetch_add(1, Ordering::Relaxed);
+        Ok::<_, OperationError>(())
+    };
+
+    // Same insertion order and parallelism as `build_filtered_graph`.
+    let num_points = points_to_index.len() as PointOffsetType;
+    let first_points = num_points.min(SINGLE_THREADED_HNSW_BUILD_THRESHOLD as PointOffsetType);
+    for local_id in 0..first_points {
+        insert_point(local_id)?;
+    }
+    if num_points > first_points {
+        pool.install(|| {
+            (first_points..num_points)
+                .into_par_iter()
+                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
+                .try_for_each(insert_point)
+        })?;
+    }
+
+    graph_layers_builder.merge_block(block_graph, points_to_index);
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn force_segment_wide_blocks() -> bool {
+    false
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests: build blocks with the segment-wide path, to compare it with the compact one.
+    static FORCE_SEGMENT_WIDE_BLOCKS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn force_segment_wide_blocks() -> bool {
+    FORCE_SEGMENT_WIDE_BLOCKS.get()
 }
 
 /// Get list of points for indexing, associated with payload block filtering condition
@@ -380,4 +494,195 @@ fn build_filtered_graph(
         })?;
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    // Config structs keep their deprecated placement fields until 2.0.
+    #![allow(deprecated)]
+
+    use std::sync::Arc;
+
+    use atomic_refcell::AtomicRefCell;
+    use common::budget::ResourcePermit;
+    use common::flags::FeatureFlags;
+    use rand::SeedableRng;
+    use rand::prelude::StdRng;
+    use rstest::rstest;
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+    use crate::entry::entry_point::SegmentEntry;
+    use crate::fixtures::index_fixtures::random_vector;
+    use crate::id_tracker::IdTracker;
+    use crate::index::PayloadIndex;
+    use crate::index::hnsw_index::graph::HnswGraph;
+    use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
+    use crate::payload_json;
+    use crate::segment::Segment;
+    use crate::segment_constructor::VectorIndexBuildArgs;
+    use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
+    use crate::types::{
+        Distance, HnswConfig, HnswGlobalConfig, PayloadSchemaType, QuantizationConfig,
+        SeqNumberType, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
+    };
+    use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
+
+    const DIM: usize = 8;
+    const NUM_POINTS: u64 = 2_000;
+    /// 8 values of 250 points each: every value makes a block.
+    const POINTS_PER_VALUE: u64 = 250;
+
+    #[derive(Clone, Copy, Debug)]
+    enum Field {
+        Keyword,
+        /// Overlapping range blocks.
+        Integer,
+        /// Every 9th point dropped from the id tracker while its vector stays.
+        KeywordWithStalePoints,
+    }
+
+    fn build_segment(dir: &std::path::Path, field: Field) -> Segment {
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut segment = build_simple_segment(dir, DIM, Distance::Cosine).unwrap();
+        for n in 0..NUM_POINTS {
+            let value = n / POINTS_PER_VALUE;
+            let payload = match field {
+                Field::Integer => payload_json! {"field": value as i64},
+                Field::Keyword | Field::KeywordWithStalePoints => {
+                    payload_json! {"field": format!("value-{value}")}
+                }
+            };
+            let vector = random_vector(&mut rng, DIM);
+            let op = n as SeqNumberType;
+            segment
+                .upsert_point(op, n.into(), only_default_vector(&vector))
+                .unwrap();
+            segment.set_full_payload(op, n.into(), &payload).unwrap();
+        }
+        let schema = match field {
+            Field::Integer => PayloadSchemaType::Integer,
+            Field::Keyword | Field::KeywordWithStalePoints => PayloadSchemaType::Keyword,
+        };
+        segment
+            .payload_index
+            .borrow_mut()
+            .set_indexed(&JsonPath::new("field"), schema)
+            .unwrap();
+        if let Field::KeywordWithStalePoints = field {
+            let mut id_tracker = segment.id_tracker.borrow_mut();
+            for n in (0..NUM_POINTS).step_by(9) {
+                id_tracker.drop(n.into()).unwrap();
+            }
+        }
+        segment
+    }
+
+    /// Build the index with one thread and return every point's sorted links per level.
+    fn build_links(
+        segment: &Segment,
+        segment_wide: bool,
+        quantize: bool,
+        payload_m: usize,
+    ) -> Vec<Vec<Vec<PointOffsetType>>> {
+        let stopped = AtomicBool::new(false);
+        let dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+        let storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
+        let quantized = quantize.then(|| {
+            let config = QuantizationConfig::Turbo(TurboQuantization {
+                turbo: TurboQuantQuantizationConfig {
+                    always_ram: None,
+                    memory: None,
+                    bits: Some(TurboQuantBitSize::Bits4),
+                },
+            });
+            let storage_type = QuantizedVectorsStorageType::Immutable;
+            QuantizedVectors::create(
+                &storage.borrow(),
+                &config,
+                storage_type,
+                dir.path(),
+                1,
+                &stopped,
+            )
+            .unwrap()
+        });
+        let hnsw_config = HnswConfig {
+            m: 8,
+            ef_construct: 16,
+            // KB: far below a value's 250 points, so every value makes a block.
+            full_scan_threshold: 1,
+            max_indexing_threads: 1,
+            on_disk: Some(false),
+            memory: None,
+            payload_m: Some(payload_m),
+            inline_storage: None,
+        };
+
+        FORCE_SEGMENT_WIDE_BLOCKS.set(segment_wide);
+        let index = HNSWIndex::build(
+            HnswIndexOpenArgs {
+                path: dir.path(),
+                id_tracker: segment.id_tracker.clone(),
+                vector_storage: storage.clone(),
+                quantized_vectors: Arc::new(AtomicRefCell::new(quantized)),
+                payload_index: segment.payload_index.clone(),
+                hnsw_config,
+            },
+            VectorIndexBuildArgs {
+                permit: Arc::new(ResourcePermit::dummy(1)),
+                old_indices: &[],
+                gpu_device: None,
+                rng: &mut StdRng::seed_from_u64(42),
+                stopped: &stopped,
+                hnsw_global_config: &HnswGlobalConfig::default(),
+                feature_flags: FeatureFlags::default(),
+                inline_vectors: false,
+                progress: ProgressTracker::new_for_test(),
+            },
+        )
+        .unwrap();
+        FORCE_SEGMENT_WIDE_BLOCKS.set(false);
+
+        let HnswGraph::Direct(graph) = &index.graph else {
+            panic!("a freshly built index is direct");
+        };
+        (0..graph.links.num_points() as PointOffsetType)
+            .map(|point_id| {
+                (0..=graph.links.point_level(point_id))
+                    .map(|level| {
+                        let mut links: Vec<_> = graph.links.links(point_id, level).collect();
+                        links.sort_unstable();
+                        links
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// With one build thread both paths are deterministic, so the compact path must produce
+    /// exactly the links of the segment-wide path.
+    #[rstest]
+    #[case::keyword(Field::Keyword, false)]
+    #[case::integer(Field::Integer, false)]
+    #[case::stale_points(Field::KeywordWithStalePoints, false)]
+    #[case::keyword_quantized(Field::Keyword, true)]
+    #[case::integer_quantized(Field::Integer, true)]
+    fn test_compact_blocks_match_segment_wide(#[case] field: Field, #[case] quantize: bool) {
+        let _hw = hw::test_guard();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let segment = build_segment(dir.path(), field);
+
+        let segment_wide = build_links(&segment, true, quantize, 8);
+        let compact = build_links(&segment, false, quantize, 8);
+        // Without blocks both builds would match trivially.
+        let no_blocks = build_links(&segment, false, quantize, 0);
+        assert_ne!(compact, no_blocks, "no payload blocks were built");
+
+        for (point_id, (expected, actual)) in segment_wide.iter().zip(&compact).enumerate() {
+            assert_eq!(expected, actual, "links of point {point_id} differ");
+        }
+        assert_eq!(segment_wide.len(), compact.len());
+    }
 }
