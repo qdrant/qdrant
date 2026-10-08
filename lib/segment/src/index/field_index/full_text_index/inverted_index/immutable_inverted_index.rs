@@ -346,12 +346,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
         let lengths = self.point_to_doc_len.as_deref();
         // Deleted points stay in these postings and are masked here, as the
         // filter path does.
-        let is_active = |point_id: PointOffsetType| {
-            Ok(self
-                .point_to_tokens_count
+        let is_indexed = |point_id: PointOffsetType| {
+            self.point_to_tokens_count
                 .get(point_id as usize)
                 .is_some_and(|count| *count > 0)
-                && accept.check(point_id)?)
         };
         // In RAM: nothing to gain from reading lengths in batches.
         score_top_k::<_, 1>(
@@ -363,7 +361,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
                 }
                 Ok(())
             },
-            is_active,
+            is_indexed,
+            accept,
             limit,
             is_stopped,
         )

@@ -2,9 +2,10 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicBool;
 
+use common::condition_checker::CheckItem;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
-use super::{Bm25Query, TermCursors};
+use super::{Bm25Accept, Bm25Query, TermCursors};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 
 /// Candidates the on-disk index gathers before reading their lengths, one
@@ -23,9 +24,14 @@ pub const ON_DISK_BLOCK: usize = 128;
 /// still make the top `limit` without them. The bound needs no stored data,
 /// since a term's contribution is capped at `idf * (k1 + 1)`.
 ///
-/// `accept` decides which documents may be scored at all: deletions the
-/// posting lists do not know about, and any outer filter. A failing check
-/// stops the query with its error.
+/// `is_indexed` masks the deletions the posting lists do not know about, and
+/// `accept` the points a query does not see; both are checked per document,
+/// before its term frequencies are read. `accept`'s outer filter is checked
+/// there too with a `BLOCK` of 1, and otherwise once per block, over the
+/// documents gathered for it: batching pays off where the filter may read
+/// storage, and the frequencies of the documents it drops are cheap to have
+/// read, which holds for the on-disk index and not for the mutable one. A
+/// failing check stops the query with its error.
 ///
 /// Candidates are gathered in blocks of up to `BLOCK` before any of them
 /// is scored, so that `doc_lens` fetches their lengths in one batch, filling
@@ -40,7 +46,8 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     query: &Bm25Query,
     cursors: &mut C,
     mut doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
-    accept: impl Fn(PointOffsetType) -> OperationResult<bool>,
+    is_indexed: impl Fn(PointOffsetType) -> bool,
+    accept: &Bm25Accept<'_>,
     limit: usize,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -74,6 +81,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     // lengths.
     let mut candidates: [PointOffsetType; BLOCK] = [0; BLOCK];
     let mut hits_end: [usize; BLOCK] = [0; BLOCK];
+    let mut slots: [Slot; BLOCK] = [Slot::default(); BLOCK];
     let mut lengths: [Option<u32>; BLOCK] = [None; BLOCK];
     let mut hits: Vec<(usize, u32)> = Vec::with_capacity(term_count * BLOCK);
 
@@ -99,8 +107,10 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
             };
 
             // Move every essential cursor standing on this document, whether
-            // or not it gets scored, keeping its frequency if it will be.
-            let accepted = accept(doc)?;
+            // or not it gets scored, keeping its frequency if it may be. In
+            // blocks, the outer filter waits for the whole block.
+            let accepted =
+                is_indexed(doc) && accept.is_visible(doc) && (BLOCK > 1 || accept.filter(doc)?);
             let hits_start = hits.len();
             for term in block_essential..term_count {
                 if cursors.current(term) == Some(doc) {
@@ -119,6 +129,40 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
         }
         if count == 0 {
             break;
+        }
+
+        // The outer filter, in one batch over the block. What it drops leaves
+        // gaps, closed in document order: the non-essential cursors only move
+        // forward, so the candidates must reach them ascending.
+        let kept = if BLOCK > 1 {
+            for (index, slot) in slots[..count].iter_mut().enumerate() {
+                *slot = Slot {
+                    doc: candidates[index],
+                    index,
+                };
+            }
+            accept.filter_batched(&mut slots[..count])?
+        } else {
+            count
+        };
+        if kept < count {
+            let kept_slots = &mut slots[..kept];
+            kept_slots.sort_unstable_by_key(|slot| slot.index);
+            let ends = hits_end;
+            let mut write = 0;
+            for (position, slot) in kept_slots.iter().enumerate() {
+                let start = slot.index.checked_sub(1).map_or(0, |prev| ends[prev]);
+                let end = ends[slot.index];
+                hits.copy_within(start..end, write);
+                write += end - start;
+                candidates[position] = slot.doc;
+                hits_end[position] = write;
+            }
+            hits.truncate(write);
+            count = kept;
+            if count == 0 {
+                continue;
+            }
         }
 
         let lengths = &mut lengths[..count];
@@ -175,4 +219,18 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     // not depend on heap internals.
     result.sort_unstable_by(|a, b| b.score.total_cmp(&a.score).then(a.idx.cmp(&b.idx)));
     Ok(result)
+}
+
+/// A gathered candidate as the batched filter moves it around: the document,
+/// and where its hits sit in the block.
+#[derive(Debug, Clone, Copy, Default)]
+struct Slot {
+    doc: PointOffsetType,
+    index: usize,
+}
+
+impl CheckItem for Slot {
+    fn point_id(self) -> PointOffsetType {
+        self.doc
+    }
 }
