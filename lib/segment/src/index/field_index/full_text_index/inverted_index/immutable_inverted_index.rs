@@ -47,7 +47,8 @@ pub struct ImmutableInvertedIndex {
     /// Number of distinct tokens per point, i.e. the size of its token set:
     /// a token that occurs several times in the text counts once.
     /// Zero for a point without tokens or a removed one.
-    pub(super) point_to_tokens_count: Vec<usize>,
+    /// Stored as `usize` on disk.
+    pub(super) point_to_tokens_count: Vec<u32>,
 
     /// Number of token occurrences per point, i.e. the length of the tokenized
     /// text with repetitions, summed over all of the point's values. `None`
@@ -406,8 +407,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.point_to_tokens_count
             .get(point_id as usize)
-            .copied()
-            .unwrap_or(0)
+            .map_or(0, |&count| count as usize)
     }
 
     fn points_count(&self) -> usize {
@@ -474,12 +474,13 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             }
         };
 
-        let point_to_tokens_count: Vec<usize> = point_to_tokens
+        // Distinct tokens are distinct `TokenId`s, so the count fits in `u32`.
+        let point_to_tokens_count: Vec<u32> = point_to_tokens
             .iter()
             .map(|tokenset| {
                 tokenset
                     .as_ref()
-                    .map(|tokenset| tokenset.len())
+                    .map(|tokenset| tokenset.len() as u32)
                     .unwrap_or(0)
             })
             .collect();
@@ -632,20 +633,24 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
         // variant tracks deletions in a separate in-memory bitmask and leaves
         // `point_to_tokens_count` untouched on disk, so we apply the bitmask
         // here when materializing the count vector.
-        let mut point_to_tokens_count = index
+        let point_to_tokens_count: Vec<u32> = index
             .storage
             .point_to_tokens_count
             .read_whole()?
-            .into_owned();
-        for (idx, count) in point_to_tokens_count.iter_mut().enumerate() {
-            if !index
-                .storage
-                .deleted_points
-                .is_active(idx as PointOffsetType)
-            {
-                *count = 0;
-            }
-        }
+            .iter()
+            .enumerate()
+            .map(|(idx, &count)| {
+                if index
+                    .storage
+                    .deleted_points
+                    .is_active(idx as PointOffsetType)
+                {
+                    count as u32
+                } else {
+                    0
+                }
+            })
+            .collect();
 
         // Document lengths are masked the same way, so that whoever sums them
         // gets the live total rather than one inflated by deleted points.
@@ -701,7 +706,7 @@ impl ImmutableInvertedIndex {
             * (size_of::<String>() + size_of::<TokenId>() + hashmap_entry_overhead);
         // Account for actual heap-allocated string data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
-        let pttc_bytes = point_to_tokens_count.capacity() * size_of::<usize>();
+        let pttc_bytes = point_to_tokens_count.capacity() * size_of::<u32>();
         let doc_len_bytes = point_to_doc_len
             .as_ref()
             .map(|lens| lens.capacity() * size_of::<u32>())
