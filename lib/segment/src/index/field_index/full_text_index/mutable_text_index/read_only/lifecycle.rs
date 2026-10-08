@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use blobstore::BlobstoreReader;
 use common::counter::hw::{self, HwMetric};
 use common::reason::reason;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::inner::MutableFullTextIndexInner;
@@ -42,10 +43,14 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     /// the `create_if_missing == false` branch of the writable counterpart —
     /// the read path never creates.
     ///
+    /// Values at or past `max_point_offset` are skipped, as the id tracker may
+    /// not yet cover them.
+    ///
     /// [1]: super::super::MutableFullTextIndex::open_gridstore
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
+        max_point_offset: PointOffsetType,
         config: TextIndexParams,
         scoring: bool,
     ) -> OperationResult<Option<Self>> {
@@ -65,7 +70,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
 
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset()?,
+                storage.max_point_offset()?.min(max_point_offset),
                 |idx, value: Vec<u8>| {
                     let doc = FullTextIndex::deserialize_document(&value)?;
                     if scoring && doc.doc_len.is_none() {

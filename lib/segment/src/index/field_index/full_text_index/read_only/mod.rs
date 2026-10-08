@@ -110,6 +110,7 @@ mod tests {
         let without_scoring = ReadOnlyAppendableFullTextIndex::<ReadOnly<MmapFile>>::open(
             &fs,
             dir.path().to_path_buf(),
+            PointOffsetType::MAX,
             config.clone(),
             false,
         )
@@ -123,6 +124,7 @@ mod tests {
         let with_scoring = ReadOnlyAppendableFullTextIndex::<ReadOnly<MmapFile>>::open(
             &fs,
             dir.path().to_path_buf(),
+            PointOffsetType::MAX,
             config,
             true,
         )
@@ -225,9 +227,14 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+                config,
+            )
+            .unwrap()
+            .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyFullTextIndex::Appendable(_)));
@@ -290,9 +297,14 @@ mod tests {
 
         // Read-only view of points 0..=2, taken before the writer continues.
         let mut reloaded: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config.clone())
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+                config.clone(),
+            )
+            .unwrap()
+            .unwrap();
 
         // Writer's delta: drop point 1, append points 3 and 4.
         writer.remove_point(1).unwrap();
@@ -312,9 +324,14 @@ mod tests {
             .unwrap();
 
         let fresh: ReadOnlyFullTextIndex<ReadOnly<MmapFile>> =
-            ReadOnlyFullTextIndex::open_appendable(&fs, dir.path().to_path_buf(), config)
-                .unwrap()
-                .unwrap();
+            ReadOnlyFullTextIndex::open_appendable(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+                config,
+            )
+            .unwrap()
+            .unwrap();
 
         assert_eq!(
             reloaded.count_indexed_points().unwrap(),
