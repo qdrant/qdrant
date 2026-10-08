@@ -53,7 +53,6 @@ pub struct ReadOnlyHNSWIndex<S: UniversalReadExt> {
     /// Residency for the (possibly deferred) graph load.
     residency: GraphLinksResidency,
     searches_telemetry: HNSWSearchesTelemetry,
-    is_on_disk: bool,
 }
 
 /// Read-only view over a [`ReadOnlyHNSWIndex`].
@@ -144,9 +143,8 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
     {
         let config = load_or_derive_config(fs, path, &hnsw_config, &vector_storage)?;
 
-        let (memory, residency) =
+        let (_memory, residency) =
             graph_residency(hnsw_config.memory_placement(), populate_override);
-        let is_on_disk = memory.is_on_disk();
 
         let graph = match vector_storage.borrow().hnsw_graph() {
             Some(graph) => OnceCell::with_value(graph),
@@ -165,7 +163,6 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             fs: raw_fs.clone(),
             residency,
             searches_telemetry: HNSWSearchesTelemetry::new(),
-            is_on_disk,
         })
     }
 
@@ -191,8 +188,13 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
             .get_or_try_init(|| HnswGraph::open_universal(&self.fs, &self.path, self.residency))
     }
 
+    /// Residency of the loaded graph, which may be borrowed from a
+    /// graph-inline vector storage; a deferred graph will load cold.
     pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+        match self.graph.get() {
+            Some(graph) => graph.is_on_disk(),
+            None => self.residency == GraphLinksResidency::Cold,
+        }
     }
 
     /// Read underlying graph data from disk into the disk cache.
