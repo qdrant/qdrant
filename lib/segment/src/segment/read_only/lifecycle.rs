@@ -487,6 +487,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             payload_index,
             payload_storage,
             pending_reload: AtomicRefCell::new(Default::default()),
+            deferred_deletes: AtomicRefCell::new(Vec::new()),
             reload_fs: AtomicRefCell::new(fs),
             segment_type,
             segment_config: config,

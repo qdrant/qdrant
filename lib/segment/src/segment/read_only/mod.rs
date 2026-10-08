@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
+use common::types::PointOffsetType;
 use common::universal_io::CachedFs;
 use uuid::Uuid;
 
@@ -49,6 +50,15 @@ pub struct ReadOnlySegment<S: UniversalReadExt + 'static> {
     /// the next reload folds in fresh changes and replays the union — components
     /// can't drift out of sync. Empty once everything is in sync.
     pub pending_reload: AtomicRefCell<LiveReloadResult>,
+
+    /// Offsets deleted by an already-published reload that components have not
+    /// dropped yet. Components drop deletions one successful reload late: until
+    /// the tracker publishes a reload, an offset it reports deleted may still be
+    /// the one it serves (a re-link only takes effect on publish), so dropping it
+    /// from a component early would hide the point from that component's reads
+    /// whenever the reload then fails. Once published, these offsets are dead in
+    /// the tracker, and readers already skip them.
+    pub deferred_deletes: AtomicRefCell<Vec<PointOffsetType>>,
 
     /// Caching filesystem retained from open: [`live_preload`](ReadOnlySegment::live_preload)
     /// re-snapshots its listing and stages into its prefetch pool, [`live_reload`](ReadOnlySegment::live_reload)

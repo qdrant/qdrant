@@ -252,6 +252,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             payload_index,
             payload_storage: _,
             pending_reload: _,
+            deferred_deletes: _,
             reload_fs: _,
             segment_type,
             segment_config,

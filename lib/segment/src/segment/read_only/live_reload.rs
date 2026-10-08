@@ -28,6 +28,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             payload_index,
             payload_storage,
             pending_reload,
+            deferred_deletes,
             reload_fs,
             segment_type: _,
             segment_config: _,
@@ -44,8 +45,12 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         let max_committed_id = probe.max_committed_id();
 
         // 2. If nothing changed and there are no unapplied pending changes from a previous
-        // failed reload, skip the expensive directory LIST and preloading entirely.
-        if probe.is_unchanged() && pending_reload.borrow().is_empty() {
+        // failed reload, nor deletions components still have to drop, skip the expensive
+        // directory LIST and preloading entirely.
+        if probe.is_unchanged()
+            && pending_reload.borrow().is_empty()
+            && deferred_deletes.borrow().is_empty()
+        {
             return Ok(max_committed_id);
         }
 
@@ -79,11 +84,26 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// delta is retained, and a later reload folds in the tracker's new changes and
     /// replays the union — no component is left drifting on a partial reload.
     ///
-    /// New inserts are published to the id-tracker's readers only after that, so
-    /// readers never reach an offset a component cannot serve.
+    /// A failed reload must leave readers on the previous view, so nothing a
+    /// component applies before the publish may be observable:
+    /// - New inserts are published to the id-tracker's readers only at the end,
+    ///   so readers never reach an offset a component cannot serve.
+    /// - Deletions reach components one successful reload late (see
+    ///   [`ReadOnlySegment::deferred_deletes`]): until this reload publishes, an
+    ///   offset it reports deleted may still be the one the tracker serves.
     pub fn live_reload(
         &mut self,
         max_committed_id: Option<PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.live_reload_with_fault(max_committed_id, |_| Ok(()))
+    }
+
+    /// [`Self::live_reload`] with a hook called before each component reloads,
+    /// so tests can fail a reload part-way.
+    pub(super) fn live_reload_with_fault(
+        &mut self,
+        max_committed_id: Option<PointOffsetType>,
+        fault: impl Fn(ReloadStage) -> OperationResult<()>,
     ) -> OperationResult<()> {
         let Self {
             uuid: _,
@@ -93,6 +113,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             payload_index,
             payload_storage,
             pending_reload,
+            deferred_deletes,
             reload_fs,
             segment_type: _,
             segment_config: _,
@@ -106,42 +127,59 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         let fresh = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
         let mut pending = pending_reload.borrow_mut();
         pending.merge(fresh);
+        let deferred = deferred_deletes.get_mut();
 
-        log::trace!(target: "live-reload", "Pending live-reload in {} changes: {:?}", self.uuid, pending);
+        log::trace!(target: "live-reload", "Pending live-reload in {} changes: {:?}, deferred deletes: {}", self.uuid, pending, deferred.len());
 
-        if pending.is_empty() {
+        if pending.is_empty() && deferred.is_empty() {
             id_tracker.borrow_mut().publish_staged();
             fs.rotate_cache_file_info();
             return Ok(());
         }
 
-        // Replay the full accumulated delta to every component. Bail on the first
-        // error without clearing `pending`, so the next reload retries the union.
+        // Replay the accumulated inserts, and the deletions an earlier reload already
+        // published, to every component. Bail on the first error without clearing
+        // either, so the next reload retries them; every component reload is
+        // idempotent.
         {
-            // SAFETY: `merge` keeps both lists sorted ascending.
-            let deleted = unsafe { SortedSlice::new_unchecked(&pending.deleted) };
+            // SAFETY: `merge` keeps the lists sorted ascending; `deferred` is a list
+            // `merge` produced.
+            let deleted = unsafe { SortedSlice::new_unchecked(deferred) };
             let inserted = unsafe { SortedSlice::new_unchecked(&pending.inserted) };
 
+            fault(ReloadStage::PayloadStorage)?;
             payload_storage
                 .borrow_mut()
                 .live_reload(fs, &deleted, &inserted)?;
+            fault(ReloadStage::PayloadIndex)?;
             payload_index
                 .borrow_mut()
                 .live_reload(fs, &deleted, &inserted)?;
 
             for vector_data in vector_data.values() {
+                fault(ReloadStage::Vectors)?;
                 vector_data.live_reload(fs, &deleted, &inserted)?;
             }
         }
 
-        // Every component is now in sync; publish the inserts, discard the applied
-        // delta and rotate file info.
+        // Every component is now in sync; publish the inserts. The offsets this
+        // reload deleted are dead in the tracker from here on, so components drop
+        // them on the next reload.
         id_tracker.borrow_mut().publish_staged();
+        *deferred = std::mem::take(&mut pending.deleted);
         *pending = LiveReloadResult::default();
         fs.rotate_cache_file_info();
 
         Ok(())
     }
+}
+
+/// A component reload [`ReadOnlySegment::live_reload_with_fault`] is about to run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReloadStage {
+    PayloadStorage,
+    PayloadIndex,
+    Vectors,
 }
 
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData<S> {

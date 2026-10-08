@@ -28,6 +28,7 @@ use crate::entry::entry_point::{
 };
 use crate::json_path::JsonPath;
 use crate::segment::Segment;
+use crate::segment::read_only::live_reload::ReloadStage;
 use crate::segment::read_only::{ReadOnlySegment, build_cached_fs_async};
 use crate::segment_constructor::build_segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
@@ -1585,7 +1586,7 @@ fn test_partially_failed_live_reload_converges(#[case] stop: PartialStop) {
     }
     mutable.flush(true).unwrap();
 
-    // First reload attempt: tracker delta drained, then components applied in
+    // First reload attempt: tracker delta drained, then components reloaded in
     // `live_reload`'s order until the simulated failure.
     let max_committed_id =
         futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
@@ -1599,7 +1600,9 @@ fn test_partially_failed_live_reload_converges(#[case] stop: PartialStop) {
         assert!(!fresh.is_empty());
         let mut pending = read_only.pending_reload.borrow_mut();
         pending.merge(fresh);
-        let deleted = SortedSlice::new(&pending.deleted).unwrap();
+        // Components get the deletions an earlier reload published, not this one's.
+        let deferred = read_only.deferred_deletes.borrow();
+        let deleted = SortedSlice::new(&deferred).unwrap();
         let inserted = SortedSlice::new(&pending.inserted).unwrap();
 
         read_only
@@ -1835,7 +1838,7 @@ fn test_retried_live_reload_matches_fresh_open(#[case] applied: Option<&'static 
     mutable.flush(true).unwrap();
 
     // First reload attempt: the tracker delta is drained, payload storage, every
-    // field index and the `applied` vector apply it, and the other vector fails.
+    // field index and the `applied` vector reload, and the other vector fails.
     // Naming the vector covers both reload orders whatever the map's order is.
     let max_committed_id =
         futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
@@ -1849,7 +1852,9 @@ fn test_retried_live_reload_matches_fresh_open(#[case] applied: Option<&'static 
         assert!(!fresh.is_empty());
         let mut pending = read_only.pending_reload.borrow_mut();
         pending.merge(fresh);
-        let deleted = SortedSlice::new(&pending.deleted).unwrap();
+        // Components get the deletions an earlier reload published, not this one's.
+        let deferred = read_only.deferred_deletes.borrow();
+        let deleted = SortedSlice::new(&deferred).unwrap();
         let inserted = SortedSlice::new(&pending.inserted).unwrap();
 
         read_only
@@ -1987,4 +1992,170 @@ fn test_retried_live_reload_matches_fresh_open(#[case] applied: Option<&'static 
         search(&read_only),
         "sparse IDF search mismatch"
     );
+}
+
+/// Everything a reader can observe on `segment`, for before/after comparisons.
+fn observable_state(segment: &ReadOnlySegment<MmapFile>) -> Vec<String> {
+    let _scope = ambient::test_guard();
+    let mut out = Vec::new();
+    for kw in ["red", "green", "blue"] {
+        out.push(format!(
+            "kw={kw}: {:?}",
+            sorted_filtered(segment, &keyword_filter(kw))
+        ));
+        for value in [0, 3, 13, 999] {
+            let mut filter = keyword_filter(kw);
+            filter
+                .must
+                .as_mut()
+                .unwrap()
+                .extend(num_match_filter(value).must.unwrap());
+            out.push(format!(
+                "kw={kw}&num={value}: {:?}",
+                sorted_filtered(segment, &filter)
+            ));
+        }
+    }
+    for lt in [5, 12, 1000] {
+        out.push(format!(
+            "num<{lt}: {:?}",
+            sorted_filtered(segment, &num_range_filter(lt))
+        ));
+    }
+    for i in 0..NUM_POINTS {
+        let point_id: PointIdType = (i as u64 + 1).into();
+        let version = segment.point_version(point_id);
+        let payload = version.map(|_| segment.payload(point_id).unwrap());
+        let vector = version.map(|_| segment.vector(DEFAULT_VECTOR_NAME, point_id).unwrap());
+        out.push(format!("{point_id}: {version:?} {payload:?} {vector:?}"));
+    }
+    out
+}
+
+/// Regression test: a live reload that fails part-way must leave the follower
+/// serving exactly its pre-reload state. Points the writer moved to a new
+/// offset (re-upsert, payload update under append-only mutations) stay linked
+/// to their old offset until the reload publishes, so no component may drop
+/// that old offset before then. If one did, filtered reads would lose the point
+/// while `Get` still returned it.
+#[rstest]
+#[case::before_payload_index(ReloadStage::PayloadIndex)]
+#[case::before_vectors(ReloadStage::Vectors)]
+fn test_failed_live_reload_keeps_previous_view(#[case] stop: ReloadStage) {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_prev_view")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let mut op_num = 0u64;
+    let mut next_op = || {
+        op_num += 1;
+        op_num
+    };
+    for (name, schema) in [
+        ("kw", PayloadSchemaType::Keyword),
+        ("num", PayloadSchemaType::Integer),
+    ] {
+        mutable
+            .create_field_index(
+                next_op(),
+                &JsonPath::new(name),
+                Some(&PayloadFieldSchema::FieldType(schema)),
+            )
+            .unwrap();
+    }
+    let write = |segment: &mut Segment, op: u64, i: usize, round: usize| {
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3 + round * 5) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        segment.upsert_point(op, point_id, vectors).unwrap();
+        let kw = ["red", "green", "blue"][i % 3];
+        let payload =
+            serde_json::from_value(serde_json::json!({ "kw": kw, "num": (i % 7) as i64 })).unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
+    };
+    for i in 0..NUM_POINTS {
+        let op = next_op();
+        write(&mut mutable, op, i, 0);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+
+    // Writer moves points to new offsets: re-upserts (same filterable values,
+    // new vectors) and payload patches.
+    for i in (0..NUM_POINTS).step_by(3) {
+        let op = next_op();
+        write(&mut mutable, op, i, 1);
+    }
+    for i in (1..NUM_POINTS).step_by(5) {
+        let payload = serde_json::from_value(serde_json::json!({ "extra": 1 })).unwrap();
+        let op = next_op();
+        mutable
+            .set_payload(op, (i as u64 + 1).into(), &payload, &None)
+            .unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    let before = observable_state(&read_only);
+
+    // A reload that fails after some components applied the delta.
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
+    read_only
+        .live_reload_with_fault(max_committed_id, |stage| {
+            if stage == stop {
+                Err(OperationError::service_error("injected component failure"))
+            } else {
+                Ok(())
+            }
+        })
+        .expect_err("simulated component failure");
+
+    let after = observable_state(&read_only);
+    let diff: Vec<_> = before
+        .iter()
+        .zip(&after)
+        .filter(|(b, a)| b != a)
+        .map(|(b, a)| format!("before: {b}\n after: {a}"))
+        .collect();
+    assert!(
+        diff.is_empty(),
+        "a failed reload changed what readers observe ({stop:?}):\n{}",
+        diff.join("\n"),
+    );
+
+    // The retry converges on the writer.
+    preload_then_reload(&mut read_only).expect("retried live reload");
+    assert_query_equivalence(&mutable, &read_only);
 }
