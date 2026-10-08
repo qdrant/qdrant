@@ -17,7 +17,7 @@ use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
-use super::bm25::{Bm25Query, ON_DISK_BLOCK, PositionalCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, ON_DISK_BLOCK, PositionalCursors, score_top_k};
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
@@ -845,7 +845,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -871,7 +871,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             // Deleted points stay in these postings and are masked here, as
             // the filter path does.
             let is_active =
-                |point_id: PointOffsetType| self.is_active(point_id) && accept(point_id);
+                |point_id: PointOffsetType| Ok(self.is_active(point_id) && accept.check(point_id)?);
             score_top_k::<_, ON_DISK_BLOCK>(
                 query,
                 &mut cursors,

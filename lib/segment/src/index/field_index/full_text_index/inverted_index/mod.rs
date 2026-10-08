@@ -12,7 +12,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use bm25::Bm25Query;
+use bm25::{Bm25Accept, Bm25Query};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
@@ -226,7 +226,7 @@ pub trait InvertedIndex {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>>;

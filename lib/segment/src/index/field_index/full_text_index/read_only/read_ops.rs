@@ -11,7 +11,7 @@ use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
-use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
+use crate::index::field_index::full_text_index::inverted_index::bm25::{Bm25Accept, Bm25Query};
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndexRead,
 };
@@ -78,7 +78,7 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {

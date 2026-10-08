@@ -15,7 +15,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
@@ -112,7 +112,7 @@ where
         terms: &[String],
         context: &TextQueryContext<'_>,
         params: Bm25Params,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let Some(indexes) = self.field_indexes.get(field) else {

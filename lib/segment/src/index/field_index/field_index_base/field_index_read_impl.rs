@@ -11,10 +11,10 @@ use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
-use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::full_text_index::full_text_index_read::{
     FullTextIndexRead, fill_text_statistics, score_bm25,
 };
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
@@ -261,7 +261,7 @@ impl FieldIndexRead for FieldIndex {
         terms: &[String],
         context: &TextQueryContext<'_>,
         params: Bm25Params,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Option<Vec<ScoredPointOffset>>> {
         match self {

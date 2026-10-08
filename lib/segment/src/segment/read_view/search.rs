@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::bitvec::BitSliceExt as _;
-use common::condition_checker::ConditionChecker;
 use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
@@ -16,7 +15,7 @@ use crate::data_types::query_context::{
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -440,15 +439,13 @@ where
             .transpose()?;
         let (cutoff, deleted, shadowed) = self.id_tracker.point_mappings().visible_scan_masks();
         let deleted = context.deleted_points().unwrap_or(deleted);
-        let accept = |point_id: PointOffsetType| {
+        let visible = |point_id: PointOffsetType| {
             let bit = point_id as usize;
             cutoff.is_none_or(|cutoff| point_id < cutoff)
                 && !deleted.get_bit(bit).unwrap_or(false)
                 && !shadowed.get_bit(bit).unwrap_or(false)
-                && filter_context
-                    .as_ref()
-                    .is_none_or(|filter| filter.check_infallible(point_id))
         };
+        let accept = Bm25Accept::new(&visible, filter_context.as_ref());
 
         let internal_result = self
             .payload_index

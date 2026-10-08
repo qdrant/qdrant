@@ -5,7 +5,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 
-use super::bm25::{Bm25Query, MutableCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, MutableCursors, score_top_k};
 use super::posting_list::PostingList;
 use super::postings_iterator::{intersect_postings_iterator, merge_postings_iterator};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
@@ -293,7 +293,7 @@ impl InvertedIndex for MutableInvertedIndex {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -326,7 +326,7 @@ impl InvertedIndex for MutableInvertedIndex {
                 }
                 Ok(())
             },
-            accept,
+            |point_id| accept.check(point_id),
             limit,
             is_stopped,
         )

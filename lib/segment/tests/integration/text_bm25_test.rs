@@ -21,9 +21,9 @@ use segment::data_types::query_context::{
 use segment::entry::entry_point::SegmentEntry;
 use segment::entry::{NonAppendableSegmentEntry, ReadSegmentEntry};
 use segment::index::field_index::FieldIndex;
-use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::field_index::full_text_index::full_text_index_read::score_bm25;
 use segment::index::field_index::full_text_index::tokenizers::Tokenizer;
+use segment::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
@@ -239,7 +239,7 @@ fn engine_rank(
         terms,
         context,
         Bm25Params::default(),
-        &|_| true,
+        &Bm25Accept::new(&|_| true, None),
         limit,
         &AtomicBool::new(false),
     )
