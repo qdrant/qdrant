@@ -237,6 +237,7 @@ impl Collection {
     pub async fn handle_replica_changes(
         &self,
         replica_changes: Vec<Change>,
+        min_other_active_replicas: Option<u32>,
     ) -> CollectionResult<()> {
         if replica_changes.is_empty() {
             return Ok(());
@@ -272,6 +273,19 @@ impl Collection {
                 return Err(CollectionError::bad_request(format!(
                     "Shard {shard_id} must have at least one active replica after removing {peer_id}",
                 )));
+            }
+
+            if let Some(min) = min_other_active_replicas {
+                let other_active = peers
+                    .iter()
+                    .filter(|&(&id, state)| id != peer_id && state.is_active())
+                    .count();
+                if other_active < min as usize {
+                    return Err(CollectionError::bad_request(format!(
+                        "Shard {shard_id} has {other_active} other active replicas besides \
+                         {peer_id}, but at least {min} are required",
+                    )));
+                }
             }
 
             let all_nodes_fixed_cancellation = self

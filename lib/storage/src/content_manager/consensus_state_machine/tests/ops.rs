@@ -3377,3 +3377,123 @@ fn quota_config(enabled: bool) -> QuotaConfig {
         release_margin_percent: None,
     }
 }
+
+const THIRD_PEER_ID: PeerId = OTHER_PEER_ID + 1;
+
+/// Shard 0 with replicas on `PEER_ID` (Active, from the fixture), `OTHER_PEER_ID` and
+/// `THIRD_PEER_ID`.
+fn drop_replica_state(other: ReplicaState, third: ReplicaState) -> ClusterState {
+    let mut state = auto_resharding_state(1);
+    let replicas = &mut state
+        .collections
+        .get_mut(COLLECTION)
+        .expect("collection")
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas;
+    replicas.insert(OTHER_PEER_ID, other);
+    replicas.insert(THIRD_PEER_ID, third);
+    state
+}
+
+fn drop_replica_op(peer_id: PeerId, min_other_active_replicas: Option<u32>) -> ConsensusOperations {
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, peer_id)]);
+    operation.min_other_active_replicas = min_other_active_replicas;
+    collection_meta_op(CollectionMetaOperations::UpdateCollection(operation))
+}
+
+fn replica_count(machine: &ConsensusStateMachine) -> usize {
+    machine
+        .state()
+        .collection(COLLECTION)
+        .expect("collection")
+        .shards[&0]
+        .replicas
+        .len()
+}
+
+#[test]
+fn drop_replica_condition_met() {
+    // Dropping the third replica leaves two other active ones.
+    let state = drop_replica_state(ReplicaState::Active, ReplicaState::Active);
+    let mut machine = state_machine(state);
+
+    let outcome = machine.apply(&drop_replica_op(THIRD_PEER_ID, Some(2)));
+
+    assert!(matches!(outcome, ApplyOutcome::Accepted(_)), "{outcome:?}");
+    assert_eq!(replica_count(&machine), 2);
+}
+
+#[test]
+fn drop_replica_condition_refused_after_replica_died() {
+    let mut machine = state_machine(drop_replica_state(
+        ReplicaState::Active,
+        ReplicaState::Active,
+    ));
+
+    // The consensus order is: the other replica dies, then the conditional drop is applied.
+    let dead = collection_meta_op(CollectionMetaOperations::SetShardReplicaState(
+        SetShardReplicaState {
+            collection_name: COLLECTION.into(),
+            shard_id: 0,
+            peer_id: OTHER_PEER_ID,
+            state: ReplicaState::Dead,
+            from_state: None,
+        },
+    ));
+    assert!(matches!(machine.apply(&dead), ApplyOutcome::Accepted(_)));
+
+    let before = machine.state().clone();
+    let outcome = machine.apply(&drop_replica_op(THIRD_PEER_ID, Some(2)));
+
+    assert!(
+        matches!(
+            outcome,
+            ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+        ),
+        "{outcome:?}"
+    );
+    assert_eq!(machine.state(), &before);
+
+    // The refusal does not poison the machine: the next entry still applies.
+    let next = machine.apply(&drop_replica_op(THIRD_PEER_ID, None));
+    assert!(matches!(next, ApplyOutcome::Accepted(_)), "{next:?}");
+    assert_eq!(replica_count(&machine), 2);
+}
+
+#[test]
+fn drop_replica_without_condition_keeps_legacy_behavior() {
+    // Only one replica is active: dropping a dead one is allowed without a condition.
+    let mut machine = state_machine(drop_replica_state(ReplicaState::Dead, ReplicaState::Dead));
+    let outcome = machine.apply(&drop_replica_op(OTHER_PEER_ID, None));
+    assert!(matches!(outcome, ApplyOutcome::Accepted(_)), "{outcome:?}");
+
+    // The last active replica is still refused, with or without the condition.
+    let before = machine.state().clone();
+    let outcome = machine.apply(&drop_replica_op(PEER_ID, None));
+    assert!(
+        matches!(
+            outcome,
+            ApplyOutcome::Rejected(StorageError::BadRequest { .. })
+        ),
+        "{outcome:?}"
+    );
+    assert_eq!(machine.state(), &before);
+}
+
+#[test]
+fn drop_replica_condition_serde_compat() {
+    // An entry without the field (written by an older peer) decodes with no condition.
+    let mut operation = UpdateCollectionOperation::new_empty(COLLECTION.into());
+    operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, OTHER_PEER_ID)]);
+    let legacy = serde_cbor::to_vec(&operation).expect("serialize");
+    let decoded: UpdateCollectionOperation = serde_cbor::from_slice(&legacy).expect("decode");
+    assert_eq!(decoded.min_other_active_replicas, None);
+
+    operation.min_other_active_replicas = Some(2);
+    let bytes = serde_cbor::to_vec(&operation).expect("serialize");
+    let decoded: UpdateCollectionOperation = serde_cbor::from_slice(&bytes).expect("decode");
+    assert_eq!(decoded.min_other_active_replicas, Some(2));
+}

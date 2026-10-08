@@ -153,6 +153,7 @@ impl TableOfContent {
         mut operation: UpdateCollectionOperation,
     ) -> Result<bool, StorageError> {
         let replica_changes = operation.take_shard_replica_changes();
+        let min_other_active_replicas = operation.min_other_active_replicas;
         let collection = self
             .get_collection_unchecked(&operation.collection_name)
             .await?;
@@ -207,7 +208,9 @@ impl TableOfContent {
             recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {
-            collection.handle_replica_changes(changes).await?;
+            collection
+                .handle_replica_changes(changes, min_other_active_replicas)
+                .await?;
         }
         if let Some(strict_mode) = strict_mode {
             collection.update_strict_mode_config(strict_mode).await?;

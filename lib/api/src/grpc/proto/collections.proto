@@ -1174,6 +1174,9 @@ enum ShardTransferMethod {
 message Replica {
   uint32 shard_id = 1;
   uint64 peer_id = 2;
+  // Drop the replica only if at least this many other replicas of the shard are active
+  // when the operation is applied. If not set, the replica is dropped unconditionally.
+  optional uint32 min_other_active_replicas = 3;
 }
 
 message CreateShardKey {
