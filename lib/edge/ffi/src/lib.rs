@@ -22,11 +22,11 @@ uniffi::setup_scaffolding!();
 
 pub use crate::config::OptimizersConfig;
 pub use crate::ops::{
-    ContextPair, CountRequest, DecayKind, Direction, Expression, FacetHit, FacetRequest,
-    FacetResponse, FeedbackCoefficients, FeedbackItem, Fusion, Group, GroupId, GroupRequest,
-    OrderBy, Prefetch, Query, QueryBatchRequest, QueryRequest, RecommendStrategy, RetrieveRequest,
-    Sample, ScoringQuery, ScrollRequest, ScrollResponse, SearchParams, SearchRequest, ShardInfo,
-    StartFrom,
+    Bm25Params, ContextPair, CountRequest, DecayKind, Direction, Expression, FacetHit,
+    FacetRequest, FacetResponse, FeedbackCoefficients, FeedbackItem, Fusion, Group, GroupId,
+    GroupRequest, OrderBy, Prefetch, Query, QueryBatchRequest, QueryRequest, RecommendStrategy,
+    RetrieveRequest, Sample, ScoringQuery, ScrollRequest, ScrollResponse, SearchParams,
+    SearchRequest, ShardInfo, StartFrom,
 };
 #[cfg(feature = "matrix")]
 pub use crate::ops::{SearchMatrixRequest, SearchMatrixResponse};

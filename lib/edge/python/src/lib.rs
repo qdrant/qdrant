@@ -59,8 +59,8 @@ mod qdrant_edge {
     use super::facet::{PyFacetHit, PyFacetRequest, PyFacetResponse};
     #[pymodule_export]
     use super::query::{
-        PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryBatchRequest, PyQueryRequest,
-        PySample,
+        PyBm25Params, PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryBatchRequest,
+        PyQueryRequest, PySample, PyTextQuery,
     };
     #[pymodule_export]
     use super::scroll::PyScrollRequest;

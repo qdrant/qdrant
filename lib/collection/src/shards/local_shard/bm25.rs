@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use segment::types::{Filter, ScoredPoint, WithPayload, WithVector};
 use shard::common::stopping_guard::StoppingGuard;
-use shard::query::text::{TextScoringQuery, TextSearchRequestInternal};
+use shard::query::text::{TextScoringQuery, TextSearchRequestInternal, cut_at_threshold};
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -74,12 +74,7 @@ impl LocalShard {
                         timeout,
                     )
                     .await?;
-                // Best first, so the threshold cuts a suffix. Strict, as the
-                // threshold of a search over a larger-is-better distance.
-                if let Some(threshold) = score_threshold {
-                    let keep = points.partition_point(|point| point.score > threshold);
-                    points.truncate(keep);
-                }
+                cut_at_threshold(&mut points, score_threshold);
                 Ok(points)
             }
         });

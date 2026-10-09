@@ -992,6 +992,7 @@ fn payload_index_params_all_variants_convert_to_matching_engine_type() {
                     memory: None,
                     stemmer: None,
                     enable_hnsw: None,
+                    scoring: None,
                 },
             },
             SegmentPayloadSchemaType::Text,
@@ -1115,6 +1116,7 @@ fn text_index_params_full_fidelity_round_trip() {
                 language: SnowballLanguage::English,
             }),
             enable_hnsw: Some(false),
+            scoring: Some(true),
         },
     };
 
@@ -1159,6 +1161,10 @@ fn text_index_params_full_fidelity_round_trip() {
         ))
     );
     assert_eq!(engine_text.enable_hnsw, Some(false));
+    assert_eq!(
+        engine_text.scoring,
+        Some(segment_index::TextScoringParams::default())
+    );
 
     // Engine → FFI: converting back must echo every option.
     let echoed = qdrant_edge_ffi::PayloadIndexParams::from(engine);
@@ -1182,6 +1188,7 @@ fn text_index_params_full_fidelity_round_trip() {
         Some([Language::English, Language::Spanish])
     ));
     assert_eq!(custom, Some(vec!["qdrant".to_string()]));
+    assert_eq!(config.scoring, Some(true));
     assert!(matches!(config.memory, Some(Memory::Cold)));
     assert!(matches!(
         config.stemmer,
@@ -1264,4 +1271,49 @@ fn legacy_on_disk_flag_resolves_to_memory_on_read() {
         Some(Memory::Cached)
     ));
     assert!(reported_memory(keyword(None, None)).is_none());
+}
+
+/// A text query converts with the defaults filled in for each parameter left
+/// unset, and refuses a field that is not a valid JSON path.
+#[test]
+fn text_query_converts() {
+    use qdrant_edge_ffi::{Bm25Params, ScoringQuery};
+    use segment::index::field_index::full_text_index::Bm25Params as SegmentBm25Params;
+
+    let text = |field: &str, bm25| ScoringQuery::Text {
+        field: field.to_string(),
+        query: "quick fox".to_string(),
+        bm25,
+    };
+
+    let converted = shard::query::ScoringQuery::try_from(text(
+        "title",
+        Some(Bm25Params {
+            k: Some(2.0),
+            b: None,
+        }),
+    ))
+    .expect("text query must convert");
+    let shard::query::ScoringQuery::Text(converted) = converted else {
+        panic!("expected a text query, got {converted:?}");
+    };
+    assert_eq!(converted.field.to_string(), "title");
+    assert_eq!(converted.text, "quick fox");
+    assert_eq!(
+        converted.params,
+        SegmentBm25Params {
+            k1: 2.0,
+            b: SegmentBm25Params::default().b,
+        }
+    );
+
+    let defaults = shard::query::ScoringQuery::try_from(text("title", None)).unwrap();
+    let shard::query::ScoringQuery::Text(defaults) = defaults else {
+        panic!("expected a text query, got {defaults:?}");
+    };
+    assert_eq!(defaults.params, SegmentBm25Params::default());
+
+    let err = shard::query::ScoringQuery::try_from(text("bad[path", None))
+        .expect_err("an invalid field path must be refused");
+    assert!(matches!(err, EdgeError::InvalidArgument { .. }), "{err:?}");
 }

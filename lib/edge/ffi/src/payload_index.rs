@@ -199,6 +199,13 @@ pub struct TextIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// If true, record document lengths, so a [`ScoringQuery::Text`] can rank
+    /// points by BM25 over this field. Implies `phrase_matching`. Changing it
+    /// rebuilds the index. Default: false.
+    ///
+    /// [`ScoringQuery::Text`]: crate::ScoringQuery::Text
+    #[uniffi(default = None)]
+    pub scoring: Option<bool>,
 }
 
 /// Parameters of a bool payload index.
@@ -685,6 +692,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     memory,
                     stemmer,
                     enable_hnsw,
+                    scoring,
                 } = config;
                 let min_token_len = token_len("min_token_len", min_token_len)?;
                 let max_token_len = token_len("max_token_len", max_token_len)?;
@@ -712,8 +720,9 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     memory: memory.map(SegmentMemory::from),
                     stemmer: stemmer.map(segment_index::StemmingAlgorithm::from),
                     enable_hnsw,
-                    // Not exposed: edge does not run BM25 over a text index yet.
-                    scoring: None,
+                    scoring: scoring
+                        .unwrap_or_default()
+                        .then(segment_index::TextScoringParams::default),
                 }))
             }
             PayloadIndexParams::Bool { config } => {
@@ -866,8 +875,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     memory: _,
                     stemmer,
                     enable_hnsw,
-                    // Not exposed, see the conversion the other way.
-                    scoring: _,
+                    scoring,
                 } = params;
                 PayloadIndexParams::Text {
                     config: TextIndexParams {
@@ -881,6 +889,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                         memory,
                         stemmer: stemmer.map(Stemmer::from),
                         enable_hnsw,
+                        scoring: Some(scoring.is_some()),
                     },
                 }
             }

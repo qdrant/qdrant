@@ -11,6 +11,7 @@ use segment::data_types::order_by::{
     Direction as SegmentDirection, OrderBy as SegmentOrderBy, StartFrom as SegmentStartFrom,
 };
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
+use segment::index::field_index::full_text_index::Bm25Params as SegmentBm25Params;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
     Filter as SegmentFilter, SearchParams as SegmentSearchParams, WithPayloadInterface,
@@ -22,6 +23,7 @@ use segment::vector_storage::query::{
 };
 use shard::query::formula::FormulaInternal;
 use shard::query::query_enum::QueryEnum;
+use shard::query::text::TextScoringQuery;
 use shard::query::*;
 
 use crate::EdgeShard;
@@ -400,6 +402,40 @@ pub enum ScoringQuery {
     },
     /// Sample results at random.
     Sample { sample: Sample },
+    /// Rank points by BM25 over the text index of a payload field. The index
+    /// must be created with `scoring` on. Cannot rescore prefetches.
+    Text {
+        /// Payload field whose text index scores the points.
+        field: String,
+        /// Text to search for, tokenized by the field's text index.
+        query: String,
+        /// BM25 parameters; `None`/`null` for the defaults.
+        #[uniffi(default = None)]
+        bm25: Option<Bm25Params>,
+    },
+}
+
+/// BM25 parameters of a [`ScoringQuery::Text`]. Each `None`/`null` takes
+/// its default.
+#[derive(Clone, Copy, Debug, uniffi::Record)]
+pub struct Bm25Params {
+    /// Term frequency saturation, non-negative. Default: 1.2.
+    #[uniffi(default = None)]
+    pub k: Option<f32>,
+    /// Document length normalization, within `[0, 1]`. Default: 0.75.
+    #[uniffi(default = None)]
+    pub b: Option<f32>,
+}
+
+impl From<Bm25Params> for SegmentBm25Params {
+    fn from(params: Bm25Params) -> Self {
+        let Bm25Params { k, b } = params;
+        let default = SegmentBm25Params::default();
+        SegmentBm25Params {
+            k1: k.unwrap_or(default.k1),
+            b: b.unwrap_or(default.b),
+        }
+    }
 }
 
 impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
@@ -464,6 +500,13 @@ impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
             ScoringQuery::Sample { sample } => Ok(shard::query::ScoringQuery::Sample(
                 SampleInternal::from(sample),
             )),
+            ScoringQuery::Text { field, query, bm25 } => {
+                Ok(shard::query::ScoringQuery::Text(TextScoringQuery {
+                    field: crate::error::parse_json_path(&field)?,
+                    text: query,
+                    params: bm25.map(SegmentBm25Params::from).unwrap_or_default(),
+                }))
+            }
         }
     }
 }
@@ -845,7 +888,7 @@ fn assert_every_scoring_query_is_mapped(q: shard::query::ScoringQuery) {
             // [`Sample::Random`]
             SampleInternal::Random => {}
         },
-        // Not exposed: edge does not run BM25 over a text index yet.
+        // [`ScoringQuery::Text`]
         shard::query::ScoringQuery::Text(_) => {}
     }
 }

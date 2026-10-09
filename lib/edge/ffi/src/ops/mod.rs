@@ -28,9 +28,9 @@ pub use self::info::ShardInfo;
 #[cfg(feature = "matrix")]
 pub use self::matrix::{SearchMatrixRequest, SearchMatrixResponse};
 pub use self::query::{
-    ContextPair, Direction, FeedbackCoefficients, FeedbackItem, Fusion, OrderBy, Prefetch, Query,
-    QueryBatchRequest, QueryRequest, RecommendStrategy, Sample, ScoringQuery, SearchParams,
-    StartFrom,
+    Bm25Params, ContextPair, Direction, FeedbackCoefficients, FeedbackItem, Fusion, OrderBy,
+    Prefetch, Query, QueryBatchRequest, QueryRequest, RecommendStrategy, Sample, ScoringQuery,
+    SearchParams, StartFrom,
 };
 pub use self::retrieve::RetrieveRequest;
 pub use self::scroll::{ScrollRequest, ScrollResponse};

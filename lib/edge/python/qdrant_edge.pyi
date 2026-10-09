@@ -18,7 +18,7 @@ Payload = Dict[str, Any]
 JsonPath = str
 WithPayloadType = Union[bool, List[str], "PayloadSelector"]
 WithVectorType = Union[bool, List[str]]
-ScoringQueryType = Union["Query", "Fusion", "OrderBy", "Formula", "Sample", "Mmr"]
+ScoringQueryType = Union["Query", "Fusion", "OrderBy", "Formula", "Sample", "Mmr", "TextQuery"]
 ConditionType = Union[
     "FieldCondition",
     "IsEmptyCondition",
@@ -1530,6 +1530,7 @@ class TextIndexParams:
         stemmer: Optional["StemmingAlgorithm"] = None,
         enable_hnsw: Optional[bool] = None,
         memory: Optional["Memory"] = None,
+        scoring: Optional[bool] = None,
     ) -> None:
         """
         Create TextIndexParams.
@@ -1547,6 +1548,8 @@ class TextIndexParams:
             enable_hnsw: Whether to enable HNSW index for this field.
             memory: Memory placement of the payload index. Overrides the deprecated
                     on_disk flag if both are set.
+            scoring: Record document lengths, so a TextQuery can rank points by
+                     BM25 over this field. Implies phrase_matching. Default: False.
         """
         ...
 
@@ -1603,6 +1606,11 @@ class TextIndexParams:
     @property
     def memory(self) -> Optional["Memory"]:
         """Memory placement of the payload index, or None if not specified."""
+        ...
+
+    @property
+    def scoring(self) -> bool:
+        """Whether the index records document lengths, which BM25 needs."""
         ...
 
 class TokenizerType(Enum):
@@ -2386,6 +2394,66 @@ class Mmr:
     @property
     def candidates_limit(self) -> int:
         """Candidates limit."""
+        ...
+
+class TextQuery:
+    """BM25 over the text index of a payload field.
+
+    The field's index must be created with `TextIndexParams(scoring=True)`.
+    """
+
+    def __init__(
+        self,
+        field: JsonPath,
+        query: str,
+        bm25: Optional["Bm25Params"] = None,
+    ) -> None:
+        """
+        Create a TextQuery.
+
+        Args:
+            field: Payload field whose text index scores the points.
+            query: Text to search for, tokenized by the field's text index.
+            bm25: BM25 parameters. If absent, the defaults.
+        """
+        ...
+
+    @property
+    def field(self) -> JsonPath:
+        """Payload field whose text index scores the points."""
+        ...
+
+    @property
+    def query(self) -> str:
+        """Text to search for."""
+        ...
+
+    @property
+    def bm25(self) -> "Bm25Params":
+        """BM25 parameters."""
+        ...
+
+class Bm25Params:
+    """BM25 parameters of a TextQuery."""
+
+    def __init__(self, k: Optional[float] = None, b: Optional[float] = None) -> None:
+        """
+        Create Bm25Params.
+
+        Args:
+            k: Term frequency saturation, non-negative. Default: 1.2.
+            b: Document length normalization, within [0, 1]. Default: 0.75.
+        """
+        ...
+
+    @property
+    def k(self) -> float:
+        """Term frequency saturation."""
+        ...
+
+    @property
+    def b(self) -> float:
+        """Document length normalization."""
         ...
 
 class RecommendQuery:

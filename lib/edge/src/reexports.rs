@@ -6,7 +6,7 @@ mod reexports_from_qdrant_crates {
     pub use segment::data_types::index::{
         BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
         KeywordIndexParams, Language, SnowballLanguage, SnowballParams, StopwordsSet,
-        TextIndexParams, TokenizerType, UuidIndexParams,
+        TextIndexParams, TextScoringParams, TextScoringType, TokenizerType, UuidIndexParams,
     };
     pub use segment::data_types::load_profile::LoadProfile;
     pub use segment::data_types::modifier::Modifier;
@@ -16,6 +16,7 @@ mod reexports_from_qdrant_crates {
     pub use segment::data_types::vectors::{
         DEFAULT_VECTOR_NAME, NamedQuery, TypedMultiDenseVector,
     };
+    pub use segment::index::field_index::full_text_index::Bm25Params;
     pub use segment::index::payload_config::{PAYLOAD_INDEX_CONFIG_FILE, PayloadConfig};
     pub use segment::index::query_optimization::rescore_formula::parsed_formula::DecayKind;
     pub use segment::json_path::JsonPath;
@@ -59,6 +60,7 @@ mod reexports_from_qdrant_crates {
     };
     pub use shard::query::formula::{ExpressionInternal as Expression, FormulaInternal as Formula};
     pub use shard::query::query_enum::QueryEnum;
+    pub use shard::query::text::TextScoringQuery;
     pub use shard::query::{
         FusionInternal as Fusion, MmrInternal as Mmr, SampleInternal as Sample, ScoringQuery,
     };

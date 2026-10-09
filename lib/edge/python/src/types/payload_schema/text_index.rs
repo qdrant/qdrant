@@ -24,7 +24,7 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 impl PyTextIndexParams {
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None, memory = None))]
+    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None, memory = None, scoring = None))]
     pub fn new(
         tokenizer: Option<PyTokenizerType>,
         min_token_len: Option<usize>,
@@ -37,6 +37,7 @@ impl PyTextIndexParams {
         stemmer: Option<PyStemmingAlgorithm>,
         enable_hnsw: Option<bool>,
         memory: Option<PyMemory>,
+        scoring: Option<bool>,
     ) -> Self {
         Self(TextIndexParams {
             r#type: Default::default(),
@@ -51,8 +52,7 @@ impl PyTextIndexParams {
             memory: memory.map(segment::types::Memory::from),
             stemmer: stemmer.map(StemmingAlgorithm::from),
             enable_hnsw,
-            // Not exposed: edge does not run BM25 over a text index yet.
-            scoring: None,
+            scoring: scoring.unwrap_or_default().then(TextScoringParams::default),
         })
     }
 
@@ -113,6 +113,12 @@ impl PyTextIndexParams {
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
+
+    /// Whether the index records document lengths, which BM25 needs.
+    #[getter]
+    pub fn scoring(&self) -> bool {
+        self.0.scoring.is_some()
+    }
 }
 
 impl PyTextIndexParams {
@@ -131,7 +137,7 @@ impl PyTextIndexParams {
             on_disk: _,
             stemmer: _,
             enable_hnsw: _,
-            scoring: _, // not exposed: edge does not run BM25 over a text index yet
+            scoring: _,
         } = self.0;
     }
 }
