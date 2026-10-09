@@ -38,7 +38,7 @@ assert results[0].score > results[1].score
 
 # Without length normalization the long document loses its length penalty.
 flat = shard.query(QueryRequest(
-    limit=3, query=TextQuery("text", "fox", bm25=Bm25Params(b=0.0)),
+    limit=3, query=TextQuery("text", "fox", scoring=Bm25Params(b=0.0)),
 ))
 print(f"Text query, b=0: {flat}")
 assert [r.id for r in flat] == [3, 1]

@@ -4544,6 +4544,7 @@ fn text_index_with_params_filters_with_stopwords() {
 fn text_query_ranks_by_bm25() {
     use qdrant_edge_ffi::{
         Bm25Params, PayloadIndexParams, QueryRequest, ScoringQuery, TextIndexParams,
+        TextQueryScoring,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -4573,13 +4574,13 @@ fn text_query_ranks_by_bm25() {
         shard.update(op).expect("update failed");
     }
 
-    let text_query = |field: &str, query: &str, bm25| QueryRequest {
+    let text_query = |field: &str, query: &str, scoring| QueryRequest {
         limit: 3,
         offset: None,
         query: Some(ScoringQuery::Text {
             field: field.to_string(),
             query: query.to_string(),
-            bm25,
+            scoring,
         }),
         prefetches: vec![],
         with_vector: None,
@@ -4601,9 +4602,11 @@ fn text_query_ranks_by_bm25() {
         .query(text_query(
             "title",
             "two",
-            Some(Bm25Params {
-                k: None,
-                b: Some(2.0),
+            Some(TextQueryScoring::Bm25 {
+                params: Bm25Params {
+                    k: None,
+                    b: Some(2.0),
+                },
             }),
         ))
         .expect_err("b out of range must be refused");

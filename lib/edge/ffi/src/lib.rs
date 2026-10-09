@@ -26,7 +26,7 @@ pub use crate::ops::{
     FacetRequest, FacetResponse, FeedbackCoefficients, FeedbackItem, Fusion, Group, GroupId,
     GroupRequest, OrderBy, Prefetch, Query, QueryBatchRequest, QueryRequest, RecommendStrategy,
     RetrieveRequest, Sample, ScoringQuery, ScrollRequest, ScrollResponse, SearchParams,
-    SearchRequest, ShardInfo, StartFrom,
+    SearchRequest, ShardInfo, StartFrom, TextQueryScoring,
 };
 #[cfg(feature = "matrix")]
 pub use crate::ops::{SearchMatrixRequest, SearchMatrixResponse};

@@ -409,10 +409,18 @@ pub enum ScoringQuery {
         field: String,
         /// Text to search for, tokenized by the field's text index.
         query: String,
-        /// BM25 parameters; `None`/`null` for the defaults.
+        /// Parameters of the scorer, which must match the `scoring` of the
+        /// field's text index; `None`/`null` for the defaults.
         #[uniffi(default = None)]
-        bm25: Option<Bm25Params>,
+        scoring: Option<TextQueryScoring>,
     },
+}
+
+/// Parameters of one scorer of a [`ScoringQuery::Text`].
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum TextQueryScoring {
+    /// BM25 parameters, for a field scored with BM25.
+    Bm25 { params: Bm25Params },
 }
 
 /// BM25 parameters of a [`ScoringQuery::Text`]. Each `None`/`null` takes
@@ -500,13 +508,19 @@ impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
             ScoringQuery::Sample { sample } => Ok(shard::query::ScoringQuery::Sample(
                 SampleInternal::from(sample),
             )),
-            ScoringQuery::Text { field, query, bm25 } => {
-                Ok(shard::query::ScoringQuery::Text(TextScoringQuery {
-                    field: crate::error::parse_json_path(&field)?,
-                    text: query,
-                    params: bm25.map(SegmentBm25Params::from).unwrap_or_default(),
-                }))
-            }
+            ScoringQuery::Text {
+                field,
+                query,
+                scoring,
+            } => Ok(shard::query::ScoringQuery::Text(TextScoringQuery {
+                field: crate::error::parse_json_path(&field)?,
+                text: query,
+                params: scoring
+                    .map(|scoring| match scoring {
+                        TextQueryScoring::Bm25 { params } => SegmentBm25Params::from(params),
+                    })
+                    .unwrap_or_default(),
+            })),
         }
     }
 }

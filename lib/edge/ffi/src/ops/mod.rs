@@ -30,7 +30,7 @@ pub use self::matrix::{SearchMatrixRequest, SearchMatrixResponse};
 pub use self::query::{
     Bm25Params, ContextPair, Direction, FeedbackCoefficients, FeedbackItem, Fusion, OrderBy,
     Prefetch, Query, QueryBatchRequest, QueryRequest, RecommendStrategy, Sample, ScoringQuery,
-    SearchParams, StartFrom,
+    SearchParams, StartFrom, TextQueryScoring,
 };
 pub use self::retrieve::RetrieveRequest;
 pub use self::scroll::{ScrollRequest, ScrollResponse};

@@ -690,12 +690,12 @@ pub struct PyTextQuery(TextScoringQuery);
 #[pymethods]
 impl PyTextQuery {
     #[new]
-    #[pyo3(signature = (field, query, bm25 = None))]
-    pub fn new(field: PyJsonPath, query: String, bm25: Option<PyBm25Params>) -> Self {
+    #[pyo3(signature = (field, query, scoring = None))]
+    pub fn new(field: PyJsonPath, query: String, scoring: Option<PyBm25Params>) -> Self {
         Self(TextScoringQuery {
             field: JsonPath::from(field),
             text: query,
-            params: bm25.map(Bm25Params::from).unwrap_or_default(),
+            params: scoring.map(Bm25Params::from).unwrap_or_default(),
         })
     }
 
@@ -710,7 +710,7 @@ impl PyTextQuery {
     }
 
     #[getter]
-    pub fn bm25(&self) -> PyBm25Params {
+    pub fn scoring(&self) -> PyBm25Params {
         PyBm25Params(self.0.params)
     }
 

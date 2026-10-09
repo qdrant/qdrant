@@ -1277,20 +1277,22 @@ fn legacy_on_disk_flag_resolves_to_memory_on_read() {
 /// unset, and refuses a field that is not a valid JSON path.
 #[test]
 fn text_query_converts() {
-    use qdrant_edge_ffi::{Bm25Params, ScoringQuery};
+    use qdrant_edge_ffi::{Bm25Params, ScoringQuery, TextQueryScoring};
     use segment::index::field_index::full_text_index::Bm25Params as SegmentBm25Params;
 
-    let text = |field: &str, bm25| ScoringQuery::Text {
+    let text = |field: &str, scoring| ScoringQuery::Text {
         field: field.to_string(),
         query: "quick fox".to_string(),
-        bm25,
+        scoring,
     };
 
     let converted = shard::query::ScoringQuery::try_from(text(
         "title",
-        Some(Bm25Params {
-            k: Some(2.0),
-            b: None,
+        Some(TextQueryScoring::Bm25 {
+            params: Bm25Params {
+                k: Some(2.0),
+                b: None,
+            },
         }),
     ))
     .expect("text query must convert");

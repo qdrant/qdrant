@@ -2406,7 +2406,7 @@ class TextQuery:
         self,
         field: JsonPath,
         query: str,
-        bm25: Optional["Bm25Params"] = None,
+        scoring: Optional["Bm25Params"] = None,
     ) -> None:
         """
         Create a TextQuery.
@@ -2414,7 +2414,8 @@ class TextQuery:
         Args:
             field: Payload field whose text index scores the points.
             query: Text to search for, tokenized by the field's text index.
-            bm25: BM25 parameters. If absent, the defaults.
+            scoring: Parameters of the scorer, which must match the scoring of
+                     the field's text index. If absent, the defaults.
         """
         ...
 
@@ -2429,8 +2430,8 @@ class TextQuery:
         ...
 
     @property
-    def bm25(self) -> "Bm25Params":
-        """BM25 parameters."""
+    def scoring(self) -> "Bm25Params":
+        """Parameters of the scorer."""
         ...
 
 class Bm25Params:
