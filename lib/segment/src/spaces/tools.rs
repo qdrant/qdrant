@@ -12,7 +12,35 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 /// renormalizing stable, while small enough to not affect regular normalizations.
 #[inline]
 pub fn is_length_zero_or_normalized(length: f32) -> bool {
-    length < f32::EPSILON || (length - 1.0).abs() <= 1.0e-6
+    length == 0.0 || (length - 1.0).abs() <= 1.0e-6
+}
+/// This is a fallback for cosine normalization when the ordinary `f32` squared-norm calculation
+/// underflows to zero
+///
+/// It scales by the maximum absolute component before calculating the norm.
+///
+/// A genuinely zero vector is left unchanged.
+pub fn cosine_preprocess_underflowing_norm(vector: &mut [f32]) {
+    let max_abs = vector.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+
+    if max_abs == 0.0 {
+        return;
+    }
+
+    let scaled_length = vector
+        .iter()
+        .map(|x| {
+            let scaled = *x / max_abs;
+            scaled * scaled
+        })
+        .sum::<f32>()
+        .sqrt();
+
+    let inv_length = 1.0 / scaled_length;
+
+    for x in vector {
+        *x = (*x / max_abs) * inv_length;
+    }
 }
 
 pub fn peek_top_smallest_iterable<I, E: Ord>(elements: I, top: usize) -> Vec<E>
