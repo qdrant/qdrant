@@ -21,7 +21,7 @@ use crate::operations::point_ops::{
 };
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::VectorsConfig;
+use crate::operations::types::{CollectionError, VectorsConfig};
 use crate::operations::universal_query::shard_query::{
     ScoringQuery, ShardPrefetch, ShardQueryRequest,
 };
@@ -248,6 +248,40 @@ async fn test_limit_offset_with_prefetch() {
     // This was zero before <https://github.com/qdrant/qdrant/pull/6412>
     let points = do_query(45, 10).await;
     assert_eq!(points.len(), 5, "expected 5 points, got {}", points.len());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_after_collection_stops_returns_not_found() {
+    let collection = fixture().await;
+    collection.stop_gracefully().await;
+
+    let result = collection
+        .query(
+            ShardQueryRequest {
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                    NamedQuery::default_dense(vec![0.1, 0.2, 0.3, 0.4]),
+                ))),
+                prefetches: vec![],
+                filter: None,
+                params: None,
+                offset: 0,
+                limit: 1,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(CollectionError::NotFound { .. })),
+        "expected a not-found error, got {result:?}"
+    );
 }
 
 fn dummy_on_replica_failure() -> ChangePeerFromState {
