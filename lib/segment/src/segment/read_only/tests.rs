@@ -23,6 +23,7 @@ use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, VectorInterna
 use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry, SegmentEntry as _, StorageSegmentEntry as _,
 };
+use crate::id_tracker::point_moves::PointMovesMode;
 use crate::json_path::JsonPath;
 use crate::segment::Segment;
 use crate::segment::read_only::{ReadOnlySegment, build_cached_fs_async};
@@ -1413,6 +1414,7 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
         mutable.uuid,
         None,
         None,
+        PointMovesMode::Ignore,
         &stop,
     )
     .and_then(|staged| staged.finish(&MmapFs))

@@ -31,7 +31,8 @@ pub use edge_shard::EdgeShard;
 #[cfg(feature = "serverless")]
 pub use read_only::{
     ListedSegment, LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator,
-    ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, SegmentEnumerator,
+    ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, SegmentEnumerator, SegmentListing,
+    UnusableSegmentState,
 };
 #[cfg(feature = "serverless")]
 pub use read_view::EdgeShardReadWithCancellation;

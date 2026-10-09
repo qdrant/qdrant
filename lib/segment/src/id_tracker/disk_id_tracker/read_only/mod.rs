@@ -15,6 +15,8 @@
 mod id_tracker_read;
 mod lifecycle;
 mod live_reload;
+#[cfg(test)]
+mod moves_tests;
 mod versions;
 
 use std::path::PathBuf;
@@ -29,6 +31,7 @@ use super::on_disk_format::{e2i_path, i2e_path, is_uuid_path};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
+use crate::id_tracker::point_moves::SlotMoves;
 
 /// Read-only id tracker backed by the on-disk format files, read lazily
 /// through a [`UniversalRead`] backend.
@@ -46,6 +49,21 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
     /// Full deleted set. NOT loaded on open or by point lookups. Materialized on
     /// the first search/scroll/count/reload and reused; invalidated by `live_reload`.
     deleted_full: OnceLock<BitVec>,
+
+    /// Point moves, when this tracker resolves them. Deletion is then answered from
+    /// [`DiskMoves::effective`] instead of the file, see
+    /// [`point_moves`](crate::id_tracker::point_moves).
+    moves: Option<Box<DiskMoves<S>>>,
+}
+
+/// The point moves of a disk-resident tracker that resolves them.
+#[derive(Debug)]
+pub(super) struct DiskMoves<S: UniversalRead> {
+    pub(super) moves: SlotMoves<S>,
+    /// The deleted mask as last read: the baseline new tombstones are found against.
+    pub(super) raw: BitVec,
+    /// What reads see: the mask without the held tombstones, plus the slots settled moves masked.
+    pub(super) effective: BitVec,
 }
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
@@ -76,6 +94,9 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
 
     /// The full deleted set, if already materialized; never triggers the load.
     pub fn deleted_full_if_materialized(&self) -> Option<&BitVec> {
-        self.deleted_full.get()
+        match &self.moves {
+            Some(moves) => Some(&moves.effective),
+            None => self.deleted_full.get(),
+        }
     }
 }
