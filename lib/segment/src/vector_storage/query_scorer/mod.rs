@@ -21,7 +21,7 @@ pub mod turbo_multi_query_scorer;
 pub mod turbo_query_scorer;
 
 pub trait QueryScorer {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType;
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType>;
 
     /// Score a batch of points
     ///
@@ -51,7 +51,7 @@ pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
     debug_assert_eq!(ids.len(), scores.len());
 
     for (idx, id) in ids.iter().enumerate() {
-        scores[idx] = this.score_stored(*id);
+        scores[idx] = this.score_stored(*id)?;
     }
     Ok(())
 }

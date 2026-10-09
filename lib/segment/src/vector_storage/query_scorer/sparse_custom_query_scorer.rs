@@ -64,17 +64,14 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> Query
     for SparseCustomQueryScorer<'_, TVectorStorage, TQuery>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self
-            .vector_storage
-            .get_sparse::<Random>(idx)
-            .expect("Failed to get sparse vector");
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        let stored = self.vector_storage.get_sparse::<Random>(idx)?;
 
         // not exactly correct for Gridstore where the indices are compressed into u8
         self.hw
             .vector_io_read(stored.indices.len() + stored.values.len());
 
-        self.score(&stored)
+        Ok(self.score(&stored))
     }
 
     fn score_stored_batch(

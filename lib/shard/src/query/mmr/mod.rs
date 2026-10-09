@@ -76,13 +76,13 @@ pub fn mmr_from_points_with_vector(
     let similarity_matrix = similarity_matrix(&volatile_storage, vectors)?;
 
     // compute MMR
-    Ok(maximal_marginal_relevance(
+    maximal_marginal_relevance(
         candidates,
         query_similarities,
         similarity_matrix,
         mmr.lambda.0,
         limit,
-    ))
+    )
 }
 
 /// Creates a volatile (in-memory and not persistent) vector storage and inserts the vectors in the provided order.
@@ -184,10 +184,10 @@ fn maximal_marginal_relevance(
     mut similarity_matrix: LazyMatrix,
     lambda: f32,
     limit: usize,
-) -> Vec<ScoredPoint> {
+) -> OperationResult<Vec<ScoredPoint>> {
     let num_candidates = candidates.len();
     if num_candidates == 0 || limit == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let mut selected_indices = Vec::with_capacity(limit.min(num_candidates));
@@ -207,7 +207,7 @@ fn maximal_marginal_relevance(
     while selected_indices.len() < limit && !remaining_indices.is_empty() {
         let best_candidate = remaining_indices
             .iter()
-            .map(|&candidate_idx| {
+            .map(|&candidate_idx| -> OperationResult<_> {
                 let relevance_score = query_similarities[candidate_idx];
 
                 debug_assert!(
@@ -222,16 +222,18 @@ fn maximal_marginal_relevance(
                     .map(|selected_idx| {
                         similarity_matrix.get_similarity(candidate_idx, *selected_idx)
                     })
-                    .max_by_key(|&sim| OrderedFloat(sim))
+                    .process_results(|sims| sims.max_by_key(|&sim| OrderedFloat(sim)))?
                     .unwrap_or(0.0);
 
                 // Calculate MMR score: λ * relevance - (1 - λ) * max_similarity_to_selected
                 let mmr_score =
                     lambda * relevance_score - (1.0 - lambda) * max_similarity_to_selected;
 
-                (candidate_idx, mmr_score)
+                Ok((candidate_idx, mmr_score))
             })
-            .max_by_key(|(_candidate_idx, mmr_score)| OrderedFloat(*mmr_score));
+            .process_results(|scored| {
+                scored.max_by_key(|(_candidate_idx, mmr_score)| OrderedFloat(*mmr_score))
+            })?;
 
         if let Some((selected_idx, _mmr_score)) = best_candidate {
             // Select the best candidate and remove from remaining
@@ -243,7 +245,7 @@ fn maximal_marginal_relevance(
     }
 
     // Convert selected indices to ScoredPoint results
-    selected_indices
+    Ok(selected_indices
         .into_iter()
         .map(|idx| {
             // Use original score, already postprocessed.
@@ -258,5 +260,5 @@ fn maximal_marginal_relevance(
             //        we are only interested in the selection of points, not the score itself.
             candidates[idx].clone()
         })
-        .collect()
+        .collect())
 }

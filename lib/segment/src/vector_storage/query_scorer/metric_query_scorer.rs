@@ -71,10 +71,13 @@ impl<
 > QueryScorer for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
         self.hw.cpu(1);
         self.hw.vector_io_read(1);
-        TMetric::similarity(&self.query, &self.vector_storage.get_dense::<Random>(idx))
+        Ok(TMetric::similarity(
+            &self.query,
+            &self.vector_storage.get_dense::<Random>(idx),
+        ))
     }
 
     #[inline]

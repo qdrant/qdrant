@@ -115,7 +115,7 @@ fn score_unbatched(storage: &VectorStorageEnum, ids: impl Iterator<Item = PointO
     let scorer = new_raw_scorer(random_query(), storage).expect("scorer created");
     let mut acc = 0.0;
     for id in ids {
-        acc += scorer.score_point(id);
+        acc += scorer.score_point(id).unwrap();
     }
     black_box(acc);
 }
