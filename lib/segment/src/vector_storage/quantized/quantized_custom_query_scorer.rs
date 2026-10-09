@@ -95,7 +95,7 @@ where
                     storage.score(query, &vector) // inhibit `rustfmt`
                 });
             })
-        });
+        })?;
         Ok(())
     }
 

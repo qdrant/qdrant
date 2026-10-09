@@ -110,7 +110,7 @@ where
             ids,
             |score_fn| score_fn(&self.query),
             scores,
-        );
+        )?;
         Ok(())
     }
 

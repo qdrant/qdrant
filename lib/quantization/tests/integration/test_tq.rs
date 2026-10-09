@@ -1255,7 +1255,9 @@ mod tests {
                         .map(|&id| encoded.score_point(&encoded_query, id))
                         .collect();
                     let mut batched = vec![0.0f32; ids.len()];
-                    encoded.score_points(&encoded_query, ids, &mut batched);
+                    encoded
+                        .score_points(&encoded_query, ids, &mut batched)
+                        .unwrap();
                     assert_eq!(
                         expected, batched,
                         "score_points mismatch for bits={bits:?}, mode={mode:?}, distance={distance_type:?}",

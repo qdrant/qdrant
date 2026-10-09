@@ -71,11 +71,10 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 
     /// Read one vector with the given access pattern.
-    fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
+    fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> UioResult<Cow<'_, [u8]>> {
         let size = self.quantized_vector_size.get() as u64;
         self.storage
             .read(ReadRange::new(size * u64::from(key), size), P::default())
-            .expect("vector read from quantized storage failed")
     }
 
     /// Run `f` for each vector in the batch, batching the underlying reads.
@@ -119,13 +118,21 @@ impl<S: UniversalRead> QuantizedStorage<S> {
 
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
             let sequential = is_read_with_prefetch_efficient(keys);
+            let mut failed = None;
             let vectors = if sequential {
-                let iter = keys.iter().map(|&key| self.read_vector::<Sequential>(key));
+                let iter = keys
+                    .iter()
+                    .map(|&key| record_failure(&mut failed, self.read_vector::<Sequential>(key)));
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             } else {
-                let iter = keys.iter().map(|&key| self.read_vector::<Random>(key));
+                let iter = keys
+                    .iter()
+                    .map(|&key| record_failure(&mut failed, self.read_vector::<Random>(key)));
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             };
+            if let Some(err) = failed {
+                return Err(err.into());
+            }
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
@@ -294,6 +301,14 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
     }
 }
 
+/// Keeps a batch going past a failed read so the caller can report the first one.
+fn record_failure<'a, E>(failed: &mut Option<E>, read: Result<Cow<'a, [u8]>, E>) -> Cow<'a, [u8]> {
+    read.unwrap_or_else(|err| {
+        failed.get_or_insert(err);
+        Cow::Borrowed(&[])
+    })
+}
+
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn prefers_contiguous_reads() -> bool {
         // Exhaustive on purpose: a new backend must decide here rather than
@@ -337,16 +352,16 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.for_each_in_batch(offsets, |idx, data| callback(idx, Cow::Borrowed(data)))
-            .expect("vectors exist and are read correctly");
+            .map_err(std::io::Error::other)
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         let size = self.quantized_vector_size.get() as u64;
         let range = |run: &ConsecutiveRun| {
             ReadRange::new(size * u64::from(run.start), size * run.len as u64)
@@ -358,13 +373,13 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
             // don't wait on each read before submitting the next.  Runs come
             // back in completion order; the access pattern is ignored.
             let runs = consecutive_runs(offsets).map(|run| ((run.first, run.len), range(&run)));
-            self.storage
+            return self
+                .storage
                 .read_batch(runs, Random, |(first, len), bytes: &[u8]| {
                     callback(first, len, Cow::Borrowed(bytes));
                     UioResult::Ok(())
                 })
-                .expect("vectors read from quantized storage failed");
-            return;
+                .map_err(std::io::Error::other);
         }
 
         // Mmap serves a run from either of two mappings; the sequential one
@@ -375,9 +390,10 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
             } else {
                 self.storage.read(range(&run), Random)
             };
-            let bytes = bytes.expect("vectors read from quantized storage failed");
+            let bytes = bytes.map_err(std::io::Error::other)?;
             callback(run.first, run.len, bytes);
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -504,28 +520,37 @@ mod tests {
 
         for ids in [&ascending, &scattered, &descending, &mixed, &empty] {
             let mut seen = vec![false; ids.len()];
-            storage.for_each_run(ids, |first, len, bytes| {
-                assert_eq!(
-                    bytes.len(),
-                    len * VECTOR_SIZE,
-                    "run bytes must span the run"
-                );
-                for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
-                    let offset = ids[first + i];
-                    assert!(!seen[first + i], "offset {offset} served twice");
-                    seen[first + i] = true;
+            storage
+                .for_each_run(ids, |first, len, bytes| {
                     assert_eq!(
-                        vector.as_slice(),
-                        storage.get_vector_data(offset).as_ref(),
-                        "run bytes diverge at offset {offset}",
+                        bytes.len(),
+                        len * VECTOR_SIZE,
+                        "run bytes must span the run"
                     );
-                }
-            });
+                    for (i, vector) in bytes.as_chunks::<VECTOR_SIZE>().0.iter().enumerate() {
+                        let offset = ids[first + i];
+                        assert!(!seen[first + i], "offset {offset} served twice");
+                        seen[first + i] = true;
+                        assert_eq!(
+                            vector.as_slice(),
+                            storage.get_vector_data(offset).as_ref(),
+                            "run bytes diverge at offset {offset}",
+                        );
+                    }
+                })
+                .unwrap();
             assert!(
                 seen.iter().all(|&served| served),
                 "every offset must be served"
             );
         }
+    }
+
+    /// A read past the stored vectors fails the way an unreachable object store does.
+    fn reads_past_the_end_fail<S: UniversalRead>(storage: &QuantizedStorage<S>) {
+        let ids = [0, COUNT as PointOffsetType + 4];
+        assert!(storage.for_each_batch(&ids, |_, _| {}).is_err());
+        assert!(storage.for_each_run(&ids, |_, _, _| {}).is_err());
     }
 
     /// `COUNT` vectors of `VECTOR_SIZE` bytes, each filled with a byte pattern
@@ -547,6 +572,7 @@ mod tests {
         let storage = QuantizedStorage::<MmapFile>::from_file(&MmapFs, &path, VECTOR_SIZE).unwrap();
         assert!(!MmapFile::kind().can_be_async());
         runs_match_per_point_reads(&storage);
+        reads_past_the_end_fail(&storage);
     }
 
     /// Pipelined backend: the whole batch of runs goes through `read_batch`.
@@ -568,5 +594,6 @@ mod tests {
                 .unwrap();
         assert!(DiskCache::<MmapFile>::kind().can_be_async());
         runs_match_per_point_reads(&storage);
+        reads_past_the_end_fail(&storage);
     }
 }
