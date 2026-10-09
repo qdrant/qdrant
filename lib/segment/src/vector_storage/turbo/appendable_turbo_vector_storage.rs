@@ -317,7 +317,7 @@ impl TurboScoring for AppendableMmapTurboVectorStorage {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         shared::score_query_batch(
             &self.storage,
             &self.quantizer,
