@@ -185,6 +185,10 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
     assert!(ids.contains(&ExtendedPointId::NumId(501)));
 }
 
+/// Same Windows caveat as [`store`]: the writer's stores rewrite files its own lookups map.
+#[cfg(not(windows))]
+mod moves;
+
 /// The store tests cannot run on Windows: the leader's writable storage
 /// preallocates chunk files, the append-only writer cuts them back to end at
 /// the data (its append offset is a compare-and-swap token), and Windows
@@ -224,7 +228,7 @@ mod store {
     /// storage empty in append-only mode — the fixture points carry no payloads,
     /// so nothing is lost. Stands in for creating segments with append-only
     /// components from the start, which nothing does yet.
-    fn recreate_payload_storages_append_only(shard_dir: &Path) {
+    pub(super) fn recreate_payload_storages_append_only(shard_dir: &Path) {
         for segment in fs_err::read_dir(shard_dir.join(SEGMENTS_PATH)).unwrap() {
             let segment_path = segment.unwrap().path();
             let payload_storage = segment_path.join("payload_storage");
@@ -236,7 +240,7 @@ mod store {
         }
     }
 
-    fn store_batch(
+    pub(super) fn store_batch(
         op_num: SeqNumberType,
         points: Vec<PointStructPersisted>,
     ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {

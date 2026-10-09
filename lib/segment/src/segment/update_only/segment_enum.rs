@@ -8,6 +8,7 @@ use common::universal_io::UniversalAppendFs;
 
 use super::{AppendableSegment, DeleteOnlySegment, WriterIdTrackerState};
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::point_moves::Retirement;
 use crate::types::{PointIdType, SegmentConfig};
 
 /// A segment opened for writing: appendable, or accepting deletes only.
@@ -55,6 +56,16 @@ impl<Fs: UniversalAppendFs> UpdateOnlySegmentEnum<Fs> {
         match self {
             Self::DeleteOnly(segment) => segment.tombstone_points(points),
             Self::Appendable(segment) => segment.tombstone_points(points),
+        }
+    }
+
+    /// Retire the points of `retirements`, recording the moves among them in the segment's move
+    /// log before the tombstones: see [`DeleteOnlySegment::retire_points`] and
+    /// [`AppendableSegment::retire_points`].
+    pub fn retire_points(&mut self, retirements: &[Retirement]) -> OperationResult<()> {
+        match self {
+            Self::DeleteOnly(segment) => segment.retire_points(retirements),
+            Self::Appendable(segment) => segment.retire_points(retirements),
         }
     }
 }

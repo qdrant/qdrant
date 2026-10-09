@@ -17,6 +17,7 @@ use super::mappings_storage::mappings_path;
 use super::versions_storage::{VERSION_ELEMENT_SIZE, versions_path, write_version};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::DELETED_POINT_VERSION;
+use crate::id_tracker::point_moves::{MoveEntry, PointMovesWriter, Retirement, moved_out_entries};
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A mapping mutation to record: claim a slot for an external id, or retire it.
@@ -65,6 +66,8 @@ pub struct UpdateOnlyAppendableIdTracker {
     /// about where its last one ends. Appending here rather than at the end of the file makes a
     /// file that ends elsewhere a conflict.
     mappings_end: u64,
+    /// The segment's move log, see [`point_moves`](crate::id_tracker::point_moves).
+    moves: PointMovesWriter,
 }
 
 impl UpdateOnlyAppendableIdTracker {
@@ -92,8 +95,10 @@ impl UpdateOnlyAppendableIdTracker {
         pending_inserts: impl IntoIterator<Item = PointIdType>,
         mappings_end: u64,
     ) -> OperationResult<Self> {
+        let segment_path = segment_path.into();
         let mut tracker = Self {
-            segment_path: segment_path.into(),
+            moves: PointMovesWriter::new(&segment_path),
+            segment_path,
             max_claimed_internal_id,
             mappings_end,
         };
@@ -302,6 +307,27 @@ impl UpdateOnlyAppendableIdTracker {
         pending_inserts: impl IntoIterator<Item = PointIdType>,
     ) -> OperationResult<()> {
         self.delete_points(fs, pending_inserts)
+    }
+
+    /// Durably append `entries` to the segment's move log.
+    pub fn record_moves<Fs: UniversalAppendFs>(
+        &mut self,
+        fs: &Fs,
+        entries: &[MoveEntry],
+    ) -> OperationResult<()> {
+        self.moves.append(fs, entries)
+    }
+
+    /// Retire the points of `retirements`. The moved-out records of the moves among them are
+    /// appended first and the `Delete` entries second, so a follower that reads a tombstone can
+    /// also read the move it belongs to.
+    pub fn retire_points<Fs: UniversalAppendFs>(
+        &mut self,
+        fs: &Fs,
+        retirements: &[Retirement],
+    ) -> OperationResult<()> {
+        self.moves.append(fs, &moved_out_entries(retirements))?;
+        self.delete_points(fs, retirements.iter().map(|retirement| retirement.id))
     }
 
     /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never
