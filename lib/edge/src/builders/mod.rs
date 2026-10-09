@@ -12,6 +12,8 @@ pub mod retrieve_request;
 pub mod scroll_request;
 pub mod search_matrix_request;
 pub mod search_request;
+pub mod text_index_params;
+pub mod text_query;
 
 pub use count_request::CountRequestBuilder;
 pub use edge_config::EdgeConfigBuilder;
@@ -25,3 +27,5 @@ pub use retrieve_request::RetrieveRequestBuilder;
 pub use scroll_request::ScrollRequestBuilder;
 pub use search_matrix_request::SearchMatrixRequestBuilder;
 pub use search_request::SearchRequestBuilder;
+pub use text_index_params::TextIndexParamsBuilder;
+pub use text_query::TextQueryBuilder;

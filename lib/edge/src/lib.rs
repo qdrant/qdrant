@@ -21,6 +21,7 @@ pub use builders::{
     CountRequestBuilder, EdgeConfigBuilder, EdgeSparseVectorParamsBuilder, EdgeVectorParamsBuilder,
     FacetRequestBuilder, GroupRequestBuilder, PrefetchBuilder, QueryRequestBuilder,
     RetrieveRequestBuilder, ScrollRequestBuilder, SearchMatrixRequestBuilder, SearchRequestBuilder,
+    TextIndexParamsBuilder, TextQueryBuilder,
 };
 pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;

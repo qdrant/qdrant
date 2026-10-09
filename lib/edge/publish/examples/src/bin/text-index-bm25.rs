@@ -6,8 +6,8 @@ use examples::load_new_shard;
 use qdrant_edge::external::serde_json::json;
 use qdrant_edge::{
     Bm25Params, CreateIndex, FieldIndexOperations, PayloadFieldSchema, PayloadSchemaParams,
-    PointInsertOperations, PointOperations, PointStruct, QueryRequestBuilder, ScoringQuery,
-    TextIndexParams, TextScoringParams, TextScoringQuery, UpdateOperation,
+    PointInsertOperations, PointOperations, PointStruct, QueryRequestBuilder,
+    TextIndexParamsBuilder, TextQueryBuilder, TextQueryScoring, TextScoringParams, UpdateOperation,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -18,10 +18,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         FieldIndexOperations::CreateIndex(CreateIndex {
             field_name: "text".try_into().unwrap(),
             field_schema: Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
-                TextIndexParams {
-                    scoring: Some(TextScoringParams::default()),
-                    ..TextIndexParams::default()
-                },
+                TextIndexParamsBuilder::new()
+                    .scoring(TextScoringParams::default())
+                    .build(),
             ))),
         }),
     ))?;
@@ -51,11 +50,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let result = shard.query(
         QueryRequestBuilder::new(10)
-            .query(ScoringQuery::Text(TextScoringQuery {
-                field: "text".try_into().unwrap(),
-                text: "clever fox".to_string(),
-                params: Bm25Params::default(),
-            }))
+            .query(TextQueryBuilder::new("text".try_into().unwrap(), "clever fox").build())
             .build(),
     )?;
 
@@ -63,6 +58,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{point:?}");
     }
     let ids: Vec<_> = result.iter().map(|point| point.id).collect();
+    assert_eq!(ids, [3.into(), 1.into()]);
+
+    // Without length normalization the long document loses its length penalty.
+    let flat = shard.query(
+        QueryRequestBuilder::new(10)
+            .query(
+                TextQueryBuilder::new("text".try_into().unwrap(), "fox")
+                    .scoring(TextQueryScoring::Bm25(Bm25Params {
+                        k: None,
+                        b: Some(0.0),
+                    }))
+                    .build(),
+            )
+            .build(),
+    )?;
+    let ids: Vec<_> = flat.iter().map(|point| point.id).collect();
     assert_eq!(ids, [3.into(), 1.into()]);
 
     Ok(())

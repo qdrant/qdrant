@@ -4,8 +4,9 @@ mod reexports_from_qdrant_crates {
     pub use segment::data_types::facets::{FacetHit, FacetResponse, FacetValue, FacetValueHit};
     pub use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
     pub use segment::data_types::index::{
-        BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
-        KeywordIndexParams, Language, SnowballLanguage, SnowballParams, StopwordsSet,
+        BoolIndexParams, DatetimeIndexParams, DisabledStemmerParams, FloatIndexParams,
+        GeoIndexParams, IntegerIndexParams, KeywordIndexParams, Language, NoStemmer, Snowball,
+        SnowballLanguage, SnowballParams, StemmingAlgorithm, StopwordsInterface, StopwordsSet,
         TextIndexParams, TextScoringParams, TextScoringType, TokenizerType, UuidIndexParams,
     };
     pub use segment::data_types::load_profile::LoadProfile;
@@ -16,7 +17,6 @@ mod reexports_from_qdrant_crates {
     pub use segment::data_types::vectors::{
         DEFAULT_VECTOR_NAME, NamedQuery, TypedMultiDenseVector,
     };
-    pub use segment::index::field_index::full_text_index::Bm25Params;
     pub use segment::index::payload_config::{PAYLOAD_INDEX_CONFIG_FILE, PayloadConfig};
     pub use segment::index::query_optimization::rescore_formula::parsed_formula::DecayKind;
     pub use segment::json_path::JsonPath;
