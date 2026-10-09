@@ -278,7 +278,6 @@ impl GraphLayersBuilder {
         self.hnsw_m
     }
 
-    #[cfg(feature = "gpu")]
     pub fn ef_construct(&self) -> usize {
         self.ef_construct
     }

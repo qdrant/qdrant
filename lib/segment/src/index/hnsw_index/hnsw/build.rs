@@ -28,10 +28,15 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod additional_links;
-mod main_graph;
+#[cfg(feature = "gpu")]
+mod gpu_builder;
+mod graph_builder;
+mod hnsw_builder;
+mod pipnn_builder;
+mod remote_builder;
 
 use self::additional_links::{additional_links_fields, build_additional_links};
-use self::main_graph::build_main_graph_on_cpu;
+use self::graph_builder::{GraphBuildContext, GraphBuilder as _, GraphBuilderEnum};
 
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
@@ -79,7 +84,7 @@ impl HNSWIndex {
         let total_vector_count = vector_storage_ref.total_vector_count();
         let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
 
-        let mut build_main_graph = config.m > 0;
+        let build_main_graph = config.m > 0;
         if !build_main_graph {
             debug!("skip building main HNSW graph");
         }
@@ -90,10 +95,7 @@ impl HNSWIndex {
         );
 
         // Progress subtasks
-        let progress_migrate = build_main_graph.then(|| progress.subtask("migrate"));
-        let progress_main_graph = build_main_graph.then(|| progress.subtask("main_graph"));
-        let additional_links_params =
-            additional_links_fields(&payload_index_ref, payload_m, &progress);
+        let additional_links_fields = additional_links_fields(&payload_index_ref, payload_m);
 
         let old_index = old_indices
             .iter()
@@ -113,18 +115,8 @@ impl HNSWIndex {
         // Build main index graph
         let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
-        #[cfg(feature = "gpu")]
-        let gpu_name_postfix = if let Some(gpu_device) = gpu_device {
-            format!(" and GPU {}", gpu_device.device().name())
-        } else {
-            Default::default()
-        };
-        #[cfg(not(feature = "gpu"))]
-        let gpu_name_postfix = "";
-        #[cfg(not(feature = "gpu"))]
-        let _ = gpu_device;
         debug!(
-            "building HNSW for {total_vector_count} vectors with {} CPUs{gpu_name_postfix}",
+            "building HNSW for {total_vector_count} vectors with {} CPUs",
             permit.num_cpus,
         );
 
@@ -135,6 +127,24 @@ impl HNSWIndex {
                 .unwrap_or(0)
                 * 10,
         );
+
+        let pool = build_thread_pool(permit.num_cpus as usize)?;
+        let context = GraphBuildContext {
+            id_tracker: id_tracker_ref.deref(),
+            vector_storage: &vector_storage_ref,
+            quantized_vectors: &quantized_vectors_ref,
+            pool: &pool,
+            progress: &progress,
+            gpu_device,
+            stopped,
+        };
+
+        let mut graph_builder = GraphBuilderEnum::select(
+            context,
+            build_main_graph || !additional_links_fields.is_empty(),
+            num_entries,
+        )?;
+
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             HnswM::new(config.m, config.m0),
@@ -142,8 +152,6 @@ impl HNSWIndex {
             num_entries,
             HNSW_USE_HEURISTIC,
         );
-
-        let pool = build_thread_pool(permit.num_cpus as usize)?;
 
         let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
@@ -162,73 +170,23 @@ impl HNSWIndex {
             graph_layers_builder.set_levels(vector_id, level);
         }
 
-        // Try to build graphs on GPU if possible.
-        #[cfg(feature = "gpu")]
-        let (gpu_vectors, gpu_graph) = super::gpu_build::upload_and_build_main_graph(
-            gpu_device,
-            build_main_graph,
-            additional_links_params
-                .as_ref()
-                .is_some_and(|(_, indexed_fields)| !indexed_fields.is_empty()),
-            id_tracker_ref.deref(),
-            &vector_storage_ref,
-            &quantized_vectors_ref,
-            &graph_layers_builder,
-            deleted_bitslice,
-            num_entries,
-            stopped,
-        )?;
-        #[cfg(not(feature = "gpu"))]
-        let gpu_graph: Option<GraphLayersBuilder> = None;
-
-        if let Some(gpu_graph) = gpu_graph {
-            graph_layers_builder = gpu_graph;
-            build_main_graph = false;
-        }
-
-        check_process_stopped(stopped)?;
-
         if build_main_graph {
-            build_main_graph_on_cpu(
-                id_tracker_ref.deref(),
-                &vector_storage_ref,
-                &quantized_vectors_ref,
-                old_index,
-                &graph_layers_builder,
-                config.ef_construct,
-                progress_migrate.unwrap(),
-                progress_main_graph.unwrap(),
-                &pool,
-                stopped,
-            )?;
+            graph_layers_builder =
+                graph_builder.build_main_graph(context, graph_layers_builder, old_index)?;
         } else {
             drop(old_index);
         }
 
-        if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
-            #[cfg(feature = "gpu")]
-            let mut gpu_insert_context = super::gpu_build::create_gpu_insert_context(
-                gpu_vectors.as_ref(),
-                payload_m,
-                config.ef_construct,
-            )?;
-            #[cfg(not(feature = "gpu"))]
-            let mut gpu_insert_context = None;
-
+        if !additional_links_fields.is_empty() {
             let indexed_payload_vectors = build_additional_links(
-                id_tracker_ref.deref(),
-                &vector_storage_ref,
-                &quantized_vectors_ref,
+                context,
                 &payload_index_ref,
-                &mut gpu_insert_context,
+                &mut graph_builder,
                 &mut graph_layers_builder,
                 &config,
                 payload_m,
-                indexed_fields,
-                progress_additional_links,
-                &pool,
+                additional_links_fields,
                 rng,
-                stopped,
             )?;
 
             debug_assert!(indexed_vectors >= indexed_payload_vectors || config.m == 0);

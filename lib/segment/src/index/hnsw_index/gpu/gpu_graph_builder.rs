@@ -16,8 +16,8 @@ pub static GPU_MAX_VISITED_FLAGS_FACTOR: usize = 32;
 
 /// Build HNSW graph on GPU.
 #[allow(clippy::too_many_arguments)]
-pub fn build_hnsw_on_gpu<'a, 'b>(
-    gpu_insert_context: &mut GpuInsertContext<'b>,
+pub fn build_hnsw_on_gpu<'a>(
+    gpu_insert_context: &mut GpuInsertContext,
     // Graph with all settings like m, ef, levels, etc.
     reference_graph: &GraphLayersBuilder,
     // Parallel inserts count.

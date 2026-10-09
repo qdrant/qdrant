@@ -28,11 +28,12 @@ pub struct GpuRequest {
 /// Structure to perform insert and update entries operations on GPU.
 /// It handles all GPU resources and shaders instead of gpu vector storage,
 /// which may be shared between multiple hnsw constructions.
-pub struct GpuInsertContext<'a> {
+pub struct GpuInsertContext {
     context: gpu::Context,
     groups_count: usize,
 
-    gpu_vector_storage: &'a GpuVectorStorage,
+    /// Binds the vectors to search. It also keeps their buffers alive.
+    vector_storage_descriptor_set: Arc<gpu::DescriptorSet>,
     gpu_links: GpuLinks,
     gpu_visited_flags: GpuVisitedFlags,
     insert_resources: GpuInsertResources,
@@ -178,9 +179,9 @@ impl GpuInsertResources {
     }
 }
 
-impl<'a> GpuInsertContext<'a> {
+impl GpuInsertContext {
     pub fn new(
-        gpu_vector_storage: &'a GpuVectorStorage,
+        gpu_vector_storage: &GpuVectorStorage,
         // Parallel inserts count.
         groups_count: usize,
         hnsw_m: HnswM,
@@ -246,7 +247,7 @@ impl<'a> GpuInsertContext<'a> {
 
         Ok(Self {
             insert_resources,
-            gpu_vector_storage,
+            vector_storage_descriptor_set: gpu_vector_storage.descriptor_set(),
             gpu_links,
             gpu_visited_flags,
             context,
@@ -327,7 +328,7 @@ impl<'a> GpuInsertContext<'a> {
             self.greedy_pipeline.clone(),
             &[
                 self.insert_resources.greedy_descriptor_set.clone(),
-                self.gpu_vector_storage.descriptor_set(),
+                self.vector_storage_descriptor_set.clone(),
                 self.gpu_links.descriptor_set(),
                 self.gpu_visited_flags.descriptor_set(),
             ],
@@ -396,7 +397,7 @@ impl<'a> GpuInsertContext<'a> {
             self.insert_pipeline.clone(),
             &[
                 self.insert_resources.insert_descriptor_set.clone(),
-                self.gpu_vector_storage.descriptor_set(),
+                self.vector_storage_descriptor_set.clone(),
                 self.gpu_links.descriptor_set(),
                 self.gpu_visited_flags.descriptor_set(),
             ],
@@ -559,7 +560,7 @@ mod tests {
         }
     }
 
-    fn create_insert_context(test_data: &TestData) -> GpuInsertContext<'_> {
+    fn create_insert_context(test_data: &TestData) -> GpuInsertContext {
         let total_num_vectors = test_data.gpu_vector_storage.num_vectors() + test_data.groups_count;
         let point_ids = (0..total_num_vectors as PointOffsetType).collect_vec();
 
@@ -615,7 +616,7 @@ mod tests {
 
         let search_shader = ShaderBuilder::new(device.clone())
             .with_shader_code(include_str!("shaders/tests/test_hnsw_search.comp"))
-            .with_parameters(gpu_insert_context.gpu_vector_storage)
+            .with_parameters(&test.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
             .with_parameters(&gpu_insert_context.insert_resources)
@@ -640,12 +641,7 @@ mod tests {
 
         let search_pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, search_descriptor_set_layout.clone())
-            .add_descriptor_set_layout(
-                1,
-                gpu_insert_context
-                    .gpu_vector_storage
-                    .descriptor_set_layout(),
-            )
+            .add_descriptor_set_layout(1, test.gpu_vector_storage.descriptor_set_layout())
             .add_descriptor_set_layout(2, gpu_insert_context.gpu_links.descriptor_set_layout())
             .add_descriptor_set_layout(
                 3,
@@ -696,7 +692,7 @@ mod tests {
                     search_pipeline.clone(),
                     &[
                         search_descriptor_set.clone(),
-                        gpu_insert_context.gpu_vector_storage.descriptor_set(),
+                        test.gpu_vector_storage.descriptor_set(),
                         gpu_insert_context.gpu_links.descriptor_set(),
                         gpu_insert_context.gpu_visited_flags.descriptor_set(),
                     ],
@@ -885,7 +881,7 @@ mod tests {
         // Create test pipeline
         let shader = ShaderBuilder::new(device.clone())
             .with_shader_code(include_str!("shaders/tests/test_heuristic.comp"))
-            .with_parameters(gpu_insert_context.gpu_vector_storage)
+            .with_parameters(&test.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
             .with_parameters(&gpu_insert_context.insert_resources)
@@ -906,12 +902,7 @@ mod tests {
 
         let pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, descriptor_set_layout.clone())
-            .add_descriptor_set_layout(
-                1,
-                gpu_insert_context
-                    .gpu_vector_storage
-                    .descriptor_set_layout(),
-            )
+            .add_descriptor_set_layout(1, test.gpu_vector_storage.descriptor_set_layout())
             .add_descriptor_set_layout(2, gpu_insert_context.gpu_links.descriptor_set_layout())
             .add_descriptor_set_layout(
                 3,
@@ -927,7 +918,7 @@ mod tests {
                 pipeline.clone(),
                 &[
                     descriptor_set.clone(),
-                    gpu_insert_context.gpu_vector_storage.descriptor_set(),
+                    test.gpu_vector_storage.descriptor_set(),
                     gpu_insert_context.gpu_links.descriptor_set(),
                     gpu_insert_context.gpu_visited_flags.descriptor_set(),
                 ],
