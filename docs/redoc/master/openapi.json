@@ -15941,7 +15941,7 @@
         }
       },
       "TextInterface": {
-        "description": "The text to search for, or the text with BM25 parameters.",
+        "description": "The text to search for, or the text with scorer parameters.",
         "anyOf": [
           {
             "type": "string"
@@ -15961,6 +15961,41 @@
             "description": "Text to search for, tokenized by the field's text index.",
             "type": "string"
           },
+          "scoring": {
+            "description": "Parameters of the scorer, keyed by its name. They must match the `scoring` type of the field's text index. If absent, the scorer runs with its defaults.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextQueryScoring"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "TextQueryScoring": {
+        "description": "Parameters of one scorer, keyed by its name.",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Bm25Scoring"
+          }
+        ]
+      },
+      "Bm25Scoring": {
+        "type": "object",
+        "required": [
+          "bm25"
+        ],
+        "properties": {
+          "bm25": {
+            "$ref": "#/components/schemas/Bm25Params"
+          }
+        }
+      },
+      "Bm25Params": {
+        "type": "object",
+        "properties": {
           "k": {
             "description": "Term frequency saturation. Default is 1.2.",
             "type": "number",

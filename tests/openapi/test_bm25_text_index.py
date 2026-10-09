@@ -92,11 +92,11 @@ def setup(collection_name):
     drop_collection(collection_name=collection_name)
 
 
-def text(query, **params):
-    """A text query: the string form, or the struct form when given parameters."""
-    if not params:
+def text(query, **bm25):
+    """A text query: the string form, or the struct form when given BM25 parameters."""
+    if not bm25:
         return {"text": query}
-    return {"text": {"query": query, **params}}
+    return {"text": {"query": query, "scoring": {"bm25": bm25}}}
 
 
 def query(collection_name, body):
@@ -169,11 +169,15 @@ def test_struct_form_takes_k_and_b(collection_name):
 def test_struct_form_defaults_match_the_string_form(collection_name):
     responses = [
         query(collection_name, {"query": body, "using": FIELD, "limit": POINTS})
-        for body in [text("alpha gamma"), {"text": {"query": "alpha gamma"}}]
+        for body in [
+            text("alpha gamma"),
+            {"text": {"query": "alpha gamma"}},
+            {"text": {"query": "alpha gamma", "scoring": {"bm25": {}}}},
+        ]
     ]
     assert all(response.ok for response in responses)
-    string_form, struct_form = (response.json()["result"]["points"] for response in responses)
-    assert string_form == struct_form
+    string_form, *struct_forms = (response.json()["result"]["points"] for response in responses)
+    assert all(struct_form == string_form for struct_form in struct_forms)
 
 
 def test_filter_applies(collection_name):
