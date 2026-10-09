@@ -173,7 +173,9 @@ impl<'a, V: PostingValue> PostingVisitor<'a, V> {
         // get from chunk
         if chunk_idx < self.list.chunks_len() {
             let id = self.decompressed_chunk(chunk_idx)[local_offset];
-            let chunk_sized_values = self.list.get_chunk_unchecked(chunk_idx).sized_values;
+            // Borrowed, not copied: the array is a chunk wide, and this runs
+            // for every element read.
+            let chunk_sized_values = &self.list.get_chunk_unchecked(chunk_idx).sized_values;
             let sized_value = chunk_sized_values[local_offset];
             let next_sized_value = || {
                 chunk_sized_values
