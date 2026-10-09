@@ -988,8 +988,10 @@ mod tests {
         holder: &LockedSegmentHolder,
         batch: &Arc<CoreSearchRequestBatch>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let query_context =
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, HwMeasurementAcc::new());
+        let query_context = QueryContext::new(
+            DEFAULT_INDEXING_THRESHOLD_KB,
+            HwHandoff::measured(AmbientContext::new()),
+        );
         SegmentsSearcher::search(
             holder.clone(),
             batch.clone(),
