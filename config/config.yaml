@@ -432,12 +432,14 @@ service:
   # Only `api_key` and `alt_api_key` are accepted there; the read-only key
   # and JWT tokens are rejected, since peers joining consensus and moving
   # shards must hold the read-write key.
-  # The regular api_key is always forwarded on internal requests, but the
-  # receiving side only verifies it when this flag is enabled. Keep disabled
-  # during a rolling upgrade so older peers (that do not attach a key yet)
-  # can still reach newer peers, then turn it on once every node is upgraded.
+  # Peers forward `api_key` (or `alt_api_key` if `api_key` is unset) on
+  # internal requests, so every node must accept the key the others send.
+  # To rotate it, first set the new key as `alt_api_key` on every node, then
+  # swap the two.
+  # Enabled by default, has no effect without an API key.
   #
-  # enforce_internal_auth: true
+  # Uncomment to disable.
+  # enforce_internal_auth: false
 
   # Hardware reporting adds information to the API responses with a
   # hint on how many resources were used to execute the request.
