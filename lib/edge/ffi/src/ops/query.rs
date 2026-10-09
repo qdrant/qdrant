@@ -11,7 +11,6 @@ use segment::data_types::order_by::{
     Direction as SegmentDirection, OrderBy as SegmentOrderBy, StartFrom as SegmentStartFrom,
 };
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
-use segment::index::field_index::full_text_index::Bm25Params as SegmentBm25Params;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
     Filter as SegmentFilter, SearchParams as SegmentSearchParams, WithPayloadInterface,
@@ -23,7 +22,6 @@ use segment::vector_storage::query::{
 };
 use shard::query::formula::FormulaInternal;
 use shard::query::query_enum::QueryEnum;
-use shard::query::text::TextScoringQuery;
 use shard::query::*;
 
 use crate::EdgeShard;
@@ -435,13 +433,17 @@ pub struct Bm25Params {
     pub b: Option<f32>,
 }
 
-impl From<Bm25Params> for SegmentBm25Params {
+impl From<Bm25Params> for edge::Bm25Params {
     fn from(params: Bm25Params) -> Self {
         let Bm25Params { k, b } = params;
-        let default = SegmentBm25Params::default();
-        SegmentBm25Params {
-            k1: k.unwrap_or(default.k1),
-            b: b.unwrap_or(default.b),
+        edge::Bm25Params { k, b }
+    }
+}
+
+impl From<TextQueryScoring> for edge::TextQueryScoring {
+    fn from(scoring: TextQueryScoring) -> Self {
+        match scoring {
+            TextQueryScoring::Bm25 { params } => edge::TextQueryScoring::Bm25(params.into()),
         }
     }
 }
@@ -512,15 +514,15 @@ impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
                 field,
                 query,
                 scoring,
-            } => Ok(shard::query::ScoringQuery::Text(TextScoringQuery {
-                field: crate::error::parse_json_path(&field)?,
-                text: query,
-                params: scoring
-                    .map(|scoring| match scoring {
-                        TextQueryScoring::Bm25 { params } => SegmentBm25Params::from(params),
-                    })
-                    .unwrap_or_default(),
-            })),
+            } => {
+                let builder =
+                    edge::TextQueryBuilder::new(crate::error::parse_json_path(&field)?, query);
+                let builder = match scoring {
+                    Some(scoring) => builder.scoring(scoring.into()),
+                    None => builder,
+                };
+                Ok(builder.build())
+            }
         }
     }
 }
