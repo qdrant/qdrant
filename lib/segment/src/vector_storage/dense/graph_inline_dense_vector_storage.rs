@@ -156,14 +156,12 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let (user_data, keys): (Vec<_>, Vec<_>) = keys.into_iter().unzip();
-        self.vectors
-            .for_each_in_batch(&keys, |idx, vector| {
-                let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
-                callback(user_data[idx], keys[idx], vector);
-            })
-            .expect("read vectors");
+        self.vectors.for_each_in_batch(&keys, |idx, vector| {
+            let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
+            callback(user_data[idx], keys[idx], vector);
+        })
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

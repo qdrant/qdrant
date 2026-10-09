@@ -340,36 +340,9 @@ mod tests {
         use crate::vector_storage::query_scorer::QueryScorer;
         use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 
-        const POINT_COUNT: PointOffsetType = 64;
-        const DIM: usize = 16;
-
         let dir = Builder::new().prefix("ro_dense_err").tempdir().unwrap();
         let _scope = ambient::test_guard();
-        {
-            let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
-                dir.path(),
-                DIM,
-                Distance::Dot,
-                AdviceSetting::Global,
-                false,
-            )
-            .unwrap();
-            for id in 0..POINT_COUNT {
-                let vector: DenseVector = vec![id as VectorElementType; DIM];
-                storage.insert_vector(id, VectorRef::from(&vector)).unwrap();
-            }
-            storage.flusher()().unwrap();
-        }
-
-        let storage = ReadOnlyChunkedDenseVectorStorage::<VectorElementType, MmapFile>::open(
-            &MmapFs,
-            dir.path(),
-            DIM,
-            Distance::Dot,
-            AdviceSetting::Global,
-            Populate::No,
-        )
-        .unwrap();
+        let storage = stored_vectors(dir.path());
 
         let query: DenseVector = vec![1.0; DIM];
         let scorer =
@@ -382,5 +355,55 @@ mod tests {
                 .is_err(),
             "a read past the stored vectors must be an error, not a panic",
         );
+    }
+
+    #[test]
+    fn read_vectors_reports_a_failed_read() {
+        let dir = Builder::new()
+            .prefix("ro_dense_read_err")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+        let storage = stored_vectors(dir.path());
+
+        let keys = [((), 0), ((), POINT_COUNT + 8)];
+        assert!(
+            storage
+                .read_vectors::<Random, _>(keys, |_, _, _| {})
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
+
+    const POINT_COUNT: PointOffsetType = 64;
+    const DIM: usize = 16;
+
+    fn stored_vectors(
+        dir: &std::path::Path,
+    ) -> ReadOnlyChunkedDenseVectorStorage<VectorElementType, MmapFile> {
+        {
+            let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+                dir,
+                DIM,
+                Distance::Dot,
+                AdviceSetting::Global,
+                false,
+            )
+            .unwrap();
+            for id in 0..POINT_COUNT {
+                let vector: DenseVector = vec![id as VectorElementType; DIM];
+                storage.insert_vector(id, VectorRef::from(&vector)).unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+        ReadOnlyChunkedDenseVectorStorage::open(
+            &MmapFs,
+            dir,
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap()
     }
 }

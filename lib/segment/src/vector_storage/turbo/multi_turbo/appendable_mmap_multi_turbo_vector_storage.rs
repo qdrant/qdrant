@@ -557,11 +557,10 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
             callback(user_data, key, self.dequantize_records(records));
         })
-        .expect("read TQ multivectors");
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
@@ -1471,9 +1470,11 @@ mod tests {
                 (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
             let mut seen: Vec<(usize, PointOffsetType, MultiDenseVectorInternal)> = Vec::new();
-            storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-                seen.push((tag, offset, to_multi(vector)));
-            });
+            storage
+                .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                    seen.push((tag, offset, to_multi(vector)));
+                })
+                .unwrap();
 
             // Order is not guaranteed (the trait permits parallel reads), so check
             // each callback against its own offset, not its arrival position.

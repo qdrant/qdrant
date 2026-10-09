@@ -228,7 +228,7 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         for (user_data, key) in keys {
             let vector = shared::dequantize_vector(
                 &self.quantizer,
@@ -237,6 +237,7 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
             );
             callback(user_data, key, vector);
         }
+        Ok(())
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

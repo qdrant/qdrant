@@ -661,9 +661,11 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
             (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
         let mut seen: Vec<(usize, PointOffsetType, DenseVector)> = Vec::new();
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
+            })
+            .unwrap();
 
         // Order is not guaranteed (the trait permits parallel reads), so check
         // each callback against its own offset, not its arrival position.
@@ -1513,23 +1515,25 @@ fn batched_retrieval_matches_per_point_reads(
     ) {
         // Decoded path: `read_vectors` ≡ `get_vector`, tags ride along.
         let mut seen = vec![false; keys.len()];
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            assert_eq!(
-                ids[tag], offset,
-                "user data not threaded to its offset ({backend})",
-            );
-            assert!(
-                !seen[tag],
-                "key at position {tag} visited twice ({backend})"
-            );
-            seen[tag] = true;
-            let direct = storage.get_vector::<Random>(offset);
-            assert_eq!(
-                DenseVector::try_from(vector).unwrap(),
-                DenseVector::try_from(direct).unwrap(),
-                "read_vectors disagrees with get_vector at {offset} ({backend})",
-            );
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                assert_eq!(
+                    ids[tag], offset,
+                    "user data not threaded to its offset ({backend})",
+                );
+                assert!(
+                    !seen[tag],
+                    "key at position {tag} visited twice ({backend})"
+                );
+                seen[tag] = true;
+                let direct = storage.get_vector::<Random>(offset);
+                assert_eq!(
+                    DenseVector::try_from(vector).unwrap(),
+                    DenseVector::try_from(direct).unwrap(),
+                    "read_vectors disagrees with get_vector at {offset} ({backend})",
+                );
+            })
+            .unwrap();
         assert!(
             seen.iter().all(|&s| s),
             "not every key was visited ({backend})",

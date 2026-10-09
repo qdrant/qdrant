@@ -132,7 +132,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
             let vector = CowVector::MultiDense(T::into_float_multivector(
                 flattened_to_multi_vector(Cow::Borrowed(flattened), self.vectors.dim()),
@@ -140,7 +140,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
 
             callback(user_data, point_offset, vector);
         })
-        .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
