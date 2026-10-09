@@ -234,10 +234,17 @@ impl SegmentsSearcher {
                 // Empty segments are left out: each segment costs a blocking task, a thread
                 // handoff and back, and an optimized collection keeps an empty appendable
                 // segment beside its indexed one, so every search paid one for nothing.
-                segments_lock
+                // One segment is always kept: the query is validated against the vector
+                // config there, so a malformed query fails on an empty collection too.
+                let mut segments: Vec<_> = segments_lock
                     .non_appendable_then_appendable_segments()
-                    .filter(|segment| !is_known_empty(segment))
-                    .collect()
+                    .collect();
+                let first = segments.first().cloned();
+                segments.retain(|segment| !is_known_empty(segment));
+                if segments.is_empty() {
+                    segments.extend(first);
+                }
+                segments
             };
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
@@ -963,9 +970,9 @@ mod tests {
         assert!(result[1].id == 3.into() || result[1].id == 11.into());
     }
 
-    fn search_request(rnd: &mut impl rand::Rng, limit: usize) -> CoreSearchRequest {
+    fn search_request(rnd: &mut impl rand::Rng, dim: usize, limit: usize) -> CoreSearchRequest {
         SearchRequestInternal {
-            vector: random_vector(rnd, 4).into(),
+            vector: random_vector(rnd, dim).into(),
             limit,
             offset: None,
             with_payload: None,
@@ -980,7 +987,7 @@ mod tests {
     async fn search_holder(
         holder: &LockedSegmentHolder,
         batch: &Arc<CoreSearchRequestBatch>,
-    ) -> Vec<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let query_context =
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, HwMeasurementAcc::new());
         SegmentsSearcher::search(
@@ -992,7 +999,6 @@ mod tests {
             TEST_TIMEOUT,
         )
         .await
-        .unwrap()
     }
 
     #[test]
@@ -1022,19 +1028,22 @@ mod tests {
 
         let mut rnd = rand::rng();
         let batch = Arc::new(CoreSearchRequestBatch {
-            searches: vec![search_request(&mut rnd, 150), search_request(&mut rnd, 10)],
+            searches: vec![
+                search_request(&mut rnd, 4, 150),
+                search_request(&mut rnd, 4, 10),
+            ],
         });
-        let with_empty = search_holder(&segment_holder, &batch).await;
+        let with_empty = search_holder(&segment_holder, &batch).await.unwrap();
         segment_holder.write().remove(&[empty_id]);
-        let without_empty = search_holder(&segment_holder, &batch).await;
+        let without_empty = search_holder(&segment_holder, &batch).await.unwrap();
         assert_eq!(with_empty, without_empty);
         assert_eq!(with_empty[0].len(), 150);
     }
 
-    /// With every segment empty there is nothing to fan out to, and each search
-    /// in the batch still gets its (empty) result.
+    /// With every segment empty, one is still searched: each search in the batch
+    /// gets its (empty) result, and a malformed query is still rejected.
     #[tokio::test]
-    async fn test_all_empty_segments_return_one_empty_result_per_search() {
+    async fn test_all_empty_segments_still_search_one() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut holder = SegmentHolder::default();
         holder.add_new(empty_segment(dir.path()));
@@ -1043,12 +1052,20 @@ mod tests {
 
         let mut rnd = rand::rng();
         let batch = Arc::new(CoreSearchRequestBatch {
-            searches: vec![search_request(&mut rnd, 5), search_request(&mut rnd, 5)],
+            searches: vec![
+                search_request(&mut rnd, 4, 5),
+                search_request(&mut rnd, 4, 5),
+            ],
         });
         assert_eq!(
-            search_holder(&segment_holder, &batch).await,
+            search_holder(&segment_holder, &batch).await.unwrap(),
             vec![vec![], vec![]]
         );
+
+        let wrong_dim = Arc::new(CoreSearchRequestBatch {
+            searches: vec![search_request(&mut rnd, 3, 5)],
+        });
+        assert!(search_holder(&segment_holder, &wrong_dim).await.is_err());
     }
 
     #[tokio::test]
