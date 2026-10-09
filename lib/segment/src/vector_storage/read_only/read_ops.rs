@@ -164,7 +164,7 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         match self {
             VectorStorageReadEnum::Dense(s) => s.read_vectors::<P, U>(keys, callback),
             VectorStorageReadEnum::DenseByte(s) => s.read_vectors::<P, U>(keys, callback),

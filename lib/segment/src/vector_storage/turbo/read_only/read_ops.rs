@@ -49,13 +49,14 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedTurboVectorStorage<S
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.storage.for_each_batch(&point_offsets, |idx, bytes| {
             let vector = shared::dequantize_vector(&self.quantizer, self.dim, &bytes);
             callback(user_data[idx], point_offsets[idx], vector);
         });
+        Ok(())
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
