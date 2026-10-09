@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::condition_checker::ConditionChecker;
-use common::counter::hw;
 use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
@@ -61,7 +61,7 @@ fn test_filtering_context_consistency() {
 
     let mut points = HashMap::new();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     for (idx, payload) in nested_payloads().into_iter().enumerate() {

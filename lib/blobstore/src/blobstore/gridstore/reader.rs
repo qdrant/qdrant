@@ -2,7 +2,7 @@ use std::cmp;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hw::{self, HwMetric};
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
@@ -131,7 +132,7 @@ impl MutableNullIndex {
         self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         // Account for I/O cost as if we were writing to disk now
-        let _hw = hw::unmeasured_guard(reason("TODO: attribute to the caller's operation"));
+        let _scope = ambient::unmeasured_guard(reason("TODO: attribute to the caller's operation"));
         HwMetric::PayloadIndexIoWrite.bump(2);
 
         Ok(())

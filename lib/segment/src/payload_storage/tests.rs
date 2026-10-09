@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use common::counter::hw;
+use common::ambient;
 use common::universal_io::MmapFile;
 use rstest::rstest;
 
@@ -18,7 +18,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
         "a": "some text",
     };
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // set
     storage.set(0, &payload).unwrap();

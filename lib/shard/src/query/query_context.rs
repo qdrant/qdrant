@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use common::counter::hw;
+use common::ambient;
 use common::iterator_ext::IteratorExt;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::query_context::QueryContext;
@@ -34,7 +34,7 @@ pub fn init_query_context_with_stopping_flag(
     is_stopped: Arc<AtomicBool>,
     check_idf_required: impl Fn(&VectorName) -> bool,
 ) -> OperationResult<QueryContext> {
-    let mut query_context = QueryContext::new(search_optimized_threshold_kb, hw::current())
+    let mut query_context = QueryContext::new(search_optimized_threshold_kb, ambient::current())
         .with_is_stopped(is_stopped.clone());
 
     for search_request in batch_request {
@@ -137,13 +137,13 @@ mod tests {
         batch: &[CoreSearchRequest],
         check_idf_required: impl Fn(&segment::types::VectorName) -> bool,
     ) -> OperationResult<QueryContext> {
-        hw::test(|| init_query_context(batch, 0, &StoppingGuard::new(), check_idf_required))
+        ambient::test(|| init_query_context(batch, 0, &StoppingGuard::new(), check_idf_required))
     }
 
     #[test]
     fn caller_owned_cancellation_reaches_segment_query_context() {
         let stopped = Arc::new(AtomicBool::new(false));
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let context =
             init_query_context_with_stopping_flag(&[], 0, stopped.clone(), |_| false).unwrap();
         assert!(Arc::ptr_eq(&context.is_stopped_handle(), &stopped));

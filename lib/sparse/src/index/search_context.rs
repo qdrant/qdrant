@@ -2,7 +2,7 @@ use std::cmp::{Ordering, max, min};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::UioResult;

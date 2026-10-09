@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hw;
+use common::ambient;
 use common::flags::FeatureFlags;
 use common::types::DeferredBehavior;
 use common::universal_io::{CachedReadFs, MmapFile, MmapFs};
@@ -48,7 +48,7 @@ fn build_immutable_segment(
     temp_path: &Path,
     inline_storage: bool,
 ) -> Segment {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let source_dir = Builder::new().prefix("ro_source").tempdir().unwrap();
     let (mut source, _) = build_segment(
@@ -166,7 +166,7 @@ fn keyword_filter(value: &str) -> Filter {
 }
 
 fn sorted_filtered(segment: &impl ReadSegmentEntry, filter: &Filter) -> Vec<PointIdType> {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut ids = segment
         .read_filtered(
             None,
@@ -228,7 +228,7 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
         );
     }
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for i in 0..NUM_POINTS {
         let point_id: PointIdType = (i as u64 + 1).into();
@@ -353,7 +353,7 @@ fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: b
 #[test]
 fn read_only_segment_load_profile_defers_points() {
     let dir = Builder::new().prefix("ro_deferred").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         dir.path(),
@@ -555,7 +555,7 @@ fn read_only_segment_sparse_mutable_ram_matches_mutable() {
     }
 
     let dir = Builder::new().prefix("ro_sparse_mut").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         dir.path(),
@@ -753,7 +753,7 @@ fn vanished_segment_classifies_not_found() {
             .expect("read-only open");
     let points_before = read_only.available_point_count();
     fs_err::remove_dir_all(&segment_path).unwrap();
-    let err = hw::test(|| preload_then_reload(&mut read_only))
+    let err = ambient::test(|| preload_then_reload(&mut read_only))
         .expect_err("live_reload over a removed directory must fail");
     assert!(err.is_not_found(), "expected not-found, got: {err}");
     assert_eq!(read_only.available_point_count(), points_before);
@@ -792,7 +792,7 @@ fn deferred_index_reads_nothing_at_open() {
 
     // Non-search reads never touch the deferred index.
     assert!(!sorted_filtered(&read_only, &filter).is_empty());
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     assert!(read_only.payload(1.into()).unwrap() != Default::default());
 
     // A search runs the deferred open, which now hits the deleted files.
@@ -913,7 +913,7 @@ fn schedule_open_and_finish_observe_the_stop_flag() {
 #[test]
 fn test_live_reload_writer_appends_between_preload_list_and_reload() {
     let segments_dir = Builder::new().prefix("appendable_seg").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1019,7 +1019,7 @@ fn test_live_reload_pure_delete_without_inserts() {
         .prefix("appendable_seg_del")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1087,7 +1087,7 @@ fn test_failed_live_reload_keeps_new_points_invisible() {
         .prefix("appendable_seg_fail")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1196,7 +1196,7 @@ fn test_live_preload_skips_list_when_unchanged() {
         .prefix("appendable_seg_skip")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1283,7 +1283,7 @@ fn test_live_preload_while_reader_holds_id_tracker() {
         .prefix("appendable_seg_shared_preload")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),
@@ -1356,7 +1356,7 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
         .prefix("appendable_seg_open")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut mutable, _) = build_segment(
         segments_dir.path(),

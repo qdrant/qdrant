@@ -3,8 +3,7 @@ mod writes;
 
 use std::collections::{BTreeSet, HashMap};
 
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::types::VectorNameBuf;
 

@@ -4,7 +4,7 @@ mod tests;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     OpenOptions, Populate, UniversalAppend, UniversalFlush as _, UniversalRead as _,

@@ -1,7 +1,7 @@
 //! Writes through the update-only storage, then reads back through the
 //! ordinary appendable storage opened on the same directory.
 
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::universal_io::MmapFs;
@@ -33,7 +33,7 @@ fn read_back(path: &std::path::Path) -> impl DenseVectorStorageRead<VectorElemen
 #[test]
 fn decoded_vectors_round_trip() {
     let dir = TempDir::with_prefix("update_only_dense").unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vectors = [
         vec![1.0, 2.0, 3.0, 4.0],
@@ -69,7 +69,7 @@ fn decoded_vectors_round_trip() {
 #[test]
 fn missing_vectors_take_their_slot_and_are_flagged() {
     let dir = TempDir::with_prefix("update_only_dense").unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let present = vec![1.0, 2.0, 3.0, 4.0];
     let mut writer = Writer::open(&MmapFs, dir.path(), DIM).unwrap();
@@ -102,7 +102,7 @@ fn missing_vectors_take_their_slot_and_are_flagged() {
 #[test]
 fn raw_bytes_round_trip() {
     let dir = TempDir::with_prefix("update_only_dense").unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vector: Vec<VectorElementType> = vec![1.5, 2.5, 3.5, 4.5];
     let bytes = bytemuck::cast_slice(&vector).to_vec();
@@ -121,7 +121,7 @@ fn raw_bytes_round_trip() {
 #[test]
 fn batches_resume() {
     let dir = TempDir::with_prefix("update_only_dense").unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let first = vec![1.0, 1.0, 1.0, 1.0];
     let second = vec![2.0, 2.0, 2.0, 2.0];

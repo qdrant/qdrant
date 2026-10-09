@@ -26,9 +26,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use ordered_float::OrderedFloat;
 use rand::SeedableRng;

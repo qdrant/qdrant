@@ -728,7 +728,7 @@ mod tests {
     /// `Match::TextAny`.
     #[test]
     fn test_nested_match_text_any_uses_full_text_index() {
-        use common::counter::hw;
+        use common::ambient;
         use tempfile::Builder;
 
         use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
@@ -736,7 +736,7 @@ mod tests {
         use crate::index::field_index::full_text_index::FullTextIndex;
         use crate::types::{Condition, MatchTextAny, Nested, NestedCondition};
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // --- build payloads with nested objects ---
         // Point 0: nested title "goodness only" (should NOT match "good cheap")

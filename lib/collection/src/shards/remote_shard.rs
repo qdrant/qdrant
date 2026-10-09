@@ -22,7 +22,7 @@ use api::grpc::transport_channel_pool::{MAX_GRPC_CHANNEL_TIMEOUT, PoolIntercepto
 use api::grpc::update_operation::Update;
 use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
-use common::counter::{HardwareData, hw};
+use common::ambient::hw::{self, HardwareData};
 use common::types::{DeferredBehavior, TelemetryDetail};
 use itertools::Itertools;
 use parking_lot::Mutex;

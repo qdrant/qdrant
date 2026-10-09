@@ -8,7 +8,7 @@ mod tests;
 
 use std::path::PathBuf;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
     MmapFile, Populate, UniversalAppend, UniversalReadFs, UniversalWrite, UniversalWriteFs,

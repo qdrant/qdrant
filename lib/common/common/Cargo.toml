@@ -26,7 +26,7 @@ chrono = { workspace = true }
 fs-err = { workspace = true }
 fs4 = { workspace = true }
 fs_extra = { workspace = true }
-futures.workspace = true
+futures = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }

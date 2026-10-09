@@ -652,7 +652,7 @@ impl GraphLayersBuilder {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -674,7 +674,7 @@ mod tests {
     /// exactly the graph that a fresh builder per block and `merge_from_other` give.
     #[test]
     fn test_merge_block_from_matches_merge_from_other() {
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let num_points = 1000;
         let dim = 16;
         let distance = Distance::Cosine;
@@ -809,7 +809,7 @@ mod tests {
             (0..(num_vectors as PointOffsetType))
                 .into_par_iter()
                 .for_each(|idx| {
-                    let _hw = hw::test_guard();
+                    let _scope = ambient::test_guard();
                     let scorer = vector_holder.internal_scorer(idx);
                     graph_layers.link_new_point(idx, scorer);
                 });
@@ -849,7 +849,7 @@ mod tests {
             graph_layers.set_levels(idx, level);
         }
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         for idx in 0..(num_vectors as PointOffsetType) {
             let scorer = vector_holder.internal_scorer(idx);
             graph_layers.link_new_point(idx, scorer);
@@ -913,7 +913,7 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
@@ -1027,7 +1027,7 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
@@ -1076,7 +1076,7 @@ mod tests {
         );
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let scorer = vector_holder.internal_scorer(idx);
             let level = graph_layers_builder.get_random_layer(&mut rng);

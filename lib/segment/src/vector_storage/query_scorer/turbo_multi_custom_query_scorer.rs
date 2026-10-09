@@ -1,4 +1,4 @@
-use common::counter::hw::HwScale;
+use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};

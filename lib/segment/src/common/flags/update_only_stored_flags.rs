@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::stored_bitmask::MutableStoredBitmask;
 use common::types::PointOffsetType;
 use common::universal_io::{Populate, UniversalWriteFs};
@@ -83,7 +83,7 @@ impl UpdateOnlyStoredFlags {
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
-    use common::counter::hw;
+    use common::ambient;
     use common::universal_io::Populate;
     #[cfg_predicate]
     use common::universal_io::{Fs, S};
@@ -99,7 +99,7 @@ mod tests_mod {
     }
 
     fn flush(flags: &mut UpdateOnlyStoredFlags) {
-        hw::test(|| flags.flush(&Fs::default())).unwrap();
+        ambient::test(|| flags.flush(&Fs::default())).unwrap();
     }
 
     /// Reader for what the writer left behind, through the type the writable

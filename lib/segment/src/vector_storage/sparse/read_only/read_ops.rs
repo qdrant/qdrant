@@ -1,6 +1,6 @@
 use blobstore::Blob;
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hw;
 use common::generic_consts::{AccessPattern, Random};
 use common::reason::reason;
 use common::types::PointOffsetType;
@@ -24,7 +24,7 @@ impl<S: UniversalRead> SparseVectorStorageRead for ReadOnlySparseVectorStorage<S
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        hw::unmeasured(reason("Vector storage read IO not measured"), || {
+        ambient::unmeasured(reason("Vector storage read IO not measured"), || {
             self.storage.get_value::<P>(key)
         })?
         .map(SparseVector::try_from)
@@ -101,7 +101,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlySparseVectorStorage<S> {
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
-        match hw::unmeasured(reason("Vector storage read IO not measured"), || {
+        match ambient::unmeasured(reason("Vector storage read IO not measured"), || {
             self.storage.get_value::<P>(key)
         }) {
             Ok(Some(stored)) => SparseVector::try_from(stored).ok().map(CowVector::from),

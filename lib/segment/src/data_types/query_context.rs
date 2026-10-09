@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::bitvec::BitSlice;
 #[cfg(feature = "testing")]
-use common::counter::AmbientContext;
-use common::counter::hw::HwHandoff;
+use common::ambient::AmbientContext;
+use common::ambient::Handoff;
+use common::bitvec::BitSlice;
 use common::cow::SimpleCow;
 use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
@@ -116,23 +116,19 @@ pub struct QueryContext {
     /// Required for scoring a text query against a payload index.
     text_stats: AHashMap<PayloadKeyType, TextFieldStats>,
 
-    /// Structure to accumulate and report hardware usage.
-    /// Holds reference to the shared drain, which is used to accumulate the values.
-    hardware_usage_accumulator: HwHandoff,
+    /// The scope of the query, to enter it on segment threads.
+    handoff: Handoff,
 }
 
 impl QueryContext {
-    pub fn new(
-        search_optimized_threshold_kb: usize,
-        hardware_usage_accumulator: HwHandoff,
-    ) -> Self {
+    pub fn new(search_optimized_threshold_kb: usize, handoff: Handoff) -> Self {
         Self {
             available_point_count: 0,
             search_optimized_threshold_kb,
             is_stopped: Arc::new(AtomicBool::new(false)),
             idf_stats: QueryIdfStats::default(),
             text_stats: AHashMap::new(),
-            hardware_usage_accumulator,
+            handoff,
         }
     }
 
@@ -241,15 +237,15 @@ impl QueryContext {
         }
     }
 
-    pub fn hardware_usage_accumulator(&self) -> &HwHandoff {
-        &self.hardware_usage_accumulator
+    pub fn handoff(&self) -> &Handoff {
+        &self.handoff
     }
 }
 
 #[cfg(feature = "testing")]
 impl Default for QueryContext {
     fn default() -> Self {
-        Self::new(usize::MAX, HwHandoff::measured(AmbientContext::new())) // Search optimized threshold won't affect the search.
+        Self::new(usize::MAX, Handoff::measured(AmbientContext::new())) // Search optimized threshold won't affect the search.
     }
 }
 
@@ -265,8 +261,8 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context.available_point_count()
     }
 
-    pub fn hardware_usage_accumulator(&self) -> &HwHandoff {
-        self.query_context.hardware_usage_accumulator()
+    pub fn handoff(&self) -> &Handoff {
+        self.query_context.handoff()
     }
 
     /// Vector-level context for the given vector name and IDF corpus

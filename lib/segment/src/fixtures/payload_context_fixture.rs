@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hw;
+use common::ambient;
 use common::types::PointOffsetType;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
@@ -114,7 +114,7 @@ pub fn create_struct_payload_index(
     )
     .unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     index
         .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)

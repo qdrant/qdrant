@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use rand::rngs::StdRng;
@@ -27,7 +27,7 @@ fn word(rng: &mut StdRng) -> String {
 
 fn fixture(seed: u64, documents: u32, deleted: &[PointOffsetType]) -> MutableInvertedIndex {
     let mut rng = StdRng::seed_from_u64(seed);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut index = MutableInvertedIndex::new(true, true);
     for idx in 0..documents {
         let len = rng.random_range(3..=60);
@@ -143,7 +143,7 @@ fn run<I: InvertedIndex>(
     accept: impl Fn(PointOffsetType) -> bool,
     limit: usize,
 ) -> Vec<ScoredPointOffset> {
-    hw::test(|| index.score_bm25(query, &accept, limit, &AtomicBool::new(false))).unwrap()
+    ambient::test(|| index.score_bm25(query, &accept, limit, &AtomicBool::new(false))).unwrap()
 }
 
 fn queries() -> Vec<Vec<&'static str>> {
@@ -276,7 +276,7 @@ fn accept_restricts_the_ranking() {
 /// `b = 0` with one, which is what the sparse route produces.
 #[test]
 fn missing_average_length_degrades_to_b_zero() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mutable = fixture(9, 200, &[]);
 
@@ -316,7 +316,7 @@ fn missing_average_length_degrades_to_b_zero() {
 
 #[test]
 fn positions_are_required() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_positions = MutableInvertedIndex::new(false, true);
     without_positions
@@ -348,7 +348,7 @@ fn positions_are_required() {
 /// no lengths, rather than silently scored as `b = 0`.
 #[test]
 fn length_normalization_requires_lengths() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_lengths = MutableInvertedIndex::new(true, false);
     without_lengths
@@ -376,7 +376,7 @@ fn length_normalization_requires_lengths() {
 
 #[test]
 fn empty_query_and_zero_limit_return_nothing() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mutable = fixture(3, 50, &[]);
     let empty = Bm25Query::new([], Bm25Params::default(), None).unwrap();
@@ -397,7 +397,7 @@ fn empty_query_and_zero_limit_return_nothing() {
 
 #[test]
 fn stop_flag_interrupts_the_scan() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(true);
     let mutable = fixture(3, 3000, &[]);
     let query = query(&mutable, &["w0"], Bm25Params::default());
@@ -442,7 +442,7 @@ fn query_dedups_and_orders_by_bound() {
 /// alone, not in the scorer.
 #[test]
 fn deleted_documents_inflate_df_on_immutable_shapes() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mutable = fixture(21, 500, &[]);
     let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
     let mut live = mutable;

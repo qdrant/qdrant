@@ -1,7 +1,7 @@
 #![allow(deprecated)]
 use std::fmt;
 
-use common::counter::hw;
+use common::ambient;
 use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use shard::operations::vector_name_ops::VectorNameConfig;
@@ -31,7 +31,7 @@ impl EdgeShard {
         let mut wal = self.wal.lock();
 
         let operation_id = wal.write(&record).map_err(service_error)?;
-        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let _update_guard = self.segments.acquire_updates_lock();
 
         let segments_guard = self.segments.read();

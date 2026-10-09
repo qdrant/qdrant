@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
     CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,

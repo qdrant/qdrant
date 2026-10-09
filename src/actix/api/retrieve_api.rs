@@ -6,7 +6,7 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{PointRequest, PointRequestInternal, ScrollRequest};
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};

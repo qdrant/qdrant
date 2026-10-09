@@ -53,7 +53,7 @@ impl UpdateOnlyIndexKind for UpdateOnlyTextKind {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::universal_io::{MmapFile, MmapFs};
     use serde_json::json;
     use tempfile::TempDir;
@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn full_text_index_round_trip() {
         let dir = TempDir::with_prefix("update_only_text").unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let field = JsonPath::new("f");
 
         let params = TextIndexParams {

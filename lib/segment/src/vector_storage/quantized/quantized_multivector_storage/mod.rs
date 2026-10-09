@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::slice;
 
 use ahash::HashMapExt as _;
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};

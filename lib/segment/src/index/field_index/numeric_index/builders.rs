@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use blobstore::Blob;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitVec;
-use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use serde_json::Value;

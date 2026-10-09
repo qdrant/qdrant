@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt as _;
 use common::types::DeferredBehavior;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt as _, TryFutureExt, TryStreamExt as _, future};
@@ -74,7 +74,7 @@ impl Collection {
                     let results: Vec<_> = local_updates.collect().await;
                     results
                 }
-                .in_current_hw(),
+                .in_current_ambient(),
             )
             .await?;
 
@@ -138,7 +138,7 @@ impl Collection {
                         .map(Some)
                 }
             }
-        }.in_current_hw())
+        }.in_current_ambient())
         .await??;
 
         if let Some(result) = result {
@@ -214,7 +214,7 @@ impl Collection {
 
         let results: Vec<_> = self
             .update_runtime
-            .spawn(updates.collect().in_current_hw())
+            .spawn(updates.collect().in_current_ambient())
             .await?;
 
         if results.is_empty() {

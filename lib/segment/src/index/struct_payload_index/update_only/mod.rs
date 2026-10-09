@@ -6,7 +6,7 @@ mod tests;
 use std::path::Path;
 
 use ahash::AHashMap;
-use common::counter::hw;
+use common::ambient;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use rayon::iter::{IntoParallelIterator as _, IntoParallelRefIterator, ParallelIterator as _};
@@ -94,9 +94,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
             .iter_mut()
             .flat_map(|(field, indexes)| indexes.iter_mut().map(move |index| (field, index)))
             .collect::<Vec<_>>();
-        hw::parallel(|hw_acc| {
+        ambient::parallel(|handoff| {
             indexes.into_par_iter().try_for_each(|(field, index)| {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 for (slot, payload) in &points {
                     let values = payload.get_value(field);
                     index.add_point(fs, *slot, &values)?;

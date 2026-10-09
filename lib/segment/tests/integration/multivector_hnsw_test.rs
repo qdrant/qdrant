@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::mmap::AdviceSetting;
 use common::progress_tracker::ProgressTracker;
@@ -50,7 +50,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment
         .create_field_index(

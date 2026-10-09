@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use ahash::AHashMap;
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;

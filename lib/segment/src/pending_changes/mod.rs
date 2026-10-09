@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use common::counter::hw;
+use common::ambient;
 use common::is_alive_lock::IsAliveLock;
 use common::reason::reason;
 use parking_lot::Mutex;
@@ -358,7 +358,7 @@ pub fn apply_change<S>(segment: &mut S, change: &PendingChange) -> OperationResu
 where
     S: NonAppendableSegmentEntry + ?Sized,
 {
-    let _hw = hw::unmeasured_guard(reason("Internal operation"));
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     match change {
         PendingChange::DeletePoint { point_id, versions } => {

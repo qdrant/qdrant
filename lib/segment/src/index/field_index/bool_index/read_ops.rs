@@ -18,9 +18,8 @@
 
 use std::path::PathBuf;
 
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
-use common::counter::HwMeasurementIteratorExt;
-use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 use serde_json::Value;
 

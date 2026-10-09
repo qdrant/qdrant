@@ -1,6 +1,6 @@
 use blobstore::Blob;
 use blobstore::error::BlobstoreError;
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;

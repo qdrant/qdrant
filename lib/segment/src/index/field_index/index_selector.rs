@@ -636,8 +636,8 @@ pub(crate) fn null_dir(dir: &Path, field: &JsonPath) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::bitvec::BitVec;
-    use common::counter::hw;
     use serde_json::{Value, json};
 
     use super::*;
@@ -652,7 +652,7 @@ mod tests {
     fn non_appendable_build_applies_placement() {
         let field = JsonPath::new("field");
         let deleted = BitVec::repeat(false, 1);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         for memory in [Memory::Cold, Memory::Cached, Memory::Pinned] {
             let cases: [(PayloadSchemaParams, Value); 4] = [

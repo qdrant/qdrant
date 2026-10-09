@@ -1,9 +1,8 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use ordered_float::OrderedFloat;
 use segment::json_path::JsonPath;

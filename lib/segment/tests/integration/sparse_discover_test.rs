@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::types::TelemetryDetail;
 use common::universal_io::MmapFs;
 use itertools::Itertools;
@@ -159,7 +160,7 @@ fn sparse_index_discover_test() {
     let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
     let (mut dense_segment, _) = build_segment(dir.path(), &dense_config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let (sparse_vector, dense_vector) = random_named_vector(&mut rnd, dim);
@@ -227,15 +228,11 @@ fn sparse_index_discover_test() {
         let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, None);
 
         let sparse_search_result = query_context
-            .hardware_usage_accumulator()
+            .handoff()
             .enter(|| sparse_index.search(&[&sparse_query], None, top, None, &vector_context))
             .unwrap();
 
-        let cpu_usage = query_context
-            .hardware_usage_accumulator()
-            .context()
-            .unwrap()
-            .hw_data()[HwMetric::Cpu];
+        let cpu_usage = query_context.handoff().context().unwrap().hw_data()[HwMetric::Cpu];
         assert!(cpu_usage > 0);
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
@@ -289,7 +286,7 @@ fn sparse_index_hardware_measurement_test() {
 
     let (mut sparse_segment, _) = build_segment(dir.path(), &sparse_config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let (sparse_vector, _) = random_named_vector(&mut rnd, dim);
@@ -327,11 +324,7 @@ fn sparse_index_hardware_measurement_test() {
     let segment_query_context = query_context.get_segment_query_context();
     let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, None);
 
-    let cpu_usage = query_context
-        .hardware_usage_accumulator()
-        .context()
-        .unwrap()
-        .hw_data()[HwMetric::Cpu];
+    let cpu_usage = query_context.handoff().context().unwrap().hw_data()[HwMetric::Cpu];
     assert_eq!(cpu_usage, 0);
 
     // Some filter so we do plain sparse search
@@ -339,14 +332,10 @@ fn sparse_index_hardware_measurement_test() {
     let filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
     query_context
-        .hardware_usage_accumulator()
+        .handoff()
         .enter(|| sparse_index.search(&[&query_vec], Some(&filter), 1, None, &vector_context))
         .unwrap();
 
-    let cpu_usage = query_context
-        .hardware_usage_accumulator()
-        .context()
-        .unwrap()
-        .hw_data()[HwMetric::Cpu];
+    let cpu_usage = query_context.handoff().context().unwrap().hw_data()[HwMetric::Cpu];
     assert!(cpu_usage > 0);
 }

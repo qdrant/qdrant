@@ -8,8 +8,9 @@ use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSliceExt;
-use common::counter::hw::{self, HwMetric};
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
@@ -127,7 +128,7 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle(
         for dim in [1, 127, 128, 1024, 4096, 4097] {
             let distance = Distance::Dot;
             let dir = Builder::new().prefix("turbo_storage").tempdir().unwrap();
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
 
             // Independent oracle, computed up front and fully independently of the
             // storage: a fresh quantizer configured exactly like the storage's
@@ -345,7 +346,7 @@ fn reinsert_clears_deleted_flag_and_count() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_reinsert").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
@@ -417,7 +418,7 @@ fn get_vector_opt_returns_none_for_absent_key() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_opt_none").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
@@ -449,7 +450,7 @@ fn insert_overwrites_existing_key_in_place() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_overwrite").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // Two near-orthogonal unit vectors so the stored one is unambiguous.
         let inputs = make_vectors(DIM, 2, seed);
@@ -500,7 +501,7 @@ fn metadata_accessors_report_expected_values() {
     const SEED: u64 = 0x0FEED;
 
     let distance = Distance::Dot;
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // `in_ram` drives `populate`, which is exactly what `is_cold` reports.
     for (in_ram, expect_on_disk) in [(true, false), (false, true)] {
@@ -550,7 +551,7 @@ fn files_and_immutable_files_match_expected_layout() {
 
     let distance = Distance::Dot;
     let dir = Builder::new().prefix("turbo_files").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut storage =
         open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
@@ -591,7 +592,7 @@ fn available_count_and_size_track_deletions() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_avail").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
@@ -648,7 +649,7 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_read_batch").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage =
             open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
@@ -768,7 +769,7 @@ fn nearest_scorer_ranks_self_first(
         for dim in [4, 127, 128, 256] {
             for seed in SEEDS {
                 let dir = Builder::new().prefix("turbo_scorer").tempdir().unwrap();
-                let _hw = hw::test_guard();
+                let _scope = ambient::test_guard();
                 let mut storage =
                     open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
                         .unwrap();
@@ -840,7 +841,7 @@ fn score_bytes_matches_score_stored(
                     .prefix("turbo_score_bytes")
                     .tempdir()
                     .unwrap();
-                let _hw = hw::test_guard();
+                let _scope = ambient::test_guard();
                 let mut storage =
                     open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
                         .unwrap();
@@ -911,7 +912,7 @@ fn custom_reco_scorer_ranks_positive_first(
         for dim in [4, 128, 256] {
             for seed in SEEDS {
                 let dir = Builder::new().prefix("turbo_reco").tempdir().unwrap();
-                let _hw = hw::test_guard();
+                let _scope = ambient::test_guard();
                 let mut storage =
                     open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
                         .unwrap();
@@ -1139,7 +1140,7 @@ fn run_model_scenario(dim: usize, distance: Distance, bits: TQBits, seed: u64, o
     let oracle = Oracle::new(dim, distance, bits);
     let dir = Builder::new().prefix("turbo_model_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("turbo_model_dst").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let stopped = AtomicBool::new(false);
 
     let mut model: Vec<Slot> = Vec::new();
@@ -1373,7 +1374,7 @@ fn score_stored_batch_matches_score_stored(
     let distance = Distance::Dot;
     let seed = SEEDS[0];
     let inputs = make_vectors(DIM, COUNT, seed);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
@@ -1473,7 +1474,7 @@ fn batched_retrieval_matches_per_point_reads(
     let distance = Distance::Dot;
     let seed = SEEDS[1];
     let inputs = make_vectors(DIM, COUNT, seed);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
@@ -1576,7 +1577,7 @@ fn batched_retrieval_matches_per_point_reads(
 fn batch_scoring_accumulates_same_hw_counters(
     #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
-    use common::counter::AmbientContext;
+    use common::ambient::AmbientContext;
 
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
@@ -1597,29 +1598,29 @@ fn batch_scoring_accumulates_same_hw_counters(
 
     let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
 
-    let per_point_acc = AmbientContext::new();
+    let per_point_ctx = AmbientContext::new();
     {
-        let _hw = per_point_acc.measure_guard();
+        let _scope = per_point_ctx.measure_guard();
         let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         for &id in &ids {
             scorer.score_stored(id);
         }
     }
 
-    let batch_acc = AmbientContext::new();
+    let batch_ctx = AmbientContext::new();
     {
-        let _hw = batch_acc.measure_guard();
+        let _scope = batch_ctx.measure_guard();
         let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         let mut scores = vec![0.0; ids.len()];
         scorer.score_stored_batch(&ids, &mut scores).unwrap();
     }
 
     assert_eq!(
-        batch_acc.hw_data()[HwMetric::Cpu],
-        per_point_acc.hw_data()[HwMetric::Cpu]
+        batch_ctx.hw_data()[HwMetric::Cpu],
+        per_point_ctx.hw_data()[HwMetric::Cpu]
     );
     assert_eq!(
-        batch_acc.hw_data()[HwMetric::VectorIoRead],
-        per_point_acc.hw_data()[HwMetric::VectorIoRead],
+        batch_ctx.hw_data()[HwMetric::VectorIoRead],
+        per_point_ctx.hw_data()[HwMetric::VectorIoRead],
     );
 }
