@@ -496,6 +496,17 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<bool, StorageError> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
+        // TODO: Check all peer changes with CSM before applying and persisting `conf_state`.
+        //
+        // Currently, we update Raft membership *before* running the peer-change handlers.
+        // We call `apply_conf_change` *before* `match single_change.change_type() { ... }`.
+        //
+        // For example, if we are removing a peer and `remove_peer` returns `BadRequest` error,
+        // the peer is already absent from Raft and no longer receives new Raft log entries,
+        // but is still present in `peer_address_by_id`. Replicas and transfers still refer to it.
+        //
+        // When CSM applies operations, user errors must leave Raft membership unchanged.
+
         let conf_state = raw_node.apply_conf_change(&change)?;
         log::debug!("Applied conf state {conf_state:?}");
         self.persistent
