@@ -40,7 +40,9 @@ pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
 /// of test order. The field is private, set through the same route a config
 /// file takes.
 pub(crate) fn init_serverless_feature_flags() {
-    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    let flags: FeatureFlags =
+        serde_json::from_str(r#"{ "serverless_compatible": true, "resolve_point_moves": true }"#)
+            .unwrap();
     init_feature_flags(flags);
 }
 

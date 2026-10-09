@@ -7,6 +7,7 @@ use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use segment::id_tracker::point_moves::PointMovesMode;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 use uuid::Uuid;
@@ -104,8 +105,16 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         // cannot spin this loop forever.
         const MAX_ATTEMPTS: usize = 3;
 
+        // The pass that resolves point moves installs and deletes in another order; without the
+        // feature flag the follower keeps this one
+        let resolve_point_moves = PointMovesMode::for_follower().is_resolve();
         for _ in 0..MAX_ATTEMPTS {
-            match self.live_reload_attempt(is_stopped)? {
+            let outcome = if resolve_point_moves {
+                self.live_reload_attempt_resolving(is_stopped)?
+            } else {
+                self.live_reload_attempt(is_stopped)?
+            };
+            match outcome {
                 LiveReloadOutcome::Complete => return Ok(LiveReloadOutcome::Complete),
                 LiveReloadOutcome::ManifestChanged => {}
             }
@@ -158,7 +167,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             new_segments,
             self.load_profile.as_ref(),
             is_stopped,
-        )?;
+        )?
+        .segments;
 
         // The swap below and the config re-derivation that follows it are one indivisible step:
         // a config lagging behind the segment set must never be observable.

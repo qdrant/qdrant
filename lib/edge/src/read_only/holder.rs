@@ -72,10 +72,15 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegmentHolder<S> {
         self.by_uuid.retain(|uuid, _| on_disk.contains_key(uuid));
     }
 
-    /// Drop a single segment (e.g. one whose files vanished mid-reload and whose removal was
-    /// confirmed against the manifest). Same handle-only semantics as [`Self::remove_missing`].
+    /// Drop a single segment: one the leader superseded, or whose files vanished mid-reload. Same
+    /// handle-only semantics as [`Self::remove_missing`].
     pub(crate) fn remove(&mut self, uuid: &Uuid) {
         self.by_uuid.remove(uuid);
+    }
+
+    /// Whether the segment `uuid` accepts appends, and can therefore be a move target.
+    pub(crate) fn is_appendable(&self, uuid: &Uuid) -> bool {
+        self.by_uuid.get(uuid).is_some_and(|slot| slot.appendable)
     }
 
     pub(crate) fn segment_arc(&self, uuid: &Uuid) -> Option<Arc<RwLock<ReadOnlySegment<S>>>> {

@@ -23,6 +23,7 @@ sparse = { path = "../sparse" }
 wal = { path = "../wal" }
 
 ahash = { workspace = true }
+atomic_refcell = { workspace = true }
 core_affinity = { workspace = true }
 fs-err = { workspace = true }
 futures = { workspace = true }
@@ -32,6 +33,7 @@ ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
+roaring = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
