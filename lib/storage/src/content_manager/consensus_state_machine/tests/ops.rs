@@ -2767,6 +2767,67 @@ fn remove_peer_aborts_transfer_before_replica() {
 }
 
 #[test]
+fn remove_peer_aborts_related_resharding_transfers() {
+    let mut state = auto_resharding_state(3);
+    add_peer(&mut state, OTHER_PEER_ID, Some("1.18.0"));
+    let resharding = ReshardState::new(Uuid::nil(), ReshardingDirection::Up, PEER_ID, 2, None);
+    let transfers: Vec<_> = (0..2)
+        .map(|shard_id| ShardTransfer {
+            shard_id,
+            to_shard_id: Some(2),
+            from: PEER_ID,
+            to: OTHER_PEER_ID,
+            sync: true,
+            method: Some(ShardTransferMethod::ReshardingStreamRecords),
+            filter: None,
+        })
+        .collect();
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.resharding = Some(resharding);
+    collection.shards.get_mut(&2).expect("shard").replicas =
+        HashMap::from([(OTHER_PEER_ID, ReplicaState::Resharding)]);
+    collection.transfers.extend(transfers.iter().cloned());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&ConsensusOperations::RemovePeer(OTHER_PEER_ID));
+
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("removing a resharding transfer peer should be accepted, got {outcome:?}");
+    };
+
+    for transfer in transfers {
+        let unregister_count = actions
+            .iter()
+            .filter(|action| {
+                matches!(action, Action::UnregisterTransfer { key, .. } if *key == transfer.key())
+            })
+            .count();
+        assert_eq!(unregister_count, 1);
+    }
+    assert!(matches!(
+        actions.last(),
+        Some(Action::RemovePeer {
+            peer_id: OTHER_PEER_ID
+        })
+    ));
+
+    let state = machine.state();
+    let collection = state.collection(COLLECTION).expect("collection");
+    assert!(collection.resharding.is_none());
+    assert!(collection.transfers.is_empty());
+    assert_eq!(collection.config.params.shard_number.get(), 2);
+    assert_eq!(collection.shards.len(), 2);
+    assert!(
+        collection
+            .shards
+            .values()
+            .all(|shard| { shard.replicas == HashMap::from([(PEER_ID, ReplicaState::Active)]) })
+    );
+    assert!(!state.peer_address_by_id.contains_key(&OTHER_PEER_ID));
+    assert!(!state.peer_metadata_by_id.contains_key(&OTHER_PEER_ID));
+}
+
+#[test]
 fn remove_peer_force_aborts_resharding() {
     let mut state = auto_resharding_state(2);
     add_peer(&mut state, OTHER_PEER_ID, Some("1.18.0"));
