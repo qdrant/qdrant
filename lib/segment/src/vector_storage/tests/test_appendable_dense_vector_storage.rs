@@ -280,10 +280,12 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
 
     let raw_res1 = raw_scorer
         .score_points(&mut query_points.clone(), 0)
+        .unwrap()
         .collect::<Vec<_>>();
 
     let raw_res2 = raw_scorer
         .score_points(&mut query_points.clone(), 0)
+        .unwrap()
         .collect::<Vec<_>>();
 
     assert_eq!(raw_res1, raw_res2);

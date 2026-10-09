@@ -106,9 +106,13 @@ fn test_random_score(
     let points = rng.random_range(1..storage.total_vector_count());
     let points = (0..storage.total_vector_count() as _).sample(&mut rng, points);
 
-    let res = scorer.score_points(&mut points.clone(), 0).collect_vec();
+    let res = scorer
+        .score_points(&mut points.clone(), 0)
+        .unwrap()
+        .collect_vec();
     let async_res = async_scorer
         .score_points(&mut points.clone(), 0)
+        .unwrap()
         .collect_vec();
 
     assert_eq!(res, async_res);

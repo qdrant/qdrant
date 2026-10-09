@@ -4,6 +4,7 @@ use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::common::operation_error::OperationResult;
 use crate::vector_storage::SparseVectorStorageRead;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
@@ -56,14 +57,17 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
     }
 
     #[inline]
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.vector_storage
             .for_each_in_sparse_batch(ids, |idx, vector| {
                 scores[idx] = self.score_ref(&vector);
             })
-            .expect("sparse vectors read");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
