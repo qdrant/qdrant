@@ -504,7 +504,6 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
 /// length normalization off since that index has no lengths.
 #[test]
 fn document_scan_fallback_matches_frequency_postings() {
-    let hw_counter = HardwareCounterCell::new();
     let mut rng = StdRng::seed_from_u64(31);
     let mut with_frequencies = MutableInvertedIndex::new(true, true);
     let mut ids_only = MutableInvertedIndex::new(true, false);
@@ -512,11 +511,9 @@ fn document_scan_fallback_matches_frequency_postings() {
         let len = rng.random_range(3..=60);
         let tokens: Vec<String> = (0..len).map(|_| word(&mut rng)).collect();
         with_frequencies
-            .index_str_tokens(idx, &tokens, Some(len), &hw_counter)
+            .index_str_tokens(idx, &tokens, Some(len))
             .unwrap();
-        ids_only
-            .index_str_tokens(idx, &tokens, None, &hw_counter)
-            .unwrap();
+        ids_only.index_str_tokens(idx, &tokens, None).unwrap();
     }
     for idx in [4, 40, 44] {
         with_frequencies.remove(idx);
