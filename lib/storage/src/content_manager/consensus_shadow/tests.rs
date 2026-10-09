@@ -11,10 +11,13 @@ use std::sync::{Arc, mpsc};
 
 use collection::collection_state;
 use collection::collection_state::ShardInfo;
+use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::{ReshardState, ReshardingStage};
 use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use raft::eraftpb::{ConfState, Entry as RaftEntry, Snapshot, SnapshotMetadata};
 use segment::types::PayloadSchemaType;
 use serde_json::json;
@@ -84,6 +87,91 @@ fn manager_preserves_handler_result() {
     let manager = manager(container, ShadowMode::Disabled, dir.path());
 
     assert!(!manager.apply_normal_entry(&entry(&nop())).expect("nop"));
+}
+
+#[test]
+fn manager_compares_peer_removal_rejection_before_stop_flag() {
+    let mut container = container();
+    container.peer_removal_error = Some(StorageError::bad_request("resharding must be completed"));
+    {
+        let mut collections = container.collections.lock();
+        let collection = collections.get_mut(COLLECTION).unwrap();
+        collection.config.params.shard_number = std::num::NonZeroU32::new(2).unwrap();
+        collection.shards = [
+            (
+                0,
+                ShardInfo {
+                    replicas: HashMap::from([(PEER_ID, ReplicaState::Active)]),
+                },
+            ),
+            (
+                1,
+                ShardInfo {
+                    replicas: HashMap::from([(OTHER_PEER_ID, ReplicaState::Active)]),
+                },
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let mut resharding = ReshardState::new(
+            uuid::Uuid::nil(),
+            ReshardingDirection::Down,
+            PEER_ID,
+            1,
+            None,
+        );
+        resharding.stage = ReshardingStage::ReadHashRingCommitted;
+        collection.resharding = Some(resharding);
+        let transfer = ShardTransfer {
+            shard_id: 1,
+            to_shard_id: Some(0),
+            from: OTHER_PEER_ID,
+            to: PEER_ID,
+            sync: true,
+            method: Some(ShardTransferMethod::ReshardingStreamRecords),
+            filter: None,
+        };
+        collection.transfers.insert(transfer);
+    }
+    let container = Arc::new(container);
+    let before = container.collections.lock().clone();
+    let dir = tempdir();
+    let manager = manager(container.clone(), ShadowMode::Panic, dir.path());
+
+    let stop = manager
+        .on_peer_remove(OTHER_PEER_ID)
+        .expect("user error must not stop consensus");
+
+    assert!(!stop);
+    assert_eq!(
+        container.snapshots(),
+        1,
+        "peer removal must run shadow validation"
+    );
+    assert_eq!(*container.collections.lock(), before);
+}
+
+#[test]
+#[should_panic(expected = "state machine accepted operation, but operation handler returned error")]
+fn manager_detects_peer_removal_outcome_divergence() {
+    let mut container = container();
+    container.peer_removal_error = Some(StorageError::bad_request("unexpected rejection"));
+    let dir = tempdir();
+    let manager = manager(Arc::new(container), ShadowMode::Panic, dir.path());
+
+    let _ = manager.on_peer_remove(OTHER_PEER_ID);
+}
+
+#[test]
+fn manager_self_removal_skips_shadow_validation() {
+    let container = Arc::new(container());
+    let dir = tempdir();
+    let manager = manager(container.clone(), ShadowMode::Panic, dir.path());
+
+    let stop = manager.on_peer_remove(PEER_ID).expect("self removal");
+
+    assert!(stop);
+    assert_eq!(container.snapshots(), 0);
 }
 
 /// Consensus state machine and `Container` contain the same collection, but with different shard
@@ -564,6 +652,7 @@ fn container() -> Container {
             ..Default::default()
         },
         handler_result: true,
+        peer_removal_error: None,
         snapshots: AtomicUsize::new(0),
         snapshots_before_handler: AtomicUsize::new(0),
         dirty_collections: Mutex::new(BTreeSet::new()),
@@ -578,6 +667,7 @@ struct Container {
     aliases: Mutex<AliasMapping>,
     quota_config: QuotaConfig,
     handler_result: bool,
+    peer_removal_error: Option<StorageError>,
     /// Number of full collection-state reads, used to distinguish resync from rebuild
     snapshots: AtomicUsize,
     /// Number of full collection-state reads observed when operation handler ran
@@ -690,11 +780,14 @@ impl CollectionContainer for Container {
         Ok(())
     }
 
-    // Remaining `CollectionContainer` methods are not exercised by these tests
-
     fn remove_peer(&self, _peer_id: PeerId) -> Result<(), StorageError> {
-        unimplemented!()
+        match &self.peer_removal_error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
     }
+
+    // Remaining `CollectionContainer` methods are not exercised by these tests
 
     fn peer_has_shards(&self, _peer_id: PeerId) -> bool {
         unimplemented!()

@@ -327,25 +327,35 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ///
     /// Return if consensus should be stopped.
     pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
-        let mut stop_consensus: bool = false;
-
-        let report = match self.remove_peer(peer_id) {
-            Ok(()) => {
-                if self.this_peer_id() == peer_id {
-                    stop_consensus = true;
-                }
-                Ok(true)
-            }
-            #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
-            Err(err) => match err {
-                err @ StorageError::ServiceError { .. } => {
-                    return Err(err);
-                }
-                _ => Err(err),
-            },
-        };
         let operation = ConsensusOperations::RemovePeer(peer_id);
+
+        let result = if self.this_peer_id() == peer_id {
+            // If the current peer is removed, we stop consensus and no longer need CSM validation
+            self.invalidate_shadow();
+            self.remove_peer(peer_id).map(|_| true)
+        } else {
+            self.apply_with_shadow(&operation, || self.remove_peer(peer_id).map(|_| true))
+        };
+
+        let (report, stop_consensus) = match result {
+            Ok(_) => {
+                // If `remove_peer` returned `Ok`, report `Ok(true)` to the client
+                // and stop consensus if the *current* peer is being removed
+                (Ok(true), self.this_peer_id() == peer_id)
+            }
+            Err(err @ StorageError::ServiceError { .. }) => {
+                // If `remove_peer` returned a service error, propagate it to the consensus thread.
+                // The consensus thread restarts after a backoff delay and retries the operation.
+                return Err(err);
+            }
+            Err(err) => {
+                // If `remove_peer` returned a user error, report the error to the client and continue
+                (Err(err), false)
+            }
+        };
+
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+
         if let Some(on_apply) = on_apply
             && on_apply.send(report).is_err()
         {
@@ -353,6 +363,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 "Failed to notify on consensus operation completion: channel receiver is dropped",
             )
         }
+
         Ok(stop_consensus)
     }
 
@@ -551,19 +562,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
-                    let operation = ConsensusOperations::RemovePeer(single_change.node_id);
-
-                    // Detaching this node clears its outbound channel map rather than preserving
-                    // cluster state for another entry. It stops immediately, so there is no
-                    // subsequent state-machine decision to validate on this peer.
-                    let stop = if self.this_peer_id() == single_change.node_id {
-                        self.invalidate_shadow();
-                        self.on_peer_remove(single_change.node_id)?
-                    } else {
-                        self.apply_with_shadow(&operation, || {
-                            self.on_peer_remove(single_change.node_id)
-                        })?
-                    };
+                    let stop = self.on_peer_remove(single_change.node_id)?;
                     stop_consensus |= stop;
                 }
                 ConfChangeType::AddLearnerNode => {
