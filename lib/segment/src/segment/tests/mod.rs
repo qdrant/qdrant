@@ -1390,8 +1390,8 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
         let quantized_scorer = quantized_vectors.raw_scorer(query.clone()).unwrap();
         let original_scorer = new_raw_scorer(query.clone(), &vector_storage).unwrap();
         for i in 0..num_points as PointOffsetType {
-            let quantized = quantized_scorer.score_point(i);
-            let original = original_scorer.score_point(i);
+            let quantized = quantized_scorer.score_point(i).unwrap();
+            let original = original_scorer.score_point(i).unwrap();
             assert!(
                 (quantized - original).abs() < 0.05,
                 "point {i}: quantized score {quantized} vs original {original}",

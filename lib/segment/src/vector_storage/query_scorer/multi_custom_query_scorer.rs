@@ -108,11 +108,11 @@ impl<
 > QueryScorer for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
         let stored = self.vector_storage.get_multi::<Random>(idx);
         self.hw.vector_io_read(stored.as_ref().vectors_count());
 
-        self.score_ref(stored.as_ref())
+        Ok(self.score_ref(stored.as_ref()))
     }
 
     fn score_stored_batch(

@@ -99,14 +99,10 @@ where
         Ok(())
     }
 
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        // account for read outside of `score_by` because the closure is called once per example
-        self.hw
-            .vector_io_read(self.quantized_storage.quantized_vector_size());
-        hw::scale_cpu(self.hw.cpu, || {
-            self.query
-                .score_by(|this| self.quantized_storage.score_point(this, idx))
-        })
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        let mut score = [0.0];
+        self.score_stored_batch(&[idx], &mut score)?;
+        Ok(score[0])
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

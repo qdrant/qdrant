@@ -60,17 +60,17 @@ where
     TStorage: TurboScoring,
     TQuery: Query<EncodedQueryTQ>,
 {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
         // Read the stored vector once (one vector of IO), then score every
         // sub-query against it — each sub-query is one vector of CPU work.
         // The per-vector byte cost is the counter multiplier set in `new`.
         let bytes = self.storage.get_quantized_vector(idx);
         self.hw.vector_io_read(1);
 
-        self.query.score_by(|query| {
+        Ok(self.query.score_by(|query| {
             self.hw.cpu(1);
             self.storage.score_query_bytes(query, &bytes)
-        })
+        }))
     }
 
     #[inline]

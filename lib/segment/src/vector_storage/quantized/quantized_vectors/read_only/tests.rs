@@ -172,6 +172,53 @@ fn read_only_matches_read_write(
     }
 }
 
+/// A read past the stored vectors stands in for a failed object-storage read.
+#[rstest]
+#[case::scalar_mmap(scalar_config(false), QuantizedVectorsStorageType::Immutable)]
+#[case::binary_chunked(binary_config(false), QuantizedVectorsStorageType::Mutable)]
+#[case::turbo_chunked(turbo_config(false), QuantizedVectorsStorageType::Mutable)]
+fn score_point_reports_a_failed_read(
+    #[case] config: QuantizationConfig,
+    #[case] storage_type: QuantizedVectorsStorageType,
+) {
+    let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();
+    let quant_dir = tempfile::Builder::new().prefix("quant").tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(SEED);
+
+    let storage = build_on_disk_storage(dir.path(), &mut rng);
+    QuantizedVectors::create(
+        &storage,
+        &config,
+        storage_type,
+        quant_dir.path(),
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
+        &MmapFs,
+        quant_dir.path(),
+        storage.distance(),
+        storage.datatype(),
+        None,
+        storage.is_cold(),
+        None,
+    )
+    .unwrap()
+    .expect("quantization config exists");
+
+    let _scope = ambient::test_guard();
+    let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
+    let scorer = ro.raw_scorer(query).unwrap();
+    assert!(scorer.score_point(0).is_ok());
+    assert!(
+        scorer
+            .score_point(NUM_POINTS as PointOffsetType + 8)
+            .is_err(),
+        "a read past the stored vectors must be an error, not a panic",
+    );
+}
+
 /// A cold populate override (request-specific load profile) demotes a pinned
 /// storage kind to its mmap counterpart over the same flat files: the open
 /// must not materialize the data in RAM, and scores must stay bit-identical

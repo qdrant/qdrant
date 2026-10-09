@@ -1848,7 +1848,7 @@ mod tests {
                         let scorer = TurboMultiQueryScorer::new(query, &storage);
 
                         let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                            .map(|k| scorer.score_stored(k))
+                            .map(|k| scorer.score_stored(k).unwrap())
                             .collect();
                         let best = (0..COUNT)
                             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -1914,7 +1914,7 @@ mod tests {
                         let scorer = TurboMultiCustomQueryScorer::new(reco, &storage);
 
                         let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                            .map(|k| scorer.score_stored(k))
+                            .map(|k| scorer.score_stored(k).unwrap())
                             .collect();
                         let best = (0..COUNT)
                             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())

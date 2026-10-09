@@ -120,7 +120,7 @@ impl<'a> GraphLayersHealer<'a> {
                 } else {
                     pending.push(ScoredPointOffset {
                         idx: point,
-                        score: scorer.score_point(point),
+                        score: scorer.score_point(point)?,
                     });
                 }
             }

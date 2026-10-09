@@ -925,8 +925,8 @@ mod tests {
         let scorer_orig = new_raw_scorer(query.clone(), &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);
@@ -947,8 +947,8 @@ mod tests {
         let scorer_orig = new_raw_scorer(query, &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);

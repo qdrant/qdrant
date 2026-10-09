@@ -290,7 +290,7 @@ impl<'a> FilteredScorer<'a> {
             .map(|(&idx, &score)| ScoredPointOffset { idx, score }))
     }
 
-    pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {
+    pub fn score_point(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         self.raw_scorer.score_point(point_id)
     }
 

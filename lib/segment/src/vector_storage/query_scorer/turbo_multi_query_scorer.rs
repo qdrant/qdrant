@@ -38,8 +38,8 @@ impl<'a, TStorage: TurboMultiScoring> TurboMultiQueryScorer<'a, TStorage> {
 }
 
 impl<TStorage: TurboMultiScoring> QueryScorer for TurboMultiQueryScorer<'_, TStorage> {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.storage.score_point_max_similarity(&self.query, idx)
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        Ok(self.storage.score_point_max_similarity(&self.query, idx))
     }
 
     fn score_stored_batch(

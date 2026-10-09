@@ -748,7 +748,7 @@ mod tests {
                 .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
-                score: scorer.score_point(0),
+                score: scorer.score_point(0).unwrap(),
             };
             let search_result = test
                 .graph_layers_builder
@@ -969,7 +969,7 @@ mod tests {
                 .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
-                score: scorer.score_point(0),
+                score: scorer.score_point(0).unwrap(),
             };
             let search_result = test
                 .graph_layers_builder

@@ -288,7 +288,7 @@ pub trait GraphLayersBase {
             // If no levels, return the entry point with it's score
             Ok(ScoredPointOffset {
                 idx: entry_point,
-                score: points_scorer.score_point(entry_point),
+                score: points_scorer.score_point(entry_point)?,
             })
         }
     }
@@ -313,7 +313,7 @@ pub trait GraphLayersBase {
         let mut changed = true;
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
-            score: points_scorer.score_point(entry_point),
+            score: points_scorer.score_point(entry_point)?,
         };
         while changed {
             changed = false;
@@ -418,7 +418,7 @@ pub trait GraphLayersWithVectors: GraphLayersBase {
         let mut links_buffer = Vec::new();
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
-            score: links_scorer_raw.score_point(entry_point),
+            score: links_scorer_raw.score_point(entry_point)?,
         };
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
@@ -923,7 +923,7 @@ mod tests {
             .search_on_level(
                 &[ScoredPointOffset {
                     idx: 0,
-                    score: scorer.score_point(0),
+                    score: scorer.score_point(0).unwrap(),
                 }],
                 0,
                 32,
@@ -1065,7 +1065,7 @@ mod tests {
         let _scope = ambient::test_guard();
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
-            let score = scorer.score_point(idx);
+            let score = scorer.score_point(idx).unwrap();
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
