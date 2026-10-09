@@ -5,14 +5,14 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
 use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use parking_lot::RwLock;
 use orx_parallel::pools::BasicPool;
+use parking_lot::RwLock;
 
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::HnswM;
+use crate::index::hnsw_index::build_parallel::par_try_for_each;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::{GraphLayersBuilder, LockedLayersContainer};
-use crate::index::hnsw_index::build_parallel::par_try_for_each;
 use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
 use crate::index::visited_pool::VisitedPool;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -222,23 +222,27 @@ impl<'a> GraphLayersHealer<'a> {
         stopped: &AtomicBool,
         counter: &AtomicU64,
     ) -> OperationResult<()> {
-        par_try_for_each(pool, std::mem::take(&mut self.to_heal), |(offset, level)| {
-            check_process_stopped(stopped)?;
+        par_try_for_each(
+            pool,
+            std::mem::take(&mut self.to_heal),
+            |(offset, level)| {
+                check_process_stopped(stopped)?;
 
-            let _hw = hw::unmeasured_guard(reason("Internal operation"));
-            let query = vector_storage
-                .get_vector::<Random>(offset)
-                .as_vec_ref()
-                .into();
-            let scorer = if let Some(quantized_vectors) = quantized_vectors {
-                quantized_vectors.raw_scorer(query)?
-            } else {
-                new_raw_scorer(query, vector_storage)?
-            };
-            self.heal_point_on_level(offset, level, scorer.as_ref());
-            counter.fetch_add(1, Ordering::Relaxed);
-            Ok(())
-        })
+                let _hw = hw::unmeasured_guard(reason("Internal operation"));
+                let query = vector_storage
+                    .get_vector::<Random>(offset)
+                    .as_vec_ref()
+                    .into();
+                let scorer = if let Some(quantized_vectors) = quantized_vectors {
+                    quantized_vectors.raw_scorer(query)?
+                } else {
+                    new_raw_scorer(query, vector_storage)?
+                };
+                self.heal_point_on_level(offset, level, scorer.as_ref());
+                counter.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            },
+        )
     }
 
     pub fn save_into_builder(self, builder: &GraphLayersBuilder) {

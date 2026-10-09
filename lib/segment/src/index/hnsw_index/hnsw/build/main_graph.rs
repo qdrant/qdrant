@@ -9,13 +9,13 @@ use orx_parallel::pools::BasicPool;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::index::hnsw_index::build_parallel::par_try_for_each;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 use crate::index::hnsw_index::hnsw::{
     FINISH_MAIN_GRAPH_LOG_MESSAGE, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
-use crate::index::hnsw_index::build_parallel::par_try_for_each;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};

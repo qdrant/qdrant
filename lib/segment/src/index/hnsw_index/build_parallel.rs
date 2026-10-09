@@ -5,8 +5,8 @@ use common::cpu::linux_low_thread_priority;
 use orx_parallel::pools::BasicPool;
 use orx_parallel::{IntoParIter, IterationOrder, Par, ParResult, Runner};
 
-use crate::common::operation_error::OperationResult;
 use super::hnsw::HNSW_BUILD_MAX_PAR_LEN;
+use crate::common::operation_error::OperationResult;
 
 /// Ensure HNSW build worker threads run at low priority (once per OS thread).
 ///
@@ -22,9 +22,7 @@ fn ensure_hnsw_build_thread_priority() {
         }
         #[cfg(target_os = "linux")]
         if let Err(err) = linux_low_thread_priority() {
-            log::debug!(
-                "Failed to set low thread priority for HNSW building, ignoring: {err}"
-            );
+            log::debug!("Failed to set low thread priority for HNSW building, ignoring: {err}");
         }
         set.set(true);
     });
