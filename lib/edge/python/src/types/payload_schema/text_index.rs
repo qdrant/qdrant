@@ -37,7 +37,7 @@ impl PyTextIndexParams {
         stemmer: Option<PyStemmingAlgorithm>,
         enable_hnsw: Option<bool>,
         memory: Option<PyMemory>,
-        scoring: Option<bool>,
+        scoring: Option<PyTextScoringInterface>,
     ) -> Self {
         Self(TextIndexParams {
             r#type: Default::default(),
@@ -52,7 +52,7 @@ impl PyTextIndexParams {
             memory: memory.map(segment::types::Memory::from),
             stemmer: stemmer.map(StemmingAlgorithm::from),
             enable_hnsw,
-            scoring: scoring.unwrap_or_default().then(TextScoringParams::default),
+            scoring: scoring.and_then(PyTextScoringInterface::into_params),
         })
     }
 
@@ -114,10 +114,9 @@ impl PyTextIndexParams {
         self.0.enable_hnsw
     }
 
-    /// Whether the index records document lengths, which BM25 needs.
     #[getter]
-    pub fn scoring(&self) -> bool {
-        self.0.scoring.is_some()
+    pub fn scoring(&self) -> Option<PyTextScoringParams> {
+        self.0.scoring.clone().map(PyTextScoringParams)
     }
 }
 
@@ -139,6 +138,83 @@ impl PyTextIndexParams {
             enable_hnsw: _,
             scoring: _,
         } = self.0;
+    }
+}
+
+/// `True` for the default ranking, `False` to disable it, or the parameters themselves.
+#[derive(FromPyObject)]
+pub enum PyTextScoringInterface {
+    Enabled(bool),
+    Params(PyTextScoringParams),
+}
+
+impl PyTextScoringInterface {
+    fn into_params(self) -> Option<TextScoringParams> {
+        match self {
+            Self::Enabled(enabled) => enabled.then(TextScoringParams::default),
+            Self::Params(params) => Some(params.0),
+        }
+    }
+}
+
+#[pyclass(name = "TextScoringParams", from_py_object)]
+#[derive(Clone, Debug, Into, TransparentWrapper)]
+#[repr(transparent)]
+pub struct PyTextScoringParams(TextScoringParams);
+
+#[pyclass_repr]
+#[pymethods]
+impl PyTextScoringParams {
+    #[new]
+    #[pyo3(signature = (r#type = PyTextScoringType::Bm25))]
+    pub fn new(r#type: PyTextScoringType) -> Self {
+        Self(TextScoringParams {
+            r#type: TextScoringType::from(r#type),
+        })
+    }
+
+    #[getter]
+    pub fn r#type(&self) -> PyTextScoringType {
+        PyTextScoringType::from(self.0.r#type)
+    }
+}
+
+impl PyTextScoringParams {
+    fn _getters(self) {
+        // Every field should have a getter method
+        let TextScoringParams { r#type: _ } = self.0;
+    }
+}
+
+#[pyclass(name = "TextScoringType", from_py_object)]
+#[derive(Copy, Clone, Debug)]
+pub enum PyTextScoringType {
+    Bm25,
+}
+
+impl Repr for PyTextScoringType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            Self::Bm25 => "Bm25",
+        };
+
+        f.simple_enum::<Self>(repr)
+    }
+}
+
+impl From<TextScoringType> for PyTextScoringType {
+    fn from(scoring_type: TextScoringType) -> Self {
+        match scoring_type {
+            TextScoringType::Bm25 => PyTextScoringType::Bm25,
+        }
+    }
+}
+
+impl From<PyTextScoringType> for TextScoringType {
+    fn from(scoring_type: PyTextScoringType) -> Self {
+        match scoring_type {
+            PyTextScoringType::Bm25 => TextScoringType::Bm25,
+        }
     }
 }
 

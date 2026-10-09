@@ -33,7 +33,7 @@ pub use crate::ops::{SearchMatrixRequest, SearchMatrixResponse};
 pub use crate::payload_index::{
     BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
     KeywordIndexParams, Language, PayloadIndexInfo, PayloadIndexParams, SnowballLanguage, Stemmer,
-    Stopwords, TextIndexParams, TokenizerType, UuidIndexParams,
+    Stopwords, TextIndexParams, TextScoringParams, TextScoringType, TokenizerType, UuidIndexParams,
 };
 pub use crate::shard::{EdgeShard, unpack_snapshot};
 pub use crate::update::{PayloadSchemaType, UpdateMode, UpdateOperation};

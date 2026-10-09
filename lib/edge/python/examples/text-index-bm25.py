@@ -8,7 +8,8 @@ from pathlib import Path
 from qdrant_edge import (
     EdgeShard, EdgeConfig, EdgeVectorParams, Distance,
     Bm25Params, Fusion, Point, Prefetch, Query, QueryRequest,
-    TextIndexParams, TextQuery, TokenizerType, UpdateOperation,
+    TextIndexParams, TextQuery, TextScoringParams, TextScoringType, TokenizerType,
+    UpdateOperation,
 )
 
 
@@ -22,8 +23,12 @@ os.makedirs(path)
 config = EdgeConfig(vectors={"dense": EdgeVectorParams(size=2, distance=Distance.Dot)})
 shard = EdgeShard.create(str(path), config)
 
+# `scoring=True` is short for `scoring=TextScoringParams(TextScoringType.Bm25)`.
 index = TextIndexParams(tokenizer=TokenizerType.Word, scoring=True)
-assert index.scoring
+assert index.scoring.type == TextScoringType.Bm25
+explicit = TextIndexParams(scoring=TextScoringParams(type=TextScoringType.Bm25))
+assert explicit.scoring.type == TextScoringType.Bm25
+assert TextIndexParams(scoring=False).scoring is None
 shard.update(UpdateOperation.create_field_index("text", index))
 shard.update(UpdateOperation.upsert_points([
     Point(1, {"dense": [1.0, 0.0]}, {"text": "the quick brown fox"}),

@@ -4544,7 +4544,7 @@ fn text_index_with_params_filters_with_stopwords() {
 fn text_query_ranks_by_bm25() {
     use qdrant_edge_ffi::{
         Bm25Params, PayloadIndexParams, QueryRequest, ScoringQuery, TextIndexParams,
-        TextQueryScoring,
+        TextQueryScoring, TextScoringParams, TextScoringType,
     };
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -4567,7 +4567,10 @@ fn text_query_ranks_by_bm25() {
             scoring,
         },
     };
-    for (field, scoring) in [("title", Some(true)), ("plain", None)] {
+    let bm25 = TextScoringParams {
+        r#type: TextScoringType::Bm25,
+    };
+    for (field, scoring) in [("title", Some(bm25)), ("plain", None)] {
         let op =
             UpdateOperation::create_field_index_with_params(field.to_string(), text_index(scoring))
                 .expect("create_field_index_with_params failed");

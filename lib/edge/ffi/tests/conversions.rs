@@ -1094,7 +1094,7 @@ fn text_index_params_full_fidelity_round_trip() {
     use qdrant_edge_ffi::config::Memory;
     use qdrant_edge_ffi::{
         Language, PayloadIndexParams, SnowballLanguage, Stemmer, Stopwords, TextIndexParams,
-        TokenizerType,
+        TextScoringParams, TextScoringType, TokenizerType,
     };
     use segment::data_types::index as segment_index;
     use segment::types::PayloadSchemaParams;
@@ -1116,7 +1116,9 @@ fn text_index_params_full_fidelity_round_trip() {
                 language: SnowballLanguage::English,
             }),
             enable_hnsw: Some(false),
-            scoring: Some(true),
+            scoring: Some(TextScoringParams {
+                r#type: TextScoringType::Bm25,
+            }),
         },
     };
 
@@ -1188,7 +1190,12 @@ fn text_index_params_full_fidelity_round_trip() {
         Some([Language::English, Language::Spanish])
     ));
     assert_eq!(custom, Some(vec!["qdrant".to_string()]));
-    assert_eq!(config.scoring, Some(true));
+    assert!(matches!(
+        config.scoring,
+        Some(TextScoringParams {
+            r#type: TextScoringType::Bm25
+        })
+    ));
     assert!(matches!(config.memory, Some(Memory::Cold)));
     assert!(matches!(
         config.stemmer,

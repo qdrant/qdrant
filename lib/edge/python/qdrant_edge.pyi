@@ -1530,7 +1530,7 @@ class TextIndexParams:
         stemmer: Optional["StemmingAlgorithm"] = None,
         enable_hnsw: Optional[bool] = None,
         memory: Optional["Memory"] = None,
-        scoring: Optional[bool] = None,
+        scoring: Optional[Union[bool, "TextScoringParams"]] = None,
     ) -> None:
         """
         Create TextIndexParams.
@@ -1548,8 +1548,9 @@ class TextIndexParams:
             enable_hnsw: Whether to enable HNSW index for this field.
             memory: Memory placement of the payload index. Overrides the deprecated
                     on_disk flag if both are set.
-            scoring: Record document lengths, so a TextQuery can rank points by
-                     BM25 over this field. Implies phrase_matching. Default: False.
+            scoring: Record document lengths, so a TextQuery can rank points over
+                     this field. `True` for BM25, or the TextScoringParams.
+                     Implies phrase_matching. Default: disabled.
         """
         ...
 
@@ -1609,9 +1610,33 @@ class TextIndexParams:
         ...
 
     @property
-    def scoring(self) -> bool:
-        """Whether the index records document lengths, which BM25 needs."""
+    def scoring(self) -> Optional["TextScoringParams"]:
+        """How the index ranks documents, or None if it doesn't."""
         ...
+
+class TextScoringParams:
+    """Ranking over a text index. The index records the length of each
+    document, which ranking normalizes by. BM25's `k` and `b` are set per
+    query, with `Bm25Params`."""
+
+    def __init__(self, type: "TextScoringType" = ...) -> None:
+        """
+        Create TextScoringParams.
+
+        Args:
+            type: How documents are ranked. Default: TextScoringType.Bm25.
+        """
+        ...
+
+    @property
+    def type(self) -> "TextScoringType":
+        """How documents are ranked."""
+        ...
+
+class TextScoringType(Enum):
+    """How a text index ranks documents."""
+
+    Bm25 = ...
 
 class TokenizerType(Enum):
     """Text tokenizer types."""
