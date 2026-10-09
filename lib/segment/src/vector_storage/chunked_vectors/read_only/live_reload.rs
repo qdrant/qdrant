@@ -61,6 +61,14 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
         Ok(Vec::new())
     }
 
+    fn apply_deletions(
+        &mut self,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        // Deletions are served from the id tracker, nothing here tracks them
+        Ok(())
+    }
+
     /// Grow the view to cover every offset in `new_points`, one vector per
     /// point offset.
     fn live_reload<Fs: UniversalReadFs<File = S>>(

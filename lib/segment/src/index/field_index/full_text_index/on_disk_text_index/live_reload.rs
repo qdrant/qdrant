@@ -17,6 +17,17 @@ impl<S: UniversalRead> LiveReload for OnDiskFullTextIndex<S> {
         Ok(Vec::new())
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for deleted_point in deleted_points {
+            self.remove_point(*deleted_point);
+        }
+
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         _fs: &Fs,
@@ -26,10 +37,6 @@ impl<S: UniversalRead> LiveReload for OnDiskFullTextIndex<S> {
         // Immutable on-disk state: only the in-memory deletion bitmap is
         // patched (mirrors the other immutable leaves). `fs` / `new_points`
         // are unused because nothing is appended after build.
-        for deleted_point in deleted_points {
-            self.remove_point(*deleted_point);
-        }
-
-        Ok(())
+        self.apply_deletions(deleted_points)
     }
 }

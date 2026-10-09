@@ -21,6 +21,14 @@ impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
         Ok(Vec::new())
     }
 
+    fn apply_deletions(
+        &mut self,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        // Deletions are served from the id tracker, nothing here tracks them
+        Ok(())
+    }
+
     /// No-op for the persisted variants: read-only vector indexes are immutable —
     /// the HNSW graph and the compressed sparse inverted indexes are built once,
     /// and plain has no index files at all. Deletions and newly appended points

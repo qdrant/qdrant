@@ -47,4 +47,12 @@ pub(crate) trait LiveReload {
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()>;
+
+    /// Apply `deleted_points` to what this store keeps in memory, without touching its files: the
+    /// deletion half of [`Self::live_reload`], for a caller that decides on deletions apart from
+    /// reloading files. Must do no IO.
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()>;
 }

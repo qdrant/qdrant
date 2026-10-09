@@ -18,6 +18,13 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
         self.storage_impl.live_preload(fs)
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.storage_impl.apply_deletions(deleted_points)
+    }
+
     /// Reload appended quantized vectors from disk (chunked layouts only).
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
@@ -72,6 +79,49 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
             }
         }
         Ok(futs)
+    }
+
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyQuantizedVectorStorage::ScalarRam(_)
+            | ReadOnlyQuantizedVectorStorage::ScalarMmap(_)
+            | ReadOnlyQuantizedVectorStorage::PQRam(_)
+            | ReadOnlyQuantizedVectorStorage::PQMmap(_)
+            | ReadOnlyQuantizedVectorStorage::BinaryRam(_)
+            | ReadOnlyQuantizedVectorStorage::BinaryMmap(_)
+            | ReadOnlyQuantizedVectorStorage::TQRam(_)
+            | ReadOnlyQuantizedVectorStorage::TQMmap(_)
+            | ReadOnlyQuantizedVectorStorage::ScalarRamMulti(_)
+            | ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(_)
+            | ReadOnlyQuantizedVectorStorage::PQRamMulti(_)
+            | ReadOnlyQuantizedVectorStorage::PQMmapMulti(_)
+            | ReadOnlyQuantizedVectorStorage::BinaryRamMulti(_)
+            | ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(_)
+            | ReadOnlyQuantizedVectorStorage::TQRamMulti(_)
+            | ReadOnlyQuantizedVectorStorage::TQMmapMulti(_) => {}
+            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => {
+                q.storage_mut().apply_deletions(deleted_points)?
+            }
+            ReadOnlyQuantizedVectorStorage::TQChunked(q) => {
+                q.storage_mut().apply_deletions(deleted_points)?
+            }
+            ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => {
+                q.storage_mut()
+                    .storage_mut()
+                    .apply_deletions(deleted_points)?;
+                q.offsets_storage_mut().apply_deletions(deleted_points)?;
+            }
+            ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => {
+                q.storage_mut()
+                    .storage_mut()
+                    .apply_deletions(deleted_points)?;
+                q.offsets_storage_mut().apply_deletions(deleted_points)?;
+            }
+        }
+        Ok(())
     }
 
     /// Pick up quantized vectors a writer appended. Only the chunked (appendable)

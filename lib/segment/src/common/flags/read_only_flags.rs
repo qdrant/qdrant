@@ -85,6 +85,14 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
         Ok(Vec::new())
     }
 
+    fn apply_deletions(
+        &mut self,
+        _deleted_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
+    ) -> OperationResult<()> {
+        // The flag files are the source of truth, nothing here tracks deletions
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = Self::File>>(
         &mut self,
         fs: &Fs,
