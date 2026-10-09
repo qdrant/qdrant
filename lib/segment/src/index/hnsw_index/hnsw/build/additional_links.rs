@@ -8,8 +8,7 @@ use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
 use log::{debug, trace};
 use rand::Rng;
-use rayon::ThreadPool;
-use rayon::prelude::*;
+use orx_parallel::pools::BasicPool;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
@@ -21,9 +20,8 @@ use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::hnsw::{
-    HNSW_BUILD_MAX_PAR_LEN, HNSW_USE_HEURISTIC, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
-};
+use crate::index::hnsw_index::hnsw::{HNSW_USE_HEURISTIC, SINGLE_THREADED_HNSW_BUILD_THRESHOLD};
+use crate::index::hnsw_index::build_parallel::par_try_for_each;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -93,7 +91,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     payload_m: HnswM,
     indexed_fields: Vec<(ProgressTracker, JsonPath)>,
     progress_additional_links: ProgressTracker,
-    pool: &ThreadPool,
+    pool: &BasicPool,
     rng: &mut R,
     stopped: &AtomicBool,
 ) -> OperationResult<usize> {
@@ -299,7 +297,7 @@ fn build_filtered_graph(
     quantized_vectors: &Option<QuantizedVectors>,
     #[allow(unused_variables)] gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
     payload_index: &StructPayloadIndex,
-    pool: &ThreadPool,
+    pool: &BasicPool,
     stopped: &AtomicBool,
     graph_layers_builder: &GraphLayersBuilder,
     points_to_index: &[PointOffsetType],
@@ -371,13 +369,11 @@ fn build_filtered_graph(
     // So that each thread will insert points in different parts of the graph,
     // it is less likely that they will compete for the same locks
     if points_to_index.len() > first_points {
-        pool.install(|| {
-            points_to_index[first_points..]
-                .par_iter()
-                .copied()
-                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                .try_for_each(insert_points)
-        })?;
+        par_try_for_each(
+            pool,
+            points_to_index[first_points..].to_vec(),
+            insert_points,
+        )?;
     }
     Ok(None)
 }

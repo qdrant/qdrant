@@ -55,6 +55,7 @@ integer-encoding = { workspace = true }
 tempfile = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
+orx-parallel = { workspace = true }
 itertools = { workspace = true }
 uuid = { workspace = true }
 bincode = { workspace = true }

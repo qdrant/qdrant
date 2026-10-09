@@ -5131,6 +5131,166 @@ dependencies = [
 ]
 
 [[package]]
+name = "orx-concurrent-bag"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2681b936a4ce42fd4bf482128ee565df3b4c2e3cdb986779423d3b00a37d023"
+dependencies = [
+ "orx-fixed-vec",
+ "orx-pinned-concurrent-col",
+ "orx-pinned-vec",
+ "orx-pseudo-default",
+ "orx-split-vec",
+]
+
+[[package]]
+name = "orx-concurrent-iter"
+version = "4.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6773e4eb82b58f0841abd2bf95efcfc30eb4bad16fb1d7643d5d35be5445694"
+dependencies = [
+ "orx-iterable",
+ "orx-pseudo-default",
+]
+
+[[package]]
+name = "orx-concurrent-iter"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a1a5cdc8aa326f7217ec3e9d99bf9d792dd0596135674d92008f7358729af1e"
+dependencies = [
+ "orx-iterable",
+ "orx-pseudo-default",
+]
+
+[[package]]
+name = "orx-concurrent-ordered-bag"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbe81d43c46cda828c785c7c7131d3755ad4a1083a212f2feb75ad4db01c787"
+dependencies = [
+ "orx-fixed-vec",
+ "orx-pinned-concurrent-col",
+ "orx-pinned-vec",
+ "orx-split-vec",
+]
+
+[[package]]
+name = "orx-fixed-vec"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "813d9544b679f7b2e93a6b93ecd29f875cb002fe7eddecb6ea448bc7cd5d2be4"
+dependencies = [
+ "orx-concurrent-iter 4.3.1",
+ "orx-iterable",
+ "orx-pinned-vec",
+ "orx-pseudo-default",
+]
+
+[[package]]
+name = "orx-iterable"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfa2cb3f82a187c68835faac9cf03faaee70b93f4da3b85515ac1b4c6f8a432d"
+dependencies = [
+ "orx-self-or",
+]
+
+[[package]]
+name = "orx-meta"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63bd687e5b6f0dd9c0b6f07c82f149b172126635ad729010892f08936c92a578"
+dependencies = [
+ "orx-meta-macros",
+]
+
+[[package]]
+name = "orx-meta-macros"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6558f188f6c936216c1c947685bdc846904534c23bb1b9d5730ce4802c7d1ef3"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "orx-parallel"
+version = "4.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "907ad0b4ce704767f885927b0b0f51c808b0e6743226aa22ad3051fa907fb0bd"
+dependencies = [
+ "js-sys",
+ "orx-concurrent-bag",
+ "orx-concurrent-iter 5.0.0",
+ "orx-concurrent-ordered-bag",
+ "orx-fixed-vec",
+ "orx-iterable",
+ "orx-meta",
+ "orx-pinned-concurrent-col",
+ "orx-pinned-vec",
+ "orx-priority-queue",
+ "orx-pseudo-default",
+ "orx-split-vec",
+]
+
+[[package]]
+name = "orx-pinned-concurrent-col"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d417d2c82bdfde5e6d54a0684cc69561781f2ffbc14ef9dae46a0c10bdb4c03e"
+dependencies = [
+ "orx-fixed-vec",
+ "orx-pinned-vec",
+ "orx-pseudo-default",
+ "orx-split-vec",
+]
+
+[[package]]
+name = "orx-pinned-vec"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d845b867b357b6c669e873109fac8fcb224d0594a401e3005bbe854e87a8df"
+dependencies = [
+ "orx-iterable",
+ "orx-pseudo-default",
+ "orx-self-or",
+]
+
+[[package]]
+name = "orx-priority-queue"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41224e48f6cc24a1189c40180a358f8e3ca56ae108974ec43531f604921c44ec"
+
+[[package]]
+name = "orx-pseudo-default"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34eaace9ae01f7025804fbca40ec45b87c19ba0328d97195e01c6135897762a8"
+
+[[package]]
+name = "orx-self-or"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67a8e35dfe18921e475b9861266fd58a5ecfd681161f242d24a9e2d1e07fbc28"
+
+[[package]]
+name = "orx-split-vec"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cda858576a9870fdb1deff68ea66b8b4cf976919417c23672472e401a366ca5e"
+dependencies = [
+ "orx-concurrent-iter 4.3.1",
+ "orx-iterable",
+ "orx-pinned-vec",
+ "orx-pseudo-default",
+]
+
+[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7200,6 +7360,7 @@ dependencies = [
  "object_store",
  "once_cell",
  "ordered-float 5.5.0",
+ "orx-parallel",
  "parking_lot",
  "posting_list",
  "pprof",

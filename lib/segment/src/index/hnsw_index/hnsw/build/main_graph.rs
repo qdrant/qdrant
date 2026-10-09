@@ -5,8 +5,7 @@ use common::counter::hw;
 use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
 use log::debug;
-use rayon::ThreadPool;
-use rayon::prelude::*;
+use orx_parallel::pools::BasicPool;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
@@ -14,8 +13,9 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 use crate::index::hnsw_index::hnsw::{
-    FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_BUILD_MAX_PAR_LEN, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
+    FINISH_MAIN_GRAPH_LOG_MESSAGE, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
+use crate::index::hnsw_index::build_parallel::par_try_for_each;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
@@ -34,7 +34,7 @@ pub(super) fn build_main_graph_on_cpu(
     ef_construct: usize,
     progress_migrate: ProgressTracker,
     progress_main_graph: ProgressTracker,
-    pool: &ThreadPool,
+    pool: &BasicPool,
     stopped: &AtomicBool,
 ) -> OperationResult<()> {
     let total_vector_count = vector_storage.total_vector_count();
@@ -117,11 +117,7 @@ pub(super) fn build_main_graph_on_cpu(
     }
 
     if !ids.is_empty() {
-        pool.install(|| {
-            ids.into_par_iter()
-                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                .try_for_each(insert_point)
-        })?;
+        par_try_for_each(pool, ids, insert_point)?;
     }
 
     drop(progress_main_graph);

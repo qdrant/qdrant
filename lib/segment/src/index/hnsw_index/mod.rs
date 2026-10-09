@@ -12,6 +12,7 @@ pub mod graph_layers;
 mod graph_layers_batched;
 pub mod graph_layers_builder;
 mod graph_layers_healer;
+mod build_parallel;
 pub mod graph_links;
 pub mod hnsw;
 mod links_container;
@@ -82,7 +83,7 @@ pub mod gpu {
 #[cfg(test)]
 mod tests;
 
-/// Number of threads to use with rayon for HNSW index building.
+/// Number of threads to use for HNSW index building.
 ///
 /// Uses [`thread_count_for_hnsw`] heuristic but accepts a `max_indexing_threads` parameter to
 /// allow configuring this.

@@ -257,6 +257,7 @@ num_cpus = "1.17"
 object_store = { version = "0.14.0", features = ["aws", "gcp", "azure"] }
 ordered-float = { version = "5.3.0", features = ["serde", "schemars", "bytemuck"] }
 rayon = "1.12.0"
+orx-parallel = "4.1.1"
 parking_lot = { version = "0.12.5", features = ["arc_lock", "deadlock_detection", "serde"] }
 ph = "0.8.5"
 pin-project-lite = "0.2.17"

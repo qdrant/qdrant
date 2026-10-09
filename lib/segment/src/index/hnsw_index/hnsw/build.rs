@@ -1,16 +1,13 @@
 use std::ops::Deref as _;
 use std::path::Path;
 use std::sync::Arc;
-use std::thread;
 
 use common::bitvec::BitSlice;
-#[cfg(target_os = "linux")]
-use common::cpu::linux_low_thread_priority;
 use common::types::PointOffsetType;
 use fs_err as fs;
 use log::debug;
+use orx_parallel::pools::BasicPool;
 use rand::Rng;
-use rayon::ThreadPool;
 
 use super::old_index::OldIndexCandidate;
 use super::telemetry::HNSWSearchesTelemetry;
@@ -143,7 +140,7 @@ impl HNSWIndex {
             HNSW_USE_HEURISTIC,
         );
 
-        let pool = build_thread_pool(permit.num_cpus as usize)?;
+        let pool = build_thread_pool(permit.num_cpus as usize);
 
         let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
@@ -279,34 +276,12 @@ impl HNSWIndex {
     }
 }
 
-/// Rayon pool for graph construction. On Linux its threads run at low priority so they
-/// interfere less with serving traffic.
-fn build_thread_pool(num_threads: usize) -> OperationResult<ThreadPool> {
-    let pool = rayon::ThreadPoolBuilder::new()
-        .thread_name(|idx| format!("hnsw-build-{idx}"))
-        .num_threads(num_threads)
-        .spawn_handler(|thread| {
-            let mut b = thread::Builder::new();
-            if let Some(name) = thread.name() {
-                b = b.name(name.to_owned());
-            }
-            if let Some(stack_size) = thread.stack_size() {
-                b = b.stack_size(stack_size);
-            }
-            b.spawn(|| {
-                #[cfg(target_os = "linux")]
-                if let Err(err) = linux_low_thread_priority() {
-                    log::debug!(
-                        "Failed to set low thread priority for HNSW building, ignoring: {err}"
-                    );
-                }
-
-                thread.run()
-            })?;
-            Ok(())
-        })
-        .build()?;
-    Ok(pool)
+/// Persistent orx-parallel pool for graph construction.
+///
+/// Worker threads set low Linux priority lazily on first use (see
+/// [`crate::index::hnsw_index::build_parallel::par_try_for_each`]) so indexing interferes less with serving traffic.
+fn build_thread_pool(num_threads: usize) -> BasicPool {
+    BasicPool::new(num_threads)
 }
 
 /// Write the graph links to `path`. With `inline_vectors`, the quantized vectors are stored

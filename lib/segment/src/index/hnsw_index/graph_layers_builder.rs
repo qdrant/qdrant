@@ -780,11 +780,10 @@ mod tests {
     where
         R: Rng + ?Sized,
     {
-        use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(2)
-            .build()
-            .unwrap();
+        use orx_parallel::pools::BasicPool;
+        use orx_parallel::{IntoParIter, Par, Runner};
+
+        let pool = BasicPool::new(2);
 
         let m = M;
         let ef_construct = 16;
@@ -805,15 +804,15 @@ mod tests {
             let level = graph_layers.get_random_layer(rng);
             graph_layers.set_levels(idx, level);
         }
-        pool.install(|| {
-            (0..(num_vectors as PointOffsetType))
-                .into_par_iter()
-                .for_each(|idx| {
-                    let _hw = hw::test_guard();
-                    let scorer = vector_holder.internal_scorer(idx);
-                    graph_layers.link_new_point(idx, scorer);
-                });
-        });
+        (0..num_vectors)
+            .into_par()
+            .runner(Runner::adaptive_with_pool(&pool))
+            .for_each(|idx| {
+                let idx = idx as PointOffsetType;
+                let _hw = hw::test_guard();
+                let scorer = vector_holder.internal_scorer(idx);
+                graph_layers.link_new_point(idx, scorer);
+            });
 
         (vector_holder, graph_layers)
     }
