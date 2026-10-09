@@ -1096,7 +1096,39 @@ message Query {
     RelevanceFeedbackInput relevance_feedback = 11;
     // Rank by BM25 over the text index of the payload field named by `using`.
     TextQuery text = 12;
+    // Re-rank the merged results of the prefetches with a re-ranker model.
+    RerankQuery rerank = 13;
   }
+}
+
+// Re-rank the merged results of the prefetches with a re-ranker model, served
+// by the inference service. The re-ranker score replaces the score of each point.
+message RerankQuery {
+  // Name of the re-ranker model.
+  string model = 1;
+  // Query text to score the candidates against.
+  string query = 2;
+  // How each candidate is presented to the model.
+  // Only these payload fields are fetched, regardless of `with_payload`.
+  RerankDocument document = 3;
+  // Model options, passed to the inference service as-is.
+  map<string, Value> options = 4;
+}
+
+message RerankDocument {
+  oneof variant {
+    // Text of this payload field.
+    string path = 1;
+    // Structured object of these payload fields, with their JSON types kept.
+    RerankDocumentFields fields = 2;
+    // Text with `{path}` placeholders replaced by payload values.
+    // A missing value renders as an empty string.
+    string template = 3;
+  }
+}
+
+message RerankDocumentFields {
+  repeated string paths = 1;
 }
 
 // Rank by BM25 over the text index of the payload field named by `using`,

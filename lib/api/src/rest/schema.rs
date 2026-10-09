@@ -675,6 +675,9 @@ pub enum Query {
 
     /// Rank by BM25 over the text index of the payload field named by `using`.
     Text(TextQuery),
+
+    /// Re-rank the merged results of the prefetches with a re-ranker model.
+    Rerank(RerankQuery),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
@@ -757,6 +760,60 @@ pub struct TextQueryInput {
     /// Document length normalization, from 0 (none) to 1 (full). Default is 0.75.
     #[validate(range(min = 0.0, max = 1.0))]
     pub b: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct RerankQuery {
+    #[validate(nested)]
+    pub rerank: RerankInput,
+}
+
+/// Re-rank the merged results of the prefetches with a re-ranker model, served by the
+/// inference service. The re-ranker score replaces the score of each point.
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct RerankInput {
+    /// Name of the re-ranker model.
+    /// List of available models depends on a provider.
+    #[validate(length(min = 1))]
+    #[schemars(length(min = 1))]
+    pub model: String,
+    /// Query text to score the candidates against.
+    pub query: String,
+    /// How each candidate is presented to the model.
+    /// Only these payload fields are fetched, regardless of `with_payload`.
+    #[validate(nested)]
+    pub document: RerankDocument,
+    /// Additional options for the model, will be passed to the inference service as-is.
+    /// See model cards for available options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<HashMap<String, JsonValue>>,
+}
+
+/// How each candidate is presented to the re-ranker model:
+///
+/// * a payload path - the text of this field
+///
+/// * a list of payload paths - a structured object of these fields, with their JSON types kept
+///
+/// * a template - text with `{path}` placeholders replaced by payload values
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[serde(expecting = "Expected a payload path, a list of payload paths, or a template object")]
+pub enum RerankDocument {
+    Path(JsonPath),
+    Fields(Vec<JsonPath>),
+    Template(RerankTemplate),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "snake_case")]
+pub struct RerankTemplate {
+    /// Text the model sees for each candidate. `{path}` placeholders are replaced by the
+    /// payload values at these paths, a missing value renders as an empty string.
+    #[validate(length(min = 1))]
+    pub template: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

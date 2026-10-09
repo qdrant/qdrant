@@ -423,6 +423,7 @@ impl Validate for super::qdrant::query::Variant {
             grpc::query::Variant::Rrf(q) => q.validate(),
             grpc::query::Variant::RelevanceFeedback(q) => q.validate(),
             grpc::query::Variant::Text(q) => q.validate(),
+            grpc::query::Variant::Rerank(q) => q.validate(),
             grpc::query::Variant::Sample(_)
             | grpc::query::Variant::Fusion(_)
             | grpc::query::Variant::OrderBy(_) => Ok(()),
@@ -476,6 +477,22 @@ impl Validate for super::qdrant::expression::Variant {
             }
             grpc::expression::Variant::LinDecay(decay_params_expression) => {
                 decay_params_expression.validate()
+            }
+        }
+    }
+}
+
+impl Validate for grpc::rerank_document::Variant {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::rerank_document::Variant::Path(_) => Ok(()),
+            grpc::rerank_document::Variant::Fields(fields) => fields.validate(),
+            grpc::rerank_document::Variant::Template(template) => {
+                common::validation::validate_not_empty(template).map_err(|err| {
+                    let mut errors = ValidationErrors::new();
+                    errors.add("template", err);
+                    errors
+                })
             }
         }
     }

@@ -7,8 +7,8 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use super::schema::validate_non_empty_dense;
 use super::{
     Batch, BatchVectorStruct, ContextInput, Expression, FormulaQuery, Fusion, NamedVectorStruct,
-    PointVectors, Query, QueryInterface, RecommendInput, RelevanceFeedbackInput, Sample,
-    VectorInput,
+    PointVectors, Query, QueryInterface, RecommendInput, RelevanceFeedbackInput, RerankDocument,
+    Sample, VectorInput,
 };
 use crate::rest::FeedbackStrategy;
 
@@ -45,6 +45,28 @@ impl Validate for Query {
             Query::Sample(sample) => sample.validate(),
             Query::RelevanceFeedback(feedback) => feedback.validate(),
             Query::Text(text) => text.validate(),
+            Query::Rerank(rerank) => rerank.validate(),
+        }
+    }
+}
+
+impl Validate for RerankDocument {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            RerankDocument::Path(_) => Ok(()),
+            RerankDocument::Fields(fields) => {
+                if fields.is_empty() {
+                    let mut err = ValidationError::new("length");
+                    err.message = Some(Cow::from("must specify at least one payload field"));
+                    err.add_param(Cow::from("min"), &1);
+                    let mut errors = ValidationErrors::new();
+                    errors.add("document", err);
+                    Err(errors)
+                } else {
+                    Ok(())
+                }
+            }
+            RerankDocument::Template(template) => template.validate(),
         }
     }
 }
@@ -340,5 +362,63 @@ mod tests {
         }));
 
         assert!(query.validate().is_ok());
+    }
+
+    fn rerank_query(document: serde_json::Value) -> Query {
+        serde_json::from_value(serde_json::json!({
+            "rerank": {
+                "model": "qwen/qwen3-reranker-0.6b",
+                "query": "how do I rotate api keys",
+                "document": document,
+            }
+        }))
+        .unwrap()
+    }
+
+    fn rerank_document(query: &Query) -> &RerankDocument {
+        let Query::Rerank(rerank) = query else {
+            panic!("expected a rerank query, got {query:?}");
+        };
+        &rerank.rerank.document
+    }
+
+    #[test]
+    fn rerank_query_parses_each_document_form() {
+        let path = rerank_query(serde_json::json!("body"));
+        assert!(matches!(rerank_document(&path), RerankDocument::Path(_)));
+        assert!(path.validate().is_ok());
+
+        let fields = rerank_query(serde_json::json!(["title", "specs.weight_g"]));
+        assert!(matches!(
+            rerank_document(&fields),
+            RerankDocument::Fields(fields) if fields.len() == 2
+        ));
+        assert!(fields.validate().is_ok());
+
+        let template = rerank_query(serde_json::json!({"template": "{title}\n{abstract}"}));
+        assert!(matches!(
+            rerank_document(&template),
+            RerankDocument::Template(_)
+        ));
+        assert!(template.validate().is_ok());
+    }
+
+    #[test]
+    fn rerank_query_rejects_empty_document() {
+        assert!(rerank_query(serde_json::json!([])).validate().is_err());
+        assert!(
+            rerank_query(serde_json::json!({"template": ""}))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rerank_query_rejects_empty_model() {
+        let query: Query = serde_json::from_value(serde_json::json!({
+            "rerank": {"model": "", "query": "q", "document": "body"}
+        }))
+        .unwrap();
+        assert!(query.validate().is_err());
     }
 }

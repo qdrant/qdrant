@@ -113,7 +113,8 @@ fn collect_query(query: &Query, batch: &mut BatchAccum) {
         | Query::Rrf(_)
         | Query::Formula(_)
         | Query::Sample(_)
-        | Query::Text(_) => {}
+        | Query::Text(_)
+        | Query::Rerank(_) => {}
     }
 }
 

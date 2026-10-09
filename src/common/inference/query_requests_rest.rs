@@ -3,8 +3,8 @@ use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, FeedbackInternal,
-    FeedbackStrategy, Mmr, NearestWithMmr, Query, TextQueryInternal, VectorInputInternal,
-    VectorQuery,
+    FeedbackStrategy, Mmr, NearestWithMmr, Query, RerankInternal, TextQueryInternal,
+    VectorInputInternal, VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -275,6 +275,7 @@ fn convert_query_with_inferred(
         rest::Query::Formula(formula) => Ok(Query::Formula(FormulaInternal::from(formula))),
         rest::Query::Sample(sample) => Ok(Query::Sample(SampleInternal::from(sample.sample))),
         rest::Query::Text(text) => Ok(Query::Text(TextQueryInternal::from(text.text))),
+        rest::Query::Rerank(rerank) => Ok(Query::Rerank(RerankInternal::from(rerank.rerank))),
         rest::Query::RelevanceFeedback(relevance_feedback) => {
             let rest::RelevanceFeedbackInput {
                 target,

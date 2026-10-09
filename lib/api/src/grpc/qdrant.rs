@@ -6867,7 +6867,10 @@ pub struct Rrf {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")]
+    #[prost(
+        oneof = "query::Variant",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
+    )]
     #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
@@ -6912,7 +6915,65 @@ pub mod query {
         /// Rank by BM25 over the text index of the payload field named by `using`.
         #[prost(message, tag = "12")]
         Text(super::TextQuery),
+        /// Re-rank the merged results of the prefetches with a re-ranker model.
+        #[prost(message, tag = "13")]
+        Rerank(super::RerankQuery),
     }
+}
+/// Re-rank the merged results of the prefetches with a re-ranker model, served
+/// by the inference service. The re-ranker score replaces the score of each point.
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RerankQuery {
+    /// Name of the re-ranker model.
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1))]
+    pub model: ::prost::alloc::string::String,
+    /// Query text to score the candidates against.
+    #[prost(string, tag = "2")]
+    pub query: ::prost::alloc::string::String,
+    /// How each candidate is presented to the model.
+    /// Only these payload fields are fetched, regardless of `with_payload`.
+    #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
+    pub document: ::core::option::Option<RerankDocument>,
+    /// Model options, passed to the inference service as-is.
+    #[prost(map = "string, message", tag = "4")]
+    pub options: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RerankDocument {
+    #[prost(oneof = "rerank_document::Variant", tags = "1, 2, 3")]
+    #[validate(nested)]
+    pub variant: ::core::option::Option<rerank_document::Variant>,
+}
+/// Nested message and enum types in `RerankDocument`.
+pub mod rerank_document {
+    #[derive(serde::Serialize)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Variant {
+        /// Text of this payload field.
+        #[prost(string, tag = "1")]
+        Path(::prost::alloc::string::String),
+        /// Structured object of these payload fields, with their JSON types kept.
+        #[prost(message, tag = "2")]
+        Fields(super::RerankDocumentFields),
+        /// Text with `{path}` placeholders replaced by payload values.
+        /// A missing value renders as an empty string.
+        #[prost(string, tag = "3")]
+        Template(::prost::alloc::string::String),
+    }
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RerankDocumentFields {
+    #[prost(string, repeated, tag = "1")]
+    #[validate(length(min = 1))]
+    pub paths: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Rank by BM25 over the text index of the payload field named by `using`,
 /// which must have `scoring` set. A point scores when it holds any of the
