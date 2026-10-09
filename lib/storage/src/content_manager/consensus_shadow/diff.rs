@@ -138,7 +138,7 @@ pub fn collection(
 
 /// Compare outcomes from consensus state machine and operation handler.
 /// Errors match by variant, error messages are ignored.
-pub fn outcome(outcome: &ApplyOutcome, result: &StorageResult<bool>) -> Option<String> {
+pub fn outcome<T>(outcome: &ApplyOutcome, result: &StorageResult<T>) -> Option<String> {
     match (outcome, result) {
         (ApplyOutcome::Accepted(_), Ok(_)) => {
             log::debug!("Consensus state machine and operation handler accepted operation");

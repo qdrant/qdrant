@@ -332,13 +332,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let result = if self.this_peer_id() == peer_id {
             // If the current peer is removed, we stop consensus and no longer need CSM validation
             self.invalidate_shadow();
-            self.remove_peer(peer_id).map(|_| true)
+            self.remove_peer(peer_id)
         } else {
-            self.apply_with_shadow(&operation, || self.remove_peer(peer_id).map(|_| true))
+            self.apply_with_shadow(&operation, || self.remove_peer(peer_id))
         };
 
         let (report, stop_consensus) = match result {
-            Ok(_) => {
+            Ok(()) => {
                 // If `remove_peer` returned `Ok`, report `Ok(true)` to the client
                 // and stop consensus if the *current* peer is being removed
                 (Ok(true), self.this_peer_id() == peer_id)
@@ -550,7 +550,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         };
                         self.apply_with_shadow(&operation, || {
                             self.add_peer(single_change.node_id, peer_uri)
-                                .map(|()| true)
                         })?;
                     } else {
                         debug_assert!(
@@ -580,7 +579,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         // Add peer to state
                         self.apply_with_shadow(&operation, || {
                             self.add_peer(single_change.node_id, peer_uri.clone())
-                                .map(|()| true)
                         })?;
 
                         // Notify the submitter, that operation was performed
@@ -712,11 +710,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         Some(outcome)
     }
 
-    fn shadow_compare(
+    fn shadow_compare<T>(
         &self,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &StorageResult<bool>,
+        result: &StorageResult<T>,
     ) {
         let Some(shadow) = self.shadow.as_ref() else {
             return;
@@ -730,11 +728,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     /// Run one non-normal-entry handler between state-machine planning and comparison
-    fn apply_with_shadow(
+    fn apply_with_shadow<T>(
         &self,
         operation: &ConsensusOperations,
-        apply: impl FnOnce() -> StorageResult<bool>,
-    ) -> StorageResult<bool> {
+        apply: impl FnOnce() -> StorageResult<T>,
+    ) -> StorageResult<T> {
         let outcome = self.shadow_apply(operation);
         let result = apply();
 

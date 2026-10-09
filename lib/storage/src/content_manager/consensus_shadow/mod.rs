@@ -79,13 +79,13 @@ impl ShadowStateMachine {
         state_machine.apply(operation)
     }
 
-    pub fn compare(
+    pub fn compare<T>(
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &StorageResult<bool>,
+        result: &StorageResult<T>,
     ) {
         let Some(report) = self.diff(toc, persistent, operation, outcome, result) else {
             return;
@@ -98,13 +98,13 @@ impl ShadowStateMachine {
         log::error!("Consensus state machine diverged from applied state: {report}");
     }
 
-    fn diff(
+    fn diff<T>(
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &StorageResult<bool>,
+        result: &StorageResult<T>,
     ) -> Option<String> {
         let Some(state_machine) = &self.state_machine else {
             return None;
