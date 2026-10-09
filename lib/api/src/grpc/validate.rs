@@ -481,10 +481,10 @@ impl Validate for super::qdrant::expression::Variant {
     }
 }
 
-impl Validate for grpc::text_query::Params {
+impl Validate for grpc::text_query::Scoring {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            grpc::text_query::Params::Bm25(params) => params.validate(),
+            grpc::text_query::Scoring::Bm25(params) => params.validate(),
         }
     }
 }

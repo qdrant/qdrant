@@ -1106,9 +1106,10 @@ message TextQuery {
   reserved 2, 3;
   // Text to search for, tokenized by the field's text index.
   string query = 1;
-  // Parameters of the scorer, which must match the `scoring` type of the
-  // field's text index. If absent, the scorer runs with its defaults.
-  oneof params {
+  // Parameters of the scorer, keyed by its name. They must match the
+  // `scoring` type of the field's text index. If absent, the scorer runs
+  // with its defaults.
+  oneof scoring {
     // BM25 parameters, for a field scored with BM25.
     Bm25Params bm25 = 4;
   }

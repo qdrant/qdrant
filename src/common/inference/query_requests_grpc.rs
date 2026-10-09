@@ -297,9 +297,9 @@ fn convert_query_with_inferred(
         Variant::Rrf(rrf) => Query::Fusion(FusionInternal::try_from(rrf)?),
         Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
-        Variant::Text(grpc::TextQuery { query, params }) => {
-            let params = params.map(|params| match params {
-                grpc::text_query::Params::Bm25(grpc::Bm25Params { k, b }) => {
+        Variant::Text(grpc::TextQuery { query, scoring }) => {
+            let params = scoring.map(|scoring| match scoring {
+                grpc::text_query::Scoring::Bm25(grpc::Bm25Params { k, b }) => {
                     TextQueryParams::bm25(k, b)
                 }
             });

@@ -6921,19 +6921,21 @@ pub struct TextQuery {
     /// Text to search for, tokenized by the field's text index.
     #[prost(string, tag = "1")]
     pub query: ::prost::alloc::string::String,
-    /// Parameters of the scorer, which must match the `scoring` type of the
-    /// field's text index. If absent, the scorer runs with its defaults.
-    #[prost(oneof = "text_query::Params", tags = "4")]
+    /// Parameters of the scorer, keyed by its name. They must match the
+    /// `scoring` type of the field's text index. If absent, the scorer runs
+    /// with its defaults.
+    #[prost(oneof = "text_query::Scoring", tags = "4")]
     #[validate(nested)]
-    pub params: ::core::option::Option<text_query::Params>,
+    pub scoring: ::core::option::Option<text_query::Scoring>,
 }
 /// Nested message and enum types in `TextQuery`.
 pub mod text_query {
-    /// Parameters of the scorer, which must match the `scoring` type of the
-    /// field's text index. If absent, the scorer runs with its defaults.
+    /// Parameters of the scorer, keyed by its name. They must match the
+    /// `scoring` type of the field's text index. If absent, the scorer runs
+    /// with its defaults.
     #[derive(serde::Serialize)]
     #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
-    pub enum Params {
+    pub enum Scoring {
         /// BM25 parameters, for a field scored with BM25.
         #[prost(message, tag = "4")]
         Bm25(super::Bm25Params),

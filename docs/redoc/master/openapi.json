@@ -15959,16 +15959,35 @@
             "description": "Text to search for, tokenized by the field's text index.",
             "type": "string"
           },
-          "bm25": {
-            "description": "BM25 parameters, for a field scored with BM25. Parameters must match the `scoring` type of the field's text index. If absent, the scorer runs with its defaults.",
+          "scoring": {
+            "description": "Parameters of the scorer, keyed by its name. They must match the `scoring` type of the field's text index. If absent, the scorer runs with its defaults.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Bm25Params"
+                "$ref": "#/components/schemas/TextQueryScoring"
               },
               {
                 "nullable": true
               }
             ]
+          }
+        }
+      },
+      "TextQueryScoring": {
+        "description": "Parameters of one scorer, keyed by its name.",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Bm25Scoring"
+          }
+        ]
+      },
+      "Bm25Scoring": {
+        "type": "object",
+        "required": [
+          "bm25"
+        ],
+        "properties": {
+          "bm25": {
+            "$ref": "#/components/schemas/Bm25Params"
           }
         }
       },

@@ -96,7 +96,7 @@ def text(query, **bm25):
     """A text query: the string form, or the struct form when given BM25 parameters."""
     if not bm25:
         return {"text": query}
-    return {"text": {"query": query, "bm25": bm25}}
+    return {"text": {"query": query, "scoring": {"bm25": bm25}}}
 
 
 def query(collection_name, body):
@@ -172,7 +172,7 @@ def test_struct_form_defaults_match_the_string_form(collection_name):
         for body in [
             text("alpha gamma"),
             {"text": {"query": "alpha gamma"}},
-            {"text": {"query": "alpha gamma", "bm25": {}}},
+            {"text": {"query": "alpha gamma", "scoring": {"bm25": {}}}},
         ]
     ]
     assert all(response.ok for response in responses)

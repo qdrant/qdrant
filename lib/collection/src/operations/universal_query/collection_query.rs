@@ -141,9 +141,13 @@ impl From<rest::TextInterface> for TextQueryInternal {
     fn from(interface: rest::TextInterface) -> Self {
         match interface {
             rest::TextInterface::Query(text) => Self { text, params: None },
-            rest::TextInterface::Struct(rest::TextQueryInput { query, bm25 }) => Self {
+            rest::TextInterface::Struct(rest::TextQueryInput { query, scoring }) => Self {
                 text: query,
-                params: bm25.map(|rest::Bm25Params { k, b }| TextQueryParams::bm25(k, b)),
+                params: scoring.map(|scoring| match scoring {
+                    rest::TextQueryScoring::Bm25(rest::Bm25Scoring {
+                        bm25: rest::Bm25Params { k, b },
+                    }) => TextQueryParams::bm25(k, b),
+                }),
             },
         }
     }
@@ -1143,10 +1147,12 @@ mod tests {
             let from_struct =
                 TextQueryInternal::from(rest::TextInterface::Struct(rest::TextQueryInput {
                     query: "fox".into(),
-                    bm25: Some(rest::Bm25Params {
-                        k: Some(2.0),
-                        b: None,
-                    }),
+                    scoring: Some(rest::TextQueryScoring::Bm25(rest::Bm25Scoring {
+                        bm25: rest::Bm25Params {
+                            k: Some(2.0),
+                            b: None,
+                        },
+                    })),
                 }));
             assert_eq!(from_struct.text, "fox");
             assert_eq!(
