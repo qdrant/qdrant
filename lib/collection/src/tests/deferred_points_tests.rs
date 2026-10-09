@@ -1,9 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::VectorStructInternal;
@@ -169,7 +168,7 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     config.optimizer_config.max_optimization_threads = Some(0);
 
     let shard = Arc::new(build_shard(&config, collection_dir.path(), payload_index_schema).await);
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     // Build up deferred state so that when A is processed, `has_deferred_points`
     // is already true and the worker enters the deferred-wait branch.
@@ -180,7 +179,7 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     for i in 1..=NUM_POINTS {
         shard
             .update(make_upsert_op(i).into(), WaitUntil::Wal, None)
-            .measured(AmbientContext::clone(&hw_acc))
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -190,7 +189,7 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     // stays alive while B races. If dropped, the worker would detect the closed
     // receiver and exit the deferred wait early — masking the regression.
     let shard_a = Arc::clone(&shard);
-    let hw_acc_a = AmbientContext::clone(&hw_acc);
+    let ctx_a = AmbientContext::clone(&ctx);
     let a_handle = tokio::spawn(async move {
         shard_a
             .update(
@@ -198,7 +197,7 @@ async fn test_wait_deferred_does_not_block_update_worker() {
                 WaitUntil::Visible,
                 None,
             )
-            .measured(hw_acc_a)
+            .measured(ctx_a)
             .await
     });
 
@@ -213,7 +212,7 @@ async fn test_wait_deferred_does_not_block_update_worker() {
                 WaitUntil::Segment,
                 None,
             )
-            .measured(AmbientContext::clone(&hw_acc)),
+            .measured(AmbientContext::clone(&ctx)),
     )
     .await
     .expect("B should complete within 5s — update worker appears blocked on A's deferred wait")

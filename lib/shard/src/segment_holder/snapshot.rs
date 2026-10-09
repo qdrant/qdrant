@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::counter::hw;
+use common::ambient;
 use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
@@ -44,7 +44,7 @@ impl SegmentHolder {
         SegmentId,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
-        let _hw = hw::unmeasured_guard(reason(
+        let _scope = ambient::unmeasured_guard(reason(
             "This counter will be used to measure operations on temp segment, \
              which is part of internal process and can be ignored",
         ));

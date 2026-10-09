@@ -3,9 +3,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::ambient::trace::Op;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::uio_trace::Op;
 use common::universal_io::{
     ByteOffset, Flusher, Item, UioResult, UniversalFlush, UniversalIoError, UniversalKind,
     UniversalRead, UserData,
@@ -261,6 +261,7 @@ mod tests {
     use std::sync::Arc;
 
     use bytes::Bytes;
+    use common::ambient;
     use common::generic_consts::{Random, Sequential};
     use common::universal_io::{
         ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs, UniversalReadFsAsync,
@@ -340,6 +341,7 @@ mod tests {
 
     #[test]
     fn blob_fs_opens_readable_file() {
+        let _scope = ambient::test_guard();
         let fs = BlobFs::new(MockSource::new(b"hello world"), BridgeRuntime::global());
         let file = fs
             .open("obj", OpenOptions::new_for_test(), ())
@@ -352,6 +354,7 @@ mod tests {
 
     #[test]
     fn read_returns_bytes_through_runtime() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"hello world"),
             BridgeRuntime::global(),
@@ -365,6 +368,7 @@ mod tests {
 
     #[test]
     fn read_subrange() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"hello world"),
             BridgeRuntime::global(),
@@ -378,6 +382,7 @@ mod tests {
 
     #[test]
     fn len_divides_by_type_size() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"\x01\x00\x02\x00"),
             BridgeRuntime::global(),
@@ -389,6 +394,7 @@ mod tests {
 
     #[test]
     fn read_batch_returns_all_pairs() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"helloWORLDxyz"),
             BridgeRuntime::global(),
@@ -566,6 +572,7 @@ mod tests {
 
     #[test]
     fn append_creates_missing_object() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -586,6 +593,7 @@ mod tests {
 
     #[test]
     fn empty_append_succeeds_without_request() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -604,6 +612,7 @@ mod tests {
     /// offset from the actual length recovers.
     #[test]
     fn append_conflict_recovery() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let first = mutable_file(&source);
         let second = mutable_file(&source);
@@ -635,6 +644,7 @@ mod tests {
     /// object) rejects it without mutating anything.
     #[test]
     fn append_bytes_passes_the_expected_etag_precondition() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -682,6 +692,7 @@ mod tests {
 
     #[test]
     fn append_flusher_is_a_no_op() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -692,6 +703,7 @@ mod tests {
 
     #[test]
     fn blob_fs_write_ops_round_trip() {
+        let _scope = ambient::test_guard();
         use common::universal_io::UniversalReadFs as _;
 
         let source = MutableMockSource::default();
@@ -714,7 +726,8 @@ mod tests {
     /// length of successful transfers.
     #[test]
     fn remote_requests_are_counted_per_op() {
-        use common::uio_trace::Op;
+        let _scope = ambient::test_guard();
+        use common::ambient::trace::Op;
         use common::universal_io::{OpenOptions, UniversalReadFs as _};
 
         let source = MutableMockSource::default();
@@ -827,6 +840,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_select_files_async() {
+        let _scope = ambient::test_guard();
         let source = MultiMockSource::default();
         source.insert(Path::new("file1.dat"), b"hello".to_vec());
         source.insert(Path::new("file2.dat"), b"world".to_vec());
@@ -865,6 +879,7 @@ mod tests {
 
     #[test]
     fn test_select_files_sync() {
+        let _scope = ambient::test_guard();
         let source = MultiMockSource::default();
         source.insert(Path::new("file1.dat"), b"hello".to_vec());
         let fs = BlobFs::new(source, BridgeRuntime::global());

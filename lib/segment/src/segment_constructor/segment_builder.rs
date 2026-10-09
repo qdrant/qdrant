@@ -10,8 +10,8 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
@@ -446,7 +446,8 @@ impl SegmentBuilder {
             }
         }
 
-        let _hw = hw::unmeasured_guard(reason("Disposable counter for internal operations."));
+        let _scope =
+            ambient::unmeasured_guard(reason("Disposable counter for internal operations."));
 
         let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
 
@@ -509,7 +510,7 @@ impl SegmentBuilder {
 
             // Propagate payload to new segment
             if !other_payload.is_empty() {
-                hw::unmeasured(reason("Internal operation"), || {
+                ambient::unmeasured(reason("Internal operation"), || {
                     self.payload_storage.set(new_internal_id, &other_payload)
                 })?;
             }

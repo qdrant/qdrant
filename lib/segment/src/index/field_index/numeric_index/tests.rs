@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use blobstore::Blob;
+use common::ambient;
 use common::bitvec::{BitSlice, BitVec};
-use common::counter::{AmbientContext, hw};
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -124,7 +124,7 @@ fn random_index(
     let mut rng = StdRng::seed_from_u64(42);
     let (temp_dir, mut index_builder) = get_index_builder(index_type);
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for i in 0..num_points {
         let values = (0..values_per_point)
@@ -318,7 +318,7 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
         vec![2.0],
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
@@ -358,7 +358,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
@@ -423,7 +423,7 @@ fn test_numeric_index(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
@@ -568,7 +568,7 @@ fn test_numeric_index_reload(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
@@ -731,7 +731,7 @@ fn test_numeric_index_reload_short_deleted_bitslice(#[case] index_type: IndexTyp
         vec![3.0],
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
@@ -795,7 +795,7 @@ fn test_numeric_index_open_compact_deleted_mask(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
@@ -852,7 +852,7 @@ fn test_cond<T: NumericIndexValue + PartialOrd + Clone + 'static>(
     };
 
     let condition = FieldCondition::new_range(JsonPath::new("unused"), ordered_range);
-    let _hw = AmbientContext::new().measure_guard_owned();
+    let _scope = ambient::test_guard();
     let offsets = index.filter(&condition).unwrap().unwrap().collect_vec();
     assert_eq!(offsets, result);
 }
@@ -895,7 +895,7 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
 fn test_remove_reopen() {
     use crate::index::field_index::PayloadFieldIndexRead;
 
-    let _hw = AmbientContext::new().measure_guard_owned();
+    let _scope = ambient::test_guard();
     let (temp_dir, mut builder) = get_index_builder(IndexType::Mmap);
     let values = [10.0_f64, 20.0, 30.0, 40.0];
     for (idx, val) in values.iter().enumerate() {
@@ -961,7 +961,7 @@ fn test_integer_index_fractional_range_bounds() {
     );
     builder.init().unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let v1 = Value::from(1_i64);
     let v2 = Value::from(2_i64);
     builder.add_point(0, &[&v1]).unwrap();
@@ -1026,7 +1026,7 @@ fn test_block_index_fallback_equivalence() {
         index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
         queries: &[Range<OrderedFloat<FloatPayloadType>>],
     ) -> Vec<(usize, usize, usize, Vec<PointOffsetType>)> {
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         queries
             .iter()
             .map(|query| {

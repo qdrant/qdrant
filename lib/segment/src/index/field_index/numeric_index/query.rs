@@ -13,8 +13,8 @@ use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::str::FromStr;
 
 use blobstore::Blob;
+use common::ambient::hw::HwMetric;
 use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
-use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 use itertools::Either;
 use ordered_float::OrderedFloat;

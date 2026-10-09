@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -87,7 +87,7 @@ fn sparse_vector_index_search_benchmark_impl(
     let field_value = "important value";
     let payload = payload_json! {field_name: field_value};
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     // all points have the same payload
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {

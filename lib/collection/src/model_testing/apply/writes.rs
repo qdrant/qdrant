@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::json_path::JsonPath;
 use segment::types::{Payload, PayloadFieldSchema, PointIdType, Slice, VectorNameBuf};

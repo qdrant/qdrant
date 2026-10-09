@@ -1,4 +1,4 @@
-use common::counter::hw;
+use common::ambient;
 use segment::common::operation_error::{OperationError, SegmentFailedState};
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
@@ -15,7 +15,7 @@ fn test_insert_fail_recovery() {
 
     let mut segment = empty_segment(dir.path());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment
         .upsert_point(1, 1.into(), only_default_vector(&vec1))

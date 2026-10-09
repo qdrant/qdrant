@@ -6,7 +6,7 @@ use api::rest::schema::PointInsertOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::PointsSelector;
 use collection::operations::vector_ops::DeleteVectors;
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use segment::json_path::JsonPath;
 use serde::Deserialize;

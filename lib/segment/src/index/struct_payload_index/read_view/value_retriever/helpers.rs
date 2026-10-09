@@ -80,8 +80,8 @@ mod tests {
 
     use ahash::AHashMap;
     use atomic_refcell::AtomicRefCell;
+    use common::ambient;
     use common::bitvec::BitVec;
-    use common::counter::hw;
     use serde_json::{Value, from_value, json};
 
     use super::variable_retriever;
@@ -196,7 +196,7 @@ mod tests {
         let payload_provider = PayloadProvider::new(Arc::new(AtomicRefCell::new(
             PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default()),
         )));
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         // No deletions in this test — sized to comfortably exceed the
         // stored deletion bitslice for the few points added below.
         let deleted_points = BitVec::repeat(false, 64);

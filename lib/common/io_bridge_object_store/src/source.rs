@@ -298,6 +298,7 @@ fn build_dir_prefix(path: &Path) -> object_store::path::Path {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
+    use common::ambient;
     use common::generic_consts::{Random, Sequential};
     use common::universal_io::{DiskCacheConfig, ListedFile, ReadRange, UioResult, UniversalRead};
     use io_bridge::{BlobFile, BridgeRuntime};
@@ -440,6 +441,7 @@ mod tests {
 
     #[test]
     fn read_full_range() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
@@ -451,6 +453,7 @@ mod tests {
 
     #[test]
     fn read_subrange() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = make_file(runtime, store, "obj");
@@ -462,6 +465,7 @@ mod tests {
 
     #[test]
     fn read_batch_returns_all_pairs() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("merged", b"helloWORLDxyz")]);
         let file = make_file(runtime, store, "merged");
@@ -534,7 +538,8 @@ mod tests {
     /// `BlobFile`'s disambiguation turns that into an empty read.
     #[test]
     fn read_from_past_eof_errors_raw_but_disambiguates_in_file() {
-        use common::uio_trace::Op;
+        let _scope = ambient::test_guard();
+        use common::ambient::trace::Op;
 
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("empty", b"")]);
@@ -561,6 +566,7 @@ mod tests {
 
     #[test]
     fn read_whole_through_blob_file() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"hello world")]);
         let file = BlobFile::new(ObjectStoreSource::new(store), runtime, PathBuf::from("obj"));
@@ -615,6 +621,7 @@ mod tests {
 
     #[test]
     fn select_files_async_with_inmemory_store() {
+        let _scope = ambient::test_guard();
         use common::universal_io::UniversalReadFsAsync;
 
         let runtime = BridgeRuntime::global();
@@ -658,6 +665,7 @@ mod tests {
 
     #[test]
     fn len_divides_by_type_size() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = inmemory_with(&runtime, &[("obj", b"\x01\x00\x02\x00")]);
         let file = make_file(runtime, store, "obj");
@@ -692,6 +700,7 @@ mod tests {
 
     #[test]
     fn append_through_blob_file() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let store = Arc::new(InMemory::new());
         let file = make_file(runtime, store, "log");

@@ -46,7 +46,7 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
@@ -90,7 +90,7 @@ mod tests {
 
         let dir = TempDir::with_prefix("ro_fulltext_no_lengths").unwrap();
         let config = test_config();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // `test_config` sets no `scoring`, so nothing records a length.
         {
@@ -153,7 +153,7 @@ mod tests {
             ..test_config()
         };
         let deleted = BitVec::new();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let build = |dir: &TempDir, scoring: bool| {
             let mut builder = FullTextIndex::builder_mmap(
                 dir.path().to_path_buf(),
@@ -204,7 +204,7 @@ mod tests {
     fn parent_open_appendable_round_trip() {
         let dir = TempDir::with_prefix("ro_fulltext_parent_gridstore").unwrap();
         let config = test_config();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let payloads = [
             serde_json::json!("the quick brown fox jumps"),
@@ -271,7 +271,7 @@ mod tests {
         let dir = TempDir::with_prefix("ro_fulltext_live_reload").unwrap();
         let mut config = test_config();
         config.phrase_matching = Some(phrase_matching);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let initial = [
             serde_json::json!("the quick brown fox jumps"),

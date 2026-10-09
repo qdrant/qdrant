@@ -231,7 +231,7 @@ fn resolve_set_payload(
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use segment::payload_json;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, MatchValue, Payload, ValueVariants,
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn resolve_delete_by_filter_matches_apply() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let holder = build_holder(dir.path());
         let twin_holder = build_holder(dir.path());
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn resolve_set_payload_filter_to_points() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let holder = build_holder(dir.path());
 
         let operation =

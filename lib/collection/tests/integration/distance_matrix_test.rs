@@ -3,8 +3,7 @@ use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -22,7 +21,7 @@ async fn distance_matrix_empty() {
     // empty collection
     let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sample_size = 100;
     let limit_per_sample = 10;
     let request = CollectionSearchMatrixRequest {
@@ -33,7 +32,7 @@ async fn distance_matrix_empty() {
     };
     let matrix = collection
         .search_points_matrix(request, ShardSelectorInternal::All, None, None, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -68,14 +67,14 @@ async fn distance_matrix_anonymous_vector() {
         ),
     );
 
-    let hw_counter = AmbientContext::new();
+    let ctx = AmbientContext::new();
     collection
         .update_from_client_simple(upsert_points, true, None, WriteOrdering::default())
-        .measured(hw_counter)
+        .measured(ctx)
         .await
         .unwrap();
 
-    let hw_acc = AmbientContext::new();
+    let ctx = AmbientContext::new();
     let sample_size = 100;
     let limit_per_sample = 10;
     let request = CollectionSearchMatrixRequest {
@@ -86,7 +85,7 @@ async fn distance_matrix_anonymous_vector() {
     };
     let matrix = collection
         .search_points_matrix(request, ShardSelectorInternal::All, None, None, None)
-        .measured(hw_acc)
+        .measured(ctx)
         .await
         .unwrap();
 

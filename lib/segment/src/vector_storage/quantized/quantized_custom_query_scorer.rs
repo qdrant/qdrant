@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common::counter::hw::{self, HwScale};
+use common::ambient::hw::{self, HwScale};
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::common::operation_error::OperationResult;

@@ -8,8 +8,8 @@ use std::time::Instant;
 
 use ahash::AHashSet;
 use chrono::{NaiveDateTime, Timelike};
-use common::counter::hw::HwMetric;
-use common::counter::{AmbientContext, HardwareData};
+use common::ambient::AmbientContext;
+use common::ambient::hw::{HardwareData, HwMetric};
 use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;

@@ -3,7 +3,7 @@ use std::hint::black_box;
 use std::ops::Deref as _;
 use std::path::Path;
 
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
@@ -108,7 +108,7 @@ fn storage_dense(path: &Path) -> AppendableMmapDenseVectorStorage<VectorElementT
 
     let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let mut vector_buffer = vec![0.0; VECTOR_DIM];
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for point_id in 0..POINT_COUNT as PointOffsetType {
         let vector = random_vector(&mut rng, &mut vector_buffer, VECTOR_DIM);
@@ -137,7 +137,7 @@ fn storage_multi(path: &Path) -> AppendableMmapMultiDenseVectorStorage<VectorEle
 
     let mut rng = SmallRng::seed_from_u64(RNG_SEED);
     let mut vector_buffer = vec![0.0; MAX_VECTORS_PER_POINT * VECTOR_DIM];
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for point_id in 0..POINT_COUNT as PointOffsetType {
         let vectors_count = rng.random_range(1..=MAX_VECTORS_PER_POINT);
@@ -160,7 +160,7 @@ fn storage_sparse(path: &Path) -> MmapSparseVectorStorage {
         MmapSparseVectorStorage::open_or_create(path).expect("mmap sparse storage opened");
 
     let mut rng = SmallRng::seed_from_u64(RNG_SEED);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for point_id in 0..POINT_COUNT as PointOffsetType {
         let vector = random_sparse_vector(&mut rng, SPARSE_MAX_DIM);

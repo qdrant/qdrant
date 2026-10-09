@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::counter::hw;
+use common::ambient;
 use segment::data_types::index::TextIndexParams;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -35,7 +35,7 @@ fn build_text_segment(path: &std::path::Path, documents: &[&str]) -> Segment {
     };
 
     let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut op_num: SeqNumberType = 0;
     segment

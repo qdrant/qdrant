@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -83,7 +83,7 @@ fn build_text_segment_deferred(
         id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(path, &config, deferred_internal_id, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut op_num: SeqNumberType = 0;
     segment
         .create_field_index(

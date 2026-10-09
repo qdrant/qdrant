@@ -1,5 +1,5 @@
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -44,7 +44,7 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         .collect::<OperationResult<InMemoryNumericIndex<_>>>()
         .unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut count = 0;
     group.bench_function("numeric-index", |b| {
         b.iter(|| {

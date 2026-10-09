@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hw;
+use common::ambient;
 use common::defaults::log_load_timing;
 use common::reason::reason;
 use fs_err as fs;
@@ -216,7 +216,7 @@ impl StructPayloadIndex {
             // Close any partially-loaded index storages first: the rebuild wipes
             // their directories before building fresh.
             indexes.clear();
-            indexes = hw::unmeasured(reason("Internal operation"), || {
+            indexes = ambient::unmeasured(reason("Internal operation"), || {
                 self.build_field_indexes(field, &payload_schema.schema)
             })?;
 

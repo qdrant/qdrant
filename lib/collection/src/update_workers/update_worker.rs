@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use cancel::CancellationToken;
-use common::counter::hw::HwHandoff;
+use common::ambient::Handoff;
 use common::save_on_disk::SaveOnDisk;
 use segment::types::SeqNumberType;
 use shard::operations::CollectionUpdateOperations;
@@ -84,7 +84,7 @@ impl UpdateWorkers {
                     operation,
                     sender,
                     wait_for_deferred,
-                    hw_measurements,
+                    handoff,
                 }) => {
                     let collection_name_clone = collection_name.clone();
                     let wal_clone = wal.clone();
@@ -161,7 +161,7 @@ impl UpdateWorkers {
                             update_operation_lock_clone,
                             update_tracker_clone,
                             max_segment_size_bytes,
-                            hw_measurements,
+                            handoff,
                         )
                     })
                     .await;
@@ -353,7 +353,7 @@ impl UpdateWorkers {
         update_operation_lock: Arc<tokio::sync::RwLock<()>>,
         update_tracker: UpdateTracker,
         max_segment_size_bytes: Option<NonZeroUsize>,
-        hw_measurements: HwHandoff,
+        handoff: Handoff,
     ) -> CollectionResult<usize> {
         // If wait flag is set, explicitly flush WAL first
         if wait {
@@ -370,10 +370,10 @@ impl UpdateWorkers {
         // Do not use for anything else
         let loggable_operation = operation.remove_details();
 
-        let cpu_utilization = hw_measurements.cpu_utilization();
+        let cpu_utilization = handoff.cpu_utilization();
 
         let result = cpu_utilization.measure(|| {
-            let _hw = hw_measurements.enter_guard();
+            let _scope = handoff.enter_guard();
             CollectionUpdater::update(
                 &segments,
                 op_num,
@@ -405,7 +405,7 @@ mod tests {
     use std::sync::Arc;
 
     use cancel::CancellationToken;
-    use common::counter::{AmbientContext, hw};
+    use common::ambient::{self, AmbientContext};
     use common::save_on_disk::SaveOnDisk;
     use segment::common::BYTES_IN_KB;
     use segment::entry::entry_point::SegmentEntry as _;
@@ -442,7 +442,7 @@ mod tests {
         let mut holder = SegmentHolder::default();
         let full_id = holder.add_new(random_segment(dir.path(), 100, 3, DIM));
         let mut source = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
-        hw::test(|| {
+        ambient::test(|| {
             source
                 .upsert_point(
                     1,
@@ -544,7 +544,7 @@ mod tests {
                 ))),
                 sender: Some(feedback_sender),
                 wait_for_deferred: false,
-                hw_measurements: HwHandoff::measured(AmbientContext::new()),
+                handoff: Handoff::measured(AmbientContext::new()),
             }))
             .await
             .unwrap();

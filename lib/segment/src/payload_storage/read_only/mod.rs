@@ -21,7 +21,7 @@ pub struct ReadOnlyPayloadStorage<S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::universal_io::{MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs};
     use rstest::rstest;
     use tempfile::TempDir;
@@ -39,7 +39,7 @@ mod tests {
         #[values(Populate::No, Populate::PreferBackground)] populate: Populate,
     ) {
         let dir = TempDir::with_prefix("read_only_payload").unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let payload = payload_json! {
             "a": "some text",

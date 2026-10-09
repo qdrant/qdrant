@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
-use common::uio_trace::{self, Op};
+use common::ambient::trace::{self, Op};
 use common::universal_io::{ListedFile, OpenOptions, UioResult, UniversalReadFs};
 
 use crate::stats::RemoteIoStats;
@@ -65,7 +65,7 @@ impl<A: AsyncRead> BlobFs<A> {
         F: Future<Output = UioResult<T>> + Send + 'static,
     {
         let handle = self.runtime.handle().clone();
-        async move { handle.spawn(uio_trace::Context::current().wrap(op)).await? }
+        async move { handle.spawn(trace::Context::current().wrap(op)).await? }
     }
 }
 
@@ -121,9 +121,9 @@ impl<A: AsyncRead + Clone> BlobFs<A> {
                         match &result {
                             Ok(Some(info)) => {
                                 observer.set_end(info.size);
-                                observer.set(uio_trace::Outcome::Ok);
+                                observer.set(trace::Outcome::Ok);
                             }
-                            Ok(None) => observer.set(uio_trace::Outcome::NotFound),
+                            Ok(None) => observer.set(trace::Outcome::NotFound),
                             Err(err) => observer.set_err(err),
                         }
                         result

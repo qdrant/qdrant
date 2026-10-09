@@ -479,7 +479,7 @@ mod tests {
     use std::mem::transmute;
     use std::sync::Arc;
 
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_to_u8_slice;
@@ -523,7 +523,7 @@ mod tests {
                 .expect("storage is missing required file");
         }
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -620,7 +620,7 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -746,7 +746,7 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -816,7 +816,7 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -885,7 +885,7 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);

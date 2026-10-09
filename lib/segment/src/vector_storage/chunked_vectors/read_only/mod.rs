@@ -46,7 +46,7 @@ pub struct ReadOnlyChunkedVectors<T: bytemuck::Pod + Send, S: UniversalRead> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
@@ -69,7 +69,7 @@ mod tests {
     fn live_reload_picks_up_appended_vectors() {
         const DIM: usize = 32;
         let dir = Builder::new().prefix("chunked_reload").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM);
@@ -107,7 +107,7 @@ mod tests {
 
         const DIM: usize = 32;
         let dir = Builder::new().prefix("chunked_preload").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM);
@@ -154,7 +154,7 @@ mod tests {
 
         const DIM: usize = 32; // 4096 vectors per test chunk
         let dir = Builder::new().prefix("chunked_boundary").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..4096, DIM);
@@ -208,7 +208,7 @@ mod tests {
 
         const DIM: usize = 32;
         let dir = Builder::new().prefix("chunked_shrink").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM);
@@ -275,7 +275,7 @@ mod tests {
         fs_err::create_dir_all(&dir).unwrap();
         fs_err::create_dir_all(&local_root).unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // The writer works on the "remote" directly; the reader mirrors it
         // into `local_root` through the disk cache.
@@ -351,7 +351,7 @@ mod tests {
         fs_err::create_dir_all(&dir).unwrap();
         fs_err::create_dir_all(&local_root).unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, &dir, dim).unwrap();
         append_range(&mut writer, 0, 0..100, dim);
@@ -405,7 +405,7 @@ mod tests {
         use common::universal_io::CachedReadFs;
 
         const DIM: usize = 32;
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let (_tmp, _writer, mut cached_fs, mut reader) = status_newer_than_snapshot(DIM);
         let empty = SortedSlice::new(&[]).unwrap();
 
@@ -459,7 +459,7 @@ mod tests {
         fs_err::create_dir_all(&dir).unwrap();
         fs_err::create_dir_all(&local_root).unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, &dir, DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM);
@@ -491,7 +491,7 @@ mod tests {
             .prefix("chunked_reload_short")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM);
@@ -527,7 +527,7 @@ mod tests {
             .prefix("chunked_reload_grow")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..4000, DIM);
@@ -576,7 +576,7 @@ mod tests {
             .prefix("chunked_reload_err")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
         append_range(&mut writer, 0, 0..100, DIM);

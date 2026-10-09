@@ -15,7 +15,7 @@ mod tests {
     use std::num::{NonZeroU64, NonZeroUsize};
     use std::path::PathBuf;
 
-    use common::counter::hw;
+    use common::ambient;
     use exhaustive::Exhaustive;
     use fs_err as fs;
     use itertools::Itertools;
@@ -309,7 +309,7 @@ mod tests {
         .unwrap();
 
         let mut rnd = rng();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         for n in 0..NUM_POINTS {
             let multi_vec = random_multi_vector(&mut rnd, DIM, 1);
             let mut named = NamedVectors::default();
@@ -511,7 +511,7 @@ mod tests {
             .indexing_threshold_kb = 50;
 
         // ----- CREATE AN INDEXED FIELD ------
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         process_field_index_operation(
             &locked_holder.read(),
@@ -630,7 +630,7 @@ mod tests {
             .unwrap()
             .num_vectors;
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         process_point_operation(
             &locked_holder.read(),
@@ -1197,7 +1197,7 @@ mod tests {
             build_segment_optimizer_config(&collection_params, &hnsw_config, &None);
         let segment_config = segment_optimizer_config.plain_segment_config();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let (mut segment, _) = build_segment(
             segments_dir.path(),
             &segment_config,

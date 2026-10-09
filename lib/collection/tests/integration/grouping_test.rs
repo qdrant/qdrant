@@ -3,7 +3,7 @@ use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use itertools::Itertools;
 use rand::RngExt;
 use rand::distr::Uniform;
@@ -27,7 +27,7 @@ mod group_by {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
-    use common::counter::AmbientContext;
+    use common::ambient::AmbientContext;
     use segment::payload_json;
 
     use super::*;
@@ -448,7 +448,7 @@ mod group_by_builder {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
-    use common::counter::AmbientContext;
+    use common::ambient::AmbientContext;
     use segment::json_path::JsonPath;
     use segment::payload_json;
 
@@ -483,7 +483,7 @@ mod group_by_builder {
         let collection_dir = tempfile::Builder::new().prefix("chunks").tempdir().unwrap();
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
-        let hw_counter = AmbientContext::new();
+        let ctx = AmbientContext::new();
 
         // insert chunk points
         {
@@ -508,7 +508,7 @@ mod group_by_builder {
 
             let insert_result = collection
                 .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
-                .measured(AmbientContext::clone(&hw_counter))
+                .measured(AmbientContext::clone(&ctx))
                 .await
                 .expect("insert failed");
 
@@ -538,7 +538,7 @@ mod group_by_builder {
             );
             let insert_result = lookup_collection
                 .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
-                .measured(AmbientContext::clone(&hw_counter))
+                .measured(AmbientContext::clone(&ctx))
                 .await
                 .expect("insert failed");
 

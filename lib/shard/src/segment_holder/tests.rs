@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use common::counter::hw;
+use common::ambient;
 use common::flags::{FeatureFlags, init_feature_flags};
 use rand::RngExt;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
@@ -54,7 +54,7 @@ fn test_apply_to_appendable() {
     let mut updated_in_place = Vec::new();
     let mut moved_to_appendable = Vec::new();
 
-    hw::test(|| {
+    ambient::test(|| {
         holder.apply_points_with_conditional_move(
             100,
             &point_ids,
@@ -118,7 +118,7 @@ fn test_apply_and_move_old_versions(
     let mut segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_2(dir.path());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert operation 100 with point 123 and 456 into segment 1, and 789 into segment 2
     segment1
@@ -218,7 +218,7 @@ fn test_cow_operation() {
     let segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_1(dir.path());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment2
         .upsert_point(
@@ -313,7 +313,7 @@ fn test_cow_move_append_only_single_slot() {
     let destination_id_tracker = destination.id_tracker.clone();
 
     let mut source = build_segment_1(dir.path());
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     source
         .upsert_point(
             100,
@@ -408,7 +408,7 @@ fn test_cow_move_does_not_degrade_turbo_vectors() {
     let (mut segment_a, _) = build_segment(dir.path(), &config, None, true).unwrap();
     let (segment_b, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let point_id: PointIdType = 7.into();
     let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
     segment_a
@@ -520,7 +520,7 @@ fn test_cow_move_overlay_preserves_untouched_turbo_vector() {
     let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
     let (destination, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let point_id: PointIdType = 7.into();
     let keep_vec: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
     let old_replace: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.11).cos()).collect();
@@ -637,7 +637,7 @@ fn test_cow_move_delete_name_preserves_survivor() {
     let (mut source, _) = build_segment(dir.path(), &config, None, true).unwrap();
     let (destination, _) = build_segment(dir.path(), &config, None, true).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let point_id: PointIdType = 7.into();
     let keep_vec: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
     let drop_vec: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.11).cos()).collect();
@@ -748,7 +748,7 @@ fn test_cow_move_allows_role_config_differences() {
     )
     .unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let point_id: PointIdType = 7.into();
     let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
     source
@@ -801,7 +801,7 @@ fn test_points_deduplication() {
     let mut segment1 = build_segment_1(dir.path());
     let mut segment2 = build_segment_1(dir.path());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .set_payload(100, 1.into(), &payload_json! {}, &None)
@@ -903,7 +903,7 @@ fn test_points_deduplication_bug() {
     let mut segment1 = empty_segment(dir.path());
     let mut segment2 = empty_segment(dir.path());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment1
         .upsert_point(
@@ -1012,7 +1012,7 @@ fn test_points_deduplication_randomized() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segments = [
         empty_segment(dir.path()),
@@ -1092,7 +1092,7 @@ fn test_find_points_to_update_and_delete() {
     use std::collections::HashSet;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
 
     // Segment 1: point 1 (v1), point 2 (v2), point 3 (v5), point 6 (v7)
@@ -1176,7 +1176,7 @@ fn test_find_points_to_update_and_delete_with_deferred() {
     use crate::fixtures::build_segment_with_deferred_1;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
 
     // Segment 1 (normal): points 3, 4, 5 at version 10
@@ -1291,7 +1291,7 @@ fn test_find_points_to_update_and_delete_with_deferred_winning() {
     use crate::fixtures::build_segment_with_deferred_1;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
 
     // Segment 1 (normal): points 4, 5 at version 3 (lower than deferred v6)
@@ -1362,7 +1362,7 @@ fn test_find_points_to_update_and_delete_with_deferred_three_segments() {
     use crate::fixtures::build_segment_with_deferred_1;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
 
     // Segment 1 (normal): point 4 at version 5 (older non-deferred)
@@ -1421,7 +1421,7 @@ fn test_points_deduplication_with_deferred() {
     use crate::fixtures::empty_segment_with_deferred;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
 
     // Segment 1 (normal, no deferred):
@@ -1585,7 +1585,7 @@ fn test_points_deduplication_with_deferred_randomized() {
     let mut rng = rand::rng();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Create segments: first 3 normal, last 2 with deferred points.
     // Deferred internal ID = 3 → internal IDs >= 3 are deferred.
@@ -1771,7 +1771,7 @@ fn deduplicate_points_sync(holder: &SegmentHolder) -> OperationResult<usize> {
 
 #[test]
 fn test_double_proxies() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segment1 = build_segment_1(dir.path());
@@ -1920,7 +1920,7 @@ fn test_cow_skips_delete_when_destination_is_deferred() {
     use crate::fixtures::build_segment_with_deferred_1;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
 
     // Appendable segment with deferred threshold: points 1-5, deferred_internal_id = 3
@@ -2088,7 +2088,7 @@ fn test_post_flush_action_hard_failure_is_dropped() {
 #[test]
 fn test_cow_deletes_source_when_destination_is_not_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let vec4 = segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]);
 
     // Regular appendable segment (no deferred threshold)
@@ -2185,7 +2185,7 @@ fn test_cow_move_prefers_appendable_segment_below_size_cap() {
     let full_size = segment_size(&holder, full_id);
     assert!(full_size > 0, "Segment should have non-zero size");
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     holder
         .apply_points_with_conditional_move(
             100,
@@ -2220,7 +2220,7 @@ fn test_cow_move_into_capped_deferred_staging_segment_keeps_point_visible() {
     use crate::fixtures::build_segment_with_deferred_1;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let staging = build_segment_with_deferred_1(dir.path());
 
@@ -2289,7 +2289,7 @@ fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
     use crate::fixtures::build_segment_with_deferred_1;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // The staging segment is added first, `aloha_random_write` would pick it without the steering
     let mut holder = SegmentHolder::default();
@@ -2358,7 +2358,7 @@ fn test_cow_move_prefers_uncapped_segment_over_full_deferred_staging_segment() {
 #[test]
 fn test_flush_all_does_not_claim_an_unfinished_operation() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // First phase of operation 10.
     let mut segment = empty_segment(dir.path());
@@ -2393,7 +2393,7 @@ fn test_flush_all_does_not_claim_an_unfinished_operation() {
 #[test]
 fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut source = empty_segment(dir.path());
     source
@@ -2802,7 +2802,7 @@ fn test_nested_proxies_pending_changes_logs() {
     });
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let segment = build_segment_1(dir.path());
     let mut holder = SegmentHolder::default();
     let segment_id = holder.add_new(segment);

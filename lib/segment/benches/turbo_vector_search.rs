@@ -22,8 +22,8 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::Duration;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hw;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use criterion::measurement::WallTime;
@@ -78,7 +78,7 @@ fn subset_ids() -> Vec<PointOffsetType> {
 /// exactly as the optimizer does.
 fn build_dataset(dir: &Path) {
     let mut rng = rand::make_rng::<SmallRng>();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let encoder_dir = TempDir::new().expect("encoder tempdir created");
     let mut encoder = open_appendable_turbo_vector_storage(
@@ -128,7 +128,7 @@ fn bench_subset(
     point_deleted: &BitSlice,
     clear_cache: bool,
 ) {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     for &(label, batched, storage) in modes {
         if !clear_cache {
             storage.populate().expect("storage populated");
