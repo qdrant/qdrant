@@ -481,6 +481,14 @@ impl Validate for super::qdrant::expression::Variant {
     }
 }
 
+impl Validate for grpc::text_query::Scoring {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::text_query::Scoring::Bm25(params) => params.validate(),
+        }
+    }
+}
+
 impl Validate for grpc::feedback_strategy::Variant {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
