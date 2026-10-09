@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::ambient;
 use common::reason::Reason;
@@ -180,8 +181,9 @@ pub(crate) const COPY_CONCURRENCY: usize = 8;
 /// Copy a locally built segment directory to the backend: directories first,
 /// then every file as one whole-object save, [`COPY_CONCURRENCY`] at a time.
 ///
-/// Every save is awaited even after one fails, so nothing is left in flight and
-/// the cleanup covers every object that landed.
+/// After the first failure no further save starts, but the ones already in
+/// flight are still awaited: nothing lands after the cleanup, which covers every
+/// object that did.
 pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     fs: &F,
     local: &Path,
@@ -214,8 +216,12 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     }
 
     // Read inside the wave, so only the in-flight files are in memory.
-    let saved: Vec<(PathBuf, OperationResult<()>)> = futures::stream::iter(files)
+    let failed = &AtomicBool::new(false);
+    let saved: Vec<(PathBuf, Option<OperationResult<()>>)> = futures::stream::iter(files)
         .map(|(source, target)| async move {
+            if failed.load(Ordering::Relaxed) {
+                return (target, None);
+            }
             let result = match fs_err::read(&source) {
                 Ok(bytes) => fs
                     .atomic_save_async(target.clone(), bytes)
@@ -228,7 +234,10 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
                     source.display()
                 ))),
             };
-            (target, result)
+            if result.is_err() {
+                failed.store(true, Ordering::Relaxed);
+            }
+            (target, Some(result))
         })
         .buffer_unordered(COPY_CONCURRENCY)
         .collect()
@@ -238,9 +247,9 @@ pub(crate) async fn copy_dir<F: UniversalWriteFsAsync>(
     let mut landed = Vec::with_capacity(saved.len());
     for (path, result) in saved {
         match result {
-            Ok(()) => landed.push(path),
-            Err(err) if first_error.is_none() => first_error = Some(err),
-            Err(_) => {}
+            Some(Ok(())) => landed.push(path),
+            Some(Err(err)) if first_error.is_none() => first_error = Some(err),
+            Some(Err(_)) | None => {}
         }
     }
     if let Some(err) = first_error {
