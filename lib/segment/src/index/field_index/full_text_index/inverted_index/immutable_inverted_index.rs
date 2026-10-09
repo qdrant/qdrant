@@ -8,7 +8,7 @@ use common::universal_io::UserData;
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
-use super::bm25::{Bm25Query, PositionalCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, PositionalCursors, score_top_k};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -329,7 +329,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -348,10 +348,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         // Deleted points stay in these postings and are masked here, as the
         // filter path does.
         let is_active = |point_id: PointOffsetType| {
-            self.point_to_tokens_count
+            Ok(self
+                .point_to_tokens_count
                 .get(point_id as usize)
                 .is_some_and(|count| *count > 0)
-                && accept(point_id)
+                && accept.check(point_id)?)
         };
         // In RAM: nothing to gain from reading lengths in batches.
         score_top_k::<_, 1>(

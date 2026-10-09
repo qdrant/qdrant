@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -14,7 +15,10 @@ use super::super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
 use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::*;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::fancy_idf;
+use crate::index::condition_checker::ConditionCheckerEnum;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 
 const VOCAB: usize = 40;
 
@@ -143,7 +147,15 @@ fn run<I: InvertedIndex>(
     accept: impl Fn(PointOffsetType) -> bool,
     limit: usize,
 ) -> Vec<ScoredPointOffset> {
-    hw::test(|| index.score_bm25(query, &accept, limit, &AtomicBool::new(false))).unwrap()
+    hw::test(|| {
+        index.score_bm25(
+            query,
+            &Bm25Accept::new(&accept, None),
+            limit,
+            &AtomicBool::new(false),
+        )
+    })
+    .unwrap()
 }
 
 fn queries() -> Vec<Vec<&'static str>> {
@@ -231,7 +243,7 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
                 }
                 Ok(())
             },
-            |_| true,
+            |_| Ok(true),
             limit,
             &AtomicBool::new(false),
         )
@@ -272,6 +284,51 @@ fn accept_restricts_the_ranking() {
     }
 }
 
+/// A filter condition whose every check fails, as a storage read can.
+struct FailingCondition;
+
+impl ConditionChecker for FailingCondition {
+    type Error = OperationError;
+
+    fn check(&self, _point_id: PointOffsetType) -> OperationResult<bool> {
+        Err(OperationError::service_error("filter read failed"))
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
+}
+
+/// A filter that fails to read stops the query with its error, on every
+/// shape, instead of leaving the point out of the ranking.
+#[test]
+fn a_failing_filter_reports_its_error() {
+    let mutable = fixture(7, 100, &[]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
+    let query = query(&mutable, &["w0", "w1"], Bm25Params::default());
+
+    let filter =
+        OptimizedFilter::from_checker(ConditionCheckerEnum::Dyn(Box::new(FailingCondition)));
+    let accept = Bm25Accept::new(&|_| true, Some(&filter));
+    let is_stopped = AtomicBool::new(false);
+    let _hw = hw::test_guard();
+    for result in [
+        mutable.score_bm25(&query, &accept, 10, &is_stopped),
+        immutable.score_bm25(&query, &accept, 10, &is_stopped),
+        on_disk.score_bm25(&query, &accept, 10, &is_stopped),
+    ] {
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("filter read failed"), "{error}");
+    }
+}
+
 /// No average length means no length normalization: the same ranking as
 /// `b = 0` with one, which is what the sparse route produces.
 #[test]
@@ -294,7 +351,12 @@ fn missing_average_length_degrades_to_b_zero() {
     )
     .unwrap();
     let actual = mutable
-        .score_bm25(&without_average, &|_| true, 20, &is_stopped)
+        .score_bm25(
+            &without_average,
+            &Bm25Accept::new(&|_| true, None),
+            20,
+            &is_stopped,
+        )
         .unwrap();
     assert_top_k(&actual, &expected, 20);
 
@@ -303,7 +365,7 @@ fn missing_average_length_degrades_to_b_zero() {
     let normalized = mutable
         .score_bm25(
             &query(&mutable, &terms, Bm25Params::default()),
-            &|_| true,
+            &Bm25Accept::new(&|_| true, None),
             20,
             &is_stopped,
         )
@@ -333,13 +395,13 @@ fn positions_are_required() {
     .unwrap();
     assert!(
         without_positions
-            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .is_err()
     );
     let immutable = ImmutableInvertedIndex::from(without_positions);
     assert!(
         immutable
-            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .is_err()
     );
 }
@@ -361,13 +423,23 @@ fn length_normalization_requires_lengths() {
     let normalized = Bm25Query::new(term, Bm25Params::default(), Some(2.0)).unwrap();
     assert!(
         without_lengths
-            .score_bm25(&normalized, &|_| true, 10, &is_stopped)
+            .score_bm25(
+                &normalized,
+                &Bm25Accept::new(&|_| true, None),
+                10,
+                &is_stopped
+            )
             .is_err()
     );
     let unnormalized = Bm25Query::new(term, Bm25Params::default(), None).unwrap();
     assert_eq!(
         without_lengths
-            .score_bm25(&unnormalized, &|_| true, 10, &is_stopped)
+            .score_bm25(
+                &unnormalized,
+                &Bm25Accept::new(&|_| true, None),
+                10,
+                &is_stopped
+            )
             .unwrap()
             .len(),
         1
@@ -382,14 +454,14 @@ fn empty_query_and_zero_limit_return_nothing() {
     let empty = Bm25Query::new([], Bm25Params::default(), None).unwrap();
     assert!(
         mutable
-            .score_bm25(&empty, &|_| true, 10, &is_stopped)
+            .score_bm25(&empty, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .unwrap()
             .is_empty()
     );
     let query = query(&mutable, &["w0"], Bm25Params::default());
     assert!(
         mutable
-            .score_bm25(&query, &|_| true, 0, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 0, &is_stopped)
             .unwrap()
             .is_empty()
     );
@@ -403,7 +475,7 @@ fn stop_flag_interrupts_the_scan() {
     let query = query(&mutable, &["w0"], Bm25Params::default());
     assert!(
         mutable
-            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .is_err()
     );
 }

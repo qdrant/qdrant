@@ -14,7 +14,7 @@ use super::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
@@ -104,7 +104,7 @@ pub trait PayloadIndexRead {
         terms: &[String],
         context: &TextQueryContext<'_>,
         params: Bm25Params,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Vec<ScoredPointOffset>>;
 

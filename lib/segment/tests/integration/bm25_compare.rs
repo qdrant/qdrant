@@ -38,7 +38,7 @@ use segment::index::field_index::FieldIndexBuilderTrait;
 use segment::index::field_index::full_text_index::full_text_index_read::{
     fill_text_statistics, score_bm25,
 };
-use segment::index::field_index::full_text_index::{Bm25Params, FullTextIndex};
+use segment::index::field_index::full_text_index::{Bm25Accept, Bm25Params, FullTextIndex};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
@@ -198,7 +198,7 @@ fn text_search(
         terms,
         &context,
         Bm25Params::default(),
-        &|_| true,
+        &Bm25Accept::new(&|_| true, None),
         LIMIT,
         &is_stopped,
     )
