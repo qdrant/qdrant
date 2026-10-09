@@ -359,8 +359,12 @@ mod tests {
             }
         }
 
-        // Check that the task was stopped.
-        tokio::time::timeout(Duration::from_millis(100), async {
+        // Check that the task was stopped. The 100ms budget was too tight on slow CI runners —
+        // CancellableReader only checks the cancel token at the start of each `read()` call, so a
+        // cancellation arriving mid-`inner.read()` has to wait for that read to return before the
+        // loop's next iteration observes the cancellation. Bump to 500ms to absorb a single full
+        // `inner.read()` cycle plus scheduling jitter on a loaded CI runner.
+        tokio::time::timeout(Duration::from_millis(500), async {
             while !is_finished_clone.load(std::sync::atomic::Ordering::SeqCst) {
                 tokio::time::sleep(Duration::from_millis(1)).await;
             }
