@@ -15,6 +15,7 @@ use crate::id_tracker::mutable_id_tracker::mappings_storage::{mappings_path, rea
 use crate::id_tracker::mutable_id_tracker::versions_storage::{
     VERSION_ELEMENT_SIZE, versions_path,
 };
+use crate::id_tracker::point_moves::skip_retired_moved_out;
 use crate::types::SeqNumberType;
 
 /// Set of point offsets that changed during a [`ReadOnlyAppendableIdTracker::live_reload`].
@@ -168,12 +169,16 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     }
 
     /// Post-LIST preloading on `CachedFs`. Appendable tracker reloads its handles during
-    /// [`Self::probe_committed`] on the inner filesystem, so this is a no-op.
+    /// [`Self::probe_committed`] on the inner filesystem, so only the move log is staged here, when
+    /// this tracker resolves point moves.
     pub fn live_preload(
         &self,
-        _fs: &impl CachedReadFs<File = S>,
+        fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
-        Ok(Vec::new())
+        match &self.moves {
+            Some(moves) => moves.view.live_preload(fs),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// Consume mapping and version changes appended to storage since the last reload.
@@ -207,6 +212,15 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // deletes act on the committed mapping immediately, and cancel still-pending inserts.
         let changes = self.read_new_mapping_changes(fs, preloaded)?;
 
+        if let Some(moves) = self.moves.as_mut() {
+            let entries = moves.view.read_new(fs)?;
+            let entries =
+                skip_retired_moved_out(entries, |internal_id| self.is_retired(internal_id));
+            if let Some(moves) = self.moves.as_mut() {
+                moves.state.ingest(entries);
+            }
+        }
+
         for change in &changes {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
         }
@@ -223,6 +237,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                         .entry(external_id)
                         .or_default()
                         .push(internal_id);
+                }
+                MappingChange::Delete(external_id) if self.moves.is_some() => {
+                    // Resolving moves: the delete may belong to one, so it waits for the shard
+                    self.hold_delete(external_id);
                 }
                 MappingChange::Delete(external_id) => {
                     // A point can be both committed (an old offset) and pending (a not-yet-committed
@@ -244,20 +262,41 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         // superseded and never reported. A re-insert not covered yet stays unversioned, without
         // hiding the earlier insert. A staged insert the new one supersedes was reported already,
         // so it is reported deleted.
+        let cancelled = self.cancelled_placeholders();
         let mut versioned = Vec::new();
         self.unversioned_inserts
             .retain(|&external_id, internal_ids| {
                 let covered = internal_ids.partition_point(|&internal_id| internal_id < committed);
-                if let Some(&internal_id) = internal_ids[..covered].last() {
+                let newest = internal_ids[..covered]
+                    .iter()
+                    .rev()
+                    .find(|&&internal_id| !cancelled.contains(&(external_id, internal_id)));
+                if let Some(&internal_id) = newest {
                     versioned.push((external_id, internal_id));
                 }
                 internal_ids.drain(..covered);
                 !internal_ids.is_empty()
             });
         for (external_id, internal_id) in versioned {
-            if let Some(superseded) = self.staged_inserts.insert(external_id, internal_id) {
+            if let Some(superseded) = self.staged_inserts.remove(&external_id) {
                 deleted.push(superseded);
             }
+            // A settled move superseded this copy before the view committed it: it never shows, and
+            // the copy it replaces goes with it
+            if self
+                .moves
+                .as_mut()
+                .is_some_and(|moves| moves.premasked.remove(&internal_id))
+            {
+                if let Some(previous) = self.mappings.set_link(external_id, internal_id)
+                    && previous != internal_id
+                {
+                    deleted.push(previous);
+                }
+                self.mappings.drop(external_id);
+                continue;
+            }
+            self.staged_inserts.insert(external_id, internal_id);
         }
 
         // Every staged insert is reported, including those an unpublished reload reported before.
@@ -272,6 +311,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             }
             inserted.push(internal_id);
         }
+
+        self.settle_point_moves();
 
         // `staged_inserts` iterates in arbitrary hash order; both result lists are sorted ascending.
         inserted.sort_unstable();
@@ -289,6 +330,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         for (external_id, internal_id) in self.staged_inserts.drain() {
             self.mappings.set_link(external_id, internal_id);
         }
+        // A published slot can settle a move into it
+        self.settle_point_moves();
     }
 
     /// Read mapping changes appended after the last consumed offset, advancing `mappings_read_to`.

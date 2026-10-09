@@ -1,7 +1,10 @@
 pub mod id_tracker_read;
 mod lifecycle;
 mod live_reload;
+mod moves;
 
+#[cfg(test)]
+mod moves_tests;
 #[cfg(test)]
 mod tests;
 
@@ -14,6 +17,7 @@ use futures::lock::Mutex;
 use smallvec::SmallVec;
 
 pub use self::live_reload::{LiveReloadResult, TrackerProbe};
+use self::moves::AppendableMoves;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -78,6 +82,10 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// Backing file handles, behind their own lock so [`Self::probe_committed`] can refresh them
     /// under shared access while readers use the tracker. Readers never touch them.
     files: Mutex<TrackerFiles<S>>,
+
+    /// Point moves, when this tracker resolves them: `Delete` entries are then held back until the
+    /// shard applies them, see [`point_moves`](crate::id_tracker::point_moves).
+    moves: Option<Box<AppendableMoves<S>>>,
 }
 
 struct TrackerFiles<S> {
