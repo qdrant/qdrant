@@ -413,7 +413,11 @@ pub trait MultiVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>>;
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>);
 

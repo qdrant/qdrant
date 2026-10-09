@@ -192,9 +192,13 @@ fn scoring_equivalency(
 
         let points = (0..other_storage.total_vector_count() as _).sample(&mut rng, SAMPLE_SIZE);
 
-        let scores = scorer.score_points(&mut points.clone(), 0).collect_vec();
+        let scores = scorer
+            .score_points(&mut points.clone(), 0)
+            .unwrap()
+            .collect_vec();
         let other_scores = other_scorer
             .score_points(&mut points.clone(), 0)
+            .unwrap()
             .collect_vec();
 
         // Compare scores

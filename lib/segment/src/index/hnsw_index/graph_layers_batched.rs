@@ -175,7 +175,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                     })?;
 
                 points_scorer
-                    .score_points(&mut links, limit)
+                    .score_points(&mut links, limit)?
                     .for_each(|score_point| {
                         if score_point.score > current_point.score {
                             changed = true;
@@ -406,7 +406,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             uio_trace::mark!("round links done ({} to score)", points_ids.len());
 
             points_scorer
-                .score_points_unfiltered(&points_ids)
+                .score_points_unfiltered(&points_ids)?
                 .for_each(|scored_point| search_context.process_candidate(scored_point));
         }
 
@@ -565,7 +565,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             }
 
             points_scorer
-                .score_points_unfiltered(&to_score)
+                .score_points_unfiltered(&to_score)?
                 .for_each(|score_point| search_context.process_candidate(score_point));
         }
 

@@ -144,7 +144,11 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         ((key as usize) < self.num_points).then(|| self.get_multi::<P>(key))
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, VectorElementType>),
     {
@@ -152,6 +156,7 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         for idx in 0..keys.len() {
             callback(idx, TypedMultiDenseVectorRef::new(&zeros, self.dim));
         }
+        Ok(())
     }
 
     fn iterate_inner_vectors(
@@ -391,7 +396,7 @@ mod tests {
 
         // Slots are deleted zero placeholders: scoring them must not panic.
         let mut scores = [0.0; 3];
-        scorer.score_points(&[0, 1, 2], &mut scores);
+        scorer.score_points(&[0, 1, 2], &mut scores).unwrap();
         assert!(scores.iter().all(|score| score.is_finite()));
     }
 }
