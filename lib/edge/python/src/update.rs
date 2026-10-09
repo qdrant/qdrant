@@ -1,5 +1,6 @@
 use bytemuck::TransparentWrapperAlloc as _;
 use derive_more::Into;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use segment::data_types::modifier::Modifier;
 use segment::json_path::JsonPath;
@@ -25,29 +26,46 @@ impl PyUpdateOperation {
         update_mode: Option<PyUpdateMode>,
     ) -> Self {
         let points = PointInsertOperationsInternal::PointsList(PyPoint::peel_vec(points));
-        let update_mode = update_mode.map(UpdateMode::from);
+        Self::upsert(points, condition, update_mode)
+    }
 
-        let operation = match (condition, update_mode) {
-            // If condition or non-default update_mode is provided, use conditional upsert
-            (Some(condition), mode) => point_ops::PointOperations::UpsertPointsConditional(
-                point_ops::ConditionalInsertOperationInternal {
-                    points_op: points,
-                    condition: Filter::from(condition),
-                    update_mode: mode,
-                },
-            ),
-            (None, Some(mode)) => point_ops::PointOperations::UpsertPointsConditional(
-                point_ops::ConditionalInsertOperationInternal {
-                    points_op: points,
-                    condition: Filter::default(),
-                    update_mode: Some(mode),
-                },
-            ),
-            // Default case: regular upsert
-            (None, None) => point_ops::PointOperations::UpsertPoints(points),
+    /// Upsert points given as columns: `ids`, `vectors` with one entry per id, and optionally
+    /// `payloads` with one entry (or `None`) per id.
+    ///
+    /// `vectors` can be a NumPy array, which is read without converting it to Python lists.
+    #[staticmethod]
+    #[pyo3(signature = (ids, vectors, payloads=None, condition=None, update_mode=None))]
+    pub fn upsert_batch(
+        ids: Vec<PyPointId>,
+        vectors: PyBatchVectors,
+        payloads: Option<Vec<Option<PyPayload>>>,
+        condition: Option<PyFilter>,
+        update_mode: Option<PyUpdateMode>,
+    ) -> PyResult<Self> {
+        vectors.check_len(ids.len())?;
+        if let Some(payloads) = &payloads
+            && payloads.len() != ids.len()
+        {
+            return Err(PyValueError::new_err(format!(
+                "upsert_batch got {} ids but {} payloads",
+                ids.len(),
+                payloads.len(),
+            )));
+        }
+
+        let batch = point_ops::BatchPersisted {
+            ids: PyPointId::peel_vec(ids),
+            vectors: vectors.0,
+            payloads: payloads.map(|payloads| {
+                payloads
+                    .into_iter()
+                    .map(|payload| payload.map(Payload::from))
+                    .collect()
+            }),
         };
 
-        Self(CollectionUpdateOperations::PointOperation(operation))
+        let points = PointInsertOperationsInternal::PointsBatch(batch);
+        Ok(Self::upsert(points, condition, update_mode))
     }
 
     #[staticmethod]
@@ -263,6 +281,38 @@ impl PyUpdateOperation {
     pub fn delete_vector_name(vector_name: String) -> Self {
         let operation = VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name });
         Self(CollectionUpdateOperations::VectorNameOperation(operation))
+    }
+}
+
+impl PyUpdateOperation {
+    fn upsert(
+        points: PointInsertOperationsInternal,
+        condition: Option<PyFilter>,
+        update_mode: Option<PyUpdateMode>,
+    ) -> Self {
+        let update_mode = update_mode.map(UpdateMode::from);
+
+        let operation = match (condition, update_mode) {
+            // If condition or non-default update_mode is provided, use conditional upsert
+            (Some(condition), mode) => point_ops::PointOperations::UpsertPointsConditional(
+                point_ops::ConditionalInsertOperationInternal {
+                    points_op: points,
+                    condition: Filter::from(condition),
+                    update_mode: mode,
+                },
+            ),
+            (None, Some(mode)) => point_ops::PointOperations::UpsertPointsConditional(
+                point_ops::ConditionalInsertOperationInternal {
+                    points_op: points,
+                    condition: Filter::default(),
+                    update_mode: Some(mode),
+                },
+            ),
+            // Default case: regular upsert
+            (None, None) => point_ops::PointOperations::UpsertPoints(points),
+        };
+
+        Self(CollectionUpdateOperations::PointOperation(operation))
     }
 }
 
