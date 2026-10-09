@@ -47,13 +47,10 @@ impl<'a> SparseMetricQueryScorer<'a> {
 
 impl QueryScorer for SparseMetricQueryScorer<'_> {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self
-            .vector_storage
-            .get_sparse::<Random>(idx)
-            .expect("Sparse vector not found");
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        let stored = self.vector_storage.get_sparse::<Random>(idx)?;
 
-        self.score_ref(&stored)
+        Ok(self.score_ref(&stored))
     }
 
     #[inline]
@@ -86,5 +83,28 @@ impl QueryScorer for SparseMetricQueryScorer<'_> {
     type SupportsBytes = False;
     fn score_bytes(&self, enabled: Self::SupportsBytes, _: &[u8]) -> ScoreType {
         match enabled {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::ambient;
+    use sparse::common::sparse_vector::SparseVector;
+
+    use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
+    use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
+    use crate::vector_storage::{VectorStorage, new_raw_scorer};
+
+    #[test]
+    fn score_point_reports_a_missing_vector() {
+        let _scope = ambient::test_guard();
+        let mut storage = new_volatile_sparse_vector_storage();
+        let vector = SparseVector::new(vec![1, 2], vec![0.5, 0.5]).unwrap();
+        storage.insert_vector(0, VectorRef::from(&vector)).unwrap();
+
+        let query = QueryVector::Nearest(VectorInternal::from(vector));
+        let scorer = new_raw_scorer(query, &storage).unwrap();
+        assert!(scorer.score_point(0).is_ok());
+        assert!(scorer.score_point(3).is_err());
     }
 }

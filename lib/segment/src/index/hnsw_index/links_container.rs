@@ -319,7 +319,7 @@ mod tests {
         for i in 0..NUM_VECTORS {
             candidates.push(ScoredPointOffset {
                 idx: i as PointOffsetType,
-                score: scorer.score_point(i as PointOffsetType),
+                score: scorer.score_point(i as PointOffsetType).unwrap(),
             });
         }
 

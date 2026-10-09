@@ -43,7 +43,7 @@ pub trait RawScorer {
     ) -> OperationResult<()>;
 
     /// Score stored vector with vector under the given index
-    fn score_point(&self, point: PointOffsetType) -> ScoreType;
+    fn score_point(&self, point: PointOffsetType) -> OperationResult<ScoreType>;
 
     /// Return distance between stored points selected by IDs
     ///
@@ -492,7 +492,7 @@ impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
         self.query_scorer.score_stored_batch(points, scores)
     }
 
-    fn score_point(&self, point: PointOffsetType) -> ScoreType {
+    fn score_point(&self, point: PointOffsetType) -> OperationResult<ScoreType> {
         self.query_scorer.score_stored(point)
     }
 

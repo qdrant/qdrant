@@ -57,9 +57,10 @@ where
     TStorage: TurboMultiScoring,
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.query
-            .score_by(|query| self.storage.score_point_max_similarity(query, idx))
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        Ok(self
+            .query
+            .score_by(|query| self.storage.score_point_max_similarity(query, idx)))
     }
 
     fn score_stored_batch(

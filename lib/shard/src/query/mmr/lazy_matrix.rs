@@ -51,16 +51,16 @@ impl<'storage> LazyMatrix<'storage> {
         Ok(Self { scorers, matrix })
     }
 
-    pub fn get_similarity(&mut self, i: usize, j: usize) -> ScoreType {
+    pub fn get_similarity(&mut self, i: usize, j: usize) -> OperationResult<ScoreType> {
         if let Some(similarity) = self.matrix[i][j] {
-            return similarity;
+            return Ok(similarity);
         }
-        let similarity = self.compute_similarity(i, j);
+        let similarity = self.compute_similarity(i, j)?;
         self.matrix[i][j] = Some(similarity);
-        similarity
+        Ok(similarity)
     }
 
-    fn compute_similarity(&self, i: usize, j: usize) -> ScoreType {
+    fn compute_similarity(&self, i: usize, j: usize) -> OperationResult<ScoreType> {
         self.scorers[i].score_point(j as PointOffsetType)
     }
 }

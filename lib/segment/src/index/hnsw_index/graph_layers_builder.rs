@@ -917,7 +917,7 @@ mod tests {
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
-            let score = scorer.score_point(idx);
+            let score = scorer.score_point(idx).unwrap();
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
@@ -1031,7 +1031,7 @@ mod tests {
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
-            let score = scorer.score_point(idx);
+            let score = scorer.score_point(idx).unwrap();
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
