@@ -389,19 +389,95 @@ impl ShardReplicaSet {
         if responses.len() >= required_successful_results {
             Ok(responses)
         } else {
-            let errors_count = errors.len();
-            let operations_count = responses.len() + errors.len();
-            let errors_separator = if !errors.is_empty() { ":" } else { "" };
-
-            let mut message = format!(
-                "{errors_count} of {operations_count} read operations failed{errors_separator}"
-            );
-
-            for error in errors {
-                write!(&mut message, "\n  {error}").expect("writing into String always succeeds");
-            }
-
-            Err(CollectionError::service_error(message))
+            Err(Self::format_read_operations_error(responses.len(), errors))
         }
+    }
+
+    pub(crate) fn format_read_operations_error(
+        successful_responses: usize,
+        mut errors: Vec<CollectionError>,
+    ) -> CollectionError {
+        let all_timeouts = !errors.is_empty()
+            && errors
+                .iter()
+                .all(|err| matches!(err, CollectionError::Timeout { .. }));
+
+        if all_timeouts && errors.len() == 1 {
+            return errors.pop().unwrap();
+        }
+
+        let errors_count = errors.len();
+        let operations_count = successful_responses + errors.len();
+        let errors_separator = if !errors.is_empty() { ":" } else { "" };
+
+        let mut message = format!(
+            "{errors_count} of {operations_count} read operations failed{errors_separator}"
+        );
+
+        for error in &errors {
+            write!(&mut message, "\n  {error}").expect("writing into String always succeeds");
+        }
+
+        if all_timeouts {
+            CollectionError::Timeout {
+                description: message,
+            }
+        } else {
+            CollectionError::service_error(message)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn test_format_read_operations_error_preserves_single_timeout() {
+        let single_timeout = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let err = ShardReplicaSet::format_read_operations_error(0, vec![single_timeout]);
+        assert!(
+            matches!(err, CollectionError::Timeout { .. }),
+            "Expected Timeout, got: {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "Timeout error: Operation 'Search' timed out after 1s"
+        );
+    }
+
+    #[test]
+    fn test_format_read_operations_error_preserves_multiple_timeouts() {
+        let t1 = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let t2 = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let err = ShardReplicaSet::format_read_operations_error(0, vec![t1, t2]);
+        assert!(
+            matches!(err, CollectionError::Timeout { .. }),
+            "Expected Timeout, got: {err:?}"
+        );
+        assert!(err.to_string().contains("2 of 2 read operations failed"));
+    }
+
+    #[test]
+    fn test_format_read_operations_error_negative_control_mixed() {
+        let t1 = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let t2 = CollectionError::service_error("peer crashed");
+        let err = ShardReplicaSet::format_read_operations_error(0, vec![t1, t2]);
+        assert!(
+            matches!(err, CollectionError::ServiceError { .. }),
+            "Expected ServiceError for mixed errors, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_format_read_operations_error_negative_control_cancelled() {
+        let cancelled = CollectionError::cancelled("request aborted");
+        let err = ShardReplicaSet::format_read_operations_error(0, vec![cancelled]);
+        assert!(
+            matches!(err, CollectionError::ServiceError { .. }),
+            "Expected ServiceError for cancellation, got: {err:?}"
+        );
     }
 }
