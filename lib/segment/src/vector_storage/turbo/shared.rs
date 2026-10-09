@@ -170,17 +170,26 @@ pub(super) fn score_query_batch<TStorage: EncodedStorage>(
     debug_assert_eq!(ids.len(), scores.len());
 
     if !TStorage::prefers_run_scoring(ids) {
-        storage.for_each_batch(ids, |idx, bytes| {
-            scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
-        });
+        storage
+            .for_each_batch(ids, |idx, bytes| {
+                scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
+            })
+            .expect("read TQ vectors");
         return;
     }
 
     // The record size every Turbo datatype storage is created with.
     let stride = quantizer.quantized_size();
-    storage.for_each_run(ids, |first, count, bytes| {
-        quantizer.score_precomputed_batch(query, &bytes, stride, &mut scores[first..first + count]);
-    });
+    storage
+        .for_each_run(ids, |first, count, bytes| {
+            quantizer.score_precomputed_batch(
+                query,
+                &bytes,
+                stride,
+                &mut scores[first..first + count],
+            );
+        })
+        .expect("read TQ vectors");
 
     if invert_score(distance) {
         for score in scores {

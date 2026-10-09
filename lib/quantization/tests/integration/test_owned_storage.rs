@@ -74,8 +74,8 @@ mod tests {
             &self,
             offsets: &[PointOffsetType],
             callback: impl FnMut(usize, Cow<'_, [u8]>),
-        ) {
-            default_for_each_batch(self, offsets, callback);
+        ) -> std::io::Result<()> {
+            default_for_each_batch(self, offsets, callback)
         }
 
         fn files(&self) -> Vec<PathBuf> {
