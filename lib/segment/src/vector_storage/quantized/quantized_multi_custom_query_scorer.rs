@@ -114,7 +114,7 @@ where
                 |score_fn| self.query.score_by(score_fn),
                 scores,
             )
-        });
+        })?;
         Ok(())
     }
 

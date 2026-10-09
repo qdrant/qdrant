@@ -55,7 +55,7 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedTurboVectorStorage<S
         self.storage.for_each_batch(&point_offsets, |idx, bytes| {
             let vector = shared::dequantize_vector(&self.quantizer, self.dim, &bytes);
             callback(user_data[idx], point_offsets[idx], vector);
-        });
+        })?;
         Ok(())
     }
 
@@ -104,7 +104,7 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyChunkedTurboVectorSt
         mut f: F,
     ) -> OperationResult<()> {
         self.storage
-            .for_each_batch(keys, |idx, bytes| f(idx, &bytes));
+            .for_each_batch(keys, |idx, bytes| f(idx, &bytes))?;
         Ok(())
     }
 
@@ -117,7 +117,7 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyChunkedTurboVectorSt
 
         self.storage.for_each_batch(&point_offsets, |idx, bytes| {
             callback(user_data[idx], point_offsets[idx], bytes.to_vec());
-        });
+        })?;
         Ok(())
     }
 

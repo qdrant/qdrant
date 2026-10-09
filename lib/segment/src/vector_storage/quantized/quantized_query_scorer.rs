@@ -89,7 +89,7 @@ where
         self.hw
             .vector_io_read(ids.len() * self.quantized_data.quantized_vector_size());
 
-        self.quantized_data.score_points(&self.query, ids, scores);
+        self.quantized_data.score_points(&self.query, ids, scores)?;
         Ok(())
     }
 

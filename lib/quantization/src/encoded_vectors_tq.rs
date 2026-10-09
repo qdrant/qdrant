@@ -414,7 +414,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
@@ -432,14 +432,13 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         query: &EncodedQueryTQ,
         offsets: &[PointOffsetType],
         scores: &mut [f32],
-    ) {
+    ) -> std::io::Result<()> {
         debug_assert_eq!(offsets.len(), scores.len());
 
         if !TStorage::prefers_run_scoring(offsets) {
-            self.for_each_batch(offsets, |i, vector| {
+            return self.for_each_batch(offsets, |i, vector| {
                 scores[i] = self.score_bytes(True, query, &vector);
             });
-            return;
         }
 
         HwMetric::Cpu.bump(offsets.len() * self.quantized_vector_size());
@@ -453,13 +452,14 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
                     stride,
                     &mut scores[first..first + count],
                 );
-            });
+            })?;
 
         if self.metadata.vector_parameters.invert {
             for score in scores {
                 *score = -*score;
             }
         }
+        Ok(())
     }
 
     /// Score two points inside endoded data by their indexes

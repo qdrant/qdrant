@@ -128,7 +128,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         let offsets = offsets
             .iter()
             .enumerate()
@@ -139,20 +139,21 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
                 callback(index, vector);
                 Ok(())
             })
-            .expect("vectors read");
+            .map_err(std::io::Error::other)
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for run in quantization::encoded_storage::consecutive_runs(offsets) {
             let bytes = self
                 .get_many::<Random>(run.start, run.len)
-                .expect("vectors read");
+                .ok_or_else(|| run.unreadable())?;
             callback(run.first, run.len, bytes);
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
