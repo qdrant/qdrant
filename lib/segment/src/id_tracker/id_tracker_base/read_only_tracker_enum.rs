@@ -400,6 +400,29 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         }
     }
 
+    fn point_moves_state_mut(&mut self) -> Option<&mut PointMoves> {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.point_moves_mut(),
+            Self::Immutable(id_tracker) => {
+                id_tracker.point_moves_mut().map(|moves| &mut moves.state)
+            }
+            Self::DiskResident(id_tracker) => {
+                id_tracker.point_moves_mut().map(|moves| &mut moves.state)
+            }
+        }
+    }
+
+    /// Whether `internal_id` is deleted in this view for good, so a mask naming it would delete
+    /// nothing. A held tombstone does not count: the slot still serves until it is released.
+    pub fn is_retired(&self, internal_id: PointOffsetType) -> bool {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.is_retired(internal_id),
+            // Nothing is ever appended to these formats, so a deleted slot stays deleted
+            Self::Immutable(id_tracker) => id_tracker.is_deleted_point(internal_id),
+            Self::DiskResident(id_tracker) => id_tracker.is_deleted_point(internal_id),
+        }
+    }
+
     /// Whether this tracker resolves point moves.
     pub fn resolves_point_moves(&self) -> bool {
         self.point_moves_state().is_some()
@@ -409,6 +432,17 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// the shard hands to those segments.
     pub fn settled_moved_in(&self) -> Option<&AHashMap<Uuid, RoaringBitmap>> {
         self.point_moves_state().map(PointMoves::settled_moved_in)
+    }
+
+    /// Forget the settled moved-in records whose source slot `retired` names, per source segment:
+    /// the sources deleted those slots for good. See [`PointMoves::prune_settled`].
+    pub fn prune_settled_moved_in<'a>(
+        &mut self,
+        retired: impl Fn(&Uuid) -> Option<&'a RoaringBitmap>,
+    ) {
+        if let Some(moves) = self.point_moves_state_mut() {
+            moves.prune_settled(retired);
+        }
     }
 
     /// Every target this segment's moved-out records name.

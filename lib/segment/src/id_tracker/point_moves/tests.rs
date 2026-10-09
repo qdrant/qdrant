@@ -252,6 +252,26 @@ fn move_state_settles_and_supersedes() {
     assert!(!moves.names(1));
 }
 
+/// Settled moved-in pairs are forgotten once their source slot is retired, and a source left with
+/// none is dropped.
+#[test]
+fn prune_settled_forgets_retired_source_slots() {
+    let mut moves = PointMoves::default();
+    moves.ingest([moved_in(3, &[(20, 5), (21, 6)]), moved_in(4, &[(22, 7)])]);
+    moves.settle(|_| true);
+
+    let retired_in_3 = RoaringBitmap::from_iter([5u32]);
+    moves.prune_settled(|source| (*source == segment(3)).then_some(&retired_in_3));
+    let settled = moves.settled_moved_in();
+    assert_eq!(settled[&segment(3)], RoaringBitmap::from_iter([6u32]));
+    assert_eq!(settled[&segment(4)], RoaringBitmap::from_iter([7u32]));
+
+    let retired_in_4 = RoaringBitmap::from_iter([7u32]);
+    moves.prune_settled(|source| (*source == segment(4)).then_some(&retired_in_4));
+    assert!(!moves.settled_moved_in().contains_key(&segment(4)));
+    assert_eq!(moves.settled_moved_in().len(), 1);
+}
+
 /// A slot two moved-out records name, after an interrupted move and a later rewrite, keeps the
 /// target of the last record only.
 #[test]

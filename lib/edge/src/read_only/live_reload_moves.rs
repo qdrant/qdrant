@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
@@ -21,11 +22,16 @@ use crate::read_only::enumerate::SegmentListing;
 use crate::read_only::live_reload::LiveReloadOutcome;
 use crate::read_only::load::{LoadedSegments, load_segments_parallel, reload_segments_parallel};
 use crate::read_only::moves::{
-    Trackers, UnheldTargets, is_segment_gone, read_move_log_tails, resolve_moves, unknown_targets,
+    Resolution, Trackers, UnheldTargets, is_segment_gone, read_move_log_tails, resolve_moves,
+    unknown_targets,
 };
 
 /// A held segment, and the deletes a pass applies to it.
 type SegmentDeletes<S> = (Uuid, Arc<RwLock<ReadOnlySegment<S>>>, MoveResolution);
+
+/// How long a pass waits for the reads of the previous epoch before it masks superseded copies.
+/// Past it, masks and releases wait for the next pass, which is stale but never missing.
+const READ_EPOCH_WAIT: Duration = Duration::from_secs(5);
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// One live_reload pass over a single manifest snapshot, resolving point moves: the
@@ -50,7 +56,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     ///    new tombstones wait;
     /// 4. resolve point moves across all of them;
     /// 5. install the new segments, and drop the superseded segments the drop rule allows;
-    /// 6. apply every held segment's deletes.
+    /// 6. start a new read epoch, and wait for the reads of the previous one to finish;
+    /// 7. apply every held segment's deletes.
     pub(super) fn live_reload_attempt_resolving(
         &self,
         is_stopped: &AtomicBool,
@@ -239,12 +246,32 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             *self.config.write() = Arc::new(derived);
         }
 
-        // 6. Apply the deletes of the held segments, each under its own lock, in parallel.
+        // 6. Masking a copy, or releasing a held delete, is only safe once no read is left that may
+        //    have missed the new copy: one that visited its target before step 3 or 5. Plain
+        //    deletes depend on no other segment. If the wait times out, masks and releases wait
+        //    for the next pass, which is stale but never missing.
+        let masks_pending = resolutions
+            .values()
+            .any(|resolution| !resolution.superseded.is_empty());
+        let waited = !masks_pending
+            || self
+                .read_epochs
+                .advance_and_wait(READ_EPOCH_WAIT, is_stopped);
+        if !waited {
+            log::debug!("reads of the previous epoch still running, masks wait for the next pass");
+        }
+
+        // 7. Apply the deletes of the held segments, each under its own lock, in parallel.
         let deletes: Vec<SegmentDeletes<S>> = {
             let holder = self.segments.read();
             resolutions
                 .into_iter()
                 .filter_map(|(uuid, resolution)| {
+                    let resolution = if waited {
+                        resolution
+                    } else {
+                        resolution.without_superseded()
+                    };
                     let segment = holder.segment_arc(&uuid)?;
                     (!resolution.is_empty()).then_some((uuid, segment, resolution))
                 })
@@ -341,14 +368,42 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             }
         }
 
-        let gone = self.gone_segments.lock();
-        resolve_moves(
-            &trackers,
-            &UnheldTargets {
-                listing,
-                replacements_loaded,
-                gone: &gone,
-            },
-        )
+        let Resolution { deletes, retired } = {
+            let gone = self.gone_segments.lock();
+            resolve_moves(
+                &trackers,
+                &UnheldTargets {
+                    listing,
+                    replacements_loaded,
+                    gone: &gone,
+                },
+            )
+        };
+
+        // Forget the settled moved-in records whose masks an earlier pass applied, so a segment
+        // only keeps the records of moves still in flight
+        if !retired.is_empty() {
+            let retired_of = |source: &Uuid| retired.get(source);
+            for (_, segment) in held {
+                // Only segments that points moved into have such records, the others are not
+                // locked for writing
+                let names_retired = segment
+                    .read()
+                    .id_tracker
+                    .borrow()
+                    .settled_moved_in()
+                    .is_some_and(|settled| {
+                        settled.keys().any(|source| retired.contains_key(source))
+                    });
+                if names_retired {
+                    segment.write().prune_settled_moved_in(retired_of);
+                }
+            }
+            for (_, segment) in loaded.iter_mut() {
+                segment.prune_settled_moved_in(retired_of);
+            }
+        }
+
+        deletes
     }
 }
