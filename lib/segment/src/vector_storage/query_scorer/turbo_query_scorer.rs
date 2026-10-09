@@ -59,8 +59,7 @@ impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
         self.hw.vector_io_read(ids.len());
         self.hw.cpu(ids.len());
 
-        self.storage.score_query_batch(&self.query, ids, scores);
-        Ok(())
+        self.storage.score_query_batch(&self.query, ids, scores)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

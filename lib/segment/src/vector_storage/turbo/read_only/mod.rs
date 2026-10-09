@@ -80,7 +80,51 @@ mod tests {
     use crate::common::live_reload::LiveReload;
     use crate::data_types::vectors::VectorRef;
     use crate::vector_storage::turbo::open_appendable_turbo_vector_storage;
-    use crate::vector_storage::{VectorStorage, VectorStorageRead};
+    use crate::vector_storage::{TurboScoring, VectorStorage, VectorStorageRead};
+
+    #[test]
+    fn score_query_batch_reports_a_failed_read() {
+        const DIM: usize = 4;
+        let dir = Builder::new()
+            .prefix("ro_turbo_read_err")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+        {
+            let mut writer = open_appendable_turbo_vector_storage(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                TQBits::Bits4,
+                false,
+            )
+            .unwrap();
+            for id in 0..8 {
+                writer
+                    .insert_vector(id, VectorRef::from(&vec![1.0; DIM]))
+                    .unwrap();
+            }
+            writer.flusher()().unwrap();
+        }
+
+        let reader = ReadOnlyChunkedTurboVectorStorage::<MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            Populate::No,
+        )
+        .unwrap();
+        let query = reader.preprocess_query(vec![1.0; DIM]);
+        let mut scores = [0.0; 2];
+        assert!(
+            reader
+                .score_query_batch(&query, &[0, 12], &mut scores)
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
 
     /// A point appended *after* the reader opened, and soft-deleted only on
     /// disk, must show up as deleted once `live_reload` folds in the persisted

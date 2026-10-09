@@ -147,9 +147,9 @@ impl<B: TurboVectorBlob> TurboScoring for ReadOnlyImmutableTurboVectorStorage<B>
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         self.storage
-            .score_query_batch(&self.quantizer, self.distance, query, ids, scores);
+            .score_query_batch(&self.quantizer, self.distance, query, ids, scores)
     }
 
     fn score_internal_encoded(

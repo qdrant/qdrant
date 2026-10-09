@@ -149,7 +149,7 @@ impl<S: UniversalRead> TurboScoring for ReadOnlyChunkedTurboVectorStorage<S> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         shared::score_query_batch(
             &self.storage,
             &self.quantizer,

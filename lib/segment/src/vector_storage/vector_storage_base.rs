@@ -569,7 +569,7 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    );
+    ) -> OperationResult<()>;
 
     fn score_internal_encoded(
         &self,

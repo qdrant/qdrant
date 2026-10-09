@@ -130,12 +130,10 @@ impl<S: UniversalRead> TurboVectorBlob for GraphVectors<u8, S> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
-        self.graph
-            .for_each_base_vector_in_batch(ids, |idx, bytes| {
-                scores[idx] = score_query_bytes(quantizer, distance, query, bytes);
-            })
-            .expect("score TQ vectors");
+        self.graph.for_each_base_vector_in_batch(ids, |idx, bytes| {
+            scores[idx] = score_query_bytes(quantizer, distance, query, bytes);
+        })
     }
 }
