@@ -64,9 +64,7 @@ where
                 }
                 callback(user_data, point_offset, cow_vector.to_owned());
             },
-        );
-
-        Ok(())
+        )
     }
 
     /// Byte-blob analogue of [`Self::vectors_by_offsets`]: yields each vector as

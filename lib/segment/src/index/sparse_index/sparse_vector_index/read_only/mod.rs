@@ -229,7 +229,7 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
             indices_tracker.register_indices(vector);
             let vector = indices_tracker.remap_vector(vector.to_owned());
             inverted_index.upsert(id, vector, None);
-        });
+        })?;
         result
     }
 }

@@ -157,11 +157,10 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
             callback(user_data, key, self.dequantize_records(records));
         })
-        .expect("read TQ multivectors");
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
