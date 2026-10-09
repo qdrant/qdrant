@@ -17,7 +17,7 @@ use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::*;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::fancy_idf;
-use crate::index::condition_checker::ConditionCheckerEnum;
+use crate::index::condition_checker::{ConditionCheckerEnum, TestBitOfId};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 
 const VOCAB: usize = 40;
@@ -243,7 +243,8 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
                 }
                 Ok(())
             },
-            |_| Ok(true),
+            |_| true,
+            &Bm25Accept::new(&|_| true, None),
             limit,
             &AtomicBool::new(false),
         )
@@ -258,6 +259,72 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
             "block {BLOCK}: a length was read twice"
         );
     }
+}
+
+/// The outer filter, checked a block at a time, keeps exactly the documents
+/// it allows on every shape and block size, whatever order its batched check
+/// leaves them in: this one keeps odd ids and reverses what it is given.
+#[rstest]
+fn the_filter_is_checked_per_block(#[values(1, 10, 1000)] limit: usize) {
+    let mutable = fixture(37, 400, &[8, 9, 100]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
+    let odd = OptimizedFilter::from_checker(ConditionCheckerEnum::TestBitOfId(TestBitOfId(0)));
+    let accept = Bm25Accept::new(&|_| true, Some(&odd));
+    let is_odd = |idx: PointOffsetType| idx % 2 == 1;
+    let is_stopped = AtomicBool::new(false);
+    let _hw = hw::test_guard();
+
+    for terms in queries() {
+        let query = query(&mutable, &terms, Bm25Params::default());
+        let expected = reference(&mutable, &query, is_odd);
+        for actual in [
+            mutable.score_bm25(&query, &accept, limit, &is_stopped),
+            immutable.score_bm25(&query, &accept, limit, &is_stopped),
+            on_disk.score_bm25(&query, &accept, limit, &is_stopped),
+        ] {
+            let actual = actual.unwrap();
+            assert_top_k(&actual, &expected, limit);
+            assert!(actual.iter().all(|hit| is_odd(hit.idx)));
+        }
+        filtered_in_blocks::<2>(&mutable, &query, &accept, &expected, limit);
+        filtered_in_blocks::<7>(&mutable, &query, &accept, &expected, limit);
+        filtered_in_blocks::<ON_DISK_BLOCK>(&mutable, &query, &accept, &expected, limit);
+    }
+}
+
+fn filtered_in_blocks<const BLOCK: usize>(
+    index: &MutableInvertedIndex,
+    query: &Bm25Query,
+    accept: &Bm25Accept<'_>,
+    expected: &[ScoredPointOffset],
+    limit: usize,
+) {
+    let documents = index.point_to_doc.as_deref().unwrap();
+    let lengths = index.point_to_doc_len.as_deref().unwrap();
+    let postings = query
+        .terms()
+        .iter()
+        .map(|term| index.postings.get(term.token_id as usize))
+        .collect();
+    let mut cursors = MutableCursors::new(postings, documents, query.terms());
+    let actual = score_top_k::<_, BLOCK>(
+        query,
+        &mut cursors,
+        |point_ids, out| {
+            for (point_id, doc_len) in point_ids.iter().zip(out) {
+                *doc_len = Some(lengths[*point_id as usize]);
+            }
+            Ok(())
+        },
+        |_| true,
+        accept,
+        limit,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_top_k(&actual, expected, limit);
 }
 
 /// The caller's filter is applied on every shape, and the pruning

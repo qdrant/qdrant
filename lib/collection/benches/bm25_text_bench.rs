@@ -17,6 +17,10 @@
 //! optimizer decides what to rebuild from vector storage alone, so a shard of
 //! payloads only would never leave the appendable segment.
 //!
+//! Every state is also timed under a payload filter on an integer `bucket`
+//! (point id modulo 100), letting 1% and 50% of the points through: the
+//! scorer checks it on every document it walks.
+//!
 //! `BM25_TEXT_DOCS` overrides the document count, 200k by default like the
 //! sparse baseline, so the two report the same corpus.
 
@@ -49,8 +53,9 @@ use segment::index::field_index::full_text_index::Bm25Params;
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::types::{
-    Distance, ExtendedPointId, Memory, PayloadFieldSchema, PayloadSchemaParams, ScoredPoint,
-    SegmentType, WithPayload, WithVector,
+    Condition, Distance, ExtendedPointId, FieldCondition, Filter, Memory, PayloadFieldSchema,
+    PayloadSchemaParams, PayloadSchemaType, Range, ScoredPoint, SegmentType, WithPayload,
+    WithVector,
 };
 use shard::payload_index_schema::PayloadIndexSchema;
 use shard::query::text::TextScoringQuery;
@@ -59,6 +64,8 @@ use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
 const TEXT_FIELD: &str = "text";
+const BUCKET_FIELD: &str = "bucket";
+const BUCKETS: u64 = 100;
 const DEFAULT_POINT_COUNT: usize = 200_000;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(60);
 const VECTOR_DIM: usize = 4;
@@ -97,7 +104,10 @@ fn corpus_points(documents: &[Vec<String>]) -> Vec<PointStructPersisted> {
         .map(|(id, tokens)| PointStructPersisted {
             id: (id as u64).into(),
             vector: VectorStructInternal::from(random_vector(&mut rng, VECTOR_DIM)).into(),
-            payload: Some(payload_json! { TEXT_FIELD: tokens.join(" ") }),
+            payload: Some(payload_json! {
+                TEXT_FIELD: tokens.join(" "),
+                BUCKET_FIELD: id as u64 % BUCKETS,
+            }),
         })
         .collect()
 }
@@ -224,6 +234,12 @@ fn shard_with(
                 field_schema: Some(field_schema),
             },
         )),
+        CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
+            CreateIndex {
+                field_name: BUCKET_FIELD.parse().unwrap(),
+                field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+            },
+        )),
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
             PointInsertOperationsInternal::PointsList(points),
         )),
@@ -252,6 +268,7 @@ fn run_batch(
     runtime: &Runtime,
     shard: &LocalShard,
     queries: &[TextScoringQuery],
+    filter: Option<&Filter>,
 ) -> Vec<Vec<ScoredPoint>> {
     runtime.block_on(async {
         let mut results = Vec::with_capacity(queries.len());
@@ -259,7 +276,7 @@ fn run_batch(
             let hits = shard
                 .score_bm25(
                     query,
-                    None,
+                    filter.cloned(),
                     LIMIT,
                     WithPayload::from(false),
                     WithVector::from(false),
@@ -390,7 +407,7 @@ fn bm25_text_bench(c: &mut Criterion) {
     });
 
     for state in &states {
-        let results = run_batch(&runtime, &state.shard, &text_queries);
+        let results = run_batch(&runtime, &state.shard, &text_queries, None);
         eprintln!(
             "recall@{LIMIT} {:<24} {:.3}",
             state.name,
@@ -398,11 +415,37 @@ fn bm25_text_bench(c: &mut Criterion) {
         );
     }
 
+    let bucket: JsonPath = BUCKET_FIELD.parse().unwrap();
+    let filters = [
+        (
+            "filter-1pct",
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                bucket.clone(),
+                0.into(),
+            ))),
+        ),
+        (
+            "filter-50pct",
+            Filter::new_must(Condition::Field(FieldCondition::new_range(
+                bucket,
+                Range {
+                    lt: Some(50.0.into()),
+                    ..Range::default()
+                },
+            ))),
+        ),
+    ];
+
     let mut group = c.benchmark_group("bm25-text");
     for state in &states {
         group.bench_function(state.name, |b| {
-            b.iter(|| run_batch(&runtime, &state.shard, &text_queries))
+            b.iter(|| run_batch(&runtime, &state.shard, &text_queries, None))
         });
+        for (name, filter) in &filters {
+            group.bench_function(format!("{}/{name}", state.name), |b| {
+                b.iter(|| run_batch(&runtime, &state.shard, &text_queries, Some(filter)))
+            });
+        }
     }
     group.finish();
 
