@@ -116,20 +116,24 @@ impl<S: UniversalRead> QuantizedStorage<S> {
         let storage_bytes = self.storage.len::<u8>().unwrap_or(u64::MAX) as usize;
         let storage_fits_cache = storage_bytes < MIN_PREFETCH_STORAGE_BYTES;
 
+        let read_vector = |key, sequential| {
+            if sequential {
+                self.read_vector::<Sequential>(key)
+            } else {
+                self.read_vector::<Random>(key)
+            }
+        };
+
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
             let sequential = is_read_with_prefetch_efficient(keys);
             let mut failed = None;
-            let vectors = if sequential {
-                let iter = keys
-                    .iter()
-                    .map(|&key| record_failure(&mut failed, self.read_vector::<Sequential>(key)));
-                maybe_uninit_fill_from(&mut vectors_buffer, iter).0
-            } else {
-                let iter = keys
-                    .iter()
-                    .map(|&key| record_failure(&mut failed, self.read_vector::<Random>(key)));
-                maybe_uninit_fill_from(&mut vectors_buffer, iter).0
-            };
+            let iter = keys.iter().map(|&key| {
+                read_vector(key, sequential).unwrap_or_else(|err| {
+                    failed.get_or_insert(err);
+                    Cow::Borrowed(&[])
+                })
+            });
+            let vectors = maybe_uninit_fill_from(&mut vectors_buffer, iter).0;
             if let Some(err) = failed {
                 return Err(err.into());
             }
@@ -299,14 +303,6 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
 
         0
     }
-}
-
-/// Keeps a batch going past a failed read so the caller can report the first one.
-fn record_failure<'a, E>(failed: &mut Option<E>, read: Result<Cow<'a, [u8]>, E>) -> Cow<'a, [u8]> {
-    read.unwrap_or_else(|err| {
-        failed.get_or_insert(err);
-        Cow::Borrowed(&[])
-    })
 }
 
 impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
