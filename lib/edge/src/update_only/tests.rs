@@ -1237,3 +1237,117 @@ fn an_update_whose_store_fails_keeps_the_point() {
     let payload = records[0].payload.as_ref().expect("payload requested");
     assert_eq!(serde_json::to_value(payload).unwrap()["v"], 1);
 }
+
+/// A relink after a failed store must keep a committed update searchable even when a follower's
+/// previous reload staged that update but failed before publishing it.
+#[cfg(unix)]
+#[test]
+fn recovery_after_a_failed_reload_keeps_the_committed_vector() {
+    use std::sync::atomic::AtomicBool;
+
+    use common::types::DeferredBehavior;
+    use common::universal_io::MmapFile;
+    use segment::data_types::query_context::QueryContext;
+    use segment::data_types::vectors::{QueryVector, VectorInternal};
+    use segment::entry::entry_point::ReadSegmentEntry as _;
+    use segment::id_tracker::IdTrackerRead as _;
+    use segment::segment::read_only::ReadOnlySegment;
+    use segment::types::{Payload, WithPayload};
+    use shard::files::segment_manifest_path;
+    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+    use shard::operations::point_ops::PointOperations;
+    use shard::segment_manifest::SegmentsManifest;
+
+    use crate::read_only::tests::VECTOR_NAME;
+
+    init_serverless_feature_flags();
+    let _hw = common::counter::hw::unmeasured_guard(common::reason::reason("Test code"));
+    let dir = leader_with_ten_points("edge-relink-reload");
+    let manifest: SegmentsManifest =
+        serde_json::from_slice(&fs_err::read(segment_manifest_path(dir.path())).unwrap()).unwrap();
+    let target = *manifest.iter().next().unwrap().0;
+    let path = dir
+        .path()
+        .join(shard::files::SEGMENTS_PATH)
+        .join(target.to_string());
+    let mut reader = ReadOnlySegment::<MmapFile>::open(&MmapFs, &path, target, None, None).unwrap();
+    let old_slot = reader
+        .id_tracker
+        .borrow()
+        .internal_id_with_behavior(3.into(), DeferredBehavior::VisibleOnly)
+        .unwrap();
+    let open = || UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+    let set_payload = |version: SeqNumberType| {
+        let payload: Payload = serde_json::from_value(serde_json::json!({"v": version})).unwrap();
+        [(
+            version,
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload,
+                points: Some(vec![ExtendedPointId::NumId(3)]),
+                filter: None,
+                key: None,
+            })),
+        )]
+    };
+
+    let (writer, _) = open().apply_batch(set_payload(100)).unwrap();
+    drop(writer);
+    // Run the tracker half as if a component then failed, retaining the delta without publishing.
+    let delta = reader
+        .id_tracker
+        .borrow_mut()
+        .live_reload(&MmapFs, None)
+        .unwrap();
+    assert_eq!(delta.inserted, vec![10]);
+    assert_eq!(delta.deleted, vec![old_slot]);
+    reader.pending_reload.borrow_mut().merge(delta);
+
+    // A second update claims slot 11, then fails while storing its payload.
+    let writer = open();
+    let payload_files: Vec<_> = segment_files(dir.path(), target)
+        .into_iter()
+        .filter(|path| path.to_string_lossy().contains("payload_storage"))
+        .collect();
+    assert!(!payload_files.is_empty());
+    lock_files(&payload_files, true);
+    let failed = writer.apply_batch(set_payload(101));
+    lock_files(&payload_files, false);
+    assert!(
+        failed.is_err(),
+        "the store must fail after claiming its slot"
+    );
+
+    // Recovery relinks point 3 to slot 10. Committing point 11 at slot 12 also covers abandoned
+    // slot 11, so the reload sees its insert as versioned before reading the relink.
+    let (_writer, outcome) = open()
+        .apply_batch([(
+            102,
+            PointOperation(PointOperations::UpsertPoints(PointsList(vec![point(11)]))),
+        )])
+        .unwrap();
+    assert_eq!(outcome.stored, 1);
+    let bound = futures::executor::block_on(reader.live_preload(&AtomicBool::new(false))).unwrap();
+    reader.live_reload(bound).unwrap();
+
+    let query = QueryVector::Nearest(VectorInternal::Dense(vec![1.0]));
+    let context = QueryContext::new(0, common::counter::hw::current());
+    let hits = reader
+        .search_batch(
+            VECTOR_NAME,
+            &[&query],
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            20,
+            None,
+            &context.get_segment_query_context(),
+        )
+        .unwrap();
+    let mut ids: Vec<_> = hits[0].iter().map(|hit| hit.id).collect();
+    ids.sort_unstable();
+    assert_eq!(
+        ids,
+        (1..=11).map(ExtendedPointId::NumId).collect::<Vec<_>>()
+    );
+}

@@ -307,6 +307,125 @@ fn test_live_reload_serves_update_versioned_alongside_newer_pending_one() {
     );
 }
 
+#[test]
+fn test_live_reload_relink_restores_an_unpublished_committed_slot() {
+    use crate::id_tracker::mutable_id_tracker::update_only::MappingOperation::Insert;
+    use crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker as Writer;
+    let dir = Builder::new().prefix("reload_relink").tempdir().unwrap();
+    let resume = || {
+        let view = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+        Writer::new(
+            &MmapFs,
+            dir.path(),
+            view.max_claimed_internal_id(),
+            view.pending_inserts(),
+            view.mappings_read_to(),
+        )
+        .unwrap()
+    };
+    let mut writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[0], &[100]).unwrap();
+    let mut reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[1], &[101]).unwrap();
+    // The first reload reports slot 1, but a component fails, preventing publication.
+    let mut pending = reader.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(pending.inserted, vec![1]);
+    assert_eq!(pending.deleted, vec![0]);
+
+    // A store at slot 2 fails. Recovery relinks 1 and commits another point at 3.
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(200.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[3], &[103]).unwrap();
+    let fresh = reader.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(fresh.inserted, vec![1, 3]);
+    assert_eq!(
+        fresh.deleted,
+        vec![0],
+        "slot 1 survived recovery: {fresh:?}"
+    );
+    pending.merge(fresh);
+    assert_eq!(pending.inserted, vec![1, 3]);
+    reader.publish_staged();
+    assert_eq!(
+        reader.internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(1),
+    );
+}
+
+#[test]
+fn test_live_reload_repeated_relinks_keep_the_published_slot() {
+    use crate::id_tracker::mutable_id_tracker::update_only::MappingOperation::Insert;
+    use crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker as Writer;
+
+    let dir = Builder::new().prefix("reload_relink").tempdir().unwrap();
+    let resume = || {
+        let view = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+        Writer::new(
+            &MmapFs,
+            dir.path(),
+            view.max_claimed_internal_id(),
+            view.pending_inserts(),
+            view.mappings_read_to(),
+        )
+        .unwrap()
+    };
+    let mut writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[0], &[100]).unwrap();
+    let mut reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+
+    // A failed update to point 100, followed by recovery and a successful other insert.
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(200.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[2], &[102]).unwrap();
+    let mut pending = reader.live_reload(&MmapFs, None).unwrap();
+    assert_eq!(pending.inserted, vec![2]);
+    assert!(pending.deleted.is_empty());
+    // A component failed during the reload: leave its inserts unpublished.
+
+    // Another failed update to 100, recovery, and successful insert of a third point.
+    writer
+        .insert_operations(&MmapFs, &[Insert(100.into())])
+        .unwrap();
+    writer = resume();
+    writer
+        .insert_operations(&MmapFs, &[Insert(300.into())])
+        .unwrap();
+    writer.set_internal_versions(&MmapFs, &[4], &[104]).unwrap();
+    let fresh = reader.live_reload(&MmapFs, None).unwrap();
+    assert!(
+        !fresh.deleted.contains(&0),
+        "slot 0 is still the committed copy of point 100, but delta is {fresh:?}",
+    );
+    pending.merge(fresh);
+    assert_eq!(pending.inserted, vec![2, 4]);
+    assert!(pending.deleted.is_empty());
+    reader.publish_staged();
+    assert_eq!(
+        reader.internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(0),
+    );
+}
+
 /// A partially-written trailing mapping entry (e.g. a flush observed mid-append) must be ignored,
 /// and the next live-reload must re-read from the start of that incomplete entry.
 #[test]

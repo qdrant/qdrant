@@ -264,10 +264,18 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         let mut inserted = self.inserted_offsets(&mut deleted);
 
+        // Covering an abandoned slot can temporarily supersede a committed slot staged by an
+        // earlier reload, before a later relink restores it. Only delete offsets that remain
+        // superseded at the end of this reload, including relinks that need no new insert.
+        let mut deleted: HashSet<_> = deleted.into_iter().collect();
+        for internal_id in self.staged_inserts.values() {
+            deleted.remove(internal_id);
+        }
+        let mut deleted: Vec<_> = deleted.into_iter().collect();
+
         // `staged_inserts` iterates in arbitrary hash order; both result lists are sorted ascending.
         inserted.sort_unstable();
         deleted.sort_unstable();
-        deleted.dedup();
 
         Ok(LiveReloadResult { inserted, deleted })
     }
