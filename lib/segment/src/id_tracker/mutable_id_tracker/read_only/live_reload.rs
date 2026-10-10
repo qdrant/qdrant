@@ -16,7 +16,7 @@ use crate::id_tracker::mutable_id_tracker::mappings_storage::{mappings_path, rea
 use crate::id_tracker::mutable_id_tracker::versions_storage::{
     VERSION_ELEMENT_SIZE, versions_path,
 };
-use crate::types::{PointIdType, SeqNumberType};
+use crate::types::SeqNumberType;
 
 /// Set of point offsets that changed during a [`ReadOnlyAppendableIdTracker::live_reload`].
 ///
@@ -213,24 +213,16 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         }
 
         // Offsets staged by an earlier reload that was never published: some components may
-        // already hold them, so replacing or deleting one of them must go into `deleted`.
+        // already hold them.
         let previously_staged_offsets: HashSet<_> = self.staged_inserts.values().copied().collect();
         let mut deleted = Vec::new();
 
         // Pending inserts whose versions landed since the last reload go first: they precede
         // `changes` in the log.
-        let versioned: Vec<_> = self
+        let versioned = self
             .unversioned_inserts
-            .extract_if(|_, &mut internal_id| internal_id < committed)
-            .collect();
-        for (external_id, internal_id) in versioned {
-            self.stage(
-                external_id,
-                internal_id,
-                &previously_staged_offsets,
-                &mut deleted,
-            );
-        }
+            .extract_if(|_, &mut internal_id| internal_id < committed);
+        self.staged_inserts.extend(versioned);
 
         for change in &changes {
             match *change {
@@ -238,12 +230,9 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     self.max_claimed_internal_id =
                         self.max_claimed_internal_id.max(Some(internal_id));
                     if internal_id < committed {
-                        self.stage(
-                            external_id,
-                            internal_id,
-                            &previously_staged_offsets,
-                            &mut deleted,
-                        );
+                        // Complete: replaces the point's pending insert and its staged offset.
+                        self.unversioned_inserts.remove(&external_id);
+                        self.staged_inserts.insert(external_id, internal_id);
                     } else {
                         // Withheld until its version lands. Until then the point keeps serving
                         // its complete copy, staged or linked.
@@ -252,51 +241,27 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 }
                 MappingChange::Delete(external_id) => {
                     self.unversioned_inserts.remove(&external_id);
-                    if let Some(staged) = self.staged_inserts.remove(&external_id)
-                        && previously_staged_offsets.contains(&staged)
-                    {
-                        deleted.push(staged);
-                    }
+                    self.staged_inserts.remove(&external_id);
                     deleted.extend(self.mappings.drop(external_id));
                 }
             }
         }
 
-        let mut inserted = self.inserted_offsets(&mut deleted);
+        // Previously staged offsets that are no longer staged were replaced or deleted by this
+        // reload. Only the final state counts: an abandoned insert whose slot the writer covered
+        // with a version looks complete and replaces a staged offset for a moment, until the
+        // relink after it stages that offset again.
+        let staged_offsets: HashSet<_> = self.staged_inserts.values().copied().collect();
+        deleted.extend(previously_staged_offsets.difference(&staged_offsets));
 
-        // Covering an abandoned slot can temporarily supersede a committed slot staged by an
-        // earlier reload, before a later relink restores it. Only delete offsets that remain
-        // superseded at the end of this reload, including relinks that need no new insert.
-        let mut deleted: HashSet<_> = deleted.into_iter().collect();
-        for internal_id in self.staged_inserts.values() {
-            deleted.remove(internal_id);
-        }
-        let mut deleted: Vec<_> = deleted.into_iter().collect();
+        let mut inserted = self.inserted_offsets(&mut deleted);
 
         // `staged_inserts` iterates in arbitrary hash order; both result lists are sorted ascending.
         inserted.sort_unstable();
         deleted.sort_unstable();
+        deleted.dedup();
 
         Ok(LiveReloadResult { inserted, deleted })
-    }
-
-    /// Stage `internal_id`, whose version is in, as the copy of `external_id` to report and later
-    /// link, superseding the point's pending insert and its staged copy. A superseded staged copy
-    /// that is in `previously_staged_offsets` goes to `deleted`.
-    fn stage(
-        &mut self,
-        external_id: PointIdType,
-        internal_id: PointOffsetType,
-        previously_staged_offsets: &HashSet<PointOffsetType>,
-        deleted: &mut Vec<PointOffsetType>,
-    ) {
-        self.unversioned_inserts.remove(&external_id);
-        if let Some(staged) = self.staged_inserts.insert(external_id, internal_id)
-            && staged != internal_id
-            && previously_staged_offsets.contains(&staged)
-        {
-            deleted.push(staged);
-        }
     }
 
     /// The offsets of all staged inserts, for [`LiveReloadResult::inserted`]. Each is compared with
