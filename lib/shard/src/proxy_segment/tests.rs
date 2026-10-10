@@ -375,6 +375,35 @@ fn test_read_filter() {
     assert_eq!(original_points.len() - 1, proxy_res.len());
 }
 
+/// Reading a proxy with `HasId` of exactly the points it has deleted must return nothing.
+/// See <https://github.com/qdrant/qdrant/issues/11056>.
+#[test]
+fn test_read_filter_has_id_of_deleted_points() {
+    let is_stopped = AtomicBool::new(false);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+
+    let _scope = ambient::test_guard();
+
+    let mut proxy_segment = wrap_proxy(original_segment);
+    proxy_segment.delete_point(100, 2.into()).unwrap();
+
+    let filter = Filter::new_must(Condition::HasId(HasIdCondition::from_iter([
+        PointIdType::from(2),
+    ])));
+    let proxy_res = proxy_segment
+        .read_filtered(
+            None,
+            Some(100),
+            Some(&filter),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    assert_eq!(proxy_res, Vec::<PointIdType>::new());
+}
+
 #[test]
 fn test_read_range() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();

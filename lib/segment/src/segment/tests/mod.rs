@@ -192,6 +192,69 @@ fn test_from_filter_attributes() {
     assert!(results_with_invalid_filter.is_empty());
 }
 
+/// A `must_not` condition equal to a primary `must` clause must still exclude its points.
+///
+/// This is the filter a proxy segment builds when it is read with `HasId` of exactly the points
+/// it has deleted: `must: HasId(ids)` plus `must_not: HasId(ids)`.
+/// See <https://github.com/qdrant/qdrant/issues/11056>.
+#[test]
+fn test_read_filtered_must_not_equal_to_primary_clause() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let _scope = ambient::test_guard();
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for id in 0..20u64 {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let color = if id < 2 { "red" } else { "blue" };
+        let payload: Payload =
+            serde_json::from_value(serde_json::json!({ "color": color })).unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+    segment
+        .create_field_index(
+            20,
+            &JsonPath::new("color"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        )
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let read = |filter: &Filter| {
+        segment
+            .read_filtered(
+                None,
+                None,
+                Some(filter),
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap()
+    };
+    let must_and_must_not = |condition: Condition| Filter {
+        must: Some(vec![condition.clone()]),
+        must_not: Some(vec![condition]),
+        ..Default::default()
+    };
+
+    let has_id = Condition::HasId(HasIdCondition::from_iter([PointIdType::from(1)]));
+    let red = Condition::Field(FieldCondition::new_match(
+        JsonPath::new("color"),
+        "red".to_string().into(),
+    ));
+
+    // Primary `HasId` clause, and primary clause from the keyword index
+    assert_eq!(
+        (
+            read(&must_and_must_not(has_id)),
+            read(&must_and_must_not(red)),
+        ),
+        (vec![], vec![]),
+    );
+}
+
 #[rstest]
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
