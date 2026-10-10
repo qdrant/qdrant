@@ -63,8 +63,8 @@ pub struct PointMappings {
     /// Only set for appendable segments with deferred points.
     deferred_internal_id: Option<PointOffsetType>,
 
-    /// Number of deleted deferred points. Maintained incrementally so we can
-    /// derive the visible deferred count without re-scanning the deleted bitslice.
+    /// Number of set bits in `deleted` at or above the deferred cutoff. Maintained incrementally so
+    /// we can derive the visible deferred count without re-scanning the deleted bitslice.
     deferred_deleted_count: usize,
 }
 
@@ -226,8 +226,7 @@ impl PointMappings {
             .map(Into::into)
     }
 
-    /// The slots [`Self::drop`] would tombstone for `external_id`: its active and
-    /// deferred heads, if any.
+    /// The active and deferred heads of `external_id`, in that order, if any.
     pub(crate) fn heads(&self, external_id: &PointIdType) -> impl Iterator<Item = PointOffsetType> {
         [
             self.internal_id_active(external_id),
@@ -286,6 +285,19 @@ impl PointMappings {
                 .is_some_and(|deferred_from| internal_id >= deferred_from)
         {
             self.deferred_deleted_count += 1;
+        }
+    }
+
+    /// Mark `internal_id` as live, the inverse of [`Self::tombstone_slot`]: decrements
+    /// `deferred_deleted_count` only on the tombstoned → live transition for slots at or above
+    /// the cutoff.
+    fn revive_slot(&mut self, internal_id: PointOffsetType) {
+        let was_deleted = self.deleted.replace(internal_id as usize, false);
+        let is_deferred = self
+            .deferred_internal_id
+            .is_some_and(|deferred_from| internal_id >= deferred_from);
+        if was_deleted && is_deferred {
+            self.deferred_deleted_count -= 1;
         }
     }
 
@@ -554,14 +566,18 @@ impl PointMappings {
             .is_some_and(|cutoff| internal_id >= cutoff);
 
         let internal_id_usize = internal_id as usize;
-        // A slot past the end is fresh: the sentinel it is filled with must not pass for a point.
-        let was_claimed = internal_id_usize < self.internal_to_external.len();
         if internal_id_usize >= self.internal_to_external.len() {
             self.internal_to_external
                 .resize(internal_id_usize + 1, PointIdType::NumId(u64::MAX));
         }
         if internal_id_usize >= self.deleted.len() {
+            // New slots start deleted, and are counted as such.
+            let new_from = self.deleted.len();
             self.deleted.resize(internal_id_usize + 1, true);
+            if let Some(deferred_from) = self.deferred_internal_id {
+                self.deferred_deleted_count +=
+                    (internal_id_usize + 1).saturating_sub(new_from.max(deferred_from as usize));
+            }
         }
 
         // Same-track insert; capture the prior head for tombstoning.
@@ -656,19 +672,8 @@ impl PointMappings {
             }
         }
 
-        // Linking a tombstoned slot back to the point it held revives it, as when a writer points
-        // an id back at its committed slot after abandoning an insert: undo the deferred deletion
-        // that tombstoning it counted.
-        if was_claimed
-            && self.deleted[internal_id_usize]
-            && replaced_external_id == external_id
-            && is_deferred
-        {
-            self.deferred_deleted_count = self.deferred_deleted_count.saturating_sub(1);
-        }
-
         self.internal_to_external[internal_id_usize] = external_id;
-        self.deleted.set(internal_id_usize, false);
+        self.revive_slot(internal_id);
 
         same_track_prior
     }
@@ -916,6 +921,29 @@ mod set_link_shadow_tests {
         assert!(m.is_shadowed(2));
         assert!(m.is_deleted_point(7), "prior deferred head tombstoned");
         assert!(!m.is_deleted_point(9));
+    }
+
+    /// The count follows the deleted bits whatever the slot held before: a fresh slot, whose
+    /// placeholder equals point `u64::MAX`, skipped slots, and a superseded slot linked again.
+    #[test]
+    fn deferred_deleted_count_matches_deleted_bits() {
+        let mut m = fresh_mapping(Some(2));
+        let check = |m: &PointMappings| {
+            assert_eq!(m.deferred_deleted_count(), m.deleted[2..].count_ones());
+        };
+
+        m.set_link(ext(1), 2);
+        m.set_link(ext(1), 3);
+        check(&m);
+        m.set_link(ext(u64::MAX), 4);
+        check(&m);
+        m.set_link(ext(5), 7);
+        check(&m);
+        m.set_link(ext(1), 2);
+        check(&m);
+        m.drop(ext(u64::MAX));
+        check(&m);
+        assert_eq!(m.deferred_deleted_count(), 4, "slots 3, 4, 5 and 6");
     }
 
     #[test]

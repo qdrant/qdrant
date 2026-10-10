@@ -8,7 +8,7 @@ use tempfile::Builder;
 use uuid::Uuid;
 
 use super::MappingOperation::{Delete, Insert};
-use super::UpdateOnlyAppendableIdTracker;
+use super::{PendingInsert, UpdateOnlyAppendableIdTracker};
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::{load_mappings, mappings_path};
 use crate::id_tracker::mutable_id_tracker::read_only::ReadOnlyAppendableIdTracker;
@@ -323,7 +323,10 @@ fn retires_inherited_pending_inserts() {
     let inherited = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
     assert_eq!(
         inherited.pending_inserts().collect::<Vec<_>>(),
-        vec![(num(11), vec![])],
+        vec![PendingInsert {
+            external_id: num(11),
+            committed_slots: vec![],
+        }],
         "a point new to the segment has no committed slot to fall back to",
     );
 
@@ -390,7 +393,10 @@ fn an_abandoned_update_falls_back_to_the_committed_slot() {
     let inherited = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
     assert_eq!(
         inherited.pending_inserts().collect::<Vec<_>>(),
-        vec![(num(10), vec![0])],
+        vec![PendingInsert {
+            external_id: num(10),
+            committed_slots: vec![0],
+        }],
     );
     assert_eq!(
         inherited.internal_id_with_behavior(num(10), DeferredBehavior::VisibleOnly),

@@ -11,11 +11,11 @@ use futures::lock::Mutex;
 use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
+use crate::id_tracker::mutable_id_tracker::update_only::PendingInsert;
 use crate::id_tracker::mutable_id_tracker::versions_storage::{
     VERSION_ELEMENT_SIZE, versions_path,
 };
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::types::PointIdType;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// The versions file: its size is the writer's commit mark.
@@ -135,25 +135,21 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         self.max_claimed_internal_id
     }
 
-    /// External ids the mappings log has inserted whose slots the versions array does not cover, in
-    /// arbitrary order, each with the committed slots the id still holds in this segment: the
-    /// versioned slot a reload staged for it if there is one, its active and deferred heads
-    /// otherwise, none for a point new to the segment.
+    /// Points whose last insert in the mappings log the versions array does not cover yet, in
+    /// arbitrary order.
     ///
-    /// The new slot is withheld because its data may be half-written, while the committed ones go
-    /// on serving: the insert superseded them in the log only, no component tombstones a slot it
-    /// stores over. A writer resuming from this view points each id back at them, or retires it
-    /// when there are none.
-    pub fn pending_inserts(
-        &self,
-    ) -> impl Iterator<Item = (PointIdType, Vec<PointOffsetType>)> + '_ {
-        self.unversioned_inserts.keys().map(|external_id| {
-            let committed = match self.staged_inserts.get(external_id) {
-                Some(&staged) => vec![staged],
-                None => self.mappings.heads(external_id).collect(),
-            };
-            (*external_id, committed)
-        })
+    /// This view withholds the new slot of each, but keeps serving its committed slots.
+    pub fn pending_inserts(&self) -> impl Iterator<Item = PendingInsert> + '_ {
+        self.unversioned_inserts
+            .keys()
+            .map(|&external_id| PendingInsert {
+                external_id,
+                // A staged insert is complete and supersedes the linked heads.
+                committed_slots: match self.staged_inserts.get(&external_id) {
+                    Some(&staged) => vec![staged],
+                    None => self.mappings.heads(&external_id).collect(),
+                },
+            })
     }
 
     /// Open the file at `path` read-only, returning `None` if it does not exist.

@@ -28,9 +28,23 @@ pub enum MappingOperation {
     /// Retire this external id. Its slot is left as it is and never handed out again; tombstoning
     /// the data is the caller's business.
     Delete(PointIdType),
-    /// Point this external id back at a slot it already held, committed and with its data intact,
-    /// superseding a later insert that never got its version. Claims nothing.
+    /// Link this external id to a slot the log already claimed, which must hold the id's committed
+    /// data, superseding its current mapping. Claims nothing.
     Relink(PointIdType, PointOffsetType),
+}
+
+/// A point whose last insert in the mappings log never got its version: a writer claimed a new
+/// slot for it and stopped before committing, so that slot's data may be half-written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingInsert {
+    pub external_id: PointIdType,
+    /// Slots where this point was stored before the unfinished insert, with complete, committed
+    /// data. The insert redirected the id in the mappings log only and left these slots intact, so
+    /// the point can fall back to them.
+    ///
+    /// Empty if the unfinished insert was the point's first in this segment. Two slots if the
+    /// point has both an active and a deferred copy.
+    pub committed_slots: Vec<PointOffsetType>,
 }
 
 /// The write half of the appendable ID tracker for an update-only segment: it records
@@ -83,8 +97,7 @@ impl UpdateOnlyAppendableIdTracker {
     /// point over the remains of the first.
     ///
     /// `pending_inserts` is the other half of that: the points sitting on those
-    /// claimed-but-unversioned slots, each with the committed slots it still holds. They are settled
-    /// before this writer can be used at all, see
+    /// claimed-but-unversioned slots. They are settled before this writer can be used at all, see
     /// [`retire_pending_inserts`](Self::retire_pending_inserts), which is why this is fallible.
     ///
     /// `mappings_end` is not a hint: the first append cuts the file back to it (see
@@ -94,7 +107,7 @@ impl UpdateOnlyAppendableIdTracker {
         fs: &Fs,
         segment_path: impl Into<PathBuf>,
         max_claimed_internal_id: Option<PointOffsetType>,
-        pending_inserts: impl IntoIterator<Item = (PointIdType, Vec<PointOffsetType>)>,
+        pending_inserts: impl IntoIterator<Item = PendingInsert>,
         mappings_end: u64,
     ) -> OperationResult<Self> {
         let mut tracker = Self {
@@ -309,26 +322,27 @@ impl UpdateOnlyAppendableIdTracker {
     /// is, readers take the point for committed and start serving whatever sits on those
     /// components.
     ///
-    /// Falling back costs only the unacknowledged update. The insert superseded the committed slot
-    /// in the mappings log alone: components store a point on fresh slots and never tombstone the
-    /// one it leaves, and the batch retires copies in other segments only after the store
-    /// succeeded. Retiring the id instead would take the committed point with it, though nothing
-    /// destroyed it, and a caller replaying the update would then find no point to update.
+    /// Falling back costs only the unacknowledged update: the insert superseded the committed slot
+    /// in the mappings log alone, so that slot's data is intact.
     ///
     /// Runs at construction rather than lazily on the first write, so that no later write path can
     /// be added that forgets it and publishes one of these points.
     fn retire_pending_inserts<Fs: UniversalAppendFs>(
         &mut self,
         fs: &Fs,
-        pending_inserts: impl IntoIterator<Item = (PointIdType, Vec<PointOffsetType>)>,
+        pending_inserts: impl IntoIterator<Item = PendingInsert>,
     ) -> OperationResult<()> {
         let mut operations = Vec::new();
-        for (external_id, committed) in pending_inserts {
-            if committed.is_empty() {
+        for PendingInsert {
+            external_id,
+            committed_slots,
+        } in pending_inserts
+        {
+            if committed_slots.is_empty() {
                 operations.push(MappingOperation::Delete(external_id));
             }
             operations.extend(
-                committed
+                committed_slots
                     .into_iter()
                     .map(|internal_id| MappingOperation::Relink(external_id, internal_id)),
             );
