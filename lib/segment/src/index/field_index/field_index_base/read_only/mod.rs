@@ -80,28 +80,18 @@ impl<S: UniversalReadExt> Debug for ReadOnlyFieldIndex<S> {
 /// - [`Self::get_full_index_type`] / [`Self::get_mutability_type`] /
 ///   [`Self::get_storage_type`] — payload-config round-tripping.
 ///
-/// The `todo!` arms are intentional placeholders, not soft failures — they
-/// panic if hit at runtime so the missing wiring surfaces immediately rather
-/// than degrading silently.
-///
 /// [1]: crate::index::field_index::FieldIndex
 impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     pub fn files(&self) -> Vec<PathBuf> {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: forward `files` through `ReadOnlyMapIndex`")
-            }
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("follow-up: forward `files` through `ReadOnlyNumericIndex`")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("follow-up: forward `files` through `ReadOnlyFullTextIndex`")
-            }
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.files(),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.files(),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.files(),
+            ReadOnlyFieldIndex::IntIndex(index) => index.files(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.files(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.files(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.files(),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.files(),
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::files(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::files(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::files(index),
@@ -110,26 +100,16 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
 
     pub fn immutable_files(&self) -> Vec<PathBuf> {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: forward `immutable_files` through `ReadOnlyMapIndex`")
-            }
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("follow-up: forward `immutable_files` through `ReadOnlyNumericIndex`")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("follow-up: forward `immutable_files` through `ReadOnlyFullTextIndex`")
-            }
-            ReadOnlyFieldIndex::BoolIndex(_) => {
-                todo!("follow-up: add `immutable_files` to `BoolIndexRead`")
-            }
-            ReadOnlyFieldIndex::NullIndex(_) => {
-                todo!("follow-up: add `immutable_files` to `NullIndexRead`")
-            }
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::IntIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.immutable_files(),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::immutable_files(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::immutable_files(index),
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::immutable_files(index),
         }
     }
@@ -169,20 +149,14 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// Populate all pages in the mmap. Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: forward `populate` through `ReadOnlyMapIndex`")
-            }
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("follow-up: forward `populate` through `ReadOnlyNumericIndex`")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("follow-up: forward `populate` through `ReadOnlyFullTextIndex`")
-            }
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.populate(),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.populate(),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.populate(),
+            ReadOnlyFieldIndex::IntIndex(index) => index.populate(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.populate(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.populate(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.populate(),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.populate(),
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::populate(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::populate(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::populate(index),
@@ -192,20 +166,14 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_) => {
-                todo!("follow-up: forward `clear_cache` through `ReadOnlyMapIndex`")
-            }
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_) => {
-                todo!("follow-up: forward `clear_cache` through `ReadOnlyNumericIndex`")
-            }
-            ReadOnlyFieldIndex::FullTextIndex(_) => {
-                todo!("follow-up: forward `clear_cache` through `ReadOnlyFullTextIndex`")
-            }
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.clear_cache(),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.clear_cache(),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.clear_cache(),
+            ReadOnlyFieldIndex::IntIndex(index) => index.clear_cache(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.clear_cache(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.clear_cache(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.clear_cache(),
+            ReadOnlyFieldIndex::FullTextIndex(index) => index.clear_cache(),
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::clear_cache(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::clear_cache(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::clear_cache(index),

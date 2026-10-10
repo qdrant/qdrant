@@ -118,4 +118,38 @@ where
             Self::OnDisk(index) => index.is_cold(),
         }
     }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(index) => index.files(),
+            Self::Immutable(index) => index.files(),
+            Self::OnDisk(index) => index.files(),
+        }
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Appendable(_) => vec![],
+            Self::Immutable(index) => index.immutable_files(),
+            Self::OnDisk(index) => index.immutable_files(),
+        }
+    }
+
+    /// Populate all pages in the mmap. Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            Self::Appendable(_) => Ok(()),
+            Self::Immutable(_) => Ok(()),
+            Self::OnDisk(index) => index.populate(),
+        }
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Appendable(index) => index.clear_cache(),
+            Self::Immutable(index) => index.clear_cache(),
+            Self::OnDisk(index) => index.clear_cache(),
+        }
+    }
 }

@@ -21,8 +21,8 @@ mod read_ops;
 pub struct ReadOnlyAppendableFullTextIndex<S: UniversalRead> {
     pub(super) inner: MutableFullTextIndexInner,
     /// Backing Blobstore reader, populated by [`Self::open`]. Held to keep the
-    /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
-    /// reads it lands with the parent dispatcher (it isn't part of the
+    /// storage mapped for [`Self::files`] / [`Self::clear_cache`] (those are
+    /// not part of the
     /// [`FullTextIndexRead`](super::super::full_text_index_read::FullTextIndexRead)
     /// surface).
     pub(super) storage: BlobstoreReader<Vec<u8>, S>,

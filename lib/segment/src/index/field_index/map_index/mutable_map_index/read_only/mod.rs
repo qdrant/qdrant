@@ -25,8 +25,8 @@ where
 {
     pub(super) in_memory_index: InMemoryMapIndex<N>,
     /// Backing Blobstore reader, populated by [`Self::open`]. Held to keep the
-    /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
-    /// reads it lands with the parent dispatcher (it isn't part of the
-    /// [`MapIndexRead`](super::super::read_ops::MapIndexRead) surface).
+    /// storage mapped for [`Self::files`] / [`Self::clear_cache`] (those are
+    /// not part of the [`MapIndexRead`](super::super::read_ops::MapIndexRead)
+    /// surface).
     pub(super) storage: BlobstoreReader<Vec<<N as MapIndexKey>::Owned>, S>,
 }

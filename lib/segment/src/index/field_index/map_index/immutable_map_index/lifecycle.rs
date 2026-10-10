@@ -239,18 +239,6 @@ where
         self.point_to_values.remove_point(idx);
         Ok(())
     }
-}
-
-impl<N, S> ImmutableMapIndex<N, S>
-where
-    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
-    N: MapIndexKey + ?Sized,
-    S: UniversalWrite,
-{
-    #[inline]
-    pub(in super::super) fn wipe(self) -> OperationResult<()> {
-        self.storage.wipe()
-    }
 
     /// Clear cache
     ///
@@ -273,5 +261,17 @@ where
     #[inline]
     pub(in super::super) fn flusher(&self) -> Flusher {
         self.storage.flusher()
+    }
+}
+
+impl<N, S> ImmutableMapIndex<N, S>
+where
+    Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
+    N: MapIndexKey + ?Sized,
+    S: UniversalWrite,
+{
+    #[inline]
+    pub(in super::super) fn wipe(self) -> OperationResult<()> {
+        self.storage.wipe()
     }
 }

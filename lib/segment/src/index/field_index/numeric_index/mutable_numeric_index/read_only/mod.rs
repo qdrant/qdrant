@@ -25,9 +25,10 @@ where
 {
     pub(super) in_memory_index: InMemoryNumericIndex<T>,
     /// Backing Blobstore reader, populated by [`Self::open`]. Held to keep the
-    /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
-    /// reads it lands with the storage-variant enum lifecycle (it isn't part of
-    /// the [`NumericIndexRead`](super::super::numeric_index_read::NumericIndexRead) surface).
+    /// storage mapped for [`Self::files`] / [`Self::clear_cache`] (those are
+    /// not part of the
+    /// [`NumericIndexRead`](super::super::numeric_index_read::NumericIndexRead)
+    /// surface).
     pub(super) storage: BlobstoreReader<Vec<T>, S>,
 }
 

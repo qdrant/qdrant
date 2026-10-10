@@ -90,6 +90,13 @@ impl NullIndexRead for NullIndex {
             NullIndex::Immutable(i) => i.telemetry_index_type(),
         }
     }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            NullIndex::Mutable(_) => Vec::new(),
+            NullIndex::Immutable(_) => NullIndexRead::files(self),
+        }
+    }
 }
 
 impl PayloadFieldIndexRead for NullIndex {
@@ -152,9 +159,6 @@ impl PayloadFieldIndex for NullIndex {
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            NullIndex::Mutable(_) => Vec::new(),
-            NullIndex::Immutable(immutable) => immutable.immutable_files(),
-        }
+        NullIndexRead::immutable_files(self)
     }
 }

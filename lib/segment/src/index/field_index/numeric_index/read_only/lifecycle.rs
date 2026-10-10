@@ -93,4 +93,22 @@ where
     pub fn is_cold(&self) -> bool {
         self.inner.is_cold()
     }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.inner.files()
+    }
+
+    pub fn immutable_files(&self) -> Vec<PathBuf> {
+        self.inner.immutable_files()
+    }
+
+    /// Populate all pages in the mmap. Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inner.populate()
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inner.clear_cache()
+    }
 }

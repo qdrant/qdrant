@@ -29,6 +29,10 @@ impl NullIndexRead for MutableNullIndex {
     fn telemetry_index_type(&self) -> &'static str {
         "mutable_null_index"
     }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        Vec::new() // everything is mutable
+    }
 }
 
 impl PayloadFieldIndexRead for MutableNullIndex {
