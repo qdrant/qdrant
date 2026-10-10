@@ -29,6 +29,7 @@ mod write_ops;
 
 use std::ops::Deref;
 
+pub use chunks::VisiblePrefix;
 use common::universal_io::{StoredStruct, UniversalWrite};
 
 use self::config::Status;

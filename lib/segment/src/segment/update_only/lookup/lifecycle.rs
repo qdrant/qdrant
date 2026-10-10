@@ -166,6 +166,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                 &path,
                 &index_path,
                 Some(WRITER_POPULATE),
+                None,
             )?
             .ok_or_else(|| {
                 OperationError::service_error(format!(
@@ -218,6 +219,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                 &path,
                 &index_path,
                 Some(WRITER_POPULATE),
+                None,
             )?;
         }
         for vector_name in config.sparse_vector_data.keys() {

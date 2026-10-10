@@ -30,7 +30,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
         path: &Path,
         populate: Populate,
     ) -> OperationResult<()> {
-        ReadOnlyChunkedVectors::<u8, S>::preopen(fs, path, AdviceSetting::Global, populate)
+        ReadOnlyChunkedVectors::<u8, S>::preopen(fs, path, AdviceSetting::Global, populate, None)
     }
 
     pub fn open(
@@ -44,6 +44,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
             quantized_vector_size,
             AdviceSetting::Global,
             Populate::No, // TODO(uio): consider `always_in_ram`?
+            None,
         )?;
         Ok(Self { data })
     }

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use common::mmap::{Advice, AdviceSetting};
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
 
 use super::VectorStorageReadEnum;
@@ -10,6 +11,7 @@ use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, Vecto
 use crate::index::hnsw_index::HnswGraph;
 use crate::index::hnsw_index::hnsw::graph_residency;
 use crate::types::{VectorDataConfig, VectorStorageDatatype, VectorStorageType};
+use crate::vector_storage::chunked_vectors::VisiblePrefix;
 use crate::vector_storage::dense::appendable_dense_vector_storage::DELETED_DIR_PATH;
 use crate::vector_storage::dense::immutable_dense_vectors::ImmutableDenseVectorData;
 use crate::vector_storage::dense::read_only::{
@@ -67,6 +69,10 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
     /// the storage-type-derived populate; the mmap advice stays derived from
     /// the storage type.
     ///
+    /// A `deferred_internal_id` is the first point no read can reach: a
+    /// chunked dense storage populates only the chunks before it. Other
+    /// layouts ignore it.
+    ///
     /// Absent files are skipped rather than reported: the subsequent open is
     /// the one to produce the error.
     pub fn preopen(
@@ -75,6 +81,7 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         path: &Path,
         vector_index_path: &Path,
         populate_override: Option<Populate>,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<()> {
         let datatype = vector_config.datatype.unwrap_or_default();
 
@@ -122,20 +129,24 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
 
         // chunked-mmap is appendable; plain mmap is the immutable storage.
         if chunked {
+            let visible = deferred_internal_id.map(|cutoff| VisiblePrefix {
+                len: cutoff as usize,
+                dim: vector_config.size,
+            });
             match datatype {
                 VectorStorageDatatype::Float32 => {
                     ReadOnlyChunkedDenseVectorStorage::<VectorElementType, S>::preopen(
-                        fs, path, advice, populate,
+                        fs, path, advice, populate, visible,
                     )
                 }
                 VectorStorageDatatype::Uint8 => {
                     ReadOnlyChunkedDenseVectorStorage::<VectorElementTypeByte, S>::preopen(
-                        fs, path, advice, populate,
+                        fs, path, advice, populate, visible,
                     )
                 }
                 VectorStorageDatatype::Float16 => {
                     ReadOnlyChunkedDenseVectorStorage::<VectorElementTypeHalf, S>::preopen(
-                        fs, path, advice, populate,
+                        fs, path, advice, populate, visible,
                     )
                 }
                 VectorStorageDatatype::Turbo4
@@ -167,12 +178,17 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
     /// Open the read-only counterpart of a dense vector storage from its
     /// `VectorDataConfig`, mirroring `open_vector_storage`. Sparse storages are
     /// opened separately via `ReadOnlySparseVectorStorage::open`.
+    ///
+    /// `deferred_internal_id` is the first point no read can reach, as for
+    /// [`preopen`](Self::preopen); a chunked dense storage keeps the chunks
+    /// past it cold, live reloads included.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         vector_config: &VectorDataConfig,
         path: &Path,
         vector_index_path: &Path,
         populate_override: Option<Populate>,
+        deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Option<Self>>
     where
         S: 'static,
@@ -281,20 +297,39 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
 
         // chunked-mmap is appendable; plain mmap is the immutable storage.
         Ok(Some(if chunked {
+            let visible_len = deferred_internal_id.map(|cutoff| cutoff as usize);
             match datatype {
                 VectorStorageDatatype::Float32 => {
                     Self::DenseChunked(Box::new(ReadOnlyChunkedDenseVectorStorage::open(
-                        fs, path, dim, distance, advice, populate,
+                        fs,
+                        path,
+                        dim,
+                        distance,
+                        advice,
+                        populate,
+                        visible_len,
                     )?))
                 }
                 VectorStorageDatatype::Uint8 => {
                     Self::DenseChunkedByte(Box::new(ReadOnlyChunkedDenseVectorStorage::open(
-                        fs, path, dim, distance, advice, populate,
+                        fs,
+                        path,
+                        dim,
+                        distance,
+                        advice,
+                        populate,
+                        visible_len,
                     )?))
                 }
                 VectorStorageDatatype::Float16 => {
                     Self::DenseChunkedHalf(Box::new(ReadOnlyChunkedDenseVectorStorage::open(
-                        fs, path, dim, distance, advice, populate,
+                        fs,
+                        path,
+                        dim,
+                        distance,
+                        advice,
+                        populate,
+                        visible_len,
                     )?))
                 }
                 VectorStorageDatatype::Turbo4
