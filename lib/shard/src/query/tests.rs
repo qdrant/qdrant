@@ -838,9 +838,10 @@ fn test_try_from_text_prefetch_fused() {
     );
 }
 
-/// BM25 cannot score a set of prefetched points yet, at the root or nested.
+/// BM25 rescores prefetched points at the shard level, at the root or nested,
+/// as a vector query does.
 #[test]
-fn test_try_from_text_rescore_is_refused() {
+fn test_try_from_text_rescore() {
     let prefetch = || ShardPrefetch {
         prefetches: Vec::new(),
         query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
@@ -856,22 +857,35 @@ fn test_try_from_text_rescore_is_refused() {
         prefetches,
         query: Some(query),
         filter: None,
-        score_threshold: None,
+        score_threshold: Some(OrderedFloat(0.5)),
         limit: 10,
-        offset: 0,
+        offset: 5,
         params: None,
         with_payload: WithPayloadInterface::Bool(false),
         with_vector: WithVector::Bool(false),
     };
 
     let at_root = request(vec![prefetch()], ScoringQuery::Text(text_query("fox")));
-    let error = PlannedQuery::try_from(vec![at_root]).unwrap_err();
-    assert_matches!(error, OperationError::ValidationError { .. });
-    assert!(error.to_string().contains("BM25"), "{error}");
+    let planned_query = PlannedQuery::try_from(vec![at_root]).unwrap();
+    assert_eq!(planned_query.searches.len(), 1);
+    assert!(planned_query.texts.is_empty(), "a rescore is not a leaf");
+    assert_eq!(
+        planned_query.root_plans[0].merge_plan,
+        MergePlan {
+            sources: vec![Source::SearchesIdx(0)],
+            rescore_stages: Some(RescoreStages::shard_level(RescoreParams {
+                rescore: ScoringQuery::Text(text_query("fox")),
+                limit: 15,
+                score_threshold: Some(OrderedFloat(0.5)),
+                params: None,
+            })),
+        },
+    );
 
     let nested = ShardPrefetch {
         prefetches: vec![prefetch()],
         query: Some(ScoringQuery::Text(text_query("fox"))),
+        limit: 20,
         ..prefetch()
     };
     let nested = request(
@@ -881,14 +895,26 @@ fn test_try_from_text_rescore_is_refused() {
             weights: None,
         }),
     );
-    let error = PlannedQuery::try_from(vec![nested]).unwrap_err();
-    assert_matches!(error, OperationError::ValidationError { .. });
-    assert!(error.to_string().contains("BM25"), "{error}");
+    let planned_query = PlannedQuery::try_from(vec![nested]).unwrap();
+    assert!(planned_query.texts.is_empty(), "a rescore is not a leaf");
+    assert_eq!(
+        planned_query.root_plans[0].merge_plan.sources,
+        vec![Source::Prefetch(Box::new(MergePlan {
+            sources: vec![Source::SearchesIdx(0)],
+            rescore_stages: Some(RescoreStages::shard_level(RescoreParams {
+                rescore: ScoringQuery::Text(text_query("fox")),
+                limit: 20,
+                score_threshold: None,
+                params: None,
+            })),
+        }))],
+    );
 }
 
 /// A corpus-scoped `idf` would change the scores, and text statistics cover the
 /// whole collection, so it is refused on a text leaf, at the root or as a
-/// prefetch. The global scope is what text already does, so it passes.
+/// prefetch, and on a text rescore. The global scope is what text already
+/// does, so it passes.
 #[test]
 fn test_try_from_text_refuses_an_idf_corpus() {
     let corpus = || SearchParams {
@@ -931,13 +957,32 @@ fn test_try_from_text_refuses_an_idf_corpus() {
         params: None,
         ..at_root(SearchParams::default())
     };
+    let as_rescore = |params| ShardQueryRequest {
+        prefetches: vec![ShardPrefetch {
+            prefetches: Vec::new(),
+            query: None,
+            limit: 10,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        }],
+        ..at_root(params)
+    };
 
-    for request in [at_root(corpus()), as_prefetch(corpus())] {
+    for request in [
+        at_root(corpus()),
+        as_prefetch(corpus()),
+        as_rescore(corpus()),
+    ] {
         let error = PlannedQuery::try_from(vec![request]).unwrap_err();
         assert_matches!(error, OperationError::ValidationError { .. });
         assert!(error.to_string().contains("idf"), "{error}");
     }
-    for request in [at_root(global()), as_prefetch(global())] {
+    for request in [
+        at_root(global()),
+        as_prefetch(global()),
+        as_rescore(global()),
+    ] {
         PlannedQuery::try_from(vec![request]).unwrap();
     }
 }

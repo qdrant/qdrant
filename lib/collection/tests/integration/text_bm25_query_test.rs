@@ -1,6 +1,7 @@
 //! BM25 over a text index through the collection's query path: tokenized and
 //! gathered per shard, merged across shards.
 
+use ahash::AHashSet;
 use collection::collection::Collection;
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
@@ -17,7 +18,8 @@ use segment::data_types::vectors::NamedQuery;
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::json_path::JsonPath;
 use segment::types::{
-    ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaParams, ScoredPoint,
+    Condition, ExtendedPointId, Filter, HasIdCondition, Payload, PayloadFieldSchema,
+    PayloadSchemaParams, ScoredPoint,
 };
 use serde_json::Map;
 use shard::query::query_enum::QueryEnum;
@@ -296,6 +298,82 @@ async fn text_query_fuses_with_a_dense_prefetch() {
             .any(|id| from_text.contains(id) && !from_dense.contains(id)),
         "the text prefetch contributes",
     );
+}
+
+/// BM25 as a rescore of a dense prefetch, over two shards: each shard scores
+/// the points it prefetched against its own statistics, as the text query
+/// would score them under a filter on those ids. A prefetched point holding
+/// no query term scores nothing and is left out.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_query_rescores_a_dense_prefetch() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = text_collection(dir.path(), 2).await;
+    // Ranks low ids first; only ids from 5 on hold `gamma`.
+    let dense = ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+        vec![0.0, -1.0, 0.0, 0.0].into(),
+        "",
+    )));
+    let prefetch_limit = 8;
+
+    let rescored = query(
+        &collection,
+        ShardQueryRequest {
+            prefetches: vec![ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(dense.clone()),
+                limit: prefetch_limit,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            ..request(text_query("gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    // A prefetch runs in each shard, so the rescored set is each shard's own
+    // top `prefetch_limit`.
+    let mut prefetched = AHashSet::new();
+    for shard_id in 0..2 {
+        let points = query(
+            &collection,
+            request(dense.clone(), prefetch_limit, 0),
+            ShardSelectorInternal::ShardId(shard_id),
+        )
+        .await;
+        prefetched.extend(points.iter().map(|point| point.id));
+    }
+    let only_prefetched =
+        Filter::new_must(Condition::HasId(HasIdCondition::from(prefetched.clone())));
+    let filtered = query(
+        &collection,
+        ShardQueryRequest {
+            filter: Some(only_prefetched),
+            ..request(text_query("gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    let ranked = |points: &[ScoredPoint]| points.iter().map(|p| (id_of(p), p.score)).collect_vec();
+    assert_eq!(ranked(&rescored), ranked(&filtered));
+    let mut expected = prefetched
+        .iter()
+        .map(|id| match id {
+            ExtendedPointId::NumId(id) => *id,
+            ExtendedPointId::Uuid(_) => unreachable!(),
+        })
+        .filter(|id| text_of(*id).contains("gamma"))
+        .collect_vec();
+    expected.sort_unstable();
+    let mut ids = rescored.iter().map(id_of).collect_vec();
+    ids.sort_unstable();
+    assert!(
+        ids.len() < prefetched.len(),
+        "some prefetched points lack `gamma`"
+    );
+    assert_eq!(ids, expected, "the prefetched points with `gamma`");
 }
 
 /// With `scoring` on, the shards record document lengths as they ingest, and

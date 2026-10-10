@@ -12,6 +12,7 @@ use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
 use shard::query::planned_query::RescoreStages;
+use shard::query::text::TextSearchRequestInternal;
 use shard::search::CoreSearchRequestBatch;
 
 use super::LocalShard;
@@ -389,10 +390,29 @@ impl LocalShard {
                 self.mmr_rescore(sources, mmr, limit, search_runtime_handle, timeout)
                     .await
             }
-            // Refused when the query is planned, see `MergePlan::validate`.
-            ScoringQuery::Text(_) => Err(CollectionError::service_error(
-                "BM25 over a text index cannot rescore prefetches",
-            )),
+            ScoringQuery::Text(query) => {
+                // Same shape as the vector rescore: a filter on the prefetched ids
+                let filter = filter_with_sources_ids(sources.into_iter());
+
+                let text_request = TextSearchRequestInternal {
+                    query,
+                    filter: Some(filter),
+                    limit,
+                    score_threshold: score_threshold.map(OrderedFloat::into_inner),
+                    with_vector: false.into(),
+                    with_payload: false.into(),
+                };
+
+                self.do_text_searches(vec![text_request], timeout)
+                    .await?
+                    // One text request is sent. We expect only one result
+                    .pop()
+                    .ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Rescoring with text query didn't return expected batch of results",
+                        )
+                    })
+            }
         }
     }
 
