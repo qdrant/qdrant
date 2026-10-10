@@ -259,6 +259,7 @@ fn run_batch(
                 .score_bm25(
                     query,
                     None,
+                    None,
                     LIMIT,
                     WithPayload::from(false),
                     WithVector::from(false),

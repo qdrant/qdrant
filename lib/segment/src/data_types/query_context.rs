@@ -54,6 +54,10 @@ pub struct IdfScopeStats {
 /// the segment that assigned it.
 #[derive(Debug, Clone)]
 pub struct TextFieldStats {
+    /// The IDF corpus: only points matching it count as documents, for `N`,
+    /// `df` and `avgdl` alike. `None` counts every point of the shard.
+    pub corpus: Option<Filter>,
+
     /// Document frequency per query term, seeded with the terms the query
     /// needs so each segment knows which ones to resolve and report.
     pub df: HashMap<String, usize>,
@@ -69,6 +73,7 @@ pub struct TextFieldStats {
 impl Default for TextFieldStats {
     fn default() -> Self {
         Self {
+            corpus: None,
             df: HashMap::new(),
             documents: 0,
             total_tokens: Some(0),
@@ -205,14 +210,27 @@ impl QueryContext {
     }
 
     /// Seed the terms a scored text query needs on `field`, so that every
-    /// segment of this shard reports their document frequencies. Terms must
-    /// already be tokenized the way the index tokenizes.
+    /// segment of this shard reports their document frequencies over `corpus`
+    /// (every point when `None`). Terms must already be tokenized the way the
+    /// index tokenizes. A field holds one corpus per context.
     pub fn init_text_stats(
         &mut self,
         field: &PayloadKeyType,
+        corpus: Option<&Filter>,
         terms: impl IntoIterator<Item = String>,
     ) {
-        let stats = self.text_stats.entry(field.clone()).or_default();
+        let stats = self
+            .text_stats
+            .entry(field.clone())
+            .or_insert_with(|| TextFieldStats {
+                corpus: corpus.cloned(),
+                ..TextFieldStats::default()
+            });
+        debug_assert_eq!(
+            stats.corpus.as_ref(),
+            corpus,
+            "one corpus per text field per context",
+        );
         for term in terms {
             stats.df.entry(term).or_insert(0);
         }

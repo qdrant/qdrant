@@ -96,9 +96,14 @@ where
         let Some(indexes) = self.field_indexes.get(field) else {
             return Ok(());
         };
+        let corpus = stats
+            .corpus
+            .as_ref()
+            .map(|corpus| self.query_points(corpus, is_stopped))
+            .transpose()?;
         // At most one text index per field.
         for index in indexes {
-            if index.fill_text_statistics(stats, is_stopped)? {
+            if index.fill_text_statistics(stats, corpus.as_deref(), is_stopped)? {
                 break;
             }
         }

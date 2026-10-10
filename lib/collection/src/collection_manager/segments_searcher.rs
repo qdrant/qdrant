@@ -559,8 +559,9 @@ impl SegmentsSearcher {
     /// return the `limit` best, highest first.
     ///
     /// `terms` must already be tokenized by the field's tokenizer. The text
-    /// statistics are gathered over every segment first, so a point scores
-    /// the same whichever segment holds it; then each segment returns its own
+    /// statistics are gathered over every segment first, among the points
+    /// matching `idf_corpus` (all of them when `None`), so a point scores the
+    /// same whichever segment holds it; then each segment returns its own
     /// `limit` best, and a point held by several segments keeps only its
     /// highest version. No sampling: every segment is asked for the full
     /// `limit`.
@@ -571,6 +572,7 @@ impl SegmentsSearcher {
         terms: Vec<String>,
         params: Bm25Params,
         filter: Option<Filter>,
+        idf_corpus: Option<&Filter>,
         limit: usize,
         with_payload: WithPayload,
         with_vector: WithVector,
@@ -580,8 +582,12 @@ impl SegmentsSearcher {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let start = Instant::now();
 
-        let query_context =
-            init_text_query_context(&field, &terms, is_stopped_guard.get_is_stopped());
+        let query_context = init_text_query_context(
+            &field,
+            idf_corpus,
+            &terms,
+            is_stopped_guard.get_is_stopped(),
+        );
         let is_stopped = is_stopped_guard.get_is_stopped();
         let cpu_utilization = hw::cpu_utilization();
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
@@ -1204,7 +1210,7 @@ mod tests {
         // Reference: each segment ranked in full against both segments'
         // statistics, the older copy of the moved point dropped.
         let mut query_context =
-            ambient::test(|| init_text_query_context(&field, &terms, Default::default()));
+            ambient::test(|| init_text_query_context(&field, None, &terms, Default::default()));
         older.fill_query_context(&mut query_context).unwrap();
         newer.fill_query_context(&mut query_context).unwrap();
         let segment_context = query_context.get_segment_query_context();
@@ -1245,6 +1251,7 @@ mod tests {
             field.clone(),
             terms.clone(),
             params,
+            None,
             None,
             limit,
             WithPayload::from(false),

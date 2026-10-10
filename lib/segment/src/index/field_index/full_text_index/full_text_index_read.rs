@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::bitvec::{BitSliceExt as _, BitVec};
 use common::iterator_ext::IteratorExt;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
@@ -20,6 +21,10 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// document frequency of every seeded term, the document count, and the total
 /// tokens behind `avgdl`.
 ///
+/// `corpus` holds this segment's points matching the statistics' corpus
+/// filter; only those of them carrying a token count. `None` counts the whole
+/// index.
+///
 /// Terms are resolved per segment: a `TokenId` is local to the vocabulary that
 /// assigned it, so the query's strings are the only key the segments share.
 /// **Seeded terms must already be tokenized.** Resolution is a bare vocabulary
@@ -28,6 +33,7 @@ use crate::types::{FieldCondition, PayloadKeyType};
 pub fn fill_text_statistics<T: FullTextIndexRead>(
     index: &T,
     stats: &mut TextFieldStats,
+    corpus: Option<&[PointOffsetType]>,
     is_stopped: &AtomicBool,
 ) -> OperationResult<()> {
     debug_assert!(
@@ -48,14 +54,58 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
         },
     )?;
 
-    for (df, token_id) in counts {
-        check_process_stopped(is_stopped)?;
-        if let Some(posting_len) = index.posting_len(token_id as TokenId)? {
-            *df += posting_len;
+    let Some(corpus) = corpus else {
+        for (df, token_id) in counts {
+            check_process_stopped(is_stopped)?;
+            if let Some(posting_len) = index.posting_len(token_id as TokenId)? {
+                *df += posting_len;
+            }
         }
+        stats.add_segment(index.points_count(), index.total_tokens());
+        return Ok(());
+    };
+
+    // A document is a corpus point holding at least one token, which is a
+    // nonzero length wherever lengths are recorded.
+    let mut documents = 0;
+    let mut total_tokens = Some(0);
+    index.doc_len_batch(corpus, |at, doc_len| match doc_len {
+        Some(0) => {}
+        Some(doc_len) => {
+            documents += 1;
+            total_tokens = total_tokens.map(|total| total + u64::from(doc_len));
+        }
+        None => {
+            if !index.values_is_empty(corpus[at]) {
+                documents += 1;
+                total_tokens = None;
+            }
+        }
+    })?;
+
+    // No corpus point here holds a token, so none holds a query term either.
+    if documents == 0 {
+        return Ok(());
     }
 
-    stats.add_segment(index.points_count(), index.total_tokens());
+    // Walks each term's whole posting list, as scoring the term does anyway,
+    // whatever the size of the corpus.
+    let len = corpus.iter().max().map_or(0, |&max| max as usize + 1);
+    let mut in_corpus = BitVec::repeat(false, len);
+    for &point_id in corpus {
+        in_corpus.set(point_id as usize, true);
+    }
+    for (df, token_id) in counts {
+        check_process_stopped(is_stopped)?;
+        let postings = index.filter_query(ParsedQuery::AnyTokens(TokenSet::from_iter([
+            token_id as TokenId,
+        ])))?;
+        *df += postings
+            .filter(|&point_id| in_corpus.get_bit(point_id as usize).unwrap_or(false))
+            .count();
+    }
+
+    stats.add_segment(documents, total_tokens);
     Ok(())
 }
 
