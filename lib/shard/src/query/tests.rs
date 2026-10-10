@@ -764,6 +764,7 @@ fn test_try_from_text_without_prefetch() {
         vec![text::TextSearchRequestInternal {
             query: text_query("quick fox"),
             filter: Some(filter),
+            idf_corpus: None,
             limit: 15,
             score_threshold: Some(0.5),
             with_vector: WithVector::Bool(false),
@@ -911,18 +912,19 @@ fn test_try_from_text_rescore() {
     );
 }
 
-/// A corpus-scoped `idf` would change the scores, and text statistics cover the
-/// whole collection, so it is refused on a text leaf, at the root or as a
-/// prefetch, and on a text rescore. The global scope is what text already
-/// does, so it passes.
+/// The `idf` corpus of a text query's params reaches its text request: on a
+/// leaf, at the root or as a prefetch, apart from the leaf's filter; on a
+/// rescore, through the params of its stage, which the shard builds the text
+/// request from. The global scope is no corpus.
 #[test]
-fn test_try_from_text_refuses_an_idf_corpus() {
+fn test_try_from_text_carries_the_idf_corpus() {
+    let tenant = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        "tenant".try_into().unwrap(),
+        "a".to_string().into(),
+    )));
     let corpus = || SearchParams {
         idf: Some(IdfParams::Corpus(IdfCorpusParams {
-            corpus: Filter::new_must(Condition::Field(FieldCondition::new_match(
-                "tenant".try_into().unwrap(),
-                "a".to_string().into(),
-            ))),
+            corpus: tenant.clone(),
         })),
         ..SearchParams::default()
     };
@@ -969,20 +971,22 @@ fn test_try_from_text_refuses_an_idf_corpus() {
         ..at_root(params)
     };
 
-    for request in [
-        at_root(corpus()),
-        as_prefetch(corpus()),
-        as_rescore(corpus()),
-    ] {
-        let error = PlannedQuery::try_from(vec![request]).unwrap_err();
-        assert_matches!(error, OperationError::ValidationError { .. });
-        assert!(error.to_string().contains("idf"), "{error}");
+    let idf_corpus = |request| {
+        let PlannedQuery { texts, .. } = PlannedQuery::try_from(vec![request]).unwrap();
+        let [text] = <[_; 1]>::try_from(texts).unwrap();
+        assert_eq!(text.filter, None, "the corpus does not filter the leaf");
+        text.idf_corpus
+    };
+    for request in [at_root(corpus()), as_prefetch(corpus())] {
+        assert_eq!(idf_corpus(request).as_ref(), Some(&tenant));
     }
-    for request in [
-        at_root(global()),
-        as_prefetch(global()),
-        as_rescore(global()),
-    ] {
-        PlannedQuery::try_from(vec![request]).unwrap();
+    for request in [at_root(global()), as_prefetch(global())] {
+        assert_eq!(idf_corpus(request), None);
+    }
+    for params in [corpus(), global()] {
+        let PlannedQuery { root_plans, .. } =
+            PlannedQuery::try_from(vec![as_rescore(params.clone())]).unwrap();
+        let stages = root_plans[0].merge_plan.rescore_stages.as_ref().unwrap();
+        assert_eq!(stages.shard_level.as_ref().unwrap().params, Some(params));
     }
 }

@@ -31,6 +31,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let TextSearchRequestInternal {
             query,
             filter,
+            idf_corpus,
             limit,
             score_threshold,
             with_vector,
@@ -38,7 +39,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         } = text;
 
         let terms = self.text_query_terms(query)?;
-        let query_context = init_text_query_context(&query.field, &terms, self.is_stopped.clone());
+        let query_context = init_text_query_context(
+            &query.field,
+            idf_corpus.as_ref(),
+            &terms,
+            self.is_stopped.clone(),
+        );
         let Some(context) =
             fill_query_context_over(query_context, &self.segments, &self.is_stopped)?
         else {

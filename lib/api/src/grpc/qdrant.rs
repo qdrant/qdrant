@@ -5925,8 +5925,8 @@ pub struct AcornSearchParams {
     #[validate(range(min = 0.0, max = 1.0))]
     pub max_selectivity: ::core::option::Option<f64>,
 }
-/// Population over which sparse vector IDF statistics are computed for scoring - the IDF corpus.
-/// Only applicable to sparse vectors with the IDF modifier enabled.
+/// Population over which IDF statistics are computed for scoring - the IDF corpus.
+/// Only applicable to sparse vectors with the IDF modifier enabled, and to BM25 over a text index.
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5962,7 +5962,7 @@ pub struct SearchParams {
     #[prost(message, optional, tag = "5")]
     #[validate(nested)]
     pub acorn: ::core::option::Option<AcornSearchParams>,
-    /// Which population sparse vector IDF statistics are computed over.
+    /// Which population IDF statistics are computed over.
     /// If unset, statistics are collection-wide (global).
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]

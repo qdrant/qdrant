@@ -184,10 +184,11 @@ fn text_search(
     let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut query_context = QueryContext::default();
-    query_context.init_text_stats(field, terms.iter().cloned());
+    query_context.init_text_stats(field, None, terms.iter().cloned());
     fill_text_statistics(
         index,
         query_context.mut_text_stats().get_mut(field).unwrap(),
+        None,
         &is_stopped,
     )
     .unwrap();
