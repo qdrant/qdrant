@@ -207,6 +207,20 @@ def test_text_index_in_a_prefetch(collection_name):
     assert {point["id"] for point in response.json()["result"]["points"]} == expected
 
 
+def test_text_index_rescores_a_prefetch(collection_name):
+    response = query(collection_name, {
+        "prefetch": {"filter": {"must": {"key": "group", "match": {"value": 0}}}, "limit": POINTS},
+        "query": text("gamma"),
+        "using": FIELD,
+        "limit": POINTS,
+    })
+    assert response.ok, response.text
+    # Statistics still cover the whole corpus; prefetched points without
+    # `gamma` score nothing and are left out.
+    ids = [i for i in range(POINTS) if i % 3 == 0]
+    assert_scores(response.json()["result"]["points"], bm25_reference(["gamma"], ids=ids))
+
+
 def test_text_index_in_query_groups(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}/points/query/groups',

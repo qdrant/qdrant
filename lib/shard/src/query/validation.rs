@@ -70,12 +70,7 @@ fn validate_query(query: &ScoringQuery, sources: &[Source]) -> OperationResult<(
         ScoringQuery::Formula(_) => Ok(()),
         ScoringQuery::Sample(_) => Ok(()),
         ScoringQuery::Mmr(_) => Ok(()),
-        // It scores each shard's segments directly, and has no way yet to
-        // score a set of prefetched points.
-        ScoringQuery::Text(_) => Err(OperationError::validation_error(
-            "BM25 over a text index cannot rescore prefetches yet; use it as a prefetch, \
-             or as a query without prefetches",
-        )),
+        ScoringQuery::Text(_) => Ok(()),
     }
 }
 
