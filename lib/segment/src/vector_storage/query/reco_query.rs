@@ -170,6 +170,14 @@ fn avg_vectors<'a>(
         match vector {
             VectorRef::Dense(vector) => {
                 dense_count += 1;
+                if avg_dense.is_empty() {
+                    avg_dense.reserve(vector.len());
+                } else if avg_dense.len() != vector.len() {
+                    return Err(OperationError::WrongVectorDimension {
+                        expected_dim: avg_dense.len(),
+                        received_dim: vector.len(),
+                    });
+                }
                 for i in 0..vector.len() {
                     if i >= avg_dense.len() {
                         avg_dense.push(vector[i])
@@ -184,15 +192,21 @@ fn avg_vectors<'a>(
             }
             VectorRef::MultiDense(vector) => {
                 multi_count += 1;
-                avg_multi = Some(avg_multi.map_or_else(
-                    || vector.to_owned(),
-                    |mut avg_multi| {
+                avg_multi = Some(match avg_multi {
+                    None => vector.to_owned(),
+                    Some(mut avg_multi) => {
+                        if avg_multi.dim != vector.dim {
+                            return Err(OperationError::WrongVectorDimension {
+                                expected_dim: avg_multi.dim,
+                                received_dim: vector.dim,
+                            });
+                        }
                         avg_multi
                             .flattened_vectors
                             .extend_from_slice(vector.flattened_vectors);
                         avg_multi
-                    },
-                ));
+                    }
+                });
             }
         }
     }
@@ -273,7 +287,7 @@ mod test {
     use rstest::rstest;
     use sparse::common::sparse_vector::SparseVector;
 
-    use super::{avg_vector_for_recommendation, avg_vectors};
+    use super::{TypedMultiDenseVector, avg_vector_for_recommendation, avg_vectors};
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::{VectorInternal, VectorRef};
     use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
@@ -433,6 +447,76 @@ mod test {
                 .into(),
         ];
         assert!(avg_vectors(vectors.iter().map(VectorRef::from)).is_err());
+    }
+
+    /// Regression for issue #10524: dense inputs of mismatched length must
+    /// be rejected, not silently zero-padded into the average. Pre-fix, the
+    /// loop `for i in 0..vector.len() { if i >= avg_dense.len() { push } else
+    /// { avg_dense[i] += vector[i] } }` extended the accumulator to the
+    /// longest input and divided every entry by the total count, producing
+    /// a silently wrong query vector when the longest input happened to
+    /// match the collection dimension.
+    #[test]
+    fn test_avg_vectors_rejects_dense_dimension_mismatch() {
+        // Shorter second input. Pre-fix returned [1.0, 0.5, 0.0] (the third
+        // element was contributed by the first input alone, then divided by 2).
+        // Post-fix returns WrongVectorDimension { expected_dim: 3, received_dim: 2 }.
+        let vectors: Vec<VectorInternal> = vec![vec![1.0, 0.0, 0.0].into(), vec![1.0, 1.0].into()];
+        let result = avg_vectors(vectors.iter().map(VectorRef::from));
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 3,
+                received_dim: 2,
+            })
+        ));
+
+        // Longer second input. Pre-fix returned [0.5, 0.5, 0.5] (the new
+        // element was taken from the second input alone, then divided by 2).
+        // Post-fix rejects with WrongVectorDimension { expected_dim: 2, received_dim: 3 }.
+        let vectors: Vec<VectorInternal> = vec![vec![1.0, 1.0].into(), vec![1.0, 1.0, 1.0].into()];
+        let result = avg_vectors(vectors.iter().map(VectorRef::from));
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
+
+        // Equal-length inputs still average correctly.
+        let vectors: Vec<VectorInternal> =
+            vec![vec![1.0, 1.0, 1.0].into(), vec![3.0, 3.0, 3.0].into()];
+        assert_eq!(
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+            vec![2.0, 2.0, 2.0].into(),
+        );
+    }
+
+    /// Regression for issue #10524: multi-dense inputs with mismatched inner
+    /// `dim` must be rejected. Pre-fix, `extend_from_slice` silently
+    /// concatenated `flattened_vectors` from inputs of different inner
+    /// dimensions, producing a structurally wrong average.
+    #[test]
+    fn test_avg_vectors_rejects_multi_dense_inner_dim_mismatch() {
+        let multi_dim2: VectorInternal =
+            TypedMultiDenseVector::try_from_matrix(vec![vec![1.0, 2.0], vec![3.0, 4.0]])
+                .unwrap()
+                .into();
+        let multi_dim3: VectorInternal =
+            TypedMultiDenseVector::try_from_matrix(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]])
+                .unwrap()
+                .into();
+
+        let vectors: Vec<VectorInternal> = vec![multi_dim2, multi_dim3];
+        let result = avg_vectors(vectors.iter().map(VectorRef::from));
+        assert!(matches!(
+            result,
+            Err(OperationError::WrongVectorDimension {
+                expected_dim: 2,
+                received_dim: 3,
+            })
+        ));
     }
 
     #[test]
