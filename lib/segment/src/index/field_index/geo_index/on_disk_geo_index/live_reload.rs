@@ -17,6 +17,17 @@ impl<S: UniversalRead> LiveReload for OnDiskGeoIndex<S> {
         Ok(Vec::new())
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for deleted_point in deleted_points {
+            self.remove_point(*deleted_point);
+        }
+
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         _fs: &Fs,
@@ -26,10 +37,6 @@ impl<S: UniversalRead> LiveReload for OnDiskGeoIndex<S> {
         // No on-disk state changes on reload: this index is immutable, so only
         // the in-memory deletion bitvec is patched. `fs` / `new_points` are
         // unused because nothing is appended after build.
-        for deleted_point in deleted_points {
-            self.remove_point(*deleted_point);
-        }
-
-        Ok(())
+        self.apply_deletions(deleted_points)
     }
 }

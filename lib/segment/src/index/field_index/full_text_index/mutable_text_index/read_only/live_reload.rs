@@ -21,6 +21,17 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
         Ok(self.storage.live_preload(fs)?)
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for deleted_point in deleted_points {
+            self.inner.inverted_index.remove(*deleted_point);
+        }
+
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
@@ -28,12 +39,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
         new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
+        self.apply_deletions(deleted_points)?;
 
         let inner = &mut self.inner;
-
-        for &deleted_point in deleted_points {
-            inner.inverted_index.remove(deleted_point);
-        }
 
         self.storage
             .view()

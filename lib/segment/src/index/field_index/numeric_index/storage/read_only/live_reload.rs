@@ -29,6 +29,17 @@ where
         }
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyNumericIndexInner::Appendable(index) => index.apply_deletions(deleted_points),
+            ReadOnlyNumericIndexInner::Immutable(index) => index.apply_deletions(deleted_points),
+            ReadOnlyNumericIndexInner::OnDisk(index) => index.apply_deletions(deleted_points),
+        }
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,

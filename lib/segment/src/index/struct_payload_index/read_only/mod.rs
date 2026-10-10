@@ -86,6 +86,17 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyStructPayloadIndex<S> {
         Ok(futs)
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        for field_index in self.field_indexes.values_mut().flatten() {
+            field_index.apply_deletions(deleted_points)?;
+        }
+
+        Ok(())
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,

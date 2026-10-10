@@ -25,16 +25,23 @@ where
         Ok(Vec::new())
     }
 
-    fn live_reload<Fs: UniversalReadFs<File = S>>(
+    fn apply_deletions(
         &mut self,
-        _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
-        _new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
         for deleted_point in deleted_points {
             self.remove_point(*deleted_point);
         }
 
         Ok(())
+    }
+
+    fn live_reload<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        _fs: &Fs,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        _new_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.apply_deletions(deleted_points)
     }
 }

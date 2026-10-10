@@ -17,6 +17,13 @@ impl<S: UniversalRead> LiveReload for MultivectorOffsetsStorageChunkedRead<S> {
         self.data.live_preload(fs)
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.data.apply_deletions(deleted_points)
+    }
+
     /// Pick up offsets a writer appended to the chunked backing.
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,

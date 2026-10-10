@@ -19,6 +19,17 @@ impl<S: UniversalRead> LiveReload for ReadOnlySparseVectorStorage<S> {
         Ok(futs)
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.deleted.insert_all(deleted_points);
+        // A deleted slot never lies above the storage's end, but keep the end covering it
+        let deleted_end = self.deleted.as_bitslice().last_one().map_or(0, |i| i + 1);
+        self.next_point_offset = self.next_point_offset.max(deleted_end);
+        Ok(())
+    }
+
     /// Reload the Blobstore, apply `deleted_points`, fold in the persisted
     /// deletion of each appended offset, and recompute `next_point_offset`.
     fn live_reload<Fs: UniversalReadFs<File = S>>(

@@ -276,6 +276,52 @@ fn test_live_reload_withholds_insert_until_version_present() {
     assert_in_sync(&read_only, &mutable);
 }
 
+/// A re-insert whose version is not flushed yet must not hide the earlier insert of the same point
+/// whose version is: the point resolves to the earlier offset until the re-insert's version lands.
+/// A fresh open reads both inserts in one go, and so does a reload that read the versions before
+/// the earlier insert's version landed.
+#[test]
+fn test_unversioned_reinsert_keeps_earlier_versioned_insert() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let resolve = |read_only: &ReadOnlyTracker| {
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly)
+    };
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    let mut reloaded = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // Point 100 is inserted at offset 0 and re-inserted at offset 1, and the reload reads both
+    // inserts before either version
+    insert(&mut mutable, 100.into(), 0, 10);
+    mutable.set_link(100.into(), 1).unwrap();
+    mutable.mapping_flusher()().unwrap();
+    assert_eq!(reload(&mut reloaded, None), LiveReloadResult::default());
+    assert_eq!(resolve(&reloaded), None);
+
+    // The first insert's version lands, the re-insert has none yet
+    mutable.versions_flusher()().unwrap();
+    let result = reload(&mut reloaded, None);
+    assert_eq!(result.inserted, vec![0]);
+    assert_eq!(result.deleted, Vec::<PointOffsetType>::new());
+    assert_eq!(resolve(&reloaded), Some(0));
+    assert_eq!(reloaded.internal_version(0), Some(10));
+
+    let mut opened = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+    assert_eq!(resolve(&opened), Some(0), "fresh open");
+
+    // The re-insert's version lands: the point moves to the new offset
+    mutable.set_internal_version(1, 20).unwrap();
+    mutable.versions_flusher()().unwrap();
+    for read_only in [&mut reloaded, &mut opened] {
+        let result = reload(read_only, None);
+        assert_eq!(result.inserted, vec![1]);
+        assert_eq!(result.deleted, vec![0]);
+        assert_eq!(resolve(read_only), Some(1));
+        assert_in_sync(read_only, &mutable);
+    }
+}
+
 /// A partially-written trailing mapping entry (e.g. a flush observed mid-append) must be ignored,
 /// and the next live-reload must re-read from the start of that incomplete entry.
 #[test]

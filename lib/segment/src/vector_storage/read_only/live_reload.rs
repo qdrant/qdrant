@@ -35,6 +35,31 @@ impl<S: UniversalRead> LiveReload for VectorStorageReadEnum<S> {
         }
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        match self {
+            VectorStorageReadEnum::Dense(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseByte(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseHalf(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseGraphInline(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseChunked(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseTurbo(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::DenseTurboChunked(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::MultiDenseTurbo(s) => s.apply_deletions(deleted_points),
+            VectorStorageReadEnum::Sparse(s) => s.apply_deletions(deleted_points),
+        }
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,

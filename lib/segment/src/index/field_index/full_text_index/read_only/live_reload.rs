@@ -21,6 +21,17 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFullTextIndex::Immutable(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.apply_deletions(deleted_points),
+        }
+    }
+
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,

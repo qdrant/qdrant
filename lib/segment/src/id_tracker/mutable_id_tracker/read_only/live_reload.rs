@@ -204,7 +204,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let committed = self.reload_versions(fs, max_committed_id, preloaded)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
-        // deletes act on the committed mapping immediately, or cancel a still-pending insert.
+        // deletes act on the committed mapping immediately, and cancel still-pending inserts.
         let changes = self.read_new_mapping_changes(fs, preloaded)?;
 
         for change in &changes {
@@ -217,12 +217,12 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 MappingChange::Insert(external_id, internal_id) => {
                     self.max_claimed_internal_id =
                         self.max_claimed_internal_id.max(Some(internal_id));
-                    // A re-insert supersedes a staged one, which a failed reload may have handed to
-                    // components already
-                    if let Some(staged) = self.staged_inserts.remove(&external_id) {
-                        deleted.push(staged);
-                    }
-                    self.unversioned_inserts.insert(external_id, internal_id);
+                    // A re-insert does not supersede the point's staged or linked insert yet:
+                    // that one is fully written, and is replaced once the re-insert is staged
+                    self.unversioned_inserts
+                        .entry(external_id)
+                        .or_default()
+                        .push(internal_id);
                 }
                 MappingChange::Delete(external_id) => {
                     // A point can be both committed (an old offset) and pending (a not-yet-committed
@@ -239,10 +239,26 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             }
         }
 
-        let versioned = self
-            .unversioned_inserts
-            .extract_if(|_, &mut internal_id| internal_id < committed);
-        self.staged_inserts.extend(versioned);
+        // Stage each point's newest insert the versions file covers. Inserts claim offsets in log
+        // order, so that is its last covered unversioned offset; the covered ones before it are
+        // superseded and never reported. A re-insert not covered yet stays unversioned, without
+        // hiding the earlier insert. A staged insert the new one supersedes was reported already,
+        // so it is reported deleted.
+        let mut versioned = Vec::new();
+        self.unversioned_inserts
+            .retain(|&external_id, internal_ids| {
+                let covered = internal_ids.partition_point(|&internal_id| internal_id < committed);
+                if let Some(&internal_id) = internal_ids[..covered].last() {
+                    versioned.push((external_id, internal_id));
+                }
+                internal_ids.drain(..covered);
+                !internal_ids.is_empty()
+            });
+        for (external_id, internal_id) in versioned {
+            if let Some(superseded) = self.staged_inserts.insert(external_id, internal_id) {
+                deleted.push(superseded);
+            }
+        }
 
         // Every staged insert is reported, including those an unpublished reload reported before.
         let mut inserted = Vec::new();
