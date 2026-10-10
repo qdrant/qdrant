@@ -5,18 +5,27 @@ use common::ambient;
 use common::bitvec::BitVec;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs, Populate};
+use posting_list::PostingList;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 
 use super::super::InvertedIndex;
 use super::super::immutable_inverted_index::ImmutableInvertedIndex;
+use super::super::immutable_postings_enum::ImmutablePostings;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
 use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::*;
 use crate::data_types::query_context::fancy_idf;
 
 const VOCAB: usize = 40;
+
+/// The vocabulary, for queries long enough to keep many terms essential.
+const WORDS: [&str; VOCAB] = [
+    "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9", "w10", "w11", "w12", "w13", "w14",
+    "w15", "w16", "w17", "w18", "w19", "w20", "w21", "w22", "w23", "w24", "w25", "w26", "w27",
+    "w28", "w29", "w30", "w31", "w32", "w33", "w34", "w35", "w36", "w37", "w38", "w39",
+];
 
 /// A skewed vocabulary: low ranks are common, high ranks rare, so queries
 /// mix terms with very different bounds and MaxScore has something to prune.
@@ -158,7 +167,63 @@ fn queries() -> Vec<Vec<&'static str>> {
         vec!["w7", "w7", "w9"],
         vec!["w5", "unknown"],
         vec!["unknown"],
+        // Long queries, as on ArguAna: enough essential terms for the cursor
+        // heap to find the candidates.
+        WORDS[..20].to_vec(),
+        WORDS[10..].to_vec(),
+        WORDS.to_vec(),
     ]
+}
+
+/// The cursor heap and the scan find the same candidates with the same hits
+/// in the same order, so the two give bit-identical results, at every block
+/// size and with or without pruning.
+#[rstest]
+fn cursor_heap_matches_the_scan(#[values(1, 10, 1000)] limit: usize) {
+    heap_matches_scan::<1>(limit);
+    heap_matches_scan::<ON_DISK_BLOCK>(limit);
+}
+
+fn heap_matches_scan<const BLOCK: usize>(limit: usize) {
+    let index = fixture(31, 600, &[2, 20, 200]);
+    let documents = index.point_to_doc.as_deref().unwrap();
+    let lengths = index.point_to_doc_len.as_deref().unwrap();
+    let rank = |query: &Bm25Query, heap_min_essential: usize| {
+        let postings = query
+            .terms()
+            .iter()
+            .map(|term| index.postings.get(term.token_id as usize))
+            .collect();
+        let mut cursors = MutableCursors::new(postings, documents, query.terms());
+        score_top_k_with::<_, BLOCK>(
+            query,
+            &mut cursors,
+            documents.len(),
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = Some(lengths[*point_id as usize]);
+                }
+                Ok(())
+            },
+            |idx| idx % 7 != 3,
+            limit,
+            &AtomicBool::new(false),
+            Strategy {
+                heap_min_essential,
+                dense_min_postings_per_doc: f32::INFINITY,
+            },
+        )
+        .unwrap()
+        .into_iter()
+        .map(|hit| (hit.idx, hit.score.to_bits()))
+        .collect::<Vec<_>>()
+    };
+    for terms in queries() {
+        let query = query(&index, &terms, Bm25Params::default());
+        let scan = rank(&query, usize::MAX);
+        assert_eq!(rank(&query, 1), scan, "block {BLOCK}, {terms:?}");
+        assert_eq!(rank(&query, 16), scan, "block {BLOCK}, {terms:?}");
+    }
 }
 
 /// Every shape reproduces the definition, with and without pruning in
@@ -223,6 +288,7 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
         let actual = score_top_k::<_, BLOCK>(
             &query,
             &mut cursors,
+            documents.len(),
             |point_ids, out| {
                 assert!(point_ids.len() <= BLOCK);
                 asked.extend_from_slice(point_ids);
@@ -535,4 +601,85 @@ fn parameters_outside_the_bound_domain_are_rejected() {
     // The edges of the domain are inside it.
     assert!(Bm25Query::new(term, Bm25Params { k1: 0.0, b: 0.0 }, None).is_ok());
     assert!(Bm25Query::new(term, Bm25Params { k1: 1.2, b: 1.0 }, Some(1.0)).is_ok());
+}
+
+/// Term at a time over a dense array ranks as document at a time does, on
+/// the shapes that allow it: the same top `limit` within float rounding, and
+/// bit for bit when nothing is pruned, since a document's terms are then summed
+/// in the same order. Lengths are read once per document, in batches no larger
+/// than the block.
+#[rstest]
+fn dense_matches_document_at_a_time(#[values(1, 3, 10, 1000)] limit: usize) {
+    let mutable = fixture(41, 500, &[1, 10, 100]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let on_disk = on_disk(dir.path(), &immutable, &BitVec::repeat(false, 500));
+    let lengths = mutable.point_to_doc_len.as_deref().unwrap();
+    let ImmutablePostings::WithPositions(postings) = &immutable.postings else {
+        panic!("the fixture stores positions");
+    };
+    let rank = |query: &Bm25Query, dense: f32| {
+        let views = query
+            .terms()
+            .iter()
+            .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
+            .collect();
+        let mut cursors = PositionalCursors::new(views);
+        let mut asked: Vec<PointOffsetType> = Vec::new();
+        let ranking = score_top_k_with::<_, 7>(
+            query,
+            &mut cursors,
+            lengths.len(),
+            |point_ids, out| {
+                assert!(point_ids.len() <= 7);
+                asked.extend_from_slice(point_ids);
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.get(*point_id as usize).copied();
+                }
+                Ok(())
+            },
+            |idx| idx % 5 != 2,
+            limit,
+            &AtomicBool::new(false),
+            Strategy {
+                heap_min_essential: HEAP_MIN_ESSENTIAL,
+                dense_min_postings_per_doc: dense,
+            },
+        )
+        .unwrap();
+        let read = asked.len();
+        asked.sort_unstable();
+        asked.dedup();
+        assert_eq!(asked.len(), read, "a length was read twice");
+        ranking
+    };
+    for terms in queries() {
+        let query = query(&mutable, &terms, Bm25Params::default());
+        let expected = reference(&mutable, &query, |idx| idx % 5 != 2);
+        let dense = rank(&query, 0.0);
+        let by_document = rank(&query, f32::INFINITY);
+        eprintln!("{terms:?} limit {limit}");
+        assert_top_k(&dense, &expected, limit);
+        assert_top_k(&by_document, &expected, limit);
+        if limit >= 500 {
+            let bits = |ranking: &[ScoredPointOffset]| {
+                ranking
+                    .iter()
+                    .map(|hit| (hit.idx, hit.score.to_bits()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(bits(&dense), bits(&by_document), "{terms:?}");
+        }
+        // Through each index's own entry point, whichever path it takes.
+        assert_top_k(
+            &run(&immutable, &query, |idx| idx % 5 != 2, limit),
+            &expected,
+            limit,
+        );
+        assert_top_k(
+            &run(&on_disk, &query, |idx| idx % 5 != 2, limit),
+            &expected,
+            limit,
+        );
+    }
 }

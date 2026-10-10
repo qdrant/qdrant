@@ -16,6 +16,7 @@ struct BitmapCursor<'a> {
 /// count is kept, so the scan is paid per document rather than per term.
 pub struct MutableCursors<'a> {
     cursors: Vec<Option<BitmapCursor<'a>>>,
+    lens: Vec<usize>,
     documents: &'a [Option<Document>],
     /// `(token id, term index)` sorted by token id, for the scan.
     tokens: Vec<(TokenId, usize)>,
@@ -32,6 +33,10 @@ impl<'a> MutableCursors<'a> {
         terms: &[Bm25Term],
     ) -> Self {
         debug_assert_eq!(postings.len(), terms.len());
+        let lens = postings
+            .iter()
+            .map(|posting| posting.map_or(0, |posting| posting.len()))
+            .collect();
         let cursors = postings
             .into_iter()
             .map(|posting| {
@@ -48,6 +53,7 @@ impl<'a> MutableCursors<'a> {
         tokens.sort_unstable();
         Self {
             cursors,
+            lens,
             documents,
             tokens,
             cached_doc: None,
@@ -68,6 +74,16 @@ impl TermCursors for MutableCursors<'_> {
                 self.cursors[term] = None;
             }
         }
+    }
+
+    fn posting_len(&self, term: usize) -> usize {
+        self.lens[term]
+    }
+
+    /// A frequency is counted from the document, cached for one document at a
+    /// time: term at a time, every posting would rescan its document.
+    fn term_at_a_time(&self) -> bool {
+        false
     }
 
     fn seek(&mut self, term: usize, target: PointOffsetType) -> Option<PointOffsetType> {

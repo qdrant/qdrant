@@ -9,12 +9,17 @@ use super::TermCursors;
 /// from the offsets alone.
 pub struct PositionalCursors<'a> {
     cursors: Vec<Option<PostingLenIterator<'a, Positions>>>,
+    lens: Vec<usize>,
 }
 
 impl<'a> PositionalCursors<'a> {
     /// One view per query term, `None` for a term this index holds no posting
     /// list for.
     pub fn new(views: Vec<Option<PostingListView<'a, Positions>>>) -> Self {
+        let lens = views
+            .iter()
+            .map(|view| view.as_ref().map_or(0, PostingListView::len))
+            .collect();
         let cursors = views
             .into_iter()
             .map(|view| {
@@ -23,7 +28,7 @@ impl<'a> PositionalCursors<'a> {
                 Some(cursor)
             })
             .collect();
-        Self { cursors }
+        Self { cursors, lens }
     }
 }
 
@@ -37,6 +42,24 @@ impl TermCursors for PositionalCursors<'_> {
             && cursor.next().is_none()
         {
             self.cursors[term] = None;
+        }
+    }
+
+    fn posting_len(&self, term: usize) -> usize {
+        self.lens[term]
+    }
+
+    /// The frequency is read next to the posting.
+    fn term_at_a_time(&self) -> bool {
+        true
+    }
+
+    /// A chunk at a time, without the per-element offset arithmetic.
+    fn for_each_posting(&mut self, term: usize, mut f: impl FnMut(PointOffsetType, u32)) {
+        if let Some(mut cursor) = self.cursors[term].take() {
+            cursor.for_each_remaining(|elem| {
+                f(elem.id, (elem.value_len / size_of::<u32>()) as u32);
+            });
         }
     }
 
