@@ -381,6 +381,13 @@ pub struct UpdateCollectionOperation {
     pub collection_name: String,
     pub update_collection: UpdateCollection,
     pub shard_replica_changes: Option<Vec<replica_set::Change>>,
+    /// Apply each replica removal only if at least this many *other* replicas of its shard are
+    /// active in the state that applies the operation. Otherwise the operation is rejected.
+    ///
+    /// Kept beside `shard_replica_changes`, not inside `replica_set::Change`: a new element in
+    /// the `Change::Remove` tuple would fail to decode on older peers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_other_active_replicas: Option<u32>,
 }
 
 impl UpdateCollectionOperation {
@@ -398,6 +405,7 @@ impl UpdateCollectionOperation {
                 metadata: None,
             },
             shard_replica_changes: None,
+            min_other_active_replicas: None,
         }
     }
 
@@ -414,6 +422,7 @@ impl UpdateCollectionOperation {
             collection_name,
             update_collection,
             shard_replica_changes: None,
+            min_other_active_replicas: None,
         })
     }
 

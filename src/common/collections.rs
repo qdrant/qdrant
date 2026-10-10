@@ -488,6 +488,7 @@ pub async fn do_update_collection_cluster(
                 drop_replica.shard_id,
                 drop_replica.peer_id,
             )]);
+            update_operation.min_other_active_replicas = drop_replica.min_other_active_replicas;
 
             dispatcher
                 .submit_collection_meta_op(

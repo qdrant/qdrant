@@ -143,6 +143,7 @@ impl ClusterState {
             collection_name,
             update_collection,
             shard_replica_changes,
+            min_other_active_replicas,
         } = op;
 
         let collection = self.resolve_collection(collection_name)?;
@@ -190,7 +191,12 @@ impl ClusterState {
         let mut planned: Actions = diffs[..split].iter().map(&config_action).collect();
 
         if let Some(changes) = shard_replica_changes {
-            planned.extend(self.plan_replica_changes(context, &collection, changes)?);
+            planned.extend(self.plan_replica_changes(
+                context,
+                &collection,
+                changes,
+                *min_other_active_replicas,
+            )?);
         }
 
         planned.extend(diffs[split..].iter().map(config_action));
@@ -203,6 +209,7 @@ impl ClusterState {
         context: &NodeContext,
         collection: &str,
         changes: &[collection::shards::replica_set::Change],
+        min_other_active_replicas: Option<u32>,
     ) -> StorageResult<Actions> {
         let state = self.collection(collection).expect("collection exists");
         let fixed_cancellation =
@@ -232,6 +239,16 @@ impl ClusterState {
                     "Shard {shard_id} must have at least one active replica after removing \
                      {peer_id}",
                 )));
+            }
+
+            if let Some(min) = min_other_active_replicas {
+                let other_active = count_other_active(&shard.replicas, peer_id);
+                if other_active < min as usize {
+                    return Err(StorageError::bad_request(format!(
+                        "Shard {shard_id} has {other_active} other active replicas besides \
+                         {peer_id}, but at least {min} are required",
+                    )));
+                }
             }
 
             let mut transfers: Vec<_> = state
@@ -1696,6 +1713,16 @@ fn apply_actions(state: &mut ClusterState, actions: &[Action]) {
     for action in actions {
         state.apply_action(action);
     }
+}
+
+fn count_other_active(
+    replicas: &std::collections::HashMap<PeerId, ReplicaState>,
+    peer_id: PeerId,
+) -> usize {
+    replicas
+        .iter()
+        .filter(|&(&id, state)| id != peer_id && state.is_active())
+        .count()
 }
 
 fn is_last_source_of_truth(
