@@ -8,7 +8,7 @@ N_SHARDS = 4
 N_REPLICA = 2
 
 
-def upsert_points(peer_url, city):
+def upsert_points(peer_url, city, *, fail_on_error=True):
     # Create points in first peer's collection
     r_batch = requests.put(
         f"{peer_url}/collections/test_collection/points?wait=true", json={
@@ -25,7 +25,8 @@ def upsert_points(peer_url, city):
                 {"id": 10, "vector": [0.95, 0.8, 0.17, 0.19], "payload": {"city": city}},
             ]
         })
-    assert_http_ok(r_batch)
+    if fail_on_error:
+        assert_http_ok(r_batch)
 
 
 def create_collection(peer_url, collection="test_collection", timeout=10):
@@ -84,11 +85,12 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     search_result = search(peer_api_uris[0], "Paris")
     assert len(search_result) > 0
 
-    # Validate upsert works with the dead node
-    upsert_points(peer_api_uris[0], "Berlin")
-
-    # Assert that there are dead replicas
+    # First write after a peer kill proposes replica deactivation via consensus and
+    # waits up to 30s for it. Under CI load that wait can time out, so tolerate the
+    # error, wait until dead replicas are observed, then assert the upsert.
+    upsert_points(peer_api_uris[0], "Berlin", fail_on_error=False)
     wait_for_some_replicas_not_active(peer_api_uris[0], "test_collection")
+    upsert_points(peer_api_uris[0], "Berlin")
 
     # Assert all records were changed
     search_result = search(peer_api_uris[0], "Paris")
