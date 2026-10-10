@@ -276,6 +276,37 @@ fn test_live_reload_withholds_insert_until_version_present() {
     assert_in_sync(&read_only, &mutable);
 }
 
+/// An update whose version lands in the same reload that reads a newer, still unversioned update
+/// of the same point is served, rather than the copy before both.
+#[test]
+fn test_live_reload_serves_update_versioned_alongside_newer_pending_one() {
+    let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut mutable = MutableIdTracker::open(segment_dir.path(), None).unwrap();
+    insert(&mut mutable, 100.into(), 0, 10);
+    flush(&mutable);
+    let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
+
+    // An update to slot 1: its mapping is flushed, its version is not.
+    insert(&mut mutable, 100.into(), 1, 11);
+    mutable.mapping_flusher()().unwrap();
+    assert_eq!(reload(&mut read_only, None), LiveReloadResult::default());
+
+    // Its version lands, and the mapping of a newer update to slot 2 is flushed without a version.
+    mutable.versions_flusher()().unwrap();
+    insert(&mut mutable, 100.into(), 2, 12);
+    mutable.mapping_flusher()().unwrap();
+
+    let result = reload(&mut read_only, None);
+    assert_eq!(result.inserted, vec![1]);
+    assert_eq!(result.deleted, vec![0]);
+    assert_eq!(
+        read_only
+            .internal_id_with_behavior(100.into(), common::types::DeferredBehavior::VisibleOnly),
+        Some(1)
+    );
+}
+
 /// A partially-written trailing mapping entry (e.g. a flush observed mid-append) must be ignored,
 /// and the next live-reload must re-read from the start of that incomplete entry.
 #[test]
