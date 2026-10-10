@@ -12,6 +12,7 @@ use rstest::rstest;
 use super::super::InvertedIndex;
 use super::super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
+use super::super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::*;
 use crate::data_types::query_context::fancy_idf;
@@ -495,6 +496,82 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
         max_relative_deviation < 0.25,
         "deleted documents move scores by {max_relative_deviation}"
     );
+}
+
+/// An index with positions but no lengths keeps ids-only postings, so its
+/// cursors fall back to counting frequencies from the document. Same
+/// ranking as the frequency-carrying index over the same data, with
+/// length normalization off since that index has no lengths.
+#[test]
+fn document_scan_fallback_matches_frequency_postings() {
+    let mut rng = StdRng::seed_from_u64(31);
+    let mut with_frequencies = MutableInvertedIndex::new(true, true);
+    let mut ids_only = MutableInvertedIndex::new(true, false);
+    for idx in 0..300 {
+        let len = rng.random_range(3..=60);
+        let tokens: Vec<String> = (0..len).map(|_| word(&mut rng)).collect();
+        with_frequencies
+            .index_str_tokens(idx, &tokens, Some(len))
+            .unwrap();
+        ids_only.index_str_tokens(idx, &tokens, None).unwrap();
+    }
+    for idx in [4, 40, 44] {
+        with_frequencies.remove(idx);
+        ids_only.remove(idx);
+    }
+    assert!(with_frequencies.postings[0].frequencies().is_some());
+    assert!(ids_only.postings[0].frequencies().is_none());
+
+    for terms in queries() {
+        let scored = query(&with_frequencies, &terms, Bm25Params { k1: 1.2, b: 0.0 });
+        // Same token ids on both: the same tokens were registered in the same order.
+        let query =
+            Bm25Query::new(scored.terms().iter().copied(), Bm25Params::default(), None).unwrap();
+        let expected = reference(&with_frequencies, &query, |_| true);
+        assert_top_k(&run(&with_frequencies, &query, |_| true, 15), &expected, 15);
+        assert_top_k(&run(&ids_only, &query, |_| true, 15), &expected, 15);
+    }
+}
+
+/// The postings a reopen rebuilds through the builder carry the same
+/// frequencies as the ones the live path built.
+#[test]
+fn builder_rebuilds_the_same_frequencies() {
+    let live = fixture(17, 200, &[3, 30]);
+    let mut builder = MutableInvertedIndexBuilder::new(true, true);
+    let documents = live.point_to_doc.as_ref().unwrap();
+    let vocab: HashMap<TokenId, &str> =
+        live.vocab.iter().map(|(s, id)| (*id, s.as_str())).collect();
+    for (idx, document) in documents.iter().enumerate() {
+        let Some(document) = document else { continue };
+        let tokens: Vec<String> = document
+            .tokens()
+            .iter()
+            .map(|t| vocab[t].to_owned())
+            .collect();
+        let len = live.point_to_doc_len.as_ref().unwrap()[idx];
+        builder.add(idx as PointOffsetType, tokens, Some(len));
+    }
+    let rebuilt = builder.build();
+
+    for (term, &token_id) in &live.vocab {
+        let rebuilt_id = rebuilt.vocab[term];
+        let (live_posting, rebuilt_posting) = (
+            &live.postings[token_id as usize],
+            &rebuilt.postings[rebuilt_id as usize],
+        );
+        assert_eq!(
+            (
+                live_posting.iter().collect::<Vec<_>>(),
+                live_posting.frequencies()
+            ),
+            (
+                rebuilt_posting.iter().collect::<Vec<_>>(),
+                rebuilt_posting.frequencies()
+            ),
+            "postings of {term} differ",
+        );
+    }
 }
 
 /// Parameters outside the domain the MaxScore bound holds in are refused
