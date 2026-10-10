@@ -175,7 +175,7 @@ fn postprocess_scores(
 ///
 /// Read-handle equivalent of [`shard::query::query_context::fill_query_context`], which is hard-typed
 /// to a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
-fn fill_query_context_over<H: ReadSegmentHandle>(
+pub(super) fn fill_query_context_over<H: ReadSegmentHandle>(
     mut query_context: QueryContext,
     segments: &[H],
     is_stopped: &AtomicBool,

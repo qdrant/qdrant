@@ -400,6 +400,52 @@ pub enum ScoringQuery {
     },
     /// Sample results at random.
     Sample { sample: Sample },
+    /// Rank points by BM25 over the text index of a payload field. The index
+    /// must be created with `scoring` on. Cannot rescore prefetches.
+    Text {
+        /// Payload field whose text index scores the points.
+        field: String,
+        /// Text to search for, tokenized by the field's text index.
+        query: String,
+        /// Parameters of the scorer, which must match the `scoring` of the
+        /// field's text index; `None`/`null` for the defaults.
+        #[uniffi(default = None)]
+        scoring: Option<TextQueryScoring>,
+    },
+}
+
+/// Parameters of one scorer of a [`ScoringQuery::Text`].
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum TextQueryScoring {
+    /// BM25 parameters, for a field scored with BM25.
+    Bm25 { params: Bm25Params },
+}
+
+/// BM25 parameters of a [`ScoringQuery::Text`]. Each `None`/`null` takes
+/// its default.
+#[derive(Clone, Copy, Debug, uniffi::Record)]
+pub struct Bm25Params {
+    /// Term frequency saturation, non-negative. Default: 1.2.
+    #[uniffi(default = None)]
+    pub k: Option<f32>,
+    /// Document length normalization, within `[0, 1]`. Default: 0.75.
+    #[uniffi(default = None)]
+    pub b: Option<f32>,
+}
+
+impl From<Bm25Params> for edge::Bm25Params {
+    fn from(params: Bm25Params) -> Self {
+        let Bm25Params { k, b } = params;
+        edge::Bm25Params { k, b }
+    }
+}
+
+impl From<TextQueryScoring> for edge::TextQueryScoring {
+    fn from(scoring: TextQueryScoring) -> Self {
+        match scoring {
+            TextQueryScoring::Bm25 { params } => edge::TextQueryScoring::Bm25(params.into()),
+        }
+    }
 }
 
 impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
@@ -464,6 +510,19 @@ impl TryFrom<ScoringQuery> for shard::query::ScoringQuery {
             ScoringQuery::Sample { sample } => Ok(shard::query::ScoringQuery::Sample(
                 SampleInternal::from(sample),
             )),
+            ScoringQuery::Text {
+                field,
+                query,
+                scoring,
+            } => {
+                let builder =
+                    edge::TextQueryBuilder::new(crate::error::parse_json_path(&field)?, query);
+                let builder = match scoring {
+                    Some(scoring) => builder.scoring(scoring.into()),
+                    None => builder,
+                };
+                Ok(builder.build())
+            }
         }
     }
 }
@@ -845,7 +904,7 @@ fn assert_every_scoring_query_is_mapped(q: shard::query::ScoringQuery) {
             // [`Sample::Random`]
             SampleInternal::Random => {}
         },
-        // Not exposed: edge does not run BM25 over a text index yet.
+        // [`ScoringQuery::Text`]
         shard::query::ScoringQuery::Text(_) => {}
     }
 }

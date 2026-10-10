@@ -4,9 +4,10 @@ mod reexports_from_qdrant_crates {
     pub use segment::data_types::facets::{FacetHit, FacetResponse, FacetValue, FacetValueHit};
     pub use segment::data_types::fully_qualified_point::FullyQualifiedPoint;
     pub use segment::data_types::index::{
-        BoolIndexParams, DatetimeIndexParams, FloatIndexParams, GeoIndexParams, IntegerIndexParams,
-        KeywordIndexParams, Language, SnowballLanguage, SnowballParams, StopwordsSet,
-        TextIndexParams, TokenizerType, UuidIndexParams,
+        BoolIndexParams, DatetimeIndexParams, DisabledStemmerParams, FloatIndexParams,
+        GeoIndexParams, IntegerIndexParams, KeywordIndexParams, Language, NoStemmer, Snowball,
+        SnowballLanguage, SnowballParams, StemmingAlgorithm, StopwordsInterface, StopwordsSet,
+        TextIndexParams, TextScoringParams, TextScoringType, TokenizerType, UuidIndexParams,
     };
     pub use segment::data_types::load_profile::LoadProfile;
     pub use segment::data_types::modifier::Modifier;
@@ -59,6 +60,7 @@ mod reexports_from_qdrant_crates {
     };
     pub use shard::query::formula::{ExpressionInternal as Expression, FormulaInternal as Formula};
     pub use shard::query::query_enum::QueryEnum;
+    pub use shard::query::text::TextScoringQuery;
     pub use shard::query::{
         FusionInternal as Fusion, MmrInternal as Mmr, SampleInternal as Sample, ScoringQuery,
     };
