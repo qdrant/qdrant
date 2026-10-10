@@ -285,6 +285,15 @@ fn binary_quantized_non_rescored_search_is_ordered(distance: Distance) {
             &Default::default(),
         )
         .unwrap();
+    let returned_scores: Vec<_> = results[0].iter().map(|result| result.score).collect();
+    assert_eq!(returned_scores.len(), TOP);
+    assert!(
+        returned_scores
+            .windows(2)
+            .all(|window| window[0] >= window[1]),
+        "{distance:?} returned scores were not non-increasing: {returned_scores:?}"
+    );
+
     let scores: Vec<_> = results[0]
         .iter()
         .map(|result| distance.postprocess_score(result.score))
