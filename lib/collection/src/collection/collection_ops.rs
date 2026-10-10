@@ -336,6 +336,17 @@ impl Collection {
     /// recreation has already been applied and persisted by the time we get here, so there is no
     /// caller left to propagate them to. Failures are also surfaced as optimizer errors per shard
     /// (see `LocalShard::on_optimizer_config_update`).
+    /// Whether any local shard of this collection has an optimizer error recorded.
+    pub async fn has_optimizer_errors(&self) -> bool {
+        let shard_holder = self.shards_holder.read().await;
+        for replica_set in shard_holder.all_shards() {
+            if replica_set.has_local_optimizer_errors().await {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn recreate_optimizers_background(&self) {
         // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
         // into a queued re-run handled by the task that is already running.
