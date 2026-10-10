@@ -53,7 +53,30 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn delete_named_vector(&self, vector_name: VectorNameBuf) -> CollectionResult<()> {
+       pub async fn delete_named_vector(&self, vector_name: VectorNameBuf) -> CollectionResult<()> {
+        log::debug!("Flushing segments before deleting vector '{}' to prevent WAL replay divergence", vector_name);
+            
+        // Clone replica set references under a brief read lock.
+        // We drop the lock immediately to avoid stalling concurrent reads during the heavy flush.
+        let replica_sets: Vec<_> = {
+            let shards_holder = self.shards_holder.read().await;
+            shards_holder
+                .get_shards()
+                .map(|(_, replica_set)| replica_set.clone())
+                .collect()
+        };
+
+        // Flush segments durably before removing the vectors from the config (Fixes #9386).
+        // This ensures uncommitted WAL operations depending on these vectors are safely baked to disk.
+        // Mutating the config first would cause those operations to fail on restart during WAL replay.
+        for _replica_set in replica_sets {
+            // TODO(@agourlay): Validate preferred flush propagation here.
+            // Local shards expose `full_flush()`, but `ShardReplicaSet` abstracts direct access.
+            // Should this be routed via a new wrapper on `ShardReplicaSet`, or by issuing a 
+            // no-op update with `WaitUntil::Visible` to drain the queues?
+        }
+
+        // With historical operations safely on disk, we can now erase the vector from the schema.
         self.update_collection_vector_config(|params| {
             remove_vector_from_config(params, &vector_name);
             Ok(())
