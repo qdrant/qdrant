@@ -41,7 +41,7 @@ pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 #[anonymize(false)]
 pub struct WalConfig {
     /// Size of a single WAL segment in MB
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1, max = "WalConfig::MAX_WAL_CAPACITY_MB"))]
     pub wal_capacity_mb: usize,
     /// Number of WAL segments to create ahead of actually used ones
     pub wal_segments_ahead: usize,
@@ -55,6 +55,14 @@ fn default_wal_retain_closed() -> usize {
     1
 }
 
+impl WalConfig {
+    /// Maximum `wal_capacity_mb` accepted at the API and config layer. Leaves a factor-of-four
+    /// headroom over the downstream `wal_capacity_mb * 1024 * 1024` and `2 * wal_capacity_mb`
+    /// multiplications, so `usize` arithmetic cannot overflow on any 64-bit target. The resulting
+    /// ceiling is roughly 4 PB on 64-bit builds, well beyond any realistic WAL segment size.
+    pub const MAX_WAL_CAPACITY_MB: usize = usize::MAX / (1024 * 1024 * 4);
+}
+
 impl From<&WalConfig> for WalOptions {
     fn from(config: &WalConfig) -> Self {
         let WalConfig {
@@ -63,7 +71,15 @@ impl From<&WalConfig> for WalOptions {
             wal_retain_closed,
         } = config;
         WalOptions {
-            segment_capacity: wal_capacity_mb * 1024 * 1024,
+            // Saturate rather than panics if a test fixture (or a future code path that bypasses
+            // validation) constructs a `WalConfig` with an out-of-range `wal_capacity_mb`. The
+            // resulting `segment_capacity = usize::MAX` is benign: it caps the WAL at the largest
+            // representable size, matching the practical effect of the validation max. The validated
+            // case (the only reachable one through the API) hits the `Some` arm and gets the exact
+            // byte count.
+            segment_capacity: wal_capacity_mb
+                .checked_mul(1024 * 1024)
+                .unwrap_or(usize::MAX),
             segment_queue_len: *wal_segments_ahead,
             retain_closed: NonZeroUsize::new(*wal_retain_closed).unwrap(),
         }
@@ -882,5 +898,72 @@ mod tests {
 
         // A single Turbo4-backed named vector is enough to trigger raw transfer.
         assert!(params.has_turbo_vector_storage());
+    }
+
+    #[test]
+    fn wal_config_from_at_max_is_exact() {
+        // The validated max must not overflow the segment-capacity multiplication.
+        let cfg = WalConfig {
+            wal_capacity_mb: WalConfig::MAX_WAL_CAPACITY_MB,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+        let opts = WalOptions::from(&cfg);
+        assert_eq!(
+            opts.segment_capacity,
+            WalConfig::MAX_WAL_CAPACITY_MB * 1024 * 1024
+        );
+    }
+
+    #[test]
+    fn wal_config_from_min_is_one_megabyte() {
+        let cfg = WalConfig {
+            wal_capacity_mb: 1,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+        let opts = WalOptions::from(&cfg);
+        assert_eq!(opts.segment_capacity, 1024 * 1024);
+    }
+
+    #[test]
+    fn wal_config_from_overflow_saturates_without_panicking() {
+        // A test fixture that bypasses validation must not crash the producer either; the
+        // `From` impl saturates to `usize::MAX` as defence in depth.
+        let cfg = WalConfig {
+            wal_capacity_mb: usize::MAX,
+            wal_segments_ahead: 0,
+            wal_retain_closed: 1,
+        };
+        let opts = WalOptions::from(&cfg);
+        assert_eq!(opts.segment_capacity, usize::MAX);
+    }
+
+    #[test]
+    fn wal_config_max_constant_leaves_headroom() {
+        // The max must leave room for both downstream multiplications: `* 1024 * 1024` in
+        // `From<&WalConfig>` and `* 2` in `local_shard/mod.rs:279`. The factor-of-four constant
+        // is the safety margin.
+        assert!(
+            WalConfig::MAX_WAL_CAPACITY_MB
+                .checked_mul(1024 * 1024)
+                .is_some()
+        );
+        assert!(WalConfig::MAX_WAL_CAPACITY_MB.checked_mul(2).is_some());
+        // `MAX * 1024 * 1024 * 4` equals `usize::MAX - (1024 * 1024 * 4 - 1)` by construction
+        // of `MAX = usize::MAX / (1024 * 1024 * 4)`, so it must NOT overflow.
+        assert!(
+            WalConfig::MAX_WAL_CAPACITY_MB
+                .checked_mul(1024 * 1024 * 4)
+                .is_some()
+        );
+        // The remainder lost to integer division is exactly `1024 * 1024 * 4 - 1`. Adding the
+        // smallest increment past that (one byte) overflows.
+        assert!(
+            WalConfig::MAX_WAL_CAPACITY_MB
+                .checked_mul(1024 * 1024 * 4)
+                .and_then(|v| v.checked_add(1024 * 1024 * 4))
+                .is_none()
+        );
     }
 }
