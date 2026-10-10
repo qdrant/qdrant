@@ -51,21 +51,24 @@ impl JapaneseTokenizer {
 
         // TODO(multilingual): Implement similar method to `iter_tokens()` that allows returning borrowed Cows instead of needlessly cloning here.
         for i in s.iter_tokens() {
-            let surface = i.surface();
+            // Clone up front: `iter_tokens()` borrows from `s`, so the surface
+            // cannot outlive this loop iteration.
+            let surface: Cow<'a, str> = Cow::Owned(i.surface().to_string());
 
-            // Skip if all characters are not alphanumeric or if the surface is empty.
-            if tokens_processor.is_stopword(surface)
-                || surface.chars().all(|char| !char.is_alphabetic())
-            {
+            // Skip if all characters are not alphanumeric.
+            if surface.chars().all(|char| !char.is_alphabetic()) {
                 continue;
             }
 
-            let surface = if tokens_processor.lowercase {
-                Cow::Owned(surface.to_lowercase())
-            } else {
-                Cow::Owned(surface.to_string())
-            };
-            cb(surface);
+            // Run the same pipeline as the charabia branch, so that
+            // `ascii_folding`, `lowercase`, `stopwords`, `stemmer` and the
+            // `min_token_len` / `max_token_len` bounds all apply. Checking
+            // stopwords here instead would compare them against the raw
+            // surface, before lowercasing, so a capitalised stopword would
+            // survive.
+            if let Some(surface) = tokens_processor.process_token_cow(surface, true) {
+                cb(surface);
+            }
         }
     }
 }
@@ -77,9 +80,14 @@ pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(input: &'a str, config: &TokensProce
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use sha2::{Digest, Sha512};
 
+    use super::super::TokensProcessor;
     use super::*;
+    use crate::data_types::index::StopwordsInterface;
+    use crate::index::field_index::full_text_index::stop_words::StopwordsFilter;
 
     #[test]
     fn test_assert_model_integrity() {
@@ -158,6 +166,99 @@ mod test {
                 "unit",
                 "test"
             ]
+        );
+    }
+
+    /// The japanese branch must run the same pipeline as the charabia branch.
+    ///
+    /// It used to post-process tokens inline instead of going through
+    /// `TokensProcessor`, which dropped `min_token_len`, `max_token_len`,
+    /// `stemmer` and `ascii_folding` entirely, and matched stopwords against
+    /// the raw surface before lowercasing it.
+    #[test]
+    fn test_min_token_len_is_applied() {
+        // Vaporetto segments this into multi-character words plus the
+        // single-character particles "語" and "の".
+        let input = "日本語のテキストです。";
+        let tokens_processor = TokensProcessor::new(
+            true,
+            false,
+            Arc::new(StopwordsFilter::new(&None, true)),
+            None,
+            Some(2),
+            None,
+        );
+        let mut out = vec![];
+        tokenize(input, &tokens_processor, |i| {
+            out.push(i.to_string());
+        });
+
+        assert!(
+            !out.is_empty(),
+            "sanity: the japanese branch must still emit tokens, got {out:?}"
+        );
+        assert!(
+            out.iter().all(|token| token.chars().count() >= 2),
+            "min_token_len = 2 must drop shorter tokens, got {out:?}"
+        );
+    }
+
+    /// `StopwordsFilter` stores its entries lowercased when `lowercase` is on
+    /// but does not lowercase the token it is asked about, so every caller has
+    /// to lowercase first. The japanese branch checked stopwords before
+    /// lowercasing, so a capitalised stopword reached the index.
+    #[test]
+    fn test_stopwords_are_matched_case_insensitively() {
+        // This input is already exercised by
+        // `test_tokenization_partially_japanese`, so it is known to take the
+        // japanese branch. It contains "It's", which segments to "It".
+        let input = "日本語のテキストです。It's used in Qdrant's code in a unit test";
+        let tokens_processor = TokensProcessor::new(
+            true,
+            false,
+            Arc::new(StopwordsFilter::new(
+                &Some(StopwordsInterface::new_custom(&["it"])),
+                true,
+            )),
+            None,
+            None,
+            None,
+        );
+        let mut out = vec![];
+        tokenize(input, &tokens_processor, |i| {
+            out.push(i.to_string());
+        });
+
+        assert!(
+            !out.iter().any(|token| token == "It" || token == "it"),
+            "the lowercase stopword \"it\" must drop the capitalised token \"It\", got {out:?}"
+        );
+    }
+
+    /// `max_token_len` is part of the same contract, and was skipped too.
+    #[test]
+    fn test_max_token_len_is_applied() {
+        let input = "日本語のテキストです。";
+        let tokens_processor = TokensProcessor::new(
+            true,
+            false,
+            Arc::new(StopwordsFilter::new(&None, true)),
+            None,
+            None,
+            Some(2),
+        );
+        let mut out = vec![];
+        tokenize(input, &tokens_processor, |i| {
+            out.push(i.to_string());
+        });
+
+        assert!(
+            !out.is_empty(),
+            "sanity: the japanese branch must still emit tokens, got {out:?}"
+        );
+        assert!(
+            out.iter().all(|token| token.chars().count() <= 2),
+            "max_token_len = 2 must drop longer tokens, got {out:?}"
         );
     }
 }
