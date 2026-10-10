@@ -97,10 +97,7 @@ where
         match self {
             MapIndex::Mutable(index) => index.remove_point(id),
             MapIndex::Immutable(index) => index.remove_point(id),
-            MapIndex::OnDisk(index) => {
-                index.remove_point(id);
-                Ok(())
-            }
+            MapIndex::OnDisk(index) => index.remove_point(id),
         }
     }
 
