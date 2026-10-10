@@ -69,11 +69,13 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// [`PayloadIndexRead::numeric_index_for`]: crate::index::PayloadIndexRead::numeric_index_for
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_>;
 
-    /// Add this index's text statistics to `stats`, and report whether it is
-    /// a text index at all.
+    /// Add this index's text statistics to `stats`, counting only the
+    /// `corpus` points when given, and report whether it is a text index at
+    /// all.
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,
+        corpus: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<bool>;
 

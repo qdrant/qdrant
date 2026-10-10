@@ -393,10 +393,14 @@ impl LocalShard {
             ScoringQuery::Text(query) => {
                 // Same shape as the vector rescore: a filter on the prefetched ids
                 let filter = filter_with_sources_ids(sources.into_iter());
+                let idf_corpus = params
+                    .and_then(|params| params.idf)
+                    .and_then(|idf| idf.corpus().cloned());
 
                 let text_request = TextSearchRequestInternal {
                     query,
                     filter: Some(filter),
+                    idf_corpus,
                     limit,
                     score_threshold: score_threshold.map(OrderedFloat::into_inner),
                     with_vector: false.into(),

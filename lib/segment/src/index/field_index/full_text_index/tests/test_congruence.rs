@@ -682,3 +682,68 @@ fn removing_a_value_without_tokens_keeps_the_count(#[values(false, true)] phrase
     index.remove_point(0).unwrap();
     assert_eq!(index.points_count(), 0);
 }
+
+/// Corpus statistics count a term the same way whether the corpus documents
+/// are probed into its posting list or the list is walked against them, on
+/// every shape. `common` is held by `3 * CHUNK_LEN` points: two documents are
+/// probed into it, three walk it. `rare` is always walked.
+#[rstest]
+fn corpus_frequencies_agree_between_probe_and_walk(#[values(false, true)] phrase_matching: bool) {
+    use crate::data_types::query_context::TextFieldStats;
+    use crate::index::field_index::full_text_index::full_text_index_read::fill_text_statistics;
+
+    let _scope = ambient::test_guard();
+    let is_stopped = std::sync::atomic::AtomicBool::new(false);
+    let points = 3 * posting_list::CHUNK_LEN as PointOffsetType;
+    let text_of = |id: PointOffsetType| {
+        if id == points {
+            // Punctuation only: in a corpus, but no document.
+            "!!! ???".to_string()
+        } else if id.is_multiple_of(50) {
+            "common rare".to_string()
+        } else {
+            "common".to_string()
+        }
+    };
+
+    for index_type in TYPES {
+        let (mut builder, _temp_dir, _db) = create_builder(*index_type, phrase_matching);
+        for id in 0..=points {
+            builder
+                .add_point(id, &[&Value::String(text_of(id))])
+                .unwrap();
+        }
+        let index = builder.finalize().unwrap();
+
+        for corpus in [&[0, 1, points][..], &[0, 1, 50, points]] {
+            let mut stats = TextFieldStats {
+                df: ["common", "rare"].map(|term| (term.to_string(), 0)).into(),
+                ..Default::default()
+            };
+            fill_text_statistics(&index, &mut stats, Some(corpus), &is_stopped).unwrap();
+
+            let documents = &corpus[..corpus.len() - 1];
+            let holding = |term: &str| {
+                documents
+                    .iter()
+                    .filter(|&&id| text_of(id).split(' ').any(|token| token == term))
+                    .count()
+            };
+            assert_eq!(
+                stats.documents,
+                documents.len(),
+                "{index_type:?} {corpus:?}"
+            );
+            assert_eq!(
+                stats.df["common"],
+                holding("common"),
+                "{index_type:?} {corpus:?}"
+            );
+            assert_eq!(
+                stats.df["rare"],
+                holding("rare"),
+                "{index_type:?} {corpus:?}"
+            );
+        }
+    }
+}

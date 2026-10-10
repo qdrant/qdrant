@@ -50,6 +50,10 @@ impl Hash for TextScoringQuery {
 pub struct TextSearchRequestInternal {
     pub query: TextScoringQuery,
     pub filter: Option<Filter>,
+    /// The `idf` corpus of the request's search params: the points the text
+    /// statistics are gathered over, independent of `filter`. `None` gathers
+    /// them over every point.
+    pub idf_corpus: Option<Filter>,
     pub limit: usize,
     /// Keep only points scoring above this.
     pub score_threshold: Option<ScoreType>,
@@ -112,18 +116,20 @@ pub fn cut_at_threshold(points: &mut Vec<ScoredPoint>, score_threshold: Option<S
     }
 }
 
-/// A query context seeded with the text statistics of `field` for `terms`,
-/// ready to be filled over the shard's segments by
+/// A query context seeded with the text statistics of `field` for `terms`
+/// over `idf_corpus` (every point when `None`), ready to be filled over the
+/// shard's segments by
 /// [`fill_query_context`](super::query_context::fill_query_context).
 pub fn init_text_query_context(
     field: &JsonPath,
+    idf_corpus: Option<&Filter>,
     terms: &[String],
     is_stopped: Arc<AtomicBool>,
 ) -> QueryContext {
     // The threshold only picks between plain and indexed vector search.
     let mut query_context =
         QueryContext::new(usize::MAX, ambient::current()).with_is_stopped(is_stopped);
-    query_context.init_text_stats(field, terms.iter().cloned());
+    query_context.init_text_stats(field, idf_corpus, terms.iter().cloned());
     query_context
 }
 

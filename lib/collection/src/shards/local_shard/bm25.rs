@@ -14,12 +14,14 @@ impl LocalShard {
     ///
     /// The text is tokenized here, with the tokenizer of the field's index in
     /// this shard's payload schema, and scored against statistics gathered
-    /// over this shard's segments only.
+    /// over this shard's segments only, among the points matching
+    /// `idf_corpus` (all of them when `None`).
     #[allow(clippy::too_many_arguments)]
     pub async fn score_bm25(
         &self,
         query: &TextScoringQuery,
         filter: Option<Filter>,
+        idf_corpus: Option<&Filter>,
         limit: usize,
         with_payload: WithPayload,
         with_vector: WithVector,
@@ -34,6 +36,7 @@ impl LocalShard {
             terms,
             query.params,
             filter,
+            idf_corpus,
             limit,
             with_payload,
             with_vector,
@@ -58,6 +61,7 @@ impl LocalShard {
             let TextSearchRequestInternal {
                 query,
                 filter,
+                idf_corpus,
                 limit,
                 score_threshold,
                 with_vector,
@@ -68,6 +72,7 @@ impl LocalShard {
                     .score_bm25(
                         &query,
                         filter,
+                        idf_corpus.as_ref(),
                         limit,
                         WithPayload::from(with_payload),
                         with_vector,

@@ -88,7 +88,11 @@ fn text_statistics_are_summed_across_segments() {
     );
 
     let mut query_context = QueryContext::default();
-    query_context.init_text_stats(&field(), ["quick", "fox", "absent"].map(str::to_string));
+    query_context.init_text_stats(
+        &field(),
+        None,
+        ["quick", "fox", "absent"].map(str::to_string),
+    );
 
     first.fill_query_context(&mut query_context).unwrap();
     second.fill_query_context(&mut query_context).unwrap();

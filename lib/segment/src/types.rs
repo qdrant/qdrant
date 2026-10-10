@@ -682,22 +682,24 @@ pub struct SearchParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acorn: Option<AcornSearchParams>,
 
-    /// Which population sparse vector IDF statistics are computed over.
+    /// Which population IDF statistics are computed over.
     /// By default (or with explicit `"global"`) statistics are collection-wide.
-    /// Only applicable to sparse vectors with the IDF modifier enabled.
+    /// Only applicable to sparse vectors with the IDF modifier enabled, and to
+    /// BM25 over a text index.
     #[serde(default)]
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idf: Option<IdfParams>,
 }
 
-/// Population over which sparse vector IDF statistics are computed for scoring —
-/// the *IDF corpus*.
+/// Population over which IDF statistics are computed for scoring — the *IDF
+/// corpus*.
 ///
 /// - `"global"` — collection-wide statistics, same as omitting the parameter.
 /// - `{ "corpus": <filter> }` — document count and per-term document frequencies
-///   are computed over the points matching the corpus filter only. The corpus is
-///   independent of the retrieval filter and is usually broader than it.
+///   (and, for BM25 over a text index, the average document length) are computed
+///   over the points matching the corpus filter only. The corpus is independent
+///   of the retrieval filter and is usually broader than it.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum IdfParams {

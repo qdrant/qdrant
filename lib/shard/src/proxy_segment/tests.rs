@@ -1316,7 +1316,7 @@ fn test_score_bm25_hides_proxy_deletions() {
     let terms = ["alpha".to_owned(), "gamma".to_owned()];
     let score = |segment: &dyn ReadSegmentEntry, stats_from: &dyn ReadSegmentEntry| {
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field, terms.iter().cloned());
+        query_context.init_text_stats(&field, None, terms.iter().cloned());
         stats_from.fill_query_context(&mut query_context).unwrap();
         segment
             .score_bm25(
@@ -1404,7 +1404,7 @@ fn test_bm25_skips_a_stale_wrapped_text_index() {
         let mut proxy = ProxySegment::new(wrapped);
         change(&mut proxy);
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field, terms.iter().cloned());
+        query_context.init_text_stats(&field, None, terms.iter().cloned());
         proxy.fill_query_context(&mut query_context).unwrap();
         let documents = query_context.mut_text_stats()[&field].documents;
         let scored = proxy

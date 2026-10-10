@@ -283,11 +283,12 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,
+        corpus: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<bool> {
         match self {
             ReadOnlyFieldIndex::FullTextIndex(index) => {
-                fill_text_statistics(index, stats, is_stopped)?;
+                fill_text_statistics(index, stats, corpus, is_stopped)?;
                 Ok(true)
             }
             ReadOnlyFieldIndex::IntIndex(_)

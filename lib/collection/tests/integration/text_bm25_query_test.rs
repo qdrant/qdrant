@@ -1,6 +1,8 @@
 //! BM25 over a text index through the collection's query path: tokenized and
 //! gathered per shard, merged across shards.
 
+use std::collections::HashMap;
+
 use ahash::AHashSet;
 use collection::collection::Collection;
 use collection::operations::CollectionUpdateOperations;
@@ -18,8 +20,8 @@ use segment::data_types::vectors::NamedQuery;
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, Payload, PayloadFieldSchema,
-    PayloadSchemaParams, ScoredPoint,
+    Condition, ExtendedPointId, Filter, HasIdCondition, IdfCorpusParams, IdfParams, Payload,
+    PayloadFieldSchema, PayloadSchemaParams, ScoredPoint, SearchParams,
 };
 use serde_json::Map;
 use shard::query::query_enum::QueryEnum;
@@ -433,5 +435,158 @@ async fn text_query_normalizes_by_length_when_the_index_scores() {
             id_of(point),
             point.score,
         );
+    }
+}
+
+/// A corpus-scoped `idf` gathers `N`, `df` and `avgdl` over the corpus alone,
+/// and does not filter: every point scores by BM25 by definition over the
+/// corpus, those outside it included.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_query_scores_over_the_idf_corpus() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let params = TextIndexParams {
+        scoring: Some(TextScoringParams::default()),
+        ..TextIndexParams::default()
+    };
+    let collection = text_collection_with(dir.path(), 1, params).await;
+
+    // Half of these hold `gamma`, against 30 of all 35 points, and they are
+    // the shortest documents.
+    let corpus = 0..10;
+    let corpus_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(
+        corpus
+            .clone()
+            .map(ExtendedPointId::from)
+            .collect::<AHashSet<_>>(),
+    )));
+    let points = query(
+        &collection,
+        ShardQueryRequest {
+            params: Some(SearchParams {
+                idf: Some(IdfParams::Corpus(IdfCorpusParams {
+                    corpus: corpus_filter,
+                })),
+                ..SearchParams::default()
+            }),
+            ..request(text_query("alpha gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+
+    let Bm25Params { k1, b } = Bm25Params::default();
+    let counts = |i: u64| {
+        let text = text_of(i);
+        let count = |term| text.split(' ').filter(|t| *t == term).count() as ScoreType;
+        (count("alpha"), count("gamma"))
+    };
+    let n = corpus.clone().count() as ScoreType;
+    let avgdl = corpus
+        .clone()
+        .map(|i| {
+            let (alpha, gamma) = counts(i);
+            alpha + gamma
+        })
+        .sum::<ScoreType>()
+        / n;
+    let df_gamma = corpus.filter(|&i| counts(i).1 > 0.0).count() as ScoreType;
+    let expected = |i: u64| {
+        let (alpha, gamma) = counts(i);
+        let norm = k1 * (1.0 - b + b * (alpha + gamma) / avgdl);
+        let term = |tf: ScoreType, df: ScoreType| {
+            if tf == 0.0 {
+                0.0
+            } else {
+                fancy_idf(n, df).max(0.0) * tf * (k1 + 1.0) / (tf + norm)
+            }
+        };
+        term(alpha, n) + term(gamma, df_gamma)
+    };
+
+    assert_eq!(points.len(), POINTS as usize);
+    for point in &points {
+        let reference = expected(id_of(point));
+        assert!(
+            (point.score - reference).abs() <= 1e-4 * reference.max(1.0),
+            "point {}: engine {}, reference {reference}",
+            id_of(point),
+            point.score,
+        );
+    }
+}
+
+/// A text rescore takes the `idf` corpus from its own params: every prefetched
+/// point scores as the corpus-scoped text query scores it, not as the global
+/// one does.
+#[tokio::test(flavor = "multi_thread")]
+async fn text_rescore_scores_over_the_idf_corpus() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let params = TextIndexParams {
+        scoring: Some(TextScoringParams::default()),
+        ..TextIndexParams::default()
+    };
+    let collection = text_collection_with(dir.path(), 1, params).await;
+    let corpus = || SearchParams {
+        idf: Some(IdfParams::Corpus(IdfCorpusParams {
+            corpus: Filter::new_must(Condition::HasId(HasIdCondition::from(
+                (0..10).map(ExtendedPointId::from).collect::<AHashSet<_>>(),
+            ))),
+        })),
+        ..SearchParams::default()
+    };
+    // Ranks low ids first, all of which hold `alpha`.
+    let dense = ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+        vec![0.0, -1.0, 0.0, 0.0].into(),
+        "",
+    )));
+
+    let rescored = query(
+        &collection,
+        ShardQueryRequest {
+            prefetches: vec![ShardPrefetch {
+                prefetches: Vec::new(),
+                query: Some(dense),
+                limit: 8,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            params: Some(corpus()),
+            ..request(text_query("alpha gamma"), POINTS as usize, 0)
+        },
+        ShardSelectorInternal::All,
+    )
+    .await;
+    let scores = |points: Vec<ScoredPoint>| {
+        points
+            .iter()
+            .map(|point| (id_of(point), point.score))
+            .collect::<HashMap<_, _>>()
+    };
+    let over_corpus = scores(
+        query(
+            &collection,
+            ShardQueryRequest {
+                params: Some(corpus()),
+                ..request(text_query("alpha gamma"), POINTS as usize, 0)
+            },
+            ShardSelectorInternal::All,
+        )
+        .await,
+    );
+    let global = scores(
+        query(
+            &collection,
+            request(text_query("alpha gamma"), POINTS as usize, 0),
+            ShardSelectorInternal::All,
+        )
+        .await,
+    );
+
+    assert_eq!(rescored.len(), 8);
+    for point in &rescored {
+        let id = id_of(point);
+        assert_eq!(point.score, over_corpus[&id], "point {id}");
+        assert_ne!(point.score, global[&id], "point {id}");
     }
 }
