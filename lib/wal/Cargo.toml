@@ -13,6 +13,15 @@ publish = false
 [lints]
 workspace = true
 
+[[bin]]
+name = "wal-ctl"
+path = "src/bin/wal-ctl.rs"
+# Bin only; build with --features wal-ctl
+required-features = ["wal-ctl"]
+
+[features]
+wal-ctl = ["dep:docopt", "dep:env_logger"]
+
 [dependencies]
 byteorder = { workspace = true }
 crc32c = "0.6.8"
@@ -26,15 +35,18 @@ rand_distr = { workspace = true }
 # to use direct functions on FreeBSD
 rustix = { version = "1", features = ["fs"] }
 
-# Binary dependencies
-docopt = "1.1"
-env_logger = { workspace = true }
+# Bin-only and test logging
 serde = { workspace = true }
+docopt = { version = "1.1", optional = true }
+env_logger = { workspace = true, optional = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
 crc = "3.4.0"
 criterion = { workspace = true }
+# Examples and tests
+docopt = "1.1"
+env_logger = { workspace = true }
 hdrhistogram = "7.5.4"
 quickcheck = "1.1.0"
 regex = "1.12.3"
