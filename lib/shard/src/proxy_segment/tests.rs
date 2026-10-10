@@ -187,7 +187,7 @@ fn test_search_batch_equivalence_single() {
     eprintln!("search_result = {search_result:#?}");
 
     let ctx = AmbientContext::new();
-    let query_context = QueryContext::new(10000, Handoff::measured(AmbientContext::clone(&ctx)));
+    let query_context = QueryContext::new(10000, Handoff::Measured(AmbientContext::clone(&ctx)));
     let segment_query_context = query_context.get_segment_query_context();
 
     let search_batch_result = proxy_segment
