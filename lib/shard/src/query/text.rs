@@ -62,10 +62,10 @@ pub struct TextSearchRequestInternal {
 }
 
 impl TextSearchRequestInternal {
-    /// Priced like a scroll: a base cost plus the filters'.
+    /// Priced like a scroll: a base cost plus the filter's.
     pub fn text_rate_cost(&self) -> usize {
         let mut cost = operation_rate_cost::BASE_COST;
-        for filter in [&self.filter, &self.idf_corpus].into_iter().flatten() {
+        if let Some(filter) = &self.filter {
             cost += operation_rate_cost::filter_rate_cost(filter);
         }
         cost
