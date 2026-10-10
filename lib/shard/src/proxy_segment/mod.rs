@@ -1,5 +1,6 @@
 pub mod segment_entry;
 pub mod snapshot_entry;
+mod vector_index_info;
 
 #[cfg(test)]
 mod tests;

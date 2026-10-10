@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
 use segment::common::operation_error::OperationResult;
-use segment::entry::ReadSegmentEntry;
-use segment::types::{PayloadIndexInfo, PayloadKeyType};
+use segment::entry::{ReadSegmentEntry, VectorIndexInfo, VectorIndexInfoProvider};
+use segment::types::{PayloadIndexInfo, PayloadKeyType, VectorNameBuf};
 
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Debug)]
 pub struct ShardInfo {
@@ -18,6 +21,9 @@ pub struct ShardInfo {
     /// Indexed vectors in large segments are faster to query,
     /// as it is stored in vector index (HNSW).
     pub indexed_vectors_count: usize,
+    /// One entry per segment and vector name, including empty storages; order is unspecified.
+    /// Captured per segment during this call and may change before a query runs.
+    pub vector_indexes: HashMap<VectorNameBuf, Vec<VectorIndexInfo>>,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
 }
@@ -28,13 +34,20 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let mut segments_count = 0;
         let mut points_count = 0;
         let mut indexed_vectors_count = 0;
+        let mut vector_indexes = HashMap::<VectorNameBuf, Vec<VectorIndexInfo>>::new();
         let mut payload_schema = HashMap::new();
 
         for segment in &self.segments {
             self.check_stopped()?;
             segments_count += 1;
 
-            let segment_info = segment.read_segment().info()?;
+            let segment = segment.read_segment();
+            let segment_info = segment.info()?;
+
+            for (name, index) in segment.vector_index_info() {
+                self.check_stopped()?;
+                vector_indexes.entry(name).or_default().push(index);
+            }
 
             points_count += segment_info.num_points;
             indexed_vectors_count += segment_info.num_indexed_vectors;
@@ -47,10 +60,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             }
         }
 
+        self.check_stopped()?;
         Ok(ShardInfo {
             segments_count,
             points_count,
             indexed_vectors_count,
+            vector_indexes,
             payload_schema,
         })
     }

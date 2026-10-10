@@ -16,9 +16,11 @@ pub mod struct_payload_index;
 mod universal_io;
 pub mod vector_index_base;
 mod vector_index_search_common;
+mod vector_index_type;
 mod visited_pool;
 
 pub use condition_checker::ConditionCheckerEnum;
 pub use payload_index_base::*;
 pub use universal_io::UniversalReadExt;
 pub use vector_index_base::*;
+pub use vector_index_type::VectorIndexType;

@@ -11,6 +11,7 @@ use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::Inve
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
+use super::VectorIndexType;
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
@@ -26,6 +27,9 @@ use crate::types::{Filter, SearchParams};
 /// only requires this trait, which makes it possible to implement read-only
 /// segments without duplicating index code.
 pub trait VectorIndexRead {
+    /// Does not load deferred index files.
+    fn index_type(&self) -> VectorIndexType;
+
     /// Return list of Ids with fitting
     fn search(
         &self,
@@ -181,6 +185,20 @@ impl VectorIndexEnum {
 }
 
 impl VectorIndexRead for VectorIndexEnum {
+    fn index_type(&self) -> VectorIndexType {
+        match self {
+            Self::Plain(index) => index.index_type(),
+            Self::Hnsw(index) => index.index_type(),
+            Self::SparseRam(_)
+            | Self::SparseCompressedImmutableRamF32(_)
+            | Self::SparseCompressedImmutableRamF16(_)
+            | Self::SparseCompressedImmutableRamU8(_)
+            | Self::SparseCompressedMmapF32(_)
+            | Self::SparseCompressedMmapF16(_)
+            | Self::SparseCompressedMmapU8(_) => VectorIndexType::Sparse,
+        }
+    }
+
     fn search(
         &self,
         vectors: &[&QueryVector],

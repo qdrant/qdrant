@@ -7,12 +7,19 @@ use super::ReadOnlyHNSWIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
-use crate::index::{UniversalReadExt, VectorIndexRead};
+use crate::index::{UniversalReadExt, VectorIndexRead, VectorIndexType};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 use crate::vector_storage::VectorStorageRead;
 
 impl<S: UniversalReadExt + 'static> VectorIndexRead for ReadOnlyHNSWIndex<S> {
+    fn index_type(&self) -> VectorIndexType {
+        VectorIndexType::Hnsw {
+            m: self.config.m,
+            payload_m: self.config.payload_m,
+        }
+    }
+
     fn search(
         &self,
         vectors: &[&QueryVector],
