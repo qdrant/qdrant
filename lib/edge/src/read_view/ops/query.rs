@@ -66,9 +66,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             scrolls,
             texts,
         } = planned_query;
-        if !texts.is_empty() {
-            return Err(text_not_supported());
-        }
 
         let mut search_results = self.search_batch(&searches)?;
 
@@ -78,11 +75,18 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             scroll_results.push(self.query_scroll(scroll)?);
         }
 
+        let mut text_results = self.text_search_batch(&texts)?;
+
         let mut scored_points_batch = Vec::with_capacity(root_plans.len());
         for (root_plan, offset) in root_plans.into_iter().zip(offsets) {
             self.check_stopped()?;
-            let scored_points =
-                self.resolve_plan(root_plan, offset, &mut search_results, &mut scroll_results)?;
+            let scored_points = self.resolve_plan(
+                root_plan,
+                offset,
+                &mut search_results,
+                &mut scroll_results,
+                &mut text_results,
+            )?;
 
             scored_points_batch.push(scored_points)
         }
@@ -96,6 +100,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         offset: usize,
         search_results: &mut Vec<Vec<ScoredPoint>>,
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
+        text_results: &mut Vec<Vec<ScoredPoint>>,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let RootPlan {
@@ -104,7 +109,8 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             with_vector,
         } = root_plan;
 
-        let mut results = self.recurse_prefetch(merge_plan, search_results, scroll_results, 0)?;
+        let mut results =
+            self.recurse_prefetch(merge_plan, search_results, scroll_results, text_results, 0)?;
         results.drain(..offset.min(results.len()));
 
         let [result] = self
@@ -124,6 +130,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         merge_plan: MergePlan,
         search_results: &mut Vec<Vec<ScoredPoint>>,
         scroll_results: &mut Vec<Vec<ScoredPoint>>,
+        text_results: &mut Vec<Vec<ScoredPoint>>,
         depth: usize,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
@@ -147,14 +154,14 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                     sources.push(take_prefetched_source(scroll_results, idx)?)
                 }
 
-                // Refused before planning resolves, see `query_batch`.
-                Source::TextsIdx(_) => return Err(text_not_supported()),
+                Source::TextsIdx(idx) => sources.push(take_prefetched_source(text_results, idx)?),
 
                 Source::Prefetch(merge_plan) => {
                     let merged = self.recurse_prefetch(
                         *merge_plan,
                         search_results,
                         scroll_results,
+                        text_results,
                         depth + 1,
                     )?;
 
@@ -286,7 +293,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
             ScoringQuery::Mmr(mmr) => self.mmr_rescore(sources, mmr, limit),
             // Refused when the query is planned, see `MergePlan::validate`.
-            ScoringQuery::Text(_) => Err(text_not_supported()),
+            ScoringQuery::Text(_) => Err(OperationError::service_error(
+                "BM25 over a text index cannot rescore prefetches",
+            )),
         }
     }
 
@@ -443,11 +452,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         Ok(query_response)
     }
-}
-
-/// Edge keeps no shard-level path for BM25 over a text index yet.
-fn text_not_supported() -> OperationError {
-    OperationError::validation_error("BM25 over a text index is not supported on edge yet")
 }
 
 fn take_prefetched_source<T: Default>(items: &mut [T], index: usize) -> OperationResult<T> {

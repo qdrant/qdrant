@@ -11,7 +11,9 @@ use segment::data_types::query_context::QueryContext;
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::field_index::full_text_index::tokenizers::Tokenizer;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadSchemaParams, WithPayloadInterface, WithVector};
+use segment::types::{
+    Filter, PayloadFieldSchema, PayloadSchemaParams, ScoredPoint, WithPayloadInterface, WithVector,
+};
 use serde::Serialize;
 
 use crate::operation_rate_cost;
@@ -71,7 +73,16 @@ impl TextScoringQuery {
     /// query. A field the schema holds no text index for is an error: there
     /// is nothing to score it with.
     pub fn tokenize(&self, schema: &PayloadIndexSchema) -> OperationResult<Vec<String>> {
-        let field_schema = schema.schema.get(&self.field).ok_or_else(|| {
+        self.tokenize_field(schema.schema.get(&self.field))
+    }
+
+    /// Like [`tokenize`](Self::tokenize), given the schema of the field
+    /// alone, `None` when the field has no index.
+    pub fn tokenize_field(
+        &self,
+        field_schema: Option<&PayloadFieldSchema>,
+    ) -> OperationResult<Vec<String>> {
+        let field_schema = field_schema.ok_or_else(|| {
             OperationError::validation_error(format!(
                 "BM25 requires a text index on field {}, which has none",
                 self.field,
@@ -88,6 +99,16 @@ impl TextScoringQuery {
         let mut terms = Vec::new();
         tokenizer.tokenize_query(&self.text, |token| terms.push(token.into_owned()));
         Ok(terms)
+    }
+}
+
+/// Keep only the points scoring above `score_threshold`, from a list sorted
+/// best first. Strict, as the threshold of a search over a larger-is-better
+/// distance.
+pub fn cut_at_threshold(points: &mut Vec<ScoredPoint>, score_threshold: Option<ScoreType>) {
+    if let Some(threshold) = score_threshold {
+        let keep = points.partition_point(|point| point.score > threshold);
+        points.truncate(keep);
     }
 }
 
@@ -111,7 +132,7 @@ mod tests {
     use std::collections::HashMap;
 
     use segment::data_types::index::{Language, StopwordsInterface, TextIndexParams};
-    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+    use segment::types::PayloadSchemaType;
 
     use super::*;
 

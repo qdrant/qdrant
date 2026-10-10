@@ -1,5 +1,6 @@
 //! Fluent builders for user-facing edge crate configuration and requests.
 
+pub mod bm25_params;
 pub mod count_request;
 pub mod edge_config;
 pub mod edge_sparse_vector_params;
@@ -12,7 +13,10 @@ pub mod retrieve_request;
 pub mod scroll_request;
 pub mod search_matrix_request;
 pub mod search_request;
+pub mod text_index_params;
+pub mod text_query;
 
+pub use bm25_params::Bm25ParamsBuilder;
 pub use count_request::CountRequestBuilder;
 pub use edge_config::EdgeConfigBuilder;
 pub use edge_sparse_vector_params::EdgeSparseVectorParamsBuilder;
@@ -25,3 +29,5 @@ pub use retrieve_request::RetrieveRequestBuilder;
 pub use scroll_request::ScrollRequestBuilder;
 pub use search_matrix_request::SearchMatrixRequestBuilder;
 pub use search_request::SearchRequestBuilder;
+pub use text_index_params::TextIndexParamsBuilder;
+pub use text_query::TextQueryBuilder;
