@@ -46,11 +46,6 @@ impl CollectionContainer for TableOfContent {
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         self.general_runtime.block_on(async {
-            // Validation:
-            // 1. Check that we are not removing some unique shards (removed)
-
-            // Validation passed
-
             self.remove_shards_at_peer(peer_id).await?;
 
             if self.this_peer_id == peer_id {
@@ -392,6 +387,14 @@ impl TableOfContent {
 
     async fn remove_shards_at_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
         let collections = self.collections.read().await;
+
+        // A later collection can reject a resharding abort. Check every collection before
+        // cleanup writes, so rejection leaves earlier collections unchanged.
+        // Consensus serializes resharding and transfer changes between these two passes.
+        for collection in collections.values() {
+            collection.check_remove_shards_at_peer(peer_id).await?;
+        }
+
         for collection in collections.values() {
             collection.remove_shards_at_peer(peer_id).await?;
         }
