@@ -39,8 +39,9 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(operation, WaitUntil::from(false), true)
-            .await?;
+        let update_result = self
+            .update_all_local(operation, WaitUntil::from(false), true)
+            .await;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
         // new vector schema. Otherwise optimization-built destination segments use the
@@ -52,10 +53,13 @@ impl Collection {
         //
         // Skipped if the vector already existed with the same schema: recreating optimizers
         // cancels in-flight optimizations, and clients may re-send the same request on every run.
+        // So it must not be skipped if the shard update fails: a retry would see unchanged params,
+        // while some shards may have applied the new vector already.
         if params_changed {
             self.recreate_optimizers_background();
         }
 
+        update_result?;
         Ok(())
     }
 
