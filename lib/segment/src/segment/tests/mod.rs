@@ -24,7 +24,7 @@ use crate::common::operation_error::OperationError::PointIdError;
 use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::OrderBy;
+use crate::data_types::order_by::{Direction, OrderBy, OrderValue, StartFrom};
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{
     DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, VectorInternal, VectorRef,
@@ -2913,4 +2913,125 @@ fn test_flush_survives_concurrent_field_index_drop() {
     // at version 3. A cancelled (aborted) flush would have left the persisted
     // version at 0.
     assert_eq!(segment.persistent_version(), 3);
+}
+
+/// `order_by.start_from` must be exact for integers above 2^53, where `i as f64` rounds.
+///
+/// Regression test: the value stream was bounded by a rounded f64, so ascending reads
+/// dropped the point equal to `start_from` and descending reads could return points
+/// on the wrong side of it.
+#[test]
+fn test_read_ordered_start_from_is_exact_for_large_integers() {
+    init_logger();
+    let hw_counter = HardwareCounterCell::new();
+
+    // (first value, step between values)
+    let cases: [(i64, i64); 6] = [
+        (-(1 << 60), 1),
+        (0, 1),
+        (1 << 52, 1),
+        (1 << 53, 1),
+        (1 << 60, 1),
+        (1_780_000_000_000_000_000, 1_000_000),
+    ];
+
+    for (base, step) in cases {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
+        let values: Vec<i64> = (0..6).map(|i| base + i * step).collect();
+
+        for (i, value) in values.iter().enumerate() {
+            let point_id = PointIdType::from(i as u64 + 1);
+            segment
+                .upsert_point(
+                    i as u64 * 2,
+                    point_id,
+                    only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+                    &hw_counter,
+                )
+                .unwrap();
+            let mut payload = Payload::default();
+            payload
+                .0
+                .insert("n".to_string(), Value::Number(Number::from(*value)));
+            payload.0.insert("group".to_string(), "all".into());
+            segment
+                .set_full_payload(i as u64 * 2 + 1, point_id, &payload, &hw_counter)
+                .unwrap();
+        }
+        segment
+            .create_field_index(
+                100,
+                &JsonPath::new("n"),
+                Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+                &hw_counter,
+            )
+            .unwrap();
+
+        segment
+            .create_field_index(
+                101,
+                &JsonPath::new("group"),
+                Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+                &hw_counter,
+            )
+            .unwrap();
+        // Matches every point; the two read paths (value stream, or filter first and
+        // then sort) are picked from the filter and limit, so cover both.
+        let match_all = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("group"),
+            Match::new_value(ValueVariants::String("all".to_string())),
+        )));
+
+        for direction in [Direction::Asc, Direction::Desc] {
+            for start in &values {
+                let mut expected: Vec<i64> = values
+                    .iter()
+                    .copied()
+                    .filter(|v| match direction {
+                        Direction::Asc => v >= start,
+                        Direction::Desc => v <= start,
+                    })
+                    .collect();
+                if direction == Direction::Desc {
+                    expected.reverse();
+                }
+
+                for (limit, filter) in [Some(1), Some(3), None]
+                    .into_iter()
+                    .flat_map(|limit| [(limit, None), (limit, Some(&match_all))])
+                {
+                    let found: Vec<i64> = segment
+                        .read_ordered_filtered(
+                            limit,
+                            filter,
+                            &OrderBy {
+                                key: JsonPath::new("n"),
+                                direction: Some(direction),
+                                start_from: Some(StartFrom::Integer(*start)),
+                            },
+                            &AtomicBool::new(false),
+                            &hw_counter,
+                            DeferredBehavior::VisibleOnly,
+                        )
+                        .unwrap()
+                        .into_iter()
+                        .map(|(value, _)| match value {
+                            OrderValue::Int(value) => value,
+                            OrderValue::Float(value) => panic!("unexpected float {value}"),
+                        })
+                        .collect();
+
+                    let wanted =
+                        &expected[..limit.map_or(expected.len(), |l| l.min(expected.len()))];
+                    assert_eq!(
+                        found,
+                        wanted,
+                        "base {base}, {direction:?} from {start}, limit {limit:?}, filtered {}",
+                        filter.is_some()
+                    );
+                }
+            }
+        }
+    }
 }
