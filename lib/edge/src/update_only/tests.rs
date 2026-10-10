@@ -1262,7 +1262,7 @@ fn recovery_after_a_failed_reload_keeps_the_committed_vector() {
     use crate::read_only::tests::VECTOR_NAME;
 
     init_serverless_feature_flags();
-    let _hw = common::counter::hw::unmeasured_guard(common::reason::reason("Test code"));
+    let _scope = common::ambient::unmeasured_guard(common::reason::reason("Test code"));
     let dir = leader_with_ten_points("edge-relink-reload");
     let manifest: SegmentsManifest =
         serde_json::from_slice(&fs_err::read(segment_manifest_path(dir.path())).unwrap()).unwrap();
@@ -1331,7 +1331,7 @@ fn recovery_after_a_failed_reload_keeps_the_committed_vector() {
     reader.live_reload(bound).unwrap();
 
     let query = QueryVector::Nearest(VectorInternal::Dense(vec![1.0]));
-    let context = QueryContext::new(0, common::counter::hw::current());
+    let context = QueryContext::new(0, common::ambient::current());
     let hits = reader
         .search_batch(
             VECTOR_NAME,
