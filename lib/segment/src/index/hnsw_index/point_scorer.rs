@@ -62,6 +62,49 @@ pub struct ScorerFilters<'a> {
     deleted: NotDeletedChecker<'a>,
 }
 
+/// Scores points given by their position in `to_global` with a scorer over segment ids.
+struct RemappedRawScorer<'a> {
+    inner: Box<dyn RawScorer + 'a>,
+    to_global: &'a [PointOffsetType],
+}
+
+impl RawScorer for RemappedRawScorer<'_> {
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
+        let mut global = [0; VECTOR_READ_BATCH_SIZE];
+        for (points, scores) in points
+            .chunks(VECTOR_READ_BATCH_SIZE)
+            .zip(scores.chunks_mut(VECTOR_READ_BATCH_SIZE))
+        {
+            let global = &mut global[..points.len()];
+            for (global, &local) in global.iter_mut().zip(points) {
+                *global = self.to_global[local as usize];
+            }
+            self.inner.score_points(global, scores)?;
+        }
+        Ok(())
+    }
+
+    fn score_point(&self, point: PointOffsetType) -> OperationResult<ScoreType> {
+        self.inner.score_point(self.to_global[point as usize])
+    }
+
+    fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        self.inner.score_internal(
+            self.to_global[point_a as usize],
+            self.to_global[point_b as usize],
+        )
+    }
+
+    fn scorer_bytes(&self) -> Option<&dyn QueryScorerBytes> {
+        // Graph building scores by id only.
+        None
+    }
+}
+
 impl<'a> ScorerFilters<'a> {
     pub fn new(
         filter_context: Option<OptimizedFilter<'a>>,
@@ -209,6 +252,37 @@ impl<'a> FilteredScorer<'a> {
         Ok(FilteredScorer {
             raw_scorer,
             filters: ScorerFilters::new(filter_context, vectors.not_deleted_checker(point_deleted)),
+            scores_buffer: Vec::new(),
+        })
+    }
+
+    /// Scorer for a payload block built in its own id space: point ids are positions in
+    /// `to_global`, which maps them to segment ids, and `block_deleted` holds one flag per block
+    /// point. Scores are those of [`Self::new_internal`] for the same segment points.
+    pub fn new_block_scorer<V, Q>(
+        point_id: PointOffsetType,
+        to_global: &'a [PointOffsetType],
+        vectors: &'a V,
+        quantized_vectors: Option<&'a Q>,
+        block_deleted: &'a BitSlice,
+    ) -> OperationResult<Self>
+    where
+        V: VectorStorageRead + RawScorerBuilder,
+        Q: QuantizedVectorsRead,
+    {
+        let scorer = Self::new_internal(point_id, vectors, quantized_vectors, None, block_deleted)?;
+        Ok(FilteredScorer {
+            raw_scorer: Box::new(RemappedRawScorer {
+                inner: scorer.raw_scorer,
+                to_global,
+            }),
+            filters: ScorerFilters::new(
+                None,
+                NotDeletedChecker {
+                    point_deleted: block_deleted,
+                    vec_deleted: block_deleted,
+                },
+            ),
             scores_buffer: Vec::new(),
         })
     }
