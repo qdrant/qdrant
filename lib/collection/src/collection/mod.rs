@@ -331,8 +331,11 @@ impl Collection {
     }
 
     pub async fn stop_gracefully(&self) {
+        log::info!("stop_gracefully: acquiring shards_holder write lock");
         let mut owned_holder = self.shards_holder.write().await;
+        log::info!("stop_gracefully: stopping shards");
         owned_holder.stop_gracefully().await;
+        log::info!("stop_gracefully: collection stopped");
     }
 
     /// Check if stored version have consequent version.
