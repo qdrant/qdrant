@@ -39,6 +39,38 @@ const TEST_PEER_ID: PeerId = 1;
 const STALLED_RECOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_stopped_replica_cannot_restore_snapshot() {
+    let target_dir = Builder::new()
+        .prefix("stopped-restore-target")
+        .tempdir()
+        .unwrap();
+    let (source_dir, snapshot_path) = new_shard_snapshot().await;
+    let target = new_shard_replica_set(&target_dir, TEST_TARGET_SHARD_ID).await;
+    let shard_flag = shard_initializing_flag_path(target_dir.path(), TEST_TARGET_SHARD_ID);
+
+    target.stop_gracefully().await;
+    let result = target
+        .restore_local_replica_from(
+            &snapshot_path,
+            RecoveryType::Full,
+            target_dir.path(),
+            cancel::CancellationToken::new(),
+        )
+        .await;
+
+    assert!(matches!(result, Err(CollectionError::NotFound { .. })));
+    assert!(
+        !shard_flag.exists(),
+        "stopped restore touched the shard directory"
+    );
+    assert!(
+        LocalShard::check_data(&snapshot_path),
+        "stopped restore consumed the snapshot"
+    );
+    drop(source_dir);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_dirty() {
     let target_collection_dir = Builder::new()
         .prefix("snapshot-recovery-cancel-target")
@@ -294,19 +326,6 @@ async fn count_points(replica_set: &ShardReplicaSet) -> usize {
         .expect("failed to count points")
         .expect("local shard must be present")
         .count
-}
-
-fn install_restore_local_replica_before_flag_hook(
-    shard_flag: std::path::PathBuf,
-    reached: oneshot::Sender<()>,
-    release: oneshot::Receiver<()>,
-) {
-    let mut hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK.lock().unwrap();
-    assert!(
-        hook.is_none(),
-        "restore-local-replica test hook is already installed"
-    );
-    *hook = Some((shard_flag, reached, release));
 }
 
 async fn new_shard_replica_set(collection_dir: &TempDir, shard_id: ShardId) -> ShardReplicaSet {

@@ -21,15 +21,32 @@ use crate::shards::shard_initializing_flag_path;
 
 #[cfg(test)]
 type RestoreLocalReplicaBeforeFlagHook = (
-    std::path::PathBuf,
     tokio::sync::oneshot::Sender<()>,
     tokio::sync::oneshot::Receiver<()>,
 );
 
 #[cfg(test)]
-static RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK: std::sync::Mutex<
-    Option<RestoreLocalReplicaBeforeFlagHook>,
-> = std::sync::Mutex::new(None);
+static RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOKS: std::sync::LazyLock<
+    std::sync::Mutex<
+        std::collections::HashMap<std::path::PathBuf, RestoreLocalReplicaBeforeFlagHook>,
+    >,
+> = std::sync::LazyLock::new(Default::default);
+
+#[cfg(test)]
+pub(crate) fn install_restore_local_replica_before_flag_hook(
+    shard_flag: std::path::PathBuf,
+    reached: tokio::sync::oneshot::Sender<()>,
+    release: tokio::sync::oneshot::Receiver<()>,
+) {
+    let old = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOKS
+        .lock()
+        .unwrap()
+        .insert(shard_flag, (reached, release));
+    assert!(
+        old.is_none(),
+        "restore-local-replica test hook is already installed"
+    );
+}
 
 impl ShardReplicaSet {
     pub async fn create_snapshot(
@@ -187,6 +204,7 @@ impl ShardReplicaSet {
         };
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
+        self.ensure_not_stopped()?;
 
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
 
@@ -426,6 +444,7 @@ impl ShardReplicaSet {
         }
 
         let mut local = self.local.write().await;
+        self.ensure_not_stopped()?;
 
         // Mark the shard as initializing before touching disk, so a crash during or
         // after clearing is detected on next startup and the shard is reloaded as a
@@ -470,19 +489,12 @@ impl ShardReplicaSet {
 
 #[cfg(test)]
 async fn wait_restore_local_replica_before_flag_hook_for_test(shard_flag: &Path) {
-    let hook = {
-        let mut hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOK.lock().unwrap();
-        if hook
-            .as_ref()
-            .is_some_and(|(expected_shard_flag, _, _)| expected_shard_flag.as_path() == shard_flag)
-        {
-            hook.take()
-        } else {
-            None
-        }
-    };
+    let hook = RESTORE_LOCAL_REPLICA_BEFORE_FLAG_HOOKS
+        .lock()
+        .unwrap()
+        .remove(shard_flag);
 
-    if let Some((_expected_shard_flag, reached, release)) = hook {
+    if let Some((reached, release)) = hook {
         let _ = reached.send(());
         let _ = release.await;
     }

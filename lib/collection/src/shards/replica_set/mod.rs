@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
@@ -97,6 +98,8 @@ use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
 ///
 pub struct ShardReplicaSet {
     local: RwLock<Option<Shard>>, // Abstract Shard to be able to use a Proxy during replication
+    /// Set under `local.write()` before this replica set's shard directory can be removed.
+    stopped: AtomicBool,
     remotes: RwLock<Vec<RemoteShard>>,
     replica_state: Arc<SaveOnDisk<ReplicaSetState>>,
     /// List of peers that are marked as dead locally, but are not yet submitted to the consensus.
@@ -211,6 +214,7 @@ impl ShardReplicaSet {
             shard_id,
             shard_key: parking_lot::RwLock::new(shard_key),
             local: RwLock::new(local),
+            stopped: AtomicBool::new(false),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
             locally_disabled_peers: Default::default(),
@@ -343,6 +347,7 @@ impl ShardReplicaSet {
             shard_id,
             shard_key: parking_lot::RwLock::new(shard_key),
             local: RwLock::new(local),
+            stopped: AtomicBool::new(false),
             remotes: RwLock::new(remote_shards),
             replica_state: replica_state.into(),
             // TODO: move to collection config
@@ -377,9 +382,22 @@ impl ShardReplicaSet {
     }
 
     pub async fn stop_gracefully(&self) {
-        if let Some(local) = self.local.write().await.take() {
+        let mut local = self.local.write().await;
+        self.stopped.store(true, Ordering::Relaxed);
+        if let Some(local) = local.take() {
             local.stop_gracefully().await;
         }
+    }
+
+    /// Call only while holding `local.write()`, which orders this check with stopping.
+    fn ensure_not_stopped(&self) -> CollectionResult<()> {
+        if self.stopped.load(Ordering::Relaxed) {
+            return Err(CollectionError::not_found(format!(
+                "Shard {}:{} was stopped or removed",
+                self.collection_id, self.shard_id,
+            )));
+        }
+        Ok(())
     }
 
     /// Synchronously flush every segment in the local shard. Test-only — `stop_gracefully`
