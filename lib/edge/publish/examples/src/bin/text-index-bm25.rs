@@ -5,7 +5,7 @@ use std::error::Error;
 use examples::load_new_shard;
 use qdrant_edge::external::serde_json::json;
 use qdrant_edge::{
-    Bm25Params, CreateIndex, FieldIndexOperations, PayloadFieldSchema, PayloadSchemaParams,
+    Bm25ParamsBuilder, CreateIndex, FieldIndexOperations, PayloadFieldSchema, PayloadSchemaParams,
     PointInsertOperations, PointOperations, PointStruct, QueryRequestBuilder,
     TextIndexParamsBuilder, TextQueryBuilder, TextQueryScoring, TextScoringParams, UpdateOperation,
 };
@@ -65,10 +65,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         QueryRequestBuilder::new(10)
             .query(
                 TextQueryBuilder::new("text".try_into().unwrap(), "fox")
-                    .scoring(TextQueryScoring::Bm25(Bm25Params {
-                        k: None,
-                        b: Some(0.0),
-                    }))
+                    .scoring(TextQueryScoring::Bm25(
+                        Bm25ParamsBuilder::new().b(0.0).build(),
+                    ))
                     .build(),
             )
             .build(),
