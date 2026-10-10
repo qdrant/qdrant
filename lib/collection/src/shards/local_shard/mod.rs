@@ -275,7 +275,7 @@ impl LocalShard {
 
         // default to 2x the WAL capacity
         let disk_buffer_threshold_mb =
-            2 * (collection_config.read().await.wal_config.wal_capacity_mb);
+            2usize.saturating_mul(collection_config.read().await.wal_config.wal_capacity_mb);
 
         let disk_usage_watcher = disk_usage_watcher::DiskUsageWatcher::new(
             shard_path.to_owned(),
