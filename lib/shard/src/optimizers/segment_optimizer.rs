@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -29,6 +30,15 @@ use crate::segment_holder::{SegmentHolder, SegmentId};
 use crate::segment_manifest::NewSegmentToken;
 
 const BYTES_IN_KB: usize = 1024;
+
+/// Above this many appendable segments, planning keeps one of them out of every optimization.
+///
+/// An optimization that takes every appendable segment creates an extra one to receive writes
+/// while it runs. When the optimization is cancelled (e.g. by an optimizer config update), that
+/// extra segment is kept, the next plan takes it in again and creates another one. Repeated
+/// cancellations under writes grow the segment count by one each. Reserving a write target breaks
+/// that loop, but only kicks in once the shard is already past normal operation.
+pub const RESERVED_APPENDABLE_SEGMENT_THRESHOLD: usize = 16;
 
 /// Resolves per-vector HNSW max_indexing_threads (0 = auto) and returns the actual thread count.
 pub fn max_num_indexing_threads(segment_optimizer_config: &SegmentOptimizerConfig) -> usize {
@@ -425,6 +435,10 @@ pub struct OptimizationPlanner<'a> {
     /// them eventually produces one new segment.
     running: usize,
 
+    /// Segments kept out of the plan, but still part of the shard.
+    /// See [`Self::reserve_appendable_segment`].
+    reserved: usize,
+
     /// This goes into [`Self::scheduled`].
     /// Should be set before calling [`Self::plan`].
     optimizer: Option<Arc<Optimizer>>,
@@ -439,6 +453,7 @@ impl<'a> OptimizationPlanner<'a> {
             remaining: segments.into_iter().collect(),
             scheduled: Vec::new(),
             running,
+            reserved: 0,
             optimizer: None,
         }
     }
@@ -459,7 +474,44 @@ impl<'a> OptimizationPlanner<'a> {
     /// The expected resulting number of segments after the optimization plan is
     /// executed, and all currently running optimizations are finished.
     pub fn expected_segments_number(&self) -> usize {
-        self.remaining.len() + self.scheduled.len() + self.running
+        self.remaining.len() + self.scheduled.len() + self.running + self.reserved
+    }
+
+    /// If the shard has more than [`RESERVED_APPENDABLE_SEGMENT_THRESHOLD`] appendable segments,
+    /// keep the smallest remaining one below `max_segment_size_bytes` out of the plan, so it stays
+    /// available as a write target and no optimization has to create a new one.
+    fn reserve_appendable_segment(
+        &mut self,
+        appendable_segments_count: usize,
+        max_segment_size_bytes: Option<NonZeroUsize>,
+    ) {
+        if appendable_segments_count <= RESERVED_APPENDABLE_SEGMENT_THRESHOLD {
+            return;
+        }
+
+        let appendable = self
+            .remaining
+            .iter()
+            .filter_map(|(&segment_id, segment)| {
+                let segment = segment.read();
+                segment.is_appendable().then(|| {
+                    let size = segment
+                        .max_available_vectors_size_in_bytes()
+                        .unwrap_or_default();
+                    (segment_id, size)
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let reserved = appendable
+            .into_iter()
+            .filter(|&(_, size)| max_segment_size_bytes.is_none_or(|max| size < max.get()))
+            .min_by_key(|&(_, size)| size);
+
+        if let Some((segment_id, _)) = reserved {
+            self.remaining.remove(&segment_id);
+            self.reserved += 1;
+        }
     }
 
     /// Schedule this batch of segments to be optimized/merged into new segment.
@@ -471,6 +523,20 @@ impl<'a> OptimizationPlanner<'a> {
         }
         self.scheduled.push((self.optimizer.clone(), segments));
     }
+}
+
+/// Count appendable segments, including the ones wrapped by proxies: they are not available to the
+/// planner, but a cancelled optimization or a finished snapshot puts them back.
+fn count_appendable_segments(segments: &SegmentHolder) -> usize {
+    segments
+        .iter()
+        .filter(|(_, segment)| match segment {
+            LockedSegment::Original(segment) => segment.read().is_appendable(),
+            LockedSegment::Proxy(proxy) => {
+                proxy.read().wrapped_segment.get().read().is_appendable()
+            }
+        })
+        .count()
 }
 
 /// Plans optimizations for the given segments and optimizers.
@@ -485,6 +551,13 @@ pub fn plan_optimizations(
         segments.running_optimizations.count(),
         segments.iter_original(),
     );
+    // Thresholds are shared by all optimizers, take them from the first one
+    if let Some(optimizer) = optimizers.first() {
+        planner.reserve_appendable_segment(
+            count_appendable_segments(segments),
+            optimizer.threshold_config().max_segment_size_bytes(),
+        );
+    }
     for optimizer in optimizers {
         planner.optimizer = Some(Arc::clone(optimizer));
         optimizer.plan_optimizations(&mut planner);
