@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use blobstore::Blob;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::numeric_index_read::NumericIndexRead;
@@ -17,7 +16,7 @@ use super::{
 };
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
-use crate::index::payload_config::{IndexMutability, StorageType};
+use crate::index::payload_config::{ImmutableLayout, IndexMutability, StorageType};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::Memory;
 
@@ -53,13 +52,13 @@ where
 
     pub fn builder_mmap(
         path: &Path,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
     ) -> NumericIndexMmapBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
     {
-        NumericIndexMmapBuilder::new(path.to_owned(), is_on_disk, deleted_points.to_owned())
+        NumericIndexMmapBuilder::new(path.to_owned(), memory, deleted_points.to_owned())
     }
 
     pub fn builder_gridstore(dir: PathBuf) -> NumericIndexGridstoreBuilder<T, P>
@@ -89,8 +88,8 @@ where
         match &self.inner {
             NumericIndexInner::Mutable(index) => index.storage_type(),
             NumericIndexInner::Immutable(index) => index.storage_type(),
-            NumericIndexInner::OnDisk(index) => StorageType::Mmap {
-                is_on_disk: index.is_on_disk(),
+            NumericIndexInner::OnDisk(_) => StorageType::Mmap {
+                layout: ImmutableLayout::Mmap,
             },
         }
     }
@@ -99,9 +98,8 @@ where
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.inner.check_values_any(idx, check_fn, hw_counter)
+        self.inner.check_values_any(idx, check_fn)
     }
 
     pub fn wipe(self) -> OperationResult<()> {
@@ -124,8 +122,8 @@ where
         self.inner.values_is_empty(idx)
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.inner.is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.inner.is_cold()
     }
 
     pub fn populate(&self) -> OperationResult<()> {

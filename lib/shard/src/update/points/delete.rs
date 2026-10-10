@@ -3,7 +3,6 @@
 use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::types::{Filter, PointIdType, SeqNumberType};
@@ -23,7 +22,6 @@ pub fn delete_points(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     ids: &[PointIdType],
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted_points = 0;
 
@@ -32,7 +30,7 @@ pub fn delete_points(
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
             for &id in batch {
-                if write_segment.delete_point(op_num, id, hw_counter)? {
+                if write_segment.delete_point(op_num, id)? {
                     total_deleted_points += 1;
                 }
             }
@@ -53,7 +51,6 @@ pub fn delete_points_by_filter(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     filter: &Filter,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<usize> {
     let mut total_deleted = 0;
     // we don’t want to cancel this filtered read
@@ -68,7 +65,6 @@ pub fn delete_points_by_filter(
                 None,
                 Some(filter),
                 &is_stopped,
-                hw_counter,
                 // Include also deferred points.
                 DeferredBehavior::WithDeferred,
             )?;
@@ -113,7 +109,7 @@ pub fn delete_points_by_filter(
 
         let mut deleted_in_batch = 0;
         while let Some(point_id) = curr_points.pop() {
-            if s.delete_point(op_num, point_id, hw_counter)? {
+            if s.delete_point(op_num, point_id)? {
                 total_deleted += 1;
                 deleted_in_batch += 1;
             }

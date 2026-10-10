@@ -1,9 +1,10 @@
 use std::ops::DerefMut as _;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, Flusher, MmapSlice};
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, MmapFile, MmapFs, OpenOptions, Populate, ReadRange, TypedStorage, UioResult,
@@ -112,7 +113,6 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageRam {
         &mut self,
         id: PointOffsetType,
         offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         // Skip hardware counter increment because it's a RAM storage.
         if id as usize >= self.len() {
@@ -252,7 +252,6 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageMm
         &mut self,
         _id: PointOffsetType,
         _offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
@@ -297,10 +296,10 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorageChunked<S> {
         offsets: impl Iterator<Item = MultivectorOffset>,
         in_ram: bool,
     ) -> OperationResult<Self> {
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let mut offsets_storage = Self::load(fs, path, in_ram)?;
         for (id, offset) in offsets.enumerate() {
-            offsets_storage.upsert_offset(id as PointOffsetType, offset, &hw_counter)?;
+            offsets_storage.upsert_offset(id as PointOffsetType, offset)?;
         }
         offsets_storage.flusher()()?;
         Ok(offsets_storage)
@@ -376,10 +375,9 @@ impl<S: UniversalWrite + Send + 'static> MultivectorOffsetsStorage
         &mut self,
         id: PointOffsetType,
         offset: MultivectorOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         self.data
-            .insert(id as VectorOffsetType, &[offset], hw_counter)
+            .insert(id as VectorOffsetType, &[offset])
             .map_err(std::io::Error::other)
     }
 
@@ -404,6 +402,12 @@ pub struct MultivectorOffsetsStorageChunkedRead<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
+    pub fn get_offset_opt(&self, idx: PointOffsetType) -> Option<MultivectorOffset> {
+        self.data
+            .get::<Random>(idx as VectorOffsetType)
+            .and_then(|offsets| offsets.first().copied())
+    }
+
     /// Schedule background prefetch of the files [`Self::open`] will read.
     ///
     /// `populate` warms the parked chunks for the `cached` memory placement;
@@ -443,10 +447,7 @@ impl<S: UniversalRead> MultivectorOffsetsStorageChunkedRead<S> {
 
 impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageChunkedRead<S> {
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self.data
-            .get::<Random>(idx as VectorOffsetType)
-            .and_then(|offsets| offsets.first().copied())
-            .unwrap_or_default()
+        self.get_offset_opt(idx).unwrap_or_default()
     }
 
     fn for_each_offset(
@@ -479,7 +480,6 @@ impl<S: UniversalRead> MultivectorOffsetsStorage for MultivectorOffsetsStorageCh
         &mut self,
         _id: PointOffsetType,
         _offset: MultivectorOffset,
-        _hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,

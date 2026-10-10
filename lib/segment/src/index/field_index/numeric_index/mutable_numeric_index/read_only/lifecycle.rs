@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use blobstore::{Blob, BlobstoreReader};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw::HwMetric;
+use common::reason::reason;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::InMemoryNumericIndex;
@@ -41,10 +44,14 @@ where
     /// the `create_if_missing == false` branch of the writable counterpart —
     /// the read path never creates.
     ///
+    /// Values at or past `max_point_offset` are skipped, as the id tracker may
+    /// not yet cover them.
+    ///
     /// [1]: super::super::MutableNumericIndex::open_gridstore
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
+        max_point_offset: PointOffsetType,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) =
             BlobstoreReader::<Vec<T>, S>::open(fs, path, Populate::Blocking).ok_not_found()?
@@ -54,15 +61,15 @@ where
         };
 
         let mut in_memory_index = InMemoryNumericIndex::default();
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset()?,
+                storage.max_point_offset()?.min(max_point_offset),
                 |idx, values: Vec<T>| {
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)
                 },
-                hw_counter.ref_payload_index_io_read_counter(),
+                HwMetric::PayloadIndexIoRead,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -74,5 +81,18 @@ where
             in_memory_index,
             storage,
         }))
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear read-only appendable numeric index gridstore cache: {err}"
+            ))
+        })
     }
 }

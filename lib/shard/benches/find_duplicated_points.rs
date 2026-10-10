@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::seq::IndexedMutRandom;
@@ -21,8 +21,7 @@ pub fn duplicate_bench(c: &mut Criterion) {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
 
-    let hw_counter = HardwareCounterCell::new();
-
+    let _scope = ambient::test_guard();
     let mut segments = std::iter::repeat_with(|| empty_segment(dir.path()))
         .take(SEGMENT_COUNT)
         .collect::<Vec<_>>();
@@ -36,7 +35,7 @@ pub fn duplicate_bench(c: &mut Criterion) {
             let version = rand.random_range(VERSION_RANGE);
             let segment = segments.choose_mut(&mut rand).unwrap();
             segment
-                .upsert_point(version, point_id, vector.clone(), &hw_counter)
+                .upsert_point(version, point_id, vector.clone())
                 .unwrap();
 
             // Duplicate this point?

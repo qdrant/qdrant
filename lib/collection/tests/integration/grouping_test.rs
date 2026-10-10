@@ -3,6 +3,7 @@ use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
+use common::ambient::AmbientFutureExt;
 use itertools::Itertools;
 use rand::RngExt;
 use rand::distr::Uniform;
@@ -26,7 +27,7 @@ mod group_by {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::ambient::AmbientContext;
     use segment::payload_json;
 
     use super::*;
@@ -80,15 +81,9 @@ mod group_by {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
         );
 
-        let hw_counter = HwMeasurementAcc::new();
         let insert_result = collection
-            .update_from_client_simple(
-                insert_points,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter.clone(),
-            )
+            .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+            .measured(AmbientContext::new())
             .await
             .expect("insert failed");
 
@@ -104,15 +99,13 @@ mod group_by {
     async fn searching() {
         let resources = setup(16, 8).await;
 
-        let hw_acc = HwMeasurementAcc::new();
         let group_by = GroupBy::new(
             resources.request.clone(),
             &resources.collection,
             |_| async { unreachable!() },
-            hw_acc,
         );
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -160,15 +153,11 @@ mod group_by {
             2,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            request.clone(),
-            &resources.collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(request.clone(), &resources.collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -224,15 +213,11 @@ mod group_by {
             3,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            group_by_request,
-            &resources.collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(group_by_request, &resources.collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -260,15 +245,11 @@ mod group_by {
             3,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            group_by_request.clone(),
-            &resources.collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(group_by_request.clone(), &resources.collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -302,15 +283,11 @@ mod group_by {
             3,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            group_by_request.clone(),
-            &collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -342,15 +319,11 @@ mod group_by {
             0,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            group_by_request.clone(),
-            &collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -378,15 +351,11 @@ mod group_by {
             3,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            group_by_request.clone(),
-            &collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -414,15 +383,11 @@ mod group_by {
             3,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            group_by_request.clone(),
-            &collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -454,15 +419,11 @@ mod group_by {
             400,
         );
 
-        let hw_acc = HwMeasurementAcc::new();
-        let group_by = GroupBy::new(
-            group_by_request.clone(),
-            &collection,
-            |_| async { unreachable!() },
-            hw_acc,
-        );
+        let group_by = GroupBy::new(group_by_request.clone(), &collection, |_| async {
+            unreachable!()
+        });
 
-        let result = group_by.execute().await;
+        let result = group_by.execute().measured(AmbientContext::new()).await;
 
         assert!(result.is_ok());
 
@@ -487,7 +448,7 @@ mod group_by_builder {
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::ambient::AmbientContext;
     use segment::json_path::JsonPath;
     use segment::payload_json;
 
@@ -522,7 +483,7 @@ mod group_by_builder {
         let collection_dir = tempfile::Builder::new().prefix("chunks").tempdir().unwrap();
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
-        let hw_counter = HwMeasurementAcc::new();
+        let ctx = AmbientContext::new();
 
         // insert chunk points
         {
@@ -546,13 +507,8 @@ mod group_by_builder {
             );
 
             let insert_result = collection
-                .update_from_client_simple(
-                    insert_points,
-                    true,
-                    None,
-                    WriteOrdering::default(),
-                    hw_counter.clone(),
-                )
+                .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+                .measured(AmbientContext::clone(&ctx))
                 .await
                 .expect("insert failed");
 
@@ -581,13 +537,8 @@ mod group_by_builder {
                 PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
             );
             let insert_result = lookup_collection
-                .update_from_client_simple(
-                    insert_points,
-                    true,
-                    None,
-                    WriteOrdering::default(),
-                    hw_counter.clone(),
-                )
+                .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+                .measured(AmbientContext::clone(&ctx))
                 .await
                 .expect("insert failed");
 
@@ -613,9 +564,9 @@ mod group_by_builder {
 
         let collection_by_name = |_: String| async { unreachable!() };
 
-        let hw_acc = HwMeasurementAcc::new();
-        let result = GroupBy::new(request.clone(), &collection, collection_by_name, hw_acc)
+        let result = GroupBy::new(request.clone(), &collection, collection_by_name)
             .execute()
+            .measured(AmbientContext::new())
             .await;
 
         assert!(result.is_ok());
@@ -647,9 +598,9 @@ mod group_by_builder {
 
         let collection_by_name = |_: String| async { Some(lookup_collection.clone()) };
 
-        let hw_acc = HwMeasurementAcc::new();
-        let result = GroupBy::new(request.clone(), &collection, collection_by_name, hw_acc)
+        let result = GroupBy::new(request.clone(), &collection, collection_by_name)
             .execute()
+            .measured(AmbientContext::new())
             .await;
 
         assert!(result.is_ok());

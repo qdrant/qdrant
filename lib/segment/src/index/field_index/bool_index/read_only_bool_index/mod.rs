@@ -117,8 +117,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::sorted_slice::SortedSlice;
     use common::universal_io::{
         CachedFs, CachedReadFs, MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs,
@@ -153,7 +152,6 @@ mod tests {
     #[test]
     fn read_only_bool_index_round_trip() {
         let dir = TempDir::with_prefix("read_only_bool_index").unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         // Same fixture as the writable `load_from_disk` test: 12 points, of
         // which 9 carry a bool value (entries 7/8/9 — null/number/string —
@@ -175,7 +173,7 @@ mod tests {
 
         let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
         for (i, value) in fixture.iter().enumerate() {
-            builder.add_point(i as u32, &[value], &hw_counter).unwrap();
+            builder.add_point(i as u32, &[value]).unwrap();
         }
         let index = builder.finalize().unwrap();
         index.flusher()().unwrap();
@@ -190,12 +188,11 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
 
         assert_eq!(
             index
-                .filter(&match_bool(false), &hw_counter)
+                .filter(&match_bool(false))
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -203,7 +200,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .filter(&match_bool(true), &hw_counter)
+                .filter(&match_bool(true))
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -243,7 +240,6 @@ mod tests {
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let dir = TempDir::with_prefix("read_only_bool_index_live_reload").unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         // Initial on-disk state: points 0..=5.
         let initial = [
@@ -256,7 +252,7 @@ mod tests {
         ];
         let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
         for (i, value) in initial.iter().enumerate() {
-            builder.add_point(i as u32, &[value], &hw_counter).unwrap();
+            builder.add_point(i as u32, &[value]).unwrap();
         }
         let mut index = builder.finalize().unwrap();
         index.flusher()().unwrap();
@@ -285,9 +281,9 @@ mod tests {
         // only through the reopened bitslice.
         index.remove_point(1).unwrap();
         index.remove_point(2).unwrap();
-        index.add_point(6, &[&json!(true)], &hw_counter).unwrap();
-        index.add_point(7, &[&json!(false)], &hw_counter).unwrap();
-        index.add_point(1100, &[&json!(true)], &hw_counter).unwrap();
+        index.add_point(6, &[&json!(true)]).unwrap();
+        index.add_point(7, &[&json!(false)]).unwrap();
+        index.add_point(1100, &[&json!(true)]).unwrap();
         index.flusher()().unwrap();
 
         // `CachedFs` passes opens through until a snapshot is taken, so the
@@ -302,7 +298,6 @@ mod tests {
                 &cached_fs,
                 &SortedSlice::new(&[1, 2]).unwrap(),
                 &SortedSlice::new(&[6, 7, 1100]).unwrap(),
-                &hw_counter,
             )
             .unwrap();
 
@@ -314,26 +309,25 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
 
         let reloaded_true = reloaded
-            .filter(&match_bool(true), &hw)
+            .filter(&match_bool(true))
             .unwrap()
             .unwrap()
             .collect_vec();
         let reloaded_false = reloaded
-            .filter(&match_bool(false), &hw)
+            .filter(&match_bool(false))
             .unwrap()
             .unwrap()
             .collect_vec();
         let fresh_true = fresh
-            .filter(&match_bool(true), &hw)
+            .filter(&match_bool(true))
             .unwrap()
             .unwrap()
             .collect_vec();
         let fresh_false = fresh
-            .filter(&match_bool(false), &hw)
+            .filter(&match_bool(false))
             .unwrap()
             .unwrap()
             .collect_vec();
@@ -341,7 +335,7 @@ mod tests {
         // Exact cardinality reads the cached `trues_count` / `falses_count`, so
         // it proves those were refreshed on reload (not just the bitmaps).
         let card = |idx: &ReadOnlyBoolIndex<ReadOnly<MmapFile>>, value| {
-            idx.estimate_cardinality(&match_bool(value), &hw)
+            idx.estimate_cardinality(&match_bool(value))
                 .unwrap()
                 .unwrap()
                 .exp
@@ -377,10 +371,9 @@ mod tests {
 
         let build = || {
             let dir = TempDir::with_prefix("read_only_bool_inconsistent").unwrap();
-            let hw_counter = HardwareCounterCell::new();
             let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
             let value = json!(true);
-            builder.add_point(0, &[&value], &hw_counter).unwrap();
+            builder.add_point(0, &[&value]).unwrap();
             let index = builder.finalize().unwrap();
             index.flusher()().unwrap();
             dir
@@ -406,11 +399,10 @@ mod tests {
     #[test]
     fn open_does_not_materialize_bitmaps() {
         let dir = TempDir::with_prefix("read_only_bool_index_lazy").unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
         let value = json!(true);
-        builder.add_point(0, &[&value], &hw_counter).unwrap();
+        builder.add_point(0, &[&value]).unwrap();
         let index = builder.finalize().unwrap();
         index.flusher()().unwrap();
         drop(index);
@@ -459,13 +451,12 @@ mod tests {
     #[test]
     fn preopen_then_open_through_cached_fs() {
         let dir = TempDir::with_prefix("read_only_bool_index_preopen").unwrap();
-        let hw_counter = HardwareCounterCell::new();
 
         // Points 0..=2: true, false, both.
         let fixture = [json!(true), json!(false), json!([true, false])];
         let mut builder = MutableBoolIndex::builder(dir.path()).unwrap();
         for (i, value) in fixture.iter().enumerate() {
-            builder.add_point(i as u32, &[value], &hw_counter).unwrap();
+            builder.add_point(i as u32, &[value]).unwrap();
         }
         let index = builder.finalize().unwrap();
         index.flusher()().unwrap();
@@ -495,11 +486,10 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
         assert_eq!(
             index
-                .filter(&match_bool(true), &hw_counter)
+                .filter(&match_bool(true))
                 .unwrap()
                 .unwrap()
                 .collect_vec(),
@@ -507,7 +497,7 @@ mod tests {
         );
         assert_eq!(
             index
-                .filter(&match_bool(false), &hw_counter)
+                .filter(&match_bool(false))
                 .unwrap()
                 .unwrap()
                 .collect_vec(),

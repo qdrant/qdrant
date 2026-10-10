@@ -7,7 +7,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, ResponseError, http};
 use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, InferenceUsage, Usage};
 use collection::operations::types::CollectionError;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientContext;
 use serde::Serialize;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
@@ -21,9 +21,7 @@ pub fn get_request_hardware_counter(
 ) -> RequestHwCounter {
     let report_to_api = report_to_api && wait != Some(false);
     RequestHwCounter::new(
-        HwMeasurementAcc::new_with_metrics_drain(
-            dispatcher.get_collection_hw_metrics(collection_name),
-        ),
+        AmbientContext::request(dispatcher.get_collection_hw_metrics(collection_name)),
         report_to_api,
     )
 }

@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::UniversalRead;
 
 use crate::common::operation_error::OperationResult;
@@ -84,58 +83,33 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
     fn build_raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self {
-            VectorStorageReadEnum::Dense(s) => raw_scorer_impl(query, s.as_ref(), hardware_counter),
-            VectorStorageReadEnum::DenseByte(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::DenseHalf(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::DenseGraphInline(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::DenseGraphInlineByte(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::DenseChunked(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::DenseChunkedByte(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::DenseChunkedHalf(s) => {
-                raw_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
-            VectorStorageReadEnum::MultiDenseChunked(s) => {
-                raw_multi_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
+            VectorStorageReadEnum::Dense(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseByte(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseHalf(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseGraphInline(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseChunked(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseChunkedByte(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => raw_scorer_impl(query, s.as_ref()),
+            VectorStorageReadEnum::MultiDenseChunked(s) => raw_multi_scorer_impl(query, s.as_ref()),
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
-                raw_multi_scorer_impl(query, s.as_ref(), hardware_counter)
+                raw_multi_scorer_impl(query, s.as_ref())
             }
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
-                raw_multi_scorer_impl(query, s.as_ref(), hardware_counter)
+                raw_multi_scorer_impl(query, s.as_ref())
             }
-            VectorStorageReadEnum::DenseTurbo(s) => {
-                raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
+            VectorStorageReadEnum::DenseTurbo(s) => raw_turbo_scorer_impl(query, s.as_ref()),
             VectorStorageReadEnum::DenseTurboGraphInline(s) => {
-                raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
+                raw_turbo_scorer_impl(query, s.as_ref())
             }
-            VectorStorageReadEnum::DenseTurboChunked(s) => {
-                raw_turbo_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
+            VectorStorageReadEnum::DenseTurboChunked(s) => raw_turbo_scorer_impl(query, s.as_ref()),
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
-                raw_turbo_multi_scorer_impl(query, s.as_ref(), hardware_counter)
+                raw_turbo_multi_scorer_impl(query, s.as_ref())
             }
-            VectorStorageReadEnum::Sparse(s) => {
-                raw_sparse_scorer_impl(query, s.as_ref(), hardware_counter)
-            }
+            VectorStorageReadEnum::Sparse(s) => raw_sparse_scorer_impl(query, s.as_ref()),
         }
     }
 }
@@ -144,12 +118,13 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
 mod tests {
     use std::path::Path;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{CachedFs, CachedReadFs, MmapFile, MmapFs};
+    use quantization::turboquant::TQBits;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
     use tempfile::Builder;
@@ -218,7 +193,7 @@ mod tests {
     fn open_routes_chunked_mmap_to_dense_chunked() {
         let dir = Builder::new().prefix("disp_chunked").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(1);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..300).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -232,7 +207,7 @@ mod tests {
             .unwrap();
             for (id, vector) in vectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             storage.flusher()().unwrap();
@@ -263,7 +238,7 @@ mod tests {
     fn open_routes_mmap_to_dense() {
         let dir = Builder::new().prefix("disp_mmap").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(2);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..3).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -273,7 +248,7 @@ mod tests {
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             merge_from_single_source(&mut storage, &staging, vectors.len() as PointOffsetType)
@@ -306,7 +281,7 @@ mod tests {
     fn open_routes_multivector_to_multi_dense_chunked() {
         let dir = Builder::new().prefix("disp_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(3);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let multis: Vec<MultiDenseVectorInternal> = (0..200)
             .map(|_| {
                 let inner = rng.random_range(1..=3);
@@ -330,7 +305,7 @@ mod tests {
                 .unwrap();
             for (id, multivec) in multis.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec))
                     .unwrap();
             }
             storage.flusher()().unwrap();
@@ -382,7 +357,7 @@ mod tests {
     fn preopen_then_open_chunked_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_chunked").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(4);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..300).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -396,7 +371,7 @@ mod tests {
             .unwrap();
             for (id, vector) in vectors.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             storage.flusher()().unwrap();
@@ -441,7 +416,7 @@ mod tests {
     fn preopen_then_open_mmap_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_mmap").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(5);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..3).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -451,7 +426,7 @@ mod tests {
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             merge_from_single_source(&mut storage, &staging, vectors.len() as PointOffsetType)
@@ -498,7 +473,7 @@ mod tests {
     fn preopen_then_open_multi_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(6);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let multis: Vec<MultiDenseVectorInternal> = (0..200)
             .map(|_| {
                 let inner = rng.random_range(1..=3);
@@ -522,7 +497,7 @@ mod tests {
                 .unwrap();
             for (id, multivec) in multis.iter().enumerate() {
                 storage
-                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(multivec))
                     .unwrap();
             }
             storage.flusher()().unwrap();
@@ -568,7 +543,7 @@ mod tests {
     fn live_reload_dispatches_to_active_variant() {
         let dir = Builder::new().prefix("disp_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(9);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let first: Vec<DenseVector> = (0..200).map(|_| rand_vec(&mut rng)).collect();
         let second: Vec<DenseVector> = (0..100).map(|_| rand_vec(&mut rng)).collect();
 
@@ -582,7 +557,7 @@ mod tests {
         .unwrap();
         for (id, vector) in first.iter().enumerate() {
             writer
-                .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -603,7 +578,6 @@ mod tests {
                 .insert_vector(
                     (first.len() + offset) as PointOffsetType,
                     VectorRef::from(vector),
-                    &hw,
                 )
                 .unwrap();
         }
@@ -621,7 +595,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 
@@ -675,18 +648,23 @@ mod tests {
         const COUNT: PointOffsetType = 300;
 
         let mut rng = StdRng::seed_from_u64(17);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let stopped = AtomicBool::new(false);
         let vectors: Vec<DenseVector> = (0..COUNT).map(|_| rand_vec(&mut rng)).collect();
         let mut deleted_ids = Vec::new();
 
         let ref_dir = Builder::new().prefix("ro_turbo_ref").tempdir().unwrap();
-        let mut reference =
-            open_appendable_turbo_vector_storage(ref_dir.path(), DIM, Distance::Dot, false)
-                .unwrap();
+        let mut reference = open_appendable_turbo_vector_storage(
+            ref_dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            false,
+        )
+        .unwrap();
         for (id, vector) in vectors.iter().enumerate() {
             reference
-                .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                 .unwrap();
         }
         for id in 0..COUNT {
@@ -719,15 +697,21 @@ mod tests {
                             dir.path(),
                             DIM,
                             Distance::Dot,
+                            TQBits::Bits4,
                             false,
                         )
                         .unwrap();
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::ChunkedMmap => {
-                    let mut target =
-                        open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false)
-                            .unwrap();
+                    let mut target = open_appendable_turbo_vector_storage(
+                        dir.path(),
+                        DIM,
+                        Distance::Dot,
+                        TQBits::Bits4,
+                        false,
+                    )
+                    .unwrap();
                     build_target(&mut target, &encoded, &stopped);
                 }
                 VectorStorageType::InRamMmap
@@ -792,12 +776,8 @@ mod tests {
             .unwrap();
 
             let query = QueryVector::Nearest(vectors[3].clone().into());
-            let ro_scorer = ro
-                .build_raw_scorer(query.clone(), HardwareCounterCell::disposable())
-                .unwrap();
-            let ref_scorer =
-                raw_turbo_scorer_impl(query, &reference, HardwareCounterCell::disposable())
-                    .unwrap();
+            let ro_scorer = ro.build_raw_scorer(query.clone()).unwrap();
+            let ref_scorer = raw_turbo_scorer_impl(query, &reference).unwrap();
             for id in 0..COUNT {
                 assert_eq!(
                     ro_scorer.score_point(id),
@@ -818,7 +798,7 @@ mod tests {
         let multivector_config = MultiVectorConfig::default();
         let dir = Builder::new().prefix("ro_turbo_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(23);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let multis: Vec<MultiDenseVectorInternal> = (0..COUNT)
             .map(|_| {
@@ -835,6 +815,7 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             multivector_config,
             false,
         )
@@ -844,7 +825,6 @@ mod tests {
                 .insert_vector(
                     id as PointOffsetType,
                     TypedMultiDenseVectorRef::from(multi).into(),
-                    &hw,
                 )
                 .unwrap();
         }
@@ -890,12 +870,8 @@ mod tests {
         .unwrap();
 
         let query = QueryVector::Nearest(multis[5].clone().into());
-        let ro_scorer = ro
-            .build_raw_scorer(query.clone(), HardwareCounterCell::disposable())
-            .unwrap();
-        let wr_scorer =
-            raw_turbo_multi_scorer_impl(query, &writable, HardwareCounterCell::disposable())
-                .unwrap();
+        let ro_scorer = ro.build_raw_scorer(query.clone()).unwrap();
+        let wr_scorer = raw_turbo_multi_scorer_impl(query, &writable).unwrap();
         for id in 0..COUNT {
             assert_eq!(
                 ro_scorer.score_point(id),

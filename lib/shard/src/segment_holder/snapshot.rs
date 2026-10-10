@@ -1,7 +1,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
@@ -43,9 +44,10 @@ impl SegmentHolder {
         SegmentId,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
-        // This counter will be used to measure operations on temp segment,
-        // which is part of internal process and can be ignored
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason(
+            "This counter will be used to measure operations on temp segment, \
+             which is part of internal process and can be ignored",
+        ));
 
         // Create temporary appendable segment to direct all proxy writes into
         let (tmp_segment, tmp_token) = segments_lock.build_tmp_segment(
@@ -67,7 +69,7 @@ impl SegmentHolder {
 
             // Write segment is fresh, so it has no operations
             // Operation with number 0 will be applied
-            proxy.replicate_field_indexes(0, &hw_counter, &tmp_segment)?;
+            proxy.replicate_field_indexes(0, &tmp_segment)?;
             new_proxies.push((segment_id, proxy));
         }
 
@@ -99,7 +101,7 @@ impl SegmentHolder {
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock
             let op_num = proxy.version();
-            if let Err(err) = proxy.replicate_field_indexes(op_num, &hw_counter, &tmp_segment) {
+            if let Err(err) = proxy.replicate_field_indexes(op_num, &tmp_segment) {
                 log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
             }
 

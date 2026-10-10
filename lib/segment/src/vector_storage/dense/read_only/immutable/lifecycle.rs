@@ -86,7 +86,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead>
         distance: Distance,
     ) -> OperationResult<Self> {
         Ok(Self {
-            populate: Populate::from(!graph.is_on_disk()),
+            populate: Populate::from(!graph.is_cold()),
             vectors: GraphVectors::new(graph, dim)?,
             deleted: InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?,
             distance,

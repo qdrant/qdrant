@@ -18,10 +18,8 @@
 
 use std::path::PathBuf;
 
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -29,7 +27,7 @@ use crate::common::flags::roaring_flags::RoaringFlagsRead;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
@@ -96,33 +94,20 @@ pub trait BoolIndexRead {
         Ok(Box::new([has_false, has_true].into_iter().flatten()))
     }
 
-    fn for_each_value_map<F>(
-        &self,
-        hw_counter: &HardwareCounterCell,
-        mut f: F,
-    ) -> OperationResult<()>
+    fn for_each_value_map<F>(&self, mut f: F) -> OperationResult<()>
     where
         F: FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     {
         f(false, &mut self.falses_flags().iter_trues()?)?;
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(u8::BITS as usize);
+        HwMetric::PayloadIndexIoRead.bump(u8::BITS as usize);
         f(true, &mut self.trues_flags().iter_trues()?)?;
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(u8::BITS as usize);
+        HwMetric::PayloadIndexIoRead.bump(u8::BITS as usize);
         Ok(())
     }
 
     /// Like [`Self::for_each_value_map`] but visits only the requested `values`.
     /// Trivial here (≤2 values); exists only to back `FacetIndex::for_values_map`.
-    fn for_values_map<F>(
-        &self,
-        values: impl Iterator<Item = bool>,
-        hw_counter: &HardwareCounterCell,
-        mut f: F,
-    ) -> OperationResult<()>
+    fn for_values_map<F>(&self, values: impl Iterator<Item = bool>, mut f: F) -> OperationResult<()>
     where
         F: FnMut(bool, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     {
@@ -132,9 +117,7 @@ pub trait BoolIndexRead {
             } else {
                 self.falses_flags().iter_trues()?
             };
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(u8::BITS as usize);
+            HwMetric::PayloadIndexIoRead.bump(u8::BITS as usize);
             f(is_true, &mut ids)?;
         }
         Ok(())
@@ -174,7 +157,7 @@ pub trait BoolIndexRead {
     /// Whether the index keeps its primary data on disk. Default `false` —
     /// every current variant serves reads from an in-RAM bitmap (the read-only
     /// one materializes it on first use).
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 
@@ -194,9 +177,18 @@ pub trait BoolIndexRead {
         files
     }
 
+    /// Files that never change after the index is built.
+    ///
+    /// Default returns [`Self::files`] — correct for immutable and read-only
+    /// variants where every backing file is immutable. Mutable variants
+    /// override this to return an empty list.
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files()
+    }
+
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
-            is_on_disk: self.is_on_disk(),
+            layout: ImmutableLayout::Heap,
         }
     }
 
@@ -216,7 +208,6 @@ pub trait BoolIndexRead {
 pub(super) fn filter<'a, N: BoolIndexRead>(
     idx: &'a N,
     condition: &'a FieldCondition,
-    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
     match &condition.r#match {
         Some(Match::Value(MatchValue {
@@ -230,11 +221,7 @@ pub(super) fn filter<'a, N: BoolIndexRead>(
             let iter = bitmap
                 .iter()
                 .map(|x| x as PointOffsetType)
-                .measure_hw_with_acc_and_fraction(
-                    hw_counter.new_accumulator(),
-                    u8::BITS as usize,
-                    |i| i.payload_index_io_read_counter(),
-                );
+                .measure_hw_fraction(HwMetric::PayloadIndexIoRead, u8::BITS as usize);
             Ok(Some(Box::new(iter)))
         }
         _ => Ok(None),
@@ -244,7 +231,6 @@ pub(super) fn filter<'a, N: BoolIndexRead>(
 pub(super) fn estimate_cardinality<N: BoolIndexRead>(
     idx: &N,
     condition: &FieldCondition,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>> {
     match &condition.r#match {
         Some(Match::Value(MatchValue {
@@ -256,9 +242,7 @@ pub(super) fn estimate_cardinality<N: BoolIndexRead>(
                 idx.falses_count()?
             };
 
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(size_of::<usize>());
+            HwMetric::PayloadIndexIoRead.bump(size_of::<usize>());
 
             Ok(Some(
                 CardinalityEstimation::exact(count)
@@ -293,7 +277,6 @@ pub(super) fn for_each_payload_block<N: BoolIndexRead>(
 pub(super) fn condition_checker<'a, N: BoolIndexRead>(
     idx: &'a N,
     condition: &FieldCondition,
-    _hw_acc: HwMeasurementAcc,
 ) -> Option<BoolConditionChecker<'a, N>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
@@ -365,7 +348,6 @@ impl<N: BoolIndexRead> ConditionChecker for BoolConditionChecker<'_, N> {
 /// [`ReadOnlyFieldIndex::value_retriever`]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
 pub(super) fn value_retriever<'a, N: BoolIndexRead + ?Sized + 'a>(
     idx: &'a N,
-    _hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<VariableRetrieverFn<'a>> {
     // Materialize both bitmaps here rather than inside the closure: the
     // retriever is invoked per point and must not fail, so the one scan that

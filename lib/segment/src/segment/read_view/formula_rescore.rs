@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, ScoreType, ScoredPointOffset};
 use itertools::{Either, Itertools};
@@ -33,7 +32,6 @@ where
         limit: usize,
         score_threshold: Option<ScoreType>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Dedup point offsets into a hashset.
         let mut points_to_rescore =
@@ -74,7 +72,7 @@ where
 
         let scorer = self
             .payload_index
-            .formula_scorer(formula, &prefetches_scores, hw_counter)?;
+            .formula_scorer(formula, &prefetches_scores)?;
 
         // Perform rescoring.
         let mut error = None;
@@ -116,7 +114,6 @@ where
     pub fn rescore_with_formula(
         &self,
         ctx: Arc<FormulaContext>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let FormulaContext {
             formula,
@@ -132,16 +129,9 @@ where
             *limit,
             *score_threshold,
             is_stopped,
-            hw_counter,
         )?;
 
-        self.process_search_result(
-            internal_results,
-            &false.into(),
-            &false.into(),
-            hw_counter,
-            is_stopped,
-        )
+        self.process_search_result(internal_results, &false.into(), &false.into(), is_stopped)
     }
 }
 
@@ -151,7 +141,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use tempfile::Builder;
 
     use crate::data_types::named_vectors::NamedVectors;
@@ -184,7 +174,7 @@ mod tests {
     fn rescore_keeps_every_prefetch_score_with_its_own_point() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         for id in [1, 2, 3] {
             let mut vectors = NamedVectors::default();
@@ -193,12 +183,10 @@ mod tests {
                 VectorInternal::Dense(vec![id as f32, 0.0]),
             );
             segment
-                .upsert_point(id, PointIdType::NumId(id), vectors, &hw_counter)
+                .upsert_point(id, PointIdType::NumId(id), vectors)
                 .unwrap();
         }
-        segment
-            .delete_point(10, PointIdType::NumId(3), &hw_counter)
-            .unwrap();
+        segment.delete_point(10, PointIdType::NumId(3)).unwrap();
 
         let ctx = FormulaContext {
             // The rescored score is the prefetch score itself.
@@ -220,9 +208,7 @@ mod tests {
             is_stopped: Arc::new(AtomicBool::new(false)),
         };
 
-        let rescored = segment
-            .rescore_with_formula(Arc::new(ctx), &hw_counter)
-            .unwrap();
+        let rescored = segment.rescore_with_formula(Arc::new(ctx)).unwrap();
 
         let scores: Vec<_> = rescored
             .into_iter()

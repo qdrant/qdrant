@@ -1,7 +1,8 @@
 #![allow(deprecated)]
 use std::fmt;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use shard::operations::vector_name_ops::VectorNameConfig;
 use shard::operations::{CollectionUpdateOperations, VectorNameOperations};
@@ -30,7 +31,7 @@ impl EdgeShard {
         let mut wal = self.wal.lock();
 
         let operation_id = wal.write(&record).map_err(service_error)?;
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let _update_guard = self.segments.acquire_updates_lock();
 
         let segments_guard = self.segments.read();
@@ -42,34 +43,16 @@ impl EdgeShard {
                     operation_id,
                     point_operation,
                     None, // edge shards have a single appendable segment, no size cap to apply
-                    &hw_counter,
                 )
             }
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                process_vector_operation(
-                    &segments_guard,
-                    operation_id,
-                    vector_operation,
-                    None,
-                    &hw_counter,
-                )
+                process_vector_operation(&segments_guard, operation_id, vector_operation, None)
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(
-                    &segments_guard,
-                    operation_id,
-                    payload_operation,
-                    None,
-                    &hw_counter,
-                )
+                process_payload_operation(&segments_guard, operation_id, payload_operation, None)
             }
             CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                process_field_index_operation(
-                    &segments_guard,
-                    operation_id,
-                    &index_operation,
-                    &hw_counter,
-                )
+                process_field_index_operation(&segments_guard, operation_id, &index_operation)
             }
             CollectionUpdateOperations::VectorNameOperation(ref vector_name_operation) => {
                 let result = process_vector_name_operation(

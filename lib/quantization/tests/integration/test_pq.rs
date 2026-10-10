@@ -3,7 +3,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::time::Duration;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_pq::{self, EncodedVectorsPQ};
@@ -45,9 +45,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let score = encoded.score_point(&query_u8, index as u32);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
@@ -83,9 +83,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let score = encoded.score_point(&query_u8, index as u32);
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
@@ -121,9 +121,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let score = encoded.score_point(&query_u8, index as u32);
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
@@ -159,9 +159,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let score = encoded.score_point(&query_u8, index as u32);
             let orginal_score = -dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
@@ -197,9 +197,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let score = encoded.score_point(&query_u8, index as u32);
             let orginal_score = -l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
@@ -235,9 +235,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let score = encoded.score_point(&query_u8, index as u32);
             let orginal_score = -l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
@@ -271,9 +271,9 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for i in 1..VECTORS_COUNT {
-            let score = encoded.score_internal(0, i as u32, &counter);
+            let score = encoded.score_internal(0, i as u32);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < ERROR);
         }
@@ -307,9 +307,9 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         for i in 1..VECTORS_COUNT {
-            let score = encoded.score_internal(0, i as u32, &counter);
+            let score = encoded.score_internal(0, i as u32);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < ERROR);
         }

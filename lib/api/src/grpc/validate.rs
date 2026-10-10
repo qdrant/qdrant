@@ -422,6 +422,7 @@ impl Validate for super::qdrant::query::Variant {
             grpc::query::Variant::Formula(q) => q.validate(),
             grpc::query::Variant::Rrf(q) => q.validate(),
             grpc::query::Variant::RelevanceFeedback(q) => q.validate(),
+            grpc::query::Variant::Text(q) => q.validate(),
             grpc::query::Variant::Sample(_)
             | grpc::query::Variant::Fusion(_)
             | grpc::query::Variant::OrderBy(_) => Ok(()),
@@ -480,6 +481,14 @@ impl Validate for super::qdrant::expression::Variant {
     }
 }
 
+impl Validate for grpc::text_query::Scoring {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::text_query::Scoring::Bm25(params) => params.validate(),
+        }
+    }
+}
+
 impl Validate for grpc::feedback_strategy::Variant {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
@@ -527,11 +536,17 @@ pub fn validate_geo_polygon_interiors(
     Ok(())
 }
 
-/// Reject the `Turbo4` datatype on sparse vector configs.
+/// Reject the TurboQuant datatypes on sparse vector configs.
 /// `validator` unwraps `Option<i32>` before calling, so we receive `&i32`.
 pub fn validate_sparse_datatype(datatype: &i32) -> Result<(), ValidationError> {
     if *datatype == grpc::Datatype::Turbo4 as i32 {
         return Err(common::validation::sparse_turbo4_unsupported_error());
+    }
+    if *datatype == grpc::Datatype::Turbo8 as i32 {
+        return Err(common::validation::sparse_turbo8_unsupported_error());
+    }
+    if *datatype == grpc::Datatype::Turbo16 as i32 {
+        return Err(common::validation::sparse_turbo16_unsupported_error());
     }
     Ok(())
 }
@@ -595,6 +610,7 @@ impl Validate for super::qdrant::TextIndexParams {
             ascii_folding: _,
             enable_hnsw: _,
             memory: _,
+            scoring: _,
         } = &self;
         validate_text_index_params(min_token_len, max_token_len)
     }

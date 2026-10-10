@@ -137,6 +137,7 @@ impl TryFrom<grpc::CreateCollection> for CollectionMetaOperations {
                 } else {
                     Some(json::proto_to_payloads(metadata)?)
                 },
+                created_at: None,
             },
         )?;
         Ok(CollectionMetaOperations::CreateCollection(op))

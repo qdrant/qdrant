@@ -14,7 +14,7 @@ workspace = true
 [features]
 default = ["api"]
 api = ["dep:api", "dep:tonic"]
-testing = []
+testing = ["common/testing"]
 staging = []
 
 [dependencies]

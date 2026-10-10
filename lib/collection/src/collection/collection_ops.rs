@@ -1,7 +1,8 @@
 use std::cmp;
 use std::sync::{Arc, LazyLock};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
@@ -10,6 +11,7 @@ use shard::count::CountRequestInternal;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 
 use super::Collection;
+use super::shard_transfer::AbortShardTransferScope;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -294,8 +296,13 @@ impl Collection {
 
         for (replica_set, peer_id, transfers) in to_remove {
             for transfer in transfers {
-                self.abort_shard_transfer_and_resharding(transfer.key())
-                    .await?;
+                self.abort_shard_transfer_and_resharding_scoped(
+                    transfer.key(),
+                    AbortShardTransferScope {
+                        skip_replica: Some((replica_set.shard_id, peer_id)),
+                    },
+                )
+                .await?;
             }
 
             replica_set.remove_peer(peer_id).await?;
@@ -445,6 +452,7 @@ impl Collection {
                 config: _,
                 payload_schema,
                 update_queue,
+                created_at: _,
             } = response;
             info.status = cmp::max(info.status, status);
             info.optimizer_status = cmp::max(info.optimizer_status, optimizer_status);
@@ -480,6 +488,9 @@ impl Collection {
             }
         }
 
+        // Shard responses from remote peers don't carry it, take it from the local config
+        info.created_at = self.collection_config.read().await.created_at;
+
         Ok(info)
     }
 
@@ -506,14 +517,11 @@ impl Collection {
 
                 // Cluster info is explicitly excluded from hardware measurements
                 // So that we can monitor hardware usage without interference
-                let hw_acc = HwMeasurementAcc::disposable();
                 let count_result = replica_set
-                    .count_local(
-                        count_request.clone(),
-                        None,
-                        hw_acc,
-                        DeferredBehavior::VisibleOnly,
-                    )
+                    .count_local(count_request.clone(), None, DeferredBehavior::VisibleOnly)
+                    .unmeasured(reason(
+                        "Cluster info is excluded from hardware measurements",
+                    ))
                     .await
                     .unwrap_or_default();
 

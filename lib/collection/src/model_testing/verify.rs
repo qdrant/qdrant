@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use api::rest::{VectorOutput, VectorStructOutput};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::types::{DetailsLevel, TelemetryDetail};
 use segment::types::{PointIdType, VectorNameBuf, WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
@@ -28,8 +28,8 @@ pub(super) async fn collect_model_from_collection(collection: &Collection) -> Mo
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("scroll failed");
 

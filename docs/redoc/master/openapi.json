@@ -6558,6 +6558,12 @@
                 "nullable": true
               }
             ]
+          },
+          "created_at": {
+            "description": "Time of the collection creation. Absent for collections created before Qdrant started recording it.",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -6833,7 +6839,7 @@
             ]
           },
           "datatype": {
-            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm.",
+            "description": "Defines which datatype should be used to represent vectors in the storage. Choosing different datatypes allows to optimize memory usage and performance vs accuracy.\n\n- For `float32` datatype - vectors are stored as single-precision floating point numbers, 4 bytes. - For `float16` datatype - vectors are stored as half-precision floating point numbers, 2 bytes. - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1 byte. It expects vector elements to be in range `[0, 255]`. - For `turbo4` datatype - vectors are quantized to 4 bits per element using the TurboQuant algorithm. - For `turbo8` datatype - vectors are quantized to 8 bits per element using the TurboQuant algorithm. - For `turbo16` datatype - vectors are quantized to 16 bits per element using the TurboQuant algorithm.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Datatype"
@@ -7174,7 +7180,8 @@
           "bits1",
           "bits1_5",
           "bits2",
-          "bits4"
+          "bits4",
+          "bits8"
         ]
       },
       "Datatype": {
@@ -7183,7 +7190,9 @@
           "float32",
           "uint8",
           "float16",
-          "turbo4"
+          "turbo4",
+          "turbo8",
+          "turbo16"
         ]
       },
       "MultiVectorConfig": {
@@ -8027,6 +8036,17 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "scoring": {
+            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Implies `phrase_matching: true`, since term frequencies come from the positions it stores. Changing it rebuilds the index. Default: disabled.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextScoringInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8186,6 +8206,36 @@
         "type": "string",
         "enum": [
           "none"
+        ]
+      },
+      "TextScoringInterface": {
+        "description": "BM25 scoring for a text index: `true` for the default parameters, `false` to disable it, or the parameters themselves.",
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "$ref": "#/components/schemas/TextScoringParams"
+          }
+        ]
+      },
+      "TextScoringParams": {
+        "description": "Parameters of ranking over a text index. The index records the length of each document, which BM25 normalizes by. `k1` and `b` are set per query.",
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/TextScoringType"
+          }
+        }
+      },
+      "TextScoringType": {
+        "description": "How a text index ranks documents.",
+        "type": "string",
+        "enum": [
+          "bm25"
         ]
       },
       "BoolIndexParams": {
@@ -12117,6 +12167,7 @@
           "dir",
           "log_api",
           "max_log_files",
+          "output",
           "rotation",
           "trust_forwarded_headers"
         ],
@@ -12137,6 +12188,9 @@
           },
           "log_api": {
             "type": "boolean"
+          },
+          "output": {
+            "type": "string"
           },
           "dir_size_bytes": {
             "type": "integer",
@@ -12868,7 +12922,9 @@
           "float32",
           "float16",
           "uint8",
-          "turbo4"
+          "turbo4",
+          "turbo8",
+          "turbo16"
         ]
       },
       "SparseVectorDataConfig": {
@@ -14877,7 +14933,7 @@
             ]
           },
           "using": {
-            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "description": "Define which vector name to use for querying. If missing, the default vector is used. For a `text` query, the payload field whose text index to search.",
             "type": "string",
             "nullable": true
           },
@@ -14992,7 +15048,7 @@
             ]
           },
           "using": {
-            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "description": "Define which vector name to use for querying. If missing, the default vector is used. For a `text` query, the payload field whose text index to search.",
             "type": "string",
             "nullable": true
           },
@@ -15122,6 +15178,9 @@
           },
           {
             "$ref": "#/components/schemas/RelevanceFeedbackQuery"
+          },
+          {
+            "$ref": "#/components/schemas/TextQuery"
           }
         ]
       },
@@ -15869,6 +15928,91 @@
           }
         }
       },
+      "TextQuery": {
+        "description": "Rank by BM25 over the text index of the payload field named by `using`, which must have `scoring` set. A point scores when it holds any of the query's terms: required or excluded terms belong in the request's `filter`.",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "$ref": "#/components/schemas/TextInterface"
+          }
+        }
+      },
+      "TextInterface": {
+        "description": "The text to search for, or the text with scorer parameters.",
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/TextQueryInput"
+          }
+        ]
+      },
+      "TextQueryInput": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "description": "Text to search for, tokenized by the field's text index.",
+            "type": "string"
+          },
+          "scoring": {
+            "description": "Parameters of the scorer, keyed by its name. They must match the `scoring` type of the field's text index. If absent, the scorer runs with its defaults.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextQueryScoring"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "TextQueryScoring": {
+        "description": "Parameters of one scorer, keyed by its name.",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Bm25Scoring"
+          }
+        ]
+      },
+      "Bm25Scoring": {
+        "type": "object",
+        "required": [
+          "bm25"
+        ],
+        "properties": {
+          "bm25": {
+            "$ref": "#/components/schemas/Bm25Params"
+          }
+        }
+      },
+      "Bm25Params": {
+        "type": "object",
+        "properties": {
+          "k": {
+            "description": "Term frequency saturation. Default is 1.2.",
+            "type": "number",
+            "format": "float",
+            "minimum": 0,
+            "nullable": true
+          },
+          "b": {
+            "description": "Document length normalization, from 0 (none) to 1 (full). Default is 0.75.",
+            "type": "number",
+            "format": "float",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
       "SearchParams": {
         "description": "Additional parameters of the search",
         "type": "object",
@@ -16101,7 +16245,7 @@
             ]
           },
           "using": {
-            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "description": "Define which vector name to use for querying. If missing, the default vector is used. For a `text` query, the payload field whose text index to search.",
             "type": "string",
             "nullable": true
           },
@@ -17089,7 +17233,7 @@
             ]
           },
           "datatype": {
-            "description": "Element storage type (Float32, Float16, Uint8, Turbo4)",
+            "description": "Element storage type (Float32, Float16, Uint8, Turbo4, Turbo8, Turbo16)",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorStorageDatatype"

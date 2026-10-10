@@ -26,7 +26,7 @@ mod lifecycle;
 mod live_reload;
 
 pub use config_reload::SegmentConfigReloadDiff;
-pub use lifecycle::StagedSegmentOpen;
+pub use lifecycle::{StagedSegmentOpen, build_cached_fs_async};
 mod read_entry;
 #[cfg(test)]
 mod tests;

@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{AdviceSetting, Flusher};
 use common::types::PointOffsetType;
@@ -81,12 +80,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
 }
 
 impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedStorageRead<S> {
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[u8]) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "Cannot upsert vector in read-only chunked storage",
@@ -97,8 +91,8 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedSto
         S::kind().is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.data.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.data.is_cold()
     }
 
     fn vectors_count(&self) -> usize {
@@ -128,7 +122,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         let offsets = offsets
             .iter()
             .enumerate()
@@ -139,20 +133,21 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
                 callback(index, vector);
                 Ok(())
             })
-            .expect("vectors read");
+            .map_err(std::io::Error::other)
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for run in quantization::encoded_storage::consecutive_runs(offsets) {
             let bytes = self
                 .get_many::<Random>(run.start, run.len)
-                .expect("vectors read");
+                .ok_or_else(|| run.unreadable())?;
             callback(run.first, run.len, bytes);
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -161,5 +156,37 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageR
 
     fn immutable_files(&self) -> Vec<PathBuf> {
         self.data.immutable_files()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::universal_io::{MmapFile, MmapFs};
+    use quantization::{EncodedStorage, EncodedStorageBuilder};
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageBuilder;
+
+    const VECTOR_SIZE: usize = 16;
+    const COUNT: PointOffsetType = 32;
+
+    #[test]
+    fn reads_past_the_stored_vectors_fail() {
+        let dir = TempDir::with_prefix("quantized_chunked_read").unwrap();
+        let mut builder =
+            QuantizedChunkedStorageBuilder::<MmapFile>::new(MmapFs, dir.path(), VECTOR_SIZE, false)
+                .unwrap();
+        for id in 0..COUNT {
+            builder.push_vector_data(&[id as u8; VECTOR_SIZE]).unwrap();
+        }
+        drop(builder.build().unwrap());
+
+        let storage =
+            QuantizedChunkedStorageRead::<MmapFile>::open(&MmapFs, dir.path(), VECTOR_SIZE)
+                .unwrap();
+        let ids = [0, COUNT + 4];
+        assert!(storage.for_each_batch(&ids, |_, _| {}).is_err());
+        assert!(storage.for_each_run(&ids, |_, _, _| {}).is_err());
     }
 }

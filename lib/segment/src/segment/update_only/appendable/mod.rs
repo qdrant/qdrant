@@ -3,8 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::{self, Handoff};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
 use rayon::ThreadPool;
@@ -56,7 +55,7 @@ struct VectorComponents<Fs: UniversalAppendFs> {
     storage: UpdateOnlyVectorStorage<Fs::File>,
     /// Quantized overlay — only for dense, non-multivector vectors whose
     /// quantization method supports incremental appends.
-    quantized: Option<UpdateOnlyQuantizedVectors<Fs>>,
+    quantized: Option<UpdateOnlyQuantizedVectors>,
 }
 
 impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
@@ -67,7 +66,7 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
         points: &[FullyQualifiedPoint],
         start_slot: u32,
         fs: &Fs,
-        hw_acc: &HwMeasurementAcc,
+        handoff: &Handoff,
         vector_name: &String,
     ) -> OperationResult<()> {
         let vectors: Vec<VectorToStore> = points
@@ -91,16 +90,15 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
         let mut quantized_res = Ok(());
         pool.scope(|s| {
             s.spawn(|_| {
-                let hw_counter = hw_acc.get_counter_cell();
-                original_res =
-                    self.storage
-                        .append_many(fs, start_slot, vectors.iter().copied(), &hw_counter);
+                let _scope = handoff.enter_guard();
+                original_res = self
+                    .storage
+                    .append_many(fs, start_slot, vectors.iter().copied());
             });
             if let Some(quantized) = &mut self.quantized {
                 s.spawn(|_| {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    quantized_res =
-                        quantized.append_many(start_slot, vectors.iter().copied(), &hw_counter);
+                    let _scope = handoff.enter_guard();
+                    quantized_res = quantized.append_many(fs, start_slot, vectors.iter().copied());
                 });
             }
         });
@@ -136,13 +134,7 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
 
                         let (original, quantized) = rayon::join(
                             || UpdateOnlyVectorStorage::<Fs::File>::open(fs, &path, vector_config),
-                            || {
-                                UpdateOnlyQuantizedVectors::<Fs>::open(
-                                    fs.clone(),
-                                    &path,
-                                    vector_config,
-                                )
-                            },
+                            || UpdateOnlyQuantizedVectors::open(fs, &path, vector_config),
                         );
 
                         let components = VectorComponents {
@@ -238,14 +230,15 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
     /// Append `points` to fresh slots in this segment and update the id tracker.
     /// Writes component data in parallel before making points visible by publishing versions.
+    ///
+    /// Returns the slot each point landed in, in the order of `points`.
     pub fn store_points(
         &mut self,
         pool: &ThreadPool,
         points: &mut [FullyQualifiedPoint],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<Vec<PointOffsetType>> {
         if points.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         // Cosine scores with a plain dot product, so a stored vector has to be
@@ -274,9 +267,6 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
         let (fs, store) = self.store_components(pool)?;
 
-        // One cell per task, off the accumulator: the cell itself is not Sync
-        let hw_acc = hw_counter.new_accumulator();
-
         let slot_payloads = || {
             inserted
                 .iter()
@@ -288,37 +278,34 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let mut vectors_res = Ok(());
         let mut payload_res = Ok(());
         let mut indexes_res = Ok(());
-        pool.scope(|s| {
-            s.spawn(|_| {
-                vectors_res =
-                    store
-                        .vectors
-                        .par_iter_mut()
-                        .try_for_each(|(vector_name, components)| {
-                            components.append_many(
-                                pool,
-                                points,
-                                start_slot,
-                                fs,
-                                &hw_acc,
-                                vector_name,
-                            )
-                        });
-            });
+        ambient::parallel(|handoff| {
+            pool.scope(|s| {
+                s.spawn(|_| {
+                    vectors_res =
+                        store
+                            .vectors
+                            .par_iter_mut()
+                            .try_for_each(|(vector_name, components)| {
+                                components.append_many(
+                                    pool,
+                                    points,
+                                    start_slot,
+                                    fs,
+                                    handoff,
+                                    vector_name,
+                                )
+                            });
+                });
 
-            s.spawn(|_| {
-                let hw_counter = hw_acc.get_counter_cell();
-                payload_res = store
-                    .payload_storage
-                    .append_many(fs, slot_payloads(), &hw_counter);
-            });
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_res = store.payload_storage.append_many(fs, slot_payloads());
+                });
 
-            s.spawn(|_| {
-                let hw_counter = hw_acc.get_counter_cell();
-                indexes_res =
-                    store
-                        .payload_indexes
-                        .par_append_many(fs, slot_payloads(), &hw_counter);
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    indexes_res = store.payload_indexes.par_append_many(fs, slot_payloads());
+                });
             });
         });
         vectors_res.and(payload_res).and(indexes_res)?;
@@ -331,7 +318,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
             .set_internal_versions(&self.fs, &slots, &versions)?;
 
         self.fs.rotate_cache_file_info();
-        Ok(())
+        Ok(slots)
     }
 
     /// Retire the given points, addressed by their external ids — the slots

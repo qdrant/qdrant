@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use blobstore::Blob;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use serde_json::Value;
@@ -17,6 +17,7 @@ use crate::index::field_index::numeric_index::immutable_numeric_index::Immutable
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
+use crate::types::Memory;
 
 pub struct NumericIndexBuilder<T: Encodable + Numericable + StoredValue + Send + Sync + Default, P>(
     NumericIndex<T, P>,
@@ -41,13 +42,8 @@ where
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, payload)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -64,7 +60,7 @@ where
 {
     path: PathBuf,
     in_memory_index: InMemoryNumericIndex<T>,
-    is_on_disk: bool,
+    memory: Memory,
     deleted_points: BitVec,
     _phantom: PhantomData<P>,
 }
@@ -75,11 +71,11 @@ where
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
     Vec<T>: Blob,
 {
-    pub(super) fn new(path: PathBuf, is_on_disk: bool, deleted_points: BitVec) -> Self {
+    pub(super) fn new(path: PathBuf, memory: Memory, deleted_points: BitVec) -> Self {
         Self {
             path,
             in_memory_index: InMemoryNumericIndex::default(),
-            is_on_disk,
+            memory,
             deleted_points,
             _phantom: PhantomData,
         }
@@ -98,12 +94,7 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         self.in_memory_index.remove_point(id);
         let mut flatten_values: Vec<_> = vec![];
         for value in payload {
@@ -115,16 +106,16 @@ where
             .map(NumericIndex::into_inner_value)
             .collect();
 
-        hw_counter
-            .payload_index_io_write_counter()
-            .incr_delta(size_of_val(&flatten_values));
+        HwMetric::PayloadIndexIoWrite.bump(size_of_val(&flatten_values));
 
         self.in_memory_index.add_many_to_list(id, flatten_values);
         Ok(())
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(!self.is_on_disk);
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = self.memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let on_disk_index = OnDiskNumericIndex::build(
             &MmapFs,
             self.in_memory_index,
@@ -133,10 +124,10 @@ where
             &self.deleted_points,
         )?;
 
-        let inner = if self.is_on_disk {
-            NumericIndexInner::OnDisk(on_disk_index)
-        } else {
+        let inner = if memory.is_heap() {
             NumericIndexInner::Immutable(ImmutableNumericIndex::load_from_on_disk(on_disk_index))
+        } else {
+            NumericIndexInner::OnDisk(on_disk_index)
         };
 
         Ok(NumericIndex {
@@ -200,18 +191,13 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "NumericIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

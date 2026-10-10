@@ -5,9 +5,12 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
-use common::universal_io::{CachedFs, CachedReadFs, Populate, UniversalReadFsAsync, read_json_via};
+use common::universal_io::{
+    CachedFs, CachedReadFs, FileInfo, Populate, UniversalReadFsAsync, read_json_via,
+};
 
 use super::LookupSegment;
+use crate::common::deferred_points::segment_deferred_internal_id;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
@@ -28,24 +31,46 @@ use crate::vector_storage::sparse::read_only::ReadOnlySparseVectorStorage;
 /// flags).
 ///
 /// [`preopen`]: LookupSegment::preopen
-const WRITER_POPULATE: Populate = Populate::No;
+pub(in crate::segment::update_only) const WRITER_POPULATE: Populate = Populate::No;
 
 /// Build the per-segment [`CachedFs`] an open runs over. Preloads statically
 /// known files.
 ///
 /// Mirror of the read-only segment's `build_cached_fs`, minus the payload index
 /// config the writer never opens.
-fn build_cached_fs<Fs: UniversalReadFsAsync>(
+pub(in crate::segment::update_only) fn build_cached_fs<Fs: UniversalReadFsAsync>(
+    fs: Fs,
+    segment_path: &Path,
+) -> OperationResult<CachedFs<Fs>> {
+    futures::executor::block_on(build_cached_fs_async(fs, segment_path))
+}
+
+async fn build_cached_fs_async<Fs: UniversalReadFsAsync>(
     fs: Fs,
     segment_path: &Path,
 ) -> OperationResult<CachedFs<Fs>> {
     let mut cached_fs = CachedFs::new(fs, segment_path)?;
 
-    cached_fs.cache_file_info()?;
+    // Probe id-tracker commit marks first, so we have an accurate commit mark available.
+    let commit_marks = ReadOnlyIdTrackerEnum::<Fs::File>::commit_mark_paths(segment_path);
+    let probed_files = cached_fs.inner().select_files_async(&commit_marks).await?;
 
-    // Absence is tolerated here: the subsequent read reports it gracefully.
+    // Schedule other static files to overlap with LIST op. Absence is tolerated here:
+    // the subsequent read reports it gracefully.
     for file_name in [VERSION_FILE, SEGMENT_STATE_FILE] {
         cached_fs.schedule_open(&segment_path.join(file_name), None, None);
+    }
+
+    // LIST
+    cached_fs.cache_file_info_async().await?;
+
+    // Inject id-tracker probe into cached_fs.
+    for path in commit_marks {
+        let info = probed_files
+            .iter()
+            .find(|f| f.path == path)
+            .map(FileInfo::from);
+        cached_fs.set_file_info(path, info);
     }
 
     Ok(cached_fs)
@@ -61,15 +86,19 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// `fs` is the canonical backend: the caching wrapper lives only for this
     /// open, and it is `fs` that components keep for later re-opens.
     ///
-    /// `deferred_internal_id` is the cutoff agreed with an external rebuilder
-    /// working the same directory — see [`open_via`](Self::open_via).
+    /// `deferred_threshold_kb` is the deferred-points threshold agreed with an
+    /// external rebuilder working the same directory, in KB like the indexing
+    /// threshold; it is converted to this segment's cutoff (see
+    /// [`segment_deferred_internal_id`] and [`open_via`](Self::open_via)).
     pub fn open(
         fs: Fs,
         segment_path: &Path,
-        deferred_internal_id: Option<PointOffsetType>,
+        deferred_threshold_kb: Option<usize>,
     ) -> OperationResult<Self> {
         let cached_fs = build_cached_fs(fs, segment_path)?;
         let config = Self::preopen(&cached_fs, segment_path)?;
+        let deferred_internal_id = deferred_threshold_kb
+            .and_then(|threshold_kb| segment_deferred_internal_id(&config, threshold_kb));
         Self::open_via(cached_fs, segment_path, config, deferred_internal_id)
     }
 
@@ -113,6 +142,8 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         )?));
 
         let appendable = config.is_appendable();
+        let max_committed_offset =
+            ReadOnlyIdTrackerEnum::<Fs::File>::max_committed_offset(&fs, segment_path);
 
         // Detect the persisted format by attempting each format's open. The
         // deferred threshold applies to the appendable tracker only, mirroring
@@ -121,6 +152,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             &fs,
             segment_path,
             deferred_internal_id.filter(|_| appendable),
+            max_committed_offset,
             WRITER_POPULATE,
         )?));
 

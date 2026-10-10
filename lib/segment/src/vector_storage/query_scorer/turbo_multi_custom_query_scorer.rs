@@ -1,9 +1,10 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::vector_storage::TurboMultiScoring;
 use crate::vector_storage::query::{Query, TransformInto};
@@ -20,9 +21,9 @@ where
     TStorage: TurboMultiScoring,
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
+    hw: HwScale,
     query: TQuery,
     storage: &'a TStorage,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a, TStorage, TQuery> TurboMultiCustomQueryScorer<'a, TStorage, TQuery>
@@ -30,11 +31,7 @@ where
     TStorage: TurboMultiScoring,
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
-    pub fn new<TInputQuery>(
-        raw_query: TInputQuery,
-        storage: &'a TStorage,
-        mut hardware_counter: HardwareCounterCell,
-    ) -> Self
+    pub fn new<TInputQuery>(raw_query: TInputQuery, storage: &'a TStorage) -> Self
     where
         TInputQuery: Query<MultiDenseVectorInternal>
             + TransformInto<TQuery, MultiDenseVectorInternal, Vec<EncodedQueryTQ>>,
@@ -44,12 +41,13 @@ where
             .transform(&|multi| Ok(storage.preprocess_query(&multi)))
             .unwrap();
 
-        hardware_counter.set_vector_io_read_multiplier(usize::from(storage.is_on_disk()));
-
         Self {
+            hw: HwScale {
+                cpu: 1,
+                vector_io_read: usize::from(storage.is_cold()),
+            },
             query,
             storage,
-            hardware_counter,
         }
     }
 }
@@ -59,31 +57,29 @@ where
     TStorage: TurboMultiScoring,
     TQuery: Query<Vec<EncodedQueryTQ>>,
 {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.query.score_by(|query| {
-            self.storage
-                .score_point_max_similarity(query, idx, &self.hardware_counter)
-        })
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        Ok(self
+            .query
+            .score_by(|query| self.storage.score_point_max_similarity(query, idx)))
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         let keys = ids.iter().copied().enumerate();
-
-        let hw_counter = &self.hardware_counter;
 
         self.storage
             .for_each_record_range::<Random, _>(keys, |idx, _id, records| {
-                hw_counter.vector_io_read().incr_delta(records.len());
+                self.hw.vector_io_read(records.len());
 
                 scores[idx] = self.query.score_by(|query| {
-                    hw_counter
-                        .cpu_counter()
-                        .incr_delta(records.len() * query.len());
+                    self.hw.cpu(records.len() * query.len());
 
                     self.storage.score_records_max_similarity(query, records)
                 });
             })
-            .expect("Failed to score stored batch");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

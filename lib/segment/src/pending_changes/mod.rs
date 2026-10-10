@@ -33,8 +33,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::is_alive_lock::IsAliveLock;
+use common::reason::reason;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -357,8 +358,7 @@ pub fn apply_change<S>(segment: &mut S, change: &PendingChange) -> OperationResu
 where
     S: NonAppendableSegmentEntry + ?Sized,
 {
-    // Internal operation, no need to measure hardware IO
-    let hw_counter = HardwareCounterCell::disposable();
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     match change {
         PendingChange::DeletePoint { point_id, versions } => {
@@ -368,11 +368,11 @@ where
             // newer. This is possible because different proxy segments can share state through a
             // common write segment.
             // See: <https://github.com/qdrant/qdrant/pull/7208>
-            segment.delete_point(versions.operation_version, *point_id, &hw_counter)?;
+            segment.delete_point(versions.operation_version, *point_id)?;
         }
         PendingChange::IndexChange { field_name, change } => match change {
             ProxyIndexChange::Create(schema, version) => {
-                segment.create_field_index(*version, field_name, Some(schema), &hw_counter)?;
+                segment.create_field_index(*version, field_name, Some(schema))?;
             }
             ProxyIndexChange::Delete(version) => {
                 segment.delete_field_index(*version, field_name)?;

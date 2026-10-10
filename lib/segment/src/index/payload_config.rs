@@ -7,7 +7,7 @@ use common::universal_io::{OkNotFound, UniversalReadFs, read_json_via};
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
-use crate::types::{PayloadFieldSchema, PayloadKeyType};
+use crate::types::{Memory, PayloadFieldSchema, PayloadKeyType};
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 
@@ -182,7 +182,57 @@ pub enum IndexMutability {
 #[serde(rename_all = "snake_case")]
 pub enum StorageType {
     Gridstore,
-    Mmap { is_on_disk: bool },
+    Mmap {
+        #[serde(rename = "is_on_disk")]
+        layout: ImmutableLayout,
+    },
+}
+
+/// In-memory layout an immutable index was built for.
+///
+/// Persisted as the legacy `is_on_disk` bool: `true` is [`Self::Mmap`].
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(from = "bool", into = "bool")]
+pub enum ImmutableLayout {
+    /// Reads go straight to the mmap files (`OnDisk*` index types).
+    Mmap,
+    /// Files are loaded into heap at open (`Immutable*` index types).
+    Heap,
+}
+
+impl From<bool> for ImmutableLayout {
+    fn from(is_on_disk: bool) -> Self {
+        if is_on_disk { Self::Mmap } else { Self::Heap }
+    }
+}
+
+impl From<ImmutableLayout> for bool {
+    fn from(layout: ImmutableLayout) -> Self {
+        match layout {
+            ImmutableLayout::Mmap => true,
+            ImmutableLayout::Heap => false,
+        }
+    }
+}
+
+impl StorageType {
+    /// Placement to open an immutable index with, `None` for the appendable
+    /// format: the built variant decides heap vs mmap, and the schema's
+    /// requested placement refines cold vs cached for the mmap variant.
+    pub fn immutable_memory(self, schema_memory: Memory) -> Option<Memory> {
+        match self {
+            StorageType::Gridstore => None,
+            StorageType::Mmap {
+                layout: ImmutableLayout::Mmap,
+            } => Some(match schema_memory {
+                Memory::Cached => Memory::Cached,
+                Memory::Cold | Memory::Pinned => Memory::Cold,
+            }),
+            StorageType::Mmap {
+                layout: ImmutableLayout::Heap,
+            } => Some(Memory::Pinned),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -220,5 +270,20 @@ mod test {
                 .schema,
             old_config
         );
+    }
+
+    #[test]
+    fn storage_type_layout_wire_format() {
+        for (layout, json) in [
+            (ImmutableLayout::Mmap, r#"{"mmap":{"is_on_disk":true}}"#),
+            (ImmutableLayout::Heap, r#"{"mmap":{"is_on_disk":false}}"#),
+        ] {
+            let storage_type = StorageType::Mmap { layout };
+            assert_eq!(serde_json::to_string(&storage_type).unwrap(), json);
+            assert_eq!(
+                serde_json::from_str::<StorageType>(json).unwrap(),
+                storage_type,
+            );
+        }
     }
 }

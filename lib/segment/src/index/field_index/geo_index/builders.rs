@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use serde_json::Value;
@@ -12,11 +11,12 @@ use super::on_disk_geo_index::OnDiskGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_index::immutable_geo_index::ImmutableGeoIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
+use crate::types::Memory;
 
 pub struct GeoIndexMmapBuilder {
     pub(super) path: PathBuf,
     pub(super) in_memory_index: InMemoryGeoIndex,
-    pub(super) is_on_disk: bool,
+    pub(super) memory: Memory,
     pub(super) deleted_points: BitVec,
 }
 
@@ -27,22 +27,18 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let values = payload
             .iter()
             .flat_map(|value| <GeoIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
-        self.in_memory_index
-            .add_many_geo_points(id, values, hw_counter)
+        self.in_memory_index.add_many_geo_points(id, values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(!self.is_on_disk);
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = self.memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let on_disk_index = OnDiskGeoIndex::build(
             &MmapFs,
             self.in_memory_index,
@@ -51,10 +47,10 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
             &self.deleted_points,
         )?;
 
-        let index = if self.is_on_disk {
-            GeoIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             GeoIndex::Immutable(ImmutableGeoIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            GeoIndex::OnDisk(on_disk_index)
         };
         Ok(index)
     }
@@ -95,18 +91,13 @@ impl FieldIndexBuilderTrait for GeoIndexGridstoreBuilder {
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "GeoIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

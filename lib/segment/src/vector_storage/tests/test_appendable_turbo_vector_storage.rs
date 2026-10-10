@@ -8,16 +8,19 @@ use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSliceExt;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFile;
 use common::universal_io::MmapFile;
+use quantization::turboquant::TQBits;
 use quantization::turboquant::quantization::TurboQuantizer;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
+use rstest::rstest;
 use tempfile::Builder;
 
 use crate::common::operation_error::OperationResult;
@@ -26,7 +29,7 @@ use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::prefill_deleted::fill_turbo;
 use crate::vector_storage::quantized::quantized_storage::QuantizedStorage;
 use crate::vector_storage::turbo::shared::{
-    DELETED_DIR_PATH, TQDT_BITS, TQDT_MODE, TQDT_ROTATION, VECTORS_DIR_PATH,
+    DELETED_DIR_PATH, TQDT_MODE, TQDT_ROTATION, VECTORS_DIR_PATH,
 };
 use crate::vector_storage::turbo::{
     AppendableMmapTurboVectorStorage, TurboVectorStorageImpl, open_appendable_turbo_vector_storage,
@@ -43,9 +46,12 @@ fn open_turbo_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     populate: bool,
 ) -> OperationResult<TurboVectorStorageImpl<QuantizedStorage<MmapFile>>> {
-    TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(path, dim, distance, populate)
+    TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
+        path, dim, distance, bits, populate,
+    )
 }
 
 /// Concrete single-file opener with an explicit backend. Only the mmap
@@ -55,6 +61,7 @@ fn open_turbo_vector_storage_with_uring(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     populate: bool,
     with_uring: bool,
 ) -> OperationResult<TurboVectorStorageImpl<QuantizedStorage<MmapFile>>> {
@@ -62,7 +69,9 @@ fn open_turbo_vector_storage_with_uring(
         !with_uring,
         "use `open_turbo_single_uring` for the io_uring backend in tests",
     );
-    TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(path, dim, distance, populate)
+    TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
+        path, dim, distance, bits, populate,
+    )
 }
 
 /// Concrete single-file io_uring opener for the tests.
@@ -71,10 +80,11 @@ fn open_turbo_single_uring(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     populate: bool,
 ) -> OperationResult<TurboVectorStorageImpl<QuantizedStorage<IoUringFile>>> {
     TurboVectorStorageImpl::<QuantizedStorage<IoUringFile>>::open_uring(
-        path, dim, distance, populate,
+        path, dim, distance, bits, populate,
     )
 }
 
@@ -105,8 +115,10 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 const SEEDS: [u64; 6] = [42, 0xC0FFEE, 0x0BAD_C0DE, 0x0DECAF, 0x5128E, 0xD15EA5E];
 
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
-#[test]
-fn upsert_flush_reload_in_ram_matches_independent_oracle() {
+#[rstest]
+fn upsert_flush_reload_in_ram_matches_independent_oracle(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     const COUNT: usize = 64;
     // Max direction error tolerated on a round-trip, and the separation we
     // require from every unrelated vector.
@@ -116,19 +128,13 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle() {
         for dim in [1, 127, 128, 1024, 4096, 4097] {
             let distance = Distance::Dot;
             let dir = Builder::new().prefix("turbo_storage").tempdir().unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
 
             // Independent oracle, computed up front and fully independently of the
             // storage: a fresh quantizer configured exactly like the storage's
             // internal one, plus `Vec<>`s standing in as a reference store.
-            let oracle = TurboQuantizer::new(
-                dim,
-                TQDT_BITS,
-                TQDT_MODE,
-                distance.into(),
-                TQDT_ROTATION,
-                None,
-            );
+            let oracle =
+                TurboQuantizer::new(dim, bits, TQDT_MODE, distance.into(), TQDT_ROTATION, None);
             let mut buf = vec![0.0f64; oracle.get_padded_dim()];
 
             let inputs = make_vectors(dim, COUNT, seed);
@@ -141,10 +147,11 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle() {
             // Hand 1 — write path: upsert into an on-disk chunked-mmap storage, flush, then drop it so everything must round-trip through disk on reload.
             {
                 let mut storage =
-                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, false).unwrap();
+                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, false)
+                        .unwrap();
                 for (i, vector) in inputs.iter().enumerate() {
                     storage
-                        .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                        .insert_vector(i as PointOffsetType, vector.as_slice().into())
                         .unwrap();
                 }
                 assert_eq!(storage.total_vector_count(), COUNT);
@@ -153,7 +160,8 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle() {
 
             // Hand 2 — load path: reopen the same directory in RAM and verify the persisted vectors against the oracle.
             let storage =
-                open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+                open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
+                    .unwrap();
 
             assert_eq!(storage.total_vector_count(), COUNT);
             assert_eq!(storage.distance(), distance);
@@ -221,8 +229,10 @@ fn upsert_flush_reload_in_ram_matches_independent_oracle() {
 /// Build-time path for the non-appendable single-file backend: `update_from`
 /// bulk-appends + re-mmaps (across repeated calls), while runtime `insert_vector`
 /// stays unsupported. Verified against the same independent oracle.
-#[test]
-fn mmap_update_from_builds_and_matches_independent_oracle() {
+#[rstest]
+fn mmap_update_from_builds_and_matches_independent_oracle(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     const COUNT: usize = 64;
     const TOL: f32 = 2e-2;
     const DELETED: PointOffsetType = 3;
@@ -234,18 +244,11 @@ fn mmap_update_from_builds_and_matches_independent_oracle() {
         for dim in [1, 127, 128, 1024, 4097] {
             let distance = Distance::Dot;
             let dir = Builder::new().prefix("turbo_mmap_build").tempdir().unwrap();
-            let hw_counter = HardwareCounterCell::new();
             let stopped = AtomicBool::new(false);
 
             // Independent oracle, configured exactly like the storage's quantizer.
-            let oracle = TurboQuantizer::new(
-                dim,
-                TQDT_BITS,
-                TQDT_MODE,
-                distance.into(),
-                TQDT_ROTATION,
-                None,
-            );
+            let oracle =
+                TurboQuantizer::new(dim, bits, TQDT_MODE, distance.into(), TQDT_ROTATION, None);
             let mut buf = vec![0.0f64; oracle.get_padded_dim()];
             let inputs = make_vectors(dim, COUNT, seed);
             let expected_bytes: Vec<Vec<u8>> = inputs
@@ -258,12 +261,12 @@ fn mmap_update_from_builds_and_matches_independent_oracle() {
             // path must round-trip through disk.
             {
                 let mut storage =
-                    open_turbo_vector_storage(dir.path(), dim, distance, false).unwrap();
+                    open_turbo_vector_storage(dir.path(), dim, distance, bits, false).unwrap();
 
                 // Runtime per-point insert is unsupported for the single-file backend.
                 assert!(
                     storage
-                        .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+                        .insert_vector(0, inputs[0].as_slice().into())
                         .is_err(),
                     "insert_vector must be unsupported on the single-file mmap backend",
                 );
@@ -298,7 +301,7 @@ fn mmap_update_from_builds_and_matches_independent_oracle() {
             }
 
             // Load path: reopen the directory and verify everything persisted.
-            let storage = open_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+            let storage = open_turbo_vector_storage(dir.path(), dim, distance, bits, true).unwrap();
             assert_eq!(storage.total_vector_count(), COUNT);
             assert_eq!(storage.distance(), distance);
             assert_eq!(storage.deleted_vector_count(), 2);
@@ -343,17 +346,18 @@ fn reinsert_clears_deleted_flag_and_count() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_reinsert").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
+                .unwrap();
 
         // Two vectors, so the deleted counter has a non-trivial baseline and we
         // can confirm the untouched neighbour is unaffected.
         let inputs = make_vectors(DIM, 2, seed);
         for (i, vector) in inputs.iter().enumerate() {
             storage
-                .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+                .insert_vector(i as PointOffsetType, vector.as_slice().into())
                 .unwrap();
         }
 
@@ -369,7 +373,7 @@ fn reinsert_clears_deleted_flag_and_count() {
 
         // Re-insert (upsert) the same slot: it must come back to life.
         storage
-            .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+            .insert_vector(0, inputs[0].as_slice().into())
             .unwrap();
 
         // (a) The flag itself must be cleared — checked both via the accessor
@@ -397,14 +401,10 @@ fn reinsert_clears_deleted_flag_and_count() {
 }
 
 /// Insert `vectors` at contiguous keys starting from 0.
-fn insert_all(
-    storage: &mut AppendableMmapTurboVectorStorage,
-    vectors: &[DenseVector],
-    hw: &HardwareCounterCell,
-) {
+fn insert_all(storage: &mut AppendableMmapTurboVectorStorage, vectors: &[DenseVector]) {
     for (i, vector) in vectors.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vector.as_slice().into(), hw)
+            .insert_vector(i as PointOffsetType, vector.as_slice().into())
             .unwrap();
     }
 }
@@ -418,11 +418,12 @@ fn get_vector_opt_returns_none_for_absent_key() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_opt_none").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
+            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
+                .unwrap();
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed));
 
         // Present key is `Some`; the first absent key and one well past it are `None`.
         assert!(storage.get_vector_opt::<Random>(0).is_some());
@@ -449,22 +450,23 @@ fn insert_overwrites_existing_key_in_place() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_overwrite").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // Two near-orthogonal unit vectors so the stored one is unambiguous.
         let inputs = make_vectors(DIM, 2, seed);
         let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
+                .unwrap();
 
         storage
-            .insert_vector(0, inputs[0].as_slice().into(), &hw_counter)
+            .insert_vector(0, inputs[0].as_slice().into())
             .unwrap();
         assert_eq!(storage.total_vector_count(), 1);
         let bytes_first = storage.get_quantized_vector(0).into_owned();
 
         // Overwrite slot 0 with the second vector.
         storage
-            .insert_vector(0, inputs[1].as_slice().into(), &hw_counter)
+            .insert_vector(0, inputs[1].as_slice().into())
             .unwrap();
 
         // Overwrite, not append: still one vector, but with new bytes.
@@ -490,7 +492,8 @@ fn insert_overwrites_existing_key_in_place() {
     }
 }
 
-/// `datatype` and `is_on_disk` for both in-RAM and on-disk openings.
+/// `datatype` and `is_cold` for both in-RAM and on-disk openings, for the
+/// appendable and the single-file storages.
 #[test]
 fn metadata_accessors_report_expected_values() {
     const DIM: usize = 128;
@@ -498,17 +501,42 @@ fn metadata_accessors_report_expected_values() {
     const SEED: u64 = 0x0FEED;
 
     let distance = Distance::Dot;
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
-    // `in_ram` drives `populate`, which is exactly what `is_on_disk` reports.
+    // `in_ram` drives `populate`, which is exactly what `is_cold` reports.
     for (in_ram, expect_on_disk) in [(true, false), (false, true)] {
         let dir = Builder::new().prefix("turbo_meta").tempdir().unwrap();
         let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, in_ram).unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
+            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, in_ram)
+                .unwrap();
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED));
 
         assert_eq!(storage.datatype(), VectorStorageDatatype::Turbo4);
-        assert_eq!(storage.is_on_disk(), expect_on_disk);
+        assert_eq!(storage.is_cold(), expect_on_disk);
+
+        // The single-file storages the optimizer builds into report it the same
+        // way: the segment builder drops the page cache of on-disk storages.
+        let dir = Builder::new()
+            .prefix("turbo_meta_single")
+            .tempdir()
+            .unwrap();
+        let storage =
+            open_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, in_ram).unwrap();
+        assert_eq!(storage.is_cold(), expect_on_disk, "mmap, in_ram {in_ram}");
+
+        #[cfg(target_os = "linux")]
+        {
+            let dir = Builder::new().prefix("turbo_meta_uring").tempdir().unwrap();
+            if let Ok(storage) =
+                open_turbo_single_uring(dir.path(), DIM, distance, TQBits::Bits4, in_ram)
+            {
+                assert_eq!(
+                    storage.is_cold(),
+                    expect_on_disk,
+                    "io_uring, in_ram {in_ram}"
+                );
+            }
+        }
     }
 }
 
@@ -523,11 +551,12 @@ fn files_and_immutable_files_match_expected_layout() {
 
     let distance = Distance::Dot;
     let dir = Builder::new().prefix("turbo_files").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut storage =
-        open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
-    insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED), &hw_counter);
+        open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
+            .unwrap();
+    insert_all(&mut storage, &make_vectors(DIM, COUNT, SEED));
 
     let vectors_dir = dir.path().join(VECTORS_DIR_PATH);
     let deleted_dir = dir.path().join(DELETED_DIR_PATH);
@@ -563,11 +592,12 @@ fn available_count_and_size_track_deletions() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_avail").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
+            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
+                .unwrap();
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed));
 
         let encoded_len = storage.get_quantized_vector(0).as_ref().len();
 
@@ -598,7 +628,9 @@ fn empty_storage_reports_zero_counts_and_no_vectors() {
     let distance = Distance::Dot;
     let dir = Builder::new().prefix("turbo_empty").tempdir().unwrap();
 
-    let storage = open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
+    let storage =
+        open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
+            .unwrap();
 
     assert_eq!(storage.total_vector_count(), 0);
     assert_eq!(storage.deleted_vector_count(), 0);
@@ -617,20 +649,23 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
     for seed in SEEDS {
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_read_batch").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let mut storage =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, true).unwrap();
-        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed), &hw_counter);
+            open_appendable_turbo_vector_storage(dir.path(), DIM, distance, TQBits::Bits4, true)
+                .unwrap();
+        insert_all(&mut storage, &make_vectors(DIM, COUNT, seed));
 
         // User data is an arbitrary tag we expect echoed back beside each offset.
         let keys: Vec<(usize, PointOffsetType)> =
             (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
         let mut seen: Vec<(usize, PointOffsetType, DenseVector)> = Vec::new();
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
+            })
+            .unwrap();
 
         // Order is not guaranteed (the trait permits parallel reads), so check
         // each callback against its own offset, not its arrival position.
@@ -656,8 +691,10 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
     }
 }
 
-#[test]
-fn deleted_placeholders_load_and_score_without_panic() {
+#[rstest]
+fn deleted_placeholders_load_and_score_without_panic(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     const COUNT: usize = 4;
     let stopped = AtomicBool::new(false);
 
@@ -673,7 +710,8 @@ fn deleted_placeholders_load_and_score_without_panic() {
                 .tempdir()
                 .unwrap();
             let mut storage =
-                open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+                open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
+                    .unwrap();
 
             // Append COUNT deleted placeholders, exactly as prefill does.
             fill_turbo(&mut storage, COUNT, &stopped).unwrap();
@@ -683,14 +721,8 @@ fn deleted_placeholders_load_and_score_without_panic() {
             // Independent quantizer, configured exactly like the storage's,
             // to score the raw placeholder bytes without reaching into the
             // storage's private state.
-            let quantizer = TurboQuantizer::new(
-                dim,
-                TQDT_BITS,
-                TQDT_MODE,
-                distance.into(),
-                TQDT_ROTATION,
-                None,
-            );
+            let quantizer =
+                TurboQuantizer::new(dim, bits, TQDT_MODE, distance.into(), TQDT_ROTATION, None);
 
             // A real (normalized) query for the asymmetric path.
             let query = make_vectors(dim, 1, 0x5EED)[0].clone();
@@ -719,8 +751,10 @@ fn deleted_placeholders_load_and_score_without_panic() {
 /// every distance: query preprocessing, the asymmetric/symmetric scoring
 /// arithmetic and the "higher = better" sign convention must all line up so
 /// that a stored vector scores best against itself.
-#[test]
-fn nearest_scorer_ranks_self_first() {
+#[rstest]
+fn nearest_scorer_ranks_self_first(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
 
@@ -737,23 +771,20 @@ fn nearest_scorer_ranks_self_first() {
         for dim in [4, 127, 128, 256] {
             for seed in SEEDS {
                 let dir = Builder::new().prefix("turbo_scorer").tempdir().unwrap();
-                let hw_counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 let mut storage =
-                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
+                        .unwrap();
                 let inputs = make_vectors(dim, COUNT, seed);
-                insert_all(&mut storage, &inputs, &hw_counter);
+                insert_all(&mut storage, &inputs);
 
                 for (q, query_vec) in inputs.iter().enumerate() {
-                    let scorer = TurboQueryScorer::new(
-                        query_vec.clone(),
-                        &storage,
-                        HardwareCounterCell::new(),
-                    );
+                    let scorer = TurboQueryScorer::new(query_vec.clone(), &storage);
 
                     // Asymmetric path: the query must score best against its
                     // own stored (lossy) encoding.
                     let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                        .map(|k| scorer.score_stored(k))
+                        .map(|k| scorer.score_stored(k).unwrap())
                         .collect();
                     let best = (0..COUNT)
                         .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -787,8 +818,10 @@ fn nearest_scorer_ranks_self_first() {
 /// encoded bytes, for both the nearest and the multi-vector (reco) scorers —
 /// the inline-rescoring path scores the exact same TQ bytes the storage
 /// holds, so the two must produce identical scores.
-#[test]
-fn score_bytes_matches_score_stored() {
+#[rstest]
+fn score_bytes_matches_score_stored(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use common::typelevel::True;
 
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
@@ -810,21 +843,20 @@ fn score_bytes_matches_score_stored() {
                     .prefix("turbo_score_bytes")
                     .tempdir()
                     .unwrap();
-                let hw_counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 let mut storage =
-                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
+                        .unwrap();
                 let inputs = make_vectors(dim, COUNT, seed);
-                insert_all(&mut storage, &inputs, &hw_counter);
+                insert_all(&mut storage, &inputs);
 
-                let nearest =
-                    TurboQueryScorer::new(inputs[0].clone(), &storage, HardwareCounterCell::new());
+                let nearest = TurboQueryScorer::new(inputs[0].clone(), &storage);
                 let reco = TurboCustomQueryScorer::new(
                     RecoBestScoreQuery::from(RecoQuery::new(
                         vec![inputs[1].clone()],
                         vec![inputs[2].clone()],
                     )),
                     &storage,
-                    HardwareCounterCell::new(),
                 );
 
                 for key in 0..COUNT as PointOffsetType {
@@ -832,13 +864,13 @@ fn score_bytes_matches_score_stored() {
 
                     assert_eq!(
                         nearest.score_bytes(True, &bytes),
-                        nearest.score_stored(key),
+                        nearest.score_stored(key).unwrap(),
                         "nearest score_bytes != score_stored at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
                     assert_eq!(
                         reco.score_bytes(True, &bytes),
-                        reco.score_stored(key),
+                        reco.score_stored(key).unwrap(),
                         "reco score_bytes != score_stored at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
@@ -853,8 +885,10 @@ fn score_bytes_matches_score_stored() {
 /// best-score and sum-score combinators must both rank that vector first,
 /// which exercises query transform/preprocessing and `score_by` plumbing on
 /// top of the same asymmetric scoring used by the nearest path.
-#[test]
-fn custom_reco_scorer_ranks_positive_first() {
+#[rstest]
+fn custom_reco_scorer_ranks_positive_first(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_custom_query_scorer::TurboCustomQueryScorer;
@@ -864,7 +898,7 @@ fn custom_reco_scorer_ranks_positive_first() {
     /// Offset of the highest-scoring stored vector.
     fn top_scored(scorer: &impl QueryScorer, count: usize) -> usize {
         let scores: Vec<ScoreType> = (0..count as PointOffsetType)
-            .map(|k| scorer.score_stored(k))
+            .map(|k| scorer.score_stored(k).unwrap())
             .collect();
         (0..count)
             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -880,27 +914,22 @@ fn custom_reco_scorer_ranks_positive_first() {
         for dim in [4, 128, 256] {
             for seed in SEEDS {
                 let dir = Builder::new().prefix("turbo_reco").tempdir().unwrap();
-                let hw_counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 let mut storage =
-                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, true).unwrap();
+                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, true)
+                        .unwrap();
                 let inputs = make_vectors(dim, COUNT, seed);
-                insert_all(&mut storage, &inputs, &hw_counter);
+                insert_all(&mut storage, &inputs);
 
                 for (q, query_vec) in inputs.iter().enumerate() {
                     // One positive (the stored vector itself), no negatives.
                     let reco =
                         || RecoQuery::new(vec![query_vec.clone()], Vec::<DenseVector>::new());
 
-                    let best = TurboCustomQueryScorer::new(
-                        RecoBestScoreQuery::from(reco()),
-                        &storage,
-                        HardwareCounterCell::new(),
-                    );
-                    let sum = TurboCustomQueryScorer::new(
-                        RecoSumScoresQuery::from(reco()),
-                        &storage,
-                        HardwareCounterCell::new(),
-                    );
+                    let best =
+                        TurboCustomQueryScorer::new(RecoBestScoreQuery::from(reco()), &storage);
+                    let sum =
+                        TurboCustomQueryScorer::new(RecoSumScoresQuery::from(reco()), &storage);
 
                     for (kind, top) in [
                         ("best", top_scored(&best, COUNT)),
@@ -941,15 +970,9 @@ struct Oracle {
 }
 
 impl Oracle {
-    fn new(dim: usize, distance: Distance) -> Self {
-        let quantizer = TurboQuantizer::new(
-            dim,
-            TQDT_BITS,
-            TQDT_MODE,
-            distance.into(),
-            TQDT_ROTATION,
-            None,
-        );
+    fn new(dim: usize, distance: Distance, bits: TQBits) -> Self {
+        let quantizer =
+            TurboQuantizer::new(dim, bits, TQDT_MODE, distance.into(), TQDT_ROTATION, None);
         Self { quantizer, dim }
     }
 
@@ -1080,11 +1103,12 @@ fn optimizer_copy(
     dst_dir: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     stopped: &AtomicBool,
 ) -> TurboVectorStorageImpl<QuantizedStorage<MmapFile>> {
     let count = src.total_vector_count() as PointOffsetType;
     {
-        let mut dst = open_turbo_vector_storage(dst_dir, dim, distance, false).unwrap();
+        let mut dst = open_turbo_vector_storage(dst_dir, dim, distance, bits, false).unwrap();
         {
             let mut it =
                 (0..count).map(|k| (src.get_quantized_vector(k), src.is_deleted_vector(k)));
@@ -1107,24 +1131,24 @@ fn optimizer_copy(
         }
         dst.flusher()().unwrap();
     }
-    open_turbo_vector_storage(dst_dir, dim, distance, true).unwrap()
+    open_turbo_vector_storage(dst_dir, dim, distance, bits, true).unwrap()
 }
 
 /// Drive a randomized op sequence against the appendable ChunkedMmap storage
 /// and the model in lockstep, flushing/dropping/reloading at random, then copy
 /// the result into the read-only single-file backend via `update_from`.
-fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
+fn run_model_scenario(dim: usize, distance: Distance, bits: TQBits, seed: u64, ops: usize) {
     let mut rng = SmallRng::seed_from_u64(seed);
-    let oracle = Oracle::new(dim, distance);
+    let oracle = Oracle::new(dim, distance, bits);
     let dir = Builder::new().prefix("turbo_model_src").tempdir().unwrap();
     let dst_dir = Builder::new().prefix("turbo_model_dst").tempdir().unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let stopped = AtomicBool::new(false);
 
     let mut model: Vec<Slot> = Vec::new();
     let mut in_ram = rng.random_range(0..2) == 0;
     let mut storage =
-        open_appendable_turbo_vector_storage(dir.path(), dim, distance, in_ram).unwrap();
+        open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, in_ram).unwrap();
 
     for _ in 0..ops {
         let count = model.len() as PointOffsetType;
@@ -1140,9 +1164,7 @@ fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
             0..=34 => {
                 let v = random_unit_vector(&mut rng, dim);
                 let encoded = oracle.encode(&v);
-                storage
-                    .insert_vector(count, v.as_slice().into(), &hw)
-                    .unwrap();
+                storage.insert_vector(count, v.as_slice().into()).unwrap();
                 model.push(Slot {
                     input: v,
                     encoded,
@@ -1155,7 +1177,7 @@ fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
                 let v = random_unit_vector(&mut rng, dim);
                 let encoded = oracle.encode(&v);
                 storage
-                    .insert_vector(k as PointOffsetType, v.as_slice().into(), &hw)
+                    .insert_vector(k as PointOffsetType, v.as_slice().into())
                     .unwrap();
                 model[k] = Slot {
                     input: v,
@@ -1178,8 +1200,9 @@ fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
                 storage.flusher()().unwrap();
                 drop(storage);
                 in_ram = !in_ram;
-                storage = open_appendable_turbo_vector_storage(dir.path(), dim, distance, in_ram)
-                    .unwrap();
+                storage =
+                    open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, in_ram)
+                        .unwrap();
                 assert_matches_model(&storage, &model, &oracle, "after reload");
             }
         }
@@ -1193,11 +1216,12 @@ fn run_model_scenario(dim: usize, distance: Distance, seed: u64, ops: usize) {
     // Final flush/reload, then a full check of the source.
     storage.flusher()().unwrap();
     drop(storage);
-    let storage = open_appendable_turbo_vector_storage(dir.path(), dim, distance, in_ram).unwrap();
+    let storage =
+        open_appendable_turbo_vector_storage(dir.path(), dim, distance, bits, in_ram).unwrap();
     assert_matches_model(&storage, &model, &oracle, "source final");
 
     // Optimizer-style copy into the read-only backend, then verify it too.
-    let dst = optimizer_copy(&storage, dst_dir.path(), dim, distance, &stopped);
+    let dst = optimizer_copy(&storage, dst_dir.path(), dim, distance, bits, &stopped);
     assert_matches_model(&dst, &model, &oracle, "dst after copy");
 }
 
@@ -1212,30 +1236,34 @@ const OPS: usize = 60;
 
 /// Sweep dims and distances with several randomized scenarios each.
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
-#[test]
-fn turbo_model_test_random_ops_dot() {
+#[rstest]
+fn turbo_model_test_random_ops_dot(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
         for seed in 0..SEEDS_PER_CELL {
             // Mix dim/distance into the seed so cells don't share a stream.
             let seed = seed
                 .wrapping_mul(0x9E37_79B9_7F4A_7C15)
                 .wrapping_add(dim as u64);
-            run_model_scenario(dim, Distance::Dot, seed, OPS);
+            run_model_scenario(dim, Distance::Dot, bits, seed, OPS);
         }
     }
 }
 
 /// Sweep dims and distances with several randomized scenarios each.
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
-#[test]
-fn turbo_model_test_random_ops_cosine() {
+#[rstest]
+fn turbo_model_test_random_ops_cosine(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     for dim in [1usize, 4, 127, 128, 4096, 4097] {
         for seed in 0..SEEDS_PER_CELL {
             // Mix dim/distance into the seed so cells don't share a stream.
             let seed = seed
                 .wrapping_mul(0x9E37_79B9_7F4A_7C15)
                 .wrapping_add(dim as u64 + 1);
-            run_model_scenario(dim, Distance::Cosine, seed, OPS);
+            run_model_scenario(dim, Distance::Cosine, bits, seed, OPS);
         }
     }
 }
@@ -1247,13 +1275,19 @@ fn turbo_model_test_random_ops_cosine() {
 /// Build a flushed single-file storage at `dir` from oracle-encoded
 /// `inputs`, exactly as the optimizer does, then drop it — leaving the
 /// directory ready to be reopened by either single-file backend.
-fn build_single_file(dir: &Path, inputs: &[DenseVector], dim: usize, distance: Distance) {
-    let oracle = Oracle::new(dim, distance);
+fn build_single_file(
+    dir: &Path,
+    inputs: &[DenseVector],
+    dim: usize,
+    distance: Distance,
+    bits: TQBits,
+) {
+    let oracle = Oracle::new(dim, distance, bits);
     let stopped = AtomicBool::new(false);
     let encoded: Vec<Vec<u8>> = inputs.iter().map(|v| oracle.encode(v)).collect();
 
     let mut storage =
-        open_turbo_vector_storage_with_uring(dir, dim, distance, false, false).unwrap();
+        open_turbo_vector_storage_with_uring(dir, dim, distance, bits, false, false).unwrap();
     let mut it = encoded.iter().map(|b| (Cow::from(b.as_slice()), false));
     storage.update_from(&mut it, &stopped).unwrap();
     storage.flusher()().unwrap();
@@ -1263,8 +1297,10 @@ fn build_single_file(dir: &Path, inputs: &[DenseVector], dim: usize, distance: D
 /// the independent oracle see: byte-identical encoded vectors and f32-exact
 /// dequantized reads.
 #[cfg(target_os = "linux")]
-#[test]
-fn uring_backend_matches_mmap_and_oracle() {
+#[rstest]
+fn uring_backend_matches_mmap_and_oracle(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     const COUNT: usize = 80;
 
     for (seed, dim) in [(SEEDS[0], 127), (SEEDS[1], 128), (SEEDS[2], 1024)] {
@@ -1274,19 +1310,20 @@ fn uring_backend_matches_mmap_and_oracle() {
             .tempdir()
             .unwrap();
         let inputs = make_vectors(dim, COUNT, seed);
-        build_single_file(dir.path(), &inputs, dim, distance);
+        build_single_file(dir.path(), &inputs, dim, distance, bits);
 
         let mmap =
-            open_turbo_vector_storage_with_uring(dir.path(), dim, distance, false, false).unwrap();
+            open_turbo_vector_storage_with_uring(dir.path(), dim, distance, bits, false, false)
+                .unwrap();
         // A dedicated io_uring type: opening it either succeeds as io_uring or
         // errors (no silent mmap fallback), so the parity checks below can't be
         // made vacuous by a fallback.
-        let uring = open_turbo_single_uring(dir.path(), dim, distance, false).unwrap();
+        let uring = open_turbo_single_uring(dir.path(), dim, distance, bits, false).unwrap();
 
         assert_eq!(uring.total_vector_count(), COUNT);
         assert_eq!(uring.deleted_vector_count(), 0);
 
-        let oracle = Oracle::new(dim, distance);
+        let oracle = Oracle::new(dim, distance, bits);
         for (i, input) in inputs.iter().enumerate() {
             let key = i as PointOffsetType;
             let expected = oracle.encode(input);
@@ -1317,8 +1354,10 @@ fn uring_backend_matches_mmap_and_oracle() {
 /// on every backend and both scorers. Keys are shuffled, contain
 /// duplicates, and exceed `VECTOR_READ_BATCH_SIZE`, so chunking and the
 /// idx→key mapping are actually exercised.
-#[test]
-fn score_stored_batch_matches_score_stored() {
+#[rstest]
+fn score_stored_batch_matches_score_stored(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use rand::seq::SliceRandom;
 
     use crate::vector_storage::query::{RecoBestScoreQuery, RecoQuery};
@@ -1337,7 +1376,7 @@ fn score_stored_batch_matches_score_stored() {
     let distance = Distance::Dot;
     let seed = SEEDS[0];
     let inputs = make_vectors(DIM, COUNT, seed);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
@@ -1355,16 +1394,18 @@ fn score_stored_batch_matches_score_stored() {
         .tempdir()
         .unwrap();
     let mut chunked =
-        open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, true).unwrap();
-    insert_all(&mut chunked, &inputs, &hw_counter);
+        open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, bits, true)
+            .unwrap();
+    insert_all(&mut chunked, &inputs);
 
     let single_dir = Builder::new()
         .prefix("turbo_batch_single")
         .tempdir()
         .unwrap();
-    build_single_file(single_dir.path(), &inputs, DIM, distance);
-    let mmap = open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, false)
-        .unwrap();
+    build_single_file(single_dir.path(), &inputs, DIM, distance, bits);
+    let mmap =
+        open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, bits, false, false)
+            .unwrap();
 
     // The backends are distinct concrete types, so run the same checks over
     // each one via a generic helper instead of a heterogeneous collection.
@@ -1374,30 +1415,31 @@ fn score_stored_batch_matches_score_stored() {
         inputs: &[DenseVector],
         ids: &[PointOffsetType],
     ) {
-        let nearest = TurboQueryScorer::new(inputs[0].clone(), storage, HardwareCounterCell::new());
+        let nearest = TurboQueryScorer::new(inputs[0].clone(), storage);
         let reco = TurboCustomQueryScorer::new(
             RecoBestScoreQuery::from(RecoQuery::new(
                 vec![inputs[1].clone()],
                 vec![inputs[2].clone()],
             )),
             storage,
-            HardwareCounterCell::new(),
         );
 
         let mut nearest_scores = vec![0.0; ids.len()];
-        nearest.score_stored_batch(ids, &mut nearest_scores);
+        nearest
+            .score_stored_batch(ids, &mut nearest_scores)
+            .unwrap();
         let mut reco_scores = vec![0.0; ids.len()];
-        reco.score_stored_batch(ids, &mut reco_scores);
+        reco.score_stored_batch(ids, &mut reco_scores).unwrap();
 
         for (idx, &id) in ids.iter().enumerate() {
             assert_eq!(
                 nearest_scores[idx],
-                nearest.score_stored(id),
+                nearest.score_stored(id).unwrap(),
                 "nearest batch score diverges at idx {idx} (key {id}, {backend})",
             );
             assert_eq!(
                 reco_scores[idx],
-                reco.score_stored(id),
+                reco.score_stored(id).unwrap(),
                 "reco batch score diverges at idx {idx} (key {id}, {backend})",
             );
         }
@@ -1410,7 +1452,7 @@ fn score_stored_batch_matches_score_stored() {
 
     #[cfg(target_os = "linux")]
     {
-        let uring = open_turbo_single_uring(single_dir.path(), DIM, distance, false).unwrap();
+        let uring = open_turbo_single_uring(single_dir.path(), DIM, distance, bits, false).unwrap();
         check_backend("uring", &uring, &inputs, &ids);
         check_backend("uring/scan", &uring, &inputs, &ascending);
     }
@@ -1422,8 +1464,10 @@ fn score_stored_batch_matches_score_stored() {
 /// Keys are shuffled, contain duplicates, and exceed
 /// `VECTOR_READ_BATCH_SIZE`, so chunking and the idx→key mapping are
 /// actually exercised.
-#[test]
-fn batched_retrieval_matches_per_point_reads() {
+#[rstest]
+fn batched_retrieval_matches_per_point_reads(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
     use rand::seq::SliceRandom;
 
     const DIM: usize = 128;
@@ -1432,7 +1476,7 @@ fn batched_retrieval_matches_per_point_reads() {
     let distance = Distance::Dot;
     let seed = SEEDS[1];
     let inputs = make_vectors(DIM, COUNT, seed);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType)
@@ -1445,16 +1489,18 @@ fn batched_retrieval_matches_per_point_reads() {
         .tempdir()
         .unwrap();
     let mut chunked =
-        open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, true).unwrap();
-    insert_all(&mut chunked, &inputs, &hw_counter);
+        open_appendable_turbo_vector_storage(chunked_dir.path(), DIM, distance, bits, true)
+            .unwrap();
+    insert_all(&mut chunked, &inputs);
 
     let single_dir = Builder::new()
         .prefix("turbo_retr_single")
         .tempdir()
         .unwrap();
-    build_single_file(single_dir.path(), &inputs, DIM, distance);
-    let mmap = open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, false, false)
-        .unwrap();
+    build_single_file(single_dir.path(), &inputs, DIM, distance, bits);
+    let mmap =
+        open_turbo_vector_storage_with_uring(single_dir.path(), DIM, distance, bits, false, false)
+            .unwrap();
 
     // Tag each key with its input position so the threading is checkable.
     let keys: Vec<(usize, PointOffsetType)> = ids.iter().copied().enumerate().collect();
@@ -1469,23 +1515,25 @@ fn batched_retrieval_matches_per_point_reads() {
     ) {
         // Decoded path: `read_vectors` ≡ `get_vector`, tags ride along.
         let mut seen = vec![false; keys.len()];
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            assert_eq!(
-                ids[tag], offset,
-                "user data not threaded to its offset ({backend})",
-            );
-            assert!(
-                !seen[tag],
-                "key at position {tag} visited twice ({backend})"
-            );
-            seen[tag] = true;
-            let direct = storage.get_vector::<Random>(offset);
-            assert_eq!(
-                DenseVector::try_from(vector).unwrap(),
-                DenseVector::try_from(direct).unwrap(),
-                "read_vectors disagrees with get_vector at {offset} ({backend})",
-            );
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                assert_eq!(
+                    ids[tag], offset,
+                    "user data not threaded to its offset ({backend})",
+                );
+                assert!(
+                    !seen[tag],
+                    "key at position {tag} visited twice ({backend})"
+                );
+                seen[tag] = true;
+                let direct = storage.get_vector::<Random>(offset);
+                assert_eq!(
+                    DenseVector::try_from(vector).unwrap(),
+                    DenseVector::try_from(direct).unwrap(),
+                    "read_vectors disagrees with get_vector at {offset} ({backend})",
+                );
+            })
+            .unwrap();
         assert!(
             seen.iter().all(|&s| s),
             "not every key was visited ({backend})",
@@ -1522,16 +1570,18 @@ fn batched_retrieval_matches_per_point_reads() {
 
     #[cfg(target_os = "linux")]
     {
-        let uring = open_turbo_single_uring(single_dir.path(), DIM, distance, false).unwrap();
+        let uring = open_turbo_single_uring(single_dir.path(), DIM, distance, bits, false).unwrap();
         check_backend("uring", &uring, &ids, &keys);
     }
 }
 
 /// Batch scoring must accrue exactly the same hardware-counter totals as
 /// scoring the same keys one by one.
-#[test]
-fn batch_scoring_accumulates_same_hw_counters() {
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
+#[rstest]
+fn batch_scoring_accumulates_same_hw_counters(
+    #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
+) {
+    use common::ambient::AmbientContext;
 
     use crate::vector_storage::query_scorer::QueryScorer;
     use crate::vector_storage::query_scorer::turbo_query_scorer::TurboQueryScorer;
@@ -1545,35 +1595,36 @@ fn batch_scoring_accumulates_same_hw_counters() {
     // On-disk single-file storage, so the vector-io-read multiplier is active
     // and IO accounting is part of the comparison.
     let dir = Builder::new().prefix("turbo_batch_hw").tempdir().unwrap();
-    build_single_file(dir.path(), &inputs, DIM, distance);
+    build_single_file(dir.path(), &inputs, DIM, distance, bits);
     let storage =
-        open_turbo_vector_storage_with_uring(dir.path(), DIM, distance, false, false).unwrap();
+        open_turbo_vector_storage_with_uring(dir.path(), DIM, distance, bits, false, false)
+            .unwrap();
 
     let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
 
-    let per_point_acc = HwMeasurementAcc::new();
+    let per_point_ctx = AmbientContext::new();
     {
-        let scorer = TurboQueryScorer::new(
-            inputs[0].clone(),
-            &storage,
-            per_point_acc.get_counter_cell(),
-        );
+        let _scope = per_point_ctx.measure_guard();
+        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         for &id in &ids {
-            scorer.score_stored(id);
+            scorer.score_stored(id).unwrap();
         }
     }
 
-    let batch_acc = HwMeasurementAcc::new();
+    let batch_ctx = AmbientContext::new();
     {
-        let scorer =
-            TurboQueryScorer::new(inputs[0].clone(), &storage, batch_acc.get_counter_cell());
+        let _scope = batch_ctx.measure_guard();
+        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         let mut scores = vec![0.0; ids.len()];
-        scorer.score_stored_batch(&ids, &mut scores);
+        scorer.score_stored_batch(&ids, &mut scores).unwrap();
     }
 
-    assert_eq!(batch_acc.get_cpu(), per_point_acc.get_cpu());
     assert_eq!(
-        batch_acc.get_vector_io_read(),
-        per_point_acc.get_vector_io_read(),
+        batch_ctx.hw_data()[HwMetric::Cpu],
+        per_point_ctx.hw_data()[HwMetric::Cpu]
+    );
+    assert_eq!(
+        batch_ctx.hw_data()[HwMetric::VectorIoRead],
+        per_point_ctx.hw_data()[HwMetric::VectorIoRead],
     );
 }

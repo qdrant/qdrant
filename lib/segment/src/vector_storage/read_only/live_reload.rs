@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
@@ -41,60 +40,47 @@ impl<S: UniversalRead> LiveReload for VectorStorageReadEnum<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            VectorStorageReadEnum::Dense(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
-            VectorStorageReadEnum::DenseByte(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
-            VectorStorageReadEnum::DenseHalf(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
+            VectorStorageReadEnum::Dense(s) => s.live_reload(fs, deleted_points, new_points),
+            VectorStorageReadEnum::DenseByte(s) => s.live_reload(fs, deleted_points, new_points),
+            VectorStorageReadEnum::DenseHalf(s) => s.live_reload(fs, deleted_points, new_points),
             VectorStorageReadEnum::DenseGraphInline(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::DenseGraphInlineByte(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::DenseGraphInlineHalf(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
-            VectorStorageReadEnum::DenseChunked(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
+            VectorStorageReadEnum::DenseChunked(s) => s.live_reload(fs, deleted_points, new_points),
             VectorStorageReadEnum::DenseChunkedByte(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::DenseChunkedHalf(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::MultiDenseChunked(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::MultiDenseChunkedByte(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::MultiDenseChunkedHalf(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
-            VectorStorageReadEnum::DenseTurbo(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
+            VectorStorageReadEnum::DenseTurbo(s) => s.live_reload(fs, deleted_points, new_points),
             VectorStorageReadEnum::DenseTurboGraphInline(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::DenseTurboChunked(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
             VectorStorageReadEnum::MultiDenseTurbo(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
+                s.live_reload(fs, deleted_points, new_points)
             }
-            VectorStorageReadEnum::Sparse(s) => {
-                s.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
+            VectorStorageReadEnum::Sparse(s) => s.live_reload(fs, deleted_points, new_points),
         }
     }
 }

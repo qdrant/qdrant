@@ -9,7 +9,6 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use segment::common::operation_error::OperationResult;
 use segment::pending_changes::PendingChanges;
@@ -128,15 +127,31 @@ impl UnsyncedProxySegment {
     pub fn replicate_field_indexes(
         &self,
         op_num: SeqNumberType,
-        hw_counter: &HardwareCounterCell,
         segment_to_update: &LockedSegment,
     ) -> OperationResult<()> {
-        self.0
-            .replicate_field_indexes(op_num, hw_counter, segment_to_update)
+        self.0.replicate_field_indexes(op_num, segment_to_update)
     }
 }
 
 impl ProxySegment {
+    /// Whether the wrapped segment's index on `field` is not the one this
+    /// proxy presents, see `ProxyIndexChanges::is_wrapped_index_stale`.
+    /// Takes the wrapped segment's read lock, so it must be called without
+    /// holding it.
+    pub(crate) fn is_wrapped_index_stale(&self, field: &PayloadKeyType) -> bool {
+        let changes = self.pending_changes.index_changes();
+        if changes.is_empty() {
+            return false;
+        }
+        let wrapped_schema = self
+            .wrapped_segment
+            .get()
+            .read()
+            .get_indexed_fields()
+            .remove(field);
+        changes.is_wrapped_index_stale(field, wrapped_schema.as_ref())
+    }
+
     /// Build a proxy wrapping `segment` and immediately sync its `deleted_mask`.
     ///
     /// Test-only convenience that collapses the two-phase [`UnsyncedProxySegment::new`] +
@@ -169,7 +184,6 @@ impl ProxySegment {
     pub fn replicate_field_indexes(
         &self,
         op_num: SeqNumberType,
-        hw_counter: &HardwareCounterCell,
         segment_to_update: &LockedSegment,
     ) -> OperationResult<()> {
         let existing_indexes = segment_to_update.get().read().get_indexed_fields();
@@ -190,7 +204,6 @@ impl ProxySegment {
                     op_num,
                     expected_field,
                     Some(expected_schema),
-                    hw_counter,
                 )?;
             }
         }

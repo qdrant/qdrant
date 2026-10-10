@@ -25,15 +25,17 @@ where
 {
     pub(super) in_memory_index: InMemoryNumericIndex<T>,
     /// Backing Blobstore reader, populated by [`Self::open`]. Held to keep the
-    /// storage mapped; the `files` / `populate` / `clear_cache` wiring that
-    /// reads it lands with the storage-variant enum lifecycle (it isn't part of
-    /// the [`NumericIndexRead`](super::super::numeric_index_read::NumericIndexRead) surface).
+    /// storage mapped for [`Self::files`] / [`Self::clear_cache`] (those are
+    /// not part of the
+    /// [`NumericIndexRead`](super::super::numeric_index_read::NumericIndexRead)
+    /// surface).
     pub(super) storage: BlobstoreReader<Vec<T>, S>,
 }
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
+    use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use serde_json::Value;
     use tempfile::TempDir;
@@ -49,22 +51,18 @@ mod tests {
     #[test]
     fn read_only_appendable_numeric_round_trip() {
         let dir = TempDir::with_prefix("read_only_numeric").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         {
             let mut builder = NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_gridstore(
                 dir.path().to_path_buf(),
             );
             builder.init().unwrap();
+            builder.add_point(0, &[&Value::from(1.5)]).unwrap();
             builder
-                .add_point(0, &[&Value::from(1.5)], &hw_counter)
-                .unwrap();
-            builder
-                .add_point(1, &[&Value::from(2.5), &Value::from(3.5)], &hw_counter)
+                .add_point(1, &[&Value::from(2.5), &Value::from(3.5)])
                 .unwrap(); // 2 values
-            builder
-                .add_point(2, &[&Value::from(4.5)], &hw_counter)
-                .unwrap();
+            builder.add_point(2, &[&Value::from(4.5)]).unwrap();
             // `finalize` flushes the Gridstore to disk.
             builder.finalize().unwrap();
         }
@@ -75,9 +73,13 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
         let index: ReadOnlyAppendableNumericIndex<FloatPayloadType, ReadOnly<MmapFile>> =
-            ReadOnlyAppendableNumericIndex::open(&fs, dir.path().to_path_buf())
-                .unwrap()
-                .unwrap();
+            ReadOnlyAppendableNumericIndex::open(
+                &fs,
+                dir.path().to_path_buf(),
+                PointOffsetType::MAX,
+            )
+            .unwrap()
+            .unwrap();
 
         assert_eq!(index.get_points_count(), 3);
         assert_eq!(index.get_max_values_per_point(), 2);
@@ -86,5 +88,15 @@ mod tests {
         assert_eq!(index.get_values(0).unwrap().count(), 1);
         assert_eq!(index.get_values(1).unwrap().count(), 2);
         assert_eq!(index.total_unique_values_count().unwrap(), 4);
+
+        // Values at or past `max_point_offset` are not loaded.
+        let capped: ReadOnlyAppendableNumericIndex<FloatPayloadType, ReadOnly<MmapFile>> =
+            ReadOnlyAppendableNumericIndex::open(&fs, dir.path().to_path_buf(), 2)
+                .unwrap()
+                .unwrap();
+        assert_eq!(capped.get_points_count(), 2);
+        assert_eq!(capped.values_count(1), Some(2));
+        assert_eq!(capped.values_count(2), None);
+        assert_eq!(capped.total_unique_values_count().unwrap(), 3);
     }
 }

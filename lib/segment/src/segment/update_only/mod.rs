@@ -25,14 +25,19 @@ mod appendable;
 mod delete_only;
 mod lookup;
 mod segment_enum;
+mod tracker_lookup;
 
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
+use common::universal_io::UniversalRead;
 
 pub use self::appendable::AppendableSegment;
 pub use self::delete_only::DeleteOnlySegment;
 pub use self::lookup::LookupSegment;
 pub use self::segment_enum::UpdateOnlySegmentEnum;
+pub use self::tracker_lookup::TrackerLookup;
+use crate::id_tracker::IdTrackerRead as _;
+use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::types::PointIdType;
 
 /// Id-tracker state the read phase hands to a segment's writer; the variant
@@ -40,6 +45,32 @@ use crate::types::PointIdType;
 pub enum WriterIdTrackerState {
     Appendable(AppendableIdTrackerState),
     DeleteOnly(DeleteOnlyIdTrackerState),
+}
+
+impl WriterIdTrackerState {
+    /// Writer state taken from `id_tracker`'s last read. The deleted mask is
+    /// passed only if already in memory.
+    pub(crate) fn of<S: UniversalRead>(id_tracker: &ReadOnlyIdTrackerEnum<S>) -> Self {
+        match id_tracker {
+            ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
+                WriterIdTrackerState::Appendable(AppendableIdTrackerState {
+                    max_claimed_internal_id: id_tracker.max_claimed_internal_id(),
+                    pending_inserts: id_tracker.pending_inserts().collect(),
+                    mappings_end: id_tracker.mappings_read_to(),
+                })
+            }
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
+                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::Immutable(Some(
+                    id_tracker.deleted_point_bitslice().to_bitvec(),
+                )))
+            }
+            ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
+                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::DiskResident(
+                    id_tracker.deleted_full_if_materialized().cloned(),
+                ))
+            }
+        }
+    }
 }
 
 /// The tail of an appendable segment's mappings log, as the read phase saw it.

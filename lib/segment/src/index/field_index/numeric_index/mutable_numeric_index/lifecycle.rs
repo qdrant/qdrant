@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw::HwMetric;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate, UniversalRead};
 
@@ -180,15 +182,14 @@ where
 
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryNumericIndex::default();
-        let hw_counter = HardwareCounterCell::disposable();
-        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, BlobstoreError>(
                 |idx, values: Vec<T>| {
                     in_memory_index.add_many_to_list(idx, values);
                     Ok(true)
                 },
-                hw_counter_ref,
+                HwMetric::PayloadIndexIoWrite,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -247,16 +248,14 @@ where
         &mut self,
         idx: PointOffsetType,
         values: Vec<T>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Update persisted storage
         if values.is_empty() {
             // An empty value cannot be stored; drop whatever the slot holds
             self.remove_point(idx)?;
         } else {
-            let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
             self.storage
-                .put_value(idx, &values, hw_counter_ref)
+                .put_value(idx, &values, HwMetric::PayloadIndexIoWrite)
                 .map_err(|err| {
                     OperationError::service_error(format!(
                         "failed to put value in mutable numeric index gridstore: {err}"

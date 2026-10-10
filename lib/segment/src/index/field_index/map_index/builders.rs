@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use ahash::HashMap;
 use blobstore::Blob;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use itertools::Itertools;
@@ -18,6 +18,7 @@ use super::on_disk_map_index::OnDiskMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::map_index::immutable_map_index::ImmutableMapIndex;
 use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
+use crate::types::Memory;
 
 pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(pub(super) MapIndex<N>)
 where
@@ -38,13 +39,8 @@ where
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        values: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.0.add_point(id, values, hw_counter)
+    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+        self.0.add_point(id, values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -56,7 +52,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
     pub(super) path: PathBuf,
     pub(super) point_to_values: Vec<Vec<<N as MapIndexKey>::Owned>>,
     pub(super) values_to_points: HashMap<<N as MapIndexKey>::Owned, Vec<PointOffsetType>>,
-    pub(super) is_on_disk: bool,
+    pub(super) memory: Memory,
     pub(super) deleted_points: BitVec,
     pub(super) prefix_index: bool,
 }
@@ -73,12 +69,7 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let mut flatten_values: Vec<_> = vec![];
         for value in payload {
             let payload_values = <MapIndex<N> as ValueIndexer>::get_values(value);
@@ -93,19 +84,15 @@ where
 
         self.point_to_values[id as usize].extend(flatten_values.clone());
 
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_write_counter()
-            .write_back_counter();
-
         for value in flatten_values {
             let entry = self.values_to_points.entry(value);
 
             if let Entry::Vacant(e) = &entry {
                 let size = N::stored_size(e.key().borrow());
-                hw_cell_wb.incr_delta(size);
+                HwMetric::PayloadIndexIoWrite.bump(size);
             }
 
-            hw_cell_wb.incr_delta(size_of_val(&id));
+            HwMetric::PayloadIndexIoWrite.bump(size_of_val(&id));
             entry.or_default().push(id);
         }
 
@@ -113,7 +100,9 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let populate = Populate::from(!self.is_on_disk);
+        // Same placement a later open would apply, so the built index can serve as-is.
+        let memory = self.memory.clamp_to_low_memory();
+        let populate = Populate::from(memory.populate_on_open());
         let on_disk_index = OnDiskMapIndex::build(
             &MmapFs,
             &self.path,
@@ -124,10 +113,10 @@ where
             self.prefix_index,
         )?;
 
-        let index = if self.is_on_disk {
-            MapIndex::OnDisk(on_disk_index)
-        } else {
+        let index = if memory.is_heap() {
             MapIndex::Immutable(ImmutableMapIndex::load_from_on_disk(on_disk_index)?)
+        } else {
+            MapIndex::OnDisk(on_disk_index)
         };
 
         Ok(index)
@@ -185,18 +174,13 @@ where
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "MapIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

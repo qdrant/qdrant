@@ -7,9 +7,9 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use common::ambient::trace;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
-use common::uio_trace;
 use common::universal_io::{
     ChunkSink, ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFs,
     UniversalReadFsAsync,
@@ -37,6 +37,14 @@ impl<A: AsyncRead + Clone> UniversalReadFsAsync for BlobFs<A> {
     ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
         self.spawn(self.list_files_traced(prefix_path))
     }
+
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A, P> {
+        let paths: Vec<PathBuf> = paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        self.spawn(self.select_files_traced(paths))
+    }
 }
 
 impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
@@ -57,9 +65,7 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         let buf = self
             .runtime
             .handle()
-            .spawn(
-                uio_trace::Context::current().wrap(read_into_byte_buffer::<A>(self, range, align)),
-            )
+            .spawn(trace::Context::current().wrap(read_into_byte_buffer::<A>(self, range, align)))
             .await??;
 
         log::trace!(
@@ -83,13 +89,27 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         I: FnOnce(u64) -> UioResult<W> + Send + 'static,
         W: ChunkSink + Send + 'static,
     {
+        let started = std::time::Instant::now();
+        log::trace!(
+            target: crate::LATENCY_LOG_TARGET,
+            "schedule read for 0 of {} range {from}..",
+            self.path.display()
+        );
         let task =
             self.runtime
                 .handle()
                 .spawn(
-                    uio_trace::Context::current()
+                    trace::Context::current()
                         .wrap(read_from_into_sink::<A, W, I>(self, from, init)),
                 );
-        async move { task.await? }
+        async move {
+            let (sink, bytes) = task.await??;
+            log::trace!(
+                target: crate::LATENCY_LOG_TARGET,
+                "awaited read for 0 returned {bytes} bytes in {:?}",
+                started.elapsed()
+            );
+            Ok(sink)
+        }
     }
 }

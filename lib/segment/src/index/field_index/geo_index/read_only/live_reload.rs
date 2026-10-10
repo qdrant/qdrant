@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
@@ -27,18 +26,13 @@ impl<S: UniversalRead> LiveReload for ReadOnlyGeoIndex<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
-            ReadOnlyGeoIndex::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
-            ReadOnlyGeoIndex::OnDisk(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
-            }
+            ReadOnlyGeoIndex::Immutable(index) => index.live_reload(fs, deleted_points, new_points),
+            ReadOnlyGeoIndex::OnDisk(index) => index.live_reload(fs, deleted_points, new_points),
         }
     }
 }

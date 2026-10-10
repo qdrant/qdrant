@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::QuantizedVectorsConfig;
@@ -19,17 +18,12 @@ pub trait QuantizedVectorsRead {
 
     fn default_rescoring(&self) -> bool;
 
-    fn raw_scorer<'a>(
-        &'a self,
-        query: QueryVector,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>>;
+    fn raw_scorer<'a>(&'a self, query: QueryVector) -> OperationResult<Box<dyn RawScorer + 'a>>;
 
     /// Build a raw scorer for the specified `point_id`.
     /// If not supported, return [`InternalScorerUnsupported`] with the original `hardware_counter`.
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported>;
 }

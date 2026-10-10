@@ -1,7 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::DeferredBehavior;
 use itertools::Itertools;
@@ -36,17 +35,13 @@ where
         limit: usize,
         condition: &Filter,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
-        let cardinality_estimation = self
-            .payload_index
-            .estimate_cardinality(condition, hw_counter)?;
+        let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
         let ids_iterator = self
             .payload_index
             .iter_filtered_points(
                 condition,
                 &cardinality_estimation,
-                hw_counter,
                 is_stopped,
                 DeferredBehavior::VisibleOnly,
             )?
@@ -63,9 +58,8 @@ where
         limit: usize,
         condition: &Filter,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
-        let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
+        let filter_context = self.payload_index.filter_context(condition)?;
         self.id_tracker
             .point_mappings()
             .iter_random_visible()
@@ -81,15 +75,14 @@ where
         limit: usize,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
         match filter {
             None => Ok(self.read_by_random_id(limit)),
             Some(condition) => {
-                if self.should_pre_filter(condition, Some(limit), hw_counter)? {
-                    self.filtered_read_by_index_shuffled(limit, condition, is_stopped, hw_counter)
+                if self.should_pre_filter(condition, Some(limit))? {
+                    self.filtered_read_by_index_shuffled(limit, condition, is_stopped)
                 } else {
-                    self.filtered_read_by_random_stream(limit, condition, is_stopped, hw_counter)
+                    self.filtered_read_by_random_stream(limit, condition, is_stopped)
                 }
             }
         }

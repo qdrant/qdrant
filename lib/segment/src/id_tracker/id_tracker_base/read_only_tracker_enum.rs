@@ -1,19 +1,24 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
 use futures::future::BoxFuture;
+use strum::{EnumDiscriminants, EnumIter, IntoEnumIterator as _};
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
-    LiveReloadResult, ReadOnlyAppendableIdTracker,
+    LiveReloadResult, ReadOnlyAppendableIdTracker, TrackerProbe,
 };
 use crate::id_tracker::{IdTrackerRead, PointMappingsRefEnum};
 use crate::types::{PointIdType, SeqNumberType};
 
+#[derive(EnumDiscriminants)]
+#[strum_discriminants(name(ReadOnlyIdTrackerKind), derive(EnumIter))]
 pub enum ReadOnlyIdTrackerEnum<S: UniversalRead> {
     Appendable(ReadOnlyAppendableIdTracker<S>),
     Immutable(ReadOnlyImmutableIdTracker<S>),
@@ -51,6 +56,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
+        max_committed_offset: Option<PointOffsetType>,
         populate: Populate,
     ) -> OperationResult<Self> {
         if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate)? {
@@ -59,14 +65,63 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
         if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path)? {
             return Ok(Self::Immutable(tracker));
         }
-        Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open(
+        Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open_capped(
             fs,
             segment_path,
             deferred_internal_id,
+            max_committed_offset,
         )?))
     }
 
-    /// Stage everything the next [`Self::live_reload`] needs. Shared access.
+    /// Files whose size bounds the committed points, across every format that
+    /// has one. Probe them before taking the listing snapshot.
+    pub fn commit_mark_paths(segment_path: &Path) -> Vec<PathBuf> {
+        ReadOnlyIdTrackerKind::iter()
+            .filter_map(|kind| match kind {
+                ReadOnlyIdTrackerKind::Appendable => {
+                    ReadOnlyAppendableIdTracker::<S>::commit_mark_path(segment_path)
+                }
+                ReadOnlyIdTrackerKind::Immutable => {
+                    ReadOnlyImmutableIdTracker::<S>::commit_mark_path(segment_path)
+                }
+                ReadOnlyIdTrackerKind::DiskResident => {
+                    ReadOnlyDiskIdTracker::<S>::commit_mark_path(segment_path)
+                }
+            })
+            .collect()
+    }
+
+    /// Exclusive offset bound of committed points, from `fs`'s snapshot of the
+    /// [`commit_mark_paths`](Self::commit_mark_paths) files.
+    pub fn max_committed_offset(
+        fs: &impl CachedReadFs,
+        segment_path: &Path,
+    ) -> Option<PointOffsetType> {
+        ReadOnlyIdTrackerKind::iter().find_map(|kind| match kind {
+            ReadOnlyIdTrackerKind::Appendable => {
+                ReadOnlyAppendableIdTracker::<S>::max_committed_offset(fs, segment_path)
+            }
+            ReadOnlyIdTrackerKind::Immutable => {
+                ReadOnlyImmutableIdTracker::<S>::max_committed_offset(fs, segment_path)
+            }
+            ReadOnlyIdTrackerKind::DiskResident => {
+                ReadOnlyDiskIdTracker::<S>::max_committed_offset(fs, segment_path)
+            }
+        })
+    }
+
+    /// Measure how far the writer has committed, before the directory listing snapshot is taken.
+    pub async fn probe_committed<Fs: UniversalReadFsAsync<File = S>>(
+        &self,
+        inner_fs: &Fs,
+    ) -> OperationResult<TrackerProbe> {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.probe_committed(inner_fs).await,
+            Self::Immutable(_) | Self::DiskResident(_) => Ok(TrackerProbe::Unknown),
+        }
+    }
+
+    /// Stage post-LIST preloading on `CachedFs` (e.g. `reschedule_open` for `deleted.dat`).
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
@@ -86,11 +141,22 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
+        max_committed_id: Option<PointOffsetType>,
     ) -> OperationResult<LiveReloadResult> {
         match self {
-            Self::Appendable(id_tracker) => id_tracker.live_reload(fs),
+            Self::Appendable(id_tracker) => id_tracker.live_reload(fs, max_committed_id),
             Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
             Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
+        }
+    }
+
+    /// Make the inserts reported by the last [`Self::live_reload`] visible to readers. Call once
+    /// every component has ingested them.
+    pub fn publish_staged(&mut self) {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.publish_staged(),
+            // Never report inserts
+            Self::Immutable(_) | Self::DiskResident(_) => {}
         }
     }
 }

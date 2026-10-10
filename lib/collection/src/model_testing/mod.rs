@@ -110,6 +110,26 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         inline_storage: false,
         initially_active: true,
     },
+    // TurboQuant 8-bit storage: same contract as "q".
+    VectorCandidate {
+        name: "t",
+        kind: VectorKind::Dense(7),
+        datatype: Some(Datatype::Turbo8),
+        distance: Distance::Cosine,
+        quantization: None,
+        inline_storage: false,
+        initially_active: true,
+    },
+    // TurboQuant 16-bit storage: same contract as "q".
+    VectorCandidate {
+        name: "b16",
+        kind: VectorKind::Dense(9),
+        datatype: Some(Datatype::Turbo16),
+        distance: Distance::Dot,
+        quantization: None,
+        inline_storage: false,
+        initially_active: true,
+    },
     // Half-precision storage. Lossy but deterministic and idempotent: the model records
     // the f32 -> f16 -> f32 round-trip and compares exactly.
     VectorCandidate {
@@ -260,6 +280,17 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
         inline_storage: false,
         initially_active: true,
     },
+    // 8-bit TurboQuant quantization, the only width without TQ+: Normal mode on both the
+    // appendable (empty-fit) and the optimizer-built quantized storages.
+    VectorCandidate {
+        name: "f",
+        kind: VectorKind::Dense(8),
+        datatype: None,
+        distance: Distance::Cosine,
+        quantization: Some(QuantizationKind::TurboBits8),
+        inline_storage: false,
+        initially_active: true,
+    },
     // Quantization x datatype combos. Live appendable inserts quantize the pristine f32
     // input; optimizer rebuilds and CoW moves re-quantize from the lossy storage
     // read-back, so the codes for the same point differ across those paths. Predictions
@@ -331,7 +362,10 @@ pub(super) const ALL_CANDIDATES: &[VectorCandidate] = &[
 ///   (dense-only follows from the quantization constraint).
 fn assert_candidates_predictable() {
     for c in ALL_CANDIDATES {
-        let turbo4 = matches!(c.datatype, Some(Datatype::Turbo4));
+        let turbo4 = matches!(
+            c.datatype,
+            Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16)
+        );
         let supported = match c.kind {
             VectorKind::Dense(_) => {
                 !turbo4 || matches!(c.distance, Distance::Dot | Distance::Cosine)
@@ -410,6 +444,8 @@ pub(super) enum QuantizationKind {
     /// Turbo4 storage source this forces the rotate-back branch of
     /// `should_keep_source_rotated`, where default-bits `Turbo` takes the keep-rotated one.
     TurboBits1_5,
+    /// TurboQuant with `Bits8` encoding, which has no TQ+ mode and quantizes in Normal mode.
+    TurboBits8,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -527,6 +563,22 @@ pub async fn run(
 ) {
     assert_candidates_predictable();
 
+    // The `t` text index: where optimized segments keep it (RAM or disk, so both scorers and both
+    // length read paths run) and how it tokenizes. Keyed off the seed rather than drawn, so the op
+    // stream is the same.
+    let text_params = fixture::text_index_params(seed);
+    println!(
+        "model_testing: text index memory={:?} tokenizer={:?} lowercase={:?} min/max={:?}/{:?} \
+         stopwords={:?} stemmer={:?} ascii_folding={:?}",
+        text_params.memory,
+        text_params.tokenizer,
+        text_params.lowercase,
+        text_params.min_token_len,
+        text_params.max_token_len,
+        text_params.stopwords,
+        text_params.stemmer,
+        text_params.ascii_folding,
+    );
     let (collection_dir, snapshots_dir, collection) = fixture::fixture(
         shard_count,
         storage_path,
@@ -534,6 +586,7 @@ pub async fn run(
         max_segment_size_kb,
         indexing_threshold_kb,
         on_disk,
+        text_params,
     )
     .await;
     // `Arc` so a background `CreateSnapshot` task can hold the collection alive while the main loop
@@ -800,7 +853,13 @@ pub async fn run(
                     log::debug!("op:{i} CreateSnapshot skipped (one already in flight)");
                 }
             } else {
-                apply::apply(&collection, &mut model, &mut active_names, &op).await;
+                // No segment is wrapped in a proxy: the optimizer is off, and no snapshot is
+                // proxying segments while it runs. Only then are statistics the model's.
+                let no_proxies = disable_optimizer
+                    && pending_snapshot
+                        .as_ref()
+                        .is_none_or(JoinHandle::is_finished);
+                apply::apply(&collection, &mut model, &mut active_names, &op, no_proxies).await;
             }
         }
         // Reap a finished background snapshot (non-blocking check); panics if it errored.

@@ -2,7 +2,7 @@ use std::cmp::{Ordering, max, min};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::UioResult;
@@ -35,7 +35,6 @@ pub struct SearchContext<'a, T: PostingListIter = PostingListIterator<'a>> {
     /// Scores buffer from [`SearchScratch`].
     scores: &'a mut Vec<ScoreType>,
     use_pruning: bool,
-    hardware_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, T: PostingListIter> SearchContext<'a, T> {
@@ -45,7 +44,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
         scratch: &'a mut SearchScratch<'_>,
         is_stopped: &'a AtomicBool,
-        hardware_counter: &'a HardwareCounterCell,
+        vector_io_read_unit: usize,
     ) -> UioResult<SearchContext<'a, T>> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
@@ -53,7 +52,8 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         let ids = query.indices.iter().copied().enumerate();
-        inverted_index.get_batch(ids, &scratch.arena, hardware_counter, |offset, mut it| {
+        inverted_index.get_batch(ids, &scratch.arena, |offset, mut it| {
+            it.set_vector_io_read_unit(vector_io_read_unit);
             if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                 min_record_id = min(min_record_id, first.record_id);
                 max_record_id = max(max_record_id, last_id);
@@ -82,7 +82,6 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
             max_record_id,
             scores: &mut scratch.scores,
             use_pruning,
-            hardware_counter,
         })
     }
 
@@ -93,8 +92,6 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
         // sort ids to fully leverage posting list iterator traversal
         let mut sorted_ids = ids.to_vec();
         sorted_ids.sort_unstable();
-
-        let cpu_counter = self.hardware_counter.cpu_counter();
 
         let mut indices = Vec::with_capacity(self.query.indices.len());
         let mut values = Vec::with_capacity(self.query.values.len());
@@ -125,8 +122,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
 
             // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
             // as measurement for CPU usage of plain search.
-            cpu_counter
-                .incr_delta(self.query.indices.len() + values.len() * size_of::<DimWeight>());
+            HwMetric::Cpu.bump(self.query.indices.len() + values.len() * size_of::<DimWeight>());
 
             // reconstruct sparse vector and score against query
             let sparse_score =
@@ -278,7 +274,7 @@ impl<'a, T: PostingListIter> SearchContext<'a, T> {
                 cpu_cost += posting.posting_list_iterator.len_to_end()
                     * posting.posting_list_iterator.element_size();
             }
-            self.hardware_counter.cpu_counter().incr_delta(cpu_cost);
+            HwMetric::Cpu.bump(cpu_cost);
         }
 
         let mut best_min_score = f32::MIN;

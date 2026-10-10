@@ -9,6 +9,8 @@
 //! * `search` — nearest-neighbour search for a query vector, optionally filtered.
 //! * `search-sparse` — nearest-neighbour search for a sparse query vector,
 //!   optionally filtered.
+//! * `count` — count points matching an optional filter.
+//! * `facet` — count points per unique value of a payload key.
 //!
 //! All sub-commands accept an arbitrary payload filter as JSON via `--filter`
 //! (curl `--data` style: a literal JSON string, `@file` to read from a file, or
@@ -104,7 +106,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser as _;
-use common::uio_trace;
+use common::ambient::{self, trace};
+use common::reason::Reason;
 use common::universal_io::DiskCache;
 use edge::{EdgeConfig, ReadOnlyEdgeShard};
 use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
@@ -138,7 +141,11 @@ where
     // with `--no-load-profile`). An omitted `--vector` stays a placeholder until the open
     // reveals the dimension (the profile only needs the vector name).
     let mut request = PreparedRequest::build(&cli.command)?;
-    let load_profile = (!cli.connection.no_load_profile).then(|| request.load_profile());
+    let load_profile = (!cli.connection.no_load_profile).then(|| {
+        request
+            .load_profile()
+            .with_deferred_points_threshold_kb(cli.connection.deferred_threshold_kb)
+    });
 
     // No edge_config.json: `ReadOnlyEdgeShard` derives its config from the segments and discovers
     // them via the manifest. `prefix` is passed only as the shard's (logical) path label. A
@@ -152,8 +159,8 @@ where
     log::info!("Load profile: {load_profile:?}");
 
     let before_open = stats.snapshot();
-    let shard = uio_trace::Phase::start("open")
-        .in_scope(|| {
+    let shard = trace::Phase::start("open")
+        .enter(|| {
             ReadOnlyEdgeShard::<DiskCache<BlobFile<A>>>::open(
                 cached_fs,
                 prefix,
@@ -167,12 +174,12 @@ where
     log::info!("opened shard with {} segment(s)", shard.segments_count());
 
     let before_prepare = stats.snapshot();
-    let result = uio_trace::Phase::start("prepare").in_scope(|| request.fill_random_vector(&shard));
+    let result = trace::Phase::start("prepare").enter(|| request.fill_random_vector(&shard));
     print_io_stats("prepare", &stats.snapshot().delta_since(&before_prepare));
     result?;
 
     let before_query = stats.snapshot();
-    let result = uio_trace::Phase::start("query").in_scope(|| request.run(&shard));
+    let result = trace::Phase::start("query").enter(|| request.run(&shard));
     print_io_stats("query", &stats.snapshot().delta_since(&before_query));
     let (rows, next_offset) = result?;
     request.print_full(&rows, next_offset.as_ref())?;
@@ -193,7 +200,7 @@ where
         }
 
         let before_reload = stats.snapshot();
-        let result = uio_trace::Phase::start("reload").in_scope(|| shard.live_reload());
+        let result = trace::Phase::start("reload").enter(|| shard.live_reload());
         print_io_stats("reload", &stats.snapshot().delta_since(&before_reload));
         if let Err(err) = result {
             // The shard keeps serving its previous state; retry on the next trigger.
@@ -206,7 +213,7 @@ where
         );
 
         let before_query = stats.snapshot();
-        let result = uio_trace::Phase::start("query").in_scope(|| request.run(&shard));
+        let result = trace::Phase::start("query").enter(|| request.run(&shard));
         print_io_stats("query", &stats.snapshot().delta_since(&before_query));
         let (rows, _) = result?;
         println!("--- live_reload #{iteration}: diff vs previous results ---");
@@ -227,7 +234,7 @@ fn main() -> Result<()> {
     common::flags::init_feature_flags(feature_flags);
     let cli = Cli::parse();
     let conn = &cli.connection;
-    let _flush_trace = conn.uio_trace.as_ref().map(uio_trace::start).transpose()?;
+    let _flush_trace = conn.uio_trace.as_ref().map(trace::start).transpose()?;
     let prefix = PathBuf::from(&conn.prefix);
     let cache_dir = conn
         .cache_dir
@@ -242,7 +249,7 @@ fn main() -> Result<()> {
         conn.prefix,
     );
 
-    match conn.backend {
+    let run_backend = || match conn.backend {
         Backend::Aws => {
             run::<ObjectStoreSource<AmazonS3>>(&cli, &prefix, &cache_dir, build_aws_config(conn)?)
         }
@@ -255,7 +262,8 @@ fn main() -> Result<()> {
         Backend::UioGrpc => {
             run::<UioGrpcSource>(&cli, &prefix, &cache_dir, build_uio_config(conn)?)
         }
-    }
+    };
+    ambient::unmeasured(Reason::EDGE_UNMEASURED, run_backend)
 }
 
 /// Default local mirror directory. The mirror is keyed by `--prefix`-relative

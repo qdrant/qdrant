@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
 use common::storage_version::VERSION_FILE;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
@@ -39,9 +38,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         self.with_view(|view| {
-            let query_cardinality = view
-                .payload_index
-                .estimate_cardinality(filter, &vector_query_context.hardware_counter())?;
+            let query_cardinality = view.payload_index.estimate_cardinality(filter)?;
             view.search_plain(
                 sparse_vector,
                 filter,
@@ -83,9 +80,8 @@ impl<TInvertedIndex: InvertedIndex> VectorIndexRead for SparseVectorIndex<TInver
         idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         is_stopped: &std::sync::atomic::AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
-        self.with_view(|view| view.fill_idf_statistics(idf, corpus, is_stopped, hw_counter))
+        self.with_view(|view| view.fill_idf_statistics(idf, corpus, is_stopped))
     }
 
     fn is_index(&self) -> bool {
@@ -131,7 +127,6 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         &mut self,
         id: PointOffsetType,
         vector: Option<VectorRef>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (old_vector, new_vector) = {
             let mut vector_storage = self.vector_storage.borrow_mut();
@@ -139,18 +134,14 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
                 .get_vector_opt::<Random>(id)
                 .map(CowVector::to_owned);
             let new_vector = if let Some(vector) = vector {
-                vector_storage.insert_vector(id, vector, hw_counter)?;
+                vector_storage.insert_vector(id, vector)?;
                 vector.to_owned()
             } else {
                 let default_vector = vector_storage.default_vector();
                 if id as usize >= vector_storage.total_vector_count() {
                     // Vector doesn't exist in the storage
                     // Insert default vector to keep the sequence
-                    vector_storage.insert_vector(
-                        id,
-                        VectorRef::from(&default_vector),
-                        hw_counter,
-                    )?;
+                    vector_storage.insert_vector(id, VectorRef::from(&default_vector))?;
                 }
                 vector_storage.delete_vector(id)?;
                 default_vector
@@ -199,7 +190,6 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         &mut self,
         id: PointOffsetType,
         vector: Option<&[u8]>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // The raw form is the lossless `StoredSparseVector` encoding; the
         // inverted index needs the decoded values anyway, so decode and
@@ -207,6 +197,6 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         let sparse = vector
             .map(StoredSparseVector::decode_untrusted_bytes)
             .transpose()?;
-        self.update_vector(id, sparse.as_ref().map(VectorRef::from), hw_counter)
+        self.update_vector(id, sparse.as_ref().map(VectorRef::from))
     }
 }

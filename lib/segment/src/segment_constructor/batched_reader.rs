@@ -15,7 +15,7 @@ use crate::data_types::vectors::{
     TypedMultiDenseVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
 };
 use crate::types::CompactExtendedPointId;
-use crate::vector_storage::turbo::shared::quantized_vector_size;
+use crate::vector_storage::turbo::shared::{quantized_vector_size, tq_bits};
 use crate::vector_storage::{
     DenseTQVectorStorage, DenseTQVectorStorageRead, DenseVectorStorage, DenseVectorStorageRead,
     MultiTQVectorStorage, MultiTQVectorStorageRead, MultiVectorStorage, MultiVectorStorageRead,
@@ -538,10 +538,14 @@ fn read_dense_tq(
         VectorStorageEnum::DenseTurboAppendableMemmap(v) => v.get_dense_tq::<Sequential>(key),
         // Placeholder for a vector added to an existing segment: every slot is
         // deleted, but the destination still needs one zero record per slot.
-        // The record size depends only on dim and distance, which the
+        // The record size depends only on dim, distance and datatype, which the
         // placeholder shares with the destination.
         VectorStorageEnum::EmptyDense(v) => {
-            let size = quantized_vector_size(DenseVectorStorageRead::vector_dim(v), v.distance());
+            let size = quantized_vector_size(
+                DenseVectorStorageRead::vector_dim(v),
+                v.distance(),
+                tq_bits(v.datatype()),
+            );
             Cow::Owned(vec![0; size])
         }
         VectorStorageEnum::DenseVolatile(_)
@@ -597,7 +601,11 @@ fn read_multi_tq(
         // Named multivector added to an existing segment: all slots are deleted,
         // but the destination still needs one zero inner record per slot.
         VectorStorageEnum::EmptyDense(v) if v.multi_vector_config().is_some() => {
-            let size = quantized_vector_size(DenseVectorStorageRead::vector_dim(v), v.distance());
+            let size = quantized_vector_size(
+                DenseVectorStorageRead::vector_dim(v),
+                v.distance(),
+                tq_bits(v.datatype()),
+            );
             Cow::Owned(vec![0; size])
         }
         VectorStorageEnum::DenseVolatile(_)
@@ -933,7 +941,9 @@ mod tests {
             VectorStorageDatatype::Float32,
             VectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8,
-            VectorStorageDatatype::Turbo4
+            VectorStorageDatatype::Turbo4,
+            VectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16
         )]
         datatype: VectorStorageDatatype,
         #[values(false, true)] multi: bool,

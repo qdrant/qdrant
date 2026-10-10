@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient;
+use common::ambient::hw;
 use common::types::{DeferredBehavior, ScoreType};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
@@ -14,12 +15,15 @@ use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_record::SegmentRecordRaw;
 use segment::data_types::vectors::QueryVector;
+use segment::index::field_index::full_text_index::Bm25Params;
+use segment::json_path::JsonPath;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SegmentConfig, VectorName, WithPayload, WithVector,
 };
 use shard::common::stopping_guard::StoppingGuard;
 use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
 use shard::query::query_context::{fill_query_context, init_query_context};
+use shard::query::text::init_text_query_context;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blocking};
 use shard::search::{
@@ -176,7 +180,6 @@ impl SegmentsSearcher {
         timeout: Duration,
         search_runtime_handle: &AdaptiveSearchHandle,
         is_stopped_guard: &StoppingGuard,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<QueryContext>> {
         let indexing_threshold_kb = collection_config
             .optimizer_config
@@ -185,12 +188,11 @@ impl SegmentsSearcher {
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
         let search_optimized_threshold_kb = indexing_threshold_kb.max(full_scan_threshold_kb);
 
-        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+        let cpu_utilization = hw::cpu_utilization();
         let query_context = init_query_context(
             &batch_request.searches,
             search_optimized_threshold_kb,
             is_stopped_guard,
-            hw_measurement_acc,
             |vector_name| {
                 collection_config
                     .params
@@ -254,9 +256,7 @@ impl SegmentsSearcher {
                     let timeout = timeout.saturating_sub(start.elapsed());
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                        let cpu_utilization = query_context_arc_segment
-                            .hardware_usage_accumulator()
-                            .cpu_utilization();
+                        let cpu_utilization = query_context_arc.handoff().cpu_utilization();
                         move || {
                             cpu_utilization.measure(|| {
                                 let segment_query_context =
@@ -321,9 +321,7 @@ impl SegmentsSearcher {
                     });
                     // update timeout
                     let timeout = timeout.saturating_sub(start.elapsed());
-                    let cpu_utilization = query_context_arc_segment
-                        .hardware_usage_accumulator()
-                        .cpu_utilization();
+                    let cpu_utilization = query_context_arc.handoff().cpu_utilization();
                     let handle = runtime_handle.spawn_blocking(move || {
                         cpu_utilization.measure(|| {
                             let segment_query_context =
@@ -391,7 +389,6 @@ impl SegmentsSearcher {
         with_vector: &WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
@@ -401,8 +398,10 @@ impl SegmentsSearcher {
             let with_payload = with_payload.clone();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
+            let handoff = ambient::current();
             // TODO create one Task per segment level retrieve
             move || {
+                let _scope = handoff.enter_guard();
                 retrieve_blocking(
                     segments,
                     &points,
@@ -410,7 +409,6 @@ impl SegmentsSearcher {
                     &with_vector,
                     timeout,
                     &is_stopped,
-                    hw_measurement_acc,
                     deferred_behavior,
                 )
             }
@@ -427,7 +425,6 @@ impl SegmentsSearcher {
         with_vector: &WithVector,
         runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<PointIdType, SegmentRecordRaw>> {
         let stopping_guard = StoppingGuard::new();
@@ -436,14 +433,15 @@ impl SegmentsSearcher {
             let points = points.to_vec();
             let with_vector = with_vector.clone();
             let is_stopped = stopping_guard.get_is_stopped();
+            let handoff = ambient::current();
             move || {
+                let _scope = handoff.enter_guard();
                 retrieve_raw_blocking(
                     segments,
                     &points,
                     &with_vector,
                     timeout,
                     &is_stopped,
-                    hw_measurement_acc,
                     deferred_behavior,
                 )
             }
@@ -455,13 +453,13 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         filter: Option<&Filter>,
         runtime_handle: &AdaptiveSearchHandle,
-        hw_measurement_acc: HwMeasurementAcc,
         timeout: Option<Duration>,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         // cloning filter spawning task
         let filter = filter.cloned();
+        let handoff = ambient::current();
         let points = runtime_handle.spawn_blocking(move || {
             let is_stopped = stopping_guard.get_is_stopped();
 
@@ -477,7 +475,7 @@ impl SegmentsSearcher {
                 .collect()
             };
 
-            let hw_counter = hw_measurement_acc.get_counter_cell();
+            let _scope = handoff.enter_guard();
 
             let work = || -> CollectionResult<_> {
                 let all_points: BTreeSet<_> = segments
@@ -488,7 +486,6 @@ impl SegmentsSearcher {
                             None,
                             filter.as_ref(),
                             &is_stopped,
-                            &hw_counter,
                             deferred_behavior,
                         )
                     })
@@ -496,10 +493,7 @@ impl SegmentsSearcher {
                 Ok(all_points)
             };
 
-            match hw_counter.cpu_utilization() {
-                Some(cpu_util) => cpu_util.measure(work),
-                None => work(),
-            }
+            hw::cpu_utilization().measure(work)
         });
         AbortOnDropHandle::new(points).await?
     }
@@ -511,7 +505,6 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         arc_ctx: Arc<FormulaContext>,
         runtime_handle: &AdaptiveSearchHandle,
-        hw_measurement_acc: HwMeasurementAcc,
         timeout: Duration,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let limit = arc_ctx.limit;
@@ -532,15 +525,12 @@ impl SegmentsSearcher {
                 .map(|segment| {
                     let handle = runtime_handle.spawn_blocking({
                         let arc_ctx = arc_ctx.clone();
-                        let hw_counter = hw_measurement_acc.get_counter_cell();
-                        let cpu_utilization = hw_measurement_acc.cpu_utilization();
+                        let handoff = ambient::current();
+                        let cpu_utilization = hw::cpu_utilization();
                         move || {
-                            cpu_utilization.measure(|| {
-                                segment
-                                    .get()
-                                    .read()
-                                    .rescore_with_formula(arc_ctx, &hw_counter)
-                            })
+                            let _scope = handoff.enter_guard();
+                            cpu_utilization
+                                .measure(|| segment.get().read().rescore_with_formula(arc_ctx))
                         }
                     });
                     AbortOnDropHandle::new(handle)
@@ -564,6 +554,131 @@ impl SegmentsSearcher {
 
         Ok(top)
     }
+
+    /// Rank the shard's points by BM25 over the text index of `field` and
+    /// return the `limit` best, highest first.
+    ///
+    /// `terms` must already be tokenized by the field's tokenizer. The text
+    /// statistics are gathered over every segment first, so a point scores
+    /// the same whichever segment holds it; then each segment returns its own
+    /// `limit` best, and a point held by several segments keeps only its
+    /// highest version. No sampling: every segment is asked for the full
+    /// `limit`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn score_bm25(
+        segments: LockedSegmentHolder,
+        field: JsonPath,
+        terms: Vec<String>,
+        params: Bm25Params,
+        filter: Option<Filter>,
+        limit: usize,
+        with_payload: WithPayload,
+        with_vector: WithVector,
+        runtime_handle: &AdaptiveSearchHandle,
+        is_stopped_guard: &StoppingGuard,
+        timeout: Duration,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let start = Instant::now();
+
+        let query_context =
+            init_text_query_context(&field, &terms, is_stopped_guard.get_is_stopped());
+        let is_stopped = is_stopped_guard.get_is_stopped();
+        let cpu_utilization = hw::cpu_utilization();
+        // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
+        let query_context = AbortOnDropHandle::new(runtime_handle.spawn_blocking({
+            let segments = segments.clone();
+            move || {
+                cpu_utilization
+                    .measure(|| fill_query_context(query_context, segments, timeout, &is_stopped))
+            }
+        }))
+        .await??;
+        let Some(query_context) = query_context else {
+            return Ok(Vec::new());
+        };
+
+        let segments: Vec<_> = {
+            let timeout = timeout.saturating_sub(start.elapsed());
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "score_bm25"));
+            };
+            // Collect the segments first so we don't lock the segment holder during the operations.
+            segments_guard
+                .non_appendable_then_appendable_segments()
+                .collect()
+        };
+
+        let query = Arc::new(SegmentBm25Query {
+            query_context,
+            field,
+            terms,
+            filter,
+            with_payload,
+            with_vector,
+        });
+        let mut futures = segments
+            .into_iter()
+            .map(|segment| {
+                let query = query.clone();
+                let timeout = timeout.saturating_sub(start.elapsed());
+                let cpu_utilization = hw::cpu_utilization();
+                let handle = runtime_handle.spawn_blocking(move || {
+                    cpu_utilization.measure(|| {
+                        let SegmentBm25Query {
+                            query_context,
+                            field,
+                            terms,
+                            filter,
+                            with_payload,
+                            with_vector,
+                        } = &*query;
+                        let segment = segment.get();
+                        let Some(read_segment) = segment.try_read_for(timeout) else {
+                            return Err(CollectionError::timeout(timeout, "score_bm25"));
+                        };
+                        let segment_query_context = query_context.get_segment_query_context();
+                        Ok(read_segment.score_bm25(
+                            field,
+                            terms,
+                            params,
+                            with_payload,
+                            with_vector,
+                            filter.as_ref(),
+                            limit,
+                            &segment_query_context,
+                        )?)
+                    })
+                });
+                AbortOnDropHandle::new(handle)
+            })
+            .collect::<FuturesUnordered<_>>();
+
+        let mut segments_results = Vec::with_capacity(futures.len());
+        while let Some(result) = futures.try_next().await? {
+            segments_results.push(result?)
+        }
+
+        // use aggregator with only one "batch"
+        let mut aggregator = BatchResultAggregator::new(std::iter::once(limit));
+        aggregator.update_point_versions(segments_results.iter().flatten());
+        aggregator.update_batch_results(0, segments_results.into_iter().flatten());
+        let top =
+            aggregator.into_topk().into_iter().next().ok_or_else(|| {
+                OperationError::service_error("expected first result of aggregator")
+            })?;
+
+        Ok(top)
+    }
+}
+
+/// What every segment's BM25 task shares, behind one `Arc`.
+struct SegmentBm25Query {
+    query_context: QueryContext,
+    field: JsonPath,
+    terms: Vec<String>,
+    filter: Option<Filter>,
+    with_payload: WithPayload,
+    with_vector: WithVector,
 }
 
 /// Returns suggested search sampling size for a given number of points and required limit.
@@ -726,7 +841,8 @@ mod tests {
 
     use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient::hw::HwMetric;
+    use common::ambient::{AmbientContext, AmbientFutureExt, Handoff};
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
@@ -754,17 +870,17 @@ mod tests {
 
         let vector_index_borrow = vector_index.borrow();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         match &*vector_index_borrow {
             VectorIndexEnum::Plain(plain_index) => {
                 let res_1 = plain_index
-                    .is_small_enough_for_unindexed_search(25, None, &hw_counter)
+                    .is_small_enough_for_unindexed_search(25, None)
                     .unwrap();
                 assert!(!res_1);
 
                 let res_2 = plain_index
-                    .is_small_enough_for_unindexed_search(225, None, &hw_counter)
+                    .is_small_enough_for_unindexed_search(225, None)
                     .unwrap();
                 assert!(res_2);
 
@@ -773,7 +889,7 @@ mod tests {
                 let ids_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
                 let res_3 = plain_index
-                    .is_small_enough_for_unindexed_search(25, Some(&ids_filter), &hw_counter)
+                    .is_small_enough_for_unindexed_search(25, Some(&ids_filter))
                     .unwrap();
                 assert!(res_3);
             }
@@ -804,13 +920,13 @@ mod tests {
             searches: vec![req],
         };
 
-        let hw_acc = HwMeasurementAcc::new();
+        let ctx = AmbientContext::new();
         let result = SegmentsSearcher::search(
             segment_holder,
             Arc::new(batch_request),
             &AdaptiveSearchHandle::current_for_tests(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, Handoff::measured(ctx)),
             TEST_TIMEOUT,
         )
         .await
@@ -871,9 +987,11 @@ mod tests {
 
             let batch_request = Arc::new(batch_request);
 
-            let hw_measurement_acc = HwMeasurementAcc::new();
-            let query_context =
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
+            let ctx = AmbientContext::new();
+            let query_context = QueryContext::new(
+                DEFAULT_INDEXING_THRESHOLD_KB,
+                Handoff::measured(AmbientContext::clone(&ctx)),
+            );
 
             let result_no_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),
@@ -886,11 +1004,13 @@ mod tests {
             .await
             .unwrap();
 
-            assert_ne!(hw_measurement_acc.get_cpu(), 0);
+            assert_ne!(ctx.hw_data()[HwMetric::Cpu], 0);
 
-            let hw_measurement_acc = HwMeasurementAcc::new();
-            let query_context =
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
+            let ctx = AmbientContext::new();
+            let query_context = QueryContext::new(
+                DEFAULT_INDEXING_THRESHOLD_KB,
+                Handoff::measured(AmbientContext::clone(&ctx)),
+            );
 
             assert!(!result_no_sampling.is_empty());
 
@@ -906,7 +1026,7 @@ mod tests {
             .unwrap();
             assert!(!result_sampling.is_empty());
 
-            assert_ne!(hw_measurement_acc.get_cpu(), 0);
+            assert_ne!(ctx.hw_data()[HwMetric::Cpu], 0);
 
             // assert equivalence in depth
             assert_eq!(result_no_sampling[0].len(), result_sampling[0].len());
@@ -924,16 +1044,17 @@ mod tests {
     fn test_retrieve() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let segment_holder = build_test_holder(dir.path());
-        let records = retrieve_blocking(
-            segment_holder,
-            &[1.into(), 2.into(), 3.into()],
-            &WithPayload::from(true),
-            &true.into(),
-            Duration::from_secs(1),
-            &AtomicBool::new(false),
-            HwMeasurementAcc::new(),
-            DeferredBehavior::VisibleOnly,
-        )
+        let records = ambient::test(|| {
+            retrieve_blocking(
+                segment_holder,
+                &[1.into(), 2.into(), 3.into()],
+                &WithPayload::from(true),
+                &true.into(),
+                Duration::from_secs(1),
+                &AtomicBool::new(false),
+                DeferredBehavior::VisibleOnly,
+            )
+        })
         .unwrap();
         assert_eq!(records.len(), 3);
     }
@@ -951,7 +1072,6 @@ mod tests {
             &true.into(),
             Duration::from_secs(1),
             &AtomicBool::new(false),
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         );
         assert_matches!(records, Err(OperationError::Timeout { .. }));
@@ -998,5 +1118,157 @@ mod tests {
             effective,
             "effective limit for [limit: {limit}, ef_limit: {ef_limit}, poisson_sampling: {poisson_sampling}] must be {effective}",
         ));
+    }
+
+    /// A text-indexed segment holding `docs`, each `(point id, op num, text)`.
+    fn text_segment(
+        path: &std::path::Path,
+        docs: impl IntoIterator<Item = (u64, u64, String)>,
+    ) -> segment::segment::Segment {
+        use segment::data_types::index::TextIndexParams;
+        use segment::data_types::vectors::only_default_vector;
+        use segment::entry::{NonAppendableSegmentEntry as _, SegmentEntry as _};
+        use segment::payload_json;
+        use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+        use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaParams};
+
+        let _scope = ambient::test_guard();
+        let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
+        let params = TextIndexParams {
+            phrase_matching: Some(true),
+            ..TextIndexParams::default()
+        };
+        segment
+            .create_field_index(
+                0,
+                &JsonPath::new("text"),
+                Some(&PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
+                    params,
+                ))),
+            )
+            .unwrap();
+        for (id, op_num, text) in docs {
+            let vector = only_default_vector(&[1.0, 0.0, 0.0, 0.0]);
+            segment.upsert_point(op_num, id.into(), vector).unwrap();
+            segment
+                .set_payload(op_num, id.into(), &payload_json! { "text": text }, &None)
+                .unwrap();
+        }
+        segment
+    }
+
+    /// Distinct term counts for every `i` below 105, so no two documents tie.
+    /// `text_of(90)`, short and heavy in `gamma`, is among the best matches
+    /// for `alpha gamma`.
+    fn text_of(i: u64) -> String {
+        ["alpha"; 5][..(i % 5 + 1) as usize].join(" ")
+            + &" beta".repeat((i % 3) as usize)
+            + &" gamma".repeat((i % 7) as usize)
+    }
+
+    /// The shard's BM25 ranking against each segment scored with statistics
+    /// over both, then merged: the statistics are shard-wide, every segment
+    /// contributes its best, and a point both segments return is ranked by
+    /// its newer copy only.
+    ///
+    /// Both copies rank here on purpose. Like a vector search, the merge only
+    /// sees the versions the segments return, so a stale copy whose newer one
+    /// misses its segment's top `limit` would surface. A shard does not hold
+    /// such a pair: an upsert deletes the old copy, and during an optimization
+    /// the proxy hides it.
+    #[tokio::test]
+    async fn test_score_bm25_across_segments() {
+        use segment::data_types::index::TextIndexParams;
+        use segment::entry::ReadSegmentEntry as _;
+        use shard::query::text::init_text_query_context;
+
+        let _scoring = TextIndexParams::override_scoring(true);
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let moved = 5;
+        let older = text_segment(
+            &dir.path().join("a"),
+            (0..40).map(|i| (i, i + 1, text_of(i))),
+        );
+        let newer = text_segment(
+            &dir.path().join("b"),
+            (40..80)
+                .map(|i| (i, i + 1, text_of(i)))
+                .chain([(moved, 100, text_of(90))]),
+        );
+
+        let field = JsonPath::new("text");
+        let terms = vec!["alpha".to_owned(), "gamma".to_owned()];
+        let params = Bm25Params::default();
+        let limit = 15;
+
+        // Reference: each segment ranked in full against both segments'
+        // statistics, the older copy of the moved point dropped.
+        let mut query_context =
+            ambient::test(|| init_text_query_context(&field, &terms, Default::default()));
+        older.fill_query_context(&mut query_context).unwrap();
+        newer.fill_query_context(&mut query_context).unwrap();
+        let segment_context = query_context.get_segment_query_context();
+        let rank = |segment: &segment::segment::Segment| {
+            segment
+                .score_bm25(
+                    &field,
+                    &terms,
+                    params,
+                    &WithPayload::from(false),
+                    &WithVector::Bool(false),
+                    None,
+                    usize::MAX,
+                    &segment_context,
+                )
+                .unwrap()
+        };
+        let mut expected: Vec<ScoredPoint> = rank(&older)
+            .into_iter()
+            .filter(|point| point.id != moved.into())
+            .chain(rank(&newer))
+            .collect();
+        expected.sort_by(|a, b| b.score.total_cmp(&a.score));
+        expected.truncate(limit);
+        assert!(
+            rank(&older)
+                .iter()
+                .take(limit)
+                .any(|point| point.id == moved.into()),
+            "its older copy ranks in its segment too, so the merge has both to choose from",
+        );
+
+        let mut holder = SegmentHolder::default();
+        holder.add_new(older);
+        holder.add_new(newer);
+        let actual = SegmentsSearcher::score_bm25(
+            LockedSegmentHolder::new(holder),
+            field.clone(),
+            terms.clone(),
+            params,
+            None,
+            limit,
+            WithPayload::from(false),
+            WithVector::Bool(false),
+            &AdaptiveSearchHandle::current_for_tests(),
+            &StoppingGuard::new(),
+            TEST_TIMEOUT,
+        )
+        .measured(AmbientContext::new())
+        .await
+        .unwrap();
+
+        let ranked = |points: &[ScoredPoint]| -> Vec<(PointIdType, u64, ScoreType)> {
+            points
+                .iter()
+                .map(|point| (point.id, point.version, point.score))
+                .collect()
+        };
+        assert_eq!(ranked(&actual), ranked(&expected));
+        assert!(
+            actual
+                .iter()
+                .any(|point| point.id == moved.into() && point.version == 100),
+            "the moved point ranks, by its newer copy",
+        );
     }
 }

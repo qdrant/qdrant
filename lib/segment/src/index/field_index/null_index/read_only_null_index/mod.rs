@@ -62,7 +62,7 @@ impl<S: UniversalRead> ReadOnlyNullIndex<S> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::sorted_slice::SortedSlice;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
@@ -84,16 +84,14 @@ mod tests {
     #[test]
     fn read_only_null_index_round_trip() {
         let dir = TempDir::with_prefix("read_only_null_index").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
         let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
-        builder.add_point(0, &[&Value::Null], &hw_counter).unwrap(); // null, no values
-        builder
-            .add_point(1, &[&null_in_array], &hw_counter)
-            .unwrap(); // null + values
-        builder.add_point(2, &[], &hw_counter).unwrap(); // empty
-        builder.add_point(3, &[&json!(true)], &hw_counter).unwrap(); // values, not null
+        builder.add_point(0, &[&Value::Null]).unwrap(); // null, no values
+        builder.add_point(1, &[&null_in_array]).unwrap(); // null + values
+        builder.add_point(2, &[]).unwrap(); // empty
+        builder.add_point(3, &[&json!(true)]).unwrap(); // values, not null
         let total = 4;
         builder.finalize().unwrap();
 
@@ -134,29 +132,17 @@ mod tests {
 
         // Bitmap-driven branches: the set positions came back intact.
         assert_eq!(
-            index
-                .filter(&is_null, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&is_null).unwrap().unwrap().collect_vec(),
             vec![0, 1],
         );
         assert_eq!(
-            index
-                .filter(&is_not_empty, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&is_not_empty).unwrap().unwrap().collect_vec(),
             vec![1, 3],
         );
         // `len`-driven branch: iter_falses over [0, len) chained with [len, total).
         // Wrong `len` (e.g. 0) would wrongly include points 1 and 3 here.
         assert_eq!(
-            index
-                .filter(&is_empty, &hw_counter)
-                .unwrap()
-                .unwrap()
-                .collect_vec(),
+            index.filter(&is_empty).unwrap().unwrap().collect_vec(),
             vec![0, 2],
         );
         // Length read straight from the status file.
@@ -196,17 +182,15 @@ mod tests {
 
     fn live_reload_matches_fresh_open(materialize_before_reload: bool) {
         let dir = TempDir::with_prefix("read_only_null_index_live_reload").unwrap();
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // Initial on-disk state: points 0..=3 (total 4).
         let null_in_array = Value::Array(vec![Value::String("x".to_string()), Value::Null]);
         let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
-        builder.add_point(0, &[&Value::Null], &hw_counter).unwrap(); // null, no values
-        builder
-            .add_point(1, &[&null_in_array], &hw_counter)
-            .unwrap(); // null + values
-        builder.add_point(2, &[], &hw_counter).unwrap(); // empty
-        builder.add_point(3, &[&json!(true)], &hw_counter).unwrap(); // values, not null
+        builder.add_point(0, &[&Value::Null]).unwrap(); // null, no values
+        builder.add_point(1, &[&null_in_array]).unwrap(); // null + values
+        builder.add_point(2, &[]).unwrap(); // empty
+        builder.add_point(3, &[&json!(true)]).unwrap(); // values, not null
         let mut index = builder.finalize().unwrap();
 
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
@@ -227,8 +211,8 @@ mod tests {
         // Writer's delta: drop point 1, flip point 2 (empty -> value), append a
         // null point 4 (which grows `total_point_count` to 5).
         index.remove_point(1).unwrap();
-        index.add_point(2, &[&json!(true)], &hw_counter).unwrap();
-        index.add_point(4, &[&Value::Null], &hw_counter).unwrap();
+        index.add_point(2, &[&json!(true)]).unwrap();
+        index.add_point(4, &[&Value::Null]).unwrap();
         index.flusher()().unwrap();
         let total = 5;
 
@@ -237,7 +221,6 @@ mod tests {
                 &fs,
                 &SortedSlice::new(&[1]).unwrap(),
                 &SortedSlice::new(&[2, 4]).unwrap(),
-                &hw_counter,
             )
             .unwrap();
 
@@ -270,36 +253,16 @@ mod tests {
             is_null: None,
         };
 
-        let reloaded_null = reloaded
-            .filter(&is_null, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
+        let reloaded_null = reloaded.filter(&is_null).unwrap().unwrap().collect_vec();
         let reloaded_not_empty = reloaded
-            .filter(&is_not_empty, &hw_counter)
+            .filter(&is_not_empty)
             .unwrap()
             .unwrap()
             .collect_vec();
-        let reloaded_empty = reloaded
-            .filter(&is_empty, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
-        let fresh_null = fresh
-            .filter(&is_null, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
-        let fresh_not_empty = fresh
-            .filter(&is_not_empty, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
-        let fresh_empty = fresh
-            .filter(&is_empty, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect_vec();
+        let reloaded_empty = reloaded.filter(&is_empty).unwrap().unwrap().collect_vec();
+        let fresh_null = fresh.filter(&is_null).unwrap().unwrap().collect_vec();
+        let fresh_not_empty = fresh.filter(&is_not_empty).unwrap().unwrap().collect_vec();
+        let fresh_empty = fresh.filter(&is_empty).unwrap().unwrap().collect_vec();
 
         // Parity with the authoritative re-open …
         assert_eq!(reloaded_null, fresh_null);
@@ -329,10 +292,10 @@ mod tests {
 
         let build = || {
             let dir = TempDir::with_prefix("read_only_null_inconsistent").unwrap();
-            let hw_counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
             let mut builder = MutableNullIndex::builder(dir.path(), 0).unwrap();
             let value = json!(true);
-            builder.add_point(0, &[&value], &hw_counter).unwrap();
+            builder.add_point(0, &[&value]).unwrap();
             builder.finalize().unwrap();
             dir
         };

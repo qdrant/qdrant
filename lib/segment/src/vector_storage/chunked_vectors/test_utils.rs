@@ -1,6 +1,5 @@
 //! Helpers shared by the `read_only` and `update_only` test modules.
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::universal_io::MmapFs;
 
 use super::update_only::UpdateOnlyChunkedVectors;
@@ -16,7 +15,6 @@ pub(super) fn append_range(
     start_key: VectorOffsetType,
     seeds: std::ops::Range<usize>,
     dim: usize,
-    hw: &HardwareCounterCell,
 ) {
     let batch: Vec<Vec<f32>> = seeds.map(|seed| make_vec(seed, dim)).collect();
     writer
@@ -24,7 +22,6 @@ pub(super) fn append_range(
             &MmapFs,
             start_key,
             batch.iter().map(|vector| vector.as_slice()),
-            hw,
         )
         .unwrap();
 }

@@ -19,8 +19,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
@@ -126,6 +126,7 @@ async fn delete_named_vector_then_reload_loses_points() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let shards: AHashMap<ShardId, HashSet<PeerId>> =
@@ -177,13 +178,8 @@ async fn delete_named_vector_then_reload_loses_points() {
         PointInsertOperationsInternal::PointsList(vec![point]),
     ));
     collection
-        .update_from_client_simple(
-            upsert,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(upsert, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .expect("initial upsert failed");
 
@@ -199,8 +195,8 @@ async fn delete_named_vector_then_reload_loses_points() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("pre-delete retrieve failed");
     assert_eq!(
@@ -227,8 +223,8 @@ async fn delete_named_vector_then_reload_loses_points() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-delete live retrieve failed");
     assert_eq!(
@@ -272,8 +268,8 @@ async fn delete_named_vector_then_reload_loses_points() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-reload retrieve failed");
     assert_eq!(
@@ -345,6 +341,7 @@ async fn delete_named_vector_after_flush_survives_reload() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
     let shards: AHashMap<ShardId, HashSet<PeerId>> =
         AHashMap::from_iter([(0, HashSet::from([PEER_ID]))]);
@@ -394,13 +391,8 @@ async fn delete_named_vector_after_flush_survives_reload() {
         PointInsertOperationsInternal::PointsList(vec![point]),
     ));
     collection
-        .update_from_client_simple(
-            upsert,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(upsert, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .expect("upsert failed");
 
@@ -444,8 +436,8 @@ async fn delete_named_vector_after_flush_survives_reload() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-reload retrieve failed");
     assert_eq!(
@@ -514,6 +506,7 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
     let shards: AHashMap<ShardId, HashSet<PeerId>> =
         AHashMap::from_iter([(0, HashSet::from([PEER_ID]))]);
@@ -557,7 +550,8 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
             datatype: None,
         });
         collection
-            .create_named_vector(name.clone(), cfg, HwMeasurementAcc::new())
+            .create_named_vector(name.clone(), cfg)
+            .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("create_named_vector({name:?}) failed: {e:?}"));
 
@@ -582,13 +576,8 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         collection
-            .update_from_client_simple(
-                upsert,
-                true,
-                None,
-                WriteOrdering::default(),
-                HwMeasurementAcc::new(),
-            )
+            .update_from_client_simple(upsert, true, None, WriteOrdering::default())
+            .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("upsert cycle {i} failed: {e:?}"));
 
@@ -614,8 +603,8 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-cycles live retrieve failed");
     assert_eq!(
@@ -656,8 +645,8 @@ async fn repeated_create_then_delete_vector_name_with_flush_survives_reload() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .expect("post-reload retrieve failed");
     let returned_ids: Vec<_> = records.iter().map(|r| r.id).collect();

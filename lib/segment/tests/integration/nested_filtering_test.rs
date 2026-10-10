@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::create_id_tracker_fixture;
 use segment::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
@@ -61,13 +61,13 @@ fn test_filtering_context_consistency() {
 
     let mut points = HashMap::new();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     for (idx, payload) in nested_payloads().into_iter().enumerate() {
         points.insert(idx, payload.clone());
         payload_storage
-            .set(idx as PointOffsetType, &payload, &hw_counter)
+            .set(idx as PointOffsetType, &payload)
             .unwrap();
     }
 
@@ -85,42 +85,22 @@ fn test_filtering_context_consistency() {
     .unwrap();
 
     index
-        .set_indexed(&JsonPath::new("f"), PayloadSchemaType::Integer, &hw_counter)
+        .set_indexed(&JsonPath::new("f"), PayloadSchemaType::Integer)
         .unwrap();
     index
-        .set_indexed(
-            &JsonPath::new("arr1[].a"),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new("arr1[].a"), PayloadSchemaType::Integer)
         .unwrap();
     index
-        .set_indexed(
-            &JsonPath::new("arr1[].b"),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new("arr1[].b"), PayloadSchemaType::Integer)
         .unwrap();
     index
-        .set_indexed(
-            &JsonPath::new("arr1[].c"),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new("arr1[].c"), PayloadSchemaType::Integer)
         .unwrap();
     index
-        .set_indexed(
-            &JsonPath::new("arr1[].d"),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new("arr1[].d"), PayloadSchemaType::Integer)
         .unwrap();
     index
-        .set_indexed(
-            &JsonPath::new("arr1[].text"),
-            PayloadSchemaType::Text,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new("arr1[].text"), PayloadSchemaType::Text)
         .unwrap();
 
     {
@@ -146,10 +126,8 @@ fn test_filtering_context_consistency() {
 
         let nested_filter_0 = Filter::new_must(nested_condition_0);
         let (res0, check_res0) = index.with_view(|v| {
-            let res0 = v
-                .query_points(&nested_filter_0, &hw_counter, &is_stopped)
-                .unwrap();
-            let filter_context = v.filter_context(&nested_filter_0, &hw_counter).unwrap();
+            let res0 = v.query_points(&nested_filter_0, &is_stopped).unwrap();
+            let filter_context = v.filter_context(&nested_filter_0).unwrap();
             let check_res0: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();
@@ -187,10 +165,8 @@ fn test_filtering_context_consistency() {
         let nested_filter_1 = Filter::new_must(nested_condition_1);
 
         let (res1, check_res1) = index.with_view(|v| {
-            let res1 = v
-                .query_points(&nested_filter_1, &hw_counter, &is_stopped)
-                .unwrap();
-            let filter_context = v.filter_context(&nested_filter_1, &hw_counter).unwrap();
+            let res1 = v.query_points(&nested_filter_1, &is_stopped).unwrap();
+            let filter_context = v.filter_context(&nested_filter_1).unwrap();
             let check_res1: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();
@@ -225,10 +201,8 @@ fn test_filtering_context_consistency() {
         let nested_filter_2 = Filter::new_must(nested_condition_2);
 
         let (res2, check_res2) = index.with_view(|v| {
-            let res2 = v
-                .query_points(&nested_filter_2, &hw_counter, &is_stopped)
-                .unwrap();
-            let filter_context = v.filter_context(&nested_filter_2, &hw_counter).unwrap();
+            let res2 = v.query_points(&nested_filter_2, &is_stopped).unwrap();
+            let filter_context = v.filter_context(&nested_filter_2).unwrap();
             let check_res2: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();
@@ -273,10 +247,8 @@ fn test_filtering_context_consistency() {
         };
 
         let (res3, check_res3) = index.with_view(|v| {
-            let res3 = v
-                .query_points(&nested_filter_3, &hw_counter, &is_stopped)
-                .unwrap();
-            let filter_context = v.filter_context(&nested_filter_3, &hw_counter).unwrap();
+            let res3 = v.query_points(&nested_filter_3, &is_stopped).unwrap();
+            let filter_context = v.filter_context(&nested_filter_3).unwrap();
             let check_res3: Vec<_> = (0..NUM_POINTS as PointOffsetType)
                 .filter(|point_id| filter_context.check(*point_id as PointOffsetType).unwrap())
                 .collect();

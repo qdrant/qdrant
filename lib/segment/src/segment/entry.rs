@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::fs::safe_delete_with_suffix;
+use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType, TelemetryDetail};
 use uuid::Uuid;
 
@@ -24,6 +25,7 @@ use crate::entry::entry_point::{
     NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry, StorageSegmentEntry,
 };
 use crate::id_tracker::{IdTracker, IdTrackerRead, PointMappingsGuard};
+use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
 use crate::json_path::JsonPath;
@@ -71,21 +73,41 @@ impl ReadSegmentEntry for Segment {
         })
     }
 
-    fn rescore_with_formula(
+    fn score_bm25(
         &self,
-        ctx: Arc<FormulaContext>,
-        hw_counter: &HardwareCounterCell,
+        field: PayloadKeyTypeRef,
+        terms: &[String],
+        params: Bm25Params,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        self.with_view(|view| view.rescore_with_formula(ctx, hw_counter))
+        self.with_view(|view| {
+            view.score_bm25(
+                field,
+                terms,
+                params,
+                with_payload,
+                with_vector,
+                filter,
+                top,
+                query_context,
+            )
+        })
+    }
+
+    fn rescore_with_formula(&self, ctx: Arc<FormulaContext>) -> OperationResult<Vec<ScoredPoint>> {
+        self.with_view(|view| view.rescore_with_formula(ctx))
     }
 
     fn vector(
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        self.with_view(|view| view.vector(vector_name, point_id, hw_counter))
+        self.with_view(|view| view.vector(vector_name, point_id))
     }
 
     fn vector_with_behavior(
@@ -93,27 +115,17 @@ impl ReadSegmentEntry for Segment {
         vector_name: &VectorName,
         point_id: PointIdType,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
-        self.with_view(|view| {
-            view.vector_with_behavior(vector_name, point_id, deferred_behavior, hw_counter)
-        })
+        self.with_view(|view| view.vector_with_behavior(vector_name, point_id, deferred_behavior))
     }
 
-    fn all_vectors(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<NamedVectors<'_>> {
+    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors<'_>> {
         self.with_view(|view| {
             let mut result = NamedVectors::default();
             for vector_name in view.vector_data.keys() {
-                if let Some(vec) = view.vector_with_behavior(
-                    vector_name,
-                    point_id,
-                    DeferredBehavior::VisibleOnly,
-                    hw_counter,
-                )? {
+                if let Some(vec) =
+                    view.vector_with_behavior(vector_name, point_id, DeferredBehavior::VisibleOnly)?
+                {
                     result.insert(vector_name.clone(), vec);
                 }
             }
@@ -121,12 +133,8 @@ impl ReadSegmentEntry for Segment {
         })
     }
 
-    fn payload(
-        &self,
-        point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.with_view(|view| view.payload(point_id, hw_counter))
+    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
+        self.with_view(|view| view.payload(point_id))
     }
 
     fn retrieve(
@@ -134,7 +142,6 @@ impl ReadSegmentEntry for Segment {
         point_ids: &[PointIdType],
         with_payload: &WithPayload,
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
@@ -143,7 +150,6 @@ impl ReadSegmentEntry for Segment {
                 point_ids,
                 with_payload,
                 with_vector,
-                hw_counter,
                 is_stopped,
                 deferred_behavior,
             )
@@ -154,18 +160,11 @@ impl ReadSegmentEntry for Segment {
         &self,
         point_ids: &[PointIdType],
         with_vector: &WithVector,
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecordRaw>> {
         self.with_view(|view| {
-            view.retrieve_raw(
-                point_ids,
-                with_vector,
-                hw_counter,
-                is_stopped,
-                deferred_behavior,
-            )
+            view.retrieve_raw(point_ids, with_vector, is_stopped, deferred_behavior)
         })
     }
 
@@ -175,18 +174,10 @@ impl ReadSegmentEntry for Segment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         self.with_view(|view| {
-            view.read_filtered(
-                offset,
-                limit,
-                filter,
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )
+            view.read_filtered(offset, limit, filter, is_stopped, deferred_behavior)
         })
     }
 
@@ -196,18 +187,10 @@ impl ReadSegmentEntry for Segment {
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         self.with_view(|view| {
-            view.read_ordered_filtered(
-                limit,
-                filter,
-                order_by,
-                is_stopped,
-                hw_counter,
-                deferred_behavior,
-            )
+            view.read_ordered_filtered(limit, filter, order_by, is_stopped, deferred_behavior)
         })
     }
 
@@ -216,9 +199,8 @@ impl ReadSegmentEntry for Segment {
         limit: usize,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<PointIdType>> {
-        self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped, hw_counter))
+        self.with_view(|view| view.read_random_filtered(limit, filter, is_stopped))
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
@@ -251,9 +233,8 @@ impl ReadSegmentEntry for Segment {
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        self.with_view(|view| view.estimate_point_count(filter, hw_counter))
+        self.with_view(|view| view.estimate_point_count(filter))
     }
 
     fn unique_values(
@@ -261,18 +242,16 @@ impl ReadSegmentEntry for Segment {
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<std::collections::BTreeSet<FacetValue>> {
-        self.with_view(|view| view.facet_values(key, filter, is_stopped, hw_counter))
+        self.with_view(|view| view.facet_values(key, filter, is_stopped))
     }
 
     fn facet(
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        self.with_view(|view| view.approximate_facet(request, is_stopped, hw_counter))
+        self.with_view(|view| view.approximate_facet(request, is_stopped))
     }
 
     fn segment_uuid(&self) -> Uuid {
@@ -607,7 +586,6 @@ impl NonAppendableSegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self
             .id_tracker
@@ -621,7 +599,7 @@ impl NonAppendableSegmentEntry for Segment {
                 point_id,
                 Some(internal_id),
                 |segment| {
-                    segment.delete_point_internal(internal_id, Some(op_num), hw_counter)?;
+                    segment.delete_point_internal(internal_id, Some(op_num))?;
                     Ok((true, Some(internal_id)))
                 },
             ),
@@ -661,18 +639,13 @@ impl NonAppendableSegmentEntry for Segment {
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_type: &PayloadFieldSchema,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BuildFieldIndexResult> {
         // Check version without updating it
         if self.version.unwrap_or(0) > op_num {
             return Ok(BuildFieldIndexResult::SkippedByVersion);
         }
 
-        let field_index = match self
-            .payload_index
-            .borrow()
-            .build_index(key, field_type, hw_counter)?
-        {
+        let field_index = match self.payload_index.borrow().build_index(key, field_type)? {
             BuildIndexResult::Built(indexes) => indexes,
             BuildIndexResult::AlreadyBuilt => {
                 return Ok(BuildFieldIndexResult::AlreadyExists);
@@ -749,7 +722,6 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         mut vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
@@ -763,9 +735,8 @@ impl SegmentEntry for Segment {
                 op_num,
                 point_id,
                 existing_internal_id,
-                hw_counter,
                 |segment, internal_id| {
-                    segment.replace_all_vectors(internal_id, op_num, &vectors, hw_counter)?;
+                    segment.replace_all_vectors(internal_id, op_num, &vectors)?;
                     Ok(true)
                 },
                 |raw_vectors, updated_vectors, _payload| {
@@ -775,8 +746,7 @@ impl SegmentEntry for Segment {
                 },
             ),
             None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
-                let new_index =
-                    segment.insert_new_vectors(point_id, op_num, &vectors, hw_counter)?;
+                let new_index = segment.insert_new_vectors(point_id, op_num, &vectors)?;
                 Ok((false, Some(new_index)))
             }),
         }
@@ -787,7 +757,6 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: &[(VectorNameBuf, Vec<u8>)],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         for (vector_name, _) in vectors {
@@ -816,7 +785,6 @@ impl SegmentEntry for Segment {
                                 point_id,
                                 existing_internal_id,
                                 vectors,
-                                hw_counter,
                             )?;
                             Ok((true, Some(new_id)))
                         } else {
@@ -824,7 +792,6 @@ impl SegmentEntry for Segment {
                                 existing_internal_id,
                                 op_num,
                                 vectors,
-                                hw_counter,
                             )?;
                             Ok((true, Some(existing_internal_id)))
                         }
@@ -832,8 +799,7 @@ impl SegmentEntry for Segment {
                 )
             }
             None => self.handle_point_version_and_failure(op_num, point_id, None, |segment| {
-                let new_index =
-                    segment.insert_new_vectors_raw(point_id, op_num, vectors, hw_counter)?;
+                let new_index = segment.insert_new_vectors_raw(point_id, op_num, vectors)?;
                 Ok((false, Some(new_index)))
             }),
         }
@@ -846,7 +812,6 @@ impl SegmentEntry for Segment {
         raw_vectors: &[(VectorNameBuf, Vec<u8>)],
         mut updated_vectors: NamedVectors,
         payload: &Payload,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         for (vector_name, _) in raw_vectors {
@@ -882,7 +847,6 @@ impl SegmentEntry for Segment {
                             raw_vectors,
                             &updated_vectors,
                             payload,
-                            hw_counter,
                         )?;
                         if append_only {
                             segment
@@ -902,7 +866,6 @@ impl SegmentEntry for Segment {
                     raw_vectors,
                     &updated_vectors,
                     payload,
-                    hw_counter,
                 )?;
                 segment.id_tracker.borrow_mut().set_link(point_id, new_id)?;
                 Ok((false, Some(new_id)))
@@ -915,7 +878,6 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         mut vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
@@ -932,9 +894,8 @@ impl SegmentEntry for Segment {
             op_num,
             point_id,
             internal_id,
-            hw_counter,
             |segment, internal_id| {
-                segment.update_vectors(internal_id, op_num, vectors.clone(), hw_counter)?;
+                segment.update_vectors(internal_id, op_num, vectors.clone())?;
                 Ok(true)
             },
             |_raw_vectors, updated_vectors, _payload| {
@@ -970,11 +931,11 @@ impl SegmentEntry for Segment {
             .vector_storage
             .borrow()
             .is_deleted_vector(internal_id);
+        let _scope = ambient::unmeasured_guard(reason("Vector deletions are not measured"));
         let is_deleted = self.handle_point_mutate(
             op_num,
             point_id,
             internal_id,
-            &HardwareCounterCell::disposable(),
             |segment, internal_id| {
                 let vector_data = segment
                     .vector_data
@@ -999,7 +960,6 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self
             .id_tracker
@@ -1019,13 +979,11 @@ impl SegmentEntry for Segment {
             op_num,
             point_id,
             internal_id,
-            hw_counter,
             |segment, internal_id| {
-                segment.payload_index.borrow_mut().overwrite_payload(
-                    internal_id,
-                    full_payload,
-                    hw_counter,
-                )?;
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .overwrite_payload(internal_id, full_payload)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
@@ -1042,7 +1000,6 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         payload: &Payload,
         key: &Option<JsonPath>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self
             .id_tracker
@@ -1057,14 +1014,11 @@ impl SegmentEntry for Segment {
             op_num,
             point_id,
             internal_id,
-            hw_counter,
             |segment, internal_id| {
-                segment.payload_index.borrow_mut().set_payload(
-                    internal_id,
-                    payload,
-                    key,
-                    hw_counter,
-                )?;
+                segment
+                    .payload_index
+                    .borrow_mut()
+                    .set_payload(internal_id, payload, key)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
@@ -1083,7 +1037,6 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self
             .id_tracker
@@ -1098,12 +1051,11 @@ impl SegmentEntry for Segment {
             op_num,
             point_id,
             internal_id,
-            hw_counter,
             |segment, internal_id| {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .delete_payload(internal_id, key, hw_counter)?;
+                    .delete_payload(internal_id, key)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },
@@ -1118,7 +1070,6 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self
             .id_tracker
@@ -1133,12 +1084,11 @@ impl SegmentEntry for Segment {
             op_num,
             point_id,
             internal_id,
-            hw_counter,
             |segment, internal_id| {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .clear_payload(internal_id, hw_counter)?;
+                    .clear_payload(internal_id)?;
                 segment.version_tracker.set_payload(Some(op_num));
                 Ok(true)
             },

@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -20,7 +20,7 @@ const COUNT: usize = 9000;
 /// the first directory, `UpdateOnlyChunkedVectors` into the second — the
 /// latter over two sessions to also exercise reopening mid-chunk.
 fn write_both() -> (TempDir, TempDir) {
-    let hw = HardwareCounterCell::disposable();
+    let _scope = ambient::test_guard();
     let plain_dir = Builder::new().prefix("chunked_plain").tempdir().unwrap();
     let appended_dir = Builder::new().prefix("chunked_appended").tempdir().unwrap();
 
@@ -33,14 +33,14 @@ fn write_both() -> (TempDir, TempDir) {
     )
     .unwrap();
     for seed in 0..COUNT {
-        plain.push(make_vec(seed, DIM).as_slice(), &hw).unwrap();
+        plain.push(make_vec(seed, DIM).as_slice()).unwrap();
     }
     plain.flusher()().unwrap();
 
     for range in [0..COUNT / 2, COUNT / 2..COUNT] {
         let mut writer =
             UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, appended_dir.path(), DIM).unwrap();
-        append_range(&mut writer, range.start, range, DIM, &hw);
+        append_range(&mut writer, range.start, range, DIM);
     }
 
     (plain_dir, appended_dir)
@@ -124,7 +124,7 @@ fn directory_reads_congruently() {
 /// to the data, after which appends continue where the count left off.
 #[test]
 fn repairs_preallocated_chunks() {
-    let hw = HardwareCounterCell::disposable();
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("chunked_prealloc").tempdir().unwrap();
 
     let mut plain = ChunkedVectors::<f32, MmapFile>::open(
@@ -135,7 +135,7 @@ fn repairs_preallocated_chunks() {
         Populate::No,
     )
     .unwrap();
-    plain.push(make_vec(0, DIM).as_slice(), &hw).unwrap();
+    plain.push(make_vec(0, DIM).as_slice()).unwrap();
     plain.flusher()().unwrap();
     drop(plain);
 
@@ -149,7 +149,7 @@ fn repairs_preallocated_chunks() {
     let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
 
     // Appends continue after it
-    append_range(&mut writer, 1, 1..3, DIM, &hw);
+    append_range(&mut writer, 1, 1..3, DIM);
 
     // File gets truncated before inserting the new vectors
     assert!(
@@ -182,15 +182,15 @@ fn repairs_preallocated_chunks() {
 /// existing data and corrupting the offset-to-vector mapping.
 #[test]
 fn replaying_an_already_applied_range_overwrites_it() {
-    let hw = HardwareCounterCell::disposable();
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("chunked_replay").tempdir().unwrap();
 
     let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
-    append_range(&mut writer, 0, 0..100, DIM, &hw);
+    append_range(&mut writer, 0, 0..100, DIM);
 
     // Replay offsets 50..100 with different vectors than landed the first
     // time, so the overwrite is observable.
-    append_range(&mut writer, 50, 1050..1100, DIM, &hw);
+    append_range(&mut writer, 50, 1050..1100, DIM);
 
     let reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
         &MmapFs,
@@ -230,13 +230,13 @@ fn replaying_an_already_applied_range_overwrites_it() {
 /// offsets down to close it.
 #[test]
 fn extends_across_a_gap_with_zeroes() {
-    let hw = HardwareCounterCell::disposable();
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("chunked_gap").tempdir().unwrap();
 
     let mut writer = UpdateOnlyChunkedVectors::<f32>::open(&MmapFs, dir.path(), DIM).unwrap();
-    append_range(&mut writer, 0, 0..10, DIM, &hw);
+    append_range(&mut writer, 0, 0..10, DIM);
     // Offsets 10..15 are skipped; the next batch picks up at 15.
-    append_range(&mut writer, 15, 15..20, DIM, &hw);
+    append_range(&mut writer, 15, 15..20, DIM);
 
     let reader = ReadOnlyChunkedVectors::<f32, MmapFile>::open(
         &MmapFs,

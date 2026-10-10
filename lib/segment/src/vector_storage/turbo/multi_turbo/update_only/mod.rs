@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
+use quantization::turboquant::TQBits;
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -46,8 +46,9 @@ impl UpdateOnlyMultiTurboVectorStorage {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
         let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(
@@ -76,7 +77,6 @@ impl UpdateOnlyMultiTurboVectorStorage {
         fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let encoded_size = self.quantizer.quantized_size();
         let batch_start = self.next_row;
@@ -108,21 +108,19 @@ impl UpdateOnlyMultiTurboVectorStorage {
             fs,
             batch_start as VectorOffsetType,
             rows.chunks_exact(encoded_size),
-            hw_counter,
         )?;
 
         self.offsets.append_many(
             fs,
             start_slot as VectorOffsetType,
             offsets.iter().map(std::slice::from_ref),
-            hw_counter,
         )?;
 
         for slot in missing {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(fs, hw_counter)
+        self.deleted.flush(fs)
     }
 
     /// Encode every inner vector, back to back.

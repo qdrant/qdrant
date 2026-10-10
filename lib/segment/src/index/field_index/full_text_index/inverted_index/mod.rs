@@ -1,3 +1,4 @@
+pub mod bm25;
 pub(super) mod immutable_inverted_index;
 pub mod immutable_postings_enum;
 pub(super) mod mutable_inverted_index;
@@ -9,9 +10,10 @@ mod postings_iterator;
 
 use std::cmp::min;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use bm25::Bm25Query;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Itertools;
 
@@ -205,50 +207,41 @@ pub trait InvertedIndex {
         }
     }
 
-    fn index_tokens(
-        &mut self,
-        idx: PointOffsetType,
-        tokens: TokenSet,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()>;
+    fn index_tokens(&mut self, idx: PointOffsetType, tokens: TokenSet) -> OperationResult<()>;
 
-    fn index_document(
-        &mut self,
-        idx: PointOffsetType,
-        document: Document,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()>;
+    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()>;
 
     fn remove(&mut self, idx: PointOffsetType) -> bool;
 
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
-    fn get_posting_len(
+    fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>>;
+
+    /// The `limit` best documents for `query` by BM25, highest first, among
+    /// those `accept` allows. Term frequencies come from positions, so an
+    /// index built without them cannot score and reports an error.
+    fn score_bm25(
         &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>>;
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
 
     fn estimate_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         match query {
             ParsedQuery::AllTokens(tokens) => {
-                self.estimate_has_subset_cardinality(tokens, condition, hw_counter)
+                self.estimate_has_subset_cardinality(tokens, condition)
             }
-            ParsedQuery::Phrase(phrase) => {
-                self.estimate_has_phrase_cardinality(phrase, condition, hw_counter)
-            }
-            ParsedQuery::AnyTokens(tokens) => {
-                self.estimate_has_any_cardinality(tokens, condition, hw_counter)
-            }
+            ParsedQuery::Phrase(phrase) => self.estimate_has_phrase_cardinality(phrase, condition),
+            ParsedQuery::AnyTokens(tokens) => self.estimate_has_any_cardinality(tokens, condition),
         }
     }
 
@@ -256,14 +249,13 @@ pub trait InvertedIndex {
         &self,
         tokens: &TokenSet,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         let points_count = self.points_count();
 
         let posting_lengths: Option<Vec<usize>> = tokens
             .tokens()
             .iter()
-            .map(|&vocab_idx| self.get_posting_len(vocab_idx, hw_counter))
+            .map(|&vocab_idx| self.get_posting_len(vocab_idx))
             .collect::<OperationResult<Option<Vec<usize>>>>()?;
         if posting_lengths.is_none() || points_count == 0 {
             // There are unseen tokens -> no matches
@@ -301,14 +293,13 @@ pub trait InvertedIndex {
         &self,
         tokens: &TokenSet,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         let points_count = self.points_count();
 
         let posting_lengths: Vec<usize> = tokens
             .tokens()
             .iter()
-            .filter_map(|&vocab_idx| self.get_posting_len(vocab_idx, hw_counter).transpose())
+            .filter_map(|&vocab_idx| self.get_posting_len(vocab_idx).transpose())
             .collect::<OperationResult<Vec<usize>>>()?;
 
         if posting_lengths.is_empty() {
@@ -341,7 +332,6 @@ pub trait InvertedIndex {
         &self,
         phrase: &Document,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         if phrase.is_empty() {
             return Ok(CardinalityEstimation::exact(0)
@@ -350,8 +340,7 @@ pub trait InvertedIndex {
 
         // Start with same cardinality estimation as has_subset
         let tokenset = phrase.to_token_set();
-        let subset_estimation =
-            self.estimate_has_subset_cardinality(&tokenset, condition, hw_counter)?;
+        let subset_estimation = self.estimate_has_subset_cardinality(&tokenset, condition)?;
 
         // But we can restrict it by considering the phrase length
         let phrase_sq = phrase.len() * phrase.len();
@@ -421,7 +410,6 @@ pub trait InvertedIndex {
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()>;
 
@@ -445,16 +433,16 @@ pub trait InvertedIndex {
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()>;
 }
 
 #[cfg(test)]
 mod tests {
-
+    use common::ambient;
+    use common::ambient::AmbientContext;
+    use common::ambient::hw::{self, HwMetric};
     use common::bitvec::BitVec;
-    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
     use rand::RngExt;
@@ -497,21 +485,15 @@ mod tests {
         Some(ParsedQuery::AnyTokens(tokens))
     }
 
-    fn parse_all<I: InvertedIndex>(
-        queries: &[Vec<String>],
-        index: &I,
-        hw_counter: &HardwareCounterCell,
-    ) -> Vec<Option<ParsedQuery>> {
+    fn parse_all<I: InvertedIndex>(queries: &[Vec<String>], index: &I) -> Vec<Option<ParsedQuery>> {
         queries
             .iter()
             .flat_map(|query| {
                 let mut ids = vec![None; query.len()];
                 index
-                    .for_each_token_id(
-                        query.iter().map(String::as_str).enumerate(),
-                        hw_counter,
-                        |i, id| ids[i] = id,
-                    )
+                    .for_each_token_id(query.iter().map(String::as_str).enumerate(), |i, id| {
+                        ids[i] = id
+                    })
                     .unwrap();
                 [to_parsed_query(&ids), to_parsed_query_any(&ids)]
             })
@@ -519,14 +501,10 @@ mod tests {
     }
 
     /// Every answer of [`InvertedIndex::doc_len_batch`], in `point_ids` order.
-    fn doc_lens(
-        index: &impl InvertedIndex,
-        point_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
-    ) -> Vec<Option<u32>> {
+    fn doc_lens(index: &impl InvertedIndex, point_ids: &[PointOffsetType]) -> Vec<Option<u32>> {
         let mut out = vec![Some(u32::MAX); point_ids.len()];
         index
-            .doc_len_batch(point_ids, hw_counter, |at, doc_len| out[at] = doc_len)
+            .doc_len_batch(point_ids, |at, doc_len| out[at] = doc_len)
             .unwrap();
         out
     }
@@ -538,8 +516,6 @@ mod tests {
     ) -> MutableInvertedIndex {
         let mut index = MutableInvertedIndex::new(with_positions, true);
 
-        let hw_counter = HardwareCounterCell::new();
-
         for idx in 0..indexed_count {
             // Generate 10 to 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
@@ -547,7 +523,7 @@ mod tests {
             // Through the same entry point the write paths use, so the fixture
             // records lengths too.
             index
-                .index_str_tokens(idx, &tokens, Some(doc_len as u32), &hw_counter)
+                .index_str_tokens(idx, &tokens, Some(doc_len as u32))
                 .unwrap();
         }
 
@@ -618,7 +594,7 @@ mod tests {
 
         let mmap_dir = tempfile::tempdir().unwrap();
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
         let empty_deleted = BitVec::new();
@@ -639,10 +615,10 @@ mod tests {
             assert_eq!(actual, Some(expected));
         };
         let vocab_iter = || immutable.vocab.iter().map(|(t, id)| (*id, t.as_str()));
-        mmap.for_each_token_id(vocab_iter(), &hw_counter, assert_same_id)
+        mmap.for_each_token_id(vocab_iter(), assert_same_id)
             .unwrap();
         imm_mmap
-            .for_each_token_id(vocab_iter(), &hw_counter, assert_same_id)
+            .for_each_token_id(vocab_iter(), assert_same_id)
             .unwrap();
 
         // Check same postings
@@ -697,7 +673,7 @@ mod tests {
             );
 
             // Check same count
-            assert_eq!(mmap_counts[point_id], *count);
+            assert_eq!(mmap_counts[point_id], *count as usize);
             assert_eq!(imm_mmap.point_to_tokens_count[point_id], *count);
 
             // Check same document length, masked identically
@@ -824,7 +800,7 @@ mod tests {
         // loaded copy sums the masked lengths.
         let build_total: u64 = lens_at_build.iter().copied().map(u64::from).sum();
         let live_total = build_total - u64::from(lens_at_build[victim]);
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         assert_eq!(
             mmap.total_tokens(),
             Some(build_total),
@@ -832,7 +808,7 @@ mod tests {
         );
         assert_eq!(imm_mmap.total_tokens(), Some(live_total));
         assert_eq!(
-            doc_lens(&mmap, &[victim as PointOffsetType], &hw_counter),
+            doc_lens(&mmap, &[victim as PointOffsetType]),
             [Some(0)],
             "a runtime deletion must read as no tokens, not as the stale length",
         );
@@ -845,7 +821,6 @@ mod tests {
     fn rebuilding_without_lengths_removes_the_sidecar(
         #[values(false, true)] phrase_matching: bool,
     ) {
-        let hw_counter = HardwareCounterCell::new();
         let mmap_dir = tempfile::tempdir().unwrap();
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
         let empty_deleted = BitVec::new();
@@ -860,7 +835,7 @@ mod tests {
         for idx in 0..64 {
             let tokens: Vec<String> = (0..=idx % 8).map(|_| generate_word()).collect();
             without_lengths
-                .index_str_tokens(idx, &tokens, None, &hw_counter)
+                .index_str_tokens(idx, &tokens, None)
                 .unwrap();
         }
         let without_lengths = ImmutableInvertedIndex::from(without_lengths);
@@ -993,7 +968,7 @@ mod tests {
     fn doc_len_and_total_tokens_agree_across_backends(
         #[values(false, true)] phrase_matching: bool,
     ) {
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
@@ -1018,32 +993,32 @@ mod tests {
         let mut shuffled: Vec<PointOffsetType> = (0..point_count + 5).rev().collect();
         shuffled.extend([0, point_count / 2, 0]);
         for point_ids in [&in_order, &shuffled] {
-            let expected = doc_lens(&mutable, point_ids, &hw_counter);
-            assert_eq!(doc_lens(&immutable, point_ids, &hw_counter), expected);
-            assert_eq!(doc_lens(&imm_mmap, point_ids, &hw_counter), expected);
-            assert_eq!(doc_lens(&mmap, point_ids, &hw_counter), expected);
+            let expected = doc_lens(&mutable, point_ids);
+            assert_eq!(doc_lens(&immutable, point_ids), expected);
+            assert_eq!(doc_lens(&imm_mmap, point_ids), expected);
+            assert_eq!(doc_lens(&mmap, point_ids), expected);
         }
-        let live_total: u64 = doc_lens(&mutable, &in_order, &hw_counter)
+        let live_total: u64 = doc_lens(&mutable, &in_order)
             .into_iter()
             .map(|doc_len| u64::from(doc_len.expect("every point of the index has a length")))
             .sum();
 
         // Only the lengths that come from the sidecar are billed.
-        let mmap_counter = HardwareCounterCell::new();
-        doc_lens(&mmap, &shuffled, &mmap_counter);
+        let mmap_acc = AmbientContext::new();
+        mmap_acc.measure(|| doc_lens(&mmap, &shuffled));
         let read_count = shuffled
             .iter()
             .filter(|&&point_id| point_id < point_count && mmap.is_active(point_id))
             .count();
         assert_eq!(
-            mmap_counter.payload_index_io_read_counter().get(),
+            mmap_acc.hw_data()[HwMetric::PayloadIndexIoRead],
             read_count * size_of::<u32>(),
         );
 
         assert!(live_total > 0, "the fixture indexed nothing");
         // Only the on-disk backend reads anything to answer, and it bills it.
         assert!(
-            hw_counter.payload_index_io_read_counter().get() > 0,
+            hw::pending()[HwMetric::PayloadIndexIoRead] > 0,
             "on-disk reads must be measured",
         );
 
@@ -1065,13 +1040,10 @@ mod tests {
     /// is a real length, so the two must not collapse into each other.
     #[rstest]
     fn accessors_report_absence_without_recording(#[values(false, true)] phrase_matching: bool) {
-        let hw_counter = HardwareCounterCell::new();
         let mut mutable = MutableInvertedIndex::new(phrase_matching, false);
         for idx in 0..16 {
             let tokens: Vec<String> = (0..=idx).map(|_| generate_word()).collect();
-            mutable
-                .index_str_tokens(idx, &tokens, None, &hw_counter)
-                .unwrap();
+            mutable.index_str_tokens(idx, &tokens, None).unwrap();
         }
         let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
@@ -1090,9 +1062,9 @@ mod tests {
 
         assert!(!mmap.records_doc_len(), "nothing to write, nothing to read");
         let point_ids: Vec<PointOffsetType> = (0..16).collect();
-        assert_eq!(doc_lens(&mutable, &point_ids, &hw_counter), [None; 16]);
-        assert_eq!(doc_lens(&immutable, &point_ids, &hw_counter), [None; 16]);
-        assert_eq!(doc_lens(&mmap, &point_ids, &hw_counter), [None; 16]);
+        assert_eq!(doc_lens(&mutable, &point_ids), [None; 16]);
+        assert_eq!(doc_lens(&immutable, &point_ids), [None; 16]);
+        assert_eq!(doc_lens(&mmap, &point_ids), [None; 16]);
         assert_eq!(mutable.total_tokens(), None);
         assert_eq!(immutable.total_tokens(), None);
         assert_eq!(mmap.total_tokens(), None);
@@ -1103,7 +1075,7 @@ mod tests {
         let indexed_count = 10000;
         let deleted_count = 500;
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
         let mmap_dir = tempfile::tempdir().unwrap();
 
         let mut mut_index = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
@@ -1125,9 +1097,9 @@ mod tests {
 
         let queries: Vec<_> = (0..100).map(|_| generate_query()).collect();
 
-        let mut_parsed_queries = parse_all(&queries, &mut_index, &hw_counter);
-        let mmap_parsed_queries = parse_all(&queries, &mmap_index, &hw_counter);
-        let imm_mmap_parsed_queries = parse_all(&queries, &imm_mmap_index, &hw_counter);
+        let mut_parsed_queries = parse_all(&queries, &mut_index);
+        let mmap_parsed_queries = parse_all(&queries, &mmap_index);
+        let imm_mmap_parsed_queries = parse_all(&queries, &imm_mmap_index);
 
         check_query_congruence(
             &mut_parsed_queries,
@@ -1136,7 +1108,6 @@ mod tests {
             &mut_index,
             &mmap_index,
             &imm_mmap_index,
-            &hw_counter,
         );
 
         // Delete random documents from both indexes
@@ -1157,7 +1128,6 @@ mod tests {
             &mut_index,
             &mmap_index,
             &imm_mmap_index,
-            &hw_counter,
         );
     }
 
@@ -1168,7 +1138,6 @@ mod tests {
         mut_index: &MutableInvertedIndex,
         mmap_index: &OnDiskInvertedIndex,
         imm_mmap_index: &ImmutableInvertedIndex,
-        hw_counter: &HardwareCounterCell,
     ) {
         for queries in mut_parsed_queries.iter().cloned().zip(
             mmap_parsed_queries
@@ -1185,16 +1154,10 @@ mod tests {
                 // In this case both queries would filter to an empty set of documents.
                 continue;
             };
-            let mut_filtered = mut_index
-                .filter(mut_query, hw_counter)
-                .unwrap()
-                .collect::<Vec<_>>();
-            let imm_filtered = mmap_index
-                .filter(imm_query, hw_counter)
-                .unwrap()
-                .collect::<Vec<_>>();
+            let mut_filtered = mut_index.filter(mut_query).unwrap().collect::<Vec<_>>();
+            let imm_filtered = mmap_index.filter(imm_query).unwrap().collect::<Vec<_>>();
             let imm_mmap_filtered = imm_mmap_index
-                .filter(imm_mmap_query, hw_counter)
+                .filter(imm_mmap_query)
                 .unwrap()
                 .collect::<Vec<_>>();
 

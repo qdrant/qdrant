@@ -15,8 +15,8 @@ use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use shard::snapshots::snapshot_data::SnapshotData;
 use tempfile::Builder;
@@ -47,6 +47,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
@@ -110,15 +111,10 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         PointInsertOperationsInternal::PointsList(points),
     ));
-    let hw_counter = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -166,7 +162,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let reference_result = collection
         .search(
             full_search_request.clone().into(),
@@ -174,12 +170,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(ctx)
         .await
         .unwrap();
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let recovered_result = recovered_collection
         .search(
             full_search_request.into(),
@@ -187,8 +183,8 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(ctx)
         .await
         .unwrap();
 

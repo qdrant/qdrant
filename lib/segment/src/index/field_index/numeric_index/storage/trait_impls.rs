@@ -14,8 +14,6 @@
 use std::path::PathBuf;
 
 use blobstore::Blob;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::super::numeric_index_read::NumericIndexRead;
@@ -67,17 +65,15 @@ where
     fn filter<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        query::filter(self, condition, hw_counter)
+        query::filter(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        query::estimate_cardinality(self, condition, hw_counter)
+        query::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(
@@ -92,9 +88,8 @@ where
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(query::condition_checker(self, condition, hw_acc).map(T::condition_checker_writable))
+        Ok(query::condition_checker(self, condition).map(T::condition_checker_writable))
     }
 }
 

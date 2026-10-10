@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::Flusher;
 use common::typelevel::TBool;
 use common::types::PointOffsetType;
@@ -42,7 +41,10 @@ pub trait EncodedVectors: Sized {
     type EncodedQuery;
 
     fn is_in_ram_or_mmap() -> bool;
-    fn is_on_disk(&self) -> bool;
+    /// Whether the encoded data was opened cold, see [`EncodedStorageWrite::is_cold`].
+    ///
+    /// [`EncodedStorageWrite::is_cold`]: crate::encoded_storage::EncodedStorageWrite::is_cold
+    fn is_cold(&self) -> bool;
 
     fn encode_query(&self, query: &[f32]) -> Self::EncodedQuery;
 
@@ -53,21 +55,11 @@ pub trait EncodedVectors: Sized {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    );
+    ) -> std::io::Result<()>;
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32;
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32;
 
-    fn score_point(
-        &self,
-        query: &Self::EncodedQuery,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32;
+    fn score_point(&self, query: &Self::EncodedQuery, i: PointOffsetType) -> f32;
 
     /// Score a batch: `scores[i]` ← score of `query` against point
     /// `offsets[i]`.
@@ -81,20 +73,14 @@ pub trait EncodedVectors: Sized {
         query: &Self::EncodedQuery,
         offsets: &[PointOffsetType],
         scores: &mut [f32],
-        hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> std::io::Result<()> {
         debug_assert_eq!(offsets.len(), scores.len());
         self.for_each_batch(offsets, |i, vector| {
-            scores[i] = self.score(query, &vector, hw_counter);
-        });
+            scores[i] = self.score(query, &vector);
+        })
     }
 
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32;
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32;
 
     /// Return size in bytes of a quantized vector
     fn quantized_vector_size(&self) -> usize;
@@ -103,12 +89,7 @@ pub trait EncodedVectors: Sized {
     /// Some implementations may not support this, in which case they should return `None`.
     fn encode_internal_vector(&self, id: PointOffsetType) -> Option<Self::EncodedQuery>;
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()>;
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()>;
 
     fn vectors_count(&self) -> usize;
 
@@ -132,7 +113,6 @@ pub trait EncodedVectors: Sized {
         enabled: Self::SupportsBytes,
         query: &Self::EncodedQuery,
         bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
     ) -> f32;
 }
 

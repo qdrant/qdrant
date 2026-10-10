@@ -98,10 +98,12 @@ impl ShaderBuilderParameters for GpuVectorStorage {
             VectorStorageDatatype::Uint8 => {
                 defines.insert("VECTOR_STORAGE_ELEMENT_UINT8".to_owned(), None);
             }
-            VectorStorageDatatype::Turbo4 => {
+            VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => {
                 // Unreachable: TurboQuant storages are dequantized to `f32`/`f16`
                 // in `new_dense_tq`/`new_multi_tq`, so `element_type` is never
-                // `Turbo4`. The GPU has no native TQ element layout.
+                // a TurboQuant datatype. The GPU has no native TQ element layout.
                 unreachable!("TurboQuant is dequantized to float before GPU upload")
             }
         }

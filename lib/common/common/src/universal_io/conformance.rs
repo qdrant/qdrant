@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use crate::ambient;
 use crate::generic_consts::Random;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
@@ -31,6 +32,7 @@ where
     Fs::File: UniversalAppend,
     Fs::OpenExtra: Default,
 {
+    let _scope = ambient::test_guard();
     let path = dir.join("append.dat");
     fs.create(&path, 0).unwrap();
 
@@ -168,6 +170,7 @@ where
     Fs: UniversalWriteFs,
     Fs::OpenExtra: Default,
 {
+    let _scope = ambient::test_guard();
     let path = dir.join("open_append.dat");
     fs.create(&path, 0).unwrap();
 

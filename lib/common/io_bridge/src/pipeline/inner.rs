@@ -2,7 +2,7 @@ use std::future::Future;
 use std::panic::AssertUnwindSafe;
 
 use aligned_vec::{AVec, RuntimeAlign};
-use common::uio_trace;
+use common::ambient::trace;
 use common::universal_io::{UioResult, UniversalIoError, UserData};
 use futures::FutureExt as _;
 use slab::Slab;
@@ -128,7 +128,7 @@ where
         // scroll), where queueing delay is part of the real per-request cost.
         let started = std::time::Instant::now();
         let reply_tx = self.tx.clone();
-        let future = uio_trace::Context::current().wrap(future);
+        let future = trace::Context::current().wrap(future);
         runtime.handle().spawn(async move {
             // Catch a panic in the read future and turn it into an error reply,
             // so every scheduled slot is always answered. Without this, a
@@ -174,6 +174,7 @@ mod tests {
     use std::assert_matches;
 
     use ahash::AHashMap;
+    use common::ambient;
 
     use super::*;
 
@@ -208,6 +209,7 @@ mod tests {
 
     #[test]
     fn pipeline_schedule_and_wait_round_trip() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let (tx, rx) = PipelineInner::<u32>::default_channel();
         let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
@@ -221,6 +223,7 @@ mod tests {
 
     #[test]
     fn pipeline_out_of_order_completion_preserves_user_data() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let (tx, rx) = PipelineInner::<u32>::default_channel();
         let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
@@ -247,6 +250,7 @@ mod tests {
     #[test]
     #[expect(unreachable_code, reason = "panic diverges before the typed tail")]
     fn pipeline_panicking_future_yields_error_not_hang() {
+        let _scope = ambient::test_guard();
         let runtime = BridgeRuntime::global();
         let (tx, rx) = PipelineInner::<u32>::default_channel();
         let mut inner: PipelineInner<u32> = PipelineInner::new(tx, rx);
@@ -264,6 +268,7 @@ mod tests {
     /// runtimes execute work in parallel and the pipeline accepts both replies.
     #[test]
     fn pipeline_collects_replies_from_multiple_runtimes() {
+        let _scope = ambient::test_guard();
         let rt_a = BridgeRuntime::new().expect("rt_a");
         let rt_b = BridgeRuntime::new().expect("rt_b");
         let (tx, rx) = PipelineInner::<u32>::default_channel();

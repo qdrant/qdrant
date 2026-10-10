@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -21,10 +22,10 @@ pub struct MultiMetricQueryScorer<
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorageRead<TElement>,
 > {
+    hw: HwScale,
     vector_storage: &'a TVectorStorage,
     query: TypedMultiDenseVector<TElement>,
     metric: PhantomData<TMetric>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<
@@ -34,30 +35,25 @@ impl<
     TVectorStorage: MultiVectorStorageRead<TElement>,
 > MultiMetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
-    pub fn new(
-        query: &MultiDenseVectorInternal,
-        vector_storage: &'a TVectorStorage,
-        mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    pub fn new(query: &MultiDenseVectorInternal, vector_storage: &'a TVectorStorage) -> Self {
         let mut preprocessed = DenseVector::new();
         for slice in query.multi_vectors() {
             preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
         }
         let preprocessed = MultiDenseVectorInternal::new(preprocessed, query.dim);
 
-        hardware_counter.set_cpu_multiplier(query.dim * size_of::<TElement>());
-
-        if vector_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(query.dim * size_of::<TElement>());
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
-
         Self {
+            hw: HwScale {
+                cpu: query.dim * size_of::<TElement>(),
+                vector_io_read: if vector_storage.is_cold() {
+                    query.dim * size_of::<TElement>()
+                } else {
+                    0
+                },
+            },
             query: TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),
             vector_storage,
             metric: PhantomData,
-            hardware_counter,
         }
     }
 
@@ -66,10 +62,9 @@ impl<
         multi_dense_a: TypedMultiDenseVectorRef<TElement>,
         multi_dense_b: TypedMultiDenseVectorRef<TElement>,
     ) -> ScoreType {
-        self.hardware_counter
-            .cpu_counter()
-            // Calculate the amount of comparisons needed for multi vector scoring.
-            .incr_delta(multi_dense_a.vectors_count() * multi_dense_b.vectors_count());
+        // Calculate the amount of comparisons needed for multi vector scoring.
+        self.hw
+            .cpu(multi_dense_a.vectors_count() * multi_dense_b.vectors_count());
 
         score_multi::<TElement, TMetric>(
             self.vector_storage.multi_vector_config(),
@@ -90,32 +85,32 @@ impl<
 > QueryScorer for MultiMetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
         let stored = self.vector_storage.get_multi::<Random>(idx);
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(stored.as_ref().vectors_count());
+        self.hw.vector_io_read(stored.as_ref().vectors_count());
 
-        self.score_multi(TypedMultiDenseVectorRef::from(&self.query), stored.as_ref())
+        Ok(self.score_multi(TypedMultiDenseVectorRef::from(&self.query), stored.as_ref()))
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
-        let vectors_read = self.hardware_counter.vector_io_read();
         self.vector_storage
             .for_each_in_batch_multi(ids, |idx, vector| {
-                vectors_read.incr_delta(vector.vectors_count());
+                self.hw.vector_io_read(vector.vectors_count());
                 scores[idx] = self.score_ref(vector);
-            });
+            })
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let v1 = self.vector_storage.get_multi::<Random>(point_a);
         let v2 = self.vector_storage.get_multi::<Random>(point_b);
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(v1.as_ref().vectors_count() + v2.as_ref().vectors_count());
+        self.hw
+            .vector_io_read(v1.as_ref().vectors_count() + v2.as_ref().vectors_count());
 
         self.score_multi(v1.as_ref(), v2.as_ref())
     }

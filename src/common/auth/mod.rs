@@ -5,7 +5,8 @@ pub use api::HTTP_HEADER_API_KEY;
 use chrono::Utc;
 use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
@@ -267,8 +268,8 @@ impl AuthKeys {
                 None, // no timeout
                 ShardSelectorInternal::All,
                 Auth::new_internal(Access::full("JWT stateful validation")),
-                HwMeasurementAcc::disposable(),
             )
+            .unmeasured(reason("Access checks aren't attributed to the request"))
             .await
             .map_err(|e| {
                 #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]

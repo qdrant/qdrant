@@ -4,7 +4,6 @@
 use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{Condition, Filter, PointIdType, SeqNumberType};
@@ -61,13 +60,12 @@ pub(crate) fn select_excluded_by_filter_ids(
     segments: &SegmentHolder,
     point_ids: impl IntoIterator<Item = PointIdType>,
     filter: Filter,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<AHashSet<PointIdType>> {
     // Filter for points that doesn't match the condition, and have matching
     let non_match_filter =
         Filter::new_must_not(Condition::Filter(filter)).with_point_ids(point_ids);
 
-    Ok(points_by_filter(segments, &non_match_filter, hw_counter)?
+    Ok(points_by_filter(segments, &non_match_filter)?
         .into_iter()
         .collect())
 }
@@ -75,7 +73,6 @@ pub(crate) fn select_excluded_by_filter_ids(
 pub(crate) fn points_by_filter(
     segments: &SegmentHolder,
     filter: &Filter,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Vec<PointIdType>> {
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
@@ -89,7 +86,6 @@ pub(crate) fn points_by_filter(
                 None,
                 Some(filter),
                 &is_stopped,
-                hw_counter,
                 // Read operation used for updates, so we must handle all points
                 DeferredBehavior::WithDeferred,
             )?;

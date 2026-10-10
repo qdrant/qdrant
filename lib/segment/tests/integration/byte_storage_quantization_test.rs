@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
@@ -52,7 +53,10 @@ where
 {
     match data_type {
         VectorStorageDatatype::Float32 => unreachable!(),
-        VectorStorageDatatype::Float16 | VectorStorageDatatype::Turbo4 => {
+        VectorStorageDatatype::Float16
+        | VectorStorageDatatype::Turbo4
+        | VectorStorageDatatype::Turbo8
+        | VectorStorageDatatype::Turbo16 => {
             let mut vector = segment::fixtures::payload_fixtures::random_vector(rnd_gen, dim);
             vector.iter_mut().for_each(|x| *x -= 0.5);
             vector
@@ -239,6 +243,42 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     32, // ef
     70., // min_acc out of 100
 )]
+#[case::nearest_scalar_turbo8_dot(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Turbo8,
+    QuantizationVariant::Scalar,
+    Distance::Dot,
+    32, // dim
+    32, // ef
+    70., // min_acc out of 100
+)]
+#[case::nearest_turbo8_turbo_euclid(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Turbo8,
+    QuantizationVariant::Turbo,
+    Distance::Euclid,
+    33, // dim
+    32, // ef
+    70., // min_acc out of 100
+)]
+#[case::nearest_scalar_turbo16_dot(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Turbo16,
+    QuantizationVariant::Scalar,
+    Distance::Dot,
+    32, // dim
+    32, // ef
+    70., // min_acc out of 100
+)]
+#[case::nearest_turbo16_turbo_euclid(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Turbo16,
+    QuantizationVariant::Turbo,
+    Distance::Euclid,
+    33, // dim
+    32, // ef
+    70., // min_acc out of 100
+)]
 // Bits1_5 target requires a Padded rotation, so the source rotation cannot be
 // kept: the vectors must be rotated back and re-rotated. Must not panic
 // (`Bits1_5 requires Padded` assert) or silently degrade to 1-bit.
@@ -260,7 +300,6 @@ fn test_quantization_over_typed_storage_hnsw(
     #[case] ef: usize,
     #[case] min_acc: f64, // out of 100
 ) {
-    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
@@ -307,7 +346,9 @@ fn test_quantization_over_typed_storage_hnsw(
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
         match storage_data_type {
-            VectorStorageDatatype::Turbo4 => {
+            VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => {
                 assert_matches!(
                     raw_storage,
                     &VectorStorageEnum::DenseTurboAppendableMemmap(_)
@@ -321,7 +362,7 @@ fn test_quantization_over_typed_storage_hnsw(
         }
     }
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for n in 0..num_vectors {
         let idx = n.into();
@@ -331,26 +372,17 @@ fn test_quantization_over_typed_storage_hnsw(
         let payload = payload_json! {int_key: int_payload};
 
         segment_byte
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment_byte
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
     segment_byte
         .payload_index
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let quantization_config = match quantization_variant {

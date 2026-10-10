@@ -60,7 +60,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
             return Ok(());
         };
         let multivector = vector_config.multivector_config.is_some();
-        let on_disk_vector_storage = vector_config.storage_memory().is_on_disk();
+        let cold_vector_storage = vector_config.storage_memory().is_cold();
 
         // Config; `open` reads it off the parked handle.
         let config_path = QuantizedVectors::get_config_path(path);
@@ -74,7 +74,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
 
         let placement = QuantizedVectors::memory_placement(
             quantization_config.memory_placement(),
-            on_disk_vector_storage,
+            cold_vector_storage,
         )
         .with_populate_override(populate_override);
         let populate = match placement {
@@ -166,7 +166,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     /// chunked format (the latter only produced by Binary/TurboQuant). Unlike
     /// [`QuantizedVectors::load`], this never creates or quantizes anything.
     ///
-    /// `distance`, `datatype`, `multivector_config` and `on_disk_vector_storage` describe
+    /// `distance`, `datatype`, `multivector_config` and `cold_vector_storage` describe
     /// the original (source) vector storage this quantization was built for.
     /// `populate_override` mirrors [`preopen`](Self::preopen): it demotes the effective
     /// placement — a demoted pinned placement opens the lazy mmap loaders over the same
@@ -178,7 +178,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         distance: Distance,
         datatype: VectorStorageDatatype,
         multivector_config: Option<&MultiVectorConfig>,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         populate_override: Option<Populate>,
     ) -> OperationResult<Option<Self>> {
         let config_path = QuantizedVectors::get_config_path(path);
@@ -189,7 +189,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         };
 
         let memory_placement = config
-            .memory_placement(on_disk_vector_storage)
+            .memory_placement(cold_vector_storage)
             .with_populate_override(populate_override);
 
         let storage_impl = match multivector_config {
@@ -198,10 +198,10 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
                 path,
                 &config,
                 multivector_config,
-                on_disk_vector_storage,
+                cold_vector_storage,
                 memory_placement,
             )?,
-            None => Self::open_single(fs, path, &config, on_disk_vector_storage, memory_placement)?,
+            None => Self::open_single(fs, path, &config, cold_vector_storage, memory_placement)?,
         };
 
         let quantized_vectors =
@@ -222,10 +222,10 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     /// itself never gets *warmer* than the config, so the reverse cannot happen).
     fn placed_storage_kind(
         config: &QuantizedVectorsConfig,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         memory_placement: Memory,
     ) -> OperationResult<QuantizedStorageKind> {
-        let storage_kind = config.storage_kind(on_disk_vector_storage)?;
+        let storage_kind = config.storage_kind(cold_vector_storage)?;
         let storage_kind = match memory_placement {
             Memory::Pinned => storage_kind,
             Memory::Cached | Memory::Cold => storage_kind.demote_ram_to_mmap(),
@@ -237,7 +237,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
         config: &QuantizedVectorsConfig,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         memory_placement: Memory,
     ) -> OperationResult<ReadOnlyQuantizedVectorStorage<S>> {
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
@@ -250,7 +250,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         let chunked = || QuantizedChunkedStorageRead::<S>::open(fs, &data_path, size);
 
         let storage =
-            match Self::placed_storage_kind(config, on_disk_vector_storage, memory_placement)? {
+            match Self::placed_storage_kind(config, cold_vector_storage, memory_placement)? {
                 QuantizedStorageKind::ScalarRam => ReadOnlyQuantizedVectorStorage::ScalarRam(
                     EncodedVectorsU8::load(fs, ram()?, &meta_path)?,
                 ),
@@ -294,7 +294,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         path: &Path,
         config: &QuantizedVectorsConfig,
         multivector_config: &MultiVectorConfig,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         memory_placement: Memory,
     ) -> OperationResult<ReadOnlyQuantizedVectorStorage<S>> {
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
@@ -313,7 +313,7 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         let chunked_offsets = || MultivectorOffsetsStorageChunkedRead::<S>::open(fs, &offsets_path);
 
         let storage =
-            match Self::placed_storage_kind(config, on_disk_vector_storage, memory_placement)? {
+            match Self::placed_storage_kind(config, cold_vector_storage, memory_placement)? {
                 QuantizedStorageKind::ScalarRam => {
                     let inner = EncodedVectorsU8::load(fs, ram()?, &meta_path)?;
                     ReadOnlyQuantizedVectorStorage::ScalarRamMulti(

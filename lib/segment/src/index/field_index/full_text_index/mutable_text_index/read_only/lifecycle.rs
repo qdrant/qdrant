@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw::HwMetric;
+use common::reason::reason;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::inner::MutableFullTextIndexInner;
@@ -41,10 +44,14 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     /// the `create_if_missing == false` branch of the writable counterpart —
     /// the read path never creates.
     ///
+    /// Values at or past `max_point_offset` are skipped, as the id tracker may
+    /// not yet cover them.
+    ///
     /// [1]: super::super::MutableFullTextIndex::open_gridstore
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
+        max_point_offset: PointOffsetType,
         config: TextIndexParams,
         scoring: bool,
     ) -> OperationResult<Option<Self>> {
@@ -58,13 +65,13 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
         let phrase_matching = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
         let mut records_without_length = 0usize;
 
         storage
             .iter::<_, OperationError>(
-                storage.max_point_offset()?,
+                storage.max_point_offset()?.min(max_point_offset),
                 |idx, value: Vec<u8>| {
                     let doc = FullTextIndex::deserialize_document(&value)?;
                     if scoring && doc.doc_len.is_none() {
@@ -73,7 +80,7 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
                     builder.add(idx, doc.tokens, doc.doc_len);
                     Ok(true)
                 },
-                hw_counter.ref_payload_index_io_read_counter(),
+                HwMetric::PayloadIndexIoRead,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -101,5 +108,18 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
             },
             storage,
         }))
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear read-only appendable full text index gridstore cache: {err}"
+            ))
+        })
     }
 }

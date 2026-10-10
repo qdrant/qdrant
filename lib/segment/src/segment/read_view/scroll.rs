@@ -2,7 +2,6 @@ use std::cmp::Reverse;
 use std::sync::atomic::AtomicBool;
 
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::iterator_ext::IteratorExt;
 use common::types::DeferredBehavior;
@@ -33,11 +32,8 @@ where
         &self,
         filter: &Filter,
         limit: Option<usize>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let query_cardinality = self
-            .payload_index
-            .estimate_cardinality(filter, hw_counter)?;
+        let query_cardinality = self.payload_index.estimate_cardinality(filter)?;
 
         // ToDo: Add telemetry for this heuristics
 
@@ -76,17 +72,13 @@ where
         limit: Option<usize>,
         condition: &Filter,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
-        let cardinality_estimation = self
-            .payload_index
-            .estimate_cardinality(condition, hw_counter)?;
+        let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
 
         let internal_ids = self.payload_index.iter_filtered_points(
             condition,
             &cardinality_estimation,
-            hw_counter,
             is_stopped,
             deferred_behavior,
         )?;
@@ -135,10 +127,9 @@ where
         limit: Option<usize>,
         condition: &Filter,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
-        let filter_context = self.payload_index.filter_context(condition, hw_counter)?;
+        let filter_context = self.payload_index.filter_context(condition)?;
         self.id_tracker
             .point_mappings()
             .iter_from_with_behavior(offset, deferred_behavior)
@@ -155,19 +146,17 @@ where
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
         match filter {
             None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
             Some(condition) => {
-                if self.should_pre_filter(condition, limit, hw_counter)? {
+                if self.should_pre_filter(condition, limit)? {
                     self.filtered_read_by_index(
                         offset,
                         limit,
                         condition,
                         is_stopped,
-                        hw_counter,
                         deferred_behavior,
                     )
                 } else {
@@ -176,7 +165,6 @@ where
                         limit,
                         condition,
                         is_stopped,
-                        hw_counter,
                         deferred_behavior,
                     )
                 }

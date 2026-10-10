@@ -799,10 +799,10 @@ impl Indexes {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             Indexes::Plain {} => false,
-            Indexes::Hnsw(config) => config.memory_placement().is_on_disk(),
+            Indexes::Hnsw(config) => config.memory_placement().is_cold(),
         }
     }
 }
@@ -1086,6 +1086,7 @@ pub enum TurboQuantBitSize {
     Bits2,
     #[default]
     Bits4,
+    Bits8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -1709,7 +1710,7 @@ impl PayloadStorageType {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadStorageType::Mmap => true,
             PayloadStorageType::InRamMmap => false,
@@ -1771,11 +1772,11 @@ impl SegmentConfig {
 
     /// Check if any vector storage is on-disk
     pub fn is_any_on_disk(&self) -> bool {
-        self.vector_data.values().any(|config| config.is_on_disk())
+        self.vector_data.values().any(|config| config.is_cold())
             || self
                 .sparse_vector_data
                 .values()
-                .any(|config| config.index.index_type.is_on_disk())
+                .any(|config| config.index.index_type.is_mmap())
     }
 
     pub fn is_appendable(&self) -> bool {
@@ -1902,14 +1903,6 @@ impl Memory {
     /// in-RAM data is fully materialized on heap and never evicted.
     pub fn from_on_disk_heap(on_disk: bool) -> Self {
         if on_disk { Self::Cold } else { Self::Pinned }
-    }
-
-    /// Whether this placement corresponds to `on_disk = true` in the legacy options.
-    pub fn is_on_disk(self) -> bool {
-        match self {
-            Self::Cold => true,
-            Self::Cached | Self::Pinned => false,
-        }
     }
 
     /// Whether data is left on disk and paged in on demand, rather than held in RAM. Reads of
@@ -2061,6 +2054,10 @@ pub enum VectorStorageDatatype {
     Uint8,
     // TurboQuant 4-bit compressed storage
     Turbo4,
+    // TurboQuant 8-bit compressed storage
+    Turbo8,
+    // TurboQuant 16-bit compressed storage
+    Turbo16,
 }
 
 #[derive(
@@ -2281,8 +2278,8 @@ impl VectorDataConfig {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.storage_memory().is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.storage_memory().is_cold()
     }
 }
 
@@ -2297,8 +2294,8 @@ pub enum SparseVectorStorageType {
 }
 
 impl SparseVectorStorageType {
-    /// Whether this storage type is a mmap on disk
-    pub fn is_on_disk(&self) -> bool {
+    /// Whether this storage type is left on disk, see [`Memory::is_cold`]
+    pub fn is_cold(&self) -> bool {
         match self {
             // On disk; kept explicit for the case if someone adds a new storage
             // type in the future.
@@ -2724,8 +2721,8 @@ impl PayloadSchemaParams {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.memory_placement().is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.memory_placement().is_cold()
     }
 
     /// Effective memory placement of the field index, resolving the new `memory` parameter
@@ -2870,6 +2867,20 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 }
 
 impl PayloadFieldSchema {
+    /// Apply what the params imply, see [`TextIndexParams::normalized`]. A
+    /// schema is normalized once, as the collection stores it, so every node
+    /// and every segment sees the same params.
+    pub fn normalized(self) -> Self {
+        match self {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)) => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params.normalized()))
+            }
+            schema @ (PayloadFieldSchema::FieldType(_) | PayloadFieldSchema::FieldParams(_)) => {
+                schema
+            }
+        }
+    }
+
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
             PayloadFieldSchema::FieldType(t) => Cow::Owned(t.expand()),
@@ -2892,10 +2903,10 @@ impl PayloadFieldSchema {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
-            PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
+            PayloadFieldSchema::FieldParams(params) => params.is_cold(),
         }
     }
 
@@ -4885,9 +4896,9 @@ mod tests {
         assert_eq!(Memory::from_on_disk_heap(true), Memory::Cold);
         assert_eq!(Memory::from_on_disk_heap(false), Memory::Pinned);
 
-        assert!(Memory::Cold.is_on_disk());
-        assert!(!Memory::Cached.is_on_disk());
-        assert!(!Memory::Pinned.is_on_disk());
+        assert!(Memory::Cold.is_cold());
+        assert!(!Memory::Cached.is_cold());
+        assert!(!Memory::Pinned.is_cold());
 
         assert!(!Memory::Cold.is_heap());
         assert!(!Memory::Cached.is_heap());

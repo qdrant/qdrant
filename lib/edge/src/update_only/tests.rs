@@ -200,18 +200,23 @@ mod store {
     use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
     use segment::payload_json;
     use segment::payload_storage::update_only::UpdateOnlyPayloadStorage;
-    use segment::types::{Distance, Filter, Payload, WithPayloadInterface, WithVector};
-    use shard::files::SEGMENTS_PATH;
+    use segment::segment_constructor::get_vector_storage_path;
+    use segment::types::{
+        BinaryQuantization, BinaryQuantizationConfig, Distance, Filter, Payload,
+        QuantizationConfig, WithPayloadInterface, WithVector,
+    };
+    use shard::files::{SEGMENTS_PATH, segment_manifest_path};
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{UpsertPoints, UpsertPointsConditional};
     use shard::operations::point_ops::{
         ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
     };
+    use shard::optimizers::config::TEMP_SEGMENTS_PATH;
 
     use super::*;
     use crate::RetrieveRequestBuilder;
-    use crate::read_only::ReadOnlyEdgeShard;
     use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
+    use crate::read_only::{ManifestSegmentEnumerator, ReadOnlyEdgeShard};
     use crate::read_view::EdgeShardRead as _;
 
     /// The leader writes its payload storage in mutable (Gridstore) mode, which an
@@ -332,6 +337,96 @@ mod store {
         assert_eq!(results[1].payload, Some(payload_json! { "kind": "fresh" }),);
     }
 
+    /// A point moved out of an immutable segment loses its old copy while
+    /// the write target is below the deferred-points threshold, and keeps it
+    /// once the target is past it: the new copy is deferred, so a reader
+    /// hiding deferred points still serves the old one.
+    #[test]
+    fn store_past_deferred_threshold_keeps_the_old_copy() {
+        use std::sync::atomic::AtomicBool;
+
+        use segment::data_types::load_profile::LoadProfile;
+
+        use crate::read_only::LocalSegmentEnumerator;
+
+        let dir = vacuumed_leader("edge-update-store-deferred");
+        recreate_payload_storages_append_only(dir.path());
+
+        // 1 KB of 1-dim f32 vectors: slots from 256 on are deferred.
+        let threshold_kb = 1;
+        let writer = UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            LocalSegmentEnumerator::new(dir.path()),
+            Some(threshold_kb),
+        )
+        .unwrap();
+
+        let moved = PointStructPersisted {
+            vector: point(7).vector,
+            ..point(501)
+        };
+        let (writer, outcome) = writer.apply_batch(store_batch(2000, vec![moved])).unwrap();
+        let record = &outcome.points[0];
+        assert_eq!(record.tombstoned.len(), 1, "below the cutoff, moves retire");
+        assert!(record.shadowed.is_empty());
+
+        let filler = (2001..=2256).map(point).collect();
+        let (writer, _) = writer.apply_batch(store_batch(2001, filler)).unwrap();
+
+        let rewritten = PointStructPersisted {
+            vector: point(7).vector,
+            ..point(500)
+        };
+        let (_writer, outcome) = writer
+            .apply_batch(store_batch(2002, vec![rewritten]))
+            .unwrap();
+        let record = &outcome.points[0];
+        assert_eq!(record.kind, PointApplyKind::Stored);
+        assert!(record.tombstoned.is_empty());
+        assert_eq!(record.superseded, None);
+        assert_eq!(
+            record.shadowed.len(),
+            1,
+            "past the cutoff, the old copy stays"
+        );
+
+        let retrieve_500 = |follower: &ReadOnlyEdgeShard<MmapFile>| {
+            let results = follower
+                .retrieve(
+                    RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(500)])
+                        .with_vector(WithVector::Bool(true))
+                        .build(),
+                )
+                .unwrap();
+            assert_eq!(results.len(), 1);
+            results[0].vector.clone()
+        };
+
+        // Showing every point, the newest copy wins.
+        let follower = open_follower(dir.path());
+        assert_eq!(
+            retrieve_500(&follower),
+            Some(point(7).vector.try_into().unwrap()),
+        );
+
+        // Hiding deferred points, the kept copy still serves.
+        let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+            MmapFs,
+            dir.path(),
+            LocalSegmentEnumerator::new(dir.path()),
+            None,
+            Some(LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(threshold_kb))),
+            Default::default(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            retrieve_500(&follower),
+            Some(point(500).vector.try_into().unwrap()),
+        );
+    }
+
     /// A retried store batch is a no-op — through the same writer and through
     /// a fresh one over the same directory alike: every point already carries
     /// the batch's version, which only a published versions array can tell
@@ -445,6 +540,90 @@ mod store {
                 .to_vec(),
         );
         assert_follower_vectors(&follower, &[11, 12]);
+    }
+
+    /// Every quantized row stored in the shard's appendable segments, in slot
+    /// order. The vectors are one-dimensional and Binary-quantized into `u128`
+    /// words, so each row is 16 bytes and a positive vector sets its first bit.
+    fn quantized_rows(shard_dir: &Path) -> Vec<[u8; 16]> {
+        let mut rows = Vec::new();
+        for segment in fs_err::read_dir(shard_dir.join(SEGMENTS_PATH)).unwrap() {
+            let segment_path = segment.unwrap().path();
+            let data_dir =
+                get_vector_storage_path(&segment_path, VECTOR_NAME).join("quantized_data");
+            if !data_dir.is_dir() {
+                continue;
+            }
+            let status = fs_err::read(data_dir.join("status.dat")).unwrap();
+            let len = usize::from_le_bytes(status[..size_of::<usize>()].try_into().unwrap());
+            let data = fs_err::read(data_dir.join("chunk_0.mmap")).unwrap();
+            let (stored, _) = data.as_chunks::<16>();
+            rows.extend_from_slice(&stored[..len]);
+        }
+        rows
+    }
+
+    /// Sequential batches through one writer keep the quantized rows of the
+    /// earlier ones: each batch must see the chunk files the previous one
+    /// wrote, not the listing taken when the quantized writer was opened.
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    fn sequential_batches_keep_quantized_rows() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-update-quantized-sequential")
+            .tempdir()
+            .unwrap();
+        fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+        let writer = UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+            None,
+        )
+        .unwrap();
+        let config = EdgeConfig {
+            quantization_config: Some(QuantizationConfig::Binary(BinaryQuantization {
+                binary: BinaryQuantizationConfig {
+                    always_ram: None,
+                    memory: None,
+                    encoding: None,
+                    query_encoding: None,
+                },
+            })),
+            ..test_config()
+        }
+        .plain_segment_config();
+        let (mut writer, _) = writer
+            .create_appendable(
+                &config,
+                &HashMap::new(),
+                &dir.path().join(TEMP_SEGMENTS_PATH),
+            )
+            .unwrap();
+
+        for (op_num, ids) in [(1, 1..=3), (2, 4..=6), (3, 7..=9)] {
+            let (next, outcome) = writer
+                .apply_batch(store_batch(op_num, ids.map(point).collect()))
+                .unwrap();
+            assert_eq!(outcome.stored, 3);
+            writer = next;
+        }
+
+        let rows = quantized_rows(dir.path());
+        assert_eq!(rows.len(), 9, "one quantized row per stored point");
+        for (slot, row) in rows.iter().enumerate() {
+            assert!(
+                row.iter().any(|&byte| byte != 0),
+                "quantized row {slot} was zeroed",
+            );
+        }
+
+        let follower = open_follower(dir.path());
+        assert_eq!(exact_count(&follower), 9);
     }
 
     /// An `insert_only` batch over a mix of taken and free ids: the free ones
@@ -680,6 +859,7 @@ fn optimizing_target_gets_a_created_appendable() {
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -733,6 +913,7 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+        None,
     )
     .unwrap();
     assert_eq!(writer.segments_count(), 0);

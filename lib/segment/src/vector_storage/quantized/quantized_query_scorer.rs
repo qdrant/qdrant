@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwScale;
 use common::types::{PointOffsetType, ScoreType};
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::DenseVector;
 use crate::spaces::metric::Metric;
@@ -13,14 +14,13 @@ pub struct QuantizedQueryScorer<'a, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors,
 {
+    hw: HwScale,
     query: TEncodedVectors::EncodedQuery,
     quantized_data: &'a TEncodedVectors,
-    hardware_counter: HardwareCounterCell,
 }
 
 /// Error type returned when [`QuantizedQueryScorer::new_internal`] fails.
-/// Contains the original [`HardwareCounterCell`] passed to [`QuantizedQueryScorer::new_internal`].
-pub struct InternalScorerUnsupported(pub HardwareCounterCell);
+pub struct InternalScorerUnsupported;
 
 impl<'a, TEncodedVectors> QuantizedQueryScorer<'a, TEncodedVectors>
 where
@@ -30,7 +30,6 @@ where
         raw_query: DenseVector,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
-        mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
         TElement: PrimitiveVectorElement,
@@ -45,31 +44,33 @@ where
         );
         let query = quantized_data.encode_query(&original_query_prequantized);
 
-        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_data.is_on_disk()));
-
         Self {
+            hw: HwScale {
+                cpu: 1,
+                vector_io_read: usize::from(quantized_data.is_cold()),
+            },
             query,
             quantized_data,
-            hardware_counter,
         }
     }
 
     /// Build a raw scorer for the specified `point_id`.
-    /// If not supported, return [`InternalScorerUnsupported`] with the original `hardware_counter`.
+    /// If not supported, return [`InternalScorerUnsupported`].
     pub fn new_internal(
         point_id: PointOffsetType,
         quantized_data: &'a TEncodedVectors,
-        mut hardware_counter: HardwareCounterCell,
     ) -> Result<Self, InternalScorerUnsupported> {
         let Some(query) = quantized_data.encode_internal_vector(point_id) else {
-            return Err(InternalScorerUnsupported(hardware_counter));
+            return Err(InternalScorerUnsupported);
         };
 
-        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_data.is_on_disk()));
         Ok(Self {
+            hw: HwScale {
+                cpu: 1,
+                vector_io_read: usize::from(quantized_data.is_cold()),
+            },
             query,
             quantized_data,
-            hardware_counter,
         })
     }
 }
@@ -78,33 +79,32 @@ impl<TEncodedVectors> QueryScorer for QuantizedQueryScorer<'_, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors,
 {
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(ids.len() * self.quantized_data.quantized_vector_size());
+        self.hw
+            .vector_io_read(ids.len() * self.quantized_data.quantized_vector_size());
 
-        self.quantized_data
-            .score_points(&self.query, ids, scores, &self.hardware_counter);
+        self.quantized_data.score_points(&self.query, ids, scores)?;
+        Ok(())
     }
 
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(self.quantized_data.quantized_vector_size());
-        self.quantized_data
-            .score_point(&self.query, idx, &self.hardware_counter)
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        let mut score = [0.0];
+        self.score_stored_batch(&[idx], &mut score)?;
+        Ok(score[0])
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.quantized_data
-            .score_internal(point_a, point_b, &self.hardware_counter)
+        self.quantized_data.score_internal(point_a, point_b)
     }
 
     type SupportsBytes = TEncodedVectors::SupportsBytes;
     fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
-        self.quantized_data
-            .score_bytes(enabled, &self.query, bytes, &self.hardware_counter)
+        self.quantized_data.score_bytes(enabled, &self.query, bytes)
     }
 }

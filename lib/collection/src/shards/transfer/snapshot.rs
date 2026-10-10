@@ -172,15 +172,14 @@ pub(super) async fn transfer_snapshot(
         "Starting shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
     );
 
-    let shard_holder_read = shard_holder.read().await;
-    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
-
-    let transferring_shard = shard_holder_read.get_shard(shard_id);
-    let Some(replica_set) = transferring_shard else {
+    let replica_set = shard_holder.read().await.get_shard(shard_id).cloned();
+    let Some(replica_set) = replica_set else {
         return Err(CollectionError::service_error(format!(
             "Shard {shard_id} cannot be queue proxied because it does not exist"
         )));
     };
+
+    let local_rest_address = channel_service.current_rest_address(transfer_config.from)?;
 
     // Queue proxy local shard
     progress.lock().set_stage(TransferStage::Proxifying);
@@ -207,16 +206,26 @@ pub(super) async fn transfer_snapshot(
             "/collections/{encoded_collection_name}/shards/{shard_id}/snapshot",
         ));
     } else {
-        // Create shard snapshot
         progress.lock().set_stage(TransferStage::CreatingSnapshot);
         log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
-        let snapshot_description = shard_holder_read
+
+        // `ShardHolder::create_shard_snapshot` returns a `Future` that can be awaited
+        // without borrowing the shard holder
+        let snapshot_creator = shard_holder
+            .read()
+            .await
             .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
-            .await?
             .await?;
 
-        // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-        let snapshot_temp_path = shard_holder_read
+        // Release shard holder lock before awaiting snapshot creation,
+        // so collection writers and readers queued behind them can proceed
+        let snapshot_description = snapshot_creator.await?;
+
+        // TODO: If future is cancelled until `get_shard_snapshot_path` resolves,
+        //       shard snapshot may not be cleaned up...
+        let snapshot_temp_path = shard_holder
+            .read()
+            .await
             .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
             .await
             .map_err(|err| {

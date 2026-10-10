@@ -1,4 +1,4 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
@@ -26,7 +26,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.live_reload(fs)?;
 
@@ -47,15 +46,12 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
                     // The stored document is already tokenized, so we replay the
                     // post-tokenization half of `MutableFullTextIndex::add_many`.
                     let doc = FullTextIndex::deserialize_document(&value)?;
-                    inner.inverted_index.index_str_tokens(
-                        point_offset,
-                        doc.tokens,
-                        doc.doc_len,
-                        hw_counter,
-                    )?;
+                    inner
+                        .inverted_index
+                        .index_str_tokens(point_offset, doc.tokens, doc.doc_len)?;
                     Ok(true)
                 },
-                hw_counter.payload_index_io_read_counter(),
+                Some(HwMetric::PayloadIndexIoRead),
             )?;
 
         Ok(())

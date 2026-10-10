@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ, ErrorCorrectionMetadata};
@@ -10,6 +10,7 @@ mod tests {
         CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, score_1bit_internal_scalar,
         score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
         score_4bit_internal_scalar, score_4bit_internal_weighted_scalar,
+        score_8bit_internal_scalar, score_16bit_internal_scalar,
     };
     use quantization::turboquant::{TQBits, TQMode, TQRotation};
     use rand::{RngExt, SeedableRng};
@@ -19,7 +20,19 @@ mod tests {
     const VECTORS_COUNT: usize = 513;
 
     const DIMS: &[usize] = &[16, 64, 65, 128, 384, 512];
-    const BITS: &[TQBits] = &[TQBits::Bits4, TQBits::Bits2, TQBits::Bits1_5, TQBits::Bits1];
+    const BITS: &[TQBits] = &[
+        TQBits::Bits16,
+        TQBits::Bits8,
+        TQBits::Bits4,
+        TQBits::Bits2,
+        TQBits::Bits1_5,
+        TQBits::Bits1,
+    ];
+
+    /// The grid widths (Bits8, Bits16) have no TQ+ mode.
+    fn supported(bits: TQBits, mode: TQMode) -> bool {
+        !(matches!(bits, TQBits::Bits8 | TQBits::Bits16) && mode == TQMode::Plus)
+    }
 
     /// Absolute tolerance for an approximate score: an empirical per-bit
     /// coefficient (≈ 1.8x observed max across VECTORS_COUNT trials) times
@@ -33,6 +46,8 @@ mod tests {
             TQBits::Bits1_5 => 4.0,
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.9,
+            TQBits::Bits8 => 0.1,
+            TQBits::Bits16 => 0.01,
         };
         coef * signal_std
     }
@@ -71,6 +86,8 @@ mod tests {
             TQBits::Bits1_5 => 4.5,
             TQBits::Bits2 => 3.0,
             TQBits::Bits4 => 0.7,
+            TQBits::Bits8 => 0.08,
+            TQBits::Bits16 => 0.01,
         };
         per_sqrt_dim * (dim as f32).sqrt()
     }
@@ -85,6 +102,7 @@ mod tests {
             TQBits::Bits1_5 => 48,
             TQBits::Bits2 => 32,
             TQBits::Bits4 => 8,
+            TQBits::Bits8 | TQBits::Bits16 => 1,
         };
         dim >= min_dim
     }
@@ -182,6 +200,8 @@ mod tests {
             (_, TQBits::Bits1 | TQBits::Bits1_5) => score_1bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits2) => score_2bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits4) => score_4bit_internal_scalar(data_v1, data_v2),
+            (_, TQBits::Bits8) => score_8bit_internal_scalar(data_v1, data_v2),
+            (_, TQBits::Bits16) => score_16bit_internal_scalar(data_v1, data_v2),
         };
         let v1_scale = read_f32(extra_v1, 0);
         let v2_scale = read_f32(extra_v2, 0);
@@ -200,7 +220,7 @@ mod tests {
     fn test_tq_internal_score_matches_reference() {
         let dim = 128;
         let vectors_count = 32;
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         for &bits in BITS {
             for &distance in &[DistanceType::Dot, DistanceType::Cosine, DistanceType::L2] {
@@ -223,6 +243,9 @@ mod tests {
                     invert: false,
                 };
                 for &mode in &[TQMode::Normal, TQMode::Plus] {
+                    if !supported(bits, mode) {
+                        continue;
+                    }
                     let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
                         &vector_parameters,
                         bits,
@@ -247,7 +270,7 @@ mod tests {
                     for i in 1..vectors_count {
                         let v1 = encoded.get_quantized_vector(0);
                         let v2 = encoded.get_quantized_vector(i as u32);
-                        let optimized = encoded.score_internal(0, i as u32, &counter);
+                        let optimized = encoded.score_internal(0, i as u32);
                         let reference = score_scalar_reference(&v1, &v2, bits, distance, mode, ec);
                         let tolerance = 1e-5 * reference.abs().max(1.0);
 
@@ -271,6 +294,9 @@ mod tests {
     #[case::plus_parallel(TQMode::Plus, 4)]
     fn test_tq_dot(#[case] mode: TQMode, #[case] num_threads: usize) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -307,9 +333,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = dot_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -325,6 +351,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_cosine(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -363,9 +392,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = cosine_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -381,6 +410,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_dot_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -415,9 +447,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = dot_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -433,6 +465,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_cosine_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -468,9 +503,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = cosine_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -489,6 +524,9 @@ mod tests {
         // non-zero query, should produce a score close to the true dot
         // product, which is exactly 0.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -527,8 +565,8 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
-                let score = encoded.score_point(&query_u8, 0u32, &counter);
+                let _scope = ambient::test_guard();
+                let score = encoded.score_point(&query_u8, 0u32);
                 assert!(
                     score.abs() < error,
                     "bits={bits:?}, dim={dim}, score={score} (expected ~0)"
@@ -544,6 +582,9 @@ mod tests {
         // A zero query, scored with Dot against any encoded vector, should
         // produce a score close to the true dot product, which is exactly 0.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -580,9 +621,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for index in 0..VECTORS_COUNT {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     assert!(
                         score.abs() < error,
                         "bits={bits:?}, dim={dim}, index={index}, score={score} (expected ~0)"
@@ -602,6 +643,9 @@ mod tests {
         // convention (preserve zero through preprocessing) yields a true
         // dot of zero post-rotation, so the encoded score should be ~0.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -642,8 +686,8 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
-                let score = encoded.score_point(&query_u8, 0u32, &counter);
+                let _scope = ambient::test_guard();
+                let score = encoded.score_point(&query_u8, 0u32);
                 assert!(
                     score.abs() < error,
                     "bits={bits:?}, dim={dim}, score={score} (expected ~0)"
@@ -660,6 +704,9 @@ mod tests {
         // should produce a score close to 0. Same convention as above:
         // zero is preserved through query preprocessing.
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -697,9 +744,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for index in 0..VECTORS_COUNT {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     assert!(
                         score.abs() < error,
                         "bits={bits:?}, dim={dim}, index={index}, score={score} (expected ~0)"
@@ -718,6 +765,9 @@ mod tests {
         // finite, sanely bounded scores; accuracy bounds elsewhere don't apply.
         let dim = 1;
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             let mut rng = rand::rngs::StdRng::seed_from_u64(42);
             let mut vector_data: Vec<Vec<f32>> = vec![];
             for _ in 0..VECTORS_COUNT {
@@ -749,9 +799,9 @@ mod tests {
             .unwrap();
             let query_u8 = encoded.encode_query(&query);
 
-            let counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
             for index in 0..VECTORS_COUNT {
-                let score = encoded.score_point(&query_u8, index as u32, &counter);
+                let score = encoded.score_point(&query_u8, index as u32);
                 assert!(
                     score.is_finite() && score.abs() < 10.0,
                     "bits={bits:?}, index={index}, score={score}"
@@ -769,6 +819,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l2(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -805,9 +858,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = l2_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -823,6 +876,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l2_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -857,9 +913,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = l2_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -875,6 +931,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l1(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -911,9 +970,9 @@ mod tests {
                 .unwrap();
                 let query_u8 = encoded.encode_query(&query);
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for (index, vector) in vector_data.iter().enumerate() {
-                    let score = encoded.score_point(&query_u8, index as u32, &counter);
+                    let score = encoded.score_point(&query_u8, index as u32);
                     let original_score = l1_similarity(&query, vector);
                     assert!(
                         (score - original_score).abs() < error,
@@ -929,6 +988,9 @@ mod tests {
     #[case::plus(TQMode::Plus)]
     fn test_tq_l1_internal(#[case] mode: TQMode) {
         for &bits in BITS {
+            if !supported(bits, mode) {
+                continue;
+            }
             for &dim in DIMS {
                 if !should_test(dim, bits) {
                     continue;
@@ -963,9 +1025,9 @@ mod tests {
                 )
                 .unwrap();
 
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
                 for i in 1..VECTORS_COUNT {
-                    let score = encoded.score_internal(0, i as u32, &counter);
+                    let score = encoded.score_internal(0, i as u32);
                     let original_score = l1_similarity(&vector_data[0], &vector_data[i]);
                     assert!(
                         (score - original_score).abs() < error,
@@ -1030,7 +1092,7 @@ mod tests {
                 &AtomicBool::new(false),
             )
             .unwrap();
-            let counter = HardwareCounterCell::new();
+            let _scope = ambient::test_guard();
             let mut total = 0.0;
             for q in &queries {
                 let mut truth: Vec<(usize, f32)> = vectors
@@ -1043,7 +1105,7 @@ mod tests {
 
                 let qq = encoded.encode_query(q);
                 let mut q_scores: Vec<(usize, f32)> = (0..n)
-                    .map(|i| (i, encoded.score_point(&qq, i as u32, &counter)))
+                    .map(|i| (i, encoded.score_point(&qq, i as u32)))
                     .collect();
                 q_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
                 let q_top: Vec<usize> = q_scores.iter().take(topk).map(|x| x.0).collect();
@@ -1097,6 +1159,9 @@ mod tests {
                     };
 
                     for &mode in &[TQMode::Normal, TQMode::Plus] {
+                        if !supported(bits, mode) {
+                            continue;
+                        }
                         let quantized_vector_size = encoded_vectors_tq::get_quantized_vector_size(
                             &vector_parameters,
                             bits,
@@ -1146,6 +1211,9 @@ mod tests {
         let dim = 128;
         for &bits in BITS {
             for &mode in &[TQMode::Normal, TQMode::Plus] {
+                if !supported(bits, mode) {
+                    continue;
+                }
                 let mut rng = rand::rngs::StdRng::seed_from_u64(42);
                 let vector_data: Vec<Vec<f32>> = (0..VECTORS_COUNT)
                     .map(|_| (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect())
@@ -1175,7 +1243,7 @@ mod tests {
                 )
                 .unwrap();
                 let encoded_query = encoded.encode_query(&query);
-                let counter = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
 
                 let sequential: Vec<u32> = (0..VECTORS_COUNT as u32).collect();
                 let scattered: Vec<u32> = (0..VECTORS_COUNT as u32).step_by(3).collect();
@@ -1184,10 +1252,12 @@ mod tests {
                 for ids in [&sequential, &scattered, &descending] {
                     let expected: Vec<f32> = ids
                         .iter()
-                        .map(|&id| encoded.score_point(&encoded_query, id, &counter))
+                        .map(|&id| encoded.score_point(&encoded_query, id))
                         .collect();
                     let mut batched = vec![0.0f32; ids.len()];
-                    encoded.score_points(&encoded_query, ids, &mut batched, &counter);
+                    encoded
+                        .score_points(&encoded_query, ids, &mut batched)
+                        .unwrap();
                     assert_eq!(
                         expected, batched,
                         "score_points mismatch for bits={bits:?}, mode={mode:?}, distance={distance_type:?}",

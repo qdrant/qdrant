@@ -7,10 +7,10 @@ use crate::vector_storage::vector_storage_base::{
 
 /// Determine the file storage intent for mmap-based vector storage.
 ///
-/// `is_on_disk() == true` means data is not populated — rely on OS page cache.
-/// `is_on_disk() == false` means data was populated on load — expected to be cached.
-fn from_files_with_on_disk(files: Vec<PathBuf>, is_on_disk: bool) -> ComponentMemoryUsage {
-    let intent = if is_on_disk {
+/// `is_cold() == true` means data is not populated — rely on OS page cache.
+/// `is_cold() == false` means data was populated on load — expected to be cached.
+fn from_files_with_on_disk(files: Vec<PathBuf>, cold: bool) -> ComponentMemoryUsage {
+    let intent = if cold {
         FileStorageIntent::OnDisk
     } else {
         FileStorageIntent::Cached
@@ -35,21 +35,21 @@ impl MemoryReporter for VectorStorageEnum {
             }
 
             // Mmap dense variants: intent depends on populate config
-            VectorStorageEnum::DenseMemmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+            VectorStorageEnum::DenseMemmap(v) => from_files_with_on_disk(v.files(), v.is_cold()),
             VectorStorageEnum::DenseMemmapByte(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::DenseMemmapHalf(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::DenseGraphInline(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::DenseGraphInlineByte(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::DenseGraphInlineHalf(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
 
             // io_uring dense variants: always on-disk, no mmap caching
@@ -68,30 +68,30 @@ impl MemoryReporter for VectorStorageEnum {
 
             // Appendable mmap dense variants: intent depends on populate config
             VectorStorageEnum::DenseAppendableMemmap(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
 
             VectorStorageEnum::DenseTurboMemmap(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::DenseTurboGraphInline(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(v) => {
                 ComponentMemoryUsage::from_files(v.files(), FileStorageIntent::OnDisk)
             }
             VectorStorageEnum::DenseTurboAppendableMemmap(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::MultiDenseTurbo(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
 
             // Volatile sparse: in-memory
@@ -99,7 +99,7 @@ impl MemoryReporter for VectorStorageEnum {
                 ComponentMemoryUsage::ram_only(v.size_of_available_vectors_in_bytes() as u64)
             }
             // Mmap sparse: intent depends on storage config
-            VectorStorageEnum::SparseMmap(v) => from_files_with_on_disk(v.files(), v.is_on_disk()),
+            VectorStorageEnum::SparseMmap(v) => from_files_with_on_disk(v.files(), v.is_cold()),
 
             // Volatile multi-dense: in-memory
             VectorStorageEnum::MultiDenseVolatile(v) => {
@@ -116,13 +116,13 @@ impl MemoryReporter for VectorStorageEnum {
 
             // Appendable mmap multi-dense: intent depends on populate config
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                from_files_with_on_disk(v.files(), v.is_on_disk())
+                from_files_with_on_disk(v.files(), v.is_cold())
             }
             VectorStorageEnum::EmptyDense(_) => ComponentMemoryUsage::empty(),
             VectorStorageEnum::EmptySparse(_) => ComponentMemoryUsage::empty(),

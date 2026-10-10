@@ -407,8 +407,8 @@ mod test {
     use std::sync::Arc;
 
     use api::rest::{PointInsertOperations, PointStruct, PointsList, SearchRequestInternal};
+    use common::ambient::{AmbientContext, AmbientFutureExt};
     use common::budget::ResourceBudget;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
@@ -828,6 +828,7 @@ mod test {
             strict_mode_config: Some(strict_mode_config.clone()),
             uuid: None,
             metadata: None,
+            created_at: None,
         };
 
         let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
@@ -863,8 +864,8 @@ mod test {
             .create_payload_index(
                 INDEXED_KEY.parse().unwrap(),
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .expect("failed to create payload index");
 

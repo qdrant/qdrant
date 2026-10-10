@@ -475,7 +475,6 @@ impl<'a> GpuInsertContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
     use common::generic_consts::Random;
     use common::types::ScoredPointOffset;
     use itertools::Itertools;
@@ -529,9 +528,7 @@ mod tests {
         let mut storage = new_volatile_dense_vector_storage(dim, Distance::Dot);
         for idx in 0..(num_vectors + groups_count) as PointOffsetType {
             let v = vector_holder.storage().get_vector::<Random>(idx);
-            storage
-                .insert_vector(idx, v.as_vec_ref(), &HardwareCounterCell::new())
-                .unwrap();
+            storage.insert_vector(idx, v.as_vec_ref()).unwrap();
         }
 
         // Build HNSW index
@@ -751,7 +748,7 @@ mod tests {
                 .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
-                score: scorer.score_point(0),
+                score: scorer.score_point(0).unwrap(),
             };
             let search_result = test
                 .graph_layers_builder
@@ -805,9 +802,10 @@ mod tests {
             let mut scorer = test
                 .vector_holder
                 .internal_scorer((num_vectors + i) as PointOffsetType);
-            let search_result =
-                test.graph_layers_builder
-                    .search_entry_on_level(0, 0, &mut scorer, &mut Vec::new());
+            let search_result = test
+                .graph_layers_builder
+                .search_entry_on_level(0, 0, &mut scorer, &mut Vec::new())
+                .unwrap();
             assert_eq!(search_result.idx, gpu_search_result);
         }
     }
@@ -971,7 +969,7 @@ mod tests {
                 .internal_scorer((num_vectors + i) as PointOffsetType);
             let entry = ScoredPointOffset {
                 idx: 0,
-                score: scorer.score_point(0),
+                score: scorer.score_point(0).unwrap(),
             };
             let search_result = test
                 .graph_layers_builder

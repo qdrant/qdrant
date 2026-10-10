@@ -31,8 +31,8 @@ use collection::shards::replica_set::AbortShardTransfer;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{CollectionId, replica_set};
+use common::ambient::hw::{HwMetric, HwSharedDrain};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
 use common::fs::safe_delete_in_tmp;
 use dashmap::DashMap;
@@ -881,14 +881,16 @@ impl TableOfContent {
             .iter()
             .map(|i| {
                 let key = i.key().clone();
+                let data = i.load();
+                let m = |metric: HwMetric| data[metric];
                 let hw_usage = HardwareUsage {
-                    cpu: i.get_cpu(),
-                    payload_io_read: i.get_payload_io_read(),
-                    payload_io_write: i.get_payload_io_write(),
-                    payload_index_io_read: i.get_payload_index_io_read(),
-                    payload_index_io_write: i.get_payload_index_io_write(),
-                    vector_io_read: i.get_vector_io_read(),
-                    vector_io_write: i.get_vector_io_write(),
+                    cpu: m(HwMetric::Cpu),
+                    payload_io_read: m(HwMetric::PayloadIoRead),
+                    payload_io_write: m(HwMetric::PayloadIoWrite),
+                    payload_index_io_read: m(HwMetric::PayloadIndexIoRead),
+                    payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
+                    vector_io_read: m(HwMetric::VectorIoRead),
+                    vector_io_write: m(HwMetric::VectorIoWrite),
                 };
                 (key, hw_usage)
             })

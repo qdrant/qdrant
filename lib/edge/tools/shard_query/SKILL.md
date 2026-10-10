@@ -1,6 +1,6 @@
 ---
 name: edge-shard-query
-description: Use the `edge-shard-query` CLI to run scroll / dense search / sparse search against a read-only Qdrant edge shard, reading segments directly from S3, GCS, or a live Qdrant peer over gRPC — no Qdrant server required. Also covers the live-reload mode for watching a leader's writes propagate. Use when asked to query, inspect, debug, or live-watch an edge shard on object storage.
+description: Use the `edge-shard-query` CLI to run scroll / dense search / sparse search / count / facet against a read-only Qdrant edge shard, reading segments directly from S3, GCS, or a live Qdrant peer over gRPC — no Qdrant server required. Also covers the live-reload mode for watching a leader's writes propagate. Use when asked to query, inspect, debug, or live-watch an edge shard on object storage.
 ---
 
 # edge-shard-query
@@ -65,6 +65,7 @@ All of these accept an environment variable as a fallback, shown in brackets.
 - `--cache-dir` — local mirror directory for the segment disk cache. Each remote block is fetched once and served locally afterwards. Defaults to a stable subdirectory of the system temp dir, so **the cache persists across runs** — delete it to force a cold read.
 - `--search-threads` — size of the shard's search thread pool (used to read segments in parallel at open, and to run searches). `0` derives it from the CPU count.
 - `--no-load-profile` — by default the shard is opened *for the specific request*, warming only the segment components that request will touch and leaving the rest cold. This flag disables that and warms everything per the persisted segment configs, like a long-lived deployment would. Use it when benchmarking steady-state behaviour rather than cold start.
+- `--deferred-threshold-kb <KB>` — hide points the leader defers under `prevent_unoptimized`: points of appendable segments past this threshold, in KB like the indexing threshold (pass the leader's indexing threshold, capped by an explicit max segment size). Without it every stored point is visible. Conflicts with `--no-load-profile`.
 - `--uio-trace <PATH>` — record every network storage request into this file, one JSON line each.
   Open the file with `tools/uio-trace-visualizer.html` to see the read timeline.
 
@@ -92,14 +93,30 @@ Prints the records plus a `next_page_offset` line to feed back into `--offset`.
 - `--using <NAME>` — sparse vectors are named, so this is **usually required**. Omit only if the shard stores its sparse vector under the default (empty) name.
 - `--offset`, `--score-threshold`, `--exact` — as for `search` (`--exact` bypasses the sparse index).
 
+### `count` — count matching points
+
+- `--approx` — return a fast approximate count instead of visiting every matching point. Exact is the default.
+- Filter flags only (`--filter` / `--filter-key`/`--filter-value`); no `--limit` or `--with-vectors`.
+
+Prints a single JSON line: `{"count": N}`.
+
+### `facet` — count points per unique payload value
+
+- `--key <FIELD>` — **required**. Payload key to facet on (e.g. `city`).
+- `--limit <N>` — max facet hits to return. Default `10`.
+- `--exact` — count each value exactly (slower). Approximate is the default.
+- Filter flags as below.
+
+Prints one JSON line per hit: `{"value": ..., "count": N}`.
+
 ### Filtering and output (every subcommand)
 
 - `--filter <JSON>` — an arbitrary payload filter in Qdrant's filter DSL (the `filter` field of a REST request). Curl `--data` style: a literal JSON string, `@path` to read from a file, or `@-` to read from stdin. Any condition the DSL can express works here, so there are no per-condition flags.
 - `--filter-key` / `--filter-value` — shortcut for the common "field equals value" case. Must be given together, and are mutually exclusive with `--filter`. The value is parsed as an integer or boolean when it looks like one, otherwise as a string.
-- `--limit <N>` — max points to return. Default `10`.
-- `--with-vectors` — include vectors in the output.
+- `--limit <N>` — max points (or facet hits) to return. Default `10`. Scroll / search / facet only.
+- `--with-vectors` — include vectors in the output. Scroll / search only.
 
-Results print as one JSON object per line (`id`, `payload`, `vector`, plus `score` and `version` for searches).
+Scroll and search results print as one JSON object per line (`id`, `payload`, `vector`, plus `score` and `version` for searches).
 
 ## Live reload — watching a leader's writes
 
@@ -162,6 +179,32 @@ cargo run -p edge-shard-query -- \
     --using  text \
     --vector '{"indices": [12, 700, 5301], "values": [0.4, 0.9, 0.2]}' \
     --limit  5
+```
+
+Count points matching a filter:
+
+```sh
+cargo run -p edge-shard-query -- \
+    --backend  aws \
+    --endpoint http://localhost:9000 \
+    --bucket   test-bucket \
+    --prefix   collection/0 \
+    count \
+    --filter-key city --filter-value London
+```
+
+Facet unique values of a payload key:
+
+```sh
+cargo run -p edge-shard-query -- \
+    --backend  aws \
+    --endpoint http://localhost:9000 \
+    --bucket   test-bucket \
+    --prefix   collection/0 \
+    facet \
+    --key city \
+    --limit 20 \
+    --exact
 ```
 
 Read straight from a running Qdrant peer — no object storage at all:

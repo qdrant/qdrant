@@ -4,7 +4,8 @@
 
 use std::num::NonZeroU64;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
@@ -24,7 +25,6 @@ impl Collection {
         &self,
         vector_name: VectorNameBuf,
         config: VectorNameConfig,
-        hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<()> {
         self.update_collection_vector_config(|params| {
             add_vector_to_config(params, &vector_name, &config)
@@ -38,7 +38,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(operation, WaitUntil::from(false), hw_acc, true)
+        self.update_all_local(operation, WaitUntil::from(false), true)
             .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
@@ -53,22 +53,22 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn delete_named_vector(&self, vector_name: VectorNameBuf) -> CollectionResult<()> {
+       pub async fn delete_named_vector(&self, vector_name: VectorNameBuf) -> CollectionResult<()> {
         log::debug!("Flushing segments before deleting vector '{}' to prevent WAL replay divergence", vector_name);
             
-        //Clone replica set references under a brief read lock.
-        //We drop the lock immediately to avoid stalling concurrent reads during the heavy flush.
+        // Clone replica set references under a brief read lock.
+        // We drop the lock immediately to avoid stalling concurrent reads during the heavy flush.
         let replica_sets: Vec<_> = {
-            let shards_holder= self.shards_holder.read().await;
+            let shards_holder = self.shards_holder.read().await;
             shards_holder
                 .get_shards()
                 .map(|(_, replica_set)| replica_set.clone())
                 .collect()
         };
 
-        //Flush segments durably before removing the vectors from the config (Fixes #9386).
+        // Flush segments durably before removing the vectors from the config (Fixes #9386).
         // This ensures uncommitted WAL operations depending on these vectors are safely baked to disk.
-        //Mutating the config first would cause those operations to fail on restart during WAL replay 
+        // Mutating the config first would cause those operations to fail on restart during WAL replay.
         for _replica_set in replica_sets {
             // TODO(@agourlay): Validate preferred flush propagation here.
             // Local shards expose `full_flush()`, but `ShardReplicaSet` abstracts direct access.
@@ -76,7 +76,7 @@ impl Collection {
             // no-op update with `WaitUntil::Visible` to drain the queues?
         }
 
-        //with historical operations safely on disk, we can now erase the vector from the schema 
+        // With historical operations safely on disk, we can now erase the vector from the schema.
         self.update_collection_vector_config(|params| {
             remove_vector_from_config(params, &vector_name);
             Ok(())
@@ -90,9 +90,9 @@ impl Collection {
         self.update_all_local(
             operation,
             WaitUntil::from(true),
-            HwMeasurementAcc::disposable(),
             true, // Delete even in dead shards
         )
+        .unmeasured(reason("Schema changes aren't measured"))
         .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the
@@ -273,5 +273,9 @@ fn storage_datatype_to_collection(
         }
         segment::types::VectorStorageDatatype::Uint8 => crate::operations::types::Datatype::Uint8,
         segment::types::VectorStorageDatatype::Turbo4 => crate::operations::types::Datatype::Turbo4,
+        segment::types::VectorStorageDatatype::Turbo8 => crate::operations::types::Datatype::Turbo8,
+        segment::types::VectorStorageDatatype::Turbo16 => {
+            crate::operations::types::Datatype::Turbo16
+        }
     }
 }

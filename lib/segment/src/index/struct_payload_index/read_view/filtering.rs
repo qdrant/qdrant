@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 
 use super::StructPayloadIndexReadView;
@@ -26,7 +25,6 @@ where
         &self,
         condition: &FieldCondition,
         nested_path: Option<&JsonPath>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
         let full_path = JsonPath::extend_or_new(nested_path, &condition.key);
         let Some(indexes) = self.field_indexes.get(&full_path) else {
@@ -39,18 +37,13 @@ where
         };
         indexes
             .iter()
-            .find_map(|index| {
-                index
-                    .estimate_cardinality(&full_path_condition, hw_counter)
-                    .transpose()
-            })
+            .find_map(|index| index.estimate_cardinality(&full_path_condition).transpose())
             .transpose()
     }
 
     pub(super) fn query_field<'q>(
         &'q self,
         condition: &'q PrimaryCondition,
-        hw_counter: &'q HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'q>>> {
         match condition {
             PrimaryCondition::Condition(field_condition) => {
@@ -59,9 +52,7 @@ where
                 };
                 field_indexes
                     .iter()
-                    .find_map(|field_index| {
-                        field_index.filter(field_condition, hw_counter).transpose()
-                    })
+                    .find_map(|field_index| field_index.filter(field_condition).transpose())
                     .transpose()
             }
             PrimaryCondition::Ids(ids) => {
@@ -75,7 +66,6 @@ where
         &'q self,
         filter: &'q Filter,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<OptimizedFilter<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
@@ -84,7 +74,6 @@ where
             payload_provider,
             self.available_point_count(),
             deferred_behavior,
-            hw_counter,
         )?;
 
         Ok(optimized_filter)
@@ -95,27 +84,26 @@ where
         condition: &Condition,
         nested_path: Option<&JsonPath>,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
         Ok(match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::Nested(nested) => {
                 // propagate complete nested path in case of multiple nested layers
                 let full_path = JsonPath::extend_or_new(nested_path, &nested.array_key());
-                self.estimate_nested_cardinality(nested.filter(), &full_path, hw_counter)?
+                self.estimate_nested_cardinality(nested.filter(), &full_path)?
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
                 let condition = FieldCondition::new_is_empty(field.key.clone(), true);
 
-                self.estimate_field_condition(&condition, nested_path, hw_counter)?
+                self.estimate_field_condition(&condition, nested_path)?
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
                 let available_points = self.available_point_count();
                 let condition = FieldCondition::new_is_null(field.key.clone(), true);
 
-                self.estimate_field_condition(&condition, nested_path, hw_counter)?
+                self.estimate_field_condition(&condition, nested_path)?
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::HasId(has_id) => {
@@ -149,7 +137,7 @@ where
                 }
             }
             Condition::Field(field_condition) => self
-                .estimate_field_condition(field_condition, nested_path, hw_counter)?
+                .estimate_field_condition(field_condition, nested_path)?
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
 
             Condition::Slice(slice_condition) => {

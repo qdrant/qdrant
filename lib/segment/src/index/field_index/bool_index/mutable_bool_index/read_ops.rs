@@ -1,5 +1,3 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 
@@ -41,6 +39,10 @@ impl BoolIndexRead for MutableBoolIndex {
     fn falses_count(&self) -> OperationResult<usize> {
         Ok(self.falses_count)
     }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        Vec::new() // everything is mutable
+    }
 }
 
 impl PayloadFieldIndexRead for MutableBoolIndex {
@@ -51,17 +53,15 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        read_ops::filter(self, condition, hw_counter)
+        read_ops::filter(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        read_ops::estimate_cardinality(self, condition, hw_counter)
+        read_ops::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(
@@ -76,9 +76,7 @@ impl PayloadFieldIndexRead for MutableBoolIndex {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(read_ops::condition_checker(self, condition, hw_acc)
-            .map(ConditionCheckerEnum::BoolMutable))
+        Ok(read_ops::condition_checker(self, condition).map(ConditionCheckerEnum::BoolMutable))
     }
 }

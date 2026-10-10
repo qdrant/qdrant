@@ -18,23 +18,24 @@
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::universal_io::{MmapFile, MmapFs, UniversalWriteFs as _};
 use quantization::encoded_vectors_binary::{self, EncodedVectorsBin};
 use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
-use quantization::turboquant::{TQMode, TQRotation};
+use quantization::turboquant::TQRotation;
 use quantization::{EncodedStorage as _, EncodedVectors as _};
+use rstest::rstest;
 use tempfile::TempDir;
 
-use super::{UpdateOnlyQuantizedVectorStorage, UpdateOnlyQuantizedVectors};
+use super::UpdateOnlyQuantizedVectors;
 use crate::data_types::vectors::VectorRef;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, Distance, Indexes, QuantizationConfig,
     TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization, VectorDataConfig,
-    VectorStorageDatatype, VectorStorageType,
+    VectorStorageType,
 };
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::{
-    QuantizedChunkedStorage, UpdateOnlyQuantizedChunkedStorageBuilder,
+    QuantizedChunkedStorage, QuantizedChunkedStorageBuilder,
 };
 use crate::vector_storage::quantized::quantized_ram_storage::QuantizedRamStorageBuilder;
 use crate::vector_storage::quantized::quantized_vectors::{
@@ -55,12 +56,12 @@ fn binary_config() -> QuantizationConfig {
     })
 }
 
-fn turbo_config() -> QuantizationConfig {
+fn turbo_config(bits: TurboQuantBitSize) -> QuantizationConfig {
     QuantizationConfig::Turbo(TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
             always_ram: None,
             memory: None,
-            bits: Some(TurboQuantBitSize::Bits4),
+            bits: Some(bits),
         },
     })
 }
@@ -96,7 +97,7 @@ fn some_vectors(n: usize) -> Vec<Vec<f32>> {
 fn create_empty_overlay(
     config: &QuantizationConfig,
     path: &std::path::Path,
-) -> UpdateOnlyQuantizedVectors<MmapFs> {
+) -> UpdateOnlyQuantizedVectors {
     let storage_type = QuantizedVectorsStorageType::Mutable;
     let vector_parameters =
         QuantizedVectors::construct_vector_parameters(config, Distance::Dot, DIM, 0, storage_type);
@@ -105,7 +106,7 @@ fn create_empty_overlay(
     let stopped = AtomicBool::new(false);
     let no_vectors = std::iter::empty::<&[f32]>();
 
-    let storage = match config {
+    match config {
         QuantizationConfig::Binary(BinaryQuantization { binary }) => {
             let encoding = QuantizedVectors::convert_binary_encoding(binary.encoding);
             let query_encoding =
@@ -115,13 +116,14 @@ fn create_empty_overlay(
                     vector_parameters.dim,
                     encoding,
                 );
-            let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
+            let storage_builder = QuantizedChunkedStorageBuilder::<MmapFile>::new(
                 MmapFs,
                 data_path.as_path(),
                 quantized_vector_size,
+                false,
             )
             .unwrap();
-            let encoded = EncodedVectorsBin::encode(
+            EncodedVectorsBin::<u128, _>::encode(
                 no_vectors,
                 storage_builder,
                 &vector_parameters,
@@ -131,20 +133,20 @@ fn create_empty_overlay(
                 &stopped,
             )
             .unwrap();
-            UpdateOnlyQuantizedVectorStorage::Binary(Box::new(encoded))
         }
         QuantizationConfig::Turbo(TurboQuantization { turbo }) => {
             let bits = QuantizedVectors::convert_tq_bits(turbo.bits.unwrap_or_default());
-            let mode = TQMode::Plus;
+            let mode = QuantizedVectors::tq_mode(bits);
             let quantized_vector_size =
                 encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
-            let storage_builder = UpdateOnlyQuantizedChunkedStorageBuilder::new(
+            let storage_builder = QuantizedChunkedStorageBuilder::<MmapFile>::new(
                 MmapFs,
                 data_path.as_path(),
                 quantized_vector_size,
+                false,
             )
             .unwrap();
-            let encoded = EncodedVectorsTQ::encode(
+            EncodedVectorsTQ::encode(
                 no_vectors,
                 storage_builder,
                 &vector_parameters,
@@ -158,12 +160,11 @@ fn create_empty_overlay(
                 &stopped,
             )
             .unwrap();
-            UpdateOnlyQuantizedVectorStorage::Turbo(Box::new(encoded))
         }
         QuantizationConfig::Scalar(_) | QuantizationConfig::Product(_) => {
             panic!("test fixture only builds Binary/Turbo overlays")
         }
-    };
+    }
 
     let overlay_config = QuantizedVectorsConfig {
         quantization_config: config.clone(),
@@ -175,21 +176,16 @@ fn create_empty_overlay(
         .atomic_save(&QuantizedVectors::get_config_path(path), &bytes)
         .unwrap();
 
-    UpdateOnlyQuantizedVectors {
-        storage,
-        config: overlay_config,
-        distance: Distance::Dot,
-        datatype: VectorStorageDatatype::Float32,
-    }
+    UpdateOnlyQuantizedVectors::open(&MmapFs, path, &dense_vector_config())
+        .unwrap()
+        .expect("overlay was just created")
 }
 
 /// First writer: created fresh (as whatever builds a new segment would), writes half the batch,
 /// then dropped, then reopened through `open` — proving a second writer resumes correctly,
-/// mirroring `dense/update_only/tests.rs::batches_resume`. Reopening goes through
-/// `EncodedVectorsBin`/`TQ::reopen_for_write`, not `load`: a resuming writer only needs the
-/// fitted metadata, not a validating read of already-stored data.
+/// mirroring `dense/update_only/tests.rs::batches_resume`.
 fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec<f32>]) {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     fn as_batch(vectors: &[Vec<f32>]) -> impl Iterator<Item = VectorToStore<'_>> {
         vectors
@@ -200,16 +196,15 @@ fn write_all(config: &QuantizationConfig, path: &std::path::Path, vectors: &[Vec
     let split = vectors.len() / 2;
     let mut writer = create_empty_overlay(config, path);
     writer
-        .append_many(0, as_batch(&vectors[..split]), &hw_counter)
+        .append_many(&MmapFs, 0, as_batch(&vectors[..split]))
         .unwrap();
     drop(writer);
 
-    let mut writer =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, path, &dense_vector_config())
-            .unwrap()
-            .expect("overlay was already created by the first writer");
+    let mut writer = UpdateOnlyQuantizedVectors::open(&MmapFs, path, &dense_vector_config())
+        .unwrap()
+        .expect("overlay was already created by the first writer");
     writer
-        .append_many(split as u32, as_batch(&vectors[split..]), &hw_counter)
+        .append_many(&MmapFs, split as u32, as_batch(&vectors[split..]))
         .unwrap();
     drop(writer);
 }
@@ -272,11 +267,9 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for (id, vector) in vectors.iter().enumerate() {
-        reference
-            .upsert_vector(id as u32, vector, &hw_counter)
-            .unwrap();
+        reference.upsert_vector(id as u32, vector).unwrap();
     }
 
     for id in 0..vectors.len() as u32 {
@@ -289,10 +282,13 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
     }
 }
 
-#[test]
-fn turbo_bytes_match_the_standard_batch_encode_path() {
+// `Bits8` has no TQ+, so it covers the Normal-mode overlay.
+#[rstest]
+#[case::bits4(TurboQuantBitSize::Bits4)]
+#[case::bits8(TurboQuantBitSize::Bits8)]
+fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitSize) {
     let dir = TempDir::with_prefix("update_only_quantized_turbo").unwrap();
-    let config = turbo_config();
+    let config = turbo_config(bits);
     let vectors = some_vectors(6);
 
     write_all(&config, dir.path(), &vectors);
@@ -312,7 +308,7 @@ fn turbo_bytes_match_the_standard_batch_encode_path() {
         | QuantizationConfig::Product(_)
         | QuantizationConfig::Binary(_) => unreachable!(),
     };
-    let mode = TQMode::Plus;
+    let mode = QuantizedVectors::tq_mode(bits);
     let quantized_vector_size =
         encoded_vectors_tq::get_quantized_vector_size(&vector_parameters, bits, mode);
     let data_path =
@@ -348,11 +344,9 @@ fn turbo_bytes_match_the_standard_batch_encode_path() {
         &AtomicBool::new(false),
     )
     .unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for (id, vector) in vectors.iter().enumerate() {
-        reference
-            .upsert_vector(id as u32, vector, &hw_counter)
-            .unwrap();
+        reference.upsert_vector(id as u32, vector).unwrap();
     }
 
     for id in 0..vectors.len() as u32 {
@@ -371,34 +365,31 @@ fn turbo_bytes_match_the_standard_batch_encode_path() {
 fn open_returns_none_when_nothing_persisted() {
     let dir = TempDir::with_prefix("update_only_quantized_no_config").unwrap();
     let overlay =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
-            .unwrap();
+        UpdateOnlyQuantizedVectors::open(&MmapFs, dir.path(), &dense_vector_config()).unwrap();
     assert!(overlay.is_none());
 }
 
-/// Reopening an overlay that already has data works, through `reopen_for_write` rather than
-/// `load` — covered end to end by `write_all`'s two-writer split (used by both byte-comparison
+/// Reopening an overlay that already has data works — covered end to end by `write_all`'s two-writer split (used by both byte-comparison
 /// tests above). This test isolates just the `open` call: it must return `Some`, not error or
 /// panic, once a prior writer already stored vectors.
 #[test]
 fn reopening_a_nonempty_overlay_works() {
     let dir = TempDir::with_prefix("update_only_quantized_reopen_nonempty").unwrap();
     let config = binary_config();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut writer = create_empty_overlay(&config, dir.path());
     let vector = some_vectors(1).remove(0);
     writer
         .append_many(
+            &MmapFs,
             0,
             [VectorToStore::Decoded(VectorRef::from(vector.as_slice()))],
-            &hw_counter,
         )
         .unwrap();
     drop(writer);
 
     let reopened =
-        UpdateOnlyQuantizedVectors::<MmapFs>::open(MmapFs, dir.path(), &dense_vector_config())
-            .unwrap();
+        UpdateOnlyQuantizedVectors::open(&MmapFs, dir.path(), &dense_vector_config()).unwrap();
     assert!(reopened.is_some());
 }

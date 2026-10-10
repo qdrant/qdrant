@@ -1724,6 +1724,7 @@ mod tests {
                                 strict_mode_config: None,
                                 uuid: None,
                                 metadata: None,
+                                created_at: None,
                             },
                         )
                         .unwrap(),

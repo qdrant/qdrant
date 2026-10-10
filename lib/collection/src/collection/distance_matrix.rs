@@ -5,7 +5,6 @@ use api::rest::{
     SearchMatrixOffsetsResponse, SearchMatrixPair, SearchMatrixPairsResponse,
     SearchMatrixRequestInternal,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, VectorNameBuf,
@@ -145,7 +144,6 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
         let start = std::time::Instant::now();
         let CollectionSearchMatrixRequest {
@@ -196,7 +194,6 @@ impl Collection {
                 routing_token,
                 shard_selection.clone(),
                 timeout,
-                hw_measurement_acc.clone(),
             )
             .await?;
 
@@ -264,7 +261,6 @@ impl Collection {
                 read_consistency,
                 routing_token,
                 timeout,
-                hw_measurement_acc,
             )
             .await?;
 

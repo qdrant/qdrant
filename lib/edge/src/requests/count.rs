@@ -1,3 +1,4 @@
+use segment::data_types::load_profile::LoadProfile;
 use segment::types::Filter;
 
 /// Count request — counts the number of points which match the given conditions.
@@ -18,6 +19,13 @@ impl CountRequest {
             filter: None,
             exact: true,
         }
+    }
+
+    /// Request-specific [`LoadProfile`] for opening a read-only shard to serve exactly
+    /// this count: no vector components are warmed, and only the field indexes the filter
+    /// reads keep their configured placement.
+    pub fn load_profile(&self) -> LoadProfile {
+        LoadProfile::for_scroll(self.filter.as_ref(), None, false)
     }
 }
 

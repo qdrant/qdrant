@@ -22,12 +22,13 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::Duration;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 use criterion::measurement::WallTime;
 use criterion::{BatchSize, BenchmarkGroup, Criterion, criterion_group, criterion_main};
+use quantization::turboquant::TQBits;
 use rand::distr::StandardUniform;
 use rand::rngs::SmallRng;
 use rand::seq::{IteratorRandom, SliceRandom};
@@ -77,21 +78,32 @@ fn subset_ids() -> Vec<PointOffsetType> {
 /// exactly as the optimizer does.
 fn build_dataset(dir: &Path) {
     let mut rng = rand::make_rng::<SmallRng>();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let encoder_dir = TempDir::new().expect("encoder tempdir created");
-    let mut encoder = open_appendable_turbo_vector_storage(encoder_dir.path(), DIM, DISTANCE, true)
-        .expect("encoder storage created");
+    let mut encoder = open_appendable_turbo_vector_storage(
+        encoder_dir.path(),
+        DIM,
+        DISTANCE,
+        TQBits::Bits4,
+        true,
+    )
+    .expect("encoder storage created");
     for i in 0..VECTORS {
         let vector = random_vector(&mut rng, DIM);
         encoder
-            .insert_vector(i as PointOffsetType, vector.as_slice().into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vector.as_slice().into())
             .expect("vector inserted");
     }
 
-    let mut storage =
-        TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(dir, DIM, DISTANCE, false)
-            .expect("single-file storage created");
+    let mut storage = TurboVectorStorageImpl::<QuantizedStorage<MmapFile>>::open_mmap(
+        dir,
+        DIM,
+        DISTANCE,
+        TQBits::Bits4,
+        false,
+    )
+    .expect("single-file storage created");
     let mut encoded =
         (0..VECTORS as PointOffsetType).map(|key| (encoder.get_quantized_vector(key), false));
     DenseTQVectorStorage::update_from(&mut storage, &mut encoded, &DEFAULT_STOPPED)
@@ -100,11 +112,10 @@ fn build_dataset(dir: &Path) {
 
 /// Score `ids` one point at a time — the exact pre-batching read pattern.
 fn score_unbatched(storage: &VectorStorageEnum, ids: impl Iterator<Item = PointOffsetType>) {
-    let scorer = new_raw_scorer(random_query(), storage, HardwareCounterCell::new())
-        .expect("scorer created");
+    let scorer = new_raw_scorer(random_query(), storage).expect("scorer created");
     let mut acc = 0.0;
     for id in ids {
-        acc += scorer.score_point(id);
+        acc += scorer.score_point(id).unwrap();
     }
     black_box(acc);
 }
@@ -117,6 +128,7 @@ fn bench_subset(
     point_deleted: &BitSlice,
     clear_cache: bool,
 ) {
+    let _scope = ambient::test_guard();
     for &(label, batched, storage) in modes {
         if !clear_cache {
             storage.populate().expect("storage populated");
@@ -157,9 +169,15 @@ fn benchmark(c: &mut Criterion) {
         .expect("bench data dir created");
     build_dataset(data_dir.path());
 
-    let mmap_storage =
-        open_turbo_vector_storage_with_uring(data_dir.path(), DIM, DISTANCE, false, false)
-            .expect("mmap storage opened");
+    let mmap_storage = open_turbo_vector_storage_with_uring(
+        data_dir.path(),
+        DIM,
+        DISTANCE,
+        TQBits::Bits4,
+        false,
+        false,
+    )
+    .expect("mmap storage opened");
 
     let modes: Vec<(&str, bool, &VectorStorageEnum)> = vec![
         ("unbatched-mmap", false, &mmap_storage),
@@ -168,9 +186,15 @@ fn benchmark(c: &mut Criterion) {
 
     cfg_select! {
         target_os = "linux" => {
-            let uring_storage =
-                open_turbo_vector_storage_with_uring(data_dir.path(), DIM, DISTANCE, false, true)
-                    .expect("uring storage opened");
+            let uring_storage = open_turbo_vector_storage_with_uring(
+                data_dir.path(),
+                DIM,
+                DISTANCE,
+                TQBits::Bits4,
+                false,
+                true,
+            )
+            .expect("uring storage opened");
 
             let mut modes = modes;
             modes.push(("batched-uring", true, &uring_storage));

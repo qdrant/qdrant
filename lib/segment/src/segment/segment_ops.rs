@@ -2,10 +2,11 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::path::Path;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::{atomic_save_json, read_json};
 use common::generic_consts::Random;
+use common::reason::reason;
 use common::tar_unpack::tar_unpack_file;
 use common::types::{DeferredBehavior, PointOffsetType};
 use fs_err as fs;
@@ -61,14 +62,13 @@ impl Segment {
         internal_id: PointOffsetType,
         op_num: SeqNumberType,
         vectors: &NamedVectors,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         check_named_vectors(vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(internal_id, vector, hw_counter)?;
+            vector_index.update_vector(internal_id, vector)?;
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         Ok(())
@@ -92,14 +92,13 @@ impl Segment {
         internal_id: PointOffsetType,
         op_num: SeqNumberType,
         vectors: NamedVectors,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
+            vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()))?;
             self.version_tracker.set_vector(&vector_name, Some(op_num));
         }
         Ok(())
@@ -115,7 +114,6 @@ impl Segment {
         point_id: PointIdType,
         op_num: SeqNumberType,
         vectors: &NamedVectors,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
         check_named_vectors(vectors, &self.segment_config)?;
@@ -123,7 +121,7 @@ impl Segment {
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(new_index, vector_opt, hw_counter)?;
+            vector_index.update_vector(new_index, vector_opt)?;
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
@@ -146,13 +144,12 @@ impl Segment {
         internal_id: PointOffsetType,
         op_num: SeqNumberType,
         vectors: &[(VectorNameBuf, Vec<u8>)],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let bytes = find_raw_vector(vectors, vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector_raw(internal_id, bytes, hw_counter)?;
+            vector_index.update_vector_raw(internal_id, bytes)?;
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         Ok(())
@@ -169,11 +166,10 @@ impl Segment {
         point_id: PointIdType,
         op_num: SeqNumberType,
         vectors: &[(VectorNameBuf, Vec<u8>)],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
         let new_index = self.id_tracker.borrow().total_point_count() as PointOffsetType;
-        self.replace_all_vectors_raw(new_index, op_num, vectors, hw_counter)?;
+        self.replace_all_vectors_raw(new_index, op_num, vectors)?;
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
     }
@@ -202,18 +198,17 @@ impl Segment {
         point_id: PointIdType,
         old_id: PointOffsetType,
         vectors: &[(VectorNameBuf, Vec<u8>)],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
         let payload = self
             .payload_index
             .borrow()
-            .with_view(|view| view.get_payload(old_id, hw_counter))?;
+            .with_view(|view| view.get_payload(old_id))?;
         let new_id = self.id_tracker.borrow().total_point_count() as PointOffsetType;
-        self.replace_all_vectors_raw(new_id, op_num, vectors, hw_counter)?;
+        self.replace_all_vectors_raw(new_id, op_num, vectors)?;
         self.payload_index
             .borrow_mut()
-            .overwrite_payload(new_id, &payload, hw_counter)?;
+            .overwrite_payload(new_id, &payload)?;
         // The payload content is unchanged, but writing it at `new_id` still
         // mutates payload storage: stamp it so partial snapshots re-upload
         // the changed files.
@@ -246,25 +241,24 @@ impl Segment {
         raw_vectors: &[(VectorNameBuf, Vec<u8>)],
         updated_vectors: &NamedVectors,
         payload: &Payload,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             match updated_vectors.get(vector_name) {
                 Some(vector) => {
-                    vector_index.update_vector(internal_id, Some(vector), hw_counter)?;
+                    vector_index.update_vector(internal_id, Some(vector))?;
                 }
                 None => {
                     let bytes = find_raw_vector(raw_vectors, vector_name);
-                    vector_index.update_vector_raw(internal_id, bytes, hw_counter)?;
+                    vector_index.update_vector_raw(internal_id, bytes)?;
                 }
             }
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
         self.payload_index
             .borrow_mut()
-            .overwrite_payload(internal_id, payload, hw_counter)?;
+            .overwrite_payload(internal_id, payload)?;
         // The overwrite mutated payload storage: stamp it so partial
         // snapshots re-upload it (the old CoW path bumped this via
         // `set_full_payload`).
@@ -322,7 +316,6 @@ impl Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         old_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         mutate: F,
     ) -> OperationResult<(R, PointOffsetType)>
     where
@@ -360,7 +353,7 @@ impl Segment {
         let mut payload = self
             .payload_index
             .borrow()
-            .with_view(|view| view.get_payload(old_id, hw_counter))?;
+            .with_view(|view| view.get_payload(old_id))?;
 
         // 2. Let the caller apply the op-specific change in memory.
         let mutate_result = mutate(&mut raw_vectors, &mut updated_vectors, &mut payload)?;
@@ -376,12 +369,9 @@ impl Segment {
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             match updated_vectors.get(vector_name) {
-                Some(vector) => vector_index.update_vector(new_id, Some(vector), hw_counter)?,
-                None => vector_index.update_vector_raw(
-                    new_id,
-                    raw_vectors.get(vector_name).map(Vec::as_slice),
-                    hw_counter,
-                )?,
+                Some(vector) => vector_index.update_vector(new_id, Some(vector))?,
+                None => vector_index
+                    .update_vector_raw(new_id, raw_vectors.get(vector_name).map(Vec::as_slice))?,
             }
             self.version_tracker.set_vector(vector_name, Some(op_num));
         }
@@ -394,7 +384,7 @@ impl Segment {
         //    see new_id and the point disappears from filter results.
         self.payload_index
             .borrow_mut()
-            .overwrite_payload(new_id, &payload, hw_counter)?;
+            .overwrite_payload(new_id, &payload)?;
 
         // Writing the payload row at new_id mutated payload storage — even
         // for a vectors-only mutation whose entry point never touches the
@@ -440,7 +430,6 @@ impl Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         existing_internal_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         in_place: InPlace,
         snapshot_mutate: SnapshotMutate,
     ) -> OperationResult<bool>
@@ -463,7 +452,6 @@ impl Segment {
                         op_num,
                         point_id,
                         existing_internal_id,
-                        hw_counter,
                         snapshot_mutate,
                     )?;
                     Ok((op_result, Some(new_id)))
@@ -662,7 +650,6 @@ impl Segment {
         &mut self,
         internal_id: PointOffsetType,
         op_num: Option<SeqNumberType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if self.is_append_only_delete() {
             // Tombstone-only: leave the payload row and field-index postings
@@ -675,9 +662,7 @@ impl Segment {
         }
 
         // Mark point as deleted, drop mapping
-        self.payload_index
-            .borrow_mut()
-            .clear_payload(internal_id, hw_counter)?;
+        self.payload_index.borrow_mut().clear_payload(internal_id)?;
 
         let mut id_tracker = self.id_tracker.borrow_mut();
 
@@ -774,8 +759,9 @@ impl Segment {
         // After that we need to set internal version to 0, so that
         // we won't need to clean them again.
 
-        // This is internal operation, no hw measurement needed
-        let disposable_hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason(
+            "This is internal operation, no hw measurement needed",
+        ));
         if !ids_to_clean.is_empty() {
             log::debug!(
                 "Cleaning up {} points with version but no mapping in segment {:?}",
@@ -784,7 +770,7 @@ impl Segment {
             );
 
             for internal_id in ids_to_clean {
-                self.delete_point_internal(internal_id, None, &disposable_hw_counter)?;
+                self.delete_point_internal(internal_id, None)?;
             }
 
             self.flush(true)?;
@@ -830,11 +816,9 @@ impl Segment {
                 ),
             }
 
-            let created = self.create_field_index(
-                self.version(),
-                key,
-                Some(schema),
-                &HardwareCounterCell::disposable(), // This function is only used in Segment::load which is unmeasured.
+            let created = ambient::unmeasured(
+                reason("This function is only used in Segment::load which is unmeasured."),
+                || self.create_field_index(self.version(), key, Some(schema)),
             )?;
             if !created {
                 log::warn!("Failed to create payload index for {key} in segment");

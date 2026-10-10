@@ -23,7 +23,7 @@ pub enum Backend {
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Open a ReadOnlyEdgeShard over S3/GCS object storage and run a read request (scroll/search)"
+    about = "Open a ReadOnlyEdgeShard over S3/GCS object storage and run a read request (scroll/search/count/facet)"
 )]
 pub struct Cli {
     /// Object-storage connection and shard-location options. Must be given
@@ -174,6 +174,13 @@ pub struct ConnectionArgs {
     #[arg(long, default_value_t = false)]
     pub no_load_profile: bool,
 
+    /// Deferred-points threshold in KB, like the indexing threshold: hide the points of
+    /// appendable segments past it, as a leader with `prevent_unoptimized` does. Use the
+    /// leader's indexing threshold (capped by an explicit max segment size). Carried by the
+    /// load profile, so it can't be combined with `--no-load-profile`.
+    #[arg(long, conflicts_with = "no_load_profile")]
+    pub deferred_threshold_kb: Option<usize>,
+
     /// Record every network storage request and save into this file.
     #[arg(long)]
     pub uio_trace: Option<PathBuf>,
@@ -187,11 +194,15 @@ pub enum Command {
     Search(SearchArgs),
     /// Nearest-neighbour search for a sparse query vector, optionally filtered.
     SearchSparse(SearchSparseArgs),
+    /// Count points matching an optional filter.
+    Count(CountArgs),
+    /// Count points per unique value of a payload key.
+    Facet(FacetArgs),
 }
 
-/// Filter and result options shared by every sub-command.
+/// Payload-filter options shared by every sub-command.
 #[derive(ClapArgs, Debug)]
-pub struct CommonReadArgs {
+pub struct CommonFilterArgs {
     /// Payload filter as JSON, in Qdrant's filter DSL (the `filter` field of a
     /// REST request). Accepts a literal JSON string, `@path` to read the JSON
     /// from a file, or `@-` to read it from stdin. Mutually exclusive with the
@@ -208,17 +219,9 @@ pub struct CommonReadArgs {
     /// or boolean when it looks like one, otherwise as a string.
     #[arg(long, requires = "filter_key")]
     pub filter_value: Option<String>,
-
-    /// Maximum number of points to return.
-    #[arg(long, default_value_t = 10)]
-    pub limit: usize,
-
-    /// Include vectors in the output.
-    #[arg(long, default_value_t = false)]
-    pub with_vectors: bool,
 }
 
-impl CommonReadArgs {
+impl CommonFilterArgs {
     /// Resolve the effective filter from either `--filter` (JSON) or the
     /// `--filter-key`/`--filter-value` shortcut. Returns `None` when neither is
     /// given (operate over all points). `clap` already guarantees the two
@@ -231,6 +234,28 @@ impl CommonReadArgs {
             return Ok(Some(filter));
         }
         build_kv_filter(self.filter_key.as_deref(), self.filter_value.as_deref())
+    }
+}
+
+/// Filter and result options shared by scroll / search sub-commands.
+#[derive(ClapArgs, Debug)]
+pub struct CommonReadArgs {
+    #[command(flatten)]
+    pub filter: CommonFilterArgs,
+
+    /// Maximum number of points to return.
+    #[arg(long, default_value_t = 10)]
+    pub limit: usize,
+
+    /// Include vectors in the output.
+    #[arg(long, default_value_t = false)]
+    pub with_vectors: bool,
+}
+
+impl CommonReadArgs {
+    /// Resolve the effective filter — see [`CommonFilterArgs::resolve_filter`].
+    pub fn resolve_filter(&self) -> Result<Option<Filter>> {
+        self.filter.resolve_filter()
     }
 }
 
@@ -311,6 +336,37 @@ pub struct SearchSparseArgs {
     pub score_threshold: Option<f32>,
 
     /// Search exhaustively without the sparse index (slow, exact).
+    #[arg(long, default_value_t = false)]
+    pub exact: bool,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct CountArgs {
+    #[command(flatten)]
+    pub filter: CommonFilterArgs,
+
+    /// Return a fast approximate count instead of visiting every matching
+    /// point. Approximate counts can be unreliable while segments are being
+    /// optimized. Exact is the default.
+    #[arg(long, default_value_t = false)]
+    pub approx: bool,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct FacetArgs {
+    #[command(flatten)]
+    pub filter: CommonFilterArgs,
+
+    /// Payload key to facet on (e.g. `city`).
+    #[arg(long)]
+    pub key: String,
+
+    /// Maximum number of facet hits to return.
+    #[arg(long, default_value_t = 10)]
+    pub limit: usize,
+
+    /// Count each value exactly (slower) instead of approximately. Approximate
+    /// is the default.
     #[arg(long, default_value_t = false)]
     pub exact: bool,
 }

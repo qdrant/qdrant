@@ -2,6 +2,7 @@ use bytemuck::TransparentWrapper;
 use common::typelevel::{TBool, TOption};
 use common::types::{PointOffsetType, ScoreType};
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::spaces::metric::Metric;
@@ -20,12 +21,17 @@ pub mod turbo_multi_query_scorer;
 pub mod turbo_query_scorer;
 
 pub trait QueryScorer {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType;
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType>;
 
     /// Score a batch of points
     ///
-    /// Enables underlying storage to optimize pre-fetching of data
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]);
+    /// Enables underlying storage to optimize pre-fetching of data.
+    /// Fallible because the vectors may come from remote storage.
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()>;
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 
@@ -41,12 +47,13 @@ pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
     this: &Q,
     ids: &[u32],
     scores: &mut [f32],
-) {
+) -> OperationResult<()> {
     debug_assert_eq!(ids.len(), scores.len());
 
     for (idx, id) in ids.iter().enumerate() {
-        scores[idx] = this.score_stored(*id);
+        scores[idx] = this.score_stored(*id)?;
     }
+    Ok(())
 }
 
 pub trait QueryScorerBytes {

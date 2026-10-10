@@ -76,6 +76,10 @@ pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 /// block it forever. See [`TimeoutWriter`].
 const SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// Pipe and read-buffer size for streaming shard snapshots.
+/// A small pipe makes the tar writer and the HTTP body ping-pong in tiny chunks.
+const SNAPSHOT_STREAM_BUFFER_SIZE: usize = 4 * 1024 * 1024;
+
 pub struct ShardHolder {
     /// `BTreeMap` for deterministic iteration order by `ShardId` — iteration is externally
     /// observable (fan-out, telemetry, consensus state apply).
@@ -86,7 +90,7 @@ pub struct ShardHolder {
     /// every `core_search` await would block writers (e.g. shard creation)
     /// for the duration of the search.
     shards: BTreeMap<ShardId, Arc<ShardReplicaSet>>,
-    pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
+    pub(crate) shard_transfers: Arc<SaveOnDisk<HashSet<ShardTransfer>>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     /// Hash rings per shard key
@@ -112,8 +116,9 @@ impl ShardHolder {
     }
 
     pub fn new(collection_path: &Path, sharding_method: ShardingMethod) -> CollectionResult<Self> {
-        let shard_transfers =
-            SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
+        let shard_transfers = Arc::new(SaveOnDisk::load_or_init_default(
+            collection_path.join(SHARD_TRANSFERS_FILE),
+        )?);
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
 
@@ -1322,7 +1327,7 @@ impl ShardHolder {
             .prefix(&format!("{snapshot_file_name}-temp-"))
             .tempdir_in(temp_dir)?;
 
-        let (read_half, write_half) = tokio::io::duplex(4096);
+        let (read_half, write_half) = tokio::io::duplex(SNAPSHOT_STREAM_BUFFER_SIZE);
 
         // Abort the snapshot if the consumer stops draining the stream. This
         // write holds a read lock on the shard's segment holder and occupies a
@@ -1368,32 +1373,28 @@ impl ShardHolder {
         });
 
         Ok(SnapshotStream::new_stream(
-            FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()),
+            FramedRead::with_capacity(read_half, BytesCodec::new(), SNAPSHOT_STREAM_BUFFER_SIZE)
+                .map_ok(|bytes| bytes.freeze()),
             Some(snapshot_file_name),
         ))
     }
 
+    /// Extract a shard snapshot and prepare its files for recovering the local replica.
+    ///
     /// # Cancel safety
     ///
-    /// This method is *not* cancel safe.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn restore_shard_snapshot(
-        &self,
+    /// This method is cancel safe.
+    #[expect(clippy::too_many_arguments)]
+    pub async fn prepare_shard_snapshot(
         snapshot_data: SnapshotData,
-        recovery_type: RecoveryType,
-        collection_path: &Path,
         collection_name: &str,
         shard_id: ShardId,
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
-        recovery_progress: Option<RecoveryProgressHandle>,
+        recovery_progress: Option<&RecoveryProgressHandle>,
         cancel: cancel::CancellationToken,
-    ) -> CollectionResult<()> {
-        if !self.contains_shard(shard_id) {
-            return Err(shard_not_found_error(shard_id));
-        }
-
+    ) -> CollectionResult<tempfile::TempDir> {
         if !temp_dir.exists() {
             fs::create_dir_all(temp_dir)?;
         }
@@ -1403,47 +1404,68 @@ impl ShardHolder {
             .tempdir_in(temp_dir)?;
 
         // Set unpacking stage
-        if let Some(recovery_progress) = &recovery_progress {
+        if let Some(recovery_progress) = recovery_progress {
             recovery_progress.lock().set_stage(RecoveryStage::Unpacking);
         }
 
-        let extract = {
-            let snapshot_temp_dir = snapshot_temp_dir.path().to_path_buf();
+        #[cfg(test)]
+        snapshot_preparation_tests::pause_preparation(temp_dir).await;
 
-            cancel::blocking::spawn_cancel_on_token(
-                cancel.child_token(),
-                move |cancel| -> CollectionResult<_> {
-                    match snapshot_data {
-                        SnapshotData::Packed(snapshot_path) => {
-                            if cancel.is_cancelled() {
-                                return Err(cancel::Error::Cancelled.into());
-                            }
-                            tar_unpack_file(&snapshot_path, &snapshot_temp_dir)?;
-                            snapshot_path.close()?;
+        let extract = cancel::blocking::spawn_cancel_on_token(
+            cancel.child_token(),
+            move |cancel| -> CollectionResult<_> {
+                // TODO: Make `tar_unpack_file`/`move_all` cancellable?
+                match snapshot_data {
+                    SnapshotData::Packed(snapshot_path) => {
+                        if cancel.is_cancelled() {
+                            return Err(cancel::Error::Cancelled.into());
                         }
-                        SnapshotData::Unpacked(snapshot_dir) => {
-                            move_all(snapshot_dir.path(), &snapshot_temp_dir)?;
-                        }
+
+                        tar_unpack_file(&snapshot_path, snapshot_temp_dir.path())?;
+                        snapshot_path.close()?;
                     }
 
-                    if cancel.is_cancelled() {
-                        return Err(cancel::Error::Cancelled.into());
+                    SnapshotData::Unpacked(snapshot_dir) => {
+                        move_all(snapshot_dir.path(), snapshot_temp_dir.path())?;
                     }
+                }
 
-                    ShardReplicaSet::restore_snapshot(
-                        &snapshot_temp_dir,
-                        this_peer_id,
-                        is_distributed,
-                    )?;
-                    common::fs::bulk_sync_dir(&snapshot_temp_dir)?;
+                #[cfg(test)]
+                snapshot_preparation_tests::pause_extraction(snapshot_temp_dir.path());
 
-                    Ok(())
-                },
-            )
-        };
+                if cancel.is_cancelled() {
+                    return Err(cancel::Error::Cancelled.into());
+                }
 
-        extract.await??;
+                ShardReplicaSet::restore_snapshot(
+                    snapshot_temp_dir.path(),
+                    this_peer_id,
+                    is_distributed,
+                )?;
 
+                common::fs::bulk_sync_dir(snapshot_temp_dir.path())?;
+                Ok(snapshot_temp_dir)
+            },
+        );
+
+        extract.await?
+    }
+
+    /// Replace or merge the local replica's files with files from the extracted snapshot directory,
+    /// then load the recovered shard.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
+    pub async fn restore_shard_snapshot(
+        &self,
+        snapshot_temp_dir: &Path,
+        recovery_type: RecoveryType,
+        collection_path: &Path,
+        shard_id: ShardId,
+        recovery_progress: Option<RecoveryProgressHandle>,
+        cancel: cancel::CancellationToken,
+    ) -> CollectionResult<()> {
         // Set restoring stage
         if let Some(recovery_progress) = &recovery_progress {
             recovery_progress.lock().set_stage(RecoveryStage::Restoring);
@@ -1453,7 +1475,7 @@ impl ShardHolder {
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
             .recover_local_shard_from(
-                snapshot_temp_dir.path(),
+                snapshot_temp_dir,
                 recovery_type,
                 collection_path,
                 shard_id,
@@ -1793,3 +1815,6 @@ mod restart_transfer_tests {
         assert_eq!(holder.shard_transfers.read().len(), 1);
     }
 }
+
+#[cfg(test)]
+mod snapshot_preparation_tests;

@@ -10,10 +10,11 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
+use common::reason::reason;
 use common::small_uint::U24;
 use common::storage_version::StorageVersion;
 use common::types::{DeferredBehavior, PointOffsetType};
@@ -41,8 +42,8 @@ use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndexEnum};
-use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::batched_reader::{PointData, merge_from};
 use crate::segment_constructor::{
@@ -205,16 +206,12 @@ impl SegmentBuilder {
     ///
     /// Note: This value doesn't guarantee strict ordering in ambiguous cases.
     ///       It should only be used in optimization purposes, not for correctness.
-    fn _get_ordering_value(
-        internal_id: PointOffsetType,
-        indices: &[FieldIndex],
-        hw_counter: &HardwareCounterCell,
-    ) -> u64 {
+    fn _get_ordering_value(internal_id: PointOffsetType, indices: &[FieldIndex]) -> u64 {
         let mut ordering = 0;
         for payload_index in indices {
             match payload_index {
                 FieldIndex::IntMapIndex(index) => {
-                    if let Some(numbers) = index.get_values(internal_id, hw_counter) {
+                    if let Some(numbers) = index.get_values(internal_id) {
                         for number in numbers {
                             ordering = ordering.wrapping_add(*number as u64);
                         }
@@ -222,7 +219,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::KeywordIndex(index) => {
-                    if let Some(keywords) = index.get_values(internal_id, hw_counter) {
+                    if let Some(keywords) = index.get_values(internal_id) {
                         for keyword in keywords {
                             let mut hasher = AHasher::default();
                             keyword.hash(&mut hasher);
@@ -266,7 +263,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::UuidMapIndex(index) => {
-                    if let Some(ids) = index.get_values(internal_id, hw_counter) {
+                    if let Some(ids) = index.get_values(internal_id) {
                         uuid_hash(&mut ordering, ids.map(Cow::into_owned));
                     }
                     break;
@@ -295,12 +292,7 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update(
-        &mut self,
-        segments: &[&Segment],
-        stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
+    pub fn update(&mut self, segments: &[&Segment], stopped: &AtomicBool) -> OperationResult<bool> {
         if segments.is_empty() {
             return Ok(true);
         }
@@ -340,7 +332,6 @@ impl SegmentBuilder {
                 point_data.ordering = point_data.ordering.wrapping_add(Self::_get_ordering_value(
                     point_data.internal_id,
                     payload_indices,
-                    hw_counter,
                 ));
             }
         }
@@ -455,7 +446,8 @@ impl SegmentBuilder {
             }
         }
 
-        let hw_counter = HardwareCounterCell::disposable(); // Disposable counter for internal operations.
+        let _scope =
+            ambient::unmeasured_guard(reason("Disposable counter for internal operations."));
 
         let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
 
@@ -465,7 +457,7 @@ impl SegmentBuilder {
             let old_internal_id = point_data.internal_id;
 
             let other_payload = payloads[point_data.segment_index.get() as usize]
-                .with_view(|v| v.get_payload_sequential(old_internal_id, &hw_counter))?; // Internal operation, no measurement needed!
+                .with_view(|v| v.get_payload_sequential(old_internal_id))?;
 
             match self.id_tracker.internal_id_with_behavior(
                 ExtendedPointId::from(point_data.external_id),
@@ -494,8 +486,7 @@ impl SegmentBuilder {
                         )?;
                         self.id_tracker
                             .set_internal_version(new_internal_id, point_data.version)?;
-                        self.payload_storage
-                            .clear(existing_internal_id, &hw_counter)?;
+                        self.payload_storage.clear(existing_internal_id)?;
 
                         existing_internal_id
                     } else {
@@ -519,11 +510,9 @@ impl SegmentBuilder {
 
             // Propagate payload to new segment
             if !other_payload.is_empty() {
-                self.payload_storage.set(
-                    new_internal_id,
-                    &other_payload,
-                    &HardwareCounterCell::disposable(),
-                )?;
+                ambient::unmeasured(reason("Internal operation"), || {
+                    self.payload_storage.set(new_internal_id, &other_payload)
+                })?;
             }
         }
 
@@ -549,7 +538,6 @@ impl SegmentBuilder {
             ResourcePermit::dummy(get_num_indexing_threads(0) as u32),
             &AtomicBool::new(false),
             &mut rand::rng(),
-            &HardwareCounterCell::new(),
             ProgressTracker::new_for_test(),
         )
         .unwrap()
@@ -570,7 +558,6 @@ impl SegmentBuilder {
         permit: ResourcePermit,
         stopped: &AtomicBool,
         rng: &mut R,
-        hw_counter: &HardwareCounterCell,
         progress_segment: ProgressTracker,
     ) -> Result<Segment, OperationError> {
         let temp_dir = {
@@ -710,7 +697,7 @@ impl SegmentBuilder {
             payload_index.disable_journal();
             for (field, payload_schema, progress) in indexed_fields {
                 progress.start();
-                payload_index.set_indexed(&field, payload_schema, hw_counter)?;
+                payload_index.set_indexed(&field, payload_schema)?;
                 check_process_stopped(stopped)?;
             }
             drop(progress_payload_index);
@@ -763,7 +750,7 @@ impl SegmentBuilder {
                     },
                 )?;
 
-                if vector_storage.borrow().is_on_disk() {
+                if vector_storage.borrow().is_cold() {
                     // If vector storage is expected to be on-disk, we need to clear cache
                     // to avoid cache pollution
                     vector_storage.borrow().clear_cache()?;
@@ -814,13 +801,13 @@ impl SegmentBuilder {
                     tick_progress: || (),
                 })?;
 
-                if sparse_vector_config.storage_type.is_on_disk() {
+                if vector_storage_arc.borrow().is_cold() {
                     // If vector storage is expected to be on-disk, we need to clear cache
                     // to avoid cache pollution
                     vector_storage_arc.borrow().clear_cache()?;
                 }
 
-                if sparse_vector_config.index.index_type.is_on_disk() {
+                if index.is_cold() {
                     index.clear_cache()?;
                 }
 
@@ -829,7 +816,7 @@ impl SegmentBuilder {
             }
             drop(progress_sparse_vector_index);
 
-            if segment_config.payload_storage_type.is_on_disk() {
+            if payload_storage_arc.borrow().is_cold() {
                 // If payload storage is expected to be on-disk, we need to clear cache
                 // to avoid cache pollution
                 payload_storage_arc.borrow().clear_cache()?;

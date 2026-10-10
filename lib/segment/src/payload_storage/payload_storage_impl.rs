@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use blobstore::config::CreateOptions;
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalAppend, UniversalWrite};
@@ -114,37 +114,22 @@ where
     S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
-    fn get(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self.storage.get_value::<Random>(point_offset, hw_counter)? {
+    fn get(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
+        match self.storage.get_value::<Random>(point_offset)? {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }
 
-    fn get_sequential(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        match self
-            .storage
-            .get_value::<Sequential>(point_offset, hw_counter)?
-        {
+    fn get_sequential(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
+        match self.storage.get_value::<Sequential>(point_offset)? {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }
 
-    fn payload_ref(
-        &self,
-        point_offset: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<OwnedPayloadRef<'_>> {
-        let payload = self.get(point_offset, hw_counter)?;
+    fn payload_ref(&self, point_offset: PointOffsetType) -> OperationResult<OwnedPayloadRef<'_>> {
+        let payload = self.get(point_offset)?;
         Ok(OwnedPayloadRef::from(payload))
     }
 
@@ -152,7 +137,6 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, Payload) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.read_values::<P, _, _>(
             point_offsets,
@@ -160,7 +144,7 @@ where
                 let payload = payload.unwrap_or_default();
                 callback(user_data, payload)
             },
-            hw_counter.payload_io_read_counter(),
+            Some(HwMetric::PayloadIoRead),
         )
     }
 
@@ -168,22 +152,21 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.storage.read_values_bytes::<P, _, _>(
             point_offsets,
             |user_data, _, bytes| callback(user_data, bytes),
-            hw_counter.payload_io_read_counter(),
+            Some(HwMetric::PayloadIoRead),
         )
     }
 
-    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
+    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         self.storage.iter(
             |point_id, payload| callback(point_id, &payload),
-            hw_counter.ref_payload_io_read_counter(),
+            HwMetric::PayloadIoRead,
         )
     }
 
@@ -191,7 +174,7 @@ where
         Ok(self.storage.get_storage_size_bytes()?)
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         !self.populate
     }
 }
@@ -201,38 +184,22 @@ where
     S: UniversalWrite + UniversalAppend + 'static,
     S::Fs: Default,
 {
-    fn overwrite(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         self.storage
-            .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())?;
+            .put_value(point_id, payload, HwMetric::PayloadIoWrite)?;
         Ok(())
     }
 
-    fn set(
-        &mut self,
-        point_id: PointOffsetType,
-        payload: &Payload,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+        match self.storage.get_value::<Random>(point_id)? {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
-                self.storage.put_value(
-                    point_id,
-                    &point_payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, &point_payload, HwMetric::PayloadIoWrite)?;
             }
             None => {
-                self.storage.put_value(
-                    point_id,
-                    payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, payload, HwMetric::PayloadIoWrite)?;
             }
         }
         Ok(())
@@ -243,25 +210,18 @@ where
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+        match self.storage.get_value::<Random>(point_id)? {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
-                self.storage.put_value(
-                    point_id,
-                    &point_payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, &point_payload, HwMetric::PayloadIoWrite)?;
             }
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
-                self.storage.put_value(
-                    point_id,
-                    &dest_payload,
-                    hw_counter.ref_payload_io_write_counter(),
-                )?;
+                self.storage
+                    .put_value(point_id, &dest_payload, HwMetric::PayloadIoWrite)?;
             }
         }
         Ok(())
@@ -271,17 +231,13 @@ where
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
-        match self.storage.get_value::<Random>(point_id, hw_counter)? {
+        match self.storage.get_value::<Random>(point_id)? {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
-                    self.storage.put_value(
-                        point_id,
-                        &payload,
-                        hw_counter.ref_payload_io_write_counter(),
-                    )?;
+                    self.storage
+                        .put_value(point_id, &payload, HwMetric::PayloadIoWrite)?;
                 }
                 Ok(res)
             }
@@ -289,17 +245,13 @@ where
         }
     }
 
-    fn clear(
-        &mut self,
-        point_id: PointOffsetType,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Option<Payload>> {
+    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         let res = self.storage.delete_value(point_id)?;
         Ok(res)
     }
 
     #[cfg(test)]
-    fn clear_all(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+    fn clear_all(&mut self) -> OperationResult<()> {
         self.storage.clear().map_err(|err| {
             OperationError::service_error(format!("Failed to clear mmap payload storage: {err}"))
         })

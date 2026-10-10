@@ -84,6 +84,9 @@ pub enum VectorStorageDatatype {
     /// engine reports for a Turbo-quantized field; configure TurboQuant itself
     /// via [`QuantizationConfig::Turbo`], not by setting this datatype directly.
     Turbo4,
+    /// TurboQuant 8-bit storage.
+    Turbo8,
+    Turbo16,
 }
 
 impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
@@ -93,6 +96,8 @@ impl From<VectorStorageDatatype> for SegmentVectorStorageDatatype {
             VectorStorageDatatype::Float16 => SegmentVectorStorageDatatype::Float16,
             VectorStorageDatatype::Uint8 => SegmentVectorStorageDatatype::Uint8,
             VectorStorageDatatype::Turbo4 => SegmentVectorStorageDatatype::Turbo4,
+            VectorStorageDatatype::Turbo8 => SegmentVectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16 => SegmentVectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -104,6 +109,8 @@ impl From<SegmentVectorStorageDatatype> for VectorStorageDatatype {
             SegmentVectorStorageDatatype::Float16 => VectorStorageDatatype::Float16,
             SegmentVectorStorageDatatype::Uint8 => VectorStorageDatatype::Uint8,
             SegmentVectorStorageDatatype::Turbo4 => VectorStorageDatatype::Turbo4,
+            SegmentVectorStorageDatatype::Turbo8 => VectorStorageDatatype::Turbo8,
+            SegmentVectorStorageDatatype::Turbo16 => VectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -437,8 +444,10 @@ pub enum TurboQuantBitSize {
     Bits1Point5,
     /// 2 bits per component.
     Bits2,
-    /// 4 bits per component (default; best recall of the Turbo modes).
+    /// 4 bits per component (default).
     Bits4,
+    /// 8 bits per component (best recall of the Turbo modes).
+    Bits8,
 }
 
 impl From<TurboQuantBitSize> for SegmentTurboQuantBitSize {
@@ -448,6 +457,7 @@ impl From<TurboQuantBitSize> for SegmentTurboQuantBitSize {
             TurboQuantBitSize::Bits1Point5 => SegmentTurboQuantBitSize::Bits1_5,
             TurboQuantBitSize::Bits2 => SegmentTurboQuantBitSize::Bits2,
             TurboQuantBitSize::Bits4 => SegmentTurboQuantBitSize::Bits4,
+            TurboQuantBitSize::Bits8 => SegmentTurboQuantBitSize::Bits8,
         }
     }
 }
@@ -459,6 +469,7 @@ impl From<SegmentTurboQuantBitSize> for TurboQuantBitSize {
             SegmentTurboQuantBitSize::Bits1_5 => TurboQuantBitSize::Bits1Point5,
             SegmentTurboQuantBitSize::Bits2 => TurboQuantBitSize::Bits2,
             SegmentTurboQuantBitSize::Bits4 => TurboQuantBitSize::Bits4,
+            SegmentTurboQuantBitSize::Bits8 => TurboQuantBitSize::Bits8,
         }
     }
 }

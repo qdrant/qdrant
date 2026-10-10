@@ -3,14 +3,15 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
@@ -140,11 +141,10 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         key: PointOffsetType,
         vector: VectorRef,
         is_deleted: bool,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
-        self.insert_multi_native(key, multi_vector.as_ref(), is_deleted, hw_counter)
+        self.insert_multi_native(key, multi_vector.as_ref(), is_deleted)
     }
 
     /// Insert a multi-vector already in the storage's element type `T`.
@@ -153,7 +153,6 @@ impl<T: PrimitiveVectorElement> VolatileMultiDenseVectorStorage<T> {
         key: PointOffsetType,
         multi_vector: TypedMultiDenseVectorRef<T>,
         is_deleted: bool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.dim);
 
@@ -212,14 +211,21 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T> for VolatileMultiDense
         self.get_multi_impl(key)
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
         for (idx, &key) in keys.iter().enumerate() {
-            let vector = self.get_multi_impl(key).expect("multi vector exists");
+            let vector = self.get_multi_impl(key).ok_or_else(|| {
+                OperationError::service_error(format!("multi vector {key} is not readable"))
+            })?;
             callback(idx, vector.as_ref());
         }
+        Ok(())
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
@@ -245,11 +251,9 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.vectors_metadata.len() as PointOffsetType;
-            self.insert_multi_native(
-                new_id,
-                other_vector.as_ref(),
-                other_deleted,
-                &HardwareCounterCell::disposable(), // This function is only used by internal operations
+            ambient::unmeasured(
+                reason("This function is only used by internal operations"),
+                || self.insert_multi_native(new_id, other_vector.as_ref(), other_deleted),
             )?;
         }
         let end_index = self.vectors_metadata.len() as PointOffsetType;
@@ -276,7 +280,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorSt
         VectorStorageDatatype::Float32
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 
@@ -316,13 +320,8 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for VolatileMultiDenseVectorSt
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for VolatileMultiDenseVectorStorage<T> {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.insert_vector_impl(key, vector, false, hw_counter)
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        self.insert_vector_impl(key, vector, false)
     }
 
     fn flusher(&self) -> Flusher {

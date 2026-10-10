@@ -172,13 +172,26 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
             let force_sequential = is_read_with_prefetch_efficient(keys);
 
+            let mut unreadable = None;
             let (vectors, _) = maybe_uninit_fill_from(
                 &mut vectors_buffer,
                 keys.iter().map(|&key| {
-                    self.get_many_impl(key.offset(), 1, force_sequential)
-                        .expect("vectors read")
+                    match self.get_many_impl(key.offset(), 1, force_sequential) {
+                        Some(vectors) => vectors,
+                        None => {
+                            unreadable.get_or_insert(key);
+                            Cow::Borrowed([].as_slice())
+                        }
+                    }
                 }),
             );
+
+            if let Some(key) = unreadable {
+                return Err(OperationError::service_error(format!(
+                    "vector {key} is not readable from {}",
+                    self.directory.display(),
+                )));
+            }
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 
@@ -296,8 +309,8 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
         Ok(())
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        !self.config.populate.unwrap_or(false)
+    pub fn is_cold(&self) -> bool {
+        !self.populate.to_bool::<S>()
     }
 
     pub fn heap_size_bytes(&self) -> usize {

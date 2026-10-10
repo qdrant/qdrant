@@ -2,7 +2,7 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
 use rstest::rstest;
 use tempfile::Builder;
@@ -19,8 +19,7 @@ fn filter_request(text: &str) -> FieldCondition {
 
 #[test]
 fn test_full_text_indexing() {
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
 
     use crate::index::field_index::{PayloadFieldIndex, PayloadFieldIndexRead, ValueIndexer};
 
@@ -55,6 +54,7 @@ fn test_full_text_indexing() {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     };
 
     {
@@ -63,41 +63,26 @@ fn test_full_text_indexing() {
                 .unwrap()
                 .unwrap();
 
-        let hw_cell = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         for (idx, payload) in payloads.iter().enumerate() {
-            index
-                .add_point(idx as PointOffsetType, &[payload], &hw_cell)
-                .unwrap();
+            index.add_point(idx as PointOffsetType, &[payload]).unwrap();
         }
 
         assert_eq!(index.count_indexed_points().unwrap(), payloads.len());
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
 
         let filter_condition = filter_request("multivac");
-        let search_res: Vec<_> = index
-            .filter(&filter_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect();
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
         assert_eq!(search_res, vec![0, 4]);
 
         let filter_condition = filter_request("giant computer");
-        let search_res: Vec<_> = index
-            .filter(&filter_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect();
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
         assert_eq!(search_res, vec![2]);
 
         let filter_condition = filter_request("the great time");
-        let search_res: Vec<_> = index
-            .filter(&filter_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect();
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
         assert_eq!(search_res, vec![4]);
 
         index.remove_point(2).unwrap();
@@ -106,7 +91,7 @@ fn test_full_text_indexing() {
         let filter_condition = filter_request("giant computer");
         assert!(
             index
-                .filter(&filter_condition, &hw_counter)
+                .filter(&filter_condition)
                 .unwrap()
                 .unwrap()
                 .next()
@@ -119,12 +104,12 @@ fn test_full_text_indexing() {
             "The last question was asked for the first time, half in jest, on May 21, 2061,",
             "at a time when humanity first stepped into the light."
         ]);
-        index.add_point(3, &[&payload], &hw_cell).unwrap();
+        index.add_point(3, &[&payload]).unwrap();
 
         let payload = serde_json::json!([
             "The question came about as a result of a five dollar bet over highballs, and it happened this way: "
         ]);
-        index.add_point(4, &[&payload], &hw_cell).unwrap();
+        index.add_point(4, &[&payload]).unwrap();
 
         assert_eq!(index.count_indexed_points().unwrap(), payloads.len() - 1);
 
@@ -138,43 +123,26 @@ fn test_full_text_indexing() {
 
         assert_eq!(index.count_indexed_points().unwrap(), 4);
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
 
         let filter_condition = filter_request("multivac");
-        let search_res: Vec<_> = index
-            .filter(&filter_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect();
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
         assert_eq!(search_res, vec![0]);
 
         let filter_condition = filter_request("the");
-        let search_res: Vec<_> = index
-            .filter(&filter_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect();
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
         assert_eq!(search_res, vec![0, 1, 3, 4]);
 
         // check deletion
         index.remove_point(0).unwrap();
         let filter_condition = filter_request("multivac");
-        let search_res: Vec<_> = index
-            .filter(&filter_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect();
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
         assert!(search_res.is_empty());
         assert_eq!(index.count_indexed_points().unwrap(), 3);
 
         index.remove_point(3).unwrap();
         let filter_condition = filter_request("the");
-        let search_res: Vec<_> = index
-            .filter(&filter_condition, &hw_counter)
-            .unwrap()
-            .unwrap()
-            .collect();
+        let search_res: Vec<_> = index.filter(&filter_condition).unwrap().unwrap().collect();
         assert_eq!(search_res, vec![1, 4]);
         assert_eq!(index.count_indexed_points().unwrap(), 2);
 
@@ -184,9 +152,9 @@ fn test_full_text_indexing() {
     }
 }
 
-/// Build a gridstore index with length recording forced on or off, so both
-/// shapes stay covered while `TextIndexParams::scoring` is a const saying
-/// `false`.
+/// Build a gridstore index with length recording forced on or off,
+/// independently of the params, so a test can pick any shape, including ones
+/// params no longer produce (see [`length_config`]).
 fn gridstore_index(
     path: std::path::PathBuf,
     config: TextIndexParams,
@@ -212,6 +180,14 @@ fn doc_lens(index: &FullTextIndex) -> (Vec<u32>, u64) {
     (lens, inverted.total_tokens)
 }
 
+/// Params with `phrase_matching` as given and `scoring` unset: the tests pass
+/// the recording flag to [`gridstore_index`] themselves.
+///
+/// `length_config(false)` with recording on is **positions off, lengths on**, a
+/// shape params cannot produce any more, since `scoring` implies
+/// `phrase_matching`. The tests that build it are kept on purpose, as guards
+/// for a TF-only tier: lengths recorded without positions, which would bring
+/// back the deduplicated gridstore records these tests were written against.
 fn length_config(phrase_matching: bool) -> TextIndexParams {
     TextIndexParams {
         r#type: TextIndexType::Text,
@@ -226,17 +202,19 @@ fn length_config(phrase_matching: bool) -> TextIndexParams {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     }
 }
 
 /// `phrase_matching: false` is the case at risk: those tokens are deduplicated
 /// on the way to the gridstore, so a length derived from them after reopening
-/// would count distinct terms rather than all of them.
+/// would count distinct terms rather than all of them. That case is a TF-only
+/// tier guard, see [`length_config`].
 #[rstest]
 fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: bool) {
     let temp_dir = Builder::new().prefix("doc_len_reload").tempdir().unwrap();
     let path = temp_dir.path().join("index");
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
     let payloads = [
@@ -250,9 +228,7 @@ fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: boo
             .unwrap()
             .unwrap();
         for (idx, payload) in payloads.iter().enumerate() {
-            index
-                .add_point(idx as PointOffsetType, &[payload], &hw_counter)
-                .unwrap();
+            index.add_point(idx as PointOffsetType, &[payload]).unwrap();
         }
         let (lens, total) = doc_lens(&index);
         assert_eq!(lens, expected, "lengths wrong before reload");
@@ -273,7 +249,7 @@ fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: boo
 #[test]
 fn doc_len_excludes_array_boundary_sentinels() {
     let temp_dir = Builder::new().prefix("doc_len_sentinel").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // Two elements, three tokens each, one sentinel between them with phrase
     // matching on. The length must be six either way.
@@ -284,7 +260,7 @@ fn doc_len_excludes_array_boundary_sentinels() {
         let mut index = gridstore_index(path, length_config(phrase_matching), true, true)
             .unwrap()
             .unwrap();
-        index.add_point(0, &[&payload], &hw_counter).unwrap();
+        index.add_point(0, &[&payload]).unwrap();
 
         let (lens, total) = doc_lens(&index);
         assert_eq!(lens, vec![6], "phrase_matching = {phrase_matching}");
@@ -292,13 +268,52 @@ fn doc_len_excludes_array_boundary_sentinels() {
     }
 }
 
+/// An array whose values all tokenize to nothing is not a document, like a
+/// single value that tokenizes to nothing. Otherwise its boundary sentinels
+/// would count it in BM25's `N` and `avgdl` with phrase matching on.
+#[rstest]
+fn array_of_empty_values_is_not_a_document(#[values(false, true)] phrase_matching: bool) {
+    use crate::index::field_index::full_text_index::inverted_index::InvertedIndex;
+
+    let temp_dir = Builder::new().prefix("doc_len_empty").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let mut index = gridstore_index(
+        temp_dir.path().join("index"),
+        length_config(phrase_matching),
+        true,
+        true,
+    )
+    .unwrap()
+    .unwrap();
+    let payloads = [
+        serde_json::json!("alpha beta"),
+        serde_json::json!(""),
+        serde_json::json!(["", ""]),
+        serde_json::json!(["", "gamma", ""]),
+    ];
+    for (idx, payload) in payloads.iter().enumerate() {
+        index.add_point(idx as PointOffsetType, &[payload]).unwrap();
+    }
+
+    // Every point offset has a length slot, so the empty ones read as zero.
+    assert_eq!(doc_lens(&index), (vec![2, 0, 0, 1], 3));
+    let FullTextIndex::Mutable(inner) = &index else {
+        panic!("expected a mutable (gridstore) index");
+    };
+    // Only points 0 and 3 hold tokens, so they are the only documents.
+    assert_eq!(inner.inner.inverted_index.points_count(), 2);
+    assert!(inner.get_doc(2).unwrap().is_empty());
+}
+
 /// `tokenize_doc` does not strip the sentinel's own character from user text,
 /// so those tokens are indexed and must be counted. Filtering the count by
 /// value rather than by inserted count reads this document as two tokens long.
+/// Positions off, lengths on: a TF-only tier guard, see [`length_config`].
 #[test]
 fn doc_len_counts_sentinel_characters_in_user_text() {
     let temp_dir = Builder::new().prefix("doc_len_nul").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut index = gridstore_index(
         temp_dir.path().join("index"),
@@ -309,11 +324,7 @@ fn doc_len_counts_sentinel_characters_in_user_text() {
     .unwrap()
     .unwrap();
     index
-        .add_point(
-            0,
-            &[&serde_json::json!("hello \u{0} \u{0} \u{0} world")],
-            &hw_counter,
-        )
+        .add_point(0, &[&serde_json::json!("hello \u{0} \u{0} \u{0} world")])
         .unwrap();
 
     let (lens, total) = doc_lens(&index);
@@ -322,11 +333,12 @@ fn doc_len_counts_sentinel_characters_in_user_text() {
 }
 
 /// Removing a point takes its length back out of the running total, so `avgdl`
-/// is not inflated by documents that no longer exist.
+/// is not inflated by documents that no longer exist. Positions off, lengths
+/// on: a TF-only tier guard, see [`length_config`].
 #[test]
 fn removing_a_point_discounts_its_length() {
     let temp_dir = Builder::new().prefix("doc_len_remove").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut index = gridstore_index(
         temp_dir.path().join("index"),
@@ -337,10 +349,10 @@ fn removing_a_point_discounts_its_length() {
     .unwrap()
     .unwrap();
     index
-        .add_point(0, &[&serde_json::json!("alpha beta gamma")], &hw_counter)
+        .add_point(0, &[&serde_json::json!("alpha beta gamma")])
         .unwrap();
     index
-        .add_point(1, &[&serde_json::json!("delta epsilon")], &hw_counter)
+        .add_point(1, &[&serde_json::json!("delta epsilon")])
         .unwrap();
     assert_eq!(doc_lens(&index), (vec![3, 2], 5));
 
@@ -352,25 +364,25 @@ fn removing_a_point_discounts_its_length() {
     assert_eq!(doc_lens(&index), (vec![3, 0], 3));
 }
 
-/// Overwriting a point replaces its length instead of adding to it.
+/// Overwriting a point replaces its length instead of adding to it. Built
+/// positions off, lengths on (`new(false, true)`): a TF-only tier guard, see
+/// [`length_config`].
 #[test]
 fn overwriting_a_point_replaces_its_length() {
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
-
-    let hw_counter = HardwareCounterCell::new();
 
     // Through the inverted index rather than `add_point`, which removes the
     // point first and so always hands `set_doc_len` a zeroed slot. Live reload
     // is the caller that overwrites in place.
     let mut index = MutableInvertedIndex::new(false, true);
     index
-        .index_str_tokens(0, ["alpha", "beta", "gamma"], Some(3), &hw_counter)
+        .index_str_tokens(0, ["alpha", "beta", "gamma"], Some(3))
         .unwrap();
     assert_eq!(index.point_to_doc_len, Some(vec![3]));
     assert_eq!(index.total_tokens, 3);
 
     index
-        .index_str_tokens(0, ["delta", "epsilon"], Some(2), &hw_counter)
+        .index_str_tokens(0, ["delta", "epsilon"], Some(2))
         .unwrap();
     assert_eq!(
         (index.point_to_doc_len.clone(), index.total_tokens),
@@ -379,9 +391,7 @@ fn overwriting_a_point_replaces_its_length() {
     );
 
     // A record with no length zeroes the slot rather than leaving a stale one.
-    index
-        .index_str_tokens(0, ["zeta"], None, &hw_counter)
-        .unwrap();
+    index.index_str_tokens(0, ["zeta"], None).unwrap();
     assert_eq!(
         (index.point_to_doc_len, index.total_tokens),
         (Some(vec![0]), 0)
@@ -394,18 +404,14 @@ fn overwriting_a_point_replaces_its_length() {
 fn scoring_off_records_no_lengths(#[values(false, true)] phrase_matching: bool) {
     let temp_dir = Builder::new().prefix("doc_len_off").tempdir().unwrap();
     let path = temp_dir.path().join("index");
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     {
         let mut index = gridstore_index(path.clone(), length_config(phrase_matching), true, false)
             .unwrap()
             .unwrap();
         index
-            .add_point(
-                0,
-                &[&serde_json::json!("the cat sat on the mat the")],
-                &hw_counter,
-            )
+            .add_point(0, &[&serde_json::json!("the cat sat on the mat the")])
             .unwrap();
 
         let FullTextIndex::Mutable(inner) = &index else {

@@ -4,7 +4,6 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
 
 use ahash::{AHashMap, AHashSet};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
@@ -33,7 +32,6 @@ pub fn sync_points(
     to_id: Option<PointIdType>,
     points: &[PointStructPersisted],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(usize, usize, usize)> {
     sync_points_impl(
         segments,
@@ -42,7 +40,6 @@ pub fn sync_points(
         to_id,
         points,
         max_segment_size_bytes,
-        hw_counter,
     )
 }
 
@@ -54,7 +51,6 @@ pub fn sync_points_raw(
     to_id: Option<PointIdType>,
     points: &[PointStructRawPersisted],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(usize, usize, usize)> {
     super::upsert::ensure_payloads_decoded(points)?;
     sync_points_impl(
@@ -64,7 +60,6 @@ pub fn sync_points_raw(
         to_id,
         points,
         max_segment_size_bytes,
-        hw_counter,
     )
 }
 
@@ -79,7 +74,6 @@ trait PointToSync: PointToUpsert {
     fn retrieve_stored(
         segment: &dyn ReadSegmentEntry,
         ids: &[PointIdType],
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<AHashMap<PointIdType, Self::StoredRecord>>;
 
@@ -104,7 +98,6 @@ fn sync_points_impl<P>(
     to_id: Option<PointIdType>,
     points: &[P],
     max_segment_size_bytes: Option<NonZeroUsize>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<(usize, usize, usize)>
 where
     P: PointToSync,
@@ -118,7 +111,7 @@ where
         .collect();
     // 2. Remove points, which are not present in the sync operation
     let points_to_remove: Vec<_> = stored_point_ids.difference(&sync_points).copied().collect();
-    let deleted = delete_points(segments, op_num, points_to_remove.as_slice(), hw_counter)?;
+    let deleted = delete_points(segments, op_num, points_to_remove.as_slice())?;
     // 3. Retrieve overlapping points, detect which one of them are changed
     let existing_point_ids: Vec<_> = stored_point_ids
         .intersection(&sync_points)
@@ -134,7 +127,7 @@ where
         DeferredBehavior::WithDeferred,
         |ids, segment| {
             // Since we retrieve points, which we already know exist, we expect all of them to be found
-            let stored_records = P::retrieve_stored(&**segment, ids, hw_counter, &is_stopped)?;
+            let stored_records = P::retrieve_stored(&**segment, ids, &is_stopped)?;
             let mut updated = 0;
 
             for (id, stored_record) in stored_records {
@@ -158,13 +151,8 @@ where
     });
 
     // 5. Upsert points which differ from the stored ones
-    let num_replaced = upsert_points_impl(
-        segments,
-        op_num,
-        points_to_update,
-        max_segment_size_bytes,
-        hw_counter,
-    )?;
+    let num_replaced =
+        upsert_points_impl(segments, op_num, points_to_update, max_segment_size_bytes)?;
     debug_assert!(
         num_replaced <= num_updated,
         "number of replaced points cannot be greater than points to update ({num_replaced} <= {num_updated})",
@@ -179,14 +167,12 @@ impl PointToSync for PointStructPersisted {
     fn retrieve_stored(
         segment: &dyn ReadSegmentEntry,
         ids: &[PointIdType],
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<AHashMap<PointIdType, SegmentRecord>> {
         segment.retrieve(
             ids,
             &WithPayload::from(true),
             &WithVector::Bool(true),
-            hw_counter,
             is_stopped,
             DeferredBehavior::WithDeferred,
         )
@@ -203,13 +189,11 @@ impl PointToSync for PointStructRawPersisted {
     fn retrieve_stored(
         segment: &dyn ReadSegmentEntry,
         ids: &[PointIdType],
-        hw_counter: &HardwareCounterCell,
         is_stopped: &AtomicBool,
     ) -> OperationResult<AHashMap<PointIdType, SegmentRecordRaw>> {
         segment.retrieve_raw(
             ids,
             &WithVector::Bool(true),
-            hw_counter,
             is_stopped,
             DeferredBehavior::WithDeferred,
         )

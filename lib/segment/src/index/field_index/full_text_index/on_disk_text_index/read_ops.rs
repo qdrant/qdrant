@@ -1,5 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use std::sync::atomic::AtomicBool;
+
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{UniversalRead, UserData};
 
 use super::super::full_text_index_read::FullTextIndexRead;
@@ -7,8 +8,9 @@ use super::super::inverted_index::{InvertedIndex, ParsedQuery, TokenId};
 use super::super::tokenizers::Tokenizer;
 use super::OnDiskFullTextIndex;
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
@@ -35,18 +37,24 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()> {
-        self.inverted_index.doc_len_batch(point_ids, hw_counter, f)
+        self.inverted_index.doc_len_batch(point_ids, f)
     }
 
-    fn posting_len(
+    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
+        self.inverted_index.get_posting_len(token_id)
+    }
+
+    fn score_bm25(
         &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
-        self.inverted_index.get_posting_len(token_id, hw_counter)
+        query: &Bm25Query,
+        accept: &dyn Fn(PointOffsetType) -> bool,
+        limit: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        self.inverted_index
+            .score_bm25(query, accept, limit, is_stopped)
     }
 
     fn total_tokens(&self) -> Option<u64> {
@@ -56,28 +64,24 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
-        self.inverted_index.for_each_token_id(iter, hw_counter, f)
+        self.inverted_index.for_each_token_id(iter, f)
     }
 
     fn filter_query<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.inverted_index.filter(query, hw_counter)
+        self.inverted_index.filter(query)
     }
 
     fn estimate_query_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<CardinalityEstimation> {
-        self.inverted_index
-            .estimate_cardinality(query, condition, hw_counter)
+        self.inverted_index.estimate_cardinality(query, condition)
     }
 
     fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> OperationResult<bool> {
@@ -105,14 +109,16 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
     }
 
     fn get_storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: true }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Mmap,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {
         self.inverted_index.ram_usage_bytes()
     }
 
-    fn is_on_disk(&self) -> bool {
-        true
+    fn is_cold(&self) -> bool {
+        self.cold
     }
 }

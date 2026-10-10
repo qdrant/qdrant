@@ -78,6 +78,8 @@ pub struct EdgeConfig {
     /// (search, scroll, count, facet, ...) in parallel and loads segments in parallel. `None` (the
     /// default) derives the count from the number of CPUs, matching the core search runtime — see
     /// [`EdgeConfig::search_thread_count`].
+    /// Unless pools are supplied externally, read-only followers create a separate load pool
+    /// with this thread count for open and live reload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_search_threads: Option<usize>,
     /// Pin every thread of this shard's search pool to the given CPU core: bounds the shard's
@@ -96,7 +98,7 @@ impl EdgeConfig {
     /// Effective payload storage location: on-disk unless explicitly set to `false`
     /// via `on_disk_payload`, or overridden by `payload_memory`.
     pub fn on_disk_payload(&self) -> bool {
-        self.payload_memory_placement().is_on_disk()
+        self.payload_memory_placement().is_cold()
     }
 
     /// Effective memory placement of the payload storage: [`Self::requested_payload_memory`],
@@ -221,7 +223,7 @@ impl EdgeConfig {
             })
             .collect();
 
-        let on_disk_payload = payload_storage_type.is_on_disk();
+        let on_disk_payload = payload_storage_type.is_cold();
 
         // Infer global hnsw_config from per-vector HNSW configs when all agree
         let hnsw_configs: Vec<HnswConfig> = vector_data

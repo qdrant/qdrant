@@ -11,13 +11,14 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::AccessPattern;
+use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
-use quantization::turboquant::EncodedQueryTQ;
 use quantization::turboquant::quantization::TurboQuantizer;
+use quantization::turboquant::{EncodedQueryTQ, TQBits};
 use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -62,9 +63,10 @@ pub fn open_appendable_turbo_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    bits: TQBits,
     in_ram: bool,
 ) -> OperationResult<AppendableMmapTurboVectorStorage> {
-    AppendableMmapTurboVectorStorage::open(path, dim, distance, in_ram)
+    AppendableMmapTurboVectorStorage::open(path, dim, distance, bits, in_ram)
 }
 
 impl AppendableMmapTurboVectorStorage {
@@ -73,11 +75,12 @@ impl AppendableMmapTurboVectorStorage {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
         in_ram: bool,
     ) -> OperationResult<Self> {
         fs_err::create_dir_all(path)?;
 
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let storage = QuantizedChunkedStorage::new(
             MmapFs,
             &path.join(VECTORS_DIR_PATH),
@@ -128,7 +131,6 @@ impl AppendableMmapTurboVectorStorage {
         &mut self,
         key: PointOffsetType,
         bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let expected_size = self.quantizer.quantized_size();
         if bytes.len() != expected_size {
@@ -137,7 +139,7 @@ impl AppendableMmapTurboVectorStorage {
                 bytes.len(),
             )));
         }
-        self.storage.upsert_vector(key, bytes, hw_counter)?;
+        self.storage.upsert_vector(key, bytes)?;
         self.set_deleted(key, false);
         Ok(())
     }
@@ -203,11 +205,11 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Turbo4
+        shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.storage.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {
@@ -226,7 +228,7 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         for (user_data, key) in keys {
             let vector = shared::dequantize_vector(
                 &self.quantizer,
@@ -235,6 +237,7 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
             );
             callback(user_data, key, vector);
         }
+        Ok(())
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -264,17 +267,12 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
 }
 
 impl VectorStorage for AppendableMmapTurboVectorStorage {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let dense: &[VectorElementType] = vector.try_into()?;
         let quantized = self
             .quantizer
             .quantize(dense, &mut self.quantization_buffer);
-        self.storage.upsert_vector(key, &quantized, hw_counter)?;
+        self.storage.upsert_vector(key, &quantized)?;
         self.set_deleted(key, false);
         Ok(())
     }
@@ -319,7 +317,7 @@ impl TurboScoring for AppendableMmapTurboVectorStorage {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         shared::score_query_batch(
             &self.storage,
             &self.quantizer,
@@ -400,13 +398,13 @@ impl DenseTQVectorStorage for AppendableMmapTurboVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let disposed_hw = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let start_index = self.storage.vectors_count() as PointOffsetType;
         let mut key = start_index;
 
         for (vector, deleted) in other_vectors {
             check_process_stopped(stopped)?;
-            self.storage.upsert_vector(key, &vector, &disposed_hw)?;
+            self.storage.upsert_vector(key, &vector)?;
             if deleted {
                 self.set_deleted(key, true);
             }

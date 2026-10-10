@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{
@@ -106,11 +106,7 @@ mod tests {
                 let query_encoded = encoded.encode_query(&query);
                 let scores: Vec<f32> = (0..vector_data.len())
                     .map(|index| {
-                        encoded.score_point(
-                            &query_encoded,
-                            index as u32,
-                            &HardwareCounterCell::new(),
-                        )
+                        ambient::test(|| encoded.score_point(&query_encoded, index as u32))
                     })
                     .collect();
                 let tops = get_top(&scores, top, false);
@@ -208,11 +204,7 @@ mod tests {
                 let query_encoded = encoded.encode_query(&query);
                 let scores: Vec<f32> = (0..vector_data.len())
                     .map(|index| {
-                        encoded.score_point(
-                            &query_encoded,
-                            index as u32,
-                            &HardwareCounterCell::new(),
-                        )
+                        ambient::test(|| encoded.score_point(&query_encoded, index as u32))
                     })
                     .collect();
                 let tops = get_top(&scores, top, false);

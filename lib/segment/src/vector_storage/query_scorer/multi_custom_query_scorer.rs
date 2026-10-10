@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -23,11 +24,11 @@ pub struct MultiCustomQueryScorer<
     TVectorStorage: MultiVectorStorageRead<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
 > {
+    hw: HwScale,
     vector_storage: &'a TVectorStorage,
     query: TQuery,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<
@@ -38,11 +39,7 @@ impl<
     TQuery: Query<TypedMultiDenseVector<TElement>>,
 > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery>
 {
-    pub fn new<TInputQuery>(
-        query: TInputQuery,
-        vector_storage: &'a TVectorStorage,
-        mut hardware_counter: HardwareCounterCell,
-    ) -> Self
+    pub fn new<TInputQuery>(query: TInputQuery, vector_storage: &'a TVectorStorage) -> Self
     where
         TInputQuery: Query<MultiDenseVectorInternal>
             + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
@@ -62,19 +59,20 @@ impl<
             .unwrap();
 
         let dim = vector_storage.vector_dim();
-        hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
-        if vector_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
 
         Self {
+            hw: HwScale {
+                cpu: dim * size_of::<TElement>(),
+                vector_io_read: if vector_storage.is_cold() {
+                    dim * size_of::<TElement>()
+                } else {
+                    0
+                },
+            },
             query,
             vector_storage,
             metric: PhantomData,
             element: PhantomData,
-            hardware_counter,
         }
     }
 }
@@ -88,12 +86,10 @@ impl<
 {
     #[inline]
     fn score_ref(&self, against: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
-        let cpu_counter = self.hardware_counter.cpu_counter();
-
         let against_vector_count = against.vectors_count();
 
         self.query.score_by(|example| {
-            cpu_counter.incr_delta(example.vectors_count() * against_vector_count);
+            self.hw.cpu(example.vectors_count() * against_vector_count);
 
             score_multi::<TElement, TMetric>(
                 self.vector_storage.multi_vector_config(),
@@ -112,24 +108,25 @@ impl<
 > QueryScorer for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
         let stored = self.vector_storage.get_multi::<Random>(idx);
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(stored.as_ref().vectors_count());
+        self.hw.vector_io_read(stored.as_ref().vectors_count());
 
-        self.score_ref(stored.as_ref())
+        Ok(self.score_ref(stored.as_ref()))
     }
 
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
-        let vectors_read = self.hardware_counter.vector_io_read();
         self.vector_storage
             .for_each_in_batch_multi(ids, |idx, vector| {
-                vectors_read.incr_delta(vector.vectors_count());
+                self.hw.vector_io_read(vector.vectors_count());
                 scores[idx] = self.score_ref(vector);
-            });
+            })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

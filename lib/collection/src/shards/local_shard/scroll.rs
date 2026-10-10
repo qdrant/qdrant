@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw;
 use common::types::DeferredBehavior;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
@@ -36,20 +36,14 @@ impl LocalShard {
         batch: Arc<Vec<QueryScrollRequestInternal>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if batch.is_empty() {
             return Ok(vec![]);
         }
 
-        let scrolls = batch.iter().map(|request| {
-            self.query_scroll(
-                request,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc.clone(),
-            )
-        });
+        let scrolls = batch
+            .iter()
+            .map(|request| self.query_scroll(request, search_runtime_handle, timeout));
 
         // execute all the scrolls concurrently
         let all_scroll_results = try_join_all(scrolls);
@@ -67,7 +61,6 @@ impl LocalShard {
         request: &QueryScrollRequestInternal,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
             limit,
@@ -91,7 +84,6 @@ impl LocalShard {
                     filter.as_ref(),
                     search_runtime_handle,
                     timeout,
-                    hw_measurement_acc,
                     DeferredBehavior::VisibleOnly,
                 )
                 .await?
@@ -105,7 +97,6 @@ impl LocalShard {
                     search_runtime_handle,
                     order_by,
                     timeout,
-                    hw_measurement_acc,
                     DeferredBehavior::VisibleOnly,
                 )
                 .await?
@@ -118,7 +109,6 @@ impl LocalShard {
                     filter.as_ref(),
                     search_runtime_handle,
                     timeout,
-                    hw_measurement_acc,
                 )
                 .await?
             }
@@ -150,7 +140,6 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
@@ -163,37 +152,34 @@ impl LocalShard {
             };
             segments_guard.split_segments()
         };
-        let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
+        let read_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let _scope = handoff.enter_guard();
                 let work = || {
                     segment.get().read().read_filtered(
                         offset,
                         Some(limit),
                         filter.as_ref(),
                         &is_stopped,
-                        &hw_counter,
                         deferred_behavior,
                     )
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
 
-        let hw_counter = hw_measurement_acc.get_counter_cell();
         let all_reads = tokio::time::timeout(
             timeout,
             try_join_all(
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(|segment| read_filtered(segment, hw_counter.fork())),
+                    .map(read_filtered),
             ),
         )
         .await
@@ -213,7 +199,6 @@ impl LocalShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await?;
@@ -242,7 +227,6 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<PointStructRawPersisted>> {
         let start = Instant::now();
@@ -258,37 +242,34 @@ impl LocalShard {
             };
             segments_guard.split_segments()
         };
-        let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
+        let read_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let _scope = handoff.enter_guard();
                 let work = || {
                     segment.get().read().read_filtered(
                         offset,
                         Some(limit),
                         filter.as_ref(),
                         &is_stopped,
-                        &hw_counter,
                         deferred_behavior,
                     )
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
 
-        let hw_counter = hw_measurement_acc.get_counter_cell();
         let all_reads = tokio::time::timeout(
             timeout,
             try_join_all(
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(|segment| read_filtered(segment, hw_counter.fork())),
+                    .map(read_filtered),
             ),
         )
         .await
@@ -308,7 +289,6 @@ impl LocalShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             ),
         )
@@ -337,7 +317,6 @@ impl LocalShard {
         search_runtime_handle: &AdaptiveSearchHandle,
         order_by: &OrderBy,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
@@ -355,33 +334,28 @@ impl LocalShard {
             segments_guard.split_segments()
         };
 
-        let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
+        let read_ordered_filtered = |segment: LockedSegment| {
             let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
             let order_by = order_by.clone();
 
-            let hw_counter = hw_counter.fork();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
+                let _scope = handoff.enter_guard();
                 let work = || {
                     segment.get().read().read_ordered_filtered(
                         Some(limit),
                         filter.as_ref(),
                         &order_by,
                         &is_stopped,
-                        &hw_counter,
                         deferred_behavior,
                     )
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
-
-        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = tokio::time::timeout(
             timeout,
@@ -389,7 +363,7 @@ impl LocalShard {
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(|segment| read_ordered_filtered(segment, &hw_counter)),
+                    .map(read_ordered_filtered),
             ),
         )
         .await
@@ -418,7 +392,6 @@ impl LocalShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await?;
@@ -447,7 +420,6 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let stopping_guard = StoppingGuard::new();
@@ -461,36 +433,27 @@ impl LocalShard {
             segments_guard.split_segments()
         };
 
-        let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
+        let read_filtered = |segment: LockedSegment| {
             let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
 
-            let hw_counter = hw_counter.fork();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || -> OperationResult<_> {
+                let _scope = handoff.enter_guard();
                 let work = || -> OperationResult<_> {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
                     Ok((
                         read_segment.available_point_count_without_deferred(),
-                        read_segment.read_random_filtered(
-                            limit,
-                            filter.as_ref(),
-                            &is_stopped,
-                            &hw_counter,
-                        )?,
+                        read_segment.read_random_filtered(limit, filter.as_ref(), &is_stopped)?,
                     ))
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
-
-        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = tokio::time::timeout(
             timeout,
@@ -498,7 +461,7 @@ impl LocalShard {
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(|segment| read_filtered(segment, &hw_counter)),
+                    .map(read_filtered),
             ),
         )
         .await
@@ -571,7 +534,6 @@ impl LocalShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 DeferredBehavior::VisibleOnly,
             )
             .await?;
@@ -590,7 +552,6 @@ impl LocalShard {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<AHashMap<ExtendedPointId, RecordInternal>> {
         if !with_payload.enable && !with_vector.is_enabled() {
@@ -609,7 +570,6 @@ impl LocalShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             ),
         )

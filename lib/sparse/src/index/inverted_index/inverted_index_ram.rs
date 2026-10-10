@@ -4,7 +4,6 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use blink_alloc::Blink;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalRead, UniversalWrite, UserData};
@@ -59,7 +58,7 @@ impl InvertedIndex for InvertedIndexRam {
 
     type Version = Version;
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 
@@ -71,7 +70,6 @@ impl InvertedIndex for InvertedIndexRam {
         &'a self,
         ids: impl Iterator<Item = (U, DimOffset)>,
         _arena: &'a Blink,
-        _hw_counter: &'a HardwareCounterCell,
         mut callback: impl FnMut(U, PostingListIterator<'a>) -> UioResult<()>,
     ) -> UioResult<()> {
         for (user_data, id) in ids {
@@ -87,7 +85,6 @@ impl InvertedIndex for InvertedIndexRam {
     fn posting_list_len_batch<U: UserData>(
         &self,
         ids: impl Iterator<Item = (U, DimOffset)>,
-        _hw_counter: &HardwareCounterCell,
         mut callback: impl FnMut(U, usize) -> UioResult<()>,
     ) -> UioResult<()> {
         for (user_data, id) in ids {

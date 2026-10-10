@@ -1,9 +1,7 @@
 use std::borrow::{Borrow, Cow};
 use std::iter;
 
-use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::persisted_hashmap::{Key, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};
@@ -15,7 +13,7 @@ use super::super::{IdIter, MapIndexKey};
 use super::OnDiskMapIndex;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::on_disk_point_to_values::ValuesIter;
-use crate::index::payload_config::StorageType;
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, N>
     for OnDiskMapIndex<N, S>
@@ -23,15 +21,10 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> OperationResult<bool> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         // Measure self.deleted access.
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<bool>());
+        HwMetric::PayloadIndexIoRead.bump(size_of::<bool>());
 
         if !self.storage.deleted.is_active(idx) {
             return Ok(false);
@@ -39,13 +32,12 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
 
         self.storage
             .point_to_values
-            .check_values_any(idx, |v| check_fn(v), &hw_counter)
+            .check_values_any(idx, |v| check_fn(v))
     }
 
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,
-        hw_counter: &HardwareCounterCell,
         check_fn: F,
         mut on_match: M,
     ) -> OperationResult<()>
@@ -58,25 +50,18 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         self.storage.point_to_values.values_iter_batch(
             items,
             &self.storage.deleted,
-            ConditionedCounter::always(hw_counter),
             |tag, mut values| on_match(tag, values.any(|value| check_fn(&value))),
         )
     }
 
-    fn get_values(
-        &'a self,
-        idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
+    fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         // We can account cost of reading `bool`, but it will likely be more expensive, than
         // actually reading bool itself.
 
         if self.storage.deleted.is_active(idx) {
             self.storage
                 .point_to_values
-                .values_iter(idx, hw_counter)
+                .values_iter(idx)
                 .ok()?
                 .map(|iter| Box::new(iter) as Box<dyn Iterator<Item = Cow<'_, N>>>)
         } else {
@@ -109,14 +94,10 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         self.storage.value_to_points.keys_count()
     }
 
-    fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
+    fn get_count_for_value(&self, value: &N) -> Option<usize> {
         // Since `value_to_points.get` doesn't actually force read from disk for all values
         // we need to only account for the overhead of hashmap lookup
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(READ_ENTRY_OVERHEAD);
+        HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD);
 
         match self
             .storage
@@ -136,15 +117,12 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         }
     }
 
-    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdIter<'_> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
+    fn get_iterator(&self, value: &N) -> IdIter<'_> {
         match self.storage.value_to_points.unbatched_get(value) {
             Ok(Some(values)) => {
                 // We're iterating over the whole (mmapped) slice
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(size_of_val(values.as_slice()) + READ_ENTRY_OVERHEAD);
+                HwMetric::PayloadIndexIoRead
+                    .bump(size_of_val(values.as_slice()) + READ_ENTRY_OVERHEAD);
 
                 let deleted = &self.storage.deleted;
                 Box::new(
@@ -154,9 +132,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
                 )
             }
             Ok(None) => {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(READ_ENTRY_OVERHEAD);
+                HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD);
 
                 Box::new(iter::empty())
             }
@@ -178,11 +154,8 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
     fn for_values_map<V: Borrow<N>>(
         &self,
         values: impl Iterator<Item = V>,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         let values: Vec<V> = values.collect();
         let requests = values.iter().map(|value| {
             let key: &N = value.borrow();
@@ -197,9 +170,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
                     Some(ids) => size_of_val(ids) + READ_ENTRY_OVERHEAD,
                     None => READ_ENTRY_OVERHEAD,
                 };
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(io_read);
+                HwMetric::PayloadIndexIoRead.bump(io_read);
 
                 let deleted = &self.storage.deleted;
                 let mut ids = point_ids
@@ -219,10 +190,9 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
     fn iter_for_values<V: Borrow<N> + 'a>(
         &'a self,
         values: impl Iterator<Item = V> + 'a,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<IdIter<'a>> {
         let mut ids = RoaringBitmap::new();
-        self.for_values_map(values, hw_counter, |_value, posting| {
+        self.for_values_map(values, |_value, posting| {
             ids.extend(&mut *posting);
             Ok(())
         })?;
@@ -257,34 +227,27 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
 
     fn for_each_value_map(
         &self,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(&N, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        let hw_counter = ConditionedCounter::always(hw_counter);
-
         let deleted = &self.storage.deleted;
 
         self.storage.value_to_points.for_each_entry(|k, v| {
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(k.write_bytes());
+            HwMetric::PayloadIndexIoRead.bump(k.write_bytes());
 
             let mut iter = v
                 .iter()
                 .copied()
                 .filter(|idx| deleted.is_active(*idx))
-                .measure_hw_with_acc(
-                    hw_counter.new_accumulator(),
-                    size_of::<PointOffsetType>(),
-                    |i| i.payload_index_io_read_counter(),
-                );
+                .measure_hw(HwMetric::PayloadIndexIoRead, size_of::<PointOffsetType>());
 
             f(k, &mut iter)
         })
     }
 
     fn storage_type(&self) -> StorageType {
-        StorageType::Mmap { is_on_disk: true }
+        StorageType::Mmap {
+            layout: ImmutableLayout::Mmap,
+        }
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -300,18 +263,16 @@ impl<N: MapIndexKey + Key + ?Sized, S: UniversalRead> OnDiskMapIndex<N, S> {
     pub fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
         f: impl FnMut(PointOffsetType, ValuesIter<'_, N>),
     ) -> OperationResult<()> {
         self.storage.point_to_values.values_iter_batch(
             points.map(|point_id| (point_id, point_id)),
             &self.storage.deleted,
-            ConditionedCounter::always(hw_counter),
             f,
         )
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        true
+    pub fn is_cold(&self) -> bool {
+        self.cold
     }
 }

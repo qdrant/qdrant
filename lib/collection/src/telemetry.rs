@@ -208,6 +208,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             strict_mode_config,
             uuid,
             metadata,
+            created_at: _,
         } = config;
         CollectionConfigTelemetry {
             params,

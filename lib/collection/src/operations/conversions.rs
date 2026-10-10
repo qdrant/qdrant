@@ -447,6 +447,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             config,
             payload_schema,
             update_queue,
+            created_at,
         } = value;
 
         let CollectionConfig {
@@ -614,6 +615,8 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .map(api::grpc::qdrant::CollectionWarning::from)
                 .collect(),
             update_queue: update_queue.map(api::grpc::qdrant::UpdateQueueInfo::from),
+            created_at: created_at
+                .map(|dt| api::grpc::conversions::naive_date_time_to_proto(dt.naive_utc())),
         }
     }
 }
@@ -820,6 +823,8 @@ pub fn convert_datatype_from_proto(datatype: Option<i32>) -> Result<Option<Datat
                 api::grpc::qdrant::Datatype::Float32 => Ok(Some(Datatype::Float32)),
                 api::grpc::qdrant::Datatype::Float16 => Ok(Some(Datatype::Float16)),
                 api::grpc::qdrant::Datatype::Turbo4 => Ok(Some(Datatype::Turbo4)),
+                api::grpc::qdrant::Datatype::Turbo8 => Ok(Some(Datatype::Turbo8)),
+                api::grpc::qdrant::Datatype::Turbo16 => Ok(Some(Datatype::Turbo16)),
                 api::grpc::qdrant::Datatype::Default => Ok(None),
             }
         } else {
@@ -944,6 +949,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     payload_schema,
                     warnings,
                     update_queue,
+                    created_at,
                 } = collection_info_response;
                 Ok(Self {
                     status: CollectionStatus::try_from(status)?,
@@ -976,6 +982,17 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                         .try_collect()?,
                     warnings: warnings.into_iter().map(CollectionWarning::from).collect(),
                     update_queue: update_queue.map(UpdateQueueInfo::from),
+                    created_at: created_at
+                        .map(|ts| {
+                            chrono::DateTime::from_timestamp(
+                                ts.seconds,
+                                u32::try_from(ts.nanos).unwrap_or(0),
+                            )
+                            .ok_or_else(|| {
+                                Status::invalid_argument(format!("Malformed created_at: {ts}"))
+                            })
+                        })
+                        .transpose()?,
                 })
             }
         }
@@ -1497,6 +1514,8 @@ impl From<Datatype> for api::grpc::qdrant::Datatype {
             Datatype::Uint8 => api::grpc::qdrant::Datatype::Uint8,
             Datatype::Float16 => api::grpc::qdrant::Datatype::Float16,
             Datatype::Turbo4 => api::grpc::qdrant::Datatype::Turbo4,
+            Datatype::Turbo8 => api::grpc::qdrant::Datatype::Turbo8,
+            Datatype::Turbo16 => api::grpc::qdrant::Datatype::Turbo16,
         }
     }
 }

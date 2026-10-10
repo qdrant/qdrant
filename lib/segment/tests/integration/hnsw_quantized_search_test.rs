@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::{ScoreType, ScoredPointOffset};
@@ -100,33 +100,26 @@ fn hnsw_quantized_search_test(
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_test_vector(&mut rng, dim, distance);
         segment
-            .upsert_point(op_num, idx, only_default_vector(&vector), &hw_counter)
+            .upsert_point(op_num, idx, only_default_vector(&vector))
             .unwrap();
         op_num += 1;
     }
 
     segment
-        .create_field_index(
-            op_num,
-            &JsonPath::new(STR_KEY),
-            Some(&Keyword.into()),
-            &hw_counter,
-        )
+        .create_field_index(op_num, &JsonPath::new(STR_KEY), Some(&Keyword.into()))
         .unwrap();
     op_num += 1;
     for n in 0..payloads_count {
         let idx = n.into();
         let payload = payload_json! {STR_KEY: STR_KEY};
-        segment
-            .set_full_payload(op_num, idx, &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(op_num, idx, &payload).unwrap();
         op_num += 1;
     }
 
@@ -219,7 +212,7 @@ fn hnsw_quantized_search_test(
         for n in 0..num_vectors {
             let idx = n.into();
             segment
-                .upsert_point(op_num, idx, only_default_vector(&zero_vector), &hw_counter)
+                .upsert_point(op_num, idx, only_default_vector(&zero_vector))
                 .unwrap();
             op_num += 1;
         }
@@ -236,6 +229,7 @@ pub fn check_matches(
     ef: usize,
     top: usize,
 ) {
+    let _scope = ambient::test_guard();
     let exact_search_results = query_vectors
         .iter()
         .map(|query| {
@@ -593,7 +587,7 @@ fn hnsw_turbo_quantization_cosine_larger_bits2_test() {
     );
 }
 
-// L2 (Euclid) and L1 (Manhattan) coverage at Bits4 and Bits2.
+// L2 (Euclid) and L1 (Manhattan) coverage at Bits4 and Bits2 (Bits8 below).
 // Bits1 and Bits1_5 are intentionally omitted across all distances:
 // they don't reliably clear the standard helper's 40% recall floor
 // and would be flaky-to-failing under this shape.
@@ -676,6 +670,89 @@ fn hnsw_turbo_quantization_manhattan_bits2_test() {
     );
 }
 
+// Bits8 is the only width without TQ+: these cover its Normal-mode quantization path.
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_cosine_bits8_test() {
+    // Bits8 is more accurate than Bits4, so the standard helper's recall floor
+    // holds with a parallel build, as for Bits4.
+    hnsw_quantized_search_test(
+        Distance::Cosine,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_dot_bits8_test() {
+    // See `hnsw_turbo_quantization_cosine_bits8_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Dot,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_euclid_bits8_test() {
+    // See `hnsw_turbo_quantization_cosine_bits8_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Euclid,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
+#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
+#[test]
+fn hnsw_turbo_quantization_manhattan_bits8_test() {
+    // See `hnsw_turbo_quantization_cosine_bits8_test` for rationale.
+    hnsw_quantized_search_test(
+        Distance::Manhattan,
+        1003,
+        64,
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                memory: None,
+                always_ram: Some(true),
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        }),
+        true,
+        false,
+    );
+}
+
 /// Bits1/Bits1_5 are below the standard helper's recall floor; instead
 /// anchor on binary quantization at the same effective bit-width and
 /// assert the quantization-error gap (rescored top-K score sum vs. exact
@@ -752,6 +829,7 @@ fn hnsw_quantized_low_bit_compare_test(
     let mut tq_total_loss: f64 = 0.0;
     let mut bq_total_loss: f64 = 0.0;
     for query in &queries {
+        let _scope = ambient::test_guard();
         let exact_result = tq_segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
@@ -844,33 +922,26 @@ fn build_quantized_hnsw_for_compare(
     let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
     let quantized_dir = Builder::new().prefix("quantized_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(segment_dir.path(), dim, distance).unwrap();
     let mut op_num: u64 = 0;
     for (n, vector) in vectors.iter().enumerate() {
         let idx = (n as u64).into();
         segment
-            .upsert_point(op_num, idx, only_default_vector(vector), &hw_counter)
+            .upsert_point(op_num, idx, only_default_vector(vector))
             .unwrap();
         op_num += 1;
     }
 
     segment
-        .create_field_index(
-            op_num,
-            &JsonPath::new(STR_KEY),
-            Some(&Keyword.into()),
-            &hw_counter,
-        )
+        .create_field_index(op_num, &JsonPath::new(STR_KEY), Some(&Keyword.into()))
         .unwrap();
     op_num += 1;
     for n in 0..payloads_count {
         let idx = n.into();
         let payload = payload_json! {STR_KEY: STR_KEY};
-        segment
-            .set_full_payload(op_num, idx, &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(op_num, idx, &payload).unwrap();
         op_num += 1;
     }
 
@@ -1065,8 +1136,7 @@ fn test_build_hnsw_using_quantization() {
     )
     .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-    builder.update(&[&segment1], &stopped, &hw_counter).unwrap();
+    builder.update(&[&segment1], &stopped).unwrap();
 
     let built_segment = builder.build_for_test(dir.path());
 

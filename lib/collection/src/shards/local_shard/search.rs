@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ScoredPoint;
 use shard::common::stopping_guard::StoppingGuard;
 use shard::query::query_enum::QueryEnum;
@@ -32,7 +31,6 @@ impl LocalShard {
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if core_request.searches.is_empty() {
             return Ok(vec![]);
@@ -62,7 +60,6 @@ impl LocalShard {
                     core_request,
                     search_runtime_handle,
                     timeout,
-                    hw_counter_acc,
                     &is_stopped_guard,
                 )
                 .await;
@@ -81,7 +78,6 @@ impl LocalShard {
                     Arc::new(core_request),
                     search_runtime_handle,
                     timeout,
-                    hw_counter_acc.clone(),
                     &is_stopped_guard,
                 )
             })
@@ -101,7 +97,6 @@ impl LocalShard {
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_counter_acc: HwMeasurementAcc,
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = std::time::Instant::now();
@@ -114,7 +109,6 @@ impl LocalShard {
                 timeout,
                 search_runtime_handle,
                 is_stopped_guard,
-                hw_counter_acc.clone(),
             )
             .await?;
 

@@ -13,7 +13,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::mmap::Flusher;
     use common::types::PointOffsetType;
     use quantization::encoded_storage::{
@@ -33,19 +33,14 @@ mod tests {
             TestEncodedStorage::is_in_ram_or_mmap()
         }
 
-        fn is_on_disk(&self) -> bool {
+        fn is_cold(&self) -> bool {
             let Self(inner) = self;
-            inner.is_on_disk()
+            inner.is_cold()
         }
 
-        fn upsert_vector(
-            &mut self,
-            id: PointOffsetType,
-            vector: &[u8],
-            hw_counter: &HardwareCounterCell,
-        ) -> std::io::Result<()> {
+        fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
             let Self(inner) = self;
-            inner.upsert_vector(id, vector, hw_counter)
+            inner.upsert_vector(id, vector)
         }
 
         fn vectors_count(&self) -> usize {
@@ -79,8 +74,8 @@ mod tests {
             &self,
             offsets: &[PointOffsetType],
             callback: impl FnMut(usize, Cow<'_, [u8]>),
-        ) {
-            default_for_each_batch(self, offsets, callback);
+        ) -> std::io::Result<()> {
+            default_for_each_batch(self, offsets, callback)
         }
 
         fn files(&self) -> Vec<PathBuf> {
@@ -154,7 +149,7 @@ mod tests {
         )
         .unwrap();
 
-        let counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // Offset + code accessor must return identical data through owning and borrowed
         // storages, and the code must have the quantized vector size minus the offset constant.
@@ -172,8 +167,8 @@ mod tests {
         for i in 0..vectors_count as PointOffsetType {
             let j = (i + 7) % vectors_count as PointOffsetType;
             assert_eq!(
-                encoded_owned.score_internal(i, j, &counter),
-                encoded_borrowed.score_internal(i, j, &counter),
+                encoded_owned.score_internal(i, j),
+                encoded_borrowed.score_internal(i, j),
             );
         }
 
@@ -182,8 +177,8 @@ mod tests {
         let query_borrowed = encoded_borrowed.encode_internal_vector(0).unwrap();
         for i in 0..vectors_count as PointOffsetType {
             assert_eq!(
-                encoded_owned.score_point(&query_owned, i, &counter),
-                encoded_borrowed.score_point(&query_borrowed, i, &counter),
+                encoded_owned.score_point(&query_owned, i),
+                encoded_borrowed.score_point(&query_borrowed, i),
             );
         }
 
@@ -192,8 +187,8 @@ mod tests {
         let query_u8_borrowed = encoded_borrowed.encode_query(&query);
         for i in 0..vectors_count as PointOffsetType {
             assert_eq!(
-                encoded_owned.score_point(&query_u8_owned, i, &counter),
-                encoded_borrowed.score_point(&query_u8_borrowed, i, &counter),
+                encoded_owned.score_point(&query_u8_owned, i),
+                encoded_borrowed.score_point(&query_u8_borrowed, i),
             );
         }
     }

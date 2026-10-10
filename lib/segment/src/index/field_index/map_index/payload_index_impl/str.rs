@@ -3,8 +3,8 @@ use std::iter;
 use std::path::PathBuf;
 
 use blobstore::Blob;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use ecow::EcoString;
 
@@ -55,17 +55,15 @@ impl PayloadFieldIndexRead for MapIndex<str> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition, hw_counter)
+        filter_impl(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        estimate_cardinality_impl(self, condition, hw_counter)
+        estimate_cardinality_impl(self, condition)
     }
 
     fn for_each_payload_block(
@@ -80,10 +78,8 @@ impl PayloadFieldIndexRead for MapIndex<str> {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(condition_checker_impl(self, condition, hw_acc)
-            .map(ConditionCheckerEnum::MapStrWritable))
+        Ok(condition_checker_impl(self, condition).map(ConditionCheckerEnum::MapStrWritable))
     }
 }
 
@@ -98,17 +94,15 @@ where
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition, hw_counter)
+        filter_impl(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        estimate_cardinality_impl(self, condition, hw_counter)
+        estimate_cardinality_impl(self, condition)
     }
 
     fn for_each_payload_block(
@@ -123,9 +117,8 @@ where
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(condition_checker_impl(self, condition, hw_acc).map(S::condition_checker_map_str))
+        Ok(condition_checker_impl(self, condition).map(S::condition_checker_map_str))
     }
 }
 
@@ -161,19 +154,16 @@ fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
 fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
     index: &'a T,
     condition: &'a FieldCondition,
-    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<Option<IdIter<'a>>> {
     let result: Option<IdIter<'a>> = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
-            ValueVariants::String(keyword) => {
-                Some(Box::new(index.get_iterator(keyword.as_str(), hw_counter)))
-            }
+            ValueVariants::String(keyword) => Some(Box::new(index.get_iterator(keyword.as_str()))),
             ValueVariants::Integer(_) => None,
             ValueVariants::Bool(_) => None,
         },
         Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
             AnyVariants::Strings(keywords) => {
-                Some(index.iter_for_values(keywords.iter().map(AsRef::as_ref), hw_counter)?)
+                Some(index.iter_for_values(keywords.iter().map(AsRef::as_ref))?)
             }
             AnyVariants::Integers(integers) => {
                 if integers.is_empty() {
@@ -184,28 +174,28 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
             }
         },
         Some(Match::Except(MatchExcept { except })) => match except {
-            AnyVariants::Strings(keywords) => Some(index.except_set(keywords, hw_counter)?),
+            AnyVariants::Strings(keywords) => Some(index.except_set(keywords)?),
             AnyVariants::Integers(_) => None,
         },
         Some(Match::Prefix(MatchPrefix { prefix })) => {
             // `None` when this index instance has no prefix structure — the
             // caller then falls back to the generic (slow) condition check.
-            match index.prefix_keys_with_counts(prefix, hw_counter)? {
-                Some(keys) => Some(
-                    index.iter_for_values(keys.into_iter().map(|(key, _count)| key), hw_counter)?,
-                ),
+            match index.prefix_keys_with_counts(prefix)? {
+                Some(keys) => {
+                    Some(index.iter_for_values(keys.into_iter().map(|(key, _count)| key))?)
+                }
                 None => None,
             }
         }
         Some(Match::Substring(MatchSubstring { substring })) => {
-            let keys = match index.substring_keys(substring, hw_counter)? {
+            let keys = match index.substring_keys(substring)? {
                 Some(keys) => keys,
                 // No key dictionary on this index instance: enumerate the map
                 // index keys rather than leave the condition to the per-point
                 // checker.
                 None => scan_keys_for_substring(index, substring)?,
             };
-            Some(index.iter_for_values(keys.into_iter(), hw_counter)?)
+            Some(index.iter_for_values(keys.into_iter())?)
         }
         _ => None,
     };
@@ -216,12 +206,11 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
 fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
     index: &'a T,
     condition: &FieldCondition,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>> {
     let estimation = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
             ValueVariants::String(keyword) => {
-                let mut estimation = index.match_cardinality(keyword.as_str(), hw_counter);
+                let mut estimation = index.match_cardinality(keyword.as_str());
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -234,7 +223,7 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
             AnyVariants::Strings(keywords) => {
                 let estimations = keywords
                     .iter()
-                    .map(|keyword| index.match_cardinality(keyword.as_str(), hw_counter))
+                    .map(|keyword| index.match_cardinality(keyword.as_str()))
                     .collect::<Vec<_>>();
                 let estimation = if estimations.is_empty() {
                     CardinalityEstimation::exact(0)
@@ -259,17 +248,15 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
         },
         Some(Match::Except(MatchExcept { except })) => match except {
             AnyVariants::Strings(keywords) => {
-                Some(index.except_cardinality(keywords.iter().map(|k| k.as_str()), hw_counter))
+                Some(index.except_cardinality(keywords.iter().map(|k| k.as_str())))
             }
             AnyVariants::Integers(_) => None,
         },
-        Some(Match::Prefix(MatchPrefix { prefix })) => {
-            index.prefix_stats(prefix, hw_counter)?.map(|stats| {
-                let PrefixIndexStats { keys, postings } = stats;
-                keys_union_cardinality(index, keys, postings)
-                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
-            })
-        }
+        Some(Match::Prefix(MatchPrefix { prefix })) => index.prefix_stats(prefix)?.map(|stats| {
+            let PrefixIndexStats { keys, postings } = stats;
+            keys_union_cardinality(index, keys, postings)
+                .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())))
+        }),
         // Counting the matching keys means scanning every distinct value of the
         // field — the same work as answering the condition. Report the
         // uninformed estimate instead, and leave the scan to `filter`, which
@@ -336,11 +323,14 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixR
     for_each_prefix_payload_block(index, threshold, &key, f)?;
 
     index.for_each_value(|value| {
-        let count = index
-            // `for_each_payload_block` is only used while building HNSW, which
-            // intentionally bypasses hardware measurement.
-            .get_count_for_value(value, &HardwareCounterCell::disposable())
-            .unwrap_or(0);
+        let count = ambient::unmeasured(
+            reason(
+                "`for_each_payload_block` is only used while building HNSW, which \
+                 intentionally bypasses hardware measurement.",
+            ),
+            || index.get_count_for_value(value),
+        )
+        .unwrap_or(0);
         if count > threshold {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
@@ -361,9 +351,10 @@ fn for_each_prefix_payload_block<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefi
     key: &PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
-    // HNSW build; hardware measurement intentionally bypassed (see above).
-    let hw_counter = HardwareCounterCell::disposable();
-    let Some(entries) = index.prefix_keys_with_counts("", &hw_counter)? else {
+    let _scope = ambient::unmeasured_guard(reason(
+        "HNSW build; hardware measurement intentionally bypassed (see above).",
+    ));
+    let Some(entries) = index.prefix_keys_with_counts("")? else {
         return Ok(());
     };
 
@@ -535,7 +526,6 @@ fn heavy_prefix_blocks(entries: &[(EcoString, usize)], threshold: usize) -> Vec<
 fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
-    hw_acc: HwMeasurementAcc,
 ) -> Option<MapConditionChecker<'a, str, T>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
@@ -552,24 +542,21 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
     } = condition;
 
     let cond_match = r#match.as_ref()?;
-    let hw_counter = hw_acc.get_counter_cell();
     match cond_match {
         Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
-        }) => Some(index.match_value_checker(hw_counter, keyword.clone())),
+        }) => Some(index.match_value_checker(keyword.clone())),
         Match::Any(MatchAny {
             any: AnyVariants::Strings(list),
-        }) => Some(index.match_any_checker(hw_counter, list.clone(), false)),
+        }) => Some(index.match_any_checker(list.clone(), false)),
         Match::Except(MatchExcept {
             except: AnyVariants::Strings(list),
-        }) => Some(index.match_any_checker(hw_counter, list.clone(), true)),
+        }) => Some(index.match_any_checker(list.clone(), true)),
         // Served through the forward index; works with or without the prefix
         // structures, which only accelerate `filter`/`estimate_cardinality`.
-        Match::Prefix(MatchPrefix { prefix }) => {
-            Some(index.match_prefix_checker(hw_counter, prefix.as_str()))
-        }
+        Match::Prefix(MatchPrefix { prefix }) => Some(index.match_prefix_checker(prefix.as_str())),
         Match::Substring(MatchSubstring { substring }) => {
-            Some(index.match_substring_checker(hw_counter, substring.as_str()))
+            Some(index.match_substring_checker(substring.as_str()))
         }
         // Conditions this index can't serve: Match::Text/TextAny/Phrase
         // (handled by FullTextIndex) and value-type mismatches (e.g.

@@ -49,6 +49,7 @@ impl TableOfContent {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         } = operation;
 
         {
@@ -205,6 +206,7 @@ impl TableOfContent {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         };
 
         // No shard key mapping on creation, shard keys are set up after creating the collection

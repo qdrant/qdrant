@@ -3,9 +3,9 @@ mod tests;
 
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
+use quantization::turboquant::TQBits;
 use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
@@ -20,7 +20,7 @@ use crate::vector_storage::update_only::VectorToStore;
 /// Writes what [`AppendableMmapTurboVectorStorage`] persists: the encoded
 /// vectors, and the flags marking which slots hold none.
 ///
-/// The quantizer is rebuilt from the dimension and distance rather than read
+/// The quantizer is rebuilt from the dimension, distance and bit width rather than read
 /// back, exactly as the writable side builds it — it carries no learned state,
 /// so the two encode identically.
 ///
@@ -42,8 +42,9 @@ impl UpdateOnlyTurboVectorStorage {
         path: &Path,
         dim: usize,
         distance: Distance,
+        bits: TQBits,
     ) -> OperationResult<Self> {
-        let quantizer = shared::build_quantizer(dim, distance);
+        let quantizer = shared::build_quantizer(dim, distance, bits);
         let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
         let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(
@@ -71,7 +72,6 @@ impl UpdateOnlyTurboVectorStorage {
         fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let encoded_size = self.quantizer.quantized_size();
         let mut run: Vec<Vec<u8>> = Vec::new();
@@ -107,13 +107,12 @@ impl UpdateOnlyTurboVectorStorage {
             fs,
             start_slot as VectorOffsetType,
             run.iter().map(Vec::as_slice),
-            hw_counter,
         )?;
 
         for slot in missing {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(fs, hw_counter)
+        self.deleted.flush(fs)
     }
 }

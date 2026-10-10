@@ -58,4 +58,3 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 * ⚙️ Performance
   * [x] Incremental HNSW indexing
   * [ ] Built-in TTL support
-

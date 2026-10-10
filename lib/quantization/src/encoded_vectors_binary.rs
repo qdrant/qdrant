@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 #[expect(deprecated, reason = "legacy code")]
@@ -69,6 +69,150 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
     encoded_vector: Vec<TBitsStoreType>,
 }
 
+impl<TBitsStoreType: BitsStoreType> EncodedBinVector<TBitsStoreType> {
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(self.encoded_vector.as_slice())
+    }
+
+    fn encode(
+        vector: &[f32],
+        vector_stats: &Option<VectorStats>,
+        encoding: Encoding,
+    ) -> EncodedBinVector<TBitsStoreType> {
+        let encoded_vector_size =
+            get_quantized_vector_size_from_params::<TBitsStoreType>(vector.len(), encoding)
+                / std::mem::size_of::<TBitsStoreType>();
+        let mut encoded_vector = vec![Default::default(); encoded_vector_size];
+
+        match encoding {
+            Encoding::OneBit => Self::encode_one_bit_vector(vector, &mut encoded_vector),
+            Encoding::TwoBits => {
+                Self::encode_two_bits_vector(vector, &mut encoded_vector, vector_stats)
+            }
+            Encoding::OneAndHalfBits => {
+                Self::encode_one_and_half_bits_vector(vector, &mut encoded_vector, vector_stats)
+            }
+        }
+
+        EncodedBinVector { encoded_vector }
+    }
+
+    fn encode_one_bit_vector(vector: &[f32], encoded_vector: &mut [TBitsStoreType]) {
+        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
+        let one = TBitsStoreType::one();
+        for (i, &v) in vector.iter().enumerate() {
+            // flag is true if the value is positive
+            // It's expected that the vector value is in range [-1; 1]
+            if v > 0.0 {
+                encoded_vector[i / bits_count] |= one << (i % bits_count);
+            }
+        }
+    }
+
+    fn encode_two_bits_vector(
+        vector: &[f32],
+        encoded_vector: &mut [TBitsStoreType],
+        vector_stats: &Option<VectorStats>,
+    ) {
+        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
+        let one = TBitsStoreType::one();
+        for i in 0..vector.len() {
+            let value = vector[i];
+            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
+            let (b1, b2) = Self::encode_two_bits_value(value, stats);
+            if b1 {
+                encoded_vector[i / bits_count] |= one << (i % bits_count);
+            }
+            if b2 {
+                let j = vector.len() + i;
+                encoded_vector[j / bits_count] |= one << (j % bits_count);
+            }
+        }
+    }
+
+    fn encode_one_and_half_bits_vector(
+        vector: &[f32],
+        encoded_vector: &mut [TBitsStoreType],
+        vector_stats: &Option<VectorStats>,
+    ) {
+        // One and half bit encoding is a 2bit quantization but first bit,
+        // which describes that value is less that sigma,
+        // is united with the bit from the next value using OR operand.
+        // Scoring for 1.5bit quantization is the same as for 2bit and 1bit quantization.
+        //
+        // Example 1:
+        // `Value1` has `[1,0]` 2bits encoding, value `Value2` has `[1,1]` 2bits encoding.
+        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [1, 1, 1]`.
+        //
+        // Example 2:
+        // `Value1` has `[0,0]` 2bits encoding, value `Value2` has `[1,0]` 2bits encoding.
+        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [0, 1, 0]`.
+        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
+        let one = TBitsStoreType::one();
+        for i in 0..vector.len() {
+            let value = vector[i];
+            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
+            let (b1, b2) = Self::encode_two_bits_value(value, stats);
+            if b1 {
+                encoded_vector[i / bits_count] |= one << (i % bits_count);
+            }
+            if b2 {
+                let j = vector.len() + i / 2;
+                encoded_vector[j / bits_count] |= one << (j % bits_count);
+            }
+        }
+    }
+
+    fn encode_two_bits_value(
+        value: f32,
+        element_stats: Option<&VectorElementStats>,
+    ) -> (bool, bool) {
+        // Two bit encoding is a regular BQ with "zero".
+        // It uses 2 bits per value and encodes values in the following way:
+        // 00 - if the value is in the range (-inf; -SIGMAS];
+        // 10 - if the value is in the range (-SIGMAS; SIGMAS);
+        // 11 - if the value is in the range [SIGMAS; +inf);
+        // where sigma is the standard deviation of the value.
+        //
+        // Scoring for 2bit quantization is the same as for 1bit quantization.
+        let Some(element_stats) = element_stats else {
+            return if value > 0.0 {
+                (true, true)
+            } else {
+                (false, false)
+            };
+        };
+        let VectorElementStats {
+            min: _,
+            max: _,
+            mean,
+            stddev,
+        } = element_stats;
+
+        let sd = *stddev;
+
+        if sd < f32::EPSILON {
+            // If standard deviation is zero,
+            // we cannot calculate z-score count so use regular BQ with zero-comparison.
+            return (value > 0.0, false);
+        }
+
+        // Calculate z-score for the value
+        let v_z = (value - mean) / sd;
+
+        // Define sigmas count which describes a zero range for 2bit encoding.
+        const SIGMAS: f32 = 2.0 / 3.0;
+
+        if v_z <= -SIGMAS {
+            (false, false) // (-inf; -SIGMAS]
+        } else if v_z < SIGMAS {
+            (true, false) // (-SIGMAS; SIGMAS)
+        } else {
+            (true, true) // [SIGMAS; +inf)
+        }
+    }
+}
+
 /// Transposed Scalar Encoded Vector
 ///
 /// This data structure represents a scalar-encoded vector optimized for efficient scoring
@@ -122,6 +266,30 @@ struct Metadata {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     vector_stats: Option<VectorStats>,
+}
+
+/// Encodes vectors the way the storage whose metadata is persisted at a given path
+/// does, for a writer that stores the encoded rows itself.
+pub struct EncoderBin<TBitsStoreType: BitsStoreType> {
+    metadata: Metadata,
+    bits_store_type: PhantomData<TBitsStoreType>,
+}
+
+impl<TBitsStoreType: BitsStoreType> EncoderBin<TBitsStoreType> {
+    pub fn load<Fs: UniversalReadFs>(fs: &Fs, meta_path: &Path) -> UioResult<Self> {
+        Ok(Self {
+            metadata: read_json_via(fs, meta_path)?,
+            bits_store_type: PhantomData,
+        })
+    }
+
+    pub fn encode(&self, vector: &[f32]) -> EncodedBinVector<TBitsStoreType> {
+        EncodedBinVector::<TBitsStoreType>::encode(
+            vector,
+            &self.metadata.vector_stats,
+            self.metadata.encoding,
+        )
+    }
 }
 
 pub trait BitsStoreType:
@@ -463,7 +631,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
                 return Err(EncodingError::Stopped);
             }
 
-            let encoded_vector = Self::encode_vector(vector.as_ref(), &vector_stats, encoding);
+            let encoded_vector = EncodedBinVector::<TBitsStoreType>::encode(
+                vector.as_ref(),
+                &vector_stats,
+                encoding,
+            );
             let encoded_vector_slice = encoded_vector.encoded_vector.as_slice();
             // TODO Safety: bytemuck::Pod type, but is it enough for slice?
             #[expect(deprecated, reason = "legacy code")]
@@ -510,197 +682,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
             bits_store_type: PhantomData,
         })
     }
-
-    /// Resume appending to a previously-persisted storage: reads the fitted metadata a writer
-    /// needs to keep encoding consistently, but — unlike [`Self::load`] — never reads a vector
-    /// back from `encoded_vectors` to validate it. A pure appender doesn't need that guarantee:
-    /// every vector it will ever write is sized from this same metadata, so the invariant
-    /// `load`'s check protects (every stored vector has the size the scoring hot path assumes)
-    /// holds by construction, not by verification. Intended for storage backends that can only
-    /// append and cannot serve that read at all (see `EncodedStorage` implementers that are
-    /// write-only).
-    pub fn reopen_for_write<Fs: UniversalReadFs>(
-        fs: &Fs,
-        encoded_vectors: TStorage,
-        meta_path: &Path,
-    ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
-        Ok(Self {
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-            encoded_vectors,
-            bits_store_type: PhantomData,
-        })
-    }
-
-    fn encode_vector(
-        vector: &[f32],
-        vector_stats: &Option<VectorStats>,
-        encoding: Encoding,
-    ) -> EncodedBinVector<TBitsStoreType> {
-        let encoded_vector_size =
-            get_quantized_vector_size_from_params::<TBitsStoreType>(vector.len(), encoding)
-                / std::mem::size_of::<TBitsStoreType>();
-        let mut encoded_vector = vec![Default::default(); encoded_vector_size];
-
-        match encoding {
-            Encoding::OneBit => Self::encode_one_bit_vector(vector, &mut encoded_vector),
-            Encoding::TwoBits => {
-                Self::encode_two_bits_vector(vector, &mut encoded_vector, vector_stats)
-            }
-            Encoding::OneAndHalfBits => {
-                Self::encode_one_and_half_bits_vector(vector, &mut encoded_vector, vector_stats)
-            }
-        }
-
-        EncodedBinVector { encoded_vector }
-    }
-
-    fn encode_one_bit_vector(vector: &[f32], encoded_vector: &mut [TBitsStoreType]) {
-        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
-        let one = TBitsStoreType::one();
-        for (i, &v) in vector.iter().enumerate() {
-            // flag is true if the value is positive
-            // It's expected that the vector value is in range [-1; 1]
-            if v > 0.0 {
-                encoded_vector[i / bits_count] |= one << (i % bits_count);
-            }
-        }
-    }
-
-    fn encode_two_bits_vector(
-        vector: &[f32],
-        encoded_vector: &mut [TBitsStoreType],
-        vector_stats: &Option<VectorStats>,
-    ) {
-        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
-        let one = TBitsStoreType::one();
-        for i in 0..vector.len() {
-            let value = vector[i];
-            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
-            let (b1, b2) = Self::encode_two_bits_value(value, stats);
-            if b1 {
-                encoded_vector[i / bits_count] |= one << (i % bits_count);
-            }
-            if b2 {
-                let j = vector.len() + i;
-                encoded_vector[j / bits_count] |= one << (j % bits_count);
-            }
-        }
-    }
-
-    fn encode_one_and_half_bits_vector(
-        vector: &[f32],
-        encoded_vector: &mut [TBitsStoreType],
-        vector_stats: &Option<VectorStats>,
-    ) {
-        // One and half bit encoding is a 2bit quantization but first bit,
-        // which describes that value is less that sigma,
-        // is united with the bit from the next value using OR operand.
-        // Scoring for 1.5bit quantization is the same as for 2bit and 1bit quantization.
-        //
-        // Example 1:
-        // `Value1` has `[1,0]` 2bits encoding, value `Value2` has `[1,1]` 2bits encoding.
-        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [1, 1, 1]`.
-        //
-        // Example 2:
-        // `Value1` has `[0,0]` 2bits encoding, value `Value2` has `[1,0]` 2bits encoding.
-        // The resulting 1.5bit encoding will be `[value1[0], value2[0], value1[1] | value2[1]] = [0, 1, 0]`.
-        let bits_count = u8::BITS as usize * std::mem::size_of::<TBitsStoreType>();
-        let one = TBitsStoreType::one();
-        for i in 0..vector.len() {
-            let value = vector[i];
-            let stats = vector_stats.as_ref().map(|stats| &stats.elements_stats[i]);
-            let (b1, b2) = Self::encode_two_bits_value(value, stats);
-            if b1 {
-                encoded_vector[i / bits_count] |= one << (i % bits_count);
-            }
-            if b2 {
-                let j = vector.len() + i / 2;
-                encoded_vector[j / bits_count] |= one << (j % bits_count);
-            }
-        }
-    }
-
-    fn encode_two_bits_value(
-        value: f32,
-        element_stats: Option<&VectorElementStats>,
-    ) -> (bool, bool) {
-        // Two bit encoding is a regular BQ with "zero".
-        // It uses 2 bits per value and encodes values in the following way:
-        // 00 - if the value is in the range (-inf; -SIGMAS];
-        // 10 - if the value is in the range (-SIGMAS; SIGMAS);
-        // 11 - if the value is in the range [SIGMAS; +inf);
-        // where sigma is the standard deviation of the value.
-        //
-        // Scoring for 2bit quantization is the same as for 1bit quantization.
-        let Some(element_stats) = element_stats else {
-            return if value > 0.0 {
-                (true, true)
-            } else {
-                (false, false)
-            };
-        };
-        let VectorElementStats {
-            min: _,
-            max: _,
-            mean,
-            stddev,
-        } = element_stats;
-
-        let sd = *stddev;
-
-        if sd < f32::EPSILON {
-            // If standard deviation is zero,
-            // we cannot calculate z-score count so use regular BQ with zero-comparison.
-            return (value > 0.0, false);
-        }
-
-        // Calculate z-score for the value
-        let v_z = (value - mean) / sd;
-
-        // Define sigmas count which describes a zero range for 2bit encoding.
-        const SIGMAS: f32 = 2.0 / 3.0;
-
-        if v_z <= -SIGMAS {
-            (false, false) // (-inf; -SIGMAS]
-        } else if v_z < SIGMAS {
-            (true, false) // (-SIGMAS; SIGMAS)
-        } else {
-            (true, true) // [SIGMAS; +inf)
-        }
-    }
-
-    /// Encode and persist `vectors` on consecutive ids from `start_id`, handing the storage the
-    /// whole run as one batch. Inherent rather than on the [`EncodedVectors`] trait, so a
-    /// write-only [`EncodedStorageWrite`] storage can call it.
-    pub fn append_many<'a>(
-        &mut self,
-        start_id: PointOffsetType,
-        vectors: impl IntoIterator<Item = &'a [f32]>,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        // Encoded whole rather than streamed: the storage borrows the encoded rows.
-        let encoded: Vec<_> = vectors
-            .into_iter()
-            .map(|vector| {
-                Self::encode_vector(vector, &self.metadata.vector_stats, self.metadata.encoding)
-            })
-            .collect();
-        self.encoded_vectors.upsert_many(
-            start_id,
-            encoded
-                .iter()
-                .map(|vector| bytemuck::cast_slice(vector.encoded_vector.as_slice())),
-            hw_counter,
-        )
-    }
-
-    /// See [`Self::append_many`]: an inherent counterpart of the [`EncodedVectors`] trait's
-    /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
-    pub fn flusher(&self) -> Flusher {
-        self.encoded_vectors.flusher()
-    }
 }
 
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
@@ -741,9 +722,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         query_encoding: QueryEncoding,
     ) -> EncodedQueryBQ<TBitsStoreType> {
         match query_encoding {
-            QueryEncoding::SameAsStorage => {
-                EncodedQueryBQ::Binary(Self::encode_vector(query, vector_stats, encoding))
-            }
+            QueryEncoding::SameAsStorage => EncodedQueryBQ::Binary(EncodedBinVector::<
+                TBitsStoreType,
+            >::encode(
+                query, vector_stats, encoding
+            )),
             QueryEncoding::Scalar8bits => EncodedQueryBQ::Scalar8bits(
                 Self::encode_scalar_query_vector(query, encoding, u8::BITS as usize),
             ),
@@ -904,8 +887,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         TStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.encoded_vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.encoded_vectors.is_cold()
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryBQ<TBitsStoreType> {
@@ -922,42 +905,26 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        self.score_bytes(True, query, encoded_vector, hw_counter)
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
+        self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(
-        &self,
-        query: &EncodedQueryBQ<TBitsStoreType>,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_point(&self, query: &EncodedQueryBQ<TBitsStoreType>, i: PointOffsetType) -> f32 {
         let vector_data = self.encoded_vectors.get_vector_data(i);
 
-        self.score_bytes(True, query, &vector_data, hw_counter)
+        self.score_bytes(True, query, &vector_data)
     }
 
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         let vector_data_1 = self.encoded_vectors.get_vector_data(i);
         let vector_data_2 = self.encoded_vectors.get_vector_data(j);
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(vector_data_1.len() + vector_data_2.len());
+        let mul = usize::from(self.encoded_vectors.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((vector_data_1.len() + vector_data_2.len()) * mul);
 
         // TODO Safety
         #[expect(deprecated, reason = "legacy code")]
@@ -966,9 +933,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         #[expect(deprecated, reason = "legacy code")]
         let vector_data_usize_2 = unsafe { transmute_from_u8_to_slice(&vector_data_2) };
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(vector_data_usize_2.len());
+        HwMetric::Cpu.bump(vector_data_usize_2.len());
 
         self.calculate_metric(vector_data_usize_1, vector_data_usize_2, 1)
     }
@@ -990,18 +955,15 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         }))
     }
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        let encoded_vector =
-            Self::encode_vector(vector, &self.metadata.vector_stats, self.metadata.encoding);
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
+        let encoded_vector = EncodedBinVector::<TBitsStoreType>::encode(
+            vector,
+            &self.metadata.vector_stats,
+            self.metadata.encoding,
+        );
         self.encoded_vectors.upsert_vector(
             id,
             bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
-            hw_counter,
         )
     }
 
@@ -1042,18 +1004,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     type SupportsBytes = True;
 
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
         // TODO Safety
         #[expect(deprecated, reason = "legacy code")]
         let vector_data_usize = unsafe { transmute_from_u8_to_slice(bytes) };
 
-        hw_counter.cpu_counter().incr_delta(bytes.len());
+        HwMetric::Cpu.bump(bytes.len());
 
         match query {
             EncodedQueryBQ::Binary(encoded_vector) => {

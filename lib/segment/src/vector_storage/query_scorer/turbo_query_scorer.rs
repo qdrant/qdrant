@@ -1,8 +1,9 @@
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwScale;
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::DenseVector;
 use crate::vector_storage::TurboScoring;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -13,56 +14,56 @@ use crate::vector_storage::query_scorer::QueryScorer;
 /// against the stored TurboQuant bytes, delegating the actual arithmetic and
 /// the metric sign convention to the storage.
 pub struct TurboQueryScorer<'a, TStorage: TurboScoring> {
+    hw: HwScale,
     query: EncodedQueryTQ,
     storage: &'a TStorage,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
-    pub fn new(
-        query: DenseVector,
-        storage: &'a TStorage,
-        mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    pub fn new(query: DenseVector, storage: &'a TStorage) -> Self {
         // Preprocess (per distance) and precompute the query once, so the
         // Hadamard rotation runs here rather than per scored point.
         let query = storage.preprocess_query(query);
 
-        hardware_counter.set_cpu_multiplier(storage.quantized_vector_size());
-        if storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(storage.quantized_vector_size());
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
-
         Self {
+            hw: HwScale {
+                cpu: storage.quantized_vector_size(),
+                vector_io_read: if storage.is_cold() {
+                    storage.quantized_vector_size()
+                } else {
+                    0
+                },
+            },
             query,
             storage,
-            hardware_counter,
         }
     }
 }
 
 impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
         let bytes = self.storage.get_quantized_vector(idx);
-        self.hardware_counter.vector_io_read().incr();
-        self.hardware_counter.cpu_counter().incr();
-        self.storage.score_query_bytes(&self.query, &bytes)
+        self.hw.vector_io_read(1);
+        self.hw.cpu(1);
+        Ok(self.storage.score_query_bytes(&self.query, &bytes))
     }
 
     #[inline]
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
-        self.hardware_counter.vector_io_read().incr_delta(ids.len());
-        self.hardware_counter.cpu_counter().incr_delta(ids.len());
+        self.hw.vector_io_read(ids.len());
+        self.hw.cpu(ids.len());
 
-        self.storage.score_query_batch(&self.query, ids, scores);
+        self.storage.score_query_batch(&self.query, ids, scores)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.hardware_counter.cpu_counter().incr();
+        self.hw.cpu(1);
         self.storage.score_internal_encoded(point_a, point_b)
     }
 
@@ -70,7 +71,7 @@ impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
         // `bytes` are an already-fetched TQ-encoded vector: one vector of CPU
         // work, no IO (the caller owns the read).
-        self.hardware_counter.cpu_counter().incr();
+        self.hw.cpu(1);
         self.storage.score_query_bytes(&self.query, bytes)
     }
 }

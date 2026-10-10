@@ -361,7 +361,11 @@ impl<'a> NamedVectors<'a> {
             Some(VectorStorageDatatype::Float16) => config
                 .distance
                 .preprocess_vector::<VectorElementTypeHalf>(dense_vector),
-            Some(VectorStorageDatatype::Turbo4) => config
+            Some(
+                VectorStorageDatatype::Turbo4
+                | VectorStorageDatatype::Turbo8
+                | VectorStorageDatatype::Turbo16,
+            ) => config
                 .distance
                 .preprocess_vector::<VectorElementType>(dense_vector), // Turbo only needs normal preprocessing.
         }

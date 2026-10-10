@@ -5,11 +5,13 @@
 use std::collections::HashMap;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::Reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
 use rayon::ThreadPool;
 use rayon::prelude::*;
+use segment::common::deferred_points::segment_deferred_internal_id;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
 use segment::segment::update_only::UpdateOnlySegmentEnum;
@@ -20,6 +22,7 @@ use uuid::Uuid;
 use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::holder::LookupSegmentHolder;
+use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
@@ -60,6 +63,11 @@ pub struct PointApplyRecord {
     /// The write-target slot a stored point left behind without a tombstone:
     /// appending the point records a mapping that supersedes it.
     pub superseded: Option<(Uuid, PointOffsetType)>,
+    /// Other segments' copies of a stored point left in place because the
+    /// point landed past the deferred-points threshold: the new copy stays
+    /// invisible until a rebuild indexes it, so these keep serving readers
+    /// until the rebuild's deduplication retires them.
+    pub shadowed: Vec<(Uuid, PointOffsetType)>,
 }
 
 /// The per-point action of [`PointApplyRecord`], mirroring the counts on
@@ -92,37 +100,6 @@ impl PointApplyKind {
     }
 }
 
-/// One copy of a point: where it lives, and at what version.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct PointLocation {
-    pub(super) segment: Uuid,
-    pub(super) internal_id: PointOffsetType,
-    pub(super) version: SeqNumberType,
-    /// Whether the holding segment accepts appends; breaks a version tie.
-    appendable: bool,
-}
-
-impl PointLocation {
-    /// Whether this copy of the point supersedes `other`: the higher version
-    /// wins, and on a tie the appendable copy is the live one (a point being
-    /// moved between segments exists in both at the same version).
-    fn supersedes(&self, other: &Self) -> bool {
-        (self.version, self.appendable) > (other.version, other.appendable)
-    }
-}
-
-/// Every copy of one point across the shard's segments.
-pub(super) struct PointLocations {
-    /// The live copy: its version decides whether the batch is already
-    /// applied, and its slot is the one a resolve reads from.
-    pub(super) newest: PointLocation,
-    /// Every slot the point occupies, `newest`'s included. A rewrite or a
-    /// delete retires them all — tombstoning only the newest slot would let
-    /// an older duplicate (left by an interrupted move) outlive the point
-    /// and, on a delete, resurrect it.
-    pub(super) slots: Vec<(Uuid, PointOffsetType)>,
-}
-
 impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// Apply a batch of update operations, each paired with the operation
     /// number to record as its version. Operations are expected in ascending
@@ -153,7 +130,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             return Ok((self, UpdateBatchOutcome::default()));
         }
 
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let segments = self.segments.read();
 
         // 1-3. Locate, read, materialize — the decision stage shared with
@@ -164,8 +141,21 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         let mut outcome = UpdateBatchOutcome::default();
         let mut to_store: Vec<FullyQualifiedPoint> = Vec::new();
+        // Index into `outcome.points` of each point in `to_store`.
+        let mut stored_records: Vec<usize> = Vec::new();
         let mut to_tombstone: AHashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = AHashMap::new();
+        // Other segments' copies of stored points, keyed by the point's index
+        // in `to_store`: retired only once the store tells whether the new
+        // copy is deferred.
+        let mut stored_retirements: Vec<(usize, Uuid, PointOffsetType)> = Vec::new();
         let write_target_uuid = segments.write_target_uuid();
+        let deferred_cutoff = match (write_target_uuid, self.deferred_threshold_kb) {
+            (Some(uuid), Some(threshold_kb)) => segment_deferred_internal_id(
+                &segments.get(uuid)?.read().segment_config,
+                threshold_kb,
+            ),
+            (None, _) | (_, None) => None,
+        };
 
         for point in resolved {
             let PointPreview {
@@ -190,6 +180,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 }
                 PointAction::Store(point) => {
                     to_store.push(*point);
+                    stored_records.push(outcome.points.len());
                     outcome.stored += 1;
                     PointApplyKind::Stored
                 }
@@ -204,6 +195,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                 kind,
                 tombstoned: Vec::new(),
                 superseded: None,
+                shadowed: Vec::new(),
             };
 
             if kind.retires_slots() {
@@ -215,8 +207,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                     // copy does have to stop resolving — an older duplicate left
                     // by an interrupted move included — and a delete retires the
                     // point everywhere it sits.
-                    if kind == PointApplyKind::Stored && Some(segment) == write_target_uuid {
-                        record.superseded = Some((segment, internal_id));
+                    if kind == PointApplyKind::Stored {
+                        if Some(segment) == write_target_uuid {
+                            record.superseded = Some((segment, internal_id));
+                        } else {
+                            stored_retirements.push((to_store.len() - 1, segment, internal_id));
+                        }
                         continue;
                     }
                     to_tombstone
@@ -249,15 +245,34 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             let writer = get_writer(&mut self.writers, uuid)?;
 
             let instant = std::time::Instant::now();
-            writer
+            let new_slots = writer
                 .as_appendable_mut()
                 .ok_or_else(|| {
                     OperationError::service_error(format!(
                         "Write target {uuid} was opened as delete-only, it cannot store points",
                     ))
                 })?
-                .store_points(&self.pool, &mut to_store, &hw_counter)?;
+                .store_points(&self.pool, &mut to_store)?;
             log::trace!(target: LOG_TARGET, "store_points took: {:?}", instant.elapsed());
+
+            // A copy stored past the cutoff is deferred: retiring the point's
+            // other copies would leave readers that hide deferred points with
+            // none, so they stay until a rebuild deduplicates them, as the
+            // server keeps the source of a copy-on-write move.
+            for (store_index, segment, internal_id) in stored_retirements.drain(..) {
+                let record = &mut outcome.points[stored_records[store_index]];
+                let is_deferred =
+                    deferred_cutoff.is_some_and(|cutoff| new_slots[store_index] >= cutoff);
+                if is_deferred {
+                    record.shadowed.push((segment, internal_id));
+                } else {
+                    to_tombstone
+                        .entry(segment)
+                        .or_default()
+                        .push((record.id, internal_id));
+                    record.tombstoned.push((segment, internal_id));
+                }
+            }
 
             // The write target's retirements happen after the store, since
             // every write is durable when it returns and the reverse order
@@ -292,10 +307,8 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         let segments = self.segments.read();
         self.pool.install(|| {
             written.par_iter().try_for_each(|&uuid| {
-                // Not shared across segments: `HardwareCounterCell` is not
-                // `Sync`, and the writer's accounting is disposable.
-                let hw_counter = HardwareCounterCell::disposable();
-                segments.get(uuid)?.write().live_reload(&hw_counter)
+                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+                segments.get(uuid)?.write().live_reload()
             })
         })
     }
@@ -321,62 +334,15 @@ pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
     let ids: Vec<PointIdType> = plan.point_ids().collect();
-
-    let per_segment: Vec<Vec<(PointIdType, PointLocation)>> = pool.install(|| {
+    let per_segment = pool.install(|| {
         segments
             .iter()
             .collect::<Vec<_>>()
             .into_par_iter()
-            .map(|(uuid, segment)| {
-                let segment = segment.read();
-                let appendable = segment.appendable;
-
-                let mut found_ids = Vec::new();
-                let mut internal_ids = Vec::new();
-                segment.locate_points(ids.iter().copied(), |id, internal_id| {
-                    found_ids.push(id);
-                    internal_ids.push(internal_id);
-                })?;
-                let versions = segment.point_versions(&internal_ids)?;
-
-                let located = found_ids
-                    .into_iter()
-                    .zip(internal_ids)
-                    .map(|(id, internal_id)| {
-                        let location = PointLocation {
-                            segment: uuid,
-                            internal_id,
-                            // A slot without a stored version is unwritten,
-                            // which compares as version 0.
-                            version: versions.get(&internal_id).copied().unwrap_or(0),
-                            appendable,
-                        };
-                        (id, location)
-                    })
-                    .collect();
-                Ok(located)
-            })
+            .map(|(uuid, segment)| locate_in(uuid, &*segment.read(), &ids))
             .collect::<OperationResult<Vec<_>>>()
     })?;
-
-    let mut locations: AHashMap<PointIdType, PointLocations> = AHashMap::new();
-    for (id, location) in per_segment.into_iter().flatten() {
-        let slot = (location.segment, location.internal_id);
-        locations
-            .entry(id)
-            .and_modify(|current| {
-                current.slots.push(slot);
-                if location.supersedes(&current.newest) {
-                    current.newest = location;
-                }
-            })
-            .or_insert_with(|| PointLocations {
-                newest: location,
-                slots: vec![slot],
-            });
-    }
-
-    Ok(locations)
+    Ok(merge_locations(per_segment))
 }
 
 /// Read the stored form of the points whose mutations need it, one batched
@@ -412,10 +378,8 @@ pub(super) fn read_stored_points<Fs: UniversalReadFsAsync>(
                     .iter()
                     .map(|(_, internal_id)| *internal_id)
                     .collect();
-                // Not shared with the caller's counter: `HardwareCounterCell`
-                // is not `Sync`, and the writer's accounting is disposable.
-                let hw_counter = HardwareCounterCell::disposable();
-                let points = segment.read_stored_points(&internal_ids, &hw_counter)?;
+                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+                let points = segment.read_stored_points(&internal_ids)?;
 
                 Ok(entries.into_iter().map(|(id, _)| id).zip(points).collect())
             })

@@ -8,7 +8,6 @@ use std::alloc::Layout;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
 
@@ -72,23 +71,20 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
         self.datatype
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.storage_impl.is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.storage_impl.is_cold()
     }
 
     pub fn raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         build_quantized_raw_scorer(
             &self.storage_impl,
             &self.config.quantization_config,
             &self.distance,
             self.datatype,
-            self.storage_impl.is_on_disk(),
             query,
-            hardware_counter,
         )
     }
 
@@ -97,10 +93,8 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
     pub fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.storage_impl
-            .raw_internal_scorer(point_id, hardware_counter)
+        self.storage_impl.raw_internal_scorer(point_id)
     }
 
     pub fn default_rescoring(&self) -> bool {
@@ -151,20 +145,15 @@ impl<S: UniversalRead> QuantizedVectorsRead for ReadOnlyQuantizedVectors<S> {
         self.default_rescoring()
     }
 
-    fn raw_scorer<'a>(
-        &'a self,
-        query: QueryVector,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        self.raw_scorer(query, hardware_counter)
+    fn raw_scorer<'a>(&'a self, query: QueryVector) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        self.raw_scorer(query)
     }
 
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.raw_internal_scorer(point_id, hardware_counter)
+        self.raw_internal_scorer(point_id)
     }
 }
 

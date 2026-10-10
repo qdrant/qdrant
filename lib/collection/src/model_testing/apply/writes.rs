@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::json_path::JsonPath;
 use segment::types::{Payload, PayloadFieldSchema, PointIdType, Slice, VectorNameBuf};
@@ -289,12 +289,8 @@ pub(super) async fn apply_create_index(
     schema: &PayloadFieldSchema,
 ) {
     collection
-        .create_payload_index_with_wait(
-            field.clone(),
-            schema.clone(),
-            true,
-            HwMeasurementAcc::new(),
-        )
+        .create_payload_index_with_wait(field.clone(), schema.clone(), true)
+        .measured(AmbientContext::new())
         .await
         .expect("create index failed");
 }
@@ -463,7 +459,8 @@ pub(super) async fn apply_create_vector_name(
     // the Collection config stale and Search would error with "Vector with name X is not
     // configured in this collection".
     collection
-        .create_named_vector(name.to_string(), config.clone(), HwMeasurementAcc::new())
+        .create_named_vector(name.to_string(), config.clone())
+        .measured(AmbientContext::new())
         .await
         .unwrap_or_else(|e| panic!("create_named_vector({name:?}) failed: {e:?}"));
     active.insert(name.to_string());

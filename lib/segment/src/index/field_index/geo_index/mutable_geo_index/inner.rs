@@ -3,7 +3,7 @@ use std::collections::btree_map::Entry;
 use std::path::PathBuf;
 
 use ahash::AHashSet;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
@@ -121,20 +121,15 @@ impl InMemoryGeoIndex {
         &mut self,
         idx: PointOffsetType,
         geo_points: Vec<GeoPoint>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if geo_points.is_empty() {
             return Ok(());
         }
 
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_write_counter()
-            .write_back_counter();
-
         let geo_hashes = geo_points
             .iter()
             .map(|geo_point| {
-                hw_cell_wb.incr_delta(size_of_val(geo_point));
+                HwMetric::PayloadIndexIoWrite.bump(size_of_val(geo_point));
                 encode_max_precision(geo_point.lon.0, geo_point.lat.0).map_err(|e| {
                     OperationError::service_error(format!("Malformed geo points: {e}"))
                 })
@@ -154,7 +149,7 @@ impl InMemoryGeoIndex {
             self.increment_hash_value_counts(geo_hash);
         }
 
-        hw_cell_wb.incr_delta(geo_hashes.len() * size_of::<PointOffsetType>());
+        HwMetric::PayloadIndexIoWrite.bump(geo_hashes.len() * size_of::<PointOffsetType>());
         self.increment_hash_point_counts(&geo_hashes);
 
         self.points_values_count += num_geo_points;
@@ -243,26 +238,17 @@ impl GeoIndexRead for InMemoryGeoIndex {
         self.max_values_per_point
     }
 
-    fn points_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn points_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self.points_per_hash.get(&hash).copied().unwrap_or(0))
     }
 
-    fn values_of_hash(
-        &self,
-        hash: GeoHash,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<usize> {
+    fn values_of_hash(&self, hash: GeoHash) -> OperationResult<usize> {
         Ok(self.values_per_hash.get(&hash).copied().unwrap_or(0))
     }
 
     fn check_values_any(
         &self,
         idx: PointOffsetType,
-        _hw_counter: &HardwareCounterCell,
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
         Ok(self
@@ -358,7 +344,7 @@ impl GeoIndexRead for InMemoryGeoIndex {
         pph_bytes + vph_bytes + pm_bytes + ptv_bytes
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 

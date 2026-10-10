@@ -4,7 +4,7 @@ mod tests;
 use std::path::Path;
 
 use blobstore::config::LogstoreConfig;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 
@@ -59,19 +59,14 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
         &mut self,
         fs: &impl UniversalAppendFs<AppendFile = S>,
         payloads: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for (internal_id, payload) in payloads {
             if payload.is_empty() {
                 continue;
             }
 
-            self.storage.put(
-                fs,
-                internal_id,
-                payload,
-                hw_counter.ref_payload_io_write_counter(),
-            )?;
+            self.storage
+                .put(fs, internal_id, payload, HwMetric::PayloadIoWrite)?;
         }
 
         // Puts only buffer, the flush is what makes them durable.

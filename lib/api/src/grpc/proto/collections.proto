@@ -3,6 +3,7 @@ package qdrant;
 
 import "json_with_int.proto";
 import "qdrant_common.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Qdrant.Client.Grpc";
 
@@ -12,6 +13,8 @@ enum Datatype {
   Uint8 = 2;
   Float16 = 3;
   Turbo4 = 4;
+  Turbo8 = 5;
+  Turbo16 = 6;
 }
 
 // Memory placement of a component's data.
@@ -423,6 +426,7 @@ enum TurboQuantBitSize{
   Bits1_5 = 1;
   Bits2 = 2;
   Bits4 = 3;
+  Bits8 = 4;
 }
 
 message QuantizationConfig {
@@ -803,6 +807,19 @@ message TextIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 11;
+  // Enable ranking points by BM25 over this field.
+  // Implies `phrase_matching: true`. Changing it rebuilds the index.
+  // Default: disabled.
+  optional TextScoringParams scoring = 12;
+}
+
+enum TextScoringType {
+  Bm25 = 0;
+}
+
+message TextScoringParams {
+  // How documents are ranked
+  TextScoringType type = 1;
 }
 
 message StemmingAlgorithm {
@@ -929,6 +946,8 @@ message CollectionInfo {
   repeated CollectionWarning warnings = 11;
   // Update queue info
   UpdateQueueInfo update_queue = 12;
+  // Time of the collection creation, absent for collections created before it was recorded
+  optional google.protobuf.Timestamp created_at = 13;
 }
 
 message ChangeAliases {

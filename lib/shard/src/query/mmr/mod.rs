@@ -3,8 +3,6 @@ mod lazy_matrix;
 #[cfg(test)]
 mod tests;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoreType;
 use indexmap::IndexSet;
 use itertools::Itertools as _;
@@ -33,7 +31,6 @@ use super::MmrInternal;
 /// * `distance` - The distance metric of the collection.
 /// * `multivector_config` - The multivector configuration of the collection, if any.
 /// * `limit` - The maximum number of points to return.
-/// * `hw_measurement_acc` - The hardware measurement accumulator.
 ///
 /// # Returns
 ///
@@ -44,7 +41,6 @@ pub fn mmr_from_points_with_vector(
     distance: Distance,
     multivector_config: Option<MultiVectorConfig>,
     limit: usize,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> OperationResult<Vec<ScoredPoint>> {
     let (vectors, candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
@@ -66,12 +62,7 @@ pub fn mmr_from_points_with_vector(
         return Ok(candidates);
     }
 
-    let volatile_storage = create_volatile_storage(
-        &vectors,
-        distance,
-        multivector_config,
-        hw_measurement_acc.get_counter_cell(),
-    )?;
+    let volatile_storage = create_volatile_storage(&vectors, distance, multivector_config)?;
 
     if candidates.len() < 2 {
         // can't compute MMR for less than 2 points, return with original score
@@ -79,23 +70,19 @@ pub fn mmr_from_points_with_vector(
     }
 
     // get similarities against query
-    let query_similarities = relevance_similarities(
-        &volatile_storage,
-        mmr.vector,
-        hw_measurement_acc.get_counter_cell(),
-    )?;
+    let query_similarities = relevance_similarities(&volatile_storage, mmr.vector)?;
 
     // get similarity matrix between candidates
-    let similarity_matrix = similarity_matrix(&volatile_storage, vectors, hw_measurement_acc)?;
+    let similarity_matrix = similarity_matrix(&volatile_storage, vectors)?;
 
     // compute MMR
-    Ok(maximal_marginal_relevance(
+    maximal_marginal_relevance(
         candidates,
         query_similarities,
         similarity_matrix,
         mmr.lambda.0,
         limit,
-    ))
+    )
 }
 
 /// Creates a volatile (in-memory and not persistent) vector storage and inserts the vectors in the provided order.
@@ -103,7 +90,6 @@ fn create_volatile_storage(
     vectors: &[VectorInternal],
     distance: Distance,
     multivector_config: Option<MultiVectorConfig>,
-    hw_counter: HardwareCounterCell,
 ) -> OperationResult<VectorStorageEnum> {
     // Create temporary vector storage
     let mut volatile_storage = {
@@ -132,7 +118,7 @@ fn create_volatile_storage(
 
     // Populate storage with vectors
     for (key, vector) in (0..).zip(vectors) {
-        volatile_storage.insert_vector(key, VectorRef::from(vector), &hw_counter)?;
+        volatile_storage.insert_vector(key, VectorRef::from(vector))?;
     }
 
     Ok(volatile_storage)
@@ -142,15 +128,14 @@ fn create_volatile_storage(
 fn relevance_similarities(
     volatile_storage: &VectorStorageEnum,
     query_vector: VectorInternal,
-    hw_counter: HardwareCounterCell,
 ) -> OperationResult<Vec<ScoreType>> {
     let query = QueryVector::Nearest(query_vector);
-    let query_scorer = new_raw_scorer(query, volatile_storage, hw_counter)?;
+    let query_scorer = new_raw_scorer(query, volatile_storage)?;
 
     // get similarity between candidates and query
     let ids: Vec<_> = (0..volatile_storage.total_vector_count() as u32).collect();
     let mut similarities = vec![0.0; ids.len()];
-    query_scorer.score_points(&ids, &mut similarities);
+    query_scorer.score_points(&ids, &mut similarities)?;
 
     Ok(similarities)
 }
@@ -163,7 +148,6 @@ fn relevance_similarities(
 fn similarity_matrix(
     volatile_storage: &VectorStorageEnum,
     vectors: Vec<VectorInternal>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> OperationResult<LazyMatrix<'_>> {
     let num_vectors = vectors.len();
 
@@ -179,7 +163,7 @@ fn similarity_matrix(
         ));
     }
 
-    LazyMatrix::new(vectors, volatile_storage, hw_measurement_acc)
+    LazyMatrix::new(vectors, volatile_storage)
 }
 
 /// Maximal Marginal Relevance (MMR) algorithm
@@ -200,10 +184,10 @@ fn maximal_marginal_relevance(
     mut similarity_matrix: LazyMatrix,
     lambda: f32,
     limit: usize,
-) -> Vec<ScoredPoint> {
+) -> OperationResult<Vec<ScoredPoint>> {
     let num_candidates = candidates.len();
     if num_candidates == 0 || limit == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let mut selected_indices = Vec::with_capacity(limit.min(num_candidates));
@@ -223,7 +207,7 @@ fn maximal_marginal_relevance(
     while selected_indices.len() < limit && !remaining_indices.is_empty() {
         let best_candidate = remaining_indices
             .iter()
-            .map(|&candidate_idx| {
+            .map(|&candidate_idx| -> OperationResult<_> {
                 let relevance_score = query_similarities[candidate_idx];
 
                 debug_assert!(
@@ -238,16 +222,18 @@ fn maximal_marginal_relevance(
                     .map(|selected_idx| {
                         similarity_matrix.get_similarity(candidate_idx, *selected_idx)
                     })
-                    .max_by_key(|&sim| OrderedFloat(sim))
+                    .process_results(|sims| sims.max_by_key(|&sim| OrderedFloat(sim)))?
                     .unwrap_or(0.0);
 
                 // Calculate MMR score: λ * relevance - (1 - λ) * max_similarity_to_selected
                 let mmr_score =
                     lambda * relevance_score - (1.0 - lambda) * max_similarity_to_selected;
 
-                (candidate_idx, mmr_score)
+                Ok((candidate_idx, mmr_score))
             })
-            .max_by_key(|(_candidate_idx, mmr_score)| OrderedFloat(*mmr_score));
+            .process_results(|scored| {
+                scored.max_by_key(|(_candidate_idx, mmr_score)| OrderedFloat(*mmr_score))
+            })?;
 
         if let Some((selected_idx, _mmr_score)) = best_candidate {
             // Select the best candidate and remove from remaining
@@ -259,7 +245,7 @@ fn maximal_marginal_relevance(
     }
 
     // Convert selected indices to ScoredPoint results
-    selected_indices
+    Ok(selected_indices
         .into_iter()
         .map(|idx| {
             // Use original score, already postprocessed.
@@ -274,5 +260,5 @@ fn maximal_marginal_relevance(
             //        we are only interested in the selection of points, not the score itself.
             candidates[idx].clone()
         })
-        .collect()
+        .collect())
 }

@@ -15,8 +15,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::defaults::log_load_timing;
+use common::reason::reason;
 use fs_err as fs;
 
 use super::field_index::FieldIndex;
@@ -25,10 +26,10 @@ use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexTyp
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
-use crate::index::payload_config::{self, PayloadConfig};
+use crate::index::payload_config::PayloadConfig;
 use crate::index::visited_pool::VisitedPool;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
-use crate::types::{Memory, PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
+use crate::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
 
 /// Desired storage type for payload indices of a segment.
@@ -215,11 +216,9 @@ impl StructPayloadIndex {
             // Close any partially-loaded index storages first: the rebuild wipes
             // their directories before building fresh.
             indexes.clear();
-            indexes = self.build_field_indexes(
-                field,
-                &payload_schema.schema,
-                &HardwareCounterCell::disposable(), // Internal operation
-            )?;
+            indexes = ambient::unmeasured(reason("Internal operation"), || {
+                self.build_field_indexes(field, &payload_schema.schema)
+            })?;
 
             // The durable config keeps listing this field: persist the rebuilt data
             // now, or a crash before the next flush cycle would leave the config
@@ -335,25 +334,15 @@ impl StructPayloadIndex {
         index_type: &FullPayloadIndexType,
         payload_schema: &PayloadFieldSchema,
     ) -> IndexSelector<'_> {
-        match index_type.storage_type {
-            payload_config::StorageType::Gridstore => IndexSelector::Appendable { dir: &self.path },
-            payload_config::StorageType::Mmap { is_on_disk } => {
-                // The persisted flag records the structural variant (heap wrapper vs mmap) the
-                // index was built with; the schema's requested placement refines cold vs cached
-                // for the mmap variant.
-                let memory = if is_on_disk {
-                    match payload_schema.memory_placement() {
-                        Memory::Cached => Memory::Cached,
-                        Memory::Cold | Memory::Pinned => Memory::Cold,
-                    }
-                } else {
-                    Memory::Pinned
-                };
-                IndexSelector::NonAppendable {
-                    dir: &self.path,
-                    memory,
-                }
-            }
+        match index_type
+            .storage_type
+            .immutable_memory(payload_schema.memory_placement())
+        {
+            None => IndexSelector::Appendable { dir: &self.path },
+            Some(memory) => IndexSelector::NonAppendable {
+                dir: &self.path,
+                memory,
+            },
         }
     }
 
@@ -378,7 +367,7 @@ impl StructPayloadIndex {
     pub fn clear_cache_if_on_disk(&self) -> OperationResult<()> {
         for field_indexes in self.field_indexes.values() {
             for index in field_indexes {
-                if index.is_on_disk() {
+                if index.is_cold() {
                     index.clear_cache()?;
                 }
             }

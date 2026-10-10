@@ -2,8 +2,8 @@
 //!
 //! Opens the TurboQuant-encoded blob and deletion flags over an arbitrary
 //! [`UniversalRead`] backend (mmap / cache / remote), so a read-only segment can
-//! retrieve and score a `Turbo4`-typed vector storage. The quantizer is fully
-//! determined by `(dim, distance)` (fixed TQDT constants), so nothing beyond the
+//! retrieve and score a TurboQuant-typed vector storage. The quantizer is fully
+//! determined by `(dim, distance, bits)` (fixed TQDT constants), so nothing beyond the
 //! encoded bytes and flags is read from disk.
 //!
 //! Mirroring the reference read-only dense storages, the on-disk layout is a
@@ -69,17 +69,62 @@ impl<S: UniversalRead> std::fmt::Debug for ReadOnlyChunkedTurboVectorStorage<S> 
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
+    use quantization::turboquant::TQBits;
     use tempfile::Builder;
 
     use super::*;
     use crate::common::live_reload::LiveReload;
     use crate::data_types::vectors::VectorRef;
     use crate::vector_storage::turbo::open_appendable_turbo_vector_storage;
-    use crate::vector_storage::{VectorStorage, VectorStorageRead};
+    use crate::vector_storage::{TurboScoring, VectorStorage, VectorStorageRead};
+
+    #[test]
+    fn score_query_batch_reports_a_failed_read() {
+        const DIM: usize = 4;
+        let dir = Builder::new()
+            .prefix("ro_turbo_read_err")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+        {
+            let mut writer = open_appendable_turbo_vector_storage(
+                dir.path(),
+                DIM,
+                Distance::Dot,
+                TQBits::Bits4,
+                false,
+            )
+            .unwrap();
+            for id in 0..8 {
+                writer
+                    .insert_vector(id, VectorRef::from(&vec![1.0; DIM]))
+                    .unwrap();
+            }
+            writer.flusher()().unwrap();
+        }
+
+        let reader = ReadOnlyChunkedTurboVectorStorage::<MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            Populate::No,
+        )
+        .unwrap();
+        let query = reader.preprocess_query(vec![1.0; DIM]);
+        let mut scores = [0.0; 2];
+        assert!(
+            reader
+                .score_query_batch(&query, &[0, 12], &mut scores)
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
 
     /// A point appended *after* the reader opened, and soft-deleted only on
     /// disk, must show up as deleted once `live_reload` folds in the persisted
@@ -91,12 +136,18 @@ mod tests {
             .prefix("ro_turbo_appended_deleted")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
-        let mut writer =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+        let mut writer = open_appendable_turbo_vector_storage(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            false,
+        )
+        .unwrap();
         writer
-            .insert_vector(0, VectorRef::from(&vec![1.0; DIM]), &hw)
+            .insert_vector(0, VectorRef::from(&vec![1.0; DIM]))
             .unwrap();
         writer.flusher()().unwrap();
 
@@ -105,12 +156,13 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             Populate::No,
         )
         .unwrap();
 
         writer
-            .insert_vector(1, VectorRef::from(&vec![0.0; DIM]), &hw)
+            .insert_vector(1, VectorRef::from(&vec![0.0; DIM]))
             .unwrap();
         writer.delete_vector(1).unwrap();
         writer.flusher()().unwrap();
@@ -122,7 +174,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 
@@ -140,13 +191,19 @@ mod tests {
             .prefix("ro_turbo_appended_batch")
             .tempdir()
             .unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
-        let mut writer =
-            open_appendable_turbo_vector_storage(dir.path(), DIM, Distance::Dot, false).unwrap();
+        let mut writer = open_appendable_turbo_vector_storage(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            false,
+        )
+        .unwrap();
         for id in 0..3u32 {
             writer
-                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]), &hw)
+                .insert_vector(id, VectorRef::from(&vec![1.0; DIM]))
                 .unwrap();
         }
         writer.flusher()().unwrap();
@@ -156,13 +213,14 @@ mod tests {
             dir.path(),
             DIM,
             Distance::Dot,
+            TQBits::Bits4,
             Populate::No,
         )
         .unwrap();
 
         for id in 3..8u32 {
             writer
-                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]), &hw)
+                .insert_vector(id, VectorRef::from(&vec![0.0; DIM]))
                 .unwrap();
         }
         let deleted_appended: Vec<PointOffsetType> = vec![4, 6];
@@ -178,7 +236,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&new_ids).unwrap(),
-                &hw,
             )
             .unwrap();
 

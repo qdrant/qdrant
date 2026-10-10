@@ -6,8 +6,8 @@ mod test_congruence;
 
 use std::path::PathBuf;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
@@ -17,6 +17,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::FullTextIn
 use crate::index::field_index::{
     FieldIndex, FieldIndexBuilderTrait as _, PayloadFieldIndexRead, ValueIndexer,
 };
+use crate::types::Memory;
 
 fn movie_titles() -> Vec<String> {
     vec![
@@ -177,6 +178,7 @@ fn test_prefix_search() {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     };
 
     let mut index =
@@ -184,22 +186,19 @@ fn test_prefix_search() {
             .unwrap()
             .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let texts = movie_titles();
 
     for (i, text) in texts.iter().enumerate() {
         index
-            .add_many(i as PointOffsetType, vec![text.clone()], &hw_counter)
+            .add_many(i as PointOffsetType, vec![text.clone()])
             .unwrap();
     }
 
-    let res: Vec<_> = index.query("ROBO", &hw_counter).unwrap().collect();
+    let res: Vec<_> = index.query("ROBO").unwrap().collect();
 
-    let query = index
-        .parse_text_query("ROBO", &hw_counter)
-        .unwrap()
-        .unwrap();
+    let query = index.parse_text_query("ROBO").unwrap().unwrap();
 
     for idx in res.iter().copied() {
         assert!(index.check_match(&query, idx).unwrap());
@@ -207,20 +206,15 @@ fn test_prefix_search() {
 
     assert_eq!(res.len(), 3);
 
-    let res: Vec<_> = index.query("q231", &hw_counter).unwrap().collect();
+    let res: Vec<_> = index.query("q231").unwrap().collect();
     assert!(res.is_empty());
 
-    assert!(
-        index
-            .parse_text_query("q231", &hw_counter)
-            .unwrap()
-            .is_none()
-    );
+    assert!(index.parse_text_query("q231").unwrap().is_none());
 }
 
 #[test]
 fn test_phrase_matching() {
-    let hw_counter = HardwareCounterCell::default();
+    let _scope = ambient::test_guard();
 
     // Create a text index with phrase matching enabled
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
@@ -237,6 +231,7 @@ fn test_phrase_matching() {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     };
 
     let mut mutable_index =
@@ -248,7 +243,7 @@ fn test_phrase_matching() {
     let mut mmap_builder = FullTextIndex::builder_mmap(
         temp_dir.path().to_path_buf(),
         config.clone(),
-        true,
+        Memory::Cold,
         &empty_deleted,
         true,
     );
@@ -265,29 +260,21 @@ fn test_phrase_matching() {
 
     for (point_id, text) in documents {
         mutable_index
-            .add_many(point_id, vec![text.clone()], &hw_counter)
+            .add_many(point_id, vec![text.clone()])
             .unwrap();
-        mmap_builder
-            .add_many(point_id, vec![text], &hw_counter)
-            .unwrap();
+        mmap_builder.add_many(point_id, vec![text]).unwrap();
     }
 
     let mmap_index = mmap_builder.finalize().unwrap();
 
     let check_matching = |index: FullTextIndex| {
         // Test regular text matching (should match documents containing all tokens regardless of order)
-        let text_query = index
-            .parse_text_query("quick brown fox", &hw_counter)
-            .unwrap()
-            .unwrap();
+        let text_query = index.parse_text_query("quick brown fox").unwrap().unwrap();
         assert!(index.check_match(&text_query, 0).unwrap());
         assert!(index.check_match(&text_query, 1).unwrap());
         assert!(index.check_match(&text_query, 2).unwrap());
 
-        let text_results: Vec<_> = index
-            .filter_query(text_query, &hw_counter)
-            .unwrap()
-            .collect();
+        let text_results: Vec<_> = index.filter_query(text_query).unwrap().collect();
 
         // Should match documents 0, 1, and 2 (all contain "quick", "brown", "fox")
         assert_eq!(text_results.len(), 3);
@@ -297,16 +284,13 @@ fn test_phrase_matching() {
 
         // Test phrase matching (should only match documents with exact phrase in order)
         let phrase_query = index
-            .parse_phrase_query("quick brown fox", &hw_counter)
+            .parse_phrase_query("quick brown fox")
             .unwrap()
             .unwrap();
         assert!(index.check_match(&phrase_query, 0).unwrap());
         assert!(index.check_match(&phrase_query, 2).unwrap());
 
-        let phrase_results: Vec<_> = index
-            .filter_query(phrase_query, &hw_counter)
-            .unwrap()
-            .collect();
+        let phrase_results: Vec<_> = index.filter_query(phrase_query).unwrap().collect();
 
         // Should only match documents 0 and 2 (contain "quick brown fox" in that exact order)
         assert_eq!(phrase_results.len(), 2);
@@ -316,36 +300,28 @@ fn test_phrase_matching() {
 
         // Test phrase that doesn't exist
         let missing_query = index
-            .parse_phrase_query("fox brown quick", &hw_counter)
+            .parse_phrase_query("fox brown quick")
             .unwrap()
             .unwrap();
-        let missing_results: Vec<_> = index
-            .filter_query(missing_query, &hw_counter)
-            .unwrap()
-            .collect();
+        let missing_results: Vec<_> = index.filter_query(missing_query).unwrap().collect();
 
         // Should match no documents (no document contains this exact phrase)
         assert_eq!(missing_results.len(), 0);
 
         // Test valid phrase up to a token that doesn't exist
-        let query_with_unknown_token = index
-            .parse_phrase_query("quick brown bird", &hw_counter)
-            .unwrap();
+        let query_with_unknown_token = index.parse_phrase_query("quick brown bird").unwrap();
         // the phrase query is not valid because it contains an unknown token
         assert!(query_with_unknown_token.is_none());
 
         // Test repeated words
         let phrase_query = index
-            .parse_phrase_query("brown brown fox", &hw_counter)
+            .parse_phrase_query("brown brown fox")
             .unwrap()
             .unwrap();
         assert!(index.check_match(&phrase_query, 4).unwrap());
 
         // Should only match document 4
-        let filter_results: Vec<_> = index
-            .filter_query(phrase_query, &hw_counter)
-            .unwrap()
-            .collect();
+        let filter_results: Vec<_> = index.filter_query(phrase_query).unwrap().collect();
         assert_eq!(filter_results.len(), 1);
         assert!(filter_results.contains(&4));
     };
@@ -356,7 +332,7 @@ fn test_phrase_matching() {
 
 #[test]
 fn test_ascii_folding_in_full_text_index_word() {
-    let hw_counter = HardwareCounterCell::default();
+    let _scope = ambient::test_guard();
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config_enabled = TextIndexParams {
@@ -372,6 +348,7 @@ fn test_ascii_folding_in_full_text_index_word() {
         stemmer: None,
         ascii_folding: Some(true),
         enable_hnsw: None,
+        scoring: None,
     };
     let config_disabled = TextIndexParams {
         ascii_folding: Some(false),
@@ -402,56 +379,39 @@ fn test_ascii_folding_in_full_text_index_word() {
 
     for (id, text) in &docs {
         index_enabled
-            .add_many(*id as PointOffsetType, vec![text.clone()], &hw_counter)
+            .add_many(*id as PointOffsetType, vec![text.clone()])
             .unwrap();
         index_disabled
-            .add_many(*id as PointOffsetType, vec![text.clone()], &hw_counter)
+            .add_many(*id as PointOffsetType, vec![text.clone()])
             .unwrap();
     }
 
     // ASCII-only queries should match only when folding is enabled
-    let query_enabled = index_enabled
-        .parse_text_query("acao", &hw_counter)
-        .unwrap()
-        .unwrap();
+    let query_enabled = index_enabled.parse_text_query("acao").unwrap().unwrap();
     assert!(index_enabled.check_match(&query_enabled, 0).unwrap());
 
-    let results_enabled: Vec<_> = index_enabled
-        .filter_query(query_enabled, &hw_counter)
-        .unwrap()
-        .collect();
+    let results_enabled: Vec<_> = index_enabled.filter_query(query_enabled).unwrap().collect();
     assert!(results_enabled.contains(&0));
 
-    let query_disabled_opt = index_disabled
-        .parse_text_query("acao", &hw_counter)
-        .unwrap();
+    let query_disabled_opt = index_disabled.parse_text_query("acao").unwrap();
     // Query might still parse, but should not match anything
     if let Some(query_disabled) = query_disabled_opt {
         let results_disabled: Vec<_> = index_disabled
-            .filter_query(query_disabled, &hw_counter)
+            .filter_query(query_disabled)
             .unwrap()
             .collect();
         assert!(!results_disabled.contains(&0));
     }
 
     // Non-folded query must work in both
-    let query_acento = index_enabled
-        .parse_text_query("ação", &hw_counter)
-        .unwrap()
-        .unwrap();
+    let query_acento = index_enabled.parse_text_query("ação").unwrap().unwrap();
     assert!(index_enabled.check_match(&query_acento, 0).unwrap());
-    let results_acento: Vec<_> = index_enabled
-        .filter_query(query_acento, &hw_counter)
-        .unwrap()
-        .collect();
+    let results_acento: Vec<_> = index_enabled.filter_query(query_acento).unwrap().collect();
     assert!(results_acento.contains(&0));
 
-    let query_acento2 = index_disabled
-        .parse_text_query("ação", &hw_counter)
-        .unwrap()
-        .unwrap();
+    let query_acento2 = index_disabled.parse_text_query("ação").unwrap().unwrap();
     let results_acento2: Vec<_> = index_disabled
-        .filter_query(query_acento2, &hw_counter)
+        .filter_query(query_acento2)
         .unwrap()
         .collect();
     assert!(results_acento2.contains(&0));
@@ -469,7 +429,7 @@ fn test_special_check_condition_match_text_any() {
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, Match, MatchTextAny};
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
@@ -485,6 +445,7 @@ fn test_special_check_condition_match_text_any() {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     };
 
     let mut index = FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
@@ -495,14 +456,12 @@ fn test_special_check_condition_match_text_any() {
     // Point 1: "cheap hardware" — should match text_any("good cheap")
     // Point 2: "neutral text" — should NOT match
     index
-        .add_many(0, vec!["goodness only".to_string()], &hw_counter)
+        .add_many(0, vec!["goodness only".to_string()])
         .unwrap();
     index
-        .add_many(1, vec!["cheap hardware".to_string()], &hw_counter)
+        .add_many(1, vec!["cheap hardware".to_string()])
         .unwrap();
-    index
-        .add_many(2, vec!["neutral text".to_string()], &hw_counter)
-        .unwrap();
+    index.add_many(2, vec!["neutral text".to_string()]).unwrap();
 
     let field_index = FieldIndex::FullTextIndex(index);
 
@@ -523,7 +482,7 @@ fn test_special_check_condition_match_text_any() {
     // "goodness only" — "good" is a substring but NOT a token match
     let goodness_value = serde_json::Value::String("goodness only".to_string());
     let result = field_index
-        .special_check_condition(&condition, &goodness_value, &hw_counter)
+        .special_check_condition(&condition, &goodness_value)
         .unwrap();
     assert_eq!(
         result,
@@ -534,7 +493,7 @@ fn test_special_check_condition_match_text_any() {
     // "cheap hardware" — "cheap" is an exact token match
     let cheap_value = serde_json::Value::String("cheap hardware".to_string());
     let result = field_index
-        .special_check_condition(&condition, &cheap_value, &hw_counter)
+        .special_check_condition(&condition, &cheap_value)
         .unwrap();
     assert_eq!(
         result,
@@ -545,7 +504,7 @@ fn test_special_check_condition_match_text_any() {
     // "neutral text" — no tokens match
     let neutral_value = serde_json::Value::String("neutral text".to_string());
     let result = field_index
-        .special_check_condition(&condition, &neutral_value, &hw_counter)
+        .special_check_condition(&condition, &neutral_value)
         .unwrap();
     assert_eq!(
         result,
@@ -555,10 +514,8 @@ fn test_special_check_condition_match_text_any() {
 }
 
 /// An mmap index over two documents: point 0 has 3 tokens, point 1 has 7 with
-/// repeats. With `TextIndexParams::scoring()` still a const `false`, the
-/// explicit builder parameter is the only way to reach a recording index.
+/// repeats, recording lengths as `scoring` says.
 fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
-    let hw_counter = HardwareCounterCell::new();
     let config = TextIndexParams {
         r#type: TextIndexType::Text,
         tokenizer: TokenizerType::Whitespace,
@@ -572,21 +529,19 @@ fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
         stemmer: None,
         ascii_folding: None,
         enable_hnsw: None,
+        scoring: None,
     };
 
     let empty_deleted = BitVec::new();
-    let mut builder = FullTextIndex::builder_mmap(path, config, true, &empty_deleted, scoring);
+    let mut builder =
+        FullTextIndex::builder_mmap(path, config, Memory::Cold, &empty_deleted, scoring);
     builder.init().unwrap();
     // Point 1 repeats "the" three times: 7 tokens, 5 distinct.
     builder
-        .add_many(0, vec!["alpha beta gamma".to_string()], &hw_counter)
+        .add_many(0, vec!["alpha beta gamma".to_string()])
         .unwrap();
     builder
-        .add_many(
-            1,
-            vec!["the cat sat on the mat the".to_string()],
-            &hw_counter,
-        )
+        .add_many(1, vec!["the cat sat on the mat the".to_string()])
         .unwrap();
 
     builder.finalize().unwrap()
@@ -614,15 +569,52 @@ fn mmap_builder_records_doc_len() {
     );
 }
 
+/// `new_mmap` under scoring reports an index without a length sidecar absent,
+/// so the caller rebuilds it from payload, and opens one with the sidecar.
+/// Without scoring, both open.
+#[test]
+fn new_mmap_without_lengths_is_absent_under_scoring() {
+    use crate::data_types::index::TextScoringParams;
+    use crate::types::Memory;
+
+    let config = |scoring: bool| TextIndexParams {
+        tokenizer: TokenizerType::Whitespace,
+        lowercase: Some(true),
+        phrase_matching: Some(false),
+        scoring: scoring.then(TextScoringParams::default),
+        ..TextIndexParams::default()
+    };
+    let deleted = BitVec::new();
+    let open = |path: &std::path::Path, scoring: bool| {
+        FullTextIndex::new_mmap(path.to_path_buf(), config(scoring), Memory::Cold, &deleted)
+            .unwrap()
+    };
+
+    let without = Builder::new().prefix("mmap_no_lengths").tempdir().unwrap();
+    drop(two_document_mmap_index(without.path().to_path_buf(), false));
+    assert!(
+        open(without.path(), false).is_some(),
+        "opens without scoring"
+    );
+    assert!(
+        open(without.path(), true).is_none(),
+        "no sidecar under scoring must read as absent",
+    );
+
+    let with = Builder::new().prefix("mmap_lengths").tempdir().unwrap();
+    drop(two_document_mmap_index(with.path().to_path_buf(), true));
+    assert!(
+        open(with.path(), true).is_some(),
+        "the sidecar serves scoring"
+    );
+    assert!(open(with.path(), false).is_some(), "and opens without it");
+}
+
 /// Every answer of [`FullTextIndexRead::doc_len_batch`], in `point_ids` order.
-fn doc_lens(
-    index: &FullTextIndex,
-    point_ids: &[PointOffsetType],
-    hw_counter: &HardwareCounterCell,
-) -> Vec<Option<u32>> {
+fn doc_lens(index: &FullTextIndex, point_ids: &[PointOffsetType]) -> Vec<Option<u32>> {
     let mut out = vec![Some(u32::MAX); point_ids.len()];
     index
-        .doc_len_batch(point_ids, hw_counter, |at, doc_len| out[at] = doc_len)
+        .doc_len_batch(point_ids, |at, doc_len| out[at] = doc_len)
         .unwrap();
     out
 }
@@ -635,12 +627,9 @@ fn read_surface_exposes_doc_len_and_total() {
     let temp_dir = Builder::new().prefix("doc_len_reads").tempdir().unwrap();
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), true);
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     // The third is outside the index. Not a zero-length document.
-    assert_eq!(
-        doc_lens(&index, &[0, 1, 2], &hw_counter),
-        [Some(3), Some(7), None]
-    );
+    assert_eq!(doc_lens(&index, &[0, 1, 2]), [Some(3), Some(7), None]);
     assert_eq!(index.total_tokens(), Some(10));
     assert_eq!(index.points_count(), 2);
 }
@@ -651,8 +640,7 @@ fn read_surface_reports_absence_without_scoring() {
     let temp_dir = Builder::new().prefix("no_doc_len_reads").tempdir().unwrap();
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), false);
 
-    let hw_counter = HardwareCounterCell::new();
-    assert_eq!(doc_lens(&index, &[0, 1], &hw_counter), [None, None]);
+    assert_eq!(doc_lens(&index, &[0, 1]), [None, None]);
     assert_eq!(index.total_tokens(), None);
     assert_eq!(index.points_count(), 2);
 }
@@ -666,7 +654,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
 
     let scoring_dir = Builder::new().prefix("stats_scoring").tempdir().unwrap();
     let index = two_document_mmap_index(scoring_dir.path().to_path_buf(), true);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let is_stopped = std::sync::atomic::AtomicBool::new(false);
 
     let mut stats = TextFieldStats {
@@ -675,7 +663,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
             .into(),
         ..Default::default()
     };
-    fill_text_statistics(&index, &mut stats, &is_stopped, &hw_counter).unwrap();
+    fill_text_statistics(&index, &mut stats, &is_stopped).unwrap();
 
     assert_eq!(stats.documents, 2);
     assert_eq!(stats.total_tokens, Some(10), "3 tokens plus 7");
@@ -687,7 +675,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
     // corpus rather than letting it be taken over the segments that do.
     let plain_dir = Builder::new().prefix("stats_plain").tempdir().unwrap();
     let plain = two_document_mmap_index(plain_dir.path().to_path_buf(), false);
-    fill_text_statistics(&plain, &mut stats, &is_stopped, &hw_counter).unwrap();
+    fill_text_statistics(&plain, &mut stats, &is_stopped).unwrap();
 
     assert_eq!(stats.documents, 4);
     assert_eq!(stats.df["the"], 2, "frequencies still sum");

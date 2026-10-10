@@ -10,6 +10,9 @@ workspace = true
 
 [features]
 staging = ["shard/staging"]
+# The read-only, update-only and delete-only shards, for deployments that
+# depend on edge from git. Never enabled in the published qdrant-edge crate.
+serverless = []
 
 [dependencies]
 bm25 = { path = "../bm25" }

@@ -74,6 +74,10 @@ fn next_plane_128<const PLANES: usize>(codes: uint8x16_t) -> uint8x16_t {
 #[inline]
 #[target_feature(enable = "neon")]
 fn lookup_codes<const PLANES: usize>(codes: uint8x16_t) -> int8x16_t {
+    if PLANES == 1 {
+        // The 8-bit code is its value shifted by 128: flip the sign bit.
+        return vreinterpretq_s8_u8(veorq_u8(codes, vdupq_n_u8(0x80)));
+    }
     let table = const { codebook::<PLANES>() };
     let codebook = unsafe { vld1q_s8(table.as_ptr()) };
     vqtbl1q_s8(
@@ -483,6 +487,7 @@ mod tests {
 
     #[test]
     fn test_kernels_match_scalar() {
+        kernels_match_scalar::<1, 2>();
         kernels_match_scalar::<2, 2>();
         kernels_match_scalar::<4, 2>();
         kernels_match_scalar::<8, 1>();
@@ -513,6 +518,7 @@ mod tests {
 
     #[test]
     fn test_saturation_safety_64k() {
+        saturation_safety_64k::<1, 2>();
         saturation_safety_64k::<2, 2>();
         saturation_safety_64k::<4, 2>();
         saturation_safety_64k::<8, 1>();
@@ -554,6 +560,7 @@ mod tests {
 
     #[test]
     fn test_batch_kernels_match_scalar() {
+        batch_kernels_match_scalar::<1, 2>();
         batch_kernels_match_scalar::<2, 2>();
         batch_kernels_match_scalar::<4, 2>();
         batch_kernels_match_scalar::<8, 1>();

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::ReadSegmentEntry as _;
@@ -30,7 +30,7 @@ fn test_delete_by_filter_version_bump() {
     let segment1 = build_segment_1(dir.path());
     let segment2 = build_segment_2(dir.path());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut holder = SegmentHolder::default();
 
@@ -59,8 +59,7 @@ fn test_delete_by_filter_version_bump() {
         }),
     )));
 
-    let deleted_count =
-        delete_points_by_filter(&segments.read(), DELETE_OP_NUM, &filter, &hw_counter).unwrap();
+    let deleted_count = delete_points_by_filter(&segments.read(), DELETE_OP_NUM, &filter).unwrap();
     assert_eq!(deleted_count, 0);
 
     let new_version = segments
@@ -79,7 +78,6 @@ fn retrieve_raw_record(
     segment_id: crate::segment_holder::SegmentId,
     point_id: u64,
 ) -> Option<segment::data_types::segment_record::SegmentRecordRaw> {
-    let hw_counter = HardwareCounterCell::new();
     let is_stopped = std::sync::atomic::AtomicBool::new(false);
     let segment = holder.get(segment_id).unwrap().get();
     let segment = segment.read();
@@ -87,7 +85,6 @@ fn retrieve_raw_record(
         .retrieve_raw(
             &[point_id.into()],
             &segment::types::WithVector::Bool(true),
-            &hw_counter,
             &is_stopped,
             common::types::DeferredBehavior::WithDeferred,
         )
@@ -116,7 +113,7 @@ fn stored_payload(
 #[test]
 fn test_upsert_points_raw_moves_point_from_non_appendable() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut non_appendable = build_segment_1(dir.path()); // points 1-5
     non_appendable.appendable_flag = false;
@@ -145,7 +142,7 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
         },
     ];
 
-    let updated = upsert_points_raw(&holder, 100, &points, None, &hw_counter).unwrap();
+    let updated = upsert_points_raw(&holder, 100, &points, None).unwrap();
     assert_eq!(updated, 1);
 
     {
@@ -176,7 +173,6 @@ fn test_upsert_points_raw_moves_point_from_non_appendable() {
 #[test]
 fn test_apply_refuses_an_undecoded_payload_blob() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
 
     let mut holder = SegmentHolder::default();
     holder.add_new(empty_segment(dir.path()));
@@ -196,8 +192,8 @@ fn test_apply_refuses_an_undecoded_payload_blob() {
         )),
     }];
 
-    assert!(upsert_points_raw(&holder, 100, &points, None, &hw_counter).is_err());
-    assert!(sync_points_raw(&holder, 101, None, None, &points, None, &hw_counter).is_err());
+    assert!(upsert_points_raw(&holder, 100, &points, None).is_err());
+    assert!(sync_points_raw(&holder, 101, None, None, &points, None).is_err());
 
     assert!(
         retrieve_raw_record(&holder, holder.iter().next().unwrap().0, 1).is_none(),
@@ -208,7 +204,7 @@ fn test_apply_refuses_an_undecoded_payload_blob() {
 #[test]
 fn test_sync_points_raw() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let segment = build_segment_1(dir.path()); // points 1-5
     let mut holder = SegmentHolder::default();
@@ -243,7 +239,6 @@ fn test_sync_points_raw() {
         None,
         &[point_2, point_3, point_100],
         None,
-        &hw_counter,
     )
     .unwrap();
 
@@ -281,17 +276,16 @@ fn build_non_appendable_with_city(
     version: u64,
     city: &str,
 ) -> segment::segment::Segment {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let mut seg = empty_segment(path);
     seg.upsert_point(
         version,
         point_id.into(),
         only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
-        &hw_counter,
     )
     .unwrap();
     let payload: segment::types::Payload = payload_json! {"city": city.to_owned()};
-    seg.set_payload(version, point_id.into(), &payload, &None, &hw_counter)
+    seg.set_payload(version, point_id.into(), &payload, &None)
         .unwrap();
     seg.appendable_flag = false;
     seg
@@ -305,18 +299,17 @@ fn build_deferred_with_city(
     version: u64,
     city: &str,
 ) -> segment::segment::Segment {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     // threshold 0 => every point is deferred
     let mut seg = empty_segment_with_deferred(path, 0);
     seg.upsert_point(
         version,
         point_id.into(),
         only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
-        &hw_counter,
     )
     .unwrap();
     let payload: segment::types::Payload = payload_json! {"city": city.to_owned()};
-    seg.set_payload(version, point_id.into(), &payload, &None, &hw_counter)
+    seg.set_payload(version, point_id.into(), &payload, &None)
         .unwrap();
     assert!(
         seg.point_is_deferred(point_id.into()),
@@ -343,7 +336,7 @@ fn city_filter(city: &str) -> Filter {
 #[test]
 fn test_delete_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -353,7 +346,7 @@ fn test_delete_by_filter_deferred_filter_matches_deferred() {
     let sid_app = holder.add_new(appendable);
 
     let filter = city_filter("Amsterdam");
-    let deleted = delete_points_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+    let deleted = delete_points_by_filter(&holder, 10, &filter).unwrap();
 
     // The deferred version matches the filter => both copies deleted.
     assert!(deleted > 0, "Should have deleted at least one copy");
@@ -384,7 +377,7 @@ fn test_delete_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_delete_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -394,7 +387,7 @@ fn test_delete_by_filter_deferred_filter_matches_old_copy() {
     let sid_app = holder.add_new(appendable);
 
     let filter = city_filter("Berlin");
-    let _deleted = delete_points_by_filter(&holder, 10, &filter, &hw_counter).unwrap();
+    let _deleted = delete_points_by_filter(&holder, 10, &filter).unwrap();
 
     let non_app = holder.get(sid_non_app).unwrap().get();
     let non_app = non_app.read();
@@ -425,7 +418,7 @@ fn test_delete_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -436,8 +429,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated =
-        set_payload_by_filter(&holder, 10, &payload, &filter, &None, None, &hw_counter).unwrap();
+    let updated = set_payload_by_filter(&holder, 10, &payload, &filter, &None, None).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -451,7 +443,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -462,8 +454,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated =
-        set_payload_by_filter(&holder, 10, &payload, &filter, &None, None, &hw_counter).unwrap();
+    let updated = set_payload_by_filter(&holder, 10, &payload, &filter, &None, None).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -496,7 +487,7 @@ fn test_set_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -507,7 +498,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
-    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None, &hw_counter).unwrap();
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -521,7 +512,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -532,7 +523,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let keys: Vec<PayloadKeyType> = vec!["city".parse().unwrap()];
-    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None, &hw_counter).unwrap();
+    let updated = delete_payload_by_filter(&holder, 10, &filter, &keys, None).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -565,7 +556,7 @@ fn test_delete_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -575,7 +566,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
     holder.add_new(appendable);
 
     let filter = city_filter("Amsterdam");
-    let updated = clear_payload_by_filter(&holder, 10, &filter, None, &hw_counter).unwrap();
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -589,7 +580,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -599,7 +590,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
     let sid_app = holder.add_new(appendable);
 
     let filter = city_filter("Berlin");
-    let updated = clear_payload_by_filter(&holder, 10, &filter, None, &hw_counter).unwrap();
+    let updated = clear_payload_by_filter(&holder, 10, &filter, None).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -632,7 +623,7 @@ fn test_clear_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -643,8 +634,7 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated =
-        overwrite_payload_by_filter(&holder, 10, &payload, &filter, None, &hw_counter).unwrap();
+    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, None).unwrap();
 
     assert!(updated > 0, "Should have updated at least one point");
 }
@@ -658,7 +648,7 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -669,8 +659,7 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let payload: segment::types::Payload = payload_json! {"color": "red"};
-    let updated =
-        overwrite_payload_by_filter(&holder, 10, &payload, &filter, None, &hw_counter).unwrap();
+    let updated = overwrite_payload_by_filter(&holder, 10, &payload, &filter, None).unwrap();
 
     assert_eq!(
         updated, 0,
@@ -703,7 +692,7 @@ fn test_overwrite_payload_by_filter_deferred_filter_matches_old_copy() {
 #[test]
 fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -714,8 +703,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
 
     let filter = city_filter("Amsterdam");
     let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
-    let deleted =
-        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None, &hw_counter).unwrap();
+    let deleted = delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None).unwrap();
 
     assert!(deleted > 0, "Should have deleted at least one vector");
 }
@@ -729,7 +717,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_deferred() {
 #[test]
 fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let non_appendable = build_non_appendable_with_city(dir.path(), 1, 1, "Berlin");
     let appendable = build_deferred_with_city(dir.path(), 1, 2, "Amsterdam");
@@ -740,8 +728,7 @@ fn test_delete_vectors_by_filter_deferred_filter_matches_old_copy() {
 
     let filter = city_filter("Berlin");
     let vector_names = vec![DEFAULT_VECTOR_NAME.into()];
-    let deleted =
-        delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None, &hw_counter).unwrap();
+    let deleted = delete_vectors_by_filter(&holder, 10, &filter, &vector_names, None).unwrap();
 
     assert_eq!(
         deleted, 0,
@@ -787,7 +774,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
 
     const DIM: usize = 4;
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let point_id: PointIdType = 7.into();
 
     // Old record: both named vectors plus a payload.
@@ -800,17 +787,10 @@ fn test_upsert_cow_move_replaces_whole_point() {
                     (VECTOR1_NAME.to_owned(), vec![0.1, 0.2, 0.3, 0.4]),
                     (VECTOR2_NAME.to_owned(), vec![0.5, 0.6, 0.7, 0.8]),
                 ]),
-                &hw_counter,
             )
             .unwrap();
         segment
-            .set_payload(
-                100,
-                point_id,
-                &payload_json! {"city": "Berlin"},
-                &None,
-                &hw_counter,
-            )
+            .set_payload(100, point_id, &payload_json! {"city": "Berlin"}, &None)
             .unwrap();
     };
 
@@ -827,21 +807,15 @@ fn test_upsert_cow_move_replaces_whole_point() {
     let check = |segment: &dyn SegmentEntry, path: &str| {
         assert!(segment.has_point(point_id, DeferredBehavior::WithDeferred));
         assert!(
-            segment
-                .vector(VECTOR1_NAME, point_id, &hw_counter)
-                .unwrap()
-                .is_some(),
+            segment.vector(VECTOR1_NAME, point_id).unwrap().is_some(),
             "{path}: upserted vector must be present",
         );
         assert!(
-            segment
-                .vector(VECTOR2_NAME, point_id, &hw_counter)
-                .unwrap()
-                .is_none(),
+            segment.vector(VECTOR2_NAME, point_id).unwrap().is_none(),
             "{path}: named vector absent from the upsert must be dropped",
         );
         assert!(
-            segment.payload(point_id, &hw_counter).unwrap().is_empty(),
+            segment.payload(point_id).unwrap().is_empty(),
             "{path}: payload absent from the upsert must be cleared",
         );
     };
@@ -852,7 +826,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
     seed(&mut in_place);
     let mut holder = SegmentHolder::default();
     let sid = holder.add_new(in_place);
-    upsert_points(&holder, 101, [&incoming], None, &hw_counter).unwrap();
+    upsert_points(&holder, 101, [&incoming], None).unwrap();
     let segment = holder.get(sid).unwrap().get();
     check(&*segment.read(), "in-place");
 
@@ -867,7 +841,7 @@ fn test_upsert_cow_move_replaces_whole_point() {
     let mut holder = SegmentHolder::default();
     holder.add_new(source);
     let sid = holder.add_new(destination);
-    upsert_points(&holder, 101, [&incoming], None, &hw_counter).unwrap();
+    upsert_points(&holder, 101, [&incoming], None).unwrap();
     let segment = holder.get(sid).unwrap().get();
     check(&*segment.read(), "CoW move");
 }
@@ -895,26 +869,20 @@ fn create_field_index_pins_pending_payload_state() {
     use uuid::Uuid;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let key: PayloadKeyType = "city".parse().unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let is_stopped = AtomicBool::new(false);
 
     let mut seg = empty_segment(dir.path());
-    seg.upsert_point(
-        1,
-        0.into(),
-        only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
-        &hw_counter,
-    )
-    .unwrap();
-    let payload: segment::types::Payload = payload_json! {"city": "Berlin"};
-    seg.set_payload(2, 0.into(), &payload, &None, &hw_counter)
+    seg.upsert_point(1, 0.into(), only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
         .unwrap();
+    let payload: segment::types::Payload = payload_json! {"city": "Berlin"};
+    seg.set_payload(2, 0.into(), &payload, &None).unwrap();
     seg.flush(true).unwrap();
 
     // Pending payload clear: stays in memory until the next flush cycle.
-    seg.clear_payload(3, 0.into(), &hw_counter).unwrap();
+    seg.clear_payload(3, 0.into()).unwrap();
     let segment_path = seg.segment_path.clone();
 
     let mut holder = SegmentHolder::default();
@@ -922,7 +890,7 @@ fn create_field_index_pins_pending_payload_state() {
 
     // The build observes the cleared row and must pin it durably before the
     // index config becomes durable.
-    create_field_index(&holder, 4, &key, Some(&schema), &hw_counter).unwrap();
+    create_field_index(&holder, 4, &key, Some(&schema)).unwrap();
 
     // Simulated crash: dropped without any flush after the op.
     drop(holder);
@@ -937,7 +905,7 @@ fn create_field_index_pins_pending_payload_state() {
     .expect("segment must load after simulated crash");
 
     // The pre-build flush persisted the pending clear together with the index.
-    let reloaded = segment.payload(0.into(), &hw_counter).unwrap();
+    let reloaded = segment.payload(0.into()).unwrap();
     assert!(
         !reloaded.0.contains_key("city"),
         "the payload state observed by the index build must be durable",
@@ -945,9 +913,7 @@ fn create_field_index_pins_pending_payload_state() {
 
     // WAL replay re-applies the CreateFieldIndex op; the config is truthful, so
     // `AlreadyBuilt` is a correct no-op.
-    segment
-        .create_field_index(4, &key, Some(&schema), &hw_counter)
-        .unwrap();
+    segment.create_field_index(4, &key, Some(&schema)).unwrap();
 
     let hits = segment
         .read_filtered(
@@ -955,7 +921,6 @@ fn create_field_index_pins_pending_payload_state() {
             None,
             Some(&city_filter("Berlin")),
             &is_stopped,
-            &hw_counter,
             DeferredBehavior::VisibleOnly,
         )
         .unwrap();
@@ -982,7 +947,7 @@ fn create_field_index_flushes_cow_destinations_before_source() {
     use crate::update::set_payload;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let key: PayloadKeyType = "color".parse().unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
 
@@ -993,7 +958,7 @@ fn create_field_index_flushes_cow_destinations_before_source() {
     // skipped by the `already_indexed` short-circuit; only the dependency-aware flush
     // of the source's visit can cover it.
     destination
-        .create_field_index(7, &key, Some(&schema), &hw_counter)
+        .create_field_index(7, &key, Some(&schema))
         .unwrap();
 
     let mut holder = SegmentHolder::default();
@@ -1007,19 +972,10 @@ fn create_field_index_flushes_cow_destinations_before_source() {
     // copy-on-write arm upserts the updated point into the destination, deletes it from
     // the source, and records the flush dependency edge.
     let payload = payload_json! {"other": "value"};
-    let moved = set_payload(
-        &holder,
-        100,
-        &payload,
-        &[1.into()],
-        &None,
-        None,
-        &hw_counter,
-    )
-    .unwrap();
+    let moved = set_payload(&holder, 100, &payload, &[1.into()], &None, None).unwrap();
     assert_eq!(moved, 1);
 
-    create_field_index(&holder, 200, &key, Some(&schema), &hw_counter).unwrap();
+    create_field_index(&holder, 200, &key, Some(&schema)).unwrap();
 
     let source_persisted = holder
         .get(source_id)
@@ -1073,19 +1029,14 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let is_stopped = AtomicBool::new(false);
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut segment = empty_segment(dir.path());
     let segment_path = segment.segment_path.clone();
     let ids: Vec<PointIdType> = (1..=POINT_COUNT).map(PointIdType::from).collect();
     for id in &ids {
         segment
-            .upsert_point(
-                1,
-                *id,
-                only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
-                &hw_counter,
-            )
+            .upsert_point(1, *id, only_default_vector(&[1.0, 0.0, 0.0, 0.0]))
             .unwrap();
     }
 
@@ -1103,7 +1054,6 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
         &ids[..PAYLOAD_OP_BATCH_SIZE],
         &None,
         None,
-        &hw_counter,
     )
     .unwrap();
     assert_eq!(
@@ -1129,7 +1079,6 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
         &ids[PAYLOAD_OP_BATCH_SIZE..],
         &None,
         None,
-        &hw_counter,
     )
     .unwrap();
 
@@ -1157,7 +1106,6 @@ fn flush_between_batches_of_one_operation_keeps_the_rest_replayable() {
             None,
             Some(&city_filter("Berlin")),
             &is_stopped,
-            &hw_counter,
             DeferredBehavior::VisibleOnly,
         )
         .unwrap();

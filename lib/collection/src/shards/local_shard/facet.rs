@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw;
 use common::types::DeferredBehavior;
 use futures::future;
 use futures::future::try_join_all;
@@ -26,27 +26,24 @@ impl LocalShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
         let stopping_guard = StoppingGuard::new();
 
-        let spawn_read = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
+        let spawn_read = |segment: LockedSegment| {
             let request = Arc::clone(&request);
             let is_stopped = stopping_guard.get_is_stopped();
 
-            let hw_counter = hw_counter.fork();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = search_runtime_handle.spawn_blocking(move || {
+                let _scope = handoff.enter_guard();
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    read_segment.facet(&request, &is_stopped, &hw_counter)
+                    read_segment.facet(&request, &is_stopped)
                 };
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
@@ -54,14 +51,12 @@ impl LocalShard {
         let all_reads = {
             let segments_lock = self.segments.read();
 
-            let hw_counter = hw_measurement_acc.get_counter_cell();
-
             tokio::time::timeout(
                 timeout,
                 try_join_all(
                     segments_lock
                         .non_appendable_then_appendable_segments()
-                        .map(|segment| spawn_read(segment, &hw_counter)),
+                        .map(spawn_read),
                 ),
             )
         }
@@ -99,7 +94,6 @@ impl LocalShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<FacetValueHit>> {
         // To return exact counts we need to consider that the same point can be in different segments if it has different versions.
         // So, we need to consider all point ids for a given filter in all segments to do an accurate count.
@@ -109,12 +103,7 @@ impl LocalShard {
 
         // Get unique values for the field
         let unique_values = self
-            .unique_values(
-                Arc::clone(&request),
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc.clone(),
-            )
+            .unique_values(Arc::clone(&request), search_runtime_handle, timeout)
             .await?;
 
         // Make an exact count for each value
@@ -126,13 +115,11 @@ impl LocalShard {
 
             let filter = Filter::merge_opts(request.filter.clone(), Some(match_value));
 
-            let hw_acc = hw_measurement_acc.clone();
             async move {
                 let count = self
                     .read_filtered(
                         filter.as_ref(),
                         search_runtime_handle,
-                        hw_acc,
                         Some(timeout.saturating_sub(instant.elapsed())),
                         DeferredBehavior::VisibleOnly,
                     )
@@ -157,39 +144,29 @@ impl LocalShard {
         request: Arc<FacetParams>,
         handle: &AdaptiveSearchHandle,
         timeout: Duration,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<FacetValue>> {
         let stopping_guard = StoppingGuard::new();
 
-        let spawn_read = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
+        let spawn_read = |segment: LockedSegment| {
             let request = Arc::clone(&request);
 
             let is_stopped = stopping_guard.get_is_stopped();
 
-            let hw_counter = hw_counter.fork();
-            let cpu_utilization = hw_counter.cpu_utilization();
+            let handoff = ambient::current();
+            let cpu_utilization = hw::cpu_utilization();
             let task = handle.spawn_blocking(move || {
+                let _scope = handoff.enter_guard();
                 let work = || {
                     let get_segment = segment.get();
                     let read_segment = get_segment.read();
 
-                    read_segment.unique_values(
-                        &request.key,
-                        request.filter.as_ref(),
-                        &is_stopped,
-                        &hw_counter,
-                    )
+                    read_segment.unique_values(&request.key, request.filter.as_ref(), &is_stopped)
                 };
 
-                match cpu_utilization {
-                    Some(cu) => cu.measure(work),
-                    None => work(),
-                }
+                cpu_utilization.measure(work)
             });
             AbortOnDropHandle::new(task)
         };
-
-        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = {
             let segments_lock = self.segments.read();
@@ -199,7 +176,7 @@ impl LocalShard {
                 try_join_all(
                     segments_lock
                         .non_appendable_then_appendable_segments()
-                        .map(|segment| spawn_read(segment, &hw_counter)),
+                        .map(spawn_read),
                 ),
             )
         }

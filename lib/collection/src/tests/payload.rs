@@ -1,8 +1,8 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use ordered_float::OrderedFloat;
 use segment::json_path::JsonPath;
@@ -55,12 +55,8 @@ async fn test_payload_missing_index_check() {
     let upsert_ops = upsert_operation();
 
     shard
-        .update(
-            upsert_ops.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .update(upsert_ops.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -174,12 +170,8 @@ pub async fn create_index(
         }),
     );
     shard
-        .update(
-            create_index.into(),
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .update(create_index.into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 }

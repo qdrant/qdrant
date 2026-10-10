@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::{self, HwScale};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::EncodedVectors;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVector};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffset, MultivectorOffsets, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
+    MultivectorOffset, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -22,9 +23,9 @@ where
     OffsetStorage: MultivectorOffsetsStorage,
     TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
+    hw: HwScale,
     query: TQuery,
     quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
-    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a, QuantizedStorage, OffsetStorage, TQuery>
@@ -41,7 +42,6 @@ where
             OffsetStorage,
         >,
         quantization_config: &QuantizationConfig,
-        mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
         TElement: PrimitiveVectorElement,
@@ -80,15 +80,13 @@ where
             })
             .unwrap();
 
-        hardware_counter.set_cpu_multiplier(size_of::<TElement>());
-
-        hardware_counter
-            .set_vector_io_read_multiplier(usize::from(quantized_multivector_storage.is_on_disk()));
-
         Self {
+            hw: HwScale {
+                cpu: size_of::<TElement>(),
+                vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
+            },
             query,
             quantized_multivector_storage,
-            hardware_counter,
         }
     }
 }
@@ -100,34 +98,30 @@ where
     OffsetStorage: MultivectorOffsetsStorage,
     TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(size_of::<MultivectorOffset>() * ids.len());
+        self.hw
+            .vector_io_read(size_of::<MultivectorOffset>() * ids.len());
 
-        self.quantized_multivector_storage.score_points_batch(
-            ids,
-            |score_fn| self.query.score_by(score_fn),
-            scores,
-            &self.hardware_counter,
-        );
+        hw::scale_cpu(self.hw.cpu, || {
+            self.quantized_multivector_storage.score_points_batch(
+                ids,
+                |score_fn| self.query.score_by(score_fn),
+                scores,
+            )
+        })?;
+        Ok(())
     }
 
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
-        let sub_vectors_count = multi_vector_offset.count as usize;
-        // compute vector IO read once for all examples
-        self.hardware_counter.vector_io_read().incr_delta(
-            size_of::<MultivectorOffset>()
-                + self.quantized_multivector_storage.quantized_vector_size() * sub_vectors_count,
-        );
-        self.query.score_by(|this| {
-            // quantized multivector storage handles hardware counter to batch vector IO
-            self.quantized_multivector_storage
-                .score_point(this, idx, &self.hardware_counter)
-        })
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        let mut score = [0.0];
+        self.score_stored_batch(&[idx], &mut score)?;
+        Ok(score[0])
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

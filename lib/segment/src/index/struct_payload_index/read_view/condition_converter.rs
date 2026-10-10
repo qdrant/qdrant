@@ -6,7 +6,6 @@ use atomic_refcell::AtomicRefCell;
 use common::condition_checker::{
     CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
 };
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{DeferredBehavior, PointOffsetType};
 use serde_json::Value;
 
@@ -37,7 +36,6 @@ where
         condition: &'b Condition,
         payload_provider: PayloadProvider<S>,
         deferred_behavior: DeferredBehavior,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<ConditionCheckerEnum<'b>> {
         let id_tracker = self.id_tracker;
         let field_indexes = self.field_indexes;
@@ -45,10 +43,9 @@ where
             Condition::Field(field_condition) => field_condition_checker(
                 field_indexes,
                 &field_condition.key,
-                hw_counter,
                 field_condition,
                 payload_provider,
-                |payload, hw| check_field_condition(field_condition, &payload, field_indexes, hw),
+                |payload| check_field_condition(field_condition, &payload, field_indexes),
             )?,
             // is_empty / is_null are served by NullIndex via
             // `condition_checker`. NullIndex is built alongside every
@@ -63,10 +60,9 @@ where
                 field_condition_checker(
                     field_indexes,
                     key,
-                    hw_counter,
                     &FieldCondition::new_is_empty(key.clone(), true),
                     payload_provider,
-                    |payload, _| Ok(check_is_empty_condition(is_empty, &payload)),
+                    |payload| Ok(check_is_empty_condition(is_empty, &payload)),
                 )?
             }
 
@@ -75,10 +71,9 @@ where
                 field_condition_checker(
                     field_indexes,
                     key,
-                    hw_counter,
                     &FieldCondition::new_is_null(key.clone(), true),
                     payload_provider,
-                    |payload, _| Ok(check_is_null_condition(is_null, &payload)),
+                    |payload| Ok(check_is_null_condition(is_null, &payload)),
                 )?
             }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
@@ -127,8 +122,8 @@ where
 
                 ConditionCheckerEnum::Dyn(Box::new(PayloadConditionChecker {
                     payload_provider,
-                    hw_counter: hw_counter.fork(),
-                    check: move |payload, point_id, hw| {
+
+                    check: move |payload, point_id| {
                         let field_values = payload.get_value(&nested_path);
 
                         for value in field_values {
@@ -144,7 +139,6 @@ where
                                     &nested.nested.filter,
                                     point_id,
                                     &nested_indexes,
-                                    hw,
                                 ) {
                                     // If at least one nested object matches, return true
                                     return Ok(true);
@@ -182,16 +176,14 @@ where
 fn field_condition_checker<'a>(
     field_indexes: &'a AHashMap<JsonPath, Vec<impl FieldIndexRead>>,
     key: &JsonPath,
-    hw_counter: &HardwareCounterCell,
     field_condition: &FieldCondition,
     payload_provider: PayloadProvider<impl PayloadStorageRead + 'a>,
-    check: impl Fn(OwnedPayloadRef, &HardwareCounterCell) -> OperationResult<bool> + 'a,
+    check: impl Fn(OwnedPayloadRef) -> OperationResult<bool> + 'a,
 ) -> OperationResult<ConditionCheckerEnum<'a>> {
     // 1. Find first index that can check condition.
     if let Some(indexes) = field_indexes.get(key) {
         for index in indexes {
-            let hw_acc = hw_counter.new_accumulator();
-            if let Some(checker) = index.condition_checker(field_condition, hw_acc)? {
+            if let Some(checker) = index.condition_checker(field_condition)? {
                 return Ok(checker);
             }
         }
@@ -201,8 +193,8 @@ fn field_condition_checker<'a>(
     Ok(ConditionCheckerEnum::Dyn(Box::new(
         PayloadConditionChecker {
             payload_provider,
-            hw_counter: hw_counter.fork(),
-            check: move |payload, _, hw| check(payload, hw),
+
+            check: move |payload, _| check(payload),
         },
     )))
 }
@@ -211,26 +203,22 @@ fn field_condition_checker<'a>(
 struct PayloadConditionChecker<S, F>
 where
     S: PayloadStorageRead,
-    F: Fn(OwnedPayloadRef, PointOffsetType, &HardwareCounterCell) -> OperationResult<bool>,
+    F: Fn(OwnedPayloadRef, PointOffsetType) -> OperationResult<bool>,
 {
     payload_provider: PayloadProvider<S>,
-    hw_counter: HardwareCounterCell,
     check: F,
 }
 
 impl<S, F> ConditionChecker for PayloadConditionChecker<S, F>
 where
     S: PayloadStorageRead,
-    F: Fn(OwnedPayloadRef, PointOffsetType, &HardwareCounterCell) -> OperationResult<bool>,
+    F: Fn(OwnedPayloadRef, PointOffsetType) -> OperationResult<bool>,
 {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.payload_provider.with_payload(
-            point_id,
-            |payload| (self.check)(payload, point_id, &self.hw_counter),
-            &self.hw_counter,
-        )
+        self.payload_provider
+            .with_payload(point_id, |payload| (self.check)(payload, point_id))
     }
 
     fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>

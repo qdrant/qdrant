@@ -9,9 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{Populate, UniversalWrite, UniversalWriteFs, UserData};
@@ -292,9 +290,9 @@ where
         fs: &S::Fs,
         point_offset: PointOffset,
         value: &V,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
-        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_counter)
+        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_metric)
     }
 
     /// Put an already serialized value in the storage.
@@ -308,7 +306,7 @@ where
         fs: &S::Fs,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
         // This function needs to NOT corrupt data in case of a crash.
         //
@@ -361,7 +359,7 @@ where
         let comp_value = self.with_view(|view| view.compress(value_bytes));
         let value_size = comp_value.len();
 
-        hw_counter.incr_delta(value_size);
+        hw_metric.bump(value_size);
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
         let (start_page_id, block_offset) =
@@ -447,9 +445,8 @@ where
     pub(super) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
+        self.with_view(|view| view.get_value::<P>(point_offset))
     }
 
     /// Get the serialized value for a given point offset.
@@ -458,10 +455,9 @@ where
     pub(super) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Vec<u8>>> {
         self.with_view(|view| {
-            let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+            let bytes = view.get_value_bytes::<P>(point_offset)?;
             Ok(bytes.map(Cow::into_owned))
         })
     }
@@ -473,7 +469,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -487,7 +483,7 @@ where
                     callback(user_data, point_offset, value)?;
                     Ok(true)
                 },
-                hw_counter_cell,
+                hw_metric,
             )
         })?;
 
@@ -499,7 +495,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -513,7 +509,7 @@ where
                     callback(user_data, point_offset, bytes)?;
                     Ok(true)
                 },
-                hw_counter_cell,
+                hw_metric,
             )
         })?;
 
@@ -537,11 +533,7 @@ where
     /// Iterate over all values and execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
-    pub(super) fn iter<F, E>(
-        &self,
-        mut callback: F,
-        hw_counter: HwMetricRefCounter,
-    ) -> Result<(), E>
+    pub(super) fn iter<F, E>(&self, mut callback: F, hw_metric: HwMetric) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
@@ -580,7 +572,7 @@ where
 
                         callback(point_offset, value)
                     },
-                    &hw_counter,
+                    Some(hw_metric),
                 )?;
 
                 if should_continue {

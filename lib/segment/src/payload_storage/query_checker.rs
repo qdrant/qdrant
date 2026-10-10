@@ -10,7 +10,6 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
@@ -132,7 +131,6 @@ pub fn check_payload<'a, R, FI>(
     query: &Filter,
     point_id: PointOffsetType,
     field_indexes: &AHashMap<PayloadKeyType, R>,
-    hw_counter: &HardwareCounterCell,
 ) -> bool
 where
     FI: FieldIndexRead,
@@ -143,7 +141,7 @@ where
             field_condition,
             get_payload().deref(),
             field_indexes,
-            hw_counter,
+
         )
         .unwrap(/* TODO(uio): handle errors */),
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
@@ -173,7 +171,6 @@ where
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
-                        hw_counter,
                     )
                 })
         }
@@ -207,7 +204,6 @@ pub fn check_field_condition<R, FI>(
     field_condition: &FieldCondition,
     payload: &impl PayloadContainer,
     field_indexes: &AHashMap<PayloadKeyType, R>,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<bool>
 where
     FI: FieldIndexRead,
@@ -225,9 +221,7 @@ where
         for p in field_values {
             let mut index_checked = false;
             for index in field_indexes.as_ref() {
-                if let Some(index_check_res) =
-                    index.special_check_condition(field_condition, p, hw_counter)?
-                {
+                if let Some(index_check_res) = index.special_check_condition(field_condition, p)? {
                     if index_check_res {
                         // If at least one object matches the condition, we can return true
                         return Ok(true);
@@ -281,8 +275,6 @@ impl SimpleConditionChecker {
 #[cfg(feature = "testing")]
 impl SimpleConditionChecker {
     pub fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let hw_counter = HardwareCounterCell::new(); // No measurements needed as this is only for test!
-
         let payload_storage_guard = self.payload_storage.borrow();
 
         let payload_ref_cell: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
@@ -296,14 +288,14 @@ impl SimpleConditionChecker {
                     let payload_ptr = match payload_storage_guard.deref() {
                         PayloadStorageEnum::InMemory(s) => s.payload_ptr(point_id).map(Into::into),
                         PayloadStorageEnum::Mmap(s) => {
-                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
+                            let payload = s.get(point_id).unwrap_or_else(|err| {
                                 panic!("Payload storage is corrupted: {err}")
                             });
                             Some(OwnedPayloadRef::from(payload))
                         }
                         #[cfg(target_os = "linux")]
                         PayloadStorageEnum::IoUring(s) => {
-                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
+                            let payload = s.get(point_id).unwrap_or_else(|err| {
                                 panic!("Payload storage is corrupted: {err}")
                             });
                             Some(OwnedPayloadRef::from(payload))
@@ -320,7 +312,6 @@ impl SimpleConditionChecker {
             query,
             point_id,
             &IndexesMap::new(),
-            &HardwareCounterCell::new(),
         )
     }
 }
@@ -363,8 +354,6 @@ mod tests {
             "null_array": [null, 1],
         };
 
-        let hw_counter = HardwareCounterCell::new();
-
         let mut payload_storage: PayloadStorageEnum =
             PayloadStorageEnum::InMemory(InMemoryPayloadStorage::default());
         let mut id_tracker = InMemoryIdTracker::new();
@@ -373,7 +362,7 @@ mod tests {
         id_tracker.set_link(1.into(), 1).unwrap();
         id_tracker.set_link(2.into(), 2).unwrap();
         id_tracker.set_link(10.into(), 10).unwrap();
-        payload_storage.overwrite(0, &payload, &hw_counter).unwrap();
+        payload_storage.overwrite(0, &payload).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
             Arc::new(AtomicRefCell::new(payload_storage)),
@@ -739,6 +728,7 @@ mod tests {
     /// `Match::TextAny`.
     #[test]
     fn test_nested_match_text_any_uses_full_text_index() {
+        use common::ambient;
         use tempfile::Builder;
 
         use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
@@ -746,7 +736,7 @@ mod tests {
         use crate::index::field_index::full_text_index::FullTextIndex;
         use crate::types::{Condition, MatchTextAny, Nested, NestedCondition};
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         // --- build payloads with nested objects ---
         // Point 0: nested title "goodness only" (should NOT match "good cheap")
@@ -782,6 +772,7 @@ mod tests {
             stemmer: None,
             ascii_folding: None,
             enable_hnsw: None,
+            scoring: None,
         };
 
         let mut ft_index =
@@ -793,7 +784,7 @@ mod tests {
         let nested_titles = ["goodness only", "cheap hardware", "neutral text"];
         for (idx, title) in nested_titles.iter().enumerate() {
             ft_index
-                .add_many(idx as u32, vec![title.to_string()], &hw_counter)
+                .add_many(idx as u32, vec![title.to_string()])
                 .unwrap();
         }
 
@@ -827,7 +818,6 @@ mod tests {
                     &nested_filter,
                     point_id,
                     &field_indexes,
-                    &hw_counter,
                 )
             })
             .collect();
