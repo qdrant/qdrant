@@ -5,7 +5,10 @@ use rand::distr::{Alphanumeric, SampleString};
 use rand::rngs::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
 
-use crate::{CHUNK_LEN, PostingBuilder, PostingList, PostingValue, UnsizedHandler, UnsizedValue};
+use crate::{
+    CHUNK_LEN, PostingBuilder, PostingLenIterator, PostingList, PostingValue, UnsizedHandler,
+    UnsizedValue,
+};
 
 // Simple struct that implements VarSizedValue for testing
 #[derive(Debug, Clone, PartialEq)]
@@ -110,6 +113,31 @@ fn test_len_iter_matches_values() {
                     expected.as_ref().map(|e| expected_len(&e.value)),
                 );
                 assert_eq!(len_cursor.current(), actual);
+            }
+
+            // Walking the rest a chunk at a time yields what `next` would:
+            // from the start, from part way in (on a chunk boundary, and off
+            // one), and from a seeked element, which it includes.
+            let walk = |cursor: &mut PostingLenIterator<'_, V>| {
+                let mut out = Vec::new();
+                cursor.for_each_remaining(|elem| out.push(elem));
+                assert_eq!(cursor.current(), None);
+                assert_eq!(cursor.next(), None, "the walk leaves the cursor exhausted");
+                out
+            };
+            assert_eq!(walk(&mut posting_list.view().len_iter()), lens);
+            for skip in [1, 3, CHUNK_LEN, CHUNK_LEN + 5] {
+                let mut cursor = posting_list.view().len_iter();
+                for _ in 0..skip {
+                    cursor.next();
+                }
+                let from = skip.saturating_sub(1).min(lens.len());
+                assert_eq!(walk(&mut cursor), lens[from..], "after {skip} next");
+            }
+            for (at, elem) in lens.iter().enumerate().step_by(lens.len() / 10 + 1) {
+                let mut cursor = posting_list.view().len_iter();
+                cursor.advance_until_greater_or_equal(elem.id);
+                assert_eq!(walk(&mut cursor), lens[at..], "after seeking {}", elem.id);
             }
         });
     }

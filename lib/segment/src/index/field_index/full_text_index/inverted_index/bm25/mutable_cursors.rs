@@ -46,12 +46,17 @@ impl MutableCursor<'_> {
 /// posting, the same shape as [`PositionalCursors`](super::PositionalCursors).
 pub struct MutableCursors<'a> {
     cursors: Vec<Option<MutableCursor<'a>>>,
+    lens: Vec<usize>,
 }
 
 impl<'a> MutableCursors<'a> {
     /// One posting list per query term, `None` for a term without one. Every
     /// list must carry frequencies.
     pub fn new(postings: Vec<Option<&'a MutablePostingList>>) -> Self {
+        let lens = postings
+            .iter()
+            .map(|posting| posting.map_or(0, |posting| posting.len()))
+            .collect();
         let cursors = postings
             .into_iter()
             .map(|posting| {
@@ -75,7 +80,7 @@ impl<'a> MutableCursors<'a> {
                 })
             })
             .collect();
-        Self { cursors }
+        Self { cursors, lens }
     }
 }
 
@@ -91,6 +96,16 @@ impl TermCursors for MutableCursors<'_> {
                 self.cursors[term] = None;
             }
         }
+    }
+
+    fn posting_len(&self, term: usize) -> usize {
+        self.lens[term]
+    }
+
+    /// Document at a time (and its heap) covers the write path; the dense path
+    /// is for the positional cursors.
+    fn term_at_a_time(&self) -> bool {
+        false
     }
 
     fn seek(&mut self, term: usize, target: PointOffsetType) -> Option<PointOffsetType> {
