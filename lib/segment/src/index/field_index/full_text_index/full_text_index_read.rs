@@ -6,6 +6,7 @@ use common::bitvec::{BitSliceExt as _, BitVec};
 use common::iterator_ext::IteratorExt;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
+use posting_list::CHUNK_LEN;
 
 use super::inverted_index::bm25::{Bm25Params, Bm25Query, Bm25Term};
 use super::inverted_index::{Document, ParsedQuery, TokenId, TokenSet};
@@ -67,45 +68,63 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
 
     // A document is a corpus point holding at least one token, which is a
     // nonzero length wherever lengths are recorded.
-    let mut documents = 0;
+    let mut documents = Vec::new();
     let mut total_tokens = Some(0);
     index.doc_len_batch(corpus, |at, doc_len| match doc_len {
         Some(0) => {}
         Some(doc_len) => {
-            documents += 1;
+            documents.push(corpus[at]);
             total_tokens = total_tokens.map(|total| total + u64::from(doc_len));
         }
         None => {
             if !index.values_is_empty(corpus[at]) {
-                documents += 1;
+                documents.push(corpus[at]);
                 total_tokens = None;
             }
         }
     })?;
 
     // No corpus point here holds a token, so none holds a query term either.
-    if documents == 0 {
+    if documents.is_empty() {
         return Ok(());
     }
+    // Probes visit a posting list in id order.
+    documents.sort_unstable();
 
-    // Walks each term's whole posting list, as scoring the term does anyway,
-    // whatever the size of the corpus.
-    let len = corpus.iter().max().map_or(0, |&max| max as usize + 1);
-    let mut in_corpus = BitVec::repeat(false, len);
-    for &point_id in corpus {
-        in_corpus.set(point_id as usize, true);
-    }
+    // Built for the first term that is walked.
+    let mut in_corpus: Option<BitVec> = None;
     for (df, token_id) in counts {
         check_process_stopped(is_stopped)?;
-        let postings = index.filter_query(ParsedQuery::AnyTokens(TokenSet::from_iter([
-            token_id as TokenId,
-        ])))?;
-        *df += postings
-            .filter(|&point_id| in_corpus.get_bit(point_id as usize).unwrap_or(false))
-            .count();
+        let token_id = token_id as TokenId;
+        let Some(posting_len) = index.posting_len(token_id)? else {
+            continue;
+        };
+        let term = TokenSet::from_iter([token_id]);
+        // A probe decompresses at most one chunk of the posting list, a walk
+        // every chunk: probe the documents into a list with more chunks.
+        if documents.len() * CHUNK_LEN < posting_len {
+            index.check_match_batch(
+                &ParsedQuery::AllTokens(term),
+                documents.iter().map(|&point_id| ((), point_id)),
+                |(), matched| *df += usize::from(matched),
+            )?;
+        } else {
+            let in_corpus = in_corpus.get_or_insert_with(|| {
+                let len = documents.last().map_or(0, |&max| max as usize + 1);
+                let mut mask = BitVec::repeat(false, len);
+                for &point_id in &documents {
+                    mask.set(point_id as usize, true);
+                }
+                mask
+            });
+            *df += index
+                .filter_query(ParsedQuery::AnyTokens(term))?
+                .filter(|&point_id| in_corpus.get_bit(point_id as usize).unwrap_or(false))
+                .count();
+        }
     }
 
-    stats.add_segment(documents, total_tokens);
+    stats.add_segment(documents.len(), total_tokens);
     Ok(())
 }
 
