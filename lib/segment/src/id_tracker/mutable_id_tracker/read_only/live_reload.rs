@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Cursor;
 use std::path::PathBuf;
 
@@ -211,51 +212,49 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
         }
 
+        // Offsets staged by an earlier reload that was never published: some components may
+        // already hold them.
+        let previously_staged_offsets: HashSet<_> = self.staged_inserts.values().copied().collect();
         let mut deleted = Vec::new();
-        for change in &changes {
-            match *change {
-                MappingChange::Insert(external_id, internal_id) => {
-                    self.max_claimed_internal_id =
-                        self.max_claimed_internal_id.max(Some(internal_id));
-                    // A re-insert supersedes a staged one, which a failed reload may have handed to
-                    // components already
-                    if let Some(staged) = self.staged_inserts.remove(&external_id) {
-                        deleted.push(staged);
-                    }
-                    self.unversioned_inserts.insert(external_id, internal_id);
-                }
-                MappingChange::Delete(external_id) => {
-                    // A point can be both committed (an old offset) and pending (a not-yet-committed
-                    // re-insert at a new offset). A delete removes it from both. Report the deleted
-                    // offset only if it was previously reported, linked or staged.
-                    self.unversioned_inserts.remove(&external_id);
-                    if let Some(staged) = self.staged_inserts.remove(&external_id) {
-                        deleted.push(staged);
-                    }
-                    if let Some(internal_id) = self.mappings.drop(external_id) {
-                        deleted.push(internal_id);
-                    }
-                }
-            }
-        }
 
+        // Pending inserts whose versions landed since the last reload go first: they precede
+        // `changes` in the log.
         let versioned = self
             .unversioned_inserts
             .extract_if(|_, &mut internal_id| internal_id < committed);
         self.staged_inserts.extend(versioned);
 
-        // Every staged insert is reported, including those an unpublished reload reported before.
-        let mut inserted = Vec::new();
-        for (external_id, &internal_id) in &self.staged_inserts {
-            // An upsert re-links an existing external id to a new offset; the previously-committed
-            // offset it displaces is dead once linked and must be reported as deleted.
-            if let Some(previous) = self.mappings.peek_link(external_id, internal_id)
-                && previous != internal_id
-            {
-                deleted.push(previous);
+        for change in &changes {
+            match *change {
+                MappingChange::Insert(external_id, internal_id) => {
+                    self.max_claimed_internal_id =
+                        self.max_claimed_internal_id.max(Some(internal_id));
+                    if internal_id < committed {
+                        // Complete: replaces the point's pending insert and its staged offset.
+                        self.unversioned_inserts.remove(&external_id);
+                        self.staged_inserts.insert(external_id, internal_id);
+                    } else {
+                        // Withheld until its version lands. Until then the point keeps serving
+                        // its complete copy, staged or linked.
+                        self.unversioned_inserts.insert(external_id, internal_id);
+                    }
+                }
+                MappingChange::Delete(external_id) => {
+                    self.unversioned_inserts.remove(&external_id);
+                    self.staged_inserts.remove(&external_id);
+                    deleted.extend(self.mappings.drop(external_id));
+                }
             }
-            inserted.push(internal_id);
         }
+
+        // Previously staged offsets that are no longer staged were replaced or deleted by this
+        // reload. Only the final state counts: an abandoned insert whose slot the writer covered
+        // with a version looks complete and replaces a staged offset for a moment, until the
+        // relink after it stages that offset again.
+        let staged_offsets: HashSet<_> = self.staged_inserts.values().copied().collect();
+        deleted.extend(previously_staged_offsets.difference(&staged_offsets));
+
+        let mut inserted = self.inserted_offsets(&mut deleted);
 
         // `staged_inserts` iterates in arbitrary hash order; both result lists are sorted ascending.
         inserted.sort_unstable();
@@ -263,6 +262,26 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         deleted.dedup();
 
         Ok(LiveReloadResult { inserted, deleted })
+    }
+
+    /// The offsets of all staged inserts, for [`LiveReloadResult::inserted`]. Each is compared with
+    /// where [`Self::mappings`] puts the point now:
+    /// - nowhere: a new point, its offset is inserted;
+    /// - at another offset: an update, its offset is inserted and the old one goes to `deleted`,
+    ///   since [`Self::publish_staged`] replaces it;
+    /// - at the same offset: a relink back to the committed slot, which components already serve,
+    ///   so nothing changes.
+    fn inserted_offsets(&self, deleted: &mut Vec<PointOffsetType>) -> Vec<PointOffsetType> {
+        let mut inserted = Vec::new();
+        for (external_id, &internal_id) in &self.staged_inserts {
+            match self.mappings.peek_link(external_id, internal_id) {
+                Some(previous) if previous == internal_id => continue,
+                Some(previous) => deleted.push(previous),
+                None => {}
+            }
+            inserted.push(internal_id);
+        }
+        inserted
     }
 
     /// Link the inserts the last reload reported, making them visible to readers.

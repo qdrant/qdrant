@@ -37,8 +37,8 @@ pub use self::lookup::LookupSegment;
 pub use self::segment_enum::UpdateOnlySegmentEnum;
 pub use self::tracker_lookup::TrackerLookup;
 use crate::id_tracker::IdTrackerRead as _;
+use crate::id_tracker::mutable_id_tracker::update_only::PendingInsert;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
-use crate::types::PointIdType;
 
 /// Id-tracker state the read phase hands to a segment's writer; the variant
 /// decides the writer's kind.
@@ -84,7 +84,7 @@ impl WriterIdTrackerState {
 ///     crate::id_tracker::mutable_id_tracker::update_only::UpdateOnlyAppendableIdTracker::new
 pub struct AppendableIdTrackerState {
     pub max_claimed_internal_id: Option<PointOffsetType>,
-    pub pending_inserts: Vec<PointIdType>,
+    pub pending_inserts: Vec<PendingInsert>,
     pub mappings_end: u64,
 }
 

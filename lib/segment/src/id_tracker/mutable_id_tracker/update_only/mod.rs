@@ -28,6 +28,23 @@ pub enum MappingOperation {
     /// Retire this external id. Its slot is left as it is and never handed out again; tombstoning
     /// the data is the caller's business.
     Delete(PointIdType),
+    /// Link this external id to a slot the log already claimed, which must hold the id's committed
+    /// data, superseding its current mapping. Claims nothing.
+    Relink(PointIdType, PointOffsetType),
+}
+
+/// A point whose last insert in the mappings log never got its version: a writer claimed a new
+/// slot for it and stopped before committing, so that slot's data may be half-written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingInsert {
+    pub external_id: PointIdType,
+    /// Slots where this point was stored before the unfinished insert, with complete, committed
+    /// data. The insert redirected the id in the mappings log only and left these slots intact, so
+    /// the point can fall back to them.
+    ///
+    /// Empty if the unfinished insert was the point's first in this segment. Two slots if the
+    /// point has both an active and a deferred copy.
+    pub committed_slots: Vec<PointOffsetType>,
 }
 
 /// The write half of the appendable ID tracker for an update-only segment: it records
@@ -43,11 +60,12 @@ pub enum MappingOperation {
 /// Every method that returns `Ok` has persisted what it wrote: it appends and then runs the
 /// handle's [`Flusher`]. Nothing is buffered across calls, so there is no separate flush step.
 ///
-/// A crash between claiming a slot and committing its version abandons that slot and the point on
-/// it: which components got to write its data is unknowable from here. The slot is never handed out
-/// again, and the point is retired for good by a `Delete` that [`new`](Self::new) records for every
-/// inherited pending insert. A torn tail is healed by the next write to either file, see
-/// [`heal_versions`](Self::heal_versions) and [`heal_mappings`](Self::heal_mappings).
+/// A crash between claiming a slot and committing its version abandons that slot: which components
+/// got to write its data is unknowable from here. The slot is never handed out again, and
+/// [`new`](Self::new) settles every inherited pending insert: a point that still holds a committed
+/// slot here is pointed back at it, one that does not is retired by a `Delete`. A torn tail is
+/// healed by the next write to either file, see [`heal_versions`](Self::heal_versions) and
+/// [`heal_mappings`](Self::heal_mappings).
 ///
 /// [`Flusher`]: common::universal_io::Flusher
 pub struct UpdateOnlyAppendableIdTracker {
@@ -79,7 +97,7 @@ impl UpdateOnlyAppendableIdTracker {
     /// point over the remains of the first.
     ///
     /// `pending_inserts` is the other half of that: the points sitting on those
-    /// claimed-but-unversioned slots. They are retired before this writer can be used at all, see
+    /// claimed-but-unversioned slots. They are settled before this writer can be used at all, see
     /// [`retire_pending_inserts`](Self::retire_pending_inserts), which is why this is fallible.
     ///
     /// `mappings_end` is not a hint: the first append cuts the file back to it (see
@@ -89,7 +107,7 @@ impl UpdateOnlyAppendableIdTracker {
         fs: &Fs,
         segment_path: impl Into<PathBuf>,
         max_claimed_internal_id: Option<PointOffsetType>,
-        pending_inserts: impl IntoIterator<Item = PointIdType>,
+        pending_inserts: impl IntoIterator<Item = PendingInsert>,
         mappings_end: u64,
     ) -> OperationResult<Self> {
         let mut tracker = Self {
@@ -243,6 +261,17 @@ impl UpdateOnlyAppendableIdTracker {
                     MappingChange::Insert(*external_id, internal_id)
                 }
                 MappingOperation::Delete(external_id) => MappingChange::Delete(*external_id),
+                MappingOperation::Relink(external_id, internal_id) => {
+                    if self
+                        .max_claimed_internal_id
+                        .is_none_or(|max_claimed| *internal_id > max_claimed)
+                    {
+                        return Err(OperationError::service_error(format!(
+                            "Cannot relink {external_id} to slot {internal_id}: the log never claimed it",
+                        )));
+                    }
+                    MappingChange::Insert(*external_id, *internal_id)
+                }
             };
 
             let start = changes_buffer.len();
@@ -282,26 +311,45 @@ impl UpdateOnlyAppendableIdTracker {
         Ok(inserted)
     }
 
-    /// Retire every insert this writer inherited: each point whose slot the mappings log claimed
-    /// and whose version no writer ever committed, recorded as a `Delete` in the log.
+    /// Settle every insert this writer inherited: each point whose slot the mappings log claimed
+    /// and whose version no writer ever committed. A point that still holds committed slots in
+    /// this segment is pointed back at them with a `Relink`; one that does not is retired with a
+    /// `Delete`.
     ///
-    /// Retired rather than adopted because such a point was written by a writer that stopped
-    /// partway, so some components hold it and others do not. It cannot be left alone either: its
-    /// slot has to be covered for any slot above it to be published, and the moment it is, readers
-    /// take the point for committed and start serving whatever sits on those components.
+    /// The abandoned slot is never adopted, because such a point was written by a writer that
+    /// stopped partway, so some components hold it and others do not. It cannot be left alone
+    /// either: its slot has to be covered for any slot above it to be published, and the moment it
+    /// is, readers take the point for committed and start serving whatever sits on those
+    /// components.
     ///
-    /// This costs the point rather than only the unacknowledged update that created it: an update
-    /// that abandoned its new slot has, by the same partial write, likely tombstoned the old one
-    /// already, so there is no earlier state to fall back to either.
+    /// Falling back costs only the unacknowledged update: the insert superseded the committed slot
+    /// in the mappings log alone, so that slot's data is intact.
     ///
     /// Runs at construction rather than lazily on the first write, so that no later write path can
     /// be added that forgets it and publishes one of these points.
     fn retire_pending_inserts<Fs: UniversalAppendFs>(
         &mut self,
         fs: &Fs,
-        pending_inserts: impl IntoIterator<Item = PointIdType>,
+        pending_inserts: impl IntoIterator<Item = PendingInsert>,
     ) -> OperationResult<()> {
-        self.delete_points(fs, pending_inserts)
+        let mut operations = Vec::new();
+        for PendingInsert {
+            external_id,
+            committed_slots,
+        } in pending_inserts
+        {
+            if committed_slots.is_empty() {
+                operations.push(MappingOperation::Delete(external_id));
+            }
+            operations.extend(
+                committed_slots
+                    .into_iter()
+                    .map(|internal_id| MappingOperation::Relink(external_id, internal_id)),
+            );
+        }
+        // Relinks and deletes claim no slots, so the returned mappings are empty.
+        self.insert_operations(fs, &operations)?;
+        Ok(())
     }
 
     /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never
