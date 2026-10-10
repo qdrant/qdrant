@@ -20,6 +20,8 @@ mod top_k;
 use common::types::{PointOffsetType, ScoreType};
 pub use mutable_cursors::MutableCursors;
 pub use positional_cursors::PositionalCursors;
+#[cfg(test)]
+use top_k::{HEAP_MIN_ESSENTIAL, Strategy, score_top_k_with};
 pub use top_k::{ON_DISK_BLOCK, score_top_k};
 
 use super::TokenId;
@@ -142,16 +144,32 @@ impl Bm25Query {
         term.idf * (self.params.k1 + 1.0)
     }
 
-    /// One term's contribution to one document.
+    /// One term's contribution to one document. The scorers compute
+    /// [`Self::doc_norm`] once per document and use
+    /// [`Self::term_score_with_norm`]; this is their definition, for the tests.
+    #[cfg(test)]
     fn term_score(&self, idf: f32, tf: u32, doc_len: Option<u32>) -> ScoreType {
+        self.term_score_with_norm(idf, tf, self.doc_norm(doc_len))
+    }
+
+    /// The part of [`Self::term_score`] that depends on the document alone,
+    /// `k1 * (1 - b + b * len / avg)`: computed once per document, it saves a
+    /// division per posting.
+    fn doc_norm(&self, doc_len: Option<u32>) -> ScoreType {
         let Bm25Params { k1, b } = self.params;
-        let tf = tf as f32;
-        let norm = match (self.avg_doc_len, doc_len) {
+        match (self.avg_doc_len, doc_len) {
             (Some(avg), Some(len)) if self.normalizes_length() => {
                 k1 * (1.0 - b + b * len as f32 / avg)
             }
             _ => k1,
-        };
+        }
+    }
+
+    /// [`Self::term_score`] given the document's [`Self::doc_norm`].
+    #[inline]
+    fn term_score_with_norm(&self, idf: f32, tf: u32, norm: ScoreType) -> ScoreType {
+        let k1 = self.params.k1;
+        let tf = tf as f32;
         idf * tf * (k1 + 1.0) / (tf + norm)
     }
 }
@@ -164,6 +182,27 @@ pub trait TermCursors {
 
     /// Move the cursor for `term` past its current document.
     fn advance(&mut self, term: usize);
+
+    /// Entries in the posting list of `term`, as when the cursors were made.
+    fn posting_len(&self, term: usize) -> usize;
+
+    /// Call `f(doc, tf)` for every document from the cursor's current one to
+    /// the end of `term`'s list, in order, and leave the cursor exhausted.
+    fn for_each_posting(&mut self, term: usize, mut f: impl FnMut(PointOffsetType, u32))
+    where
+        Self: Sized,
+    {
+        while let Some(doc) = self.current(term) {
+            let tf = self.tf(term, doc);
+            f(doc, tf);
+            self.advance(term);
+        }
+    }
+
+    /// Whether `tf` is as cheap read one term at a time over many documents as
+    /// one document at a time over its terms, so the query may be scored term
+    /// at a time.
+    fn term_at_a_time(&self) -> bool;
 
     /// Move the cursor for `term` to the first document at or after `target`
     /// and return it. A cursor already at or past `target` does not move.

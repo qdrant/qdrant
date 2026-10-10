@@ -875,6 +875,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             score_top_k::<_, ON_DISK_BLOCK>(
                 query,
                 &mut cursors,
+                self.storage.total_points,
                 |point_ids, lengths| {
                     self.doc_len_batch(point_ids, |index, doc_len| {
                         lengths[index] = doc_len;
