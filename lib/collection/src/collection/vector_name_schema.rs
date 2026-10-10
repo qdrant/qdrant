@@ -26,10 +26,11 @@ impl Collection {
         vector_name: VectorNameBuf,
         config: VectorNameConfig,
     ) -> CollectionResult<()> {
-        self.update_collection_vector_config(|params| {
-            add_vector_to_config(params, &vector_name, &config)
-        })
-        .await?;
+        let params_changed = self
+            .update_collection_vector_config(|params| {
+                add_vector_to_config(params, &vector_name, &config)
+            })
+            .await?;
 
         let operation = CollectionUpdateOperations::VectorNameOperation(
             VectorNameOperations::CreateVectorName(CreateVectorName {
@@ -48,7 +49,12 @@ impl Collection {
         // Done in the background: this path is reached from consensus, where blocking can stall the
         // whole cluster. The refresh itself is unchanged - it already ran on a spawned task either
         // way - so this does not widen the window in which the stale config is in effect.
-        self.recreate_optimizers_background();
+        //
+        // Skipped if the vector already existed with the same schema: recreating optimizers
+        // cancels in-flight optimizations, and clients may re-send the same request on every run.
+        if params_changed {
+            self.recreate_optimizers_background();
+        }
 
         Ok(())
     }
@@ -84,14 +90,17 @@ impl Collection {
     }
 
     /// Apply a mutation to collection params and persist.
+    ///
+    /// Returns `true` if the mutation changed the params.
     async fn update_collection_vector_config(
         &self,
         mutate: impl FnOnce(&mut crate::config::CollectionParams) -> CollectionResult<()>,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<bool> {
         let mut config = self.collection_config.write().await;
+        let params_before = config.params.clone();
         mutate(&mut config.params)?;
         config.save(&self.path)?;
-        Ok(())
+        Ok(config.params != params_before)
     }
 }
 
