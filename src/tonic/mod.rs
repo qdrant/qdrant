@@ -241,7 +241,7 @@ fn reflection_service() -> tonic_reflection::server::Builder<'static> {
 pub fn init_internal(
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
-    telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<TelemetryCollector>,
     tonic_telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
     settings: Settings,
     host: String,

@@ -82,7 +82,7 @@ impl Consensus {
         settings: Settings,
         channel_service: ChannelService,
         propose_receiver: mpsc::Receiver<ConsensusOperations>,
-        telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+        telemetry_collector: Arc<TelemetryCollector>,
         tonic_telemetry_collector: Arc<parking_lot::Mutex<TonicTelemetryCollector>>,
         toc: Arc<TableOfContent>,
         runtime: Handle,
