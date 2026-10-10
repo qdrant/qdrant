@@ -3,7 +3,6 @@ use point_scorer::{FilteredBytesScorer, FilteredScorer};
 
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 
-pub mod build_condition_checker;
 mod config;
 mod entry_points;
 mod graph;
