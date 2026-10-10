@@ -177,6 +177,15 @@ pub trait BoolIndexRead {
         files
     }
 
+    /// Files that never change after the index is built.
+    ///
+    /// Default returns [`Self::files`] — correct for immutable and read-only
+    /// variants where every backing file is immutable. Mutable variants
+    /// override this to return an empty list.
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files()
+    }
+
     fn get_storage_type(&self) -> StorageType {
         StorageType::Mmap {
             layout: ImmutableLayout::Heap,

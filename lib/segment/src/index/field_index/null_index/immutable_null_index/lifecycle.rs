@@ -54,7 +54,7 @@ impl PayloadFieldIndex for ImmutableNullIndex {
 
     #[inline]
     fn immutable_files(&self) -> Vec<PathBuf> {
-        NullIndexRead::files(self) // All the files are immutable in this index.
+        NullIndexRead::immutable_files(self) // All the files are immutable in this index.
     }
 
     #[inline]

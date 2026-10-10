@@ -251,7 +251,7 @@ impl PayloadFieldIndex for MutableBoolIndex {
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        Vec::new() // everything is mutable
+        BoolIndexRead::immutable_files(self)
     }
 }
 

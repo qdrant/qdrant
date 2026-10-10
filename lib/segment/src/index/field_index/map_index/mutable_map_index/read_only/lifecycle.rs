@@ -11,7 +11,7 @@ use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, Un
 use super::super::MapIndexKey;
 use super::super::in_memory::InMemoryMapIndex;
 use super::ReadOnlyAppendableMapIndex;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
@@ -82,5 +82,18 @@ where
             in_memory_index,
             storage,
         }))
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear read-only appendable map index gridstore cache: {err}"
+            ))
+        })
     }
 }
