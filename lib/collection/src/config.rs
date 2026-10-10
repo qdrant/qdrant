@@ -396,10 +396,26 @@ impl CollectionConfigInternal {
     ///
     /// Same rule as `Collection::apply_config` uses for configs from a Raft snapshot.
     pub fn is_core_config_updated(&self, other: &Self) -> bool {
-        self.params != other.params
-            || self.hnsw_config != other.hnsw_config
-            || self.optimizer_config != other.optimizer_config
-            || self.quantization_config != other.quantization_config
+        // Destructure, so a new field has to be explicitly classified here
+        let Self {
+            params,
+            hnsw_config,
+            optimizer_config,
+            // Only applied on restart
+            wal_config: _,
+            quantization_config,
+            // Applied to shards directly, see `Collection::update_strict_mode_config`
+            strict_mode_config: _,
+            // Identity and user data, not used by optimizers
+            uuid: _,
+            metadata: _,
+            created_at: _,
+        } = self;
+
+        params != &other.params
+            || hnsw_config != &other.hnsw_config
+            || optimizer_config != &other.optimizer_config
+            || quantization_config != &other.quantization_config
     }
 
     /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`)
