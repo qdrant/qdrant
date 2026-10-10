@@ -1,4 +1,4 @@
-use common::counter::hw;
+use common::ambient;
 use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::index::TextIndexParams;
@@ -20,7 +20,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         &self,
         texts: &[TextSearchRequestInternal],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         texts.iter().map(|text| self.text_search(text)).collect()
     }
 
