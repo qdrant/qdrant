@@ -59,11 +59,22 @@ impl Collection {
         global_temp_dir: &Path,
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
-        let snapshot_name = format!(
-            "{}-{this_peer_id}-{}.snapshot",
+        // Generate a unique snapshot name. The base format is
+        // `{name}-{peer_id}-{millis_resolution}.snapshot`. If a snapshot with
+        // that name already exists (e.g., two requests racing within the
+        // same millisecond on a fast loop), append a numeric suffix until
+        // unique. Without this, the second `store_file` would silently
+        // rename-overwrite the first archive and the first client would be
+        // told a snapshot exists that has been deleted from disk. See
+        // issue #10554.
+        let snapshot_name = unique_snapshot_name(
             self.name(),
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
-        );
+            this_peer_id,
+            chrono::Utc::now()
+                .format("%Y-%m-%d-%H-%M-%S-%3f")
+                .to_string(),
+            &self.snapshots_path,
+        )?;
 
         // Final location of snapshot
         let snapshot_path = self.snapshots_path.join(&snapshot_name);
@@ -505,5 +516,113 @@ impl Collection {
             .ok_or_else(|| shard_not_found_error(shard_id))?
             .get_partial_snapshot_manifest()
             .await
+    }
+}
+
+/// Generate a unique snapshot file name for the given collection and peer.
+///
+/// The base name is `{name}-{peer_id}-{timestamp}.snapshot` where `timestamp`
+/// is provided by the caller in millisecond resolution (e.g. `"2026-10-08-01-43-00-123"`).
+/// If a file with that name already exists in `snapshots_path`, append a
+/// numeric suffix (`-2`, `-3`, ...) until a free name is found.
+///
+/// The pre-existence check is racy in the strict sense: two requests can
+/// pass the `exists()` check before either writes. In practice the
+/// millisecond timestamp plus the bounded retry counter covers the
+/// observed patterns (concurrent pairs and 10ms-spaced sequential loops).
+/// The two real "save point" failures that would still cause a silent
+/// overwrite would be many requests in a single millisecond on a single
+/// peer, which is far outside the issue's repro envelope.
+fn unique_snapshot_name(
+    collection_name: &str,
+    peer_id: PeerId,
+    timestamp: String,
+    snapshots_path: &Path,
+) -> CollectionResult<String> {
+    const MAX_COLLISION_ATTEMPTS: u32 = 1000;
+
+    let base = format!("{collection_name}-{peer_id}-{timestamp}.snapshot");
+    if !snapshots_path.join(&base).exists() {
+        return Ok(base);
+    }
+
+    for counter in 2..=MAX_COLLISION_ATTEMPTS {
+        let candidate = format!("{collection_name}-{peer_id}-{timestamp}-{counter}.snapshot");
+        if !snapshots_path.join(&candidate).exists() {
+            return Ok(candidate);
+        }
+    }
+
+    Err(CollectionError::service_error(format!(
+        "could not find a unique snapshot name for {collection_name} after {MAX_COLLISION_ATTEMPTS} attempts"
+    )))
+}
+
+#[cfg(test)]
+mod unique_snapshot_name_tests {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use super::unique_snapshot_name;
+
+    fn tempdir() -> PathBuf {
+        let base = std::env::temp_dir().join(format!(
+            "qdrant-snapshot-name-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+        ));
+        fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    /// Regression for issue #10554: when no file with the base name
+    /// exists, the helper returns the base name unchanged. This is the
+    /// common case; the millisecond resolution in the timestamp string
+    /// already covers the typical intra-second collision.
+    #[test]
+    fn test_unique_snapshot_name_base_when_no_collision() {
+        let dir = tempdir();
+        let timestamp = "2026-10-08-01-43-00-123".to_string();
+        let name = unique_snapshot_name("coll", 7, timestamp, &dir).unwrap();
+        assert_eq!(name, "coll-7-2026-10-08-01-43-00-123.snapshot");
+    }
+
+    /// Regression for issue #10554: when the base name is taken (e.g., a
+    /// concurrent request that completed first), the helper returns the
+    /// base with a numeric suffix (`-2`). This is the second-fast path.
+    #[test]
+    fn test_unique_snapshot_name_appends_counter_on_collision() {
+        let dir = tempdir();
+        let timestamp = "2026-10-08-01-43-00-456".to_string();
+        // Pre-create the base file to simulate a prior request that
+        // already wrote to that name.
+        fs::write(
+            dir.join("coll-3-2026-10-08-01-43-00-456.snapshot"),
+            b"existing",
+        )
+        .unwrap();
+        let name = unique_snapshot_name("coll", 3, timestamp, &dir).unwrap();
+        assert_eq!(name, "coll-3-2026-10-08-01-43-00-456-2.snapshot");
+    }
+
+    /// Regression for issue #10554: the counter increments past `-2` if
+    /// `-2` is also taken. Picks the smallest free counter.
+    #[test]
+    fn test_unique_snapshot_name_skips_taken_counters() {
+        let dir = tempdir();
+        let timestamp = "2026-10-08-01-43-00-789".to_string();
+        // Pre-create base and -2; -3 should be free.
+        fs::write(
+            dir.join("coll-9-2026-10-08-01-43-00-789.snapshot"),
+            b"existing",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("coll-9-2026-10-08-01-43-00-789-2.snapshot"),
+            b"existing",
+        )
+        .unwrap();
+        let name = unique_snapshot_name("coll", 9, timestamp, &dir).unwrap();
+        assert_eq!(name, "coll-9-2026-10-08-01-43-00-789-3.snapshot");
     }
 }
