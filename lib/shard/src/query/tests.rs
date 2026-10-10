@@ -243,6 +243,113 @@ fn test_try_from_no_prefetch_mmr() {
     assert_eq!(root_plan.with_payload, WithPayloadInterface::Bool(true));
 }
 
+/// A leaf prefetch runs a single search, so it cannot rescore with MMR: without this check the
+/// query would be accepted and the MMR would be dropped silently.
+#[test]
+fn test_try_from_leaf_prefetch_mmr() {
+    let prefetch = ShardPrefetch {
+        prefetches: vec![], // No recursion: this prefetch is a leaf
+        query: Some(ScoringQuery::Mmr(MmrInternal {
+            vector: VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            using: "dense".to_owned(),
+            lambda: OrderedFloat(0.5),
+            candidates_limit: 100,
+        })),
+        limit: 10,
+        params: None,
+        filter: None,
+        score_threshold: None,
+    };
+    let request = ShardQueryRequest {
+        prefetches: vec![prefetch],
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            "dense",
+        )))),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+
+    let err = PlannedQuery::try_from(vec![request]).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "Validation failed: cannot apply Mmr without prefetches"
+    );
+}
+
+/// MMR on a prefetch that has nested prefetches is still accepted: it runs as a shard-level
+/// rescore over the inner results. Only a leaf prefetch has nothing to rescore with.
+#[test]
+fn test_try_from_nested_prefetch_mmr() {
+    let inner = ShardPrefetch {
+        prefetches: vec![],
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            "dense",
+        )))),
+        limit: 100,
+        params: None,
+        filter: None,
+        score_threshold: None,
+    };
+    let outer = ShardPrefetch {
+        prefetches: vec![inner],
+        query: Some(ScoringQuery::Mmr(MmrInternal {
+            vector: VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            using: "dense".to_owned(),
+            lambda: OrderedFloat(0.5),
+            candidates_limit: 100,
+        })),
+        limit: 10,
+        params: None,
+        filter: None,
+        score_threshold: None,
+    };
+    let request = ShardQueryRequest {
+        prefetches: vec![outer],
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+            "dense",
+        )))),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+
+    let planned_query = PlannedQuery::try_from(vec![request]).unwrap();
+
+    let [root_plan] = planned_query.root_plans.as_slice() else {
+        panic!("expected a single root plan");
+    };
+    let [Source::Prefetch(prefetch_plan)] = root_plan.merge_plan.sources.as_slice() else {
+        panic!("expected a single nested prefetch");
+    };
+    assert_eq!(
+        prefetch_plan.rescore_stages,
+        Some(RescoreStages::shard_level(RescoreParams {
+            rescore: ScoringQuery::Mmr(MmrInternal {
+                vector: VectorInternal::Dense(vec![1.0, 2.0, 3.0]),
+                using: "dense".to_owned(),
+                lambda: OrderedFloat(0.5),
+                candidates_limit: 100,
+            }),
+            limit: 10,
+            score_threshold: None,
+            params: None,
+        }))
+    );
+}
+
 #[test]
 fn test_try_from_hybrid_query() {
     let dummy_vector = vec![1.0, 2.0, 3.0];
