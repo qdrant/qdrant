@@ -1003,6 +1003,20 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Whether the local shard, if any, has an optimizer error recorded.
+    pub(crate) async fn has_local_optimizer_errors(&self) -> bool {
+        match self
+            .local
+            .read()
+            .await
+            .as_ref()
+            .and_then(|shard| shard.local_shard())
+        {
+            Some(local_shard) => local_shard.has_optimizer_errors().await,
+            None => false,
+        }
+    }
+
     /// Apply shard's strict mode configuration update
     ///
     /// The actual rate limiters live on `LocalShard`, so this just delegates

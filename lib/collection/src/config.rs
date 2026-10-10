@@ -391,6 +391,17 @@ pub struct CollectionConfigInternal {
 }
 
 impl CollectionConfigInternal {
+    /// Returns `true` if `other` differs in the parts of the config that optimizers are built
+    /// from, so optimizers have to be recreated to apply it.
+    ///
+    /// Same rule as `Collection::apply_config` uses for configs from a Raft snapshot.
+    pub fn is_core_config_updated(&self, other: &Self) -> bool {
+        self.params != other.params
+            || self.hnsw_config != other.hnsw_config
+            || self.optimizer_config != other.optimizer_config
+            || self.quantization_config != other.quantization_config
+    }
+
     /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`)
     /// storage datatype.
     ///
@@ -801,6 +812,26 @@ mod tests {
         let mut params = CollectionParams::empty();
         params.vectors = VectorsConfig::Single(builder.build());
         params
+    }
+
+    #[test]
+    fn core_config_updated_only_by_optimizer_inputs() {
+        let config = crate::tests::fixtures::create_collection_config();
+        assert!(!config.is_core_config_updated(&config.clone()));
+
+        let mut optimizer_changed = config.clone();
+        optimizer_changed.optimizer_config.flush_interval_sec += 1;
+        assert!(config.is_core_config_updated(&optimizer_changed));
+
+        let mut hnsw_changed = config.clone();
+        hnsw_changed.hnsw_config.m += 1;
+        assert!(config.is_core_config_updated(&hnsw_changed));
+
+        // Optimizers are not built from metadata
+        let mut metadata_changed = config.clone();
+        let metadata = serde_json::Map::from_iter([("owner".to_string(), "test".into())]);
+        metadata_changed.metadata = Some(Payload::from(metadata));
+        assert!(!config.is_core_config_updated(&metadata_changed));
     }
 
     #[test]

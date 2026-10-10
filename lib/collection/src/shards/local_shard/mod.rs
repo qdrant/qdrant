@@ -1213,6 +1213,15 @@ impl LocalShard {
         }
     }
 
+    /// Whether an optimizer error is recorded on this shard. Recreating optimizers clears it.
+    pub async fn has_optimizer_errors(&self) -> bool {
+        let segments = self.segments.clone();
+        let handle =
+            tokio::task::spawn_blocking(move || segments.read().optimizer_errors.is_some());
+        // If we can't tell, report an error so callers fall back to recreating optimizers
+        AbortOnDropHandle::new(handle).await.unwrap_or(true)
+    }
+
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {
         {
             let segments = self.segments.clone();
