@@ -24,7 +24,7 @@ use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 use crate::index::hnsw_index::hnsw::{
     HNSW_BUILD_MAX_PAR_LEN, HNSW_USE_HEURISTIC, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
-use crate::index::hnsw_index::links_container::LinksContainer;
+use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
@@ -371,6 +371,7 @@ fn build_block(
         Some(seeds) => {
             seeds.enter_block(points_to_index);
             let block_seeds = &*seeds;
+            let payload_m0 = block_seeds.payload_m0;
             let block = BlockContext {
                 points: points_to_index,
                 deleted: &block_deleted,
@@ -385,17 +386,52 @@ fn build_block(
                     .map(|local_id| {
                         check_process_stopped(stopped)?;
                         let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-                        let seeded =
+                        let replacements =
                             block_seeds.seed_point(local_id, &block, &block_graph, final_graph)?;
-                        if seeded {
+                        if replacements.is_some() {
                             counter.fetch_add(1, Ordering::Relaxed);
                         }
-                        Ok::<_, OperationError>((!seeded).then_some(local_id))
+                        Ok::<_, OperationError>((local_id, replacements))
                     })
                     .collect::<OperationResult<Vec<_>>>()
             });
             seeds.leave_block(points_to_index);
-            seeded?.into_iter().flatten().collect()
+            let seeded = seeded?;
+
+            // Link the replacements of removed points back. Those that are not seeded get
+            // their links when they are inserted.
+            let is_seeded: BitVec = seeded.iter().map(|(_, r)| r.is_some()).collect();
+            pool.install(|| {
+                seeded.par_iter().try_for_each(|(local_id, replacements)| {
+                    let Some(replacements) = replacements.as_ref().filter(|r| !r.is_empty()) else {
+                        return Ok(());
+                    };
+                    check_process_stopped(stopped)?;
+                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
+                    let scorer = block.scorer(points_to_index[*local_id as usize])?;
+                    let mut items = ItemsBuffer::default();
+                    for &other in replacements {
+                        if !is_seeded[other as usize] {
+                            continue;
+                        }
+                        let mut links = block_graph.links_mut(other, 0);
+                        if !links.links().contains(local_id) {
+                            links.connect_with_heuristic(
+                                *local_id,
+                                other,
+                                payload_m0,
+                                |a, b| scorer.score_internal(a, b),
+                                &mut items,
+                            );
+                        }
+                    }
+                    Ok::<_, OperationError>(())
+                })
+            })?;
+            seeded
+                .into_iter()
+                .filter_map(|(local_id, replacements)| replacements.is_none().then_some(local_id))
+                .collect()
         }
     };
 
@@ -481,9 +517,12 @@ fn old_range_blocks(
 /// The old graph keeps a point's main graph links and payload links in one list. Restricted to
 /// the points of a block, that list holds the old links between block points: the payload links
 /// of a similar old block, if there was one, and the main graph links that fall into the block.
-/// A point removed since the old build is replaced by its link closest to the point, like the
-/// main graph healer links through removed points. Taking all its links instead fills the lists,
-/// and the backlinks of inserted points then prune them.
+/// The links of a point to points removed since the old build are replaced like the main graph
+/// healer replaces them: as many as were removed, picked by the heuristic from the block links of
+/// the removed points, and each one linked back to the point. Without the backlinks, a graph
+/// healed many times over loses recall against a fresh build, a little more with every heal.
+/// Taking all links of the removed points instead fills the lists, and the backlinks of
+/// inserted points then prune them.
 ///
 /// A point is seeded if this leaves it enough candidates, and keeps them as its links, except
 /// for those it already has in the graph being built (main graph links, links of blocks merged
@@ -564,21 +603,21 @@ impl<'a> BlockSeeds<'a> {
 
     /// Add block point `local_id` to `block_graph` with its links from the old graph, if it
     /// has enough of them. `final_graph` is the graph the block will be merged into. Returns
-    /// whether it did.
+    /// `None` if it did not, else the links it took in place of removed points.
     fn seed_point(
         &self,
         local_id: PointOffsetType,
         block: &BlockContext,
         block_graph: &GraphLayersBuilder,
         final_graph: &GraphLayersBuilder,
-    ) -> OperationResult<bool> {
+    ) -> OperationResult<Option<Vec<PointOffsetType>>> {
         let block_deleted = block.deleted;
         if block_deleted[local_id as usize] {
-            return Ok(false);
+            return Ok(None);
         }
         let point_id = block.points[local_id as usize];
         let Some(old_id) = self.new_to_old[point_id as usize] else {
-            return Ok(false);
+            return Ok(None);
         };
 
         // Old links to points of the block, and points removed since the old build.
@@ -599,12 +638,11 @@ impl<'a> BlockSeeds<'a> {
             }
         }
 
-        // Replace each removed point with its link that is closest to this point.
+        // As many replacements of the removed points, picked by the heuristic from their links.
+        let mut replacements = Vec::new();
         if !removed.is_empty() {
-            let mut scorer = block.scorer(point_id)?;
             let mut options = Vec::new();
-            for old_link in removed {
-                options.clear();
+            for &old_link in &removed {
                 for link in self.old_links.links(old_link, 0) {
                     if let Some(new_link) = self.old_to_new[link as usize]
                         && let Some(option) = self.block_point(new_link, local_id, block_deleted)
@@ -614,17 +652,23 @@ impl<'a> BlockSeeds<'a> {
                         options.push(option);
                     }
                 }
-                let closest = scorer
-                    .score_points_unfiltered(&options)?
-                    .max_by(|a, b| a.score.total_cmp(&b.score));
-                if let Some(closest) = closest {
-                    candidates.push(closest.idx);
-                }
             }
+            let mut scorer = block.scorer(point_id)?;
+            let mut scored: Vec<ScoredPointOffset> =
+                scorer.score_points_unfiltered(&options)?.collect();
+            scored.sort_unstable_by(|a, b| b.cmp(a));
+            let mut container = LinksContainer::with_capacity(removed.len());
+            container.fill_from_sorted_with_heuristic(
+                scored.iter().copied(),
+                removed.len(),
+                |a, b| scorer.score_internal(a, b),
+            );
+            replacements = container.into_vec();
+            candidates.extend_from_slice(&replacements);
         }
 
         if candidates.len() < self.min_candidates(old_links_count) {
-            return Ok(false);
+            return Ok(None);
         }
 
         let all_candidates = candidates.len();
@@ -639,8 +683,9 @@ impl<'a> BlockSeeds<'a> {
         if candidates.len() > places {
             candidates = select_links(places, &candidates, point_id, block)?;
         }
+        replacements.retain(|r| candidates.contains(r));
         block_graph.add_new_point(local_id, vec![candidates]);
-        Ok(true)
+        Ok(Some(replacements))
     }
 }
 
