@@ -45,6 +45,12 @@ where
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_values: Option<Vec<_>>| {
                     let values = maybe_values.unwrap_or_default();
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed. Re-adding them in place would keep the
+                    // inverted postings but leave `point_to_values` empty (the
+                    // postings report every value as a duplicate), so drop the
+                    // point first to make the replay idempotent.
+                    in_memory_index.remove_point(point_offset);
                     in_memory_index.add_many_to_map(point_offset, values);
                     Ok(true)
                 },
