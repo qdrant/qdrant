@@ -9,8 +9,8 @@ use segment::types::{SeqNumberType, VectorNameBuf};
 use shard::operations::vector_name_ops::VectorNameConfig;
 use shard::operations::{CollectionUpdateOperations, OperationWithClockTag, VectorNameOperations};
 use shard::update::*;
-use shard::wal::WalRawRecord;
 
+use super::update_log::UpdateLog;
 use crate::EdgeShard;
 use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
@@ -29,15 +29,14 @@ impl EdgeShard {
         }
 
         let record = OperationWithClockTag::new(operation, None);
-        let raw_record = WalRawRecord::new(&record).map_err(service_error)?;
+
+        let mut update_log = self.update_log.lock();
+
+        let operation_id = update_log.append(&record)?;
         let OperationWithClockTag {
             operation,
             clock_tag: _,
         } = record;
-
-        let mut wal = self.wal.lock();
-
-        let operation_id = wal.write(&raw_record).map_err(service_error)?;
         self.apply(operation_id, operation)
     }
 
@@ -48,7 +47,13 @@ impl EdgeShard {
     /// operation the segments already hold is a no-op thanks to point versions. An operation that
     /// fails with a user error is skipped, as it failed the same way when it was first applied.
     pub(super) fn replay_wal(&self) -> OperationResult<()> {
-        let wal = self.wal.lock();
+        let update_log = self.update_log.lock();
+        let wal = match &*update_log {
+            UpdateLog::Wal(wal) => wal,
+            UpdateLog::Disabled {
+                last_operation_id: _,
+            } => return Ok(()),
+        };
 
         // Operations may reference a vector name that was deleted later. The config already
         // reflects the deletion, so such operations would fail validation and drop all their

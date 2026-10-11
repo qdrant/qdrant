@@ -1013,6 +1013,12 @@ pub struct EdgeConfig {
     /// serverless-compatible mode).
     #[uniffi(default = None)]
     pub id_tracker_memory: Option<Memory>,
+    /// Whether updates are written to a write-ahead log. `None`/`null` means
+    /// enabled. Fixed when the shard is created: loading an existing shard
+    /// with a different value fails. Without a WAL, updates are durable only
+    /// once `flush()` returns; a crash loses every update since the last flush.
+    #[uniffi(default = None)]
+    pub wal_enabled: Option<bool>,
 }
 
 /// Inclusive bounds for a dense vector's dimensionality, mirroring the server's
@@ -1082,6 +1088,16 @@ pub(crate) fn validate_hnsw(scope: &str, hnsw: &HnswIndexConfig) -> crate::error
 }
 
 impl EdgeConfig {
+    /// Hydrate into the engine's `edge::EdgeConfig`: the vector and memory
+    /// settings go through `SegmentConfig`, which has no notion of a WAL.
+    pub(crate) fn into_edge_config(self) -> edge::EdgeConfig {
+        let wal_enabled = self.wal_enabled;
+        edge::EdgeConfig {
+            wal_enabled,
+            ..edge::EdgeConfig::from_segment_config(&SegmentConfig::from(self))
+        }
+    }
+
     /// Reject host config that would crash the engine, so a host gets a
     /// catchable `InvalidArgument` instead of an uncatchable engine crash.
     /// Called from `load` before any conversion.
@@ -1179,6 +1195,8 @@ impl From<EdgeConfig> for SegmentConfig {
             sparse_vector_data,
             payload_memory,
             id_tracker_memory,
+            // Not a segment property, see `EdgeConfig::into_edge_config`.
+            wal_enabled: _,
         } = c;
         let payload_memory = payload_memory
             .map(SegmentMemory::from)
@@ -1217,6 +1235,7 @@ impl From<SegmentConfig> for EdgeConfig {
                 .collect(),
             payload_memory: Some(Memory::from(payload_storage_type.memory())),
             id_tracker_memory: id_tracker_memory.map(Memory::from),
+            wal_enabled: None,
         }
     }
 }
@@ -1247,6 +1266,7 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             id_tracker_memory,
             optimizers: _,
             wal_options: _,
+            wal_enabled,
             max_search_threads: _,
             search_pool_core: _,
         } = c;
@@ -1330,6 +1350,7 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             // `Cold` default.
             payload_memory: c.requested_payload_memory().map(Memory::from),
             id_tracker_memory: (*id_tracker_memory).map(Memory::from),
+            wal_enabled: *wal_enabled,
         }
     }
 }
