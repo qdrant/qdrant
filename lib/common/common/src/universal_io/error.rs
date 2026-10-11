@@ -253,6 +253,21 @@ impl UniversalIoError {
         }
     }
 
+    /// An owned copy for an error that more than one party reports, such as a
+    /// shared prefetch. Keeps the not-found classification and the message;
+    /// any other variant becomes an [`Self::Io`] error carrying the message.
+    pub fn duplicate(&self) -> Self {
+        if let Self::NotFound { path } = self {
+            return Self::NotFound { path: path.clone() };
+        }
+        let kind = if self.is_not_found() {
+            io::ErrorKind::NotFound
+        } else {
+            io::ErrorKind::Other
+        };
+        Self::Io(io::Error::new(kind, self.to_string()))
+    }
+
     pub fn uninitialized(description: impl Into<String>) -> Self {
         Self::Uninitialized {
             description: description.into(),

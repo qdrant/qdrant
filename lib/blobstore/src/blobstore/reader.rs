@@ -1,10 +1,10 @@
 use std::path::PathBuf;
-use std::pin::Pin;
 
 use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
+    CachedReadFs, OkNotFound, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UserData,
+    read_json_via,
 };
 use strum::IntoEnumIterator;
 
@@ -208,10 +208,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(
-        &self,
-        fs: &Fs,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<Vec<PreloadFuture>> {
         match self {
             Self::Gridstore(reader) => reader.live_preload(fs),
             Self::Logstore(reader) => reader.live_preload(fs),

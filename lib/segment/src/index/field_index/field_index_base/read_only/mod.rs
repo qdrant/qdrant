@@ -6,8 +6,7 @@ use std::path::PathBuf;
 
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalReadFs};
 
 pub(crate) use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
@@ -243,7 +242,7 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         match self {
             ReadOnlyFieldIndex::IntIndex(index) => index.live_preload(fs),
             ReadOnlyFieldIndex::DatetimeIndex(index) => index.live_preload(fs),

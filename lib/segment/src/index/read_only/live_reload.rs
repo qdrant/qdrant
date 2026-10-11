@@ -1,7 +1,6 @@
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalReadFs};
 
 use super::VectorIndexReadEnum;
 use crate::common::live_reload::LiveReload;
@@ -14,7 +13,7 @@ impl<S: UniversalReadExt> LiveReload for VectorIndexReadEnum<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         // Nothing to stage: the persisted variants are immutable after build,
         // and the mutable-RAM sparse index ingests through the already-reloaded
         // vector storage.

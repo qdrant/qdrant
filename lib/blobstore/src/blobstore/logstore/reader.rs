@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
 use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{
+    CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UserData,
+};
 
 use super::page::AppendOnlyPages;
 use super::view::LogstoreView;
@@ -85,7 +86,7 @@ impl<V, S: UniversalRead> LogstoreReader<V, S, TrackerEnum<S>> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+    ) -> Result<Vec<PreloadFuture>> {
         match &self.tracker {
             TrackerEnum::AppendOnly(tracker) => {
                 let mut futs = vec![tracker.live_preload(fs)?];

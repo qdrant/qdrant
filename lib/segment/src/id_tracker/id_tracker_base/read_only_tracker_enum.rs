@@ -3,9 +3,8 @@ use std::path::{Path, PathBuf};
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, Populate, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+    CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
-use futures::future::BoxFuture;
 use strum::{EnumDiscriminants, EnumIter, IntoEnumIterator as _};
 
 use crate::common::operation_error::OperationResult;
@@ -125,7 +124,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         match self {
             Self::Appendable(id_tracker) => id_tracker.live_preload(fs),
             Self::Immutable(id_tracker) => id_tracker.live_preload(fs),

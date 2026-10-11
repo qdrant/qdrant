@@ -1,8 +1,7 @@
 use common::persisted_hashmap::Key;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
@@ -19,7 +18,7 @@ where
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         Ok(Vec::new())
     }
 

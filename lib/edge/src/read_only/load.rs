@@ -163,8 +163,8 @@ fn skip_level(err: &OperationError) -> log::Level {
 ///
 /// Like [`load_segments_parallel`], the preloads are driven to completion on
 /// the calling thread; `pool` only runs the CPU-bound apply.
-/// A failed preload is benign (warn): its reload still runs and surfaces
-/// anything real. Returns each segment's reload result, in input order.
+/// A failed preload skips its segment's reload and becomes that segment's
+/// result. Returns each segment's reload result, in input order.
 ///
 /// Cooperative cancellation: `is_stopped` is checked between segments and
 /// between stages; a set flag yields [`OperationError::Cancelled`] as the

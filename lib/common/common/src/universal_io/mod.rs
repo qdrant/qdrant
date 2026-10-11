@@ -40,7 +40,8 @@ pub use self::traits::{
     UniversalReadFsAsync, UniversalWrite, UniversalWriteFs, UniversalWriteFsAsync, UserData,
 };
 pub use self::types::{
-    ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, ReadBytesItem, ReadRange,
-    UioResult, UniversalKind, read_bin_via, read_json_via, read_whole_via,
+    ByteOffset, FileIndex, Flusher, ListedFile, OpenOptions, Populate, PreloadFuture,
+    ReadBytesItem, ReadRange, UioResult, UniversalKind, read_bin_via, read_json_via,
+    read_whole_via,
 };
 pub use self::wrappers::{ReadOnly, SliceBufferedUpdateWrapper, StoredStruct, TypedStorage};
