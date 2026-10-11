@@ -258,7 +258,18 @@ impl EdgeShard {
             .flush()
             .map_err(|e| OperationError::service_error(format!("WAL flush failed: {e}")))?;
 
-        self.segments.read().flush_all(FlushMode::Sync, true)?;
+        let persisted_version = self.segments.read().flush_all(FlushMode::Sync, true)?;
+
+        // Acknowledge the persisted version so the WAL truncates its closed
+        // segments. Without this, the WAL directory only ever grows and every
+        // closed segment stays on disk forever. `Wal::ack` runs `prefix_truncate`,
+        // which always keeps at least one closed segment and the newest one in
+        // particular; that is what gives `Wal::open` the right starting operation
+        // number on reload.
+        self.wal
+            .lock()
+            .ack(persisted_version)
+            .map_err(|e| OperationError::service_error(format!("WAL ack failed: {e}")))?;
 
         Ok(())
     }
