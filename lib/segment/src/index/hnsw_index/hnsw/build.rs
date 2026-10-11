@@ -12,7 +12,7 @@ use log::debug;
 use rand::Rng;
 use rayon::ThreadPool;
 
-use super::old_index::OldIndexCandidate;
+use super::old_index::{OldIndexCandidate, payload_hnsw_m};
 use super::telemetry::HNSWSearchesTelemetry;
 use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs, derive_config};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -84,10 +84,7 @@ impl HNSWIndex {
             debug!("skip building main HNSW graph");
         }
 
-        let payload_m = HnswM::new(
-            config.payload_m.unwrap_or(config.m),
-            config.payload_m0.unwrap_or(config.m0),
-        );
+        let payload_m = payload_hnsw_m(&config);
 
         // Progress subtasks
         let progress_migrate = build_main_graph.then(|| progress.subtask("migrate"));
@@ -193,7 +190,7 @@ impl HNSWIndex {
                 id_tracker_ref.deref(),
                 &vector_storage_ref,
                 &quantized_vectors_ref,
-                old_index,
+                old_index.as_ref(),
                 &graph_layers_builder,
                 config.ef_construct,
                 progress_migrate.unwrap(),
@@ -201,9 +198,13 @@ impl HNSWIndex {
                 &pool,
                 stopped,
             )?;
-        } else {
-            drop(old_index);
         }
+
+        // Payload blocks can start from the old graph only if its payload links have the
+        // same size.
+        let payload_seed = old_index.as_ref().filter(|old_index| {
+            old_index.payload_m() == payload_m
+        });
 
         if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
             #[cfg(feature = "gpu")]
@@ -225,6 +226,7 @@ impl HNSWIndex {
                 &config,
                 payload_m,
                 indexed_fields,
+                payload_seed,
                 progress_additional_links,
                 &pool,
                 rng,
@@ -237,6 +239,7 @@ impl HNSWIndex {
         } else {
             debug!("skip building additional HNSW links");
         }
+        drop(old_index);
 
         config.indexed_vector_count.replace(indexed_vectors);
 

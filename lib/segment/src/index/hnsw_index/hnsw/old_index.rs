@@ -10,6 +10,7 @@ use log::debug;
 use super::HNSWIndex;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::VectorIndexEnum;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_links::GraphLinksResidency;
@@ -71,15 +72,19 @@ impl<'a> OldIndexCandidate<'a> {
             .as_ref()
             .map(|qv| &qv.config().quantization_config);
 
-        let no_main_graph = config.m == 0;
         let configuration_mismatch = config.m != old_index.config.m
             || config.m0 != old_index.config.m0
             || config.ef_construct != old_index.config.ef_construct
             || new_quantization_config != old_quantization_config;
+        // Without a main graph, the old graph has only payload links, and payload blocks can
+        // start from them only if they have the same size.
+        let no_main_graph = config.m == 0;
+        let nothing_to_reuse =
+            no_main_graph && payload_hnsw_m(config) != payload_hnsw_m(&old_index.config);
         // If old graph has vectors, reusing it will cause a lot of random reads,
         // making it slower than building from scratch.
         let old_graph_is_with_vectors = old_index.graph.has_inline_vectors();
-        if no_main_graph || configuration_mismatch || old_graph_is_with_vectors {
+        if nothing_to_reuse || configuration_mismatch || old_graph_is_with_vectors {
             return None;
         }
         drop(old_quantized_vectors_ref);
@@ -240,10 +245,23 @@ impl OldIndex<'_> {
         Some(self.graph().links.point_level(old_id))
     }
 
+    /// `m` of the old graph's payload links.
+    pub(super) fn payload_m(&self) -> HnswM {
+        payload_hnsw_m(&self.index.config)
+    }
+
     pub(in crate::index::hnsw_index) fn graph(&self) -> &GraphLayers {
         match &self.reopened_graph {
             Some(reopened_graph) => reopened_graph,
             None => self.index.graph.as_direct().expect("opened in `evaluate`"),
         }
     }
+}
+
+/// `m` of the payload links of a graph built with `config`.
+pub(super) fn payload_hnsw_m(config: &HnswGraphConfig) -> HnswM {
+    HnswM::new(
+        config.payload_m.unwrap_or(config.m),
+        config.payload_m0.unwrap_or(config.m0),
+    )
 }
