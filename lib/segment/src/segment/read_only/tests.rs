@@ -10,11 +10,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::ambient;
 use common::flags::FeatureFlags;
+use common::sorted_slice::SortedSlice;
 use common::types::DeferredBehavior;
 use common::universal_io::{CachedReadFs, MmapFile, MmapFs};
+use ordered_float::OrderedFloat;
 use rstest::rstest;
 use tempfile::Builder;
 
+use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::load_profile::LoadProfile;
 use crate::data_types::named_vectors::NamedVectors;
@@ -30,7 +33,7 @@ use crate::segment_constructor::build_segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
 use crate::types::{
     Condition, Distance, FieldCondition, Filter, HasVectorCondition, HnswConfig, HnswGlobalConfig,
-    Indexes, Match, PayloadFieldSchema, PayloadSchemaType, PointIdType, QuantizationConfig,
+    Indexes, Match, PayloadFieldSchema, PayloadSchemaType, PointIdType, QuantizationConfig, Range,
     ScalarQuantizationConfig, ScalarType, SegmentConfig, ValueVariants, VectorDataConfig,
     VectorStorageType, WithPayload,
 };
@@ -1436,4 +1439,247 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
     // The next refresh picks up the rest.
     preload_then_reload(&mut read_only).expect("reload");
     assert_eq!(read_only.available_point_count(), 5000);
+}
+
+/// Where a simulated partial live reload stops (as if the next component's
+/// reload returned an error).
+#[derive(Debug, Clone, Copy)]
+enum PartialStop {
+    /// Payload storage and every field index applied the delta; vectors failed.
+    BeforeVectors,
+    /// Payload storage applied; the payload index failed on its first field.
+    BeforePayloadIndex,
+    /// Payload storage and the `num` field index applied; another field failed.
+    InsidePayloadIndex,
+    /// Payload storage and the `kw` (map) field index applied; another field failed.
+    InsidePayloadIndexKeyword,
+}
+
+fn num_range_filter(lt: i64) -> Filter {
+    Filter::new_must(Condition::Field(FieldCondition::new_range(
+        JsonPath::new("num"),
+        Range {
+            lt: Some(OrderedFloat(lt as f64)),
+            gt: None,
+            gte: None,
+            lte: None,
+        },
+    )))
+}
+
+fn num_match_filter(value: i64) -> Filter {
+    Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new("num"),
+        Match::new_value(ValueVariants::Integer(value)),
+    )))
+}
+
+/// Regression test: a live reload whose components fail
+/// after *some* of them already applied the tracker delta. The retained delta
+/// is replayed to every component on the retry, including those that applied
+/// it the first time, so each component's reload must be idempotent. The
+/// follower must end up answering exactly like the writer.
+#[rstest]
+#[case::before_vectors(PartialStop::BeforeVectors)]
+#[case::before_payload_index(PartialStop::BeforePayloadIndex)]
+#[case::inside_payload_index(PartialStop::InsidePayloadIndex)]
+#[case::inside_payload_index_keyword(PartialStop::InsidePayloadIndexKeyword)]
+fn test_partially_failed_live_reload_converges(#[case] stop: PartialStop) {
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_partial")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let mut op_num = 0u64;
+    let mut next_op = || {
+        op_num += 1;
+        op_num
+    };
+    mutable
+        .create_field_index(
+            next_op(),
+            &JsonPath::new("kw"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        )
+        .unwrap();
+    mutable
+        .create_field_index(
+            next_op(),
+            &JsonPath::new("num"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)),
+        )
+        .unwrap();
+
+    let write = |segment: &mut Segment, op: u64, i: usize, round: usize| {
+        let vector: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3 + round * 5) % 13) as f32 + 0.5)
+            .collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        segment.upsert_point(op, point_id, vectors).unwrap();
+        let kw = ["red", "green", "blue"][(i + round) % 3];
+        let payload = serde_json::from_value(serde_json::json!({
+            "kw": kw,
+            "num": (i % 7 + round * 10) as i64,
+        }))
+        .unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
+    };
+
+    for i in 0..NUM_POINTS {
+        let op = next_op();
+        write(&mut mutable, op, i, 0);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    assert_query_equivalence(&mutable, &read_only);
+
+    // Writer: overwrite a third, patch a few payloads, clear some, delete some.
+    for i in (0..NUM_POINTS).step_by(3) {
+        let op = next_op();
+        write(&mut mutable, op, i, 1);
+    }
+    for i in (1..NUM_POINTS).step_by(11) {
+        let payload = serde_json::from_value(serde_json::json!({ "num": 999 })).unwrap();
+        let op = next_op();
+        mutable
+            .set_payload(op, (i as u64 + 1).into(), &payload, &None)
+            .unwrap();
+    }
+    for i in (2..NUM_POINTS).step_by(13) {
+        let op = next_op();
+        mutable.clear_payload(op, (i as u64 + 1).into()).unwrap();
+    }
+    for i in (5..NUM_POINTS).step_by(17) {
+        let op = next_op();
+        mutable.delete_point(op, (i as u64 + 1).into()).unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    // First reload attempt: tracker delta drained, then components applied in
+    // `live_reload`'s order until the simulated failure.
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
+    {
+        let fs = &*read_only.reload_fs.get_mut();
+        let fresh = read_only
+            .id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id)
+            .unwrap();
+        assert!(!fresh.is_empty());
+        let mut pending = read_only.pending_reload.borrow_mut();
+        pending.merge(fresh);
+        let deleted = SortedSlice::new(&pending.deleted).unwrap();
+        let inserted = SortedSlice::new(&pending.inserted).unwrap();
+
+        read_only
+            .payload_storage
+            .borrow_mut()
+            .live_reload(fs, &deleted, &inserted)
+            .unwrap();
+        match stop {
+            PartialStop::BeforePayloadIndex => {}
+            PartialStop::BeforeVectors => read_only
+                .payload_index
+                .borrow_mut()
+                .live_reload(fs, &deleted, &inserted)
+                .unwrap(),
+            PartialStop::InsidePayloadIndex | PartialStop::InsidePayloadIndexKeyword => {
+                let name = match stop {
+                    PartialStop::InsidePayloadIndex => "num",
+                    PartialStop::InsidePayloadIndexKeyword => "kw",
+                    PartialStop::BeforeVectors | PartialStop::BeforePayloadIndex => unreachable!(),
+                };
+                let mut payload_index = read_only.payload_index.borrow_mut();
+                let field = payload_index
+                    .field_indexes
+                    .get_mut(&JsonPath::new(name))
+                    .expect("field is indexed");
+                for index in field.iter_mut() {
+                    index.live_reload(fs, &deleted, &inserted).unwrap();
+                }
+            }
+        }
+        // ... and the next component fails: `pending` is retained.
+    }
+
+    // The retry replays the retained delta to every component.
+    preload_then_reload(&mut read_only).expect("retried live reload");
+    assert!(read_only.pending_reload.borrow().is_empty());
+
+    assert_query_equivalence(&mutable, &read_only);
+    for lt in [5, 12, 1000] {
+        let filter = num_range_filter(lt);
+        assert_eq!(
+            sorted_filtered(&mutable, &filter),
+            sorted_filtered(&read_only, &filter),
+            "filtered read mismatch for num < {lt} ({stop:?})",
+        );
+    }
+    // Two-clause filters: the planner iterates one field's index and checks the
+    // other clause per point, which reads the forward (point -> values) side.
+    for kw in ["red", "green", "blue"] {
+        for value in [0, 3, 13, 999] {
+            let mut filter = keyword_filter(kw);
+            filter
+                .must
+                .as_mut()
+                .unwrap()
+                .extend(num_match_filter(value).must.unwrap());
+            assert_eq!(
+                sorted_filtered(&mutable, &filter),
+                sorted_filtered(&read_only, &filter),
+                "filtered read mismatch for kw == {kw} && num == {value} ({stop:?})",
+            );
+        }
+    }
+    for value in [0, 3, 13, 999] {
+        let filter = num_match_filter(value);
+        assert_eq!(
+            sorted_filtered(&mutable, &filter),
+            sorted_filtered(&read_only, &filter),
+            "filtered read mismatch for num == {value} ({stop:?})",
+        );
+    }
+    for i in 0..NUM_POINTS {
+        let point_id: PointIdType = (i as u64 + 1).into();
+        if mutable.point_version(point_id).is_none() {
+            continue;
+        }
+        assert_eq!(
+            mutable.vector(DEFAULT_VECTOR_NAME, point_id).unwrap(),
+            read_only.vector(DEFAULT_VECTOR_NAME, point_id).unwrap(),
+            "vector mismatch for point {point_id} ({stop:?})",
+        );
+    }
 }

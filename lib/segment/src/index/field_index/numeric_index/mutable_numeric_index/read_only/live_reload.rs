@@ -47,6 +47,9 @@ where
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_values: Option<Vec<T>>| {
                     let values = maybe_values.unwrap_or_default();
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed: drop them first so the replay is idempotent.
+                    in_memory_index.remove_point(point_offset);
                     in_memory_index.add_many_to_list(point_offset, values);
                     Ok(true)
                 },

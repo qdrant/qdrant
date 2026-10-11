@@ -44,6 +44,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
                         .into_iter()
                         .map(GeoPoint::from)
                         .collect::<Vec<_>>();
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed: drop them first so the replay is idempotent.
+                    in_memory_index.remove_point(point_offset)?;
                     in_memory_index.add_many_geo_points(point_offset, geo_points)?;
                     Ok(true)
                 },
