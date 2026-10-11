@@ -36,6 +36,7 @@ pub(crate) fn test_config() -> EdgeConfig {
         quantization_config: None,
         optimizers: Default::default(),
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: None,
         search_pool_core: None,
     }
