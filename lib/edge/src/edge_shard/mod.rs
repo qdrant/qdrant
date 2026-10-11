@@ -272,7 +272,13 @@ impl EdgeShard {
             .flush()
             .map_err(|e| OperationError::service_error(format!("WAL flush failed: {e}")))?;
 
-        self.segments.read().flush_all(FlushMode::Sync, true)?;
+        let persisted_version = self.segments.read().flush_all(FlushMode::Sync, true)?;
+
+        // Keeps the newest closed segment, which `Wal::open` needs to restore operation numbering.
+        self.wal
+            .lock()
+            .ack(persisted_version)
+            .map_err(|e| OperationError::service_error(format!("WAL ack failed: {e}")))?;
 
         Ok(())
     }
