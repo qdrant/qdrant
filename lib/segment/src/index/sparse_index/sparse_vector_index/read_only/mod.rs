@@ -232,17 +232,7 @@ impl<S: UniversalReadExt> ReadOnlySparseVectorIndex<S, InvertedIndexRam> {
             // indexed (an appended offset never changes its vector): replay those
             // as an update of the same vector, so the vector count (IDF's N) and
             // total size are not counted twice.
-            let indexed = vector.indices.first().is_some_and(|&dim_id| {
-                inverted_index
-                    .postings
-                    .get(dim_id as usize)
-                    .is_some_and(|posting| {
-                        posting
-                            .elements
-                            .binary_search_by_key(&id, |element| element.record_id)
-                            .is_ok()
-                    })
-            });
+            let indexed = inverted_index.contains(id, &vector);
             let old_vector = indexed.then(|| vector.clone());
             inverted_index.upsert(id, vector, old_vector);
         })?;

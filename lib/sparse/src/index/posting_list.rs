@@ -31,6 +31,18 @@ impl PostingList {
         }
     }
 
+    /// Whether the list holds an element for `record_id`. O(1) for an id past
+    /// the last element, a binary search otherwise.
+    pub fn contains(&self, record_id: PointOffsetType) -> bool {
+        self.elements
+            .last()
+            .is_some_and(|last| last.record_id >= record_id)
+            && self
+                .elements
+                .binary_search_by_key(&record_id, |e| e.record_id)
+                .is_ok()
+    }
+
     pub fn delete(&mut self, record_id: PointOffsetType) {
         let index = self
             .elements
