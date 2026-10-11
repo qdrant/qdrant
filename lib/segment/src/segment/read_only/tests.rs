@@ -1683,3 +1683,308 @@ fn test_partially_failed_live_reload_converges(#[case] stop: PartialStop) {
         );
     }
 }
+
+/// Regression test: a reload retried after a part-way failure replays its
+/// inserts into every appendable index (geo, full-text, bool and null indexes,
+/// and the mutable-RAM sparse index whose vector count is IDF's N). The
+/// follower must end up indistinguishable from a fresh open of the same files.
+///
+/// `applied` names the vector whose reload succeeded before the failure.
+#[rstest]
+#[case::no_vector_applied(None)]
+#[case::dense_applied(Some(DEFAULT_VECTOR_NAME))]
+#[case::sparse_applied(Some("sp"))]
+fn test_retried_live_reload_matches_fresh_open(#[case] applied: Option<&'static str>) {
+    use sparse::common::sparse_vector::SparseVector;
+
+    use crate::data_types::modifier::Modifier;
+    use crate::data_types::vectors::VectorRef;
+    use crate::index::VectorIndexRead as _;
+    use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+    use crate::types::{
+        GeoPoint, GeoRadius, IsEmptyCondition, IsNullCondition, PayloadField,
+        SparseVectorDataConfig, SparseVectorStorageType,
+    };
+
+    const SPARSE: &str = "sp";
+
+    let segments_dir = Builder::new()
+        .prefix("appendable_seg_all_indexes")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: HashMap::from([(
+                SPARSE.to_owned(),
+                SparseVectorDataConfig {
+                    index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None, None),
+                    storage_type: SparseVectorStorageType::default(),
+                    modifier: Some(Modifier::Idf),
+                },
+            )]),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let mut op_num = 0u64;
+    let mut next_op = || {
+        op_num += 1;
+        op_num
+    };
+    for (name, schema) in [
+        ("kw", PayloadSchemaType::Keyword),
+        ("num", PayloadSchemaType::Integer),
+        ("loc", PayloadSchemaType::Geo),
+        ("txt", PayloadSchemaType::Text),
+        ("flag", PayloadSchemaType::Bool),
+    ] {
+        mutable
+            .create_field_index(
+                next_op(),
+                &JsonPath::new(name),
+                Some(&PayloadFieldSchema::FieldType(schema)),
+            )
+            .unwrap();
+    }
+
+    let write = |segment: &mut Segment, op: u64, i: usize, round: usize| {
+        let dense: Vec<f32> = (0..DIM)
+            .map(|j| ((i * 7 + j * 3 + round * 5) % 13) as f32 + 0.5)
+            .collect();
+        let sparse = SparseVector::new(
+            vec![(i % 7) as u32, 8 + ((i + round) % 15) as u32],
+            vec![1.0 + (i % 11) as f32, 0.5 + (round % 5) as f32],
+        )
+        .unwrap();
+        let mut vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, dense.as_slice().into());
+        vectors.insert_ref(SPARSE, VectorRef::Sparse(&sparse));
+        let point_id = (i as u64 + 1).into();
+        segment.upsert_point(op, point_id, vectors).unwrap();
+        let kw = ["red", "green", "blue"][(i + round) % 3];
+        let word = ["alpha", "beta", "gamma"][(i + round) % 3];
+        let mut payload = serde_json::json!({
+            "kw": kw,
+            "loc": { "lat": (i % 50) as f64, "lon": ((i + round) % 50) as f64 },
+            "txt": format!("{word} point {i}"),
+            "flag": (i + round).is_multiple_of(2),
+        });
+        // Every 4th point has an explicit null `num`, every 5th none at all.
+        if i.is_multiple_of(4) {
+            payload["num"] = serde_json::Value::Null;
+        } else if !i.is_multiple_of(5) {
+            payload["num"] = serde_json::json!((i % 7 + round * 10) as i64);
+        }
+        let payload = serde_json::from_value(payload).unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
+    };
+
+    for i in 0..NUM_POINTS {
+        let op = next_op();
+        write(&mut mutable, op, i, 0);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+    // Same history, reloads never fail: the reference for the sparse index,
+    // whose statistics a fresh open computes differently (see below).
+    let mut clean =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+
+    for i in (0..NUM_POINTS).step_by(3) {
+        let op = next_op();
+        write(&mut mutable, op, i, 1);
+    }
+    for i in (1..NUM_POINTS).step_by(11) {
+        let payload = serde_json::from_value(serde_json::json!({ "flag": true })).unwrap();
+        let op = next_op();
+        mutable
+            .set_payload(op, (i as u64 + 1).into(), &payload, &None)
+            .unwrap();
+    }
+    for i in (2..NUM_POINTS).step_by(13) {
+        let op = next_op();
+        mutable.clear_payload(op, (i as u64 + 1).into()).unwrap();
+    }
+    for i in (5..NUM_POINTS).step_by(17) {
+        let op = next_op();
+        mutable.delete_point(op, (i as u64 + 1).into()).unwrap();
+    }
+    mutable.flush(true).unwrap();
+
+    // First reload attempt: the tracker delta is drained, payload storage, every
+    // field index and the `applied` vector apply it, and the other vector fails.
+    // Naming the vector covers both reload orders whatever the map's order is.
+    let max_committed_id =
+        futures::executor::block_on(read_only.live_preload(&AtomicBool::new(false))).unwrap();
+    {
+        let fs = &*read_only.reload_fs.get_mut();
+        let fresh = read_only
+            .id_tracker
+            .borrow_mut()
+            .live_reload(fs, max_committed_id)
+            .unwrap();
+        assert!(!fresh.is_empty());
+        let mut pending = read_only.pending_reload.borrow_mut();
+        pending.merge(fresh);
+        let deleted = SortedSlice::new(&pending.deleted).unwrap();
+        let inserted = SortedSlice::new(&pending.inserted).unwrap();
+
+        read_only
+            .payload_storage
+            .borrow_mut()
+            .live_reload(fs, &deleted, &inserted)
+            .unwrap();
+        read_only
+            .payload_index
+            .borrow_mut()
+            .live_reload(fs, &deleted, &inserted)
+            .unwrap();
+        if let Some(name) = applied {
+            read_only.vector_data[name]
+                .live_reload(fs, &deleted, &inserted)
+                .unwrap();
+        }
+        // ... and the other vector fails: `pending` is retained.
+    }
+    preload_then_reload(&mut read_only).expect("retried live reload");
+    // One more reload on each follower, so both have settled.
+    preload_then_reload(&mut read_only).expect("follow-up live reload");
+    preload_then_reload(&mut clean).expect("clean live reload");
+    preload_then_reload(&mut clean).expect("clean follow-up live reload");
+
+    let fresh =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("fresh read-only open");
+
+    let field = |key: &str| PayloadField {
+        key: JsonPath::new(key),
+    };
+    let filters: Vec<(&str, Filter)> = vec![
+        ("kw==red", keyword_filter("red")),
+        ("num<5", num_range_filter(5)),
+        ("num==13", num_match_filter(13)),
+        (
+            "geo",
+            Filter::new_must(Condition::Field(FieldCondition::new_geo_radius(
+                JsonPath::new("loc"),
+                GeoRadius {
+                    center: GeoPoint::new(10.0, 10.0).unwrap(),
+                    radius: OrderedFloat(1_500_000.0),
+                },
+            ))),
+        ),
+        (
+            "txt~alpha",
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                JsonPath::new("txt"),
+                Match::new_text("alpha"),
+            ))),
+        ),
+        (
+            "flag==true",
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                JsonPath::new("flag"),
+                Match::new_value(ValueVariants::Bool(true)),
+            ))),
+        ),
+        (
+            "is_empty(num)",
+            Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+                is_empty: field("num"),
+            })),
+        ),
+        (
+            "is_null(num)",
+            Filter::new_must(Condition::IsNull(IsNullCondition {
+                is_null: field("num"),
+            })),
+        ),
+        (
+            "is_empty(kw)",
+            Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
+                is_empty: field("kw"),
+            })),
+        ),
+    ];
+    for (name, filter) in &filters {
+        assert_eq!(
+            sorted_filtered(&fresh, filter),
+            sorted_filtered(&read_only, filter),
+            "filtered read mismatch for {name} (applied before the failure: {applied:?})",
+        );
+        // Two-clause variant: one clause drives, the other is checked per point.
+        let mut combined = keyword_filter("green");
+        combined
+            .must
+            .as_mut()
+            .unwrap()
+            .extend(filter.must.clone().unwrap());
+        assert_eq!(
+            sorted_filtered(&fresh, &combined),
+            sorted_filtered(&read_only, &combined),
+            "filtered read mismatch for kw==green && {name} (applied before the failure: {applied:?})",
+        );
+    }
+
+    let sparse_count = |segment: &ReadOnlySegment<MmapFile>| {
+        segment.vector_data[SPARSE]
+            .vector_index
+            .borrow()
+            .indexed_vector_count()
+    };
+    // The follower's mutable-RAM sparse index never drops superseded or deleted
+    // offsets, so its count (IDF's N) is not a fresh open's: compare against the
+    // follower whose reloads never failed.
+    assert_eq!(
+        sparse_count(&clean),
+        sparse_count(&read_only),
+        "sparse indexed vector count (IDF's N) drifted (applied before the failure: {applied:?})",
+    );
+    let query = QueryVector::Nearest(VectorInternal::Sparse(
+        SparseVector::new(vec![2, 10], vec![1.0, 0.5]).unwrap(),
+    ));
+    let query_context = QueryContext::default();
+    let sqc = query_context.get_segment_query_context();
+    let search = |segment: &ReadOnlySegment<MmapFile>| {
+        segment
+            .search_batch(
+                SPARSE,
+                &[&query],
+                &WithPayload::default(),
+                &false.into(),
+                None,
+                NUM_POINTS,
+                None,
+                &sqc,
+            )
+            .unwrap()
+    };
+    assert_eq!(
+        search(&clean),
+        search(&read_only),
+        "sparse IDF search mismatch"
+    );
+}
