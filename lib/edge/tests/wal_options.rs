@@ -174,3 +174,37 @@ fn reload_with_larger_wal_capacity_after_upsert() {
         .unwrap();
     assert_eq!(shard.info().unwrap().points_count, 2);
 }
+
+/// Regression test for #11068: `flush` must acknowledge the persisted version,
+/// so the WAL drops closed segments down to `retain_closed` instead of growing.
+#[test]
+fn flush_truncates_closed_wal_segments() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-options-flush-ack")
+        .tempdir()
+        .unwrap();
+
+    let config = base_builder()
+        .wal_options(WalOptions {
+            segment_capacity: 1024,
+            ..small_wal_options()
+        })
+        .build();
+    let shard = EdgeShard::new(dir.path(), config).unwrap();
+
+    for id in 0..50 {
+        shard
+            .update(PointOperation(UpsertPoints(PointsList(vec![point(id)]))))
+            .unwrap();
+        shard.flush().unwrap();
+    }
+
+    let closed_segments = fs_err::read_dir(dir.path().join("wal"))
+        .unwrap()
+        .filter(|entry| {
+            let name = entry.as_ref().unwrap().file_name();
+            name.to_string_lossy().starts_with("closed-")
+        })
+        .count();
+    assert_eq!(closed_segments, 1);
+}
