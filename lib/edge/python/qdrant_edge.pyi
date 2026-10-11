@@ -291,6 +291,7 @@ class EdgeConfig:
         search_pool_core: Optional[int] = None,
         payload_memory: Optional["Memory"] = None,
         id_tracker_memory: Optional["Memory"] = None,
+        wal_enabled: Optional[bool] = None,
     ) -> None:
         """
         Create an EdgeConfig.
@@ -323,6 +324,9 @@ class EdgeConfig:
                             (treated as Cached). Defaults to Cold.
             id_tracker_memory: Memory placement of the point id tracker in non-appendable
                                segments. None uses the deployment default.
+            wal_enabled: Whether updates are written to a write-ahead log. None means enabled.
+                         Fixed when the shard is created: loading with a different value fails.
+                         Without a WAL, updates are durable only once flush() returns.
         """
         ...
 
@@ -374,6 +378,11 @@ class EdgeConfig:
     @property
     def id_tracker_memory(self) -> Optional["Memory"]:
         """Memory placement of the point id tracker, or None if not specified."""
+        ...
+
+    @property
+    def wal_enabled(self) -> Optional[bool]:
+        """Whether updates are written to a write-ahead log, or None if not specified (enabled)."""
         ...
 
 class EdgeVectorParams:

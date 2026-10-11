@@ -431,7 +431,8 @@ fn resolve_initial_config(
                 && provided.wal_enabled() != persisted.wal_enabled() =>
         {
             return Err(OperationError::validation_error(format!(
-                "wal_enabled is fixed when the shard is created: the shard has it {}",
+                "wal_enabled cannot be changed after the shard is created \
+                 (the shard was created with wal_enabled={})",
                 persisted.wal_enabled(),
             )));
         }

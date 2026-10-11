@@ -25,7 +25,7 @@ pub struct PyEdgeConfig(pub EdgeConfig);
 #[pymethods]
 impl PyEdgeConfig {
     #[new]
-    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None, search_pool_core=None, payload_memory=None, id_tracker_memory=None))]
+    #[pyo3(signature = (vectors=None, sparse_vectors=None, on_disk_payload=None, hnsw_config=None, quantization_config=None, optimizers=None, max_search_threads=None, search_pool_core=None, payload_memory=None, id_tracker_memory=None, wal_enabled=None))]
     // Python-facing keyword arguments mirror EdgeConfig's fields one-to-one.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -41,6 +41,7 @@ impl PyEdgeConfig {
         search_pool_core: Option<usize>,
         payload_memory: Option<PyMemory>,
         id_tracker_memory: Option<PyMemory>,
+        wal_enabled: Option<bool>,
     ) -> PyResult<Self> {
         let vectors = vectors.unwrap_or_default();
         let sparse_vectors = sparse_vectors.unwrap_or_default();
@@ -64,7 +65,7 @@ impl PyEdgeConfig {
             quantization_config: quantization_config.map(QuantizationConfig::from),
             optimizers: optimizers.map(|o| o.0),
             wal_options: None,
-            wal_enabled: None,
+            wal_enabled,
             max_search_threads,
             search_pool_core,
         }))
@@ -121,6 +122,11 @@ impl PyEdgeConfig {
     #[getter]
     pub fn search_pool_core(&self) -> Option<usize> {
         self.0.search_pool_core
+    }
+
+    #[getter]
+    pub fn wal_enabled(&self) -> Option<bool> {
+        self.0.wal_enabled
     }
 
     pub fn __repr__(&self) -> String {

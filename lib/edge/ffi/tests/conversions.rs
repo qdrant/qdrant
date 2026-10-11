@@ -375,6 +375,7 @@ fn closed_shard_returns_shard_closed() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
 
     let shard: Arc<EdgeShard> =
