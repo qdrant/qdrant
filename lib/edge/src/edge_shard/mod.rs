@@ -260,12 +260,7 @@ impl EdgeShard {
 
         let persisted_version = self.segments.read().flush_all(FlushMode::Sync, true)?;
 
-        // Acknowledge the persisted version so the WAL truncates its closed
-        // segments. Without this, the WAL directory only ever grows and every
-        // closed segment stays on disk forever. `Wal::ack` runs `prefix_truncate`,
-        // which always keeps at least one closed segment and the newest one in
-        // particular; that is what gives `Wal::open` the right starting operation
-        // number on reload.
+        // Keeps the newest closed segment, which `Wal::open` needs to restore operation numbering.
         self.wal
             .lock()
             .ack(persisted_version)
