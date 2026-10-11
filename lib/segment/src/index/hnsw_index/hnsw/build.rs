@@ -202,9 +202,9 @@ impl HNSWIndex {
 
         // Payload blocks can start from the old graph only if its payload links have the
         // same size.
-        let payload_seed = old_index.as_ref().filter(|old_index| {
-            old_index.payload_m() == payload_m
-        });
+        let payload_seed = old_index
+            .as_ref()
+            .filter(|old_index| old_index.payload_m() == payload_m);
 
         if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
             #[cfg(feature = "gpu")]
