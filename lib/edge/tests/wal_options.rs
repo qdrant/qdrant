@@ -2,13 +2,15 @@
 use std::collections::HashMap;
 use std::num::NonZero;
 
-use edge::{Distance, EdgeConfig, EdgeShard, EdgeVectorParams, WalOptions};
+use edge::{Distance, EdgeConfig, EdgeShard, EdgeVectorParams, WAL_PATH, WalOptions};
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::ExtendedPointId;
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
 use shard::operations::point_ops::PointOperations::UpsertPoints;
 use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+use shard::operations::{ClockTag, OperationWithClockTag};
+use shard::wal::{SerdeWal, WalRawRecord};
 
 const VECTOR_NAME: &str = "edge-wal-options-test-vector";
 
@@ -207,4 +209,47 @@ fn flush_truncates_closed_wal_segments() {
         })
         .count();
     assert_eq!(closed_segments, 1);
+}
+
+/// Operations written to the WAL but never applied to the segments, as after a crash, must be
+/// re-applied on load. Covers both edge-written entries (no clock tag) and Qdrant-written ones
+/// (with a clock tag), which a restored snapshot's WAL contains.
+#[test]
+fn load_replays_unapplied_wal_operations() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-replay")
+        .tempdir()
+        .unwrap();
+
+    {
+        let shard = EdgeShard::new(dir.path(), default_config()).unwrap();
+        shard
+            .update(PointOperation(UpsertPoints(PointsList(vec![point(1)]))))
+            .unwrap();
+    }
+
+    {
+        let mut wal = SerdeWal::<OperationWithClockTag>::new(
+            &dir.path().join(WAL_PATH),
+            WalOptions::default(),
+        )
+        .unwrap();
+        for (id, clock_tag) in [(2, None), (3, Some(ClockTag::new(1, 0, 1)))] {
+            let record = OperationWithClockTag::new(
+                PointOperation(UpsertPoints(PointsList(vec![point(id)]))),
+                clock_tag,
+            );
+            wal.write(&WalRawRecord::new(&record).unwrap()).unwrap();
+        }
+        wal.flush().unwrap();
+    }
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 3);
+    drop(shard);
+
+    // The replayed operations are persisted and acknowledged on drop; loading again must not
+    // change anything.
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 3);
 }
