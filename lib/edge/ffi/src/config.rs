@@ -1247,6 +1247,7 @@ impl From<&edge::EdgeConfig> for EdgeConfig {
             id_tracker_memory,
             optimizers: _,
             wal_options: _,
+            wal_enabled: _,
             max_search_threads: _,
             search_pool_core: _,
         } = c;

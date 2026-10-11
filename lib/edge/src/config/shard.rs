@@ -74,6 +74,13 @@ pub struct EdgeConfig {
     /// where the default segment size is too large.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wal_options: Option<WalOptions>,
+    /// Whether updates are written to a WAL. `None` means enabled. Fixed when the shard is
+    /// created: loading with a different value fails.
+    ///
+    /// Without a WAL, updates are durable only once [`EdgeShard::flush`](crate::EdgeShard::flush)
+    /// returns; a crash loses every update since the last flush. `wal_options` is ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wal_enabled: Option<bool>,
     /// Number of threads in the shard's search thread pool. The pool executes per-segment reads
     /// (search, scroll, count, facet, ...) in parallel and loads segments in parallel. `None` (the
     /// default) derives the count from the number of CPUs, matching the core search runtime — see
@@ -122,6 +129,11 @@ impl EdgeConfig {
         self.hnsw_config.unwrap_or_default()
     }
 
+    /// Effective WAL mode: enabled unless explicitly disabled.
+    pub fn wal_enabled(&self) -> bool {
+        self.wal_enabled.unwrap_or(true)
+    }
+
     /// Effective optimizers config: [`EdgeOptimizersConfig::default`] unless explicitly set.
     pub fn optimizers(&self) -> EdgeOptimizersConfig {
         self.optimizers.clone().unwrap_or_default()
@@ -148,6 +160,7 @@ impl EdgeConfig {
             quantization_config,
             optimizers,
             wal_options,
+            wal_enabled,
             max_search_threads,
             search_pool_core,
         } = self;
@@ -178,6 +191,7 @@ impl EdgeConfig {
             quantization_config: quantization_config.or_else(|| base.quantization_config.clone()),
             optimizers: optimizers.or_else(|| base.optimizers.clone()),
             wal_options: wal_options.or_else(|| base.wal_options.clone()),
+            wal_enabled: wal_enabled.or(base.wal_enabled),
             max_search_threads: max_search_threads.or(base.max_search_threads),
             search_pool_core: search_pool_core.or(base.search_pool_core),
         }
@@ -251,6 +265,7 @@ impl EdgeConfig {
             quantization_config: None,
             optimizers: None,
             wal_options: None,
+            wal_enabled: None,
             max_search_threads: None,
             search_pool_core: None,
         }
@@ -485,6 +500,7 @@ mod tests {
             quantization_config: None,
             optimizers: None,
             wal_options: None,
+            wal_enabled: None,
             max_search_threads: None,
             search_pool_core: None,
         };
@@ -539,6 +555,7 @@ mod tests {
             quantization_config: None,
             optimizers: None,
             wal_options: None,
+            wal_enabled: None,
             max_search_threads: None,
             search_pool_core: None,
         };

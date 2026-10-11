@@ -7,7 +7,7 @@ use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::ExtendedPointId;
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use shard::operations::point_ops::PointOperations::UpsertPoints;
+use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
 use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use shard::operations::{ClockTag, OperationWithClockTag};
 use shard::wal::{SerdeWal, WalRawRecord};
@@ -250,6 +250,107 @@ fn load_replays_unapplied_wal_operations() {
 
     // The replayed operations are persisted and acknowledged on drop; loading again must not
     // change anything.
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 3);
+}
+
+fn upsert(shard: &EdgeShard, id: u64) {
+    shard
+        .update(PointOperation(UpsertPoints(PointsList(vec![point(id)]))))
+        .unwrap();
+}
+
+/// Without a WAL, updates survive a flush and operation numbering continues across reloads: a
+/// delete after reload must not be numbered below the version of the point it deletes.
+#[test]
+fn wal_less_shard_numbers_updates_after_reload() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-less")
+        .tempdir()
+        .unwrap();
+
+    {
+        let shard = EdgeShard::new(dir.path(), base_builder().wal_enabled(false).build()).unwrap();
+        for id in 0..10 {
+            upsert(&shard, id);
+        }
+        assert!(!dir.path().join(WAL_PATH).exists());
+    }
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 10);
+    shard
+        .update(PointOperation(DeletePoints {
+            ids: vec![ExtendedPointId::NumId(9)],
+        }))
+        .unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 9);
+    drop(shard);
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 9);
+    assert!(!dir.path().join(WAL_PATH).exists());
+}
+
+#[test]
+fn wal_enabled_cannot_change_on_load() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-less-fixed")
+        .tempdir()
+        .unwrap();
+
+    drop(EdgeShard::new(dir.path(), base_builder().wal_enabled(false).build()).unwrap());
+
+    assert!(EdgeShard::load(dir.path(), Some(base_builder().wal_enabled(true).build())).is_err());
+    let shard =
+        EdgeShard::load(dir.path(), Some(base_builder().wal_enabled(false).build())).unwrap();
+    assert!(!shard.config().wal_enabled());
+    drop(shard);
+
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-fixed")
+        .tempdir()
+        .unwrap();
+
+    drop(EdgeShard::new(dir.path(), default_config()).unwrap());
+
+    assert!(EdgeShard::load(dir.path(), Some(base_builder().wal_enabled(false).build())).is_err());
+}
+
+/// A WAL-less shard may still find a WAL on load, e.g. one restored from a Qdrant snapshot: its
+/// operations are applied and persisted, and the WAL is removed.
+#[test]
+fn wal_less_load_applies_and_removes_existing_wal() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-less-existing-wal")
+        .tempdir()
+        .unwrap();
+
+    drop(EdgeShard::new(dir.path(), base_builder().wal_enabled(false).build()).unwrap());
+    fs_err::create_dir(dir.path().join(WAL_PATH)).unwrap();
+
+    {
+        let mut wal = SerdeWal::<OperationWithClockTag>::new(
+            &dir.path().join(WAL_PATH),
+            WalOptions::default(),
+        )
+        .unwrap();
+        for id in [1, 2] {
+            let record = OperationWithClockTag::new(
+                PointOperation(UpsertPoints(PointsList(vec![point(id)]))),
+                Some(ClockTag::new(1, 0, id)),
+            );
+            wal.write(&WalRawRecord::new(&record).unwrap()).unwrap();
+        }
+        wal.flush().unwrap();
+    }
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 2);
+    assert!(!dir.path().join(WAL_PATH).exists());
+    upsert(&shard, 3);
+    drop(shard);
+
     let shard = EdgeShard::load(dir.path(), None).unwrap();
     assert_eq!(shard.info().unwrap().points_count, 3);
 }

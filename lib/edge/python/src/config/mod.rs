@@ -64,6 +64,7 @@ impl PyEdgeConfig {
             quantization_config: quantization_config.map(QuantizationConfig::from),
             optimizers: optimizers.map(|o| o.0),
             wal_options: None,
+            wal_enabled: None,
             max_search_threads,
             search_pool_core,
         }))
@@ -140,6 +141,7 @@ impl PyEdgeConfig {
             quantization_config: _,
             optimizers: _,
             wal_options: _,
+            wal_enabled: _,
             max_search_threads: _,
             search_pool_core: _,
         } = self.0;
