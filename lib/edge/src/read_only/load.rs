@@ -157,7 +157,9 @@ fn skip_level(err: &OperationError) -> log::Level {
 /// Like [`load_segments_parallel`], the preloads are driven to completion on
 /// the calling thread; `pool` only runs the CPU-bound apply.
 /// A failed preload skips its segment's reload and becomes that segment's
-/// result. Returns each segment's reload result, in input order.
+/// result. A reload that fails after a successful preload reopens the segment
+/// (see [`reopen_after_failed_reload`]). Returns each segment's reload result,
+/// in input order.
 ///
 /// Cooperative cancellation: `is_stopped` is checked between segments and
 /// between stages; a set flag yields [`OperationError::Cancelled`] as the
@@ -170,7 +172,9 @@ fn skip_level(err: &OperationError) -> log::Level {
 #[expect(clippy::await_holding_lock)]
 pub(crate) fn reload_segments_parallel<S>(
     pool: &ThreadPool,
+    fs: &S::Fs,
     segments: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)>,
+    load_profile: Option<&LoadProfile>,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<(Uuid, OperationResult<()>)>>
 where
@@ -200,8 +204,17 @@ where
                 .map(|((uuid, segment), (_, max_committed_id_res))| {
                     check_process_stopped(is_stopped)?;
                     let _scope = handoff.enter_guard();
-                    let result = max_committed_id_res
-                        .and_then(|max_committed_id| segment.write().live_reload(max_committed_id));
+                    let result = max_committed_id_res.and_then(|max_committed_id| {
+                        let mut segment = segment.write();
+                        match segment.live_reload(max_committed_id) {
+                            Ok(()) => Ok(()),
+                            Err(err @ OperationError::Cancelled { .. }) => Err(err),
+                            Err(err) if err.is_not_found() => Err(err),
+                            Err(err) => {
+                                reopen_after_failed_reload(&mut segment, err, fs, load_profile)
+                            }
+                        }
+                    });
                     Ok((uuid, result))
                 })
                 .collect::<OperationResult<Vec<_>>>()
@@ -209,4 +222,38 @@ where
     })?;
     check_process_stopped(is_stopped)?;
     Ok(results)
+}
+
+/// Replace a segment whose reload failed after a successful preload with a
+/// fresh open of its files, under the segment's write lock.
+///
+/// The preload already reported files that could not be fetched, so this
+/// reload met data it could not apply on top of the loaded state. It may have
+/// failed after some components applied it, and retrying would fail the same
+/// way. Reads of this segment wait for the reopen, so none sees the partially
+/// applied reload. The reopen is not cancellable for the same reason. If it
+/// fails, the segment keeps its partially applied state and the error is
+/// returned.
+pub(super) fn reopen_after_failed_reload<S>(
+    segment: &mut ReadOnlySegment<S>,
+    reload_err: OperationError,
+    fs: &S::Fs,
+    load_profile: Option<&LoadProfile>,
+) -> OperationResult<()>
+where
+    S: UniversalReadExt + 'static,
+    S::Fs: UniversalReadFsAsync,
+{
+    let uuid = segment.uuid;
+    log::warn!("live_reload of segment {uuid} failed, reopening it: {reload_err}");
+    match ReadOnlySegment::open(fs, &segment.segment_path, uuid, None, load_profile) {
+        Ok(reopened) => {
+            *segment = reopened;
+            Ok(())
+        }
+        Err(err) => {
+            log::error!("reopening segment {uuid} after a failed live_reload failed: {err}");
+            Err(err)
+        }
+    }
 }
