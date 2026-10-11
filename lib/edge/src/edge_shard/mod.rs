@@ -18,7 +18,7 @@ use segment::entry::{NonAppendableSegmentEntry as _, ReadSegmentEntry as _};
 use segment::pending_changes::PersistedProxyChanges;
 use segment::segment_constructor::{build_segment, load_segment, normalize_segment_dir};
 use shard::files::{SEGMENTS_PATH, WAL_PATH, segment_manifest_path};
-use shard::operations::CollectionUpdateOperations;
+use shard::operations::OperationWithClockTag;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use shard::segment_holder::{FlushMode, PostFlushOutcome, SegmentHolder};
 use shard::segment_manifest::SegmentsManifest;
@@ -36,7 +36,7 @@ pub struct EdgeShard {
     /// Shared so long-lived closures (e.g. the optimizer's live vector-name provider) can read the
     /// current config after `&self` borrows expire.
     config: Arc<SaveOnDisk<EdgeConfig>>,
-    wal: Mutex<SerdeWal<CollectionUpdateOperations>>,
+    wal: Mutex<SerdeWal<OperationWithClockTag>>,
     segments: LockedSegmentHolder,
     /// Segment manifest (`segments/manifest.json`), kept in sync with the live segment set so a
     /// read-only follower can discover segments without scanning. `Some` only when the
@@ -112,6 +112,9 @@ impl EdgeShard {
     /// Fails if `path` is not an existing directory, or if no segments exist and no config can be
     /// loaded or inferred.
     ///
+    /// WAL operations not yet persisted by the segments, e.g. those left by a crash, are re-applied
+    /// before the shard is returned.
+    ///
     /// To override WAL options (e.g. for embedded/mobile deployments where
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
@@ -172,14 +175,18 @@ impl EdgeShard {
 
         let segment_manifest = init_segment_manifest(path, &segments)?;
 
-        Ok(Self {
+        let shard = Self {
             path: path.into(),
             config,
             wal: parking_lot::Mutex::new(wal),
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
             search_pool,
-        })
+        };
+
+        shard.replay_wal()?;
+
+        Ok(shard)
     }
 
     /// Rebuild and persist the segment manifest from the current live segment set, when enabled.
@@ -344,7 +351,7 @@ fn has_existing_segments(path: &Path) -> bool {
 fn ensure_dirs_and_open_wal(
     path: &Path,
     wal_options: WalOptions,
-) -> OperationResult<(SerdeWal<CollectionUpdateOperations>, PathBuf)> {
+) -> OperationResult<(SerdeWal<OperationWithClockTag>, PathBuf)> {
     let wal_path = path.join(WAL_PATH);
     if !wal_path.exists() {
         fs::create_dir(&wal_path).map_err(|err| {
