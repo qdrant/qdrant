@@ -197,27 +197,35 @@ mod store {
     use std::path::Path;
 
     use common::universal_io::{MmapFile, MmapFs};
-    use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
+    use segment::data_types::vectors::{
+        MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
+    };
     use segment::payload_json;
     use segment::payload_storage::update_only::UpdateOnlyPayloadStorage;
     use segment::segment_constructor::get_vector_storage_path;
     use segment::types::{
-        BinaryQuantization, BinaryQuantizationConfig, Distance, Filter, Payload,
-        QuantizationConfig, WithPayloadInterface, WithVector,
+        BinaryQuantization, BinaryQuantizationConfig, Distance, Filter, MultiVectorComparator,
+        MultiVectorConfig, Payload, QuantizationConfig, SearchParams, TurboQuantBitSize,
+        TurboQuantQuantizationConfig, TurboQuantization, VectorStorageDatatype,
+        WithPayloadInterface, WithVector,
     };
     use shard::files::{SEGMENTS_PATH, segment_manifest_path};
+    use shard::operations::CollectionUpdateOperations::PayloadOperation;
+    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{UpsertPoints, UpsertPointsConditional};
     use shard::operations::point_ops::{
         ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
     };
     use shard::optimizers::config::TEMP_SEGMENTS_PATH;
+    use shard::query::ScoringQuery;
+    use shard::query::query_enum::QueryEnum;
 
     use super::*;
-    use crate::RetrieveRequestBuilder;
     use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
     use crate::read_only::{ManifestSegmentEnumerator, ReadOnlyEdgeShard};
     use crate::read_view::EdgeShardRead as _;
+    use crate::{QueryRequestBuilder, RetrieveRequestBuilder};
 
     /// The leader writes its payload storage in mutable (Gridstore) mode, which an
     /// append-only writer refuses to append to. Recreate each segment's payload
@@ -624,6 +632,125 @@ mod store {
 
         let follower = open_follower(dir.path());
         assert_eq!(exact_count(&follower), 9);
+    }
+
+    /// A search through the quantized copy has to find every appended
+    /// multivector, just as an exact one does.
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    fn appended_multivectors_are_found_through_quantization() {
+        let turbo = QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        });
+        let binary = QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                encoding: None,
+                query_encoding: None,
+            },
+        });
+
+        for quantization in [turbo, binary] {
+            let dir = tempfile::Builder::new()
+                .prefix("edge-update-quantized-multivector")
+                .tempdir()
+                .unwrap();
+            fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+            let writer = UpdateOnlyEdgeShard::open(
+                MmapFs,
+                dir.path(),
+                ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+                None,
+            )
+            .unwrap();
+            let mut config = EdgeConfig {
+                quantization_config: Some(quantization.clone()),
+                ..test_config()
+            };
+            let params = config.vectors.get_mut(VECTOR_NAME).unwrap();
+            params.size = 2;
+            params.datatype = Some(VectorStorageDatatype::Float16);
+            params.multivector_config = Some(MultiVectorConfig {
+                comparator: MultiVectorComparator::MaxSim,
+            });
+            let (writer, _) = writer
+                .create_appendable(
+                    &config.plain_segment_config(),
+                    &HashMap::new(),
+                    &dir.path().join(TEMP_SEGMENTS_PATH),
+                )
+                .unwrap();
+
+            let points = (1..=5).map(|id| multivector_point(id, id as f32)).collect();
+            let (writer, outcome) = writer.apply_batch(store_batch(1, points)).unwrap();
+            assert_eq!(outcome.stored, 5);
+            assert_multivectors_found(dir.path(), &quantization);
+
+            // A payload update moves each point with its multivector as storage-native bytes.
+            let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload: payload_json! { "kind": "moved" },
+                points: Some((1..=5).map(ExtendedPointId::NumId).collect()),
+                filter: None,
+                key: None,
+            }));
+            let (_writer, outcome) = writer.apply_batch([(2, set_payload)]).unwrap();
+            assert_eq!(outcome.stored, 5);
+            assert_multivectors_found(dir.path(), &quantization);
+        }
+    }
+
+    fn assert_multivectors_found(shard_dir: &Path, quantization: &QuantizationConfig) {
+        let follower = open_follower(shard_dir);
+        let found = |params: SearchParams| {
+            let query =
+                MultiDenseVectorInternal::new_unchecked(vec![vec![3.0, 1.0], vec![1.0, 3.0]]);
+            let request = QueryRequestBuilder::new(10)
+                .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    VectorInternal::from(query),
+                    VECTOR_NAME.to_string(),
+                ))))
+                .params(params)
+                .build();
+            let mut ids: Vec<_> = follower
+                .query(request)
+                .unwrap()
+                .into_iter()
+                .map(|point| point.id)
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+
+        let all: Vec<_> = (1..=5).map(ExtendedPointId::NumId).collect();
+        let exact = SearchParams {
+            exact: true,
+            ..Default::default()
+        };
+        assert_eq!(found(exact), all, "{quantization:?}");
+        assert_eq!(found(SearchParams::default()), all, "{quantization:?}");
+    }
+
+    fn multivector_point(id: u64, value: f32) -> PointStructPersisted {
+        PointStructPersisted {
+            id: ExtendedPointId::NumId(id),
+            vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
+                VECTOR_NAME.to_string(),
+                VectorInternal::from(MultiDenseVectorInternal::new_unchecked(vec![
+                    vec![value, 1.0],
+                    vec![1.0, value],
+                ])),
+            )]))),
+            payload: None,
+        }
     }
 
     /// An `insert_only` batch over a mix of taken and free ids: the free ones
