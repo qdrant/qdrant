@@ -236,11 +236,12 @@ impl FieldIndexRead for FieldIndex {
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,
+        corpus: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<bool> {
         match self {
             FieldIndex::FullTextIndex(index) => {
-                fill_text_statistics(index, stats, is_stopped)?;
+                fill_text_statistics(index, stats, corpus, is_stopped)?;
                 Ok(true)
             }
             FieldIndex::IntIndex(_)

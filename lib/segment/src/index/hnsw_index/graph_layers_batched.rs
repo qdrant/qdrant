@@ -158,7 +158,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut links = Vec::with_capacity(2 * self.hnsw_m.level_m(0));
         let mut current_point = ScoredPointOffset {
             idx: entry_point.point_id,
-            score: points_scorer.score_point(entry_point.point_id),
+            score: points_scorer.score_point(entry_point.point_id)?,
         };
         for level in rev_range(entry_point.level, target_level) {
             trace::mark!("entry_level {level} begin");
@@ -203,7 +203,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut links = Vec::with_capacity(2 * self.hnsw_m.level_m(0));
         let mut current_point = ScoredPointOffset {
             idx: entry_point.point_id,
-            score: links_scorer_raw.score_point(entry_point.point_id),
+            score: links_scorer_raw.score_point(entry_point.point_id)?,
         };
         for level in rev_range(entry_point.level, target_level) {
             trace::mark!("entry_level {level} begin");
@@ -819,7 +819,7 @@ mod tests {
             for idx in 0..batched.num_points() as PointOffsetType {
                 reference_top.push(ScoredPointOffset {
                     idx,
-                    score: base_scorer.score_point(idx),
+                    score: base_scorer.score_point(idx).unwrap(),
                 });
             }
             let reference = reference_top.into_sorted_vec();

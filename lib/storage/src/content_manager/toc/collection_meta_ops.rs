@@ -162,10 +162,19 @@ impl TableOfContent {
         // `ClusterState::plan_update_collection` checks an operation with the same call, so both
         // reject the same ones. Once the state machine drives consensus, this call is the only
         // thing checking a diff on this path, and it goes with the code below it.
-        apply_collection_config_diffs(
-            &mut collection.config().await,
-            &operation.update_collection,
-        )?;
+        let config_before = collection.config().await;
+        let mut config_after = config_before.clone();
+        apply_collection_config_diffs(&mut config_after, &operation.update_collection)?;
+
+        // Recreating optimizers cancels in-flight optimizations, so only do it when the update
+        // changes what optimizers are built from. Clients that re-send the same config on every
+        // run would otherwise keep cancelling optimizations, and every cancelled optimization
+        // under writes leaves an extra segment behind.
+        //
+        // Recreating also clears optimizer errors, and re-sending an unchanged config is how
+        // users restart failed optimizers, so keep doing it while an error is recorded.
+        let recreate_optimizers = config_before.is_core_config_updated(&config_after)
+            || collection.has_optimizer_errors().await;
 
         let UpdateCollection {
             vectors,
@@ -177,33 +186,25 @@ impl TableOfContent {
             strict_mode_config: strict_mode,
             metadata,
         } = operation.update_collection;
-        let mut recreate_optimizers = false;
-
         if let Some(diff) = optimizers_config {
             collection.update_optimizer_params_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = params {
             collection.update_params_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = hnsw_config {
             collection.update_hnsw_config_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = vectors {
             collection.update_vectors_from_diff(&diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = quantization_config {
             collection
                 .update_quantization_config_from_diff(diff)
                 .await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = sparse_vectors {
             collection.update_sparse_vectors_from_other(&diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;

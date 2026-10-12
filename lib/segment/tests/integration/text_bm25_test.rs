@@ -319,7 +319,7 @@ fn bm25_matches_the_reference_end_to_end() {
         tokenizer.tokenize_query(query, |token| terms.push(token.into_owned()));
 
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field(), terms.iter().cloned());
+        query_context.init_text_stats(&field(), None, terms.iter().cloned());
         for segment in &segments {
             segment.fill_query_context(&mut query_context).unwrap();
         }
@@ -422,7 +422,7 @@ fn segment_entry_point_scores_what_a_query_sees() {
         tokenizer.tokenize_query(&query, |token| terms.push(token.into_owned()));
 
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field(), terms.iter().cloned());
+        query_context.init_text_stats(&field(), None, terms.iter().cloned());
         segment.fill_query_context(&mut query_context).unwrap();
         let segment_context = query_context.get_segment_query_context();
         let expected = reference.rank(0, &terms);
@@ -526,7 +526,7 @@ fn segment_entry_point_skips_deferred_points() {
         tokenizer.tokenize_query(&query, |token| terms.push(token.into_owned()));
 
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field(), terms.iter().cloned());
+        query_context.init_text_stats(&field(), None, terms.iter().cloned());
         segment.fill_query_context(&mut query_context).unwrap();
         let segment_context = query_context.get_segment_query_context();
         let context = segment_context.get_text_context(&field()).unwrap();

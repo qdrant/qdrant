@@ -39,6 +39,10 @@ impl BoolIndexRead for MutableBoolIndex {
     fn falses_count(&self) -> OperationResult<usize> {
         Ok(self.falses_count)
     }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        Vec::new() // everything is mutable
+    }
 }
 
 impl PayloadFieldIndexRead for MutableBoolIndex {

@@ -40,6 +40,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
             .read_values::<Sequential, _, OperationError>(
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_value: Option<Vec<u8>>| {
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed: drop them first so the replay is idempotent.
+                    inner.inverted_index.remove(point_offset);
                     let Some(value) = maybe_value else {
                         return Ok(true);
                     };

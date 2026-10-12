@@ -194,9 +194,11 @@ where
     let point_offsets = point_offsets.iter().map(|&point_offset| ((), point_offset));
 
     let mut bytes_read = 0;
-    storage.read_vectors::<P, _>(point_offsets, |_, _, vector| {
-        bytes_read += vector.estimate_size_in_bytes();
-    });
+    storage
+        .read_vectors::<P, _>(point_offsets, |_, _, vector| {
+            bytes_read += vector.estimate_size_in_bytes();
+        })
+        .unwrap();
 
     black_box(bytes_read)
 }

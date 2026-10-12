@@ -19,6 +19,10 @@ use crate::StorageError;
 /// Timeout for stream reads - if no data is received within this duration, the download fails.
 const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Read buffer between the HTTP body and the tar unpacker, so the unpacker
+/// doesn't block on the async runtime for every small read.
+const STREAM_READ_BUFFER_SIZE: usize = 4 * 1024 * 1024;
+
 /// An async reader wrapper that times out if no data is received within a specified duration.
 ///
 /// This implements an inactivity timeout - the timeout resets each time data is successfully read.
@@ -195,6 +199,7 @@ pub async fn download_and_unpack_tar(
         // SyncIoBridge converts an AsyncRead into a sync Read
         // It must be used within a tokio runtime context (spawn_blocking provides this)
         let sync_reader = tokio_util::io::SyncIoBridge::new(async_reader);
+        let sync_reader = std::io::BufReader::with_capacity(STREAM_READ_BUFFER_SIZE, sync_reader);
 
         // Wrap the reader with cancellation support
         let cancellable_reader = CancellableReader::new(sync_reader, cancel);

@@ -60,7 +60,7 @@ pub trait EncodedStorage: EncodedStorageWrite {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    );
+    ) -> std::io::Result<()>;
 
     /// True when the storage serves one contiguous slice faster than the same
     /// vectors read individually, at *any* run length, so run batching should
@@ -115,10 +115,11 @@ pub trait EncodedStorage: EncodedStorageWrite {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for (index, &offset) in offsets.iter().enumerate() {
             callback(index, 1, self.get_vector_data(offset));
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf>;
@@ -130,10 +131,11 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
     this: &E,
     offsets: &[u32],
     mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-) {
+) -> std::io::Result<()> {
     for (index, &offset) in offsets.iter().enumerate() {
         callback(index, this.get_vector_data(offset));
     }
+    Ok(())
 }
 
 /// One maximal run of consecutive ids in an offsets list, see
@@ -146,6 +148,16 @@ pub struct ConsecutiveRun {
     pub start: PointOffsetType,
     /// Number of ids in the run.
     pub len: usize,
+}
+
+impl ConsecutiveRun {
+    pub fn unreadable(&self) -> std::io::Error {
+        std::io::Error::other(format!(
+            "quantized vectors {}..{} are not readable",
+            self.start,
+            self.start as usize + self.len,
+        ))
+    }
 }
 
 /// Run detection shared by [`EncodedStorage::for_each_run`] implementations:
@@ -375,20 +387,21 @@ impl EncodedStorage for TestEncodedStorage {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        default_for_each_batch(self, offsets, callback);
+    ) -> std::io::Result<()> {
+        default_for_each_batch(self, offsets, callback)
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for run in consecutive_runs(offsets) {
             let begin = run.start as usize * self.quantized_vector_size.get();
             let end = begin + run.len * self.quantized_vector_size.get();
             callback(run.first, run.len, Cow::Borrowed(&self.data[begin..end]));
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -556,9 +569,11 @@ mod tests {
         let storage = builder.build().unwrap();
 
         let mut runs = Vec::new();
-        storage.for_each_run(&[2, 3, 4, 8, 9, 1], |first, len, bytes| {
-            runs.push((first, len, bytes.into_owned()));
-        });
+        storage
+            .for_each_run(&[2, 3, 4, 8, 9, 1], |first, len, bytes| {
+                runs.push((first, len, bytes.into_owned()));
+            })
+            .unwrap();
         assert_eq!(
             runs,
             vec![

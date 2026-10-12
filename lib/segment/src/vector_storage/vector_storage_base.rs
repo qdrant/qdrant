@@ -119,10 +119,11 @@ pub trait VectorStorageRead {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         for (user_data, key) in keys {
             callback(user_data, key, self.get_vector::<P>(key));
         }
+        Ok(())
     }
 
     /// Get the vector by the given key if it exists
@@ -568,7 +569,7 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    );
+    ) -> OperationResult<()>;
 
     fn score_internal_encoded(
         &self,
@@ -1672,7 +1673,7 @@ impl VectorStorageRead for VectorStorageEnum {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         match self {
             VectorStorageEnum::DenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(test)]

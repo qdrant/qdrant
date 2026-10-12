@@ -89,11 +89,11 @@ impl<
 > QueryScorer for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
         let stored = self.vector_storage.get_dense::<Random>(idx);
         self.hw.vector_io_read(1);
 
-        self.score(&stored)
+        Ok(self.score(&stored))
     }
 
     #[inline]

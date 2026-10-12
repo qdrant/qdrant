@@ -151,7 +151,7 @@ fn build_ram_index(
             ram_index_builder.add(id, vector);
         }
         tick_progress();
-    });
+    })?;
     result?;
 
     Ok((ram_index_builder.build(), indices_tracker))

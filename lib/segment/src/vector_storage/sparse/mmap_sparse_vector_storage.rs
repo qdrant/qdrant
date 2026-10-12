@@ -302,7 +302,7 @@ impl VectorStorageRead for MmapSparseVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let callback = |user_data, point_offset, sparse_vector| -> OperationResult<()> {
             let Some(sparse_vector) = sparse_vector else {
                 return Ok(());
@@ -315,7 +315,6 @@ impl VectorStorageRead for MmapSparseVectorStorage {
 
         self.storage
             .read_values::<P, _, _>(keys.into_iter(), callback, None)
-            .expect("sparse vectors read")
     }
 
     /// Get vector by key, if it exists.

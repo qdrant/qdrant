@@ -351,8 +351,8 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
     let scorer_orig = new_raw_scorer(query.clone(), storage).unwrap();
     for i in 0..5 {
-        let quant = scorer_quant.score_point(i);
-        let orig = scorer_orig.score_point(i);
+        let quant = scorer_quant.score_point(i).unwrap();
+        let orig = scorer_orig.score_point(i).unwrap();
         assert!((orig - quant).abs() < 0.15);
 
         let quant = scorer_quant.score_internal(0, i);
@@ -373,8 +373,8 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
     let scorer_orig = new_raw_scorer(query, storage).unwrap();
     for i in 0..5 {
-        let quant = scorer_quant.score_point(i);
-        let orig = scorer_orig.score_point(i);
+        let quant = scorer_quant.score_point(i).unwrap();
+        let orig = scorer_orig.score_point(i).unwrap();
         assert!((orig - quant).abs() < 0.15);
 
         let quant = scorer_quant.score_internal(0, i);

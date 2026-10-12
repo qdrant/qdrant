@@ -76,6 +76,10 @@ pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 /// block it forever. See [`TimeoutWriter`].
 const SNAPSHOT_STREAM_WRITE_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// Pipe and read-buffer size for streaming shard snapshots.
+/// A small pipe makes the tar writer and the HTTP body ping-pong in tiny chunks.
+const SNAPSHOT_STREAM_BUFFER_SIZE: usize = 4 * 1024 * 1024;
+
 pub struct ShardHolder {
     /// `BTreeMap` for deterministic iteration order by `ShardId` — iteration is externally
     /// observable (fan-out, telemetry, consensus state apply).
@@ -1323,7 +1327,7 @@ impl ShardHolder {
             .prefix(&format!("{snapshot_file_name}-temp-"))
             .tempdir_in(temp_dir)?;
 
-        let (read_half, write_half) = tokio::io::duplex(4096);
+        let (read_half, write_half) = tokio::io::duplex(SNAPSHOT_STREAM_BUFFER_SIZE);
 
         // Abort the snapshot if the consumer stops draining the stream. This
         // write holds a read lock on the shard's segment holder and occupies a
@@ -1369,7 +1373,8 @@ impl ShardHolder {
         });
 
         Ok(SnapshotStream::new_stream(
-            FramedRead::new(read_half, BytesCodec::new()).map_ok(|bytes| bytes.freeze()),
+            FramedRead::with_capacity(read_half, BytesCodec::new(), SNAPSHOT_STREAM_BUFFER_SIZE)
+                .map_ok(|bytes| bytes.freeze()),
             Some(snapshot_file_name),
         ))
     }

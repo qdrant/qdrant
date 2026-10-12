@@ -89,14 +89,14 @@ where
         self.hw
             .vector_io_read(ids.len() * self.quantized_data.quantized_vector_size());
 
-        self.quantized_data.score_points(&self.query, ids, scores);
+        self.quantized_data.score_points(&self.query, ids, scores)?;
         Ok(())
     }
 
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.hw
-            .vector_io_read(self.quantized_data.quantized_vector_size());
-        self.quantized_data.score_point(&self.query, idx)
+    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
+        let mut score = [0.0];
+        self.score_stored_batch(&[idx], &mut score)?;
+        Ok(score[0])
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

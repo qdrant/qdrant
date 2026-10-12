@@ -389,7 +389,7 @@ where
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice (it chunks it for batched reads), but we still want
         // `user_data[idx]` available inside the callback.
@@ -402,7 +402,6 @@ where
                 let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
             })
-            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -926,8 +925,8 @@ mod tests {
         let scorer_orig = new_raw_scorer(query.clone(), &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);
@@ -948,8 +947,8 @@ mod tests {
         let scorer_orig = new_raw_scorer(query, &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);

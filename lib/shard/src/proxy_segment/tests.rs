@@ -375,6 +375,35 @@ fn test_read_filter() {
     assert_eq!(original_points.len() - 1, proxy_res.len());
 }
 
+/// Reading a proxy with `HasId` of exactly the points it has deleted must return nothing.
+/// See <https://github.com/qdrant/qdrant/issues/11056>.
+#[test]
+fn test_read_filter_has_id_of_deleted_points() {
+    let is_stopped = AtomicBool::new(false);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+
+    let _scope = ambient::test_guard();
+
+    let mut proxy_segment = wrap_proxy(original_segment);
+    proxy_segment.delete_point(100, 2.into()).unwrap();
+
+    let filter = Filter::new_must(Condition::HasId(HasIdCondition::from_iter([
+        PointIdType::from(2),
+    ])));
+    let proxy_res = proxy_segment
+        .read_filtered(
+            None,
+            Some(100),
+            Some(&filter),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    assert_eq!(proxy_res, Vec::<PointIdType>::new());
+}
+
 #[test]
 fn test_read_range() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -1287,7 +1316,7 @@ fn test_score_bm25_hides_proxy_deletions() {
     let terms = ["alpha".to_owned(), "gamma".to_owned()];
     let score = |segment: &dyn ReadSegmentEntry, stats_from: &dyn ReadSegmentEntry| {
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field, terms.iter().cloned());
+        query_context.init_text_stats(&field, None, terms.iter().cloned());
         stats_from.fill_query_context(&mut query_context).unwrap();
         segment
             .score_bm25(
@@ -1375,7 +1404,7 @@ fn test_bm25_skips_a_stale_wrapped_text_index() {
         let mut proxy = ProxySegment::new(wrapped);
         change(&mut proxy);
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field, terms.iter().cloned());
+        query_context.init_text_stats(&field, None, terms.iter().cloned());
         proxy.fill_query_context(&mut query_context).unwrap();
         let documents = query_context.mut_text_stats()[&field].documents;
         let scored = proxy

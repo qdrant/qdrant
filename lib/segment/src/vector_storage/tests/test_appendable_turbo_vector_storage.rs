@@ -661,9 +661,11 @@ fn read_vectors_threads_user_data_and_matches_get_vector() {
             (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
         let mut seen: Vec<(usize, PointOffsetType, DenseVector)> = Vec::new();
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                seen.push((tag, offset, DenseVector::try_from(vector).unwrap()));
+            })
+            .unwrap();
 
         // Order is not guaranteed (the trait permits parallel reads), so check
         // each callback against its own offset, not its arrival position.
@@ -782,7 +784,7 @@ fn nearest_scorer_ranks_self_first(
                     // Asymmetric path: the query must score best against its
                     // own stored (lossy) encoding.
                     let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                        .map(|k| scorer.score_stored(k))
+                        .map(|k| scorer.score_stored(k).unwrap())
                         .collect();
                     let best = (0..COUNT)
                         .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -862,13 +864,13 @@ fn score_bytes_matches_score_stored(
 
                     assert_eq!(
                         nearest.score_bytes(True, &bytes),
-                        nearest.score_stored(key),
+                        nearest.score_stored(key).unwrap(),
                         "nearest score_bytes != score_stored at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
                     assert_eq!(
                         reco.score_bytes(True, &bytes),
-                        reco.score_stored(key),
+                        reco.score_stored(key).unwrap(),
                         "reco score_bytes != score_stored at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
@@ -896,7 +898,7 @@ fn custom_reco_scorer_ranks_positive_first(
     /// Offset of the highest-scoring stored vector.
     fn top_scored(scorer: &impl QueryScorer, count: usize) -> usize {
         let scores: Vec<ScoreType> = (0..count as PointOffsetType)
-            .map(|k| scorer.score_stored(k))
+            .map(|k| scorer.score_stored(k).unwrap())
             .collect();
         (0..count)
             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -1432,12 +1434,12 @@ fn score_stored_batch_matches_score_stored(
         for (idx, &id) in ids.iter().enumerate() {
             assert_eq!(
                 nearest_scores[idx],
-                nearest.score_stored(id),
+                nearest.score_stored(id).unwrap(),
                 "nearest batch score diverges at idx {idx} (key {id}, {backend})",
             );
             assert_eq!(
                 reco_scores[idx],
-                reco.score_stored(id),
+                reco.score_stored(id).unwrap(),
                 "reco batch score diverges at idx {idx} (key {id}, {backend})",
             );
         }
@@ -1513,23 +1515,25 @@ fn batched_retrieval_matches_per_point_reads(
     ) {
         // Decoded path: `read_vectors` ≡ `get_vector`, tags ride along.
         let mut seen = vec![false; keys.len()];
-        storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-            assert_eq!(
-                ids[tag], offset,
-                "user data not threaded to its offset ({backend})",
-            );
-            assert!(
-                !seen[tag],
-                "key at position {tag} visited twice ({backend})"
-            );
-            seen[tag] = true;
-            let direct = storage.get_vector::<Random>(offset);
-            assert_eq!(
-                DenseVector::try_from(vector).unwrap(),
-                DenseVector::try_from(direct).unwrap(),
-                "read_vectors disagrees with get_vector at {offset} ({backend})",
-            );
-        });
+        storage
+            .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                assert_eq!(
+                    ids[tag], offset,
+                    "user data not threaded to its offset ({backend})",
+                );
+                assert!(
+                    !seen[tag],
+                    "key at position {tag} visited twice ({backend})"
+                );
+                seen[tag] = true;
+                let direct = storage.get_vector::<Random>(offset);
+                assert_eq!(
+                    DenseVector::try_from(vector).unwrap(),
+                    DenseVector::try_from(direct).unwrap(),
+                    "read_vectors disagrees with get_vector at {offset} ({backend})",
+                );
+            })
+            .unwrap();
         assert!(
             seen.iter().all(|&s| s),
             "not every key was visited ({backend})",
@@ -1603,7 +1607,7 @@ fn batch_scoring_accumulates_same_hw_counters(
         let _scope = per_point_ctx.measure_guard();
         let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         for &id in &ids {
-            scorer.score_stored(id);
+            scorer.score_stored(id).unwrap();
         }
     }
 

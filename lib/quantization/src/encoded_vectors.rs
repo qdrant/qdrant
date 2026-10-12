@@ -55,7 +55,7 @@ pub trait EncodedVectors: Sized {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    );
+    ) -> std::io::Result<()>;
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32;
 
@@ -73,11 +73,11 @@ pub trait EncodedVectors: Sized {
         query: &Self::EncodedQuery,
         offsets: &[PointOffsetType],
         scores: &mut [f32],
-    ) {
+    ) -> std::io::Result<()> {
         debug_assert_eq!(offsets.len(), scores.len());
         self.for_each_batch(offsets, |i, vector| {
             scores[i] = self.score(query, &vector);
-        });
+        })
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32;

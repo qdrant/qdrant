@@ -68,6 +68,7 @@ pub(crate) fn test_config() -> EdgeConfig {
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: None,
         search_pool_core: None,
     }
@@ -391,6 +392,7 @@ fn provided_config_overrides_tunables_at_open() {
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: Some(2),
         search_pool_core: None,
     };

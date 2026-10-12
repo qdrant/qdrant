@@ -170,7 +170,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
     /// `Self` is destructured so that every component is covered: adding a field
     /// without reloading it won't compile. Each component mutates through its own
     /// `Arc<AtomicRefCell<_>>`, so `&self` is enough — no `&mut` is needed.
-    fn live_reload<Fs: UniversalReadFs<File = S>>(
+    pub(super) fn live_reload<Fs: UniversalReadFs<File = S>>(
         &self,
         fs: &Fs,
         deleted: &SortedSlice<'_, PointOffsetType>,
