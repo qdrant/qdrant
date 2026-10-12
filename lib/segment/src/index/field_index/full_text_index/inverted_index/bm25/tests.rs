@@ -366,6 +366,12 @@ fn lengths_are_required() {
             .score_bm25(&query, &|_| true, 10, &is_stopped)
             .is_err()
     );
+    let immutable = ImmutableInvertedIndex::from(without_lengths);
+    assert!(
+        immutable
+            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .is_err()
+    );
 }
 
 #[test]

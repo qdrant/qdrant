@@ -333,9 +333,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let ImmutablePostings::WithPositions(postings) = &self.postings else {
+        let (ImmutablePostings::WithPositions(postings), Some(lengths)) =
+            (&self.postings, self.point_to_doc_len.as_deref())
+        else {
             return Err(OperationError::service_error(
-                "text index stores no positions, term frequencies cannot be computed",
+                "text index does not score: BM25 needs positions and document lengths",
             ));
         };
         let views = query
@@ -344,7 +346,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
             .collect();
         let mut cursors = PositionalCursors::new(views);
-        let lengths = self.point_to_doc_len.as_deref();
         // Deleted points stay in these postings and are masked here, as the
         // filter path does.
         let is_active = |point_id: PointOffsetType| {
@@ -359,7 +360,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             &mut cursors,
             |point_ids, out| {
                 for (point_id, doc_len) in point_ids.iter().zip(out) {
-                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                    *doc_len = lengths.get(*point_id as usize).copied();
                 }
                 Ok(())
             },
