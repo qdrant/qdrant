@@ -45,6 +45,8 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
+        # Each OS runs its tests on two runners; each builds the tests and runs half of them
+        partition: [ 1, 2 ]
 
     steps:
     # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the temp files the
@@ -89,8 +91,9 @@ jobs:
       shell: bash
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
-        # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-        save-if: ${{ github.ref == 'refs/heads/dev' }}
+        # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget.
+        # Both partitions build the same thing, so one of them saves it.
+        save-if: ${{ github.ref == 'refs/heads/dev' && matrix.partition == 1 }}
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - name: Install mold
@@ -107,12 +110,12 @@ jobs:
       run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
       shell: bash
     - name: Run tests
-      # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run ${{ needs.select-packages.outputs.packages }} --profile ci --locked
+      # Profile "ci" is configured in .config/nextest.toml. A small PR can leave a partition without tests.
+      run: cargo nextest run ${{ needs.select-packages.outputs.packages }} --profile ci --locked --partition count:${{ matrix.partition }}/2 --no-tests=warn
     - name: Upload test report
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: junit-${{ matrix.os }}.xml
+        name: junit-${{ matrix.os }}-${{ matrix.partition }}.xml
         path: target/nextest/ci/junit.xml
 
   # After tests are run, this hacky script will process the JUnit output of nextest
@@ -127,11 +130,12 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest  ]
+        partition: [ 1, 2 ]
     steps:
       - name: Download test report
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: junit-${{ matrix.os }}.xml
+          name: junit-${{ matrix.os }}-${{ matrix.partition }}.xml
       - name: Process test report
         id: process-test-report
         run: |
