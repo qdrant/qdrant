@@ -20,6 +20,7 @@ use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, read_json_via};
 use quantization::encoded_vectors_binary::EncoderBin;
 use quantization::encoded_vectors_tq::EncoderTQ;
+use quantization::turboquant::quantization::TurboQuantizer;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -33,6 +34,7 @@ use crate::vector_storage::quantized::quantized_multivector_storage::Multivector
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsConfig,
 };
+use crate::vector_storage::turbo::shared;
 use crate::vector_storage::update_only::VectorToStore;
 
 enum Encoder {
@@ -66,6 +68,8 @@ pub struct UpdateOnlyQuantizedVectors {
     encoder: Encoder,
     vectors: UpdateOnlyChunkedVectors<u8>,
     multivector: Option<MultivectorRows>,
+    /// The raw storage's quantizer, for a TurboQuant datatype.
+    raw_quantizer: Option<TurboQuantizer>,
     config: QuantizedVectorsConfig,
     /// Raw-storage properties, needed to decode a [`VectorToStore::Raw`].
     distance: Distance,
@@ -86,16 +90,6 @@ impl UpdateOnlyQuantizedVectors {
         vector_config: &VectorDataConfig,
     ) -> OperationResult<Option<Self>> {
         let datatype = vector_config.datatype.unwrap_or_default();
-        // TurboQuant-datatype vectors never get an overlay, so they return `None` outright.
-        if matches!(
-            datatype,
-            VectorStorageDatatype::Turbo4
-                | VectorStorageDatatype::Turbo8
-                | VectorStorageDatatype::Turbo16
-        ) {
-            return Ok(None);
-        }
-
         let config_path = QuantizedVectors::get_config_path(path);
         if !fs.exists(&config_path)? {
             return Ok(None);
@@ -115,6 +109,9 @@ impl UpdateOnlyQuantizedVectors {
     ) -> OperationResult<Self> {
         let meta_path = QuantizedVectors::get_meta_path(path);
         let data_path = QuantizedVectors::get_data_path(path, config.storage_type);
+
+        let raw_quantizer = shared::datatype_bits(datatype)
+            .map(|bits| shared::build_quantizer(config.vector_parameters.dim, distance, bits));
 
         let encoder = match &config.quantization_config {
             QuantizationConfig::Binary(_) if is_multi => {
@@ -147,6 +144,7 @@ impl UpdateOnlyQuantizedVectors {
             encoder,
             vectors,
             multivector,
+            raw_quantizer,
             config,
             distance,
             datatype,
@@ -254,17 +252,14 @@ impl UpdateOnlyQuantizedVectors {
         &self,
         bytes: &'a [u8],
     ) -> OperationResult<Vec<Cow<'a, [VectorElementType]>>> {
-        let element_size = match self.datatype {
-            VectorStorageDatatype::Float32 => size_of::<VectorElementType>(),
-            VectorStorageDatatype::Uint8 => size_of::<VectorElementTypeByte>(),
-            VectorStorageDatatype::Float16 => size_of::<VectorElementTypeHalf>(),
+        let row_size = match self.datatype {
+            VectorStorageDatatype::Float32 => self.dim() * size_of::<VectorElementType>(),
+            VectorStorageDatatype::Uint8 => self.dim() * size_of::<VectorElementTypeByte>(),
+            VectorStorageDatatype::Float16 => self.dim() * size_of::<VectorElementTypeHalf>(),
             VectorStorageDatatype::Turbo4
             | VectorStorageDatatype::Turbo8
-            | VectorStorageDatatype::Turbo16 => {
-                unreachable!("`Self::open` opens no overlay for a TurboQuant-datatype vector")
-            }
+            | VectorStorageDatatype::Turbo16 => self.raw_quantizer()?.quantized_size(),
         };
-        let row_size = self.dim() * element_size;
         if !bytes.len().is_multiple_of(row_size) {
             return Err(OperationError::malformed_vector_blob(format!(
                 "Malformed multi vector blob of {} bytes, not a whole number of {row_size}-byte \
@@ -288,9 +283,31 @@ impl UpdateOnlyQuantizedVectors {
             VectorStorageDatatype::Turbo4
             | VectorStorageDatatype::Turbo8
             | VectorStorageDatatype::Turbo16 => {
-                unreachable!("`Self::open` opens no overlay for a TurboQuant-datatype vector")
+                let quantizer = self.raw_quantizer()?;
+                let expected_size = quantizer.quantized_size();
+                if bytes.len() != expected_size {
+                    return Err(OperationError::malformed_vector_blob(format!(
+                        "Malformed dense TQ blob of {} bytes, expected {expected_size}",
+                        bytes.len(),
+                    )));
+                }
+                // Decoded as `get_vector` does: what the non-update-only path quantizes.
+                Ok(Cow::Owned(shared::dequantize_for_requantization(
+                    quantizer,
+                    self.dim(),
+                    bytes,
+                    false,
+                )))
             }
         }
+    }
+
+    fn raw_quantizer(&self) -> OperationResult<&TurboQuantizer> {
+        self.raw_quantizer.as_ref().ok_or_else(|| {
+            OperationError::service_error(
+                "TurboQuant-datatype overlay opened without its quantizer",
+            )
+        })
     }
 
     /// Mirrors `QuantizedVectors::create_impl` on the non-update-only path.

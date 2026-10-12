@@ -225,7 +225,7 @@ pub(super) fn dequantize_vector<'a>(
 /// `keep_rotated` is set the inverse rotation is skipped and the result is
 /// dequantized straight into `f32`, avoiding the intermediate `Vec<f64>` that
 /// the rotation would need.
-pub(super) fn dequantize_for_requantization(
+pub(crate) fn dequantize_for_requantization(
     quantizer: &TurboQuantizer,
     dim: usize,
     quantized: &[u8],
