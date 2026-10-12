@@ -28,10 +28,12 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod additional_links;
-mod main_graph;
+mod graph_builder;
+mod hnsw_builder;
 
 use self::additional_links::{additional_links_fields, build_additional_links};
-use self::main_graph::build_main_graph_on_cpu;
+use self::graph_builder::{GraphBuildContext, GraphBuilder as _, GraphBuilderEnum};
+use self::hnsw_builder::HnswGraphBuilder;
 
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
@@ -89,11 +91,7 @@ impl HNSWIndex {
             config.payload_m0.unwrap_or(config.m0),
         );
 
-        // Progress subtasks
-        let progress_migrate = build_main_graph.then(|| progress.subtask("migrate"));
-        let progress_main_graph = build_main_graph.then(|| progress.subtask("main_graph"));
-        let additional_links_params =
-            additional_links_fields(&payload_index_ref, payload_m, &progress);
+        let payload_fields = additional_links_fields(&payload_index_ref, payload_m);
 
         let old_index = old_indices
             .iter()
@@ -135,6 +133,7 @@ impl HNSWIndex {
                 .unwrap_or(0)
                 * 10,
         );
+
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             HnswM::new(config.m, config.m0),
@@ -144,6 +143,15 @@ impl HNSWIndex {
         );
 
         let pool = build_thread_pool(permit.num_cpus as usize)?;
+        let context = GraphBuildContext {
+            id_tracker: id_tracker_ref.deref(),
+            vector_storage: &vector_storage_ref,
+            quantized_vectors: &quantized_vectors_ref,
+            pool: &pool,
+            progress: &progress,
+            stopped,
+        };
+        let mut graph_builder = GraphBuilderEnum::Hnsw(HnswGraphBuilder);
 
         let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
@@ -167,9 +175,7 @@ impl HNSWIndex {
         let (gpu_vectors, gpu_graph) = super::gpu_build::upload_and_build_main_graph(
             gpu_device,
             build_main_graph,
-            additional_links_params
-                .as_ref()
-                .is_some_and(|(_, indexed_fields)| !indexed_fields.is_empty()),
+            !payload_fields.is_empty(),
             id_tracker_ref.deref(),
             &vector_storage_ref,
             &quantized_vectors_ref,
@@ -189,23 +195,13 @@ impl HNSWIndex {
         check_process_stopped(stopped)?;
 
         if build_main_graph {
-            build_main_graph_on_cpu(
-                id_tracker_ref.deref(),
-                &vector_storage_ref,
-                &quantized_vectors_ref,
-                old_index,
-                &graph_layers_builder,
-                config.ef_construct,
-                progress_migrate.unwrap(),
-                progress_main_graph.unwrap(),
-                &pool,
-                stopped,
-            )?;
+            graph_layers_builder =
+                graph_builder.build_main_graph(context, graph_layers_builder, old_index)?;
         } else {
             drop(old_index);
         }
 
-        if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
+        if !payload_fields.is_empty() {
             #[cfg(feature = "gpu")]
             let mut gpu_insert_context = super::gpu_build::create_gpu_insert_context(
                 gpu_vectors.as_ref(),
@@ -216,19 +212,15 @@ impl HNSWIndex {
             let mut gpu_insert_context = None;
 
             let indexed_payload_vectors = build_additional_links(
-                id_tracker_ref.deref(),
-                &vector_storage_ref,
-                &quantized_vectors_ref,
+                context,
                 &payload_index_ref,
                 &mut gpu_insert_context,
+                &mut graph_builder,
                 &mut graph_layers_builder,
                 &config,
                 payload_m,
-                indexed_fields,
-                progress_additional_links,
-                &pool,
+                payload_fields,
                 rng,
-                stopped,
             )?;
 
             debug_assert!(indexed_vectors >= indexed_payload_vectors || config.m == 0);

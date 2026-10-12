@@ -1,63 +1,49 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::bitvec::{BitSliceExt as _, BitVec};
-use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
 use log::{debug, trace};
 use rand::Rng;
-use rayon::ThreadPool;
-use rayon::prelude::*;
 
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use super::graph_builder::{GraphBuildContext, GraphBuilder as _, GraphBuilderEnum};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::PayloadBlockCondition;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::hnsw::{
-    HNSW_BUILD_MAX_PAR_LEN, HNSW_USE_HEURISTIC, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
-};
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, PayloadFieldSchema, PayloadKeyType};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
-/// Fields that get additional HNSW links, each paired with its progress subtask under the
-/// returned `additional_links` tracker. `None` when there is nothing to build.
+/// Fields that get additional HNSW links, in build order, each with the name of its progress
+/// subtask. Empty when there is nothing to build.
 pub(super) fn additional_links_fields(
     payload_index: &StructPayloadIndex,
     payload_m: HnswM,
-    progress: &ProgressTracker,
-) -> Option<(ProgressTracker, Vec<(ProgressTracker, JsonPath)>)> {
+) -> Vec<(String, JsonPath)> {
     if payload_m.m == 0 {
-        return None;
+        return Vec::new();
     }
     let fields = payload_index.with_view(|v| v.indexed_fields());
-    if fields.is_empty() {
-        return None;
-    }
-    let progress_additional_links = progress.subtask("additional_links");
-    let fields = in_build_order(fields)
+    in_build_order(fields)
         .into_iter()
         .filter_map(|(field, payload_schema)| {
-            let subtask_name = format!("{}:{field}", payload_schema.name());
             if payload_schema.enable_hnsw() {
-                Some((progress_additional_links.subtask(subtask_name), field))
+                Some((format!("{}:{field}", payload_schema.name()), field))
             } else {
                 debug!("enable_hnsw=false. Skip building additional index for field {field}");
                 None
             }
         })
-        .collect::<Vec<_>>();
-    Some((progress_additional_links, fields))
+        .collect()
 }
 
 /// Indexed fields in the order their additional links are built.
@@ -73,8 +59,8 @@ fn in_build_order(
     fields
 }
 
-/// Build per-payload-block subgraphs for every field in `indexed_fields` and merge them
-/// into `graph_layers_builder`.
+/// Build per-payload-block subgraphs for every field in `fields`, from
+/// [`additional_links_fields`], and merge them into `graph_layers_builder`.
 ///
 /// Returns the number of vectors that got indexed through these subgraphs.
 #[allow(clippy::too_many_arguments)]
@@ -83,24 +69,31 @@ fn in_build_order(
     allow(unused_variables, clippy::needless_pass_by_ref_mut)
 )]
 pub(super) fn build_additional_links<R: Rng + ?Sized>(
-    id_tracker: &IdTrackerEnum,
-    vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    context: GraphBuildContext<'_>,
     payload_index: &StructPayloadIndex,
     gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
+    graph_builder: &mut GraphBuilderEnum,
     graph_layers_builder: &mut GraphLayersBuilder,
     config: &HnswGraphConfig,
     payload_m: HnswM,
-    indexed_fields: Vec<(ProgressTracker, JsonPath)>,
-    progress_additional_links: ProgressTracker,
-    pool: &ThreadPool,
+    fields: Vec<(String, JsonPath)>,
     rng: &mut R,
-    stopped: &AtomicBool,
 ) -> OperationResult<usize> {
+    let GraphBuildContext {
+        id_tracker,
+        vector_storage,
+        progress,
+        stopped,
+        ..
+    } = context;
     let total_vector_count = vector_storage.total_vector_count();
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-    progress_additional_links.start();
+    let progress_additional_links = progress.running_subtask("additional_links");
+    let indexed_fields = fields
+        .into_iter()
+        .map(|(subtask_name, field)| (progress_additional_links.subtask(subtask_name), field))
+        .collect::<Vec<_>>();
 
     // Calculate true average number of links per vertex in the HNSW graph
     // to better estimate percolation threshold
@@ -159,7 +152,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
             payload_m,
             config.ef_construct,
             1,
-            HNSW_USE_HEURISTIC,
+            crate::index::hnsw_index::hnsw::HNSW_USE_HEURISTIC,
             false,
         )
     });
@@ -240,7 +233,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                     crate::index::hnsw_index::hnsw::gpu_build::build_block_on_gpu(
                         id_tracker,
                         vector_storage,
-                        quantized_vectors,
+                        context.quantized_vectors,
                         gpu_insert_context,
                         reference_graph,
                         &points_to_index,
@@ -251,12 +244,8 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 return Ok(());
             }
 
-            build_block(
-                id_tracker,
-                vector_storage,
-                quantized_vectors,
-                pool,
-                stopped,
+            graph_builder.build_block_graph(
+                context,
                 graph_layers_builder,
                 &points_to_index,
                 payload_m,
@@ -270,79 +259,6 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         })?;
     }
     Ok(indexed_vectors_set.count_ones())
-}
-
-/// Build one payload block, linking its points only to each other, and merge it into
-/// `graph_layers_builder`.
-///
-/// Block points are numbered `0..points_to_index.len()`, so the builder's links and visited
-/// lists are sized to the block, not the segment, and a search can only reach block points.
-#[allow(clippy::too_many_arguments)]
-fn build_block(
-    id_tracker: &IdTrackerEnum,
-    vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
-    pool: &ThreadPool,
-    stopped: &AtomicBool,
-    graph_layers_builder: &mut GraphLayersBuilder,
-    points_to_index: &[PointOffsetType],
-    payload_m: HnswM,
-    ef_construct: usize,
-    counter: &AtomicU64,
-) -> OperationResult<()> {
-    let vector_deleted = vector_storage.deleted_vector_bitslice();
-    let point_deleted = id_tracker.deleted_point_bitslice();
-    let block_deleted: BitVec = points_to_index
-        .iter()
-        .map(|&point_id| {
-            vector_deleted.get_bit(point_id as usize).unwrap_or(false)
-                || point_deleted.get_bit(point_id as usize).unwrap_or(true)
-        })
-        .collect();
-
-    let block_graph = GraphLayersBuilder::new_with_params(
-        points_to_index.len(),
-        payload_m,
-        ef_construct,
-        1,
-        HNSW_USE_HEURISTIC,
-        false,
-    );
-
-    let insert_point = |local_id: PointOffsetType| {
-        check_process_stopped(stopped)?;
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-        let points_scorer = FilteredScorer::new_block_scorer(
-            points_to_index[local_id as usize],
-            points_to_index,
-            vector_storage,
-            quantized_vectors.as_ref(),
-            &block_deleted,
-        )?;
-        block_graph.link_new_point(local_id, points_scorer);
-        counter.fetch_add(1, Ordering::Relaxed);
-        Ok::<_, OperationError>(())
-    };
-
-    // First index points in single thread so ensure warm start for parallel indexing process.
-    // Once initial structure is built, index remaining points in parallel, so that each thread
-    // inserts points in different parts of the graph and is less likely to compete for locks.
-    let num_points = points_to_index.len() as PointOffsetType;
-    let first_points = num_points.min(SINGLE_THREADED_HNSW_BUILD_THRESHOLD as PointOffsetType);
-    for local_id in 0..first_points {
-        insert_point(local_id)?;
-    }
-    if num_points > first_points {
-        pool.install(|| {
-            (first_points..num_points)
-                .into_par_iter()
-                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                .try_for_each(insert_point)
-        })?;
-    }
-
-    graph_layers_builder.merge_block(block_graph, points_to_index);
-    Ok(())
 }
 
 /// Get list of points for indexing, associated with payload block filtering condition
