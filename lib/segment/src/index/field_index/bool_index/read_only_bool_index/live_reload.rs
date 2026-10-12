@@ -1,7 +1,6 @@
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalReadFs};
 
 use super::ReadOnlyBoolIndex;
 use crate::common::operation_error::OperationResult;
@@ -14,7 +13,7 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyBoolIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         cached_fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         let mut futs = self.storage.trues_flags.live_preload(cached_fs)?;
         futs.extend(self.storage.falses_flags.live_preload(cached_fs)?);
         Ok(futs)

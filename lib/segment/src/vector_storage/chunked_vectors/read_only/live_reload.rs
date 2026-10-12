@@ -1,9 +1,8 @@
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OkUnchanged, TypedStorage, UniversalRead, UniversalReadFs,
+    CachedReadFs, OkUnchanged, PreloadFuture, TypedStorage, UniversalRead, UniversalReadFs,
 };
-use futures::future::BoxFuture;
 
 use super::super::chunks::{chunk_name, chunk_open_options, list_chunk_files, read_chunks_from};
 use super::ReadOnlyChunkedVectors;
@@ -35,7 +34,7 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> LiveReload for ReadOnlyChunkedVe
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         let num_files = list_chunk_files(fs, &self.directory)?.len();
         let last_chunk = self.watermark_chunk();
 

@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use common::generic_consts::Sequential;
 use common::types::PointOffsetType;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, ReadRange, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+    CachedReadFs, OkNotFound, PreloadFuture, ReadRange, UniversalRead, UniversalReadFs,
+    UniversalReadFsAsync,
 };
-use futures::future::BoxFuture;
 
 use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
@@ -153,7 +153,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         match file {
             Some(file) => {
                 if let Some(fut) = file.live_preload(|_| None).ok_not_found()? {
-                    fut.await;
+                    fut.await.ok_not_found()?;
                     file.live_reload().ok_not_found()?;
                 }
             }
@@ -172,7 +172,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     pub fn live_preload(
         &self,
         _fs: &impl CachedReadFs<File = S>,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         Ok(Vec::new())
     }
 

@@ -2,8 +2,10 @@ use std::sync::atomic::AtomicBool;
 
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs, UniversalReadFsAsync};
-use futures::future::{BoxFuture, join_all};
+use common::universal_io::{
+    CachedReadFs, PreloadFuture, UioResult, UniversalReadFs, UniversalReadFsAsync,
+};
+use futures::future::join_all;
 
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::live_reload::LiveReload;
@@ -16,6 +18,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// re-snapshot the retained caching filesystem's listing, schedule every
     /// fetch the reload will need, then drive them all to completion — so the
     /// reload only applies ready data.
+    ///
+    /// Fails if any fetch failed. The caller must then skip the reload: it
+    /// would fail part-way, after some components already applied the change.
+    /// What was staged is dropped, and the next preload stages it again.
     pub async fn live_preload(
         &self,
         is_stopped: &AtomicBool,
@@ -63,7 +69,16 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             preloads.extend(vector_data.live_preload(fs)?);
         }
 
-        futures::join!(fs.wait_all(), join_all(preloads));
+        let ((), fetched) = futures::join!(fs.wait_all(), join_all(preloads));
+        let fetched = fetched
+            .into_iter()
+            .collect::<UioResult<()>>()
+            .and_then(|()| fs.prefetch_error());
+        if let Err(err) = fetched {
+            fs.discard_prefetched();
+            return Err(err.into());
+        }
+
         Ok(max_committed_id)
     }
 
@@ -149,7 +164,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData
     fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         let Self {
             vector_index,
             vector_storage,
