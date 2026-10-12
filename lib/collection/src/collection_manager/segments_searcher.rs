@@ -22,7 +22,7 @@ use segment::types::{
 };
 use shard::common::stopping_guard::StoppingGuard;
 use shard::optimizers::config::DEFAULT_INDEXING_THRESHOLD_KB;
-use shard::query::query_context::{fill_query_context, init_query_context};
+use shard::query::query_context::{fill_segment_query_context, init_query_context};
 use shard::query::text::init_text_query_context;
 use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::{retrieve_blocking, retrieve_raw_blocking};
@@ -188,7 +188,6 @@ impl SegmentsSearcher {
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
         let search_optimized_threshold_kb = indexing_threshold_kb.max(full_scan_threshold_kb);
 
-        let cpu_utilization = hw::cpu_utilization();
         let query_context = init_query_context(
             &batch_request.searches,
             search_optimized_threshold_kb,
@@ -201,14 +200,64 @@ impl SegmentsSearcher {
                     .unwrap_or(false)
             },
         )?;
-        let is_stopped = is_stopped_guard.get_is_stopped().clone();
-        // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
-        let task = AbortOnDropHandle::new(search_runtime_handle.spawn_blocking(move || {
-            cpu_utilization
-                .measure(|| fill_query_context(query_context, segments, timeout, &is_stopped))
-        }))
-        .await??;
-        Ok(task)
+        Self::fill_query_context(
+            query_context,
+            segments,
+            search_runtime_handle,
+            is_stopped_guard,
+            timeout,
+        )
+        .await
+    }
+
+    /// Fill `query_context` with the statistics of every segment, one blocking
+    /// task per segment. Returns `None` when there are no segments.
+    async fn fill_query_context(
+        mut query_context: QueryContext,
+        segments: LockedSegmentHolder,
+        runtime_handle: &AdaptiveSearchHandle,
+        is_stopped_guard: &StoppingGuard,
+        timeout: Duration,
+    ) -> CollectionResult<Option<QueryContext>> {
+        let start = Instant::now();
+
+        let segments: Vec<_> = {
+            let Some(segments_guard) = segments.try_read_for(timeout) else {
+                return Err(CollectionError::timeout(timeout, "fill query context"));
+            };
+            // Collect the segments first so we don't lock the segment holder during the operations.
+            segments_guard
+                .non_appendable_then_appendable_segments()
+                .collect()
+        };
+
+        if segments.is_empty() {
+            return Ok(None);
+        }
+
+        // Tasks read the seed while the merge below writes into `query_context`.
+        let seed = Arc::new(query_context.fork_statistics());
+        let mut forks = segments
+            .into_iter()
+            .map(|segment| {
+                let seed = seed.clone();
+                let is_stopped = is_stopped_guard.get_is_stopped();
+                let timeout = timeout.saturating_sub(start.elapsed());
+                let cpu_utilization = hw::cpu_utilization();
+                // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
+                let handle = runtime_handle.spawn_blocking(move || {
+                    cpu_utilization.measure(|| {
+                        fill_segment_query_context(&seed, &segment, timeout, &is_stopped)
+                    })
+                });
+                AbortOnDropHandle::new(handle)
+            })
+            .collect::<FuturesUnordered<_>>();
+
+        while let Some(fork) = forks.try_next().await? {
+            query_context.merge_statistics(fork?);
+        }
+        Ok(Some(query_context))
     }
 
     pub async fn search(
@@ -588,17 +637,14 @@ impl SegmentsSearcher {
             &terms,
             is_stopped_guard.get_is_stopped(),
         );
-        let is_stopped = is_stopped_guard.get_is_stopped();
-        let cpu_utilization = hw::cpu_utilization();
-        // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
-        let query_context = AbortOnDropHandle::new(runtime_handle.spawn_blocking({
-            let segments = segments.clone();
-            move || {
-                cpu_utilization
-                    .measure(|| fill_query_context(query_context, segments, timeout, &is_stopped))
-            }
-        }))
-        .await??;
+        let query_context = Self::fill_query_context(
+            query_context,
+            segments.clone(),
+            runtime_handle,
+            is_stopped_guard,
+            timeout,
+        )
+        .await?;
         let Some(query_context) = query_context else {
             return Ok(Vec::new());
         };

@@ -3,14 +3,13 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use common::ambient;
-use common::iterator_ext::IteratorExt;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::query_context::QueryContext;
 use segment::types::VectorName;
 
 use crate::common::stopping_guard::StoppingGuard;
+use crate::locked_segment::LockedSegment;
 use crate::search::CoreSearchRequest;
-use crate::segment_holder::locked::LockedSegmentHolder;
 
 pub fn init_query_context(
     batch_request: &[CoreSearchRequest],
@@ -69,36 +68,23 @@ pub fn init_query_context_with_stopping_flag(
     Ok(query_context)
 }
 
-pub fn fill_query_context(
-    mut query_context: QueryContext,
-    segments: LockedSegmentHolder,
+/// Fill one segment's contribution into a [`QueryContext::fork_statistics`]
+/// copy of `query_context`, to fold back with
+/// [`QueryContext::merge_statistics`]. Segments fill in parallel this way.
+pub fn fill_segment_query_context(
+    query_context: &QueryContext,
+    segment: &LockedSegment,
     timeout: Duration,
     is_stopped: &AtomicBool,
-) -> OperationResult<Option<QueryContext>> {
-    let start = std::time::Instant::now();
-
-    let segments: Vec<_> = {
-        let Some(holder_guard) = segments.try_read_for(timeout) else {
-            return Err(OperationError::timeout(timeout, "fill query context"));
-        };
-        holder_guard
-            .non_appendable_then_appendable_segments()
-            .collect()
+) -> OperationResult<QueryContext> {
+    check_process_stopped(is_stopped)?;
+    let mut fork = query_context.fork_statistics();
+    let segment = segment.get();
+    let Some(segment_guard) = segment.try_read_for(timeout) else {
+        return Err(OperationError::timeout(timeout, "fill query context"));
     };
-
-    if segments.is_empty() {
-        return Ok(None);
-    }
-
-    for locked_segment in segments.into_iter().stop_if(is_stopped) {
-        let segment = locked_segment.get();
-        let timeout = timeout.saturating_sub(start.elapsed());
-        let Some(segment_guard) = segment.try_read_for(timeout) else {
-            return Err(OperationError::timeout(timeout, "fill query context"));
-        };
-        segment_guard.fill_query_context(&mut query_context)?;
-    }
-    Ok(Some(query_context))
+    segment_guard.fill_query_context(&mut fork)?;
+    Ok(fork)
 }
 
 #[cfg(test)]

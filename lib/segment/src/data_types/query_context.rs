@@ -15,7 +15,7 @@ use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::types::{Filter, PayloadKeyType, ScoredPoint, VectorName, VectorNameBuf};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct QueryIdfStats {
     /// IDF statistics per corpus scope.
     ///
@@ -36,7 +36,7 @@ impl QueryIdfStats {
 /// Statistics of the element frequency, collected over all segments,
 /// scoped to a single IDF corpus.
 /// Required for processing sparse vector search with `idf-dot` similarity.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdfScopeStats {
     /// Filter defining the population the statistics are computed over.
     /// `None` — the whole collection (global statistics).
@@ -248,6 +248,80 @@ impl QueryContext {
         &mut self.text_stats
     }
 
+    /// A copy seeded with the same scopes, dimensions and terms, every count at
+    /// zero, for one segment to fill on its own thread. Fold it back with
+    /// [`Self::merge_statistics`].
+    pub fn fork_statistics(&self) -> Self {
+        let mut idf_stats = self.idf_stats.clone();
+        for scope in &mut idf_stats.scopes {
+            scope
+                .idf
+                .values_mut()
+                .flat_map(HashMap::values_mut)
+                .for_each(|df| *df = 0);
+            scope
+                .indexed_vectors
+                .values_mut()
+                .for_each(|count| *count = 0);
+        }
+        let text_stats = self
+            .text_stats
+            .iter()
+            .map(|(field, stats)| {
+                let stats = TextFieldStats {
+                    corpus: stats.corpus.clone(),
+                    df: stats.df.keys().map(|term| (term.clone(), 0)).collect(),
+                    ..TextFieldStats::default()
+                };
+                (field.clone(), stats)
+            })
+            .collect();
+        Self {
+            available_point_count: 0,
+            search_optimized_threshold_kb: self.search_optimized_threshold_kb,
+            is_stopped: self.is_stopped.clone(),
+            idf_stats,
+            text_stats,
+            handoff: self.handoff.clone(),
+        }
+    }
+
+    /// Sum the statistics of a [`Self::fork_statistics`] copy into this context.
+    pub fn merge_statistics(&mut self, fork: Self) {
+        let Self {
+            available_point_count,
+            search_optimized_threshold_kb: _,
+            is_stopped: _,
+            idf_stats,
+            text_stats,
+            handoff: _,
+        } = fork;
+
+        self.available_point_count += available_point_count;
+
+        debug_assert_eq!(self.idf_stats.scopes.len(), idf_stats.scopes.len());
+        for (scope, fork_scope) in self.idf_stats.scopes.iter_mut().zip(idf_stats.scopes) {
+            debug_assert_eq!(scope.corpus, fork_scope.corpus);
+            for (vector_name, fork_idf) in fork_scope.idf {
+                let idf = scope.idf.get_or_insert_default(&vector_name);
+                for (dim, df) in fork_idf {
+                    *idf.entry(dim).or_insert(0) += df;
+                }
+            }
+            for (vector_name, count) in fork_scope.indexed_vectors {
+                *scope.indexed_vectors.get_or_insert_default(&vector_name) += count;
+            }
+        }
+
+        for (field, fork_stats) in text_stats {
+            let stats = self.text_stats.entry(field).or_default();
+            for (term, df) in fork_stats.df {
+                *stats.df.entry(term).or_insert(0) += df;
+            }
+            stats.add_segment(fork_stats.documents, fork_stats.total_tokens);
+        }
+    }
+
     pub fn get_segment_query_context(&self) -> SegmentQueryContext<'_> {
         SegmentQueryContext {
             query_context: self,
@@ -454,4 +528,53 @@ pub struct FormulaContext {
     pub limit: usize,
     pub score_threshold: Option<ScoreType>,
     pub is_stopped: Arc<AtomicBool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merged_forks_sum_statistics() {
+        let field = PayloadKeyType::new("text");
+        let mut context = QueryContext::default();
+        context.init_idf("sparse", None, &[1, 2]);
+        context.init_text_stats(&field, None, ["fox".to_string(), "dog".to_string()]);
+
+        // Each fork stands for one segment's fill.
+        let segment_fill = |documents, total_tokens, fox_df, dim_1_df| {
+            let mut fork = context.fork_statistics();
+            fork.add_available_point_count(documents);
+            let scope = &mut fork.mut_idf_stats().scopes[0];
+            *scope.indexed_vectors.get_mut("sparse").unwrap() += documents;
+            *scope.idf.get_mut("sparse").unwrap().get_mut(&1).unwrap() += dim_1_df;
+            let stats = fork.mut_text_stats().get_mut(&field).unwrap();
+            *stats.df.get_mut("fox").unwrap() += fox_df;
+            stats.add_segment(documents, total_tokens);
+            fork
+        };
+        let first = segment_fill(3, Some(10), 2, 1);
+        let second = segment_fill(4, Some(7), 1, 3);
+        let without_lengths = segment_fill(0, None, 0, 0);
+
+        context.merge_statistics(first);
+        context.merge_statistics(second);
+        assert_eq!(context.available_point_count(), 7);
+        let scope = context.idf_stats().scope(None).unwrap();
+        assert_eq!(scope.indexed_vectors.get("sparse"), Some(&7));
+        let idf = scope.idf.get("sparse").unwrap();
+        assert_eq!((idf[&1], idf[&2]), (4, 0));
+        let stats = &context.mut_text_stats()[&field];
+        assert_eq!((stats.df["fox"], stats.df["dog"]), (3, 0));
+        assert_eq!((stats.documents, stats.total_tokens), (7, Some(17)));
+
+        // A fork of a filled context starts from zero again.
+        let fork = context.fork_statistics();
+        assert_eq!(fork.available_point_count(), 0);
+        assert_eq!(fork.idf_stats().scopes[0].idf.get("sparse").unwrap()[&1], 0);
+
+        // One segment without document lengths drops `avgdl` for the shard.
+        context.merge_statistics(without_lengths);
+        assert_eq!(context.mut_text_stats()[&field].total_tokens, None);
+    }
 }
