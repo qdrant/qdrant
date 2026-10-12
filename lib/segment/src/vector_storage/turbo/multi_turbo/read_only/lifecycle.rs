@@ -31,6 +31,7 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
             &path.join(OFFSETS_DIR_PATH),
             advice,
             populate,
+            None,
         )?;
         InMemoryBitvecFlags::preopen(fs, &path.join(DELETED_DIR_PATH))?;
         Ok(())
@@ -62,8 +63,14 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
             storage.populate()?;
         }
 
-        let offsets =
-            ReadOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
+        let offsets = ReadOnlyChunkedVectors::open(
+            fs,
+            &path.join(OFFSETS_DIR_PATH),
+            1,
+            advice,
+            populate,
+            None,
+        )?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 

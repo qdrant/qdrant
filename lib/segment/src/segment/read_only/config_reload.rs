@@ -170,7 +170,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         let index_path = get_vector_index_path(&self.segment_path, name);
         // A config reload follows the new config alone: the request-specific
         // load profile of the original open (if any) does not outlive it.
-        let storage = VectorStorageReadEnum::open(fs, config, &path, &index_path, None)?
+        let storage = VectorStorageReadEnum::open(fs, config, &path, &index_path, None, None)?
             .ok_or_else(|| {
                 OperationError::service_error(format!(
                     "Read-only dense vector storage '{name}' was not found, or is corrupted.",

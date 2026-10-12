@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use common::universal_io::{
-    UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFs, read_json_via, read_whole_via,
+    Populate, UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFs, read_json_via,
+    read_whole_via,
 };
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +43,26 @@ pub(super) struct RunPart {
 }
 
 impl ChunkedVectorsConfig {
+    /// Populate for chunk `chunk_id` of `element_size`-byte elements when only
+    /// the first `visible_len` vectors are read; see [`visible_chunk_populate`].
+    ///
+    /// [`visible_chunk_populate`]: super::chunks::visible_chunk_populate
+    pub(super) fn chunk_populate(
+        &self,
+        populate: Populate,
+        chunk_id: usize,
+        element_size: usize,
+        visible_len: Option<usize>,
+    ) -> Populate {
+        super::chunks::visible_chunk_populate(
+            populate,
+            chunk_id,
+            self.chunk_size_vectors,
+            self.dim * element_size,
+            visible_len,
+        )
+    }
+
     pub fn get_chunk_index(&self, key: usize) -> usize {
         key / self.chunk_size_vectors
     }
@@ -130,6 +151,12 @@ where
     }
 }
 
+/// Vectors per chunk for vectors of `vector_size_bytes`, as a new directory's
+/// config records it.
+pub(super) fn chunk_size_vectors(vector_size_bytes: usize) -> usize {
+    CHUNK_SIZE / vector_size_bytes
+}
+
 fn create_config<T>(
     fs: &impl UniversalWriteFs,
     config_file: &Path,
@@ -141,9 +168,8 @@ fn create_config<T>(
         ));
     }
 
-    let chunk_size_bytes = CHUNK_SIZE;
     let vector_size_bytes = dim * std::mem::size_of::<T>();
-    let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
+    let chunk_size_vectors = chunk_size_vectors(vector_size_bytes);
     let corrected_chunk_size_bytes = chunk_size_vectors * vector_size_bytes;
 
     let config = ChunkedVectorsConfig {

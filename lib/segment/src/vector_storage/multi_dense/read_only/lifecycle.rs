@@ -30,6 +30,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
             &path.join(VECTORS_DIR_PATH),
             advice,
             populate,
+            None,
         )?;
 
         // Offsets
@@ -38,6 +39,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
             &path.join(OFFSETS_DIR_PATH),
             advice,
             populate,
+            None,
         )?;
 
         // Deleted flags
@@ -59,13 +61,25 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ReadOnlyChunkedMultiDenseVecto
         advice: AdviceSetting,
         populate: Populate,
     ) -> OperationResult<Self> {
-        let vectors =
-            ReadOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim, advice, populate)?;
+        let vectors = ReadOnlyChunkedVectors::open(
+            fs,
+            &path.join(VECTORS_DIR_PATH),
+            dim,
+            advice,
+            populate,
+            None,
+        )?;
 
         // Offsets store one `MultivectorMmapOffset` element per point, so the
         // chunked storage dimensionality is 1.
-        let offsets =
-            ReadOnlyChunkedVectors::open(fs, &path.join(OFFSETS_DIR_PATH), 1, advice, populate)?;
+        let offsets = ReadOnlyChunkedVectors::open(
+            fs,
+            &path.join(OFFSETS_DIR_PATH),
+            1,
+            advice,
+            populate,
+            None,
+        )?;
 
         let deleted = InMemoryBitvecFlags::open::<S>(fs, &path.join(DELETED_DIR_PATH))?;
 

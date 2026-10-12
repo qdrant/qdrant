@@ -211,8 +211,13 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         is_stopped: &'a AtomicBool,
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
-        let (config, payload_config) =
-            Self::first_preopen(&fs, segment_path, load_profile, is_stopped)?;
+        let (config, payload_config, deferred_internal_id) = Self::first_preopen(
+            &fs,
+            segment_path,
+            deferred_internal_id,
+            load_profile,
+            is_stopped,
+        )?;
         Ok(StagedSegmentOpen {
             fs,
             segment_path: segment_path.to_path_buf(),
@@ -228,18 +233,28 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// Schedule the prefetch of every file the segment's components will open,
     /// returning the configs parsed along the way so [`open_via`](Self::open_via)
     /// does not have to read them a second time.
+    ///
+    /// Also returns the segment's deferred cutoff: the given
+    /// `deferred_internal_id`, else the one `load_profile` derives from the
+    /// config, and only for an appendable segment. Points past it are never
+    /// read, so the vector storages leave them unfetched.
     fn first_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
+        deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
         is_stopped: &AtomicBool,
-    ) -> OperationResult<(SegmentConfig, PayloadConfig)> {
+    ) -> OperationResult<(SegmentConfig, PayloadConfig, Option<PointOffsetType>)> {
         let SegmentState {
             initial_version: _,
             version: _,
             config,
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
         check_process_stopped(is_stopped)?;
+
+        let deferred_internal_id = deferred_internal_id
+            .or_else(|| load_profile.and_then(|profile| profile.deferred_internal_id(&config)))
+            .filter(|_| config.is_appendable());
 
         // Payload storage
         let payload_storage_populate = load_profile
@@ -268,6 +283,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 &path,
                 &index_path,
                 storage_populate,
+                deferred_internal_id,
             )?;
             check_process_stopped(is_stopped)?;
 
@@ -316,7 +332,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             load_profile,
         )?;
 
-        Ok((config, payload_config))
+        Ok((config, payload_config, deferred_internal_id))
     }
 
     /// Read-only mirror of `load_segment`: assembles every read-only component
@@ -362,9 +378,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         }
 
         let is_appendable = config.is_appendable();
-        let deferred_internal_id = deferred_internal_id
-            .or_else(|| load_profile.and_then(|profile| profile.deferred_internal_id(&config)))
-            .filter(|_| is_appendable);
+        let deferred_internal_id = deferred_internal_id.filter(|_| is_appendable);
 
         let payload_storage_populate = load_profile
             .and_then(|profile| profile.payload_storage_placement())
@@ -405,6 +419,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
                 &path,
                 &index_path,
                 storage_populate,
+                deferred_internal_id,
             )?;
             let storage = opened.ok_or_else(|| {
                 OperationError::service_error(format!(
