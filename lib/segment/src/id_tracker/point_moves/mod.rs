@@ -28,7 +28,9 @@ use ahash::AHashMap;
 use common::types::PointOffsetType;
 use uuid::Uuid;
 
-pub use self::view::{PointMovesView, read_point_moves_tail};
+pub use self::view::PointMovesView;
+#[cfg(test)]
+pub use self::view::read_point_moves_tail;
 pub use self::writer::PointMovesWriter;
 use crate::types::PointIdType;
 

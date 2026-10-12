@@ -135,6 +135,7 @@ impl<S: UniversalRead> PointMovesView<S> {
 ///
 /// This is the read that classifies a tombstone: it starts after the tombstone was read, so it
 /// covers every record the writer appended before that tombstone.
+#[cfg(test)]
 pub fn read_point_moves_tail<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     path: &Path,
