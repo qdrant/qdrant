@@ -205,8 +205,8 @@ mod store {
     use segment::segment_constructor::get_vector_storage_path;
     use segment::types::{
         BinaryQuantization, BinaryQuantizationConfig, Distance, Filter, MultiVectorComparator,
-        MultiVectorConfig, Payload, QuantizationConfig, SearchParams, TurboQuantBitSize,
-        TurboQuantQuantizationConfig, TurboQuantization, VectorStorageDatatype,
+        MultiVectorConfig, Payload, QuantizationConfig, QuantizationSearchParams, SearchParams,
+        TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization, VectorStorageDatatype,
         WithPayloadInterface, WithVector,
     };
     use shard::files::{SEGMENTS_PATH, segment_manifest_path};
@@ -707,13 +707,17 @@ mod store {
     }
 
     fn assert_multivectors_found(shard_dir: &Path, quantization: &QuantizationConfig) {
+        let query = MultiDenseVectorInternal::new_unchecked(vec![vec![3.0, 1.0], vec![1.0, 3.0]]);
+        assert_all_found(shard_dir, VectorInternal::from(query), quantization);
+    }
+
+    /// Points 1..=5 are found both exactly and through quantization.
+    fn assert_all_found(shard_dir: &Path, query: VectorInternal, context: &impl std::fmt::Debug) {
         let follower = open_follower(shard_dir);
         let found = |params: SearchParams| {
-            let query =
-                MultiDenseVectorInternal::new_unchecked(vec![vec![3.0, 1.0], vec![1.0, 3.0]]);
             let request = QueryRequestBuilder::new(10)
                 .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
-                    VectorInternal::from(query),
+                    query.clone(),
                     VECTOR_NAME.to_string(),
                 ))))
                 .params(params)
@@ -733,8 +737,172 @@ mod store {
             exact: true,
             ..Default::default()
         };
-        assert_eq!(found(exact), all, "{quantization:?}");
-        assert_eq!(found(SearchParams::default()), all, "{quantization:?}");
+        assert_eq!(found(exact), all, "{context:?}");
+        assert_eq!(found(SearchParams::default()), all, "{context:?}");
+    }
+
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    fn appended_turbo_datatype_vectors_are_found_through_quantization() {
+        const DIM: usize = 8;
+        let turbo = |bits| {
+            QuantizationConfig::Turbo(TurboQuantization {
+                turbo: TurboQuantQuantizationConfig {
+                    always_ram: None,
+                    memory: None,
+                    bits: Some(bits),
+                },
+            })
+        };
+        let binary = QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                encoding: None,
+                query_encoding: None,
+            },
+        });
+        let quantizations = [
+            turbo(TurboQuantBitSize::Bits1),
+            turbo(TurboQuantBitSize::Bits1_5),
+            binary,
+        ];
+        let datatypes = [
+            VectorStorageDatatype::Turbo4,
+            VectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16,
+        ];
+
+        for is_multi in [false, true] {
+            for datatype in datatypes {
+                for quantization in &quantizations {
+                    let context = (is_multi, datatype, quantization);
+                    let dir = tempfile::Builder::new()
+                        .prefix("edge-update-quantized-turbo-datatype")
+                        .tempdir()
+                        .unwrap();
+                    fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+                    let writer = UpdateOnlyEdgeShard::open(
+                        MmapFs,
+                        dir.path(),
+                        ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+                        None,
+                    )
+                    .unwrap();
+                    let mut config = EdgeConfig {
+                        quantization_config: Some(quantization.clone()),
+                        ..test_config()
+                    };
+                    let params = config.vectors.get_mut(VECTOR_NAME).unwrap();
+                    params.size = DIM;
+                    params.datatype = Some(datatype);
+                    params.multivector_config = is_multi.then_some(MultiVectorConfig {
+                        comparator: MultiVectorComparator::MaxSim,
+                    });
+                    let (writer, _) = writer
+                        .create_appendable(
+                            &config.plain_segment_config(),
+                            &HashMap::new(),
+                            &dir.path().join(TEMP_SEGMENTS_PATH),
+                        )
+                        .unwrap();
+
+                    let row = |id: u64| -> Vec<f32> {
+                        (0..DIM)
+                            .map(|i| ((id as usize + i) % 3) as f32 + 0.5)
+                            .collect()
+                    };
+                    let vector = |id: u64| {
+                        if is_multi {
+                            VectorInternal::from(MultiDenseVectorInternal::new_unchecked(vec![
+                                row(id),
+                                row(id + 1),
+                            ]))
+                        } else {
+                            VectorInternal::from(row(id))
+                        }
+                    };
+                    let points: Vec<_> = (1..=5)
+                        .map(|id| PointStructPersisted {
+                            id: ExtendedPointId::NumId(id),
+                            vector: VectorStructPersisted::from(VectorStructInternal::Named(
+                                HashMap::from([(VECTOR_NAME.to_string(), vector(id))]),
+                            )),
+                            payload: None,
+                        })
+                        .collect();
+                    // The reference: a regular appendable segment fed the same operations.
+                    let leader_dir = tempfile::Builder::new()
+                        .prefix("edge-leader-quantized-turbo-datatype")
+                        .tempdir()
+                        .unwrap();
+                    let leader = EdgeShard::new(leader_dir.path(), config).unwrap();
+
+                    let (writer, outcome) =
+                        writer.apply_batch(store_batch(1, points.clone())).unwrap();
+                    assert_eq!(outcome.stored, 5, "{context:?}");
+                    leader
+                        .update(PointOperation(UpsertPoints(PointsList(points))))
+                        .unwrap();
+                    leader.flush().unwrap();
+                    assert_all_found(dir.path(), vector(0), &context);
+                    assert_eq!(
+                        quantized_scores(dir.path(), vector(0)),
+                        quantized_scores(leader_dir.path(), vector(0)),
+                        "{context:?}",
+                    );
+
+                    // Re-stores the points from their raw bytes.
+                    let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                        payload: payload_json! { "kind": "moved" },
+                        points: Some((1..=5).map(ExtendedPointId::NumId).collect()),
+                        filter: None,
+                        key: None,
+                    }));
+                    let (_writer, outcome) =
+                        writer.apply_batch([(2, set_payload.clone())]).unwrap();
+                    assert_eq!(outcome.stored, 5, "{context:?}");
+                    leader.update(set_payload).unwrap();
+                    leader.flush().unwrap();
+                    assert_all_found(dir.path(), vector(0), &context);
+                    assert_eq!(
+                        quantized_scores(dir.path(), vector(0)),
+                        quantized_scores(leader_dir.path(), vector(0)),
+                        "{context:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Scores straight from the quantized vectors, with no rescoring, by point id.
+    fn quantized_scores(shard_dir: &Path, query: VectorInternal) -> Vec<(ExtendedPointId, f32)> {
+        let request = QueryRequestBuilder::new(10)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                query,
+                VECTOR_NAME.to_string(),
+            ))))
+            .params(SearchParams {
+                quantization: Some(QuantizationSearchParams {
+                    ignore: false,
+                    rescore: Some(false),
+                    oversampling: None,
+                }),
+                ..Default::default()
+            })
+            .build();
+        let mut scores: Vec<_> = open_follower(shard_dir)
+            .query(request)
+            .unwrap()
+            .into_iter()
+            .map(|point| (point.id, point.score))
+            .collect();
+        scores.sort_unstable_by_key(|(id, _)| *id);
+        scores
     }
 
     fn multivector_point(id: u64, value: f32) -> PointStructPersisted {
