@@ -28,8 +28,9 @@ pub use __ambient_mark as mark;
 pub use __ambient_span as span;
 
 /// Record [Event::Mark].
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn record_mark(text: impl FnOnce() -> EcoString) {
-    record_here(|parent| Event::Mark {
+    record_here("trace::mark!()", |parent| Event::Mark {
         parent,
         timestamp: now(),
         text: text(),
@@ -37,22 +38,25 @@ pub fn record_mark(text: impl FnOnce() -> EcoString) {
 }
 
 /// Record [Event::Sections].
+#[cfg_attr(debug_assertions, track_caller)]
 pub fn file_sections(path: &str, sections: Vec<(&'static str, u64)>) {
-    record_here(|_| Event::Sections {
+    record_here("trace::file_sections()", |_| Event::Sections {
         path: EcoString::from(path),
         sections,
     });
 }
 
 /// Record an event in the current span. Dropped if untraced.
-fn record_here(event: impl FnOnce(SpanId) -> Event) {
-    with_sink(|sink, parent| sink.send(event(parent)));
+#[cfg_attr(debug_assertions, track_caller)]
+fn record_here(what: &str, event: impl FnOnce(SpanId) -> Event) {
+    with_sink(what, |sink, parent| sink.send(event(parent)));
 }
 
 /// Run `f` on the sink and parent span of the current scope:
 /// the span of its context, or the [`global`] sink with no parent.
-pub(super) fn with_sink<R>(f: impl FnOnce(&Sink, SpanId) -> R) -> Option<R> {
-    slot::with_context(|ctx| match ctx.and_then(AmbientContext::traced) {
+#[cfg_attr(debug_assertions, track_caller)]
+pub(super) fn with_sink<R>(what: &str, f: impl FnOnce(&Sink, SpanId) -> R) -> Option<R> {
+    slot::with_context(what, |ctx| match ctx.and_then(AmbientContext::traced) {
         Some((sink, parent)) => Some(f(sink, parent)),
         None => global().map(|sink| f(sink, 0)),
     })

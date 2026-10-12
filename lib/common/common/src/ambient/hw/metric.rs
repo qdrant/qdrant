@@ -18,6 +18,7 @@ pub enum HwMetric {
 
 impl HwMetric {
     #[inline]
+    #[cfg_attr(debug_assertions, track_caller)]
     pub fn bump(self, delta: usize) {
         slot::bump(self, delta);
     }
