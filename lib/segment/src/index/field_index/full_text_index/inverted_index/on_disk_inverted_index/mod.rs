@@ -875,8 +875,8 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             let mut cursors = PositionalCursors::new(by_term);
             // Deleted points stay in these postings and are masked here, as
             // the filter path does.
-            let is_active =
-                |point_id: PointOffsetType| Ok(self.is_active(point_id) && accept.check(point_id)?);
+            let visible =
+                |point_id: PointOffsetType| self.is_active(point_id) && accept.is_visible(point_id);
             score_top_k::<_, ON_DISK_BLOCK>(
                 query,
                 &mut cursors,
@@ -885,7 +885,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                         lengths[index] = doc_len;
                     })
                 },
-                is_active,
+                &accept.with_visible(&visible),
                 limit,
                 is_stopped,
             )
