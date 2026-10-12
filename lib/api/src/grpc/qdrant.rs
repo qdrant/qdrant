@@ -6927,7 +6927,7 @@ pub struct TextQuery {
     /// Parameters of the scorer, keyed by its name. They must match the
     /// `scoring` type of the field's text index. If absent, the scorer runs
     /// with its defaults.
-    #[prost(oneof = "text_query::Scoring", tags = "4")]
+    #[prost(oneof = "text_query::Scoring", tags = "2")]
     #[validate(nested)]
     pub scoring: ::core::option::Option<text_query::Scoring>,
 }
@@ -6940,7 +6940,7 @@ pub mod text_query {
     #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
     pub enum Scoring {
         /// BM25 parameters, for a field scored with BM25.
-        #[prost(message, tag = "4")]
+        #[prost(message, tag = "2")]
         Bm25(super::Bm25Params),
     }
 }
