@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
+use chrono::SubsecRound as _;
 use common::raw_bytes_serde;
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
@@ -74,6 +75,10 @@ pub type VectorName = str;
 pub type VectorNameBuf = String;
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
+///
+/// Qdrant supports datetimes with microsecond precision. Constructing through [`From`],
+/// [`FromStr`] or deserialization truncates anything below a microsecond, so that filtering
+/// gives the same result with and without a payload index.
 #[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, Eq, PartialOrd, Hash)]
 #[serde(transparent)]
 pub struct DateTimeWrapper(pub chrono::DateTime<chrono::Utc>);
@@ -156,8 +161,9 @@ impl Display for DateTimePayloadType {
 }
 
 impl From<chrono::DateTime<chrono::Utc>> for DateTimePayloadType {
+    /// Truncates to microseconds, matching [`DateTimeWrapper::timestamp`]
     fn from(dt: chrono::DateTime<chrono::Utc>) -> Self {
-        DateTimeWrapper(dt)
+        DateTimeWrapper(dt.trunc_subsecs(6))
     }
 }
 
@@ -5344,7 +5350,7 @@ mod tests {
 
     #[test]
     fn test_datetime_wrapper_transcoding() {
-        let expected = DateTimeWrapper(chrono::Utc::now());
+        let expected = DateTimeWrapper::from(chrono::Utc::now());
         let transcoded = DateTimeWrapper::from_str(&expected.to_string()).unwrap();
         assert_eq!(expected, transcoded);
     }
