@@ -52,7 +52,7 @@ mod tests {
                 );
             let encoded = EncodedVectorsBin::<u128, _>::encode(
                 vectors.iter(),
-                vectors.iter(),
+                std::iter::repeat_n(true, vectors.len()),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters(),
                 encoding,
@@ -91,8 +91,7 @@ mod tests {
                 encoded_vectors_tq::get_quantized_vector_size(&vector_parameters(), bits, mode);
             let encoded = EncodedVectorsTQ::encode(
                 vectors.iter(),
-                vectors.iter(),
-                COUNT,
+                std::iter::repeat_n(true, COUNT),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters(),
                 bits,

@@ -23,8 +23,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_turbo<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
-        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
-        calibration_count: usize,
+        keep: impl Iterator<Item = bool> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         turbo_config: &TurboQuantQuantizationConfig,
@@ -55,8 +54,7 @@ impl QuantizedVectors {
                 Ok(QuantizedVectorStorage::TQChunkedMmap(
                     EncodedVectorsTQ::encode(
                         vectors,
-                        calibration_vectors,
-                        calibration_count,
+                        keep,
                         storage_builder,
                         vector_parameters,
                         bits,
@@ -77,8 +75,7 @@ impl QuantizedVectors {
                 )?;
                 Ok(QuantizedVectorStorage::TQRam(EncodedVectorsTQ::encode(
                     vectors,
-                    calibration_vectors,
-                    calibration_count,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     bits,
@@ -98,8 +95,7 @@ impl QuantizedVectors {
                 )?;
                 Ok(QuantizedVectorStorage::TQMmap(EncodedVectorsTQ::encode(
                     vectors,
-                    calibration_vectors,
-                    calibration_count,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     bits,
@@ -117,8 +113,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_turbo_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
-        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
-        calibration_count: usize,
+        keep: impl Iterator<Item = bool> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -152,8 +147,7 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsTQ::encode(
                     vectors,
-                    calibration_vectors,
-                    calibration_count,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     bits,
@@ -187,8 +181,7 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsTQ::encode(
                     vectors,
-                    calibration_vectors,
-                    calibration_count,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     bits,
@@ -217,8 +210,7 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsTQ::encode(
                     vectors,
-                    calibration_vectors,
-                    calibration_count,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     bits,

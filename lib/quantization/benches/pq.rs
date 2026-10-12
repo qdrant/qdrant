@@ -30,8 +30,7 @@ fn encode_bench(c: &mut Criterion) {
         encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 2);
     let pq_encoded = EncodedVectorsPQ::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
-        (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
-        vectors_count,
+        std::iter::repeat_n(true, vectors_count),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
         2,

@@ -16,7 +16,9 @@ use crate::EncodingError;
 use crate::encoded_storage::{
     EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, validate_storage_vector_size,
 };
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{
+    EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
+};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
@@ -132,14 +134,14 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
 
     /// Encode vector data
     ///
-    /// The TQ+ error correction is fitted on `calibration_data` only, while every vector of
-    /// `data` is encoded, so the encoded offsets match `data`. Pass `data` itself as calibration
-    /// data, unless some of its vectors are not real (e.g. the placeholders of deleted vectors).
+    /// Every vector of `data` is encoded, but the TQ+ error correction is fitted only on the
+    /// vectors whose flag in `keep` is set.
     ///
     /// # Arguments
     /// * `data` - iterator over original vector data
-    /// * `calibration_data` - iterator over the vectors to fit the TQ+ error correction on
-    /// * `calibration_count` - number of vectors in `calibration_data` iterator
+    /// * `keep` - one flag per vector of `data`, set for the vectors to fit the TQ+ error
+    ///   correction on; clear it for vectors that are not real (e.g. the placeholders of deleted
+    ///   vectors)
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `bits` - bits for quantization
@@ -154,8 +156,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + 'a,
-        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + 'a,
-        calibration_count: usize,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         bits: TQBits,
@@ -226,6 +227,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
                 // no reservoir, no intermediate `Vec<Vec<f32>>`, only a
                 // small fixed-size batch scratch (~192 KB at padded_dim=1536).
                 let pre_quantizer_ref = &pre_quantizer;
+                let (calibration_data, calibration_count) = calibration_vectors(data.clone(), keep);
                 let intervals = find_quantile_interval_per_coordinate_with_preprocess(
                     calibration_data,
                     vector_parameters.dim,

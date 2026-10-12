@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
 use crate::encoded_vectors::{
-    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
+    DistanceType, EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 
@@ -141,18 +141,15 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
     /// Encode vector data using scalar quantization.
     ///
-    /// The value range (min/max or quantile) is fitted on `calibration_data` only, while every
-    /// vector of `orig_data` is encoded, so the encoded offsets match `orig_data`. Pass
-    /// `orig_data` itself as calibration data, unless some of its vectors are not real (e.g. the
-    /// placeholders of deleted vectors).
-    ///
-    /// `calibration_data` holds `calibration_count` vectors. If it is empty while `orig_data` is
-    /// not, no vector is real, so no score matters, and a zero range is used.
+    /// Every vector of `orig_data` is encoded, but the value range (min/max or quantile) is
+    /// fitted only on the vectors whose flag in `keep` is set. `keep` holds one flag per vector;
+    /// clear the flags of vectors that are not real (e.g. the placeholders of deleted vectors).
+    /// If no flag is set while `orig_data` is not empty, no vector is real, so no score matters,
+    /// and a zero range is used.
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        calibration_count: usize,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         quantile: Option<f32>,
@@ -200,6 +197,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
 
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
+        let (calibration_data, calibration_count) = calibration_vectors(orig_data.clone(), keep);
         let (alpha, offset) = if calibration_count == 0 {
             (0.0, 0.0)
         } else {

@@ -18,8 +18,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_pq<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send,
-        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
-        calibration_count: usize,
+        keep: impl Iterator<Item = bool> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         pq_config: &ProductQuantizationConfig,
@@ -49,8 +48,7 @@ impl QuantizedVectors {
             )?;
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
-                calibration_vectors,
-                calibration_count,
+                keep,
                 storage_builder,
                 vector_parameters,
                 bucket_size,
@@ -66,8 +64,7 @@ impl QuantizedVectors {
             )?;
             Ok(QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::encode(
                 vectors,
-                calibration_vectors,
-                calibration_count,
+                keep,
                 storage_builder,
                 vector_parameters,
                 bucket_size,
@@ -81,8 +78,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_pq_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send,
-        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
-        calibration_count: usize,
+        keep: impl Iterator<Item = bool> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -116,8 +112,7 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsPQ::encode(
                 vectors,
-                calibration_vectors,
-                calibration_count,
+                keep,
                 storage_builder,
                 vector_parameters,
                 bucket_size,
@@ -142,8 +137,7 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsPQ::encode(
                 vectors,
-                calibration_vectors,
-                calibration_count,
+                keep,
                 storage_builder,
                 vector_parameters,
                 bucket_size,

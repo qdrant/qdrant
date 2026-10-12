@@ -41,7 +41,7 @@ fn binary_bench(c: &mut Criterion) {
     );
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
-        vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,
@@ -90,7 +90,7 @@ fn binary_bench(c: &mut Criterion) {
     );
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
-        vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,
@@ -153,7 +153,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     );
     let encoded_u128 = EncodedVectorsBin::<u128, _>::encode(
         vectors.iter(),
-        vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,
@@ -219,7 +219,7 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     );
     let encoded_u8 = EncodedVectorsBin::<u8, _>::encode(
         vectors.iter(),
-        vectors.iter(),
+        std::iter::repeat_n(true, vectors.len()),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &VectorParameters {
             dim: vector_dim,

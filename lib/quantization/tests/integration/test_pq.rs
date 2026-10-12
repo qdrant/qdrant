@@ -34,8 +34,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -73,8 +72,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -112,8 +110,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -151,8 +148,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -190,8 +186,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -229,8 +224,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -267,8 +261,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -304,8 +297,7 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 1);
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
-            vector_data.iter(),
-            VECTORS_COUNT,
+            std::iter::repeat_n(true, VECTORS_COUNT),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
             1,
@@ -363,17 +355,7 @@ mod tests {
                             std::thread::sleep(Duration::from_micros(100));
                         }
                     }),
-                    vector_data.iter().inspect(|_| {
-                        let cnt = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        if cnt == panic_index {
-                            panic!("test panic")
-                        }
-                        if cnt > panic_index {
-                            // after panic add start sleeping to simulate large amount of data
-                            std::thread::sleep(Duration::from_micros(100));
-                        }
-                    }),
-                    VECTORS_COUNT,
+                    std::iter::repeat_n(true, VECTORS_COUNT),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &vector_parameters,
                     1,

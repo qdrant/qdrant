@@ -22,7 +22,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_binary<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
-        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        keep: impl Iterator<Item = bool> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         binary_config: &BinaryQuantizationConfig,
@@ -51,7 +51,7 @@ impl QuantizedVectors {
                 Ok(QuantizedVectorStorage::BinaryChunkedMmap(
                     EncodedVectorsBin::encode(
                         vectors,
-                        calibration_vectors,
+                        keep,
                         storage_builder,
                         vector_parameters,
                         encoding,
@@ -70,7 +70,7 @@ impl QuantizedVectors {
                 Ok(QuantizedVectorStorage::BinaryRam(
                     EncodedVectorsBin::encode(
                         vectors,
-                        calibration_vectors,
+                        keep,
                         storage_builder,
                         vector_parameters,
                         encoding,
@@ -89,7 +89,7 @@ impl QuantizedVectors {
                 Ok(QuantizedVectorStorage::BinaryMmap(
                     EncodedVectorsBin::encode(
                         vectors,
-                        calibration_vectors,
+                        keep,
                         storage_builder,
                         vector_parameters,
                         encoding,
@@ -105,7 +105,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_binary_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
-        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        keep: impl Iterator<Item = bool> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -137,7 +137,7 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsBin::encode(
                     vectors,
-                    calibration_vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     encoding,
@@ -168,7 +168,7 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsBin::encode(
                     vectors,
-                    calibration_vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     encoding,
@@ -194,7 +194,7 @@ impl QuantizedVectors {
                 )?;
                 let quantized_storage = EncodedVectorsBin::encode(
                     vectors,
-                    calibration_vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
                     encoding,

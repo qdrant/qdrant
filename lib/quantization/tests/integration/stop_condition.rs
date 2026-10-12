@@ -40,8 +40,7 @@ mod tests {
         assert_eq!(
             EncodedVectorsU8::encode(
                 stop_while_reading(&stopped, vectors_count, &zero_vector),
-                stop_while_reading(&stopped, vectors_count, &zero_vector),
-                vectors_count,
+                std::iter::repeat_n(true, vectors_count),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters,
                 None,
@@ -72,8 +71,7 @@ mod tests {
         assert_eq!(
             EncodedVectorsPQ::encode(
                 stop_while_reading(&stopped, vectors_count, &zero_vector),
-                stop_while_reading(&stopped, vectors_count, &zero_vector),
-                vectors_count,
+                std::iter::repeat_n(true, vectors_count),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters,
                 2,

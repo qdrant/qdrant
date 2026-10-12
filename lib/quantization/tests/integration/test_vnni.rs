@@ -39,8 +39,7 @@ mod tests {
                 encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
             let encoded = EncodedVectorsU8::encode(
                 vector_data.iter(),
-                vector_data.iter(),
-                vectors_count,
+                std::iter::repeat_n(true, vectors_count),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters,
                 None,

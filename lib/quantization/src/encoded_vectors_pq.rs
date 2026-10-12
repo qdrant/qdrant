@@ -21,7 +21,9 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{
+    EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
+};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 
@@ -57,14 +59,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
     /// Encode vector data using product quantization.
     ///
-    /// The centroids are fitted on `calibration_data` only, while every vector of `data` is
-    /// encoded, so the encoded offsets match `data`. Pass `data` itself as calibration data,
-    /// unless some of its vectors are not real (e.g. the placeholders of deleted vectors).
+    /// Every vector of `data` is encoded, but the centroids are fitted only on the vectors whose
+    /// flag in `keep` is set.
     ///
     /// # Arguments
     /// * `data` - iterator over original vector data
-    /// * `calibration_data` - iterator over the vectors to fit the centroids on
-    /// * `calibration_count` - number of vectors in `calibration_data` iterator
+    /// * `keep` - one flag per vector of `data`, set for the vectors to fit the centroids on;
+    ///   clear it for vectors that are not real (e.g. the placeholders of deleted vectors)
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
@@ -73,8 +74,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
-        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
-        calibration_count: usize,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
         vector_parameters: &VectorParameters,
         chunk_size: usize,
@@ -88,6 +88,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         let vector_division = Self::get_vector_division(vector_parameters.dim, chunk_size);
 
         // then, find flattened centroid positions
+        let (calibration_data, calibration_count) = calibration_vectors(data.clone(), keep);
         let centroids = Self::find_centroids(
             calibration_data,
             &vector_division,

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
 use crate::encoded_storage::validate_storage_vector_size;
-use crate::encoded_vectors::validate_vector_parameters;
+use crate::encoded_vectors::{calibration_vectors, validate_vector_parameters};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
@@ -600,14 +600,14 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
 
     /// Encode vector data using binary quantization.
     ///
-    /// The per-coordinate stats, if the encodings need them, are computed on `calibration_data`
-    /// only, while every vector of `orig_data` is encoded, so the encoded offsets match
-    /// `orig_data`. Pass `orig_data` itself as calibration data, unless some of its vectors are
-    /// not real (e.g. the placeholders of deleted vectors).
+    /// Every vector of `orig_data` is encoded, but the per-coordinate stats, if the encodings
+    /// need them, are computed only on the vectors whose flag in `keep` is set. `keep` holds one
+    /// flag per vector; clear the flags of vectors that are not real (e.g. the placeholders of
+    /// deleted vectors).
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
-        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         encoding: Encoding,
@@ -629,6 +629,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         };
 
         let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {
+            let (calibration_data, _) = calibration_vectors(orig_data.clone(), keep);
             Some(VectorStats::build(calibration_data, vector_parameters.dim))
         } else {
             None
