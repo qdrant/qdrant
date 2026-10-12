@@ -50,8 +50,11 @@ impl PointsService {
         collection_name: String,
         wait: Option<bool>,
     ) -> RequestHwCounter {
-        let counter =
-            AmbientContext::request(self.dispatcher.get_collection_hw_metrics(collection_name));
+        let counter = AmbientContext::request(
+            &collection_name,
+            self.dispatcher
+                .get_collection_hw_metrics(collection_name.clone()),
+        );
 
         let waiting = wait != Some(false);
         RequestHwCounter::new(counter, self.service_config.hardware_reporting() && waiting)

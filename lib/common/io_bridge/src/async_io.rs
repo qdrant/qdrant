@@ -7,7 +7,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::ambient::trace;
+use common::ambient::AmbientFutureExt as _;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
@@ -65,7 +65,7 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
         let buf = self
             .runtime
             .handle()
-            .spawn(trace::Context::current().wrap(read_into_byte_buffer::<A>(self, range, align)))
+            .spawn(read_into_byte_buffer::<A>(self, range, align).in_current_ambient())
             .await??;
 
         log::trace!(
@@ -95,13 +95,10 @@ impl<A: AsyncRead + Clone> UniversalReadAsync for BlobFile<A> {
             "schedule read for 0 of {} range {from}..",
             self.path.display()
         );
-        let task =
-            self.runtime
-                .handle()
-                .spawn(
-                    trace::Context::current()
-                        .wrap(read_from_into_sink::<A, W, I>(self, from, init)),
-                );
+        let task = self
+            .runtime
+            .handle()
+            .spawn(read_from_into_sink::<A, W, I>(self, from, init).in_current_ambient());
         async move {
             let (sink, bytes) = task.await??;
             log::trace!(

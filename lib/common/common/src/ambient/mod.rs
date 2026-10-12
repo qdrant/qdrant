@@ -1,3 +1,5 @@
+//! Per-request ambient state, reached through a thread-local slot.
+
 mod context;
 mod future;
 mod handoff;

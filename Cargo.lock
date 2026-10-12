@@ -1426,6 +1426,7 @@ version = "0.0.0"
 dependencies = [
  "ahash",
  "aligned-vec",
+ "arc-swap",
  "atomicwrites",
  "bincode 1.3.3",
  "bitvec",
@@ -1434,6 +1435,7 @@ dependencies = [
  "common",
  "criterion",
  "duplicate",
+ "ecow",
  "fs-err",
  "fs4 1.1.0",
  "fs_extra",

@@ -544,7 +544,7 @@ mod tests {
                 ))),
                 sender: Some(feedback_sender),
                 wait_for_deferred: false,
-                handoff: Handoff::measured(AmbientContext::new()),
+                handoff: Handoff::Measured(AmbientContext::new()),
             }))
             .await
             .unwrap();

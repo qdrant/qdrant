@@ -528,7 +528,10 @@ impl PointsInternalService {
         &self,
         collection_name: String,
     ) -> RequestHwCounter {
-        let counter = AmbientContext::request(self.toc.get_collection_hw_metrics(collection_name));
+        let counter = AmbientContext::request(
+            &collection_name,
+            self.toc.get_collection_hw_metrics(collection_name.clone()),
+        );
 
         RequestHwCounter::new(counter, self.service_config.hardware_reporting())
     }
