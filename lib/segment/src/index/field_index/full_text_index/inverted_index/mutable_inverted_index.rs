@@ -337,23 +337,18 @@ impl InvertedIndex for MutableInvertedIndex {
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let Some(documents) = self.point_to_doc.as_deref() else {
+        if !self.stores_frequencies() {
             return Err(OperationError::service_error(
-                "text index stores no positions, term frequencies cannot be computed",
+                "text index does not score: BM25 needs positions and document lengths",
             ));
-        };
+        }
+        let lengths = self.point_to_doc_len.as_deref().unwrap_or_default();
         let postings = query
             .terms()
             .iter()
             .map(|term| self.postings.get(term.token_id as usize))
             .collect();
-        let mut cursors = MutableCursors::new(postings, documents, query.terms());
-        let lengths = self.point_to_doc_len.as_deref();
-        if query.normalizes_length() && lengths.is_none() {
-            return Err(OperationError::service_error(
-                "text index stores no document lengths, BM25 cannot normalize by length",
-            ));
-        }
+        let mut cursors = MutableCursors::new(postings);
         // Deleted points are removed from these postings, so only the caller's
         // filter applies.
         // In RAM: nothing to gain from reading lengths in batches.
@@ -362,7 +357,7 @@ impl InvertedIndex for MutableInvertedIndex {
             &mut cursors,
             |point_ids, out| {
                 for (point_id, doc_len) in point_ids.iter().zip(out) {
-                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                    *doc_len = lengths.get(*point_id as usize).copied();
                 }
                 Ok(())
             },

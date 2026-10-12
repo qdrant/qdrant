@@ -210,7 +210,6 @@ fn block_size_does_not_change_the_ranking(#[values(1, 10, 1000)] limit: usize) {
 
 fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
     let index = fixture(23, 500, &[3, 30, 300]);
-    let documents = index.point_to_doc.as_deref().unwrap();
     let lengths = index.point_to_doc_len.as_deref().unwrap();
     for terms in queries() {
         let query = query(&index, &terms, Bm25Params::default());
@@ -219,7 +218,7 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
             .iter()
             .map(|term| index.postings.get(term.token_id as usize))
             .collect();
-        let mut cursors = MutableCursors::new(postings, documents, query.terms());
+        let mut cursors = MutableCursors::new(postings);
         let mut asked: Vec<PointOffsetType> = Vec::new();
         let actual = score_top_k::<_, BLOCK>(
             &query,
@@ -345,33 +344,27 @@ fn positions_are_required() {
     );
 }
 
-/// A query that normalizes by length is refused by an index that records
-/// no lengths, rather than silently scored as `b = 0`.
 #[test]
-fn length_normalization_requires_lengths() {
+fn lengths_are_required() {
     let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_lengths = MutableInvertedIndex::new(true, false);
     without_lengths
         .index_str_tokens(0, ["alpha", "beta"], None)
         .unwrap();
-    let term = [Bm25Term {
-        token_id: 0,
-        idf: 1.0,
-    }];
-    let normalized = Bm25Query::new(term, Bm25Params::default(), Some(2.0)).unwrap();
+    let query = Bm25Query::new(
+        [Bm25Term {
+            token_id: 0,
+            idf: 1.0,
+        }],
+        Bm25Params::default(),
+        None,
+    )
+    .unwrap();
     assert!(
         without_lengths
-            .score_bm25(&normalized, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &|_| true, 10, &is_stopped)
             .is_err()
-    );
-    let unnormalized = Bm25Query::new(term, Bm25Params::default(), None).unwrap();
-    assert_eq!(
-        without_lengths
-            .score_bm25(&unnormalized, &|_| true, 10, &is_stopped)
-            .unwrap()
-            .len(),
-        1
     );
 }
 
@@ -496,41 +489,6 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
         max_relative_deviation < 0.25,
         "deleted documents move scores by {max_relative_deviation}"
     );
-}
-
-/// An index with positions but no lengths keeps ids-only postings, so its
-/// cursors fall back to counting frequencies from the document. Same
-/// ranking as the frequency-carrying index over the same data, with
-/// length normalization off since that index has no lengths.
-#[test]
-fn document_scan_fallback_matches_frequency_postings() {
-    let mut rng = StdRng::seed_from_u64(31);
-    let mut with_frequencies = MutableInvertedIndex::new(true, true);
-    let mut ids_only = MutableInvertedIndex::new(true, false);
-    for idx in 0..300 {
-        let len = rng.random_range(3..=60);
-        let tokens: Vec<String> = (0..len).map(|_| word(&mut rng)).collect();
-        with_frequencies
-            .index_str_tokens(idx, &tokens, Some(len))
-            .unwrap();
-        ids_only.index_str_tokens(idx, &tokens, None).unwrap();
-    }
-    for idx in [4, 40, 44] {
-        with_frequencies.remove(idx);
-        ids_only.remove(idx);
-    }
-    assert!(with_frequencies.postings[0].frequencies().is_some());
-    assert!(ids_only.postings[0].frequencies().is_none());
-
-    for terms in queries() {
-        let scored = query(&with_frequencies, &terms, Bm25Params { k1: 1.2, b: 0.0 });
-        // Same token ids on both: the same tokens were registered in the same order.
-        let query =
-            Bm25Query::new(scored.terms().iter().copied(), Bm25Params::default(), None).unwrap();
-        let expected = reference(&with_frequencies, &query, |_| true);
-        assert_top_k(&run(&with_frequencies, &query, |_| true, 15), &expected, 15);
-        assert_top_k(&run(&ids_only, &query, |_| true, 15), &expected, 15);
-    }
 }
 
 /// The postings a reopen rebuilds through the builder carry the same
