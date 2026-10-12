@@ -1,4 +1,7 @@
-use ahash::AHashSet;
+use std::sync::{Arc, LazyLock};
+
+use ahash::{AHashMap, AHashSet};
+use parking_lot::RwLock;
 
 use crate::data_types::index::{Language, StopwordsInterface};
 
@@ -100,6 +103,25 @@ impl StopwordsFilter {
         this
     }
 
+    /// Like [`new`](Self::new), but built once per process for each distinct
+    /// configuration and shared: a query builds a tokenizer per request, and
+    /// filling this set was most of that cost. The configurations come from
+    /// text index schemas, so there are few of them.
+    pub fn shared(option: &Option<StopwordsInterface>, lowercase: bool) -> Arc<Self> {
+        type Shared = AHashMap<(Option<StopwordsInterface>, bool), Arc<StopwordsFilter>>;
+        static SHARED: LazyLock<RwLock<Shared>> = LazyLock::new(Default::default);
+
+        let key = (option.clone(), lowercase);
+        if let Some(filter) = SHARED.read().get(&key) {
+            return filter.clone();
+        }
+        SHARED
+            .write()
+            .entry(key)
+            .or_insert_with(|| Arc::new(Self::new(option, lowercase)))
+            .clone()
+    }
+
     /// Check if a token is a stopword
     pub fn is_stopword(&self, token: &str) -> bool {
         self.stopwords.contains(token)
@@ -157,12 +179,32 @@ impl StopwordsFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::index::StopwordsSet;
 
     #[test]
     fn test_empty_stopwords() {
         let filter = StopwordsFilter::new(&None, true);
         assert!(!filter.is_stopword("the"));
         assert!(!filter.is_stopword("hello"));
+    }
+
+    #[test]
+    fn test_shared_filter_is_built_once_per_configuration() {
+        let english = Some(StopwordsInterface::Language(Language::English));
+        let a = StopwordsFilter::shared(&english, true);
+        assert!(Arc::ptr_eq(&a, &StopwordsFilter::shared(&english, true)));
+        assert!(a.is_stopword("the"));
+        assert!(!Arc::ptr_eq(&a, &StopwordsFilter::shared(&english, false)));
+
+        // The shape the gRPC API produces for one language.
+        let set = Some(StopwordsInterface::Set(StopwordsSet {
+            languages: Some([Language::English].into_iter().collect()),
+            custom: Some(["foo".to_string()].into_iter().collect()),
+        }));
+        let b = StopwordsFilter::shared(&set, true);
+        assert!(Arc::ptr_eq(&b, &StopwordsFilter::shared(&set, true)));
+        assert!(b.is_stopword("the") && b.is_stopword("foo"));
+        assert!(!Arc::ptr_eq(&a, &b));
     }
 
     #[test]
