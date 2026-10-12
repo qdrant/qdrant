@@ -18,11 +18,13 @@ testing = []
 [dependencies]
 ahash = { workspace = true }
 aligned-vec = "0.6.4"
+arc-swap = { workspace = true }
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
+ecow = { workspace = true }
 fs-err = { workspace = true }
 fs4 = { workspace = true }
 fs_extra = { workspace = true }

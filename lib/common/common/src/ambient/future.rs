@@ -4,20 +4,19 @@ use std::task::{Context, Poll};
 
 use pin_project_lite::pin_project;
 
-use super::{AmbientContext, Handoff, current};
+use super::{AmbientContext, Handoff, current, slot};
 use crate::reason::Reason;
 
 /// Future adapters that enter a scope on every poll.
 pub trait AmbientFutureExt: Future + Sized {
     fn measured(self, ctx: AmbientContext) -> AmbientFuture<Self> {
-        self.in_ambient(Handoff::measured(ctx))
+        self.in_ambient(Handoff::Measured(ctx))
     }
 
     fn unmeasured(self, reason: Reason) -> AmbientFuture<Self> {
         self.in_ambient(Handoff::unmeasured(reason))
     }
 
-    /// Enter a context taken from [`current`].
     fn in_ambient(self, handoff: Handoff) -> AmbientFuture<Self> {
         AmbientFuture {
             handoff,
@@ -45,7 +44,6 @@ impl<F: Future> Future for AmbientFuture<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<F::Output> {
         let this = self.project();
-        let _scope = this.handoff.enter_guard();
-        this.future.poll(cx)
+        slot::enter(this.handoff, || this.future.poll(cx))
     }
 }

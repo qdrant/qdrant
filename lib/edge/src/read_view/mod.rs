@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
-use common::ambient::trace;
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -75,12 +74,11 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         R: Send,
     {
         self.check_stopped()?;
-        let ctx = trace::Context::current();
         let result = ambient::parallel(|handoff| {
             let checked = |segment: &H| {
                 self.check_stopped()?;
                 let _scope = handoff.enter_guard();
-                let result = ctx.enter(|| f(segment));
+                let result = f(segment);
                 self.check_stopped()?;
                 result
             };

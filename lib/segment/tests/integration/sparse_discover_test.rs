@@ -232,7 +232,7 @@ fn sparse_index_discover_test() {
             .enter(|| sparse_index.search(&[&sparse_query], None, top, None, &vector_context))
             .unwrap();
 
-        let cpu_usage = query_context.handoff().context().unwrap().hw_data()[HwMetric::Cpu];
+        let cpu_usage = query_context.handoff().measured().unwrap().hw_data()[HwMetric::Cpu];
         assert!(cpu_usage > 0);
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
@@ -324,7 +324,7 @@ fn sparse_index_hardware_measurement_test() {
     let segment_query_context = query_context.get_segment_query_context();
     let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME, None);
 
-    let cpu_usage = query_context.handoff().context().unwrap().hw_data()[HwMetric::Cpu];
+    let cpu_usage = query_context.handoff().measured().unwrap().hw_data()[HwMetric::Cpu];
     assert_eq!(cpu_usage, 0);
 
     // Some filter so we do plain sparse search
@@ -336,6 +336,6 @@ fn sparse_index_hardware_measurement_test() {
         .enter(|| sparse_index.search(&[&query_vec], Some(&filter), 1, None, &vector_context))
         .unwrap();
 
-    let cpu_usage = query_context.handoff().context().unwrap().hw_data()[HwMetric::Cpu];
+    let cpu_usage = query_context.handoff().measured().unwrap().hw_data()[HwMetric::Cpu];
     assert!(cpu_usage > 0);
 }

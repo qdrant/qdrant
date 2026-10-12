@@ -1,38 +1,36 @@
 use super::{HardwareData, HwMetric};
-use crate::ambient::{AmbientContext, Scope, current, slot};
+use crate::ambient::{AmbientContext, Handoff, Scope, slot};
 use crate::cpu_utilization::CpuUtilization;
 
 impl AmbientContext {
     /// Run `f`, measuring everything it does on this thread into `self`.
     pub fn measure<R>(&self, f: impl FnOnce() -> R) -> R {
-        let _scope = self.measure_guard();
-        f()
+        slot::measure(self, f)
     }
 
     /// Guard version of [`Self::measure`]. Don't hold it across `.await`.
-    pub fn measure_guard(&self) -> Scope<'_> {
-        slot::enter_measured(self)
-    }
-
-    /// Like [`Self::measure_guard`], but keeps the context alive by owning it.
-    pub fn measure_guard_owned(self) -> Scope<'static> {
-        slot::enter_measured_owned(self)
+    pub fn measure_guard(&self) -> Scope {
+        Handoff::Measured(self.clone()).into_scope()
     }
 }
 
 /// Whether the current scope is measured.
 pub fn is_measured() -> bool {
-    slot::is_measured()
+    slot::with_measured(|ctx| ctx.is_some())
 }
 
 /// CPU utilization of the current context; a fresh one when unmeasured.
 pub fn cpu_utilization() -> CpuUtilization {
-    current().cpu_utilization()
+    slot::with_measured(|ctx| ctx.map_or_else(CpuUtilization::new, AmbientContext::cpu_utilization))
 }
 
 /// [`AmbientContext::accumulate_request`] on the current context, if measured.
 pub fn accumulate_request(src: HardwareData) {
-    slot::accumulate_request(src);
+    slot::with_measured(|ctx| {
+        if let Some(ctx) = ctx {
+            ctx.accumulate_request(src);
+        }
+    });
 }
 
 /// Measurements of the current scope, not yet flushed into its context.
@@ -95,20 +93,12 @@ mod tests {
 
     #[test]
     fn test_accumulate() {
+        let cpu = |value| HardwareData::from_fn(|m| if m == HwMetric::Cpu { value } else { 0 });
         let ctx = AmbientContext::new();
         ctx.measure(|| {
-            current()
-                .context()
-                .unwrap()
-                .accumulate(HardwareData::from_fn(|m| usize::from(m == HwMetric::Cpu)));
-            accumulate_request(HardwareData::from_fn(|m| {
-                if m == HwMetric::Cpu { 10 } else { 0 }
-            }));
-            assert!(is_measured());
-            test(|| {
-                assert!(current().context().is_none());
-                assert!(!is_measured());
-            });
+            current().measured().unwrap().accumulate(cpu(1));
+            accumulate_request(cpu(10));
+            test(|| accumulate_request(cpu(100)));
         });
         assert_eq!(ctx.hw_data()[HwMetric::Cpu], 11);
     }
