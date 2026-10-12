@@ -274,7 +274,7 @@ fn the_filter_is_checked_per_block(#[values(1, 10, 1000)] limit: usize) {
     let accept = Bm25Accept::new(&|_| true, Some(&odd));
     let is_odd = |idx: PointOffsetType| idx % 2 == 1;
     let is_stopped = AtomicBool::new(false);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for terms in queries() {
         let query = query(&mutable, &terms, Bm25Params::default());
@@ -301,14 +301,13 @@ fn filtered_in_blocks<const BLOCK: usize>(
     expected: &[ScoredPointOffset],
     limit: usize,
 ) {
-    let documents = index.point_to_doc.as_deref().unwrap();
     let lengths = index.point_to_doc_len.as_deref().unwrap();
     let postings = query
         .terms()
         .iter()
         .map(|term| index.postings.get(term.token_id as usize))
         .collect();
-    let mut cursors = MutableCursors::new(postings, documents, query.terms());
+    let mut cursors = MutableCursors::new(postings);
     let actual = score_top_k::<_, BLOCK>(
         query,
         &mut cursors,
