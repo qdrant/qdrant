@@ -1103,7 +1103,6 @@ message Query {
 // which must have `scoring` set. A point scores when it holds any of the
 // query's terms: required or excluded terms belong in the request's filter.
 message TextQuery {
-  reserved 2, 3;
   // Text to search for, tokenized by the field's text index.
   string query = 1;
   // Parameters of the scorer, keyed by its name. They must match the
@@ -1111,7 +1110,7 @@ message TextQuery {
   // with its defaults.
   oneof scoring {
     // BM25 parameters, for a field scored with BM25.
-    Bm25Params bm25 = 4;
+    Bm25Params bm25 = 2;
   }
 }
 
