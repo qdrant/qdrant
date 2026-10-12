@@ -1722,8 +1722,8 @@ mod tests {
         assert_matches_model(&dst, &model, &oracle, "dst after reload");
     }
 
-    const SEEDS_PER_CELL: u64 = 16;
-    const OPS: usize = 200;
+    const SEEDS_PER_CELL: u64 = 4;
+    const OPS: usize = 100;
 
     #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]

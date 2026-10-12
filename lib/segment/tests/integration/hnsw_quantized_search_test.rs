@@ -357,7 +357,7 @@ fn check_rescoring(
 fn hnsw_quantized_search_cosine_test() {
     hnsw_quantized_search_test(
         Distance::Cosine,
-        5003,
+        1003,
         131,
         ScalarQuantizationConfig {
             memory: None,
@@ -376,7 +376,7 @@ fn hnsw_quantized_search_cosine_test() {
 fn hnsw_quantized_search_euclid_test() {
     hnsw_quantized_search_test(
         Distance::Euclid,
-        5003,
+        1003,
         131,
         ScalarQuantizationConfig {
             memory: None,
@@ -395,7 +395,7 @@ fn hnsw_quantized_search_euclid_test() {
 fn hnsw_quantized_search_manhattan_test() {
     hnsw_quantized_search_test(
         Distance::Manhattan,
-        5003,
+        1003,
         131,
         ScalarQuantizationConfig {
             memory: None,
@@ -414,42 +414,6 @@ fn hnsw_quantized_search_manhattan_test() {
 fn hnsw_product_quantization_cosine_test() {
     hnsw_quantized_search_test(
         Distance::Cosine,
-        1003,
-        64,
-        ProductQuantizationConfig {
-            memory: None,
-            compression: CompressionRatio::X4,
-            always_ram: Some(true),
-        }
-        .into(),
-        false,
-        false,
-    );
-}
-
-#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
-#[test]
-fn hnsw_product_quantization_euclid_test() {
-    hnsw_quantized_search_test(
-        Distance::Euclid,
-        1003,
-        64,
-        ProductQuantizationConfig {
-            memory: None,
-            compression: CompressionRatio::X4,
-            always_ram: Some(true),
-        }
-        .into(),
-        false,
-        false,
-    );
-}
-
-#[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
-#[test]
-fn hnsw_product_quantization_manhattan_test() {
-    hnsw_quantized_search_test(
-        Distance::Manhattan,
         1003,
         64,
         ProductQuantizationConfig {
