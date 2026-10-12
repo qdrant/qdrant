@@ -85,10 +85,10 @@ impl PostingList {
     }
 
     pub fn heap_bytes(&self) -> usize {
+        let Self { ids, frequencies } = self;
         // Approximate the bitmap's heap usage with its serialized size
-        self.ids.serialized_size()
-            + self
-                .frequencies
+        ids.serialized_size()
+            + frequencies
                 .as_ref()
                 .map_or(0, |frequencies| frequencies.capacity() * size_of::<u32>())
     }
