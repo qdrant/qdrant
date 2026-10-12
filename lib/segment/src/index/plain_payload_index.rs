@@ -20,7 +20,7 @@ use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::facet_index::FacetIndexEnum;
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
@@ -194,7 +194,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
         _terms: &[String],
         _context: &TextQueryContext<'_>,
         _params: Bm25Params,
-        _accept: &dyn Fn(PointOffsetType) -> bool,
+        _accept: &Bm25Accept<'_>,
         _limit: usize,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Plain index has no text index to score with.

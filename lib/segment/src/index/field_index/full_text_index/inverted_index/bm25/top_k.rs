@@ -24,7 +24,8 @@ pub const ON_DISK_BLOCK: usize = 128;
 /// since a term's contribution is capped at `idf * (k1 + 1)`.
 ///
 /// `accept` decides which documents may be scored at all: deletions the
-/// posting lists do not know about, and any outer filter.
+/// posting lists do not know about, and any outer filter. A failing check
+/// stops the query with its error.
 ///
 /// Candidates are gathered in blocks of up to `BLOCK` before any of them
 /// is scored, so that `doc_lens` fetches their lengths in one batch, filling
@@ -39,7 +40,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     query: &Bm25Query,
     cursors: &mut C,
     mut doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
-    accept: impl Fn(PointOffsetType) -> bool,
+    accept: impl Fn(PointOffsetType) -> OperationResult<bool>,
     limit: usize,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -99,7 +100,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
 
             // Move every essential cursor standing on this document, whether
             // or not it gets scored, keeping its frequency if it will be.
-            let accepted = accept(doc);
+            let accepted = accept(doc)?;
             let hits_start = hits.len();
             for term in block_essential..term_count {
                 if cursors.current(term) == Some(doc) {
