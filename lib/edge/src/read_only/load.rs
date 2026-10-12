@@ -206,14 +206,13 @@ where
                     let _scope = handoff.enter_guard();
                     let result = max_committed_id_res.and_then(|max_committed_id| {
                         let mut segment = segment.write();
-                        match segment.live_reload(max_committed_id) {
-                            Ok(()) => Ok(()),
-                            Err(err @ OperationError::Cancelled { .. }) => Err(err),
-                            Err(err) if err.is_not_found() => Err(err),
-                            Err(err) => {
+                        segment.live_reload(max_committed_id).or_else(|err| {
+                            if requires_reopen(&err) {
                                 reopen_after_failed_reload(&mut segment, err, fs, load_profile)
+                            } else {
+                                Err(err)
                             }
-                        }
+                        })
                     });
                     Ok((uuid, result))
                 })
@@ -222,6 +221,34 @@ where
     })?;
     check_process_stopped(is_stopped)?;
     Ok(results)
+}
+
+/// Whether a failed reload left the segment in a state only a reopen recovers.
+/// A cancelled reload replays its delta next time, and a not-found one is
+/// resolved against the manifest by the caller.
+fn requires_reopen(err: &OperationError) -> bool {
+    match err {
+        OperationError::Cancelled { .. } | OperationError::FileNotFound { .. } => false,
+        OperationError::WrongVectorDimension { .. }
+        | OperationError::MalformedVectorBlob { .. }
+        | OperationError::MalformedPayloadBlob { .. }
+        | OperationError::VectorNameNotExists { .. }
+        | OperationError::PointIdError { .. }
+        | OperationError::TypeError { .. }
+        | OperationError::TypeInferenceError { .. }
+        | OperationError::ServiceError { .. }
+        | OperationError::InconsistentStorage { .. }
+        | OperationError::OutOfMemory { .. }
+        | OperationError::Timeout { .. }
+        | OperationError::ValidationError { .. }
+        | OperationError::WrongSparse
+        | OperationError::WrongMulti
+        | OperationError::MissingRangeIndexForOrderBy { .. }
+        | OperationError::MissingMapIndexForFacet { .. }
+        | OperationError::VariableTypeError { .. }
+        | OperationError::NonFiniteNumber { .. }
+        | OperationError::OutOfAppendableCapacity { .. } => true,
+    }
 }
 
 /// Replace a segment whose reload failed after a successful preload with a
