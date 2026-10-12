@@ -53,8 +53,8 @@ struct StoreComponents<Fs: UniversalAppendFs> {
 /// The writers of one named vector.
 struct VectorComponents<Fs: UniversalAppendFs> {
     storage: UpdateOnlyVectorStorage<Fs::File>,
-    /// Quantized overlay — only for dense, non-multivector vectors whose
-    /// quantization method supports incremental appends.
+    /// Quantized overlay — only for vectors whose quantization method supports
+    /// incremental appends.
     quantized: Option<UpdateOnlyQuantizedVectors>,
 }
 
