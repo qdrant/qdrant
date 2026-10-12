@@ -634,8 +634,6 @@ mod store {
         assert_eq!(exact_count(&follower), 9);
     }
 
-    /// A search through the quantized copy has to find every appended
-    /// multivector, just as an exact one does.
     #[test]
     #[expect(
         deprecated,
@@ -695,7 +693,7 @@ mod store {
             assert_eq!(outcome.stored, 5);
             assert_multivectors_found(dir.path(), &quantization);
 
-            // A payload update moves each point with its multivector as storage-native bytes.
+            // Re-stores the points from their raw bytes.
             let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
                 payload: payload_json! { "kind": "moved" },
                 points: Some((1..=5).map(ExtendedPointId::NumId).collect()),

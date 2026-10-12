@@ -1,7 +1,7 @@
 //! The write half of quantized vectors, for update-only appendable segments.
 //!
 //! Scoped to what an update-only segment needs: Binary and TurboQuant quantization only, the two
-//! methods [`QuantizationConfig::supports_appendable`] allows, over dense and multivector storages.
+//! methods [`QuantizationConfig::supports_appendable`] allows.
 //!
 //! [`UpdateOnlyQuantizedVectors::open`] only reopens an overlay that already exists on disk. It
 //! loads the fitted metadata through the `quantization` crate's standalone encoders and appends
@@ -52,13 +52,8 @@ impl Encoder {
     }
 }
 
-/// Where each point's run of inner-vector rows starts, in the layout
-/// [`QuantizedMultivectorStorage`] reads.
-///
-/// [`QuantizedMultivectorStorage`]: crate::vector_storage::quantized::quantized_multivector_storage::QuantizedMultivectorStorage
 struct MultivectorRows {
     offsets: UpdateOnlyChunkedVectors<MultivectorOffset>,
-    /// One past the last row in use, carried across batches.
     next_row: usize,
 }
 
@@ -70,7 +65,6 @@ struct MultivectorRows {
 pub struct UpdateOnlyQuantizedVectors {
     encoder: Encoder,
     vectors: UpdateOnlyChunkedVectors<u8>,
-    /// Set for a multivector, whose points own runs of rows instead of one row per slot.
     multivector: Option<MultivectorRows>,
     config: QuantizedVectorsConfig,
     /// Raw-storage properties, needed to decode a [`VectorToStore::Raw`].
@@ -196,8 +190,6 @@ impl UpdateOnlyQuantizedVectors {
         )
     }
 
-    /// Multivector counterpart of [`Self::append_many`]: each point appends a run of rows from
-    /// `batch_start`, the first row not in use, and its slot records where that run starts.
     fn append_many_multi<'a, Fs: UniversalAppendFs>(
         &mut self,
         fs: &Fs,
@@ -253,12 +245,11 @@ impl UpdateOnlyQuantizedVectors {
         Ok(())
     }
 
-    /// The dimensionality of the (unrotated) vector, or inner vector, this overlay quantizes.
+    /// The dimensionality of the (unrotated) vector this overlay quantizes.
     fn dim(&self) -> usize {
         self.config.vector_parameters.dim
     }
 
-    /// Storage-native multivector bytes are its inner vectors packed flat.
     fn decode_raw_multi<'a>(
         &self,
         bytes: &'a [u8],
