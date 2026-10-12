@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
+use chrono::SubsecRound as _;
 use common::raw_bytes_serde;
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
@@ -74,6 +75,10 @@ pub type VectorName = str;
 pub type VectorNameBuf = String;
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
+///
+/// Qdrant supports datetimes with microsecond precision. Constructing through [`From`],
+/// [`FromStr`] or deserialization truncates anything below a microsecond, so that filtering
+/// gives the same result with and without a payload index.
 #[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, Eq, PartialOrd, Hash)]
 #[serde(transparent)]
 pub struct DateTimeWrapper(pub chrono::DateTime<chrono::Utc>);
@@ -156,8 +161,9 @@ impl Display for DateTimePayloadType {
 }
 
 impl From<chrono::DateTime<chrono::Utc>> for DateTimePayloadType {
+    /// Truncates to microseconds, matching [`DateTimeWrapper::timestamp`]
     fn from(dt: chrono::DateTime<chrono::Utc>) -> Self {
-        DateTimeWrapper(dt)
+        DateTimeWrapper(dt.trunc_subsecs(6))
     }
 }
 
@@ -5154,6 +5160,33 @@ mod tests {
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
     }
 
+    /// Sub-microsecond digits must be truncated on parse, so that range filters give the same
+    /// result with and without a payload index. See: <https://github.com/qdrant/qdrant/issues/11087>
+    #[rstest]
+    #[case::one_nano("2024-01-01T00:00:00.000000001Z", "2024-01-01T00:00:00Z")]
+    #[case::nanos("2024-01-01T00:00:00.123456789Z", "2024-01-01T00:00:00.123456Z")]
+    #[case::without_z("2024-01-01T00:00:00.123456789", "2024-01-01T00:00:00.123456")]
+    #[case::with_tz("2024-01-01T01:00:00.123456789+01:00", "2024-01-01T00:00:00.123456Z")]
+    #[case::before_epoch("1969-12-31T23:59:59.999999999Z", "1969-12-31T23:59:59.999999Z")]
+    fn test_datetime_truncates_to_micros(#[case] input: &str, #[case] expected: &str) {
+        let datetime = DateTimePayloadType::from_str(input).unwrap();
+        let expected = DateTimePayloadType::from_str(expected).unwrap();
+        assert_eq!(datetime, expected);
+
+        // Must match the microsecond timestamp the payload index stores
+        let from_timestamp = DateTimePayloadType::from_timestamp(datetime.timestamp()).unwrap();
+        assert_eq!(datetime, from_timestamp);
+
+        // Range checks must agree with the index on the truncated value
+        let range = Range {
+            lt: None,
+            gt: Some(expected),
+            gte: None,
+            lte: None,
+        };
+        assert!(!range.check_range(datetime));
+    }
+
     #[test]
     fn test_invalid_datetime_range_returns_clear_rfc3339_error() {
         let json = r#"{
@@ -5344,7 +5377,7 @@ mod tests {
 
     #[test]
     fn test_datetime_wrapper_transcoding() {
-        let expected = DateTimeWrapper(chrono::Utc::now());
+        let expected = DateTimeWrapper::from(chrono::Utc::now());
         let transcoded = DateTimeWrapper::from_str(&expected.to_string()).unwrap();
         assert_eq!(expected, transcoded);
     }
