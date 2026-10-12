@@ -5160,6 +5160,33 @@ mod tests {
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
     }
 
+    /// Sub-microsecond digits must be truncated on parse, so that range filters give the same
+    /// result with and without a payload index. See: <https://github.com/qdrant/qdrant/issues/11087>
+    #[rstest]
+    #[case::one_nano("2024-01-01T00:00:00.000000001Z", "2024-01-01T00:00:00Z")]
+    #[case::nanos("2024-01-01T00:00:00.123456789Z", "2024-01-01T00:00:00.123456Z")]
+    #[case::without_z("2024-01-01T00:00:00.123456789", "2024-01-01T00:00:00.123456")]
+    #[case::with_tz("2024-01-01T01:00:00.123456789+01:00", "2024-01-01T00:00:00.123456Z")]
+    #[case::before_epoch("1969-12-31T23:59:59.999999999Z", "1969-12-31T23:59:59.999999Z")]
+    fn test_datetime_truncates_to_micros(#[case] input: &str, #[case] expected: &str) {
+        let datetime = DateTimePayloadType::from_str(input).unwrap();
+        let expected = DateTimePayloadType::from_str(expected).unwrap();
+        assert_eq!(datetime, expected);
+
+        // Must match the microsecond timestamp the payload index stores
+        let from_timestamp = DateTimePayloadType::from_timestamp(datetime.timestamp()).unwrap();
+        assert_eq!(datetime, from_timestamp);
+
+        // Range checks must agree with the index on the truncated value
+        let range = Range {
+            lt: None,
+            gt: Some(expected),
+            gte: None,
+            lte: None,
+        };
+        assert!(!range.check_range(datetime));
+    }
+
     #[test]
     fn test_invalid_datetime_range_returns_clear_rfc3339_error() {
         let json = r#"{

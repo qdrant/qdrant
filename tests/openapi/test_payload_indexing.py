@@ -263,6 +263,49 @@ def test_datetime_indexing(collection_name):
         assert not response.ok
 
 
+def test_datetime_sub_microsecond_index_consistency(collection_name):
+    # Sub-microsecond digits are truncated, with and without index
+    # See: https://github.com/qdrant/qdrant/issues/11087
+    datetime_key = "datetime_payload"
+    set_payload(collection_name, {datetime_key: "2024-01-01T00:00:00.000000001Z"}, [1])
+
+    def count(range_):
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/count",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "exact": True,
+                "filter": {"must": [{"key": datetime_key, "range": range_}]},
+            },
+        )
+        assert response.ok, response.json()
+        return response.json()["result"]["count"]
+
+    def assert_counts():
+        assert count({"lte": "2024-01-01T00:00:00Z"}) == 1
+        assert count({"gt": "2024-01-01T00:00:00Z"}) == 0
+        assert count({"gte": "2024-01-01T00:00:00.000000002Z", "lte": "2024-01-01T00:00:00Z"}) == 1
+
+    # Without index
+    assert_counts()
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": datetime_key,
+            "field_schema": "datetime"
+        }
+    )
+    assert response.ok
+
+    # With index
+    assert_counts()
+
+
 def test_update_payload_on_indexed_field(collection_name):
     keyword_field = "city"
 
