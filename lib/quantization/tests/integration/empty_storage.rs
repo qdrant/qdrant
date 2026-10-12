@@ -31,9 +31,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let _encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             ScalarQuantizationMethod::Int8,
             Some(meta_path.as_path()),
@@ -69,9 +70,10 @@ mod tests {
             encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 2);
         let _encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             2,
             1,
             Some(meta_path.as_path()),
@@ -108,6 +110,7 @@ mod tests {
                 quantization::encoded_vectors_binary::Encoding::OneBit,
             );
         let _encoded = EncodedVectorsBin::<u8, _>::encode(
+            vector_data.iter(),
             vector_data.iter(),
             TestEncodedStorageBuilder::new(Some(data_path.as_path()), quantized_vector_size),
             &vector_parameters,

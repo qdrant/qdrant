@@ -1,3 +1,4 @@
+use std::iter;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -283,10 +284,14 @@ impl QuantizedVectors {
             let vector = vector_storage.get_dense::<Sequential>(i);
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
+        let (calibration_vectors, calibration_count) =
+            Self::calibration_vectors(vector_storage, vectors.clone(), |_| 1);
         let cold_vector_storage = vector_storage.is_cold();
 
         Self::quantize_dense(
             vectors,
+            calibration_vectors,
+            calibration_count,
             quantization_config,
             distance,
             datatype,
@@ -319,9 +324,13 @@ impl QuantizedVectors {
 
         let vectors = (0..count as PointOffsetType)
             .map(move |i| vector_storage.get_dense_for_requantization(i, keep_rotated));
+        let (calibration_vectors, calibration_count) =
+            Self::calibration_vectors(vector_storage, vectors.clone(), |_| 1);
 
         Self::quantize_dense(
             vectors,
+            calibration_vectors,
+            calibration_count,
             quantization_config,
             distance,
             datatype,
@@ -336,9 +345,37 @@ impl QuantizedVectors {
         )
     }
 
+    /// Vectors to fit the quantization parameters on, with their count.
+    ///
+    /// `vectors` holds the vectors of all points in offset order, `inner_count(point)` of them
+    /// per point (1 for dense vectors). The vectors of deleted points are skipped: a point
+    /// without this vector still occupies a storage slot, filled with a placeholder (see
+    /// [`VectorStorageEnum::default_vector`]) that is not a real vector. For Cosine, a dense
+    /// placeholder is not even unit length.
+    fn calibration_vectors<'a, T>(
+        vector_storage: &'a (impl VectorStorageRead + ?Sized),
+        vectors: impl Iterator<Item = T> + Clone + 'a,
+        inner_count: impl Fn(PointOffsetType) -> usize + Clone + 'a,
+    ) -> (impl Iterator<Item = T> + Clone + 'a, usize) {
+        let points = 0..vector_storage.total_vector_count() as PointOffsetType;
+        let keep_flags = points.flat_map(move |point| {
+            let keep = !vector_storage.is_deleted_vector(point);
+            iter::repeat_n(keep, inner_count(point))
+        });
+        let calibration_count = keep_flags.clone().filter(|&keep| keep).count();
+        let calibration_vectors = vectors
+            .zip(keep_flags)
+            .filter_map(|(vector, keep)| keep.then_some(vector));
+        (calibration_vectors, calibration_count)
+    }
+
+    /// Quantize `vectors`, fitting the quantization parameters on `calibration_vectors`.
+    /// See [`Self::calibration_vectors`].
     #[allow(clippy::too_many_arguments)]
     fn quantize_dense<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone + Send,
+        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        calibration_count: usize,
         quantization_config: &QuantizationConfig,
         distance: Distance,
         datatype: VectorStorageDatatype,
@@ -366,6 +403,8 @@ impl QuantizedVectors {
                 scalar: scalar_config,
             }) => Self::create_scalar(
                 vectors,
+                calibration_vectors,
+                calibration_count,
                 &vector_parameters,
                 count,
                 scalar_config,
@@ -377,6 +416,8 @@ impl QuantizedVectors {
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
                 Self::create_pq(
                     vectors,
+                    calibration_vectors,
+                    calibration_count,
                     &vector_parameters,
                     count,
                     pq_config,
@@ -391,6 +432,7 @@ impl QuantizedVectors {
                 binary: binary_config,
             }) => Self::create_binary(
                 vectors,
+                calibration_vectors,
                 &vector_parameters,
                 count,
                 binary_config,
@@ -403,6 +445,8 @@ impl QuantizedVectors {
                 turbo: turbo_config,
             }) => Self::create_turbo(
                 vectors,
+                calibration_vectors,
+                calibration_count,
                 &vector_parameters,
                 count,
                 turbo_config,
@@ -453,6 +497,13 @@ impl QuantizedVectors {
             PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, vector)
         });
         let inner_vectors_count = vectors.clone().count();
+        let (calibration_vectors, calibration_count) =
+            Self::calibration_vectors(vector_storage, vectors.clone(), |point| {
+                vector_storage
+                    .get_multi::<Random>(point)
+                    .as_ref()
+                    .vectors_count()
+            });
         let vectors_count = vector_storage.total_vector_count();
         let cold_vector_storage = vector_storage.is_cold();
 
@@ -467,6 +518,8 @@ impl QuantizedVectors {
 
         Self::quantize_multi(
             vectors,
+            calibration_vectors,
+            calibration_count,
             offsets,
             quantization_config,
             distance,
@@ -508,6 +561,10 @@ impl QuantizedVectors {
         let inner_vectors_count: usize = (0..vectors_count as PointOffsetType)
             .map(|key| vector_storage.point_inner_vectors_count(key))
             .sum();
+        let (calibration_vectors, calibration_count) =
+            Self::calibration_vectors(vector_storage, vectors.clone(), |key| {
+                vector_storage.point_inner_vectors_count(key)
+            });
 
         let offsets = (0..vectors_count as PointOffsetType)
             .map(|key| vector_storage.point_inner_vectors_count(key) as PointOffsetType)
@@ -515,6 +572,8 @@ impl QuantizedVectors {
 
         Self::quantize_multi(
             vectors,
+            calibration_vectors,
+            calibration_count,
             offsets,
             quantization_config,
             distance,
@@ -536,6 +595,8 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     fn quantize_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone + Send,
+        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        calibration_count: usize,
         offsets: impl Iterator<Item = MultivectorOffset>,
         quantization_config: &QuantizationConfig,
         distance: Distance,
@@ -566,6 +627,8 @@ impl QuantizedVectors {
                 scalar: scalar_config,
             }) => Self::create_scalar_multi(
                 vectors,
+                calibration_vectors,
+                calibration_count,
                 offsets,
                 &vector_parameters,
                 vectors_count,
@@ -580,6 +643,8 @@ impl QuantizedVectors {
             QuantizationConfig::Product(ProductQuantization { product: pq_config }) => {
                 Self::create_pq_multi(
                     vectors,
+                    calibration_vectors,
+                    calibration_count,
                     offsets,
                     &vector_parameters,
                     vectors_count,
@@ -597,6 +662,7 @@ impl QuantizedVectors {
                 binary: binary_config,
             }) => Self::create_binary_multi(
                 vectors,
+                calibration_vectors,
                 offsets,
                 &vector_parameters,
                 vectors_count,
@@ -612,6 +678,8 @@ impl QuantizedVectors {
                 turbo: turbo_config,
             }) => Self::create_turbo_multi(
                 vectors,
+                calibration_vectors,
+                calibration_count,
                 offsets,
                 &vector_parameters,
                 vectors_count,

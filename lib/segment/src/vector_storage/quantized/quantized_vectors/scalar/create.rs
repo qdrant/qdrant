@@ -19,6 +19,8 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_scalar<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
+        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        calibration_count: usize,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
@@ -47,9 +49,10 @@ impl QuantizedVectors {
             )?;
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
+                calibration_vectors,
+                calibration_count,
                 storage_builder,
                 vector_parameters,
-                vectors_count,
                 scalar_config.quantile,
                 encoding,
                 Some(meta_path.as_path()),
@@ -64,9 +67,10 @@ impl QuantizedVectors {
             Ok(QuantizedVectorStorage::ScalarMmap(
                 EncodedVectorsU8::encode(
                     vectors,
+                    calibration_vectors,
+                    calibration_count,
                     storage_builder,
                     vector_parameters,
-                    vectors_count,
                     scalar_config.quantile,
                     encoding,
                     Some(meta_path.as_path()),
@@ -79,6 +83,8 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_scalar_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
+        calibration_vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + 'a,
+        calibration_count: usize,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -111,9 +117,10 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsU8::encode(
                 vectors,
+                calibration_vectors,
+                calibration_count,
                 storage_builder,
                 vector_parameters,
-                inner_vectors_count,
                 scalar_config.quantile,
                 encoding,
                 Some(meta_path.as_path()),
@@ -136,9 +143,10 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsU8::encode(
                 vectors,
+                calibration_vectors,
+                calibration_count,
                 storage_builder,
                 vector_parameters,
-                inner_vectors_count,
                 scalar_config.quantile,
                 encoding,
                 Some(meta_path.as_path()),

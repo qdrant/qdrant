@@ -36,9 +36,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -80,9 +81,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -128,9 +130,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,

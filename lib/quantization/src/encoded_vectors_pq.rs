@@ -57,8 +57,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
     /// Encode vector data using product quantization.
     ///
+    /// The centroids are fitted on `calibration_data` only, while every vector of `data` is
+    /// encoded, so the encoded offsets match `data`. Pass `data` itself as calibration data,
+    /// unless some of its vectors are not real (e.g. the placeholders of deleted vectors).
+    ///
     /// # Arguments
     /// * `data` - iterator over original vector data
+    /// * `calibration_data` - iterator over the vectors to fit the centroids on
+    /// * `calibration_count` - number of vectors in `calibration_data` iterator
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
@@ -67,9 +73,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
+        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
+        calibration_count: usize,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
         vector_parameters: &VectorParameters,
-        count: usize,
         chunk_size: usize,
         max_kmeans_threads: usize,
         meta_path: Option<&Path>,
@@ -82,10 +89,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
         // then, find flattened centroid positions
         let centroids = Self::find_centroids(
-            data.clone(),
+            calibration_data,
             &vector_division,
             vector_parameters,
-            count,
+            calibration_count,
             CENTROIDS_COUNT,
             max_kmeans_threads,
             stopped,
@@ -340,7 +347,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// * `max_kmeans_threads` - Max allowed threads for kmeans process
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     fn find_centroids<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
         vector_division: &[Range<usize>],
         vector_parameters: &VectorParameters,
         count: usize,

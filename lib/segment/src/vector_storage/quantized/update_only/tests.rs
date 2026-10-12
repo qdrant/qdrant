@@ -124,6 +124,7 @@ fn create_empty_overlay(
             )
             .unwrap();
             EncodedVectorsBin::<u128, _>::encode(
+                no_vectors.clone(),
                 no_vectors,
                 storage_builder,
                 &vector_parameters,
@@ -147,10 +148,11 @@ fn create_empty_overlay(
             )
             .unwrap();
             EncodedVectorsTQ::encode(
+                no_vectors.clone(),
                 no_vectors,
+                0,
                 storage_builder,
                 &vector_parameters,
-                0,
                 bits,
                 mode,
                 TQRotation::Padded,
@@ -259,6 +261,7 @@ fn binary_bytes_match_the_standard_batch_encode_path() {
     .unwrap();
     let mut reference: EncodedVectorsBin<u128, _> = EncodedVectorsBin::encode(
         std::iter::empty::<&[f32]>(),
+        std::iter::empty::<&[f32]>(),
         reference_builder,
         &vector_parameters,
         encoding,
@@ -332,9 +335,10 @@ fn turbo_bytes_match_the_standard_batch_encode_path(#[case] bits: TurboQuantBitS
     .unwrap();
     let mut reference: EncodedVectorsTQ<_> = EncodedVectorsTQ::encode(
         std::iter::empty::<&[f32]>(),
+        std::iter::empty::<&[f32]>(),
+        0,
         reference_builder,
         &vector_parameters,
-        0,
         bits,
         mode,
         TQRotation::Padded,

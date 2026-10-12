@@ -132,11 +132,16 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
 
     /// Encode vector data
     ///
+    /// The TQ+ error correction is fitted on `calibration_data` only, while every vector of
+    /// `data` is encoded, so the encoded offsets match `data`. Pass `data` itself as calibration
+    /// data, unless some of its vectors are not real (e.g. the placeholders of deleted vectors).
+    ///
     /// # Arguments
     /// * `data` - iterator over original vector data
+    /// * `calibration_data` - iterator over the vectors to fit the TQ+ error correction on
+    /// * `calibration_count` - number of vectors in `calibration_data` iterator
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
-    /// * `count` - number of vectors in `data` iterator
     /// * `bits` - bits for quantization
     /// * `mode` - quantization mode
     /// * `rotation` - rotation applied to vectors and queries ([`TQRotation::Padded`]
@@ -149,9 +154,10 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + 'a,
+        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + 'a,
+        calibration_count: usize,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
-        count: usize,
         bits: TQBits,
         mode: TQMode,
         rotation: TQRotation,
@@ -167,7 +173,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         // (`input_already_rotated`), the encode pass skips rotating them again.
         let rotate_input = !input_already_rotated;
 
-        // TQ+: first pass over `data` to fit per-coordinate shift/scale that
+        // TQ+: first pass over `calibration_data` to fit per-coordinate shift/scale that
         // pulls the rotated, length-rescaled coordinates onto the Lloyd-Max
         // N(0, 1) codebook before quantization.
         //
@@ -221,10 +227,10 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
                 // small fixed-size batch scratch (~192 KB at padded_dim=1536).
                 let pre_quantizer_ref = &pre_quantizer;
                 let intervals = find_quantile_interval_per_coordinate_with_preprocess(
-                    data.clone(),
+                    calibration_data,
                     vector_parameters.dim,
                     padded_dim,
-                    count,
+                    calibration_count,
                     quantile_param,
                     num_threads,
                     bits.sample_size(),

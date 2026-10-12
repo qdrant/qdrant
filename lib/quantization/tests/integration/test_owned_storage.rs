@@ -128,9 +128,10 @@ mod tests {
 
         let encoded_owned = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             OwnedStorageBuilder(TestEncodedStorageBuilder::new(None, quantized_vector_size)),
             &vector_parameters,
-            vectors_count,
             None,
             ScalarQuantizationMethod::Int8,
             None,
@@ -139,9 +140,10 @@ mod tests {
         .unwrap();
         let encoded_borrowed = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             ScalarQuantizationMethod::Int8,
             None,

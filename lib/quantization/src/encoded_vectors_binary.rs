@@ -598,8 +598,16 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         &mut self.encoded_vectors
     }
 
+    /// Encode vector data using binary quantization.
+    ///
+    /// The per-coordinate stats, if the encodings need them, are computed on `calibration_data`
+    /// only, while every vector of `orig_data` is encoded, so the encoded offsets match
+    /// `orig_data`. Pass `orig_data` itself as calibration data, unless some of its vectors are
+    /// not real (e.g. the placeholders of deleted vectors).
+    #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         encoding: Encoding,
@@ -621,7 +629,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         };
 
         let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {
-            Some(VectorStats::build(orig_data.clone(), vector_parameters.dim))
+            Some(VectorStats::build(calibration_data, vector_parameters.dim))
         } else {
             None
         };

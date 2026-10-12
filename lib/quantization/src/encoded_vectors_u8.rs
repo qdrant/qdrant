@@ -139,12 +139,22 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         &self.encoded_vectors
     }
 
+    /// Encode vector data using scalar quantization.
+    ///
+    /// The value range (min/max or quantile) is fitted on `calibration_data` only, while every
+    /// vector of `orig_data` is encoded, so the encoded offsets match `orig_data`. Pass
+    /// `orig_data` itself as calibration data, unless some of its vectors are not real (e.g. the
+    /// placeholders of deleted vectors).
+    ///
+    /// `calibration_data` holds `calibration_count` vectors. If it is empty while `orig_data` is
+    /// not, no vector is real, so no score matters, and a zero range is used.
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        calibration_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        calibration_count: usize,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
-        count: usize,
         quantile: Option<f32>,
         method: ScalarQuantizationMethod,
         meta_path: Option<&Path>,
@@ -153,7 +163,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         assert_eq!(method, ScalarQuantizationMethod::Int8);
         let actual_dim = get_actual_dim(vector_parameters);
 
-        if count == 0 {
+        if orig_data.clone().next().is_none() {
             let metadata = Metadata::Int8(MetadataInt8 {
                 actual_dim,
                 alpha: 0.0,
@@ -190,12 +200,16 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         }
 
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
-        let (alpha, offset) = Self::find_alpha_offset_size_dim(orig_data.clone());
+        let (alpha, offset) = if calibration_count == 0 {
+            (0.0, 0.0)
+        } else {
+            Self::find_alpha_offset_size_dim(calibration_data.clone())
+        };
         let (alpha, offset) = if let Some(quantile) = quantile {
             if let Some((min, max)) = find_quantile_interval(
-                orig_data.clone(),
+                calibration_data,
                 vector_parameters.dim,
-                count,
+                calibration_count,
                 quantile,
                 stopped,
             )? {

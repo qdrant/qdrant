@@ -28,9 +28,10 @@ fn encode_dot_bench(c: &mut Criterion) {
     let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        vectors_count,
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
-        vectors_count,
         None,
         ScalarQuantizationMethod::Int8,
         None,
@@ -187,9 +188,10 @@ fn encode_l1_bench(c: &mut Criterion) {
     let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        vectors_count,
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
-        vectors_count,
         None,
         ScalarQuantizationMethod::Int8,
         None,

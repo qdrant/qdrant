@@ -75,6 +75,7 @@ mod tests {
 
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
+                    vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &VectorParameters {
                         dim: vector_dim,
@@ -172,6 +173,7 @@ mod tests {
                     );
 
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
+                    vector_data.iter(),
                     vector_data.iter(),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &VectorParameters {

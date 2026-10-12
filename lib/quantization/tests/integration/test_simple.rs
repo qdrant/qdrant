@@ -37,9 +37,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -81,9 +82,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -129,9 +131,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -173,9 +176,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -217,9 +221,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -257,9 +262,10 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             Some(0.99),
             ScalarQuantizationMethod::Int8,
             None,
@@ -401,9 +407,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -444,9 +451,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -486,9 +494,10 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -529,10 +538,12 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            vector_data.iter(),
+            vectors_count,
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
-            Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+            Some(1.0 - f32::EPSILON),
+            // almost 1.0 value, but not 1.0
             method,
             None,
             &AtomicBool::new(false),
@@ -577,10 +588,12 @@ mod tests {
 
             let encoded = EncodedVectorsU8::encode(
                 vector_data.iter(),
+                vector_data.iter(),
+                vectors_count,
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters,
-                vectors_count,
-                Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+                Some(1.0 - f32::EPSILON),
+                // almost 1.0 value, but not 1.0
                 method.clone(),
                 None,
                 &AtomicBool::new(false),
