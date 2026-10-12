@@ -15,7 +15,6 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::PayloadBlockCondition;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
@@ -64,14 +63,9 @@ fn in_build_order(
 ///
 /// Returns the number of vectors that got indexed through these subgraphs.
 #[allow(clippy::too_many_arguments)]
-#[cfg_attr(
-    not(feature = "gpu"),
-    allow(unused_variables, clippy::needless_pass_by_ref_mut)
-)]
 pub(super) fn build_additional_links<R: Rng + ?Sized>(
     context: GraphBuildContext<'_>,
     payload_index: &StructPayloadIndex,
-    gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
     graph_builder: &mut GraphBuilderEnum,
     graph_layers_builder: &mut GraphLayersBuilder,
     config: &HnswGraphConfig,
@@ -142,21 +136,6 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         BitVec::repeat(false, total_vector_count)
     };
 
-    // The GPU stores vectors and links by segment id, so it builds blocks in a segment-sized
-    // builder. This one only carries the block graph's settings: `payload_m`, `ef_construct`
-    // and level 0 for every point.
-    #[cfg(feature = "gpu")]
-    let gpu_block_reference = gpu_insert_context.is_some().then(|| {
-        GraphLayersBuilder::new_with_params(
-            total_vector_count,
-            payload_m,
-            config.ef_construct,
-            1,
-            crate::index::hnsw_index::hnsw::HNSW_USE_HEURISTIC,
-            false,
-        )
-    });
-
     for (index_pos, (field_progress, field)) in indexed_fields.into_iter().enumerate() {
         field_progress.start();
 
@@ -224,24 +203,6 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 for &point_id in &points_to_index {
                     indexed_vectors_set.set(point_id as usize, true);
                 }
-            }
-
-            #[cfg(feature = "gpu")]
-            if let (Some(gpu_insert_context), Some(reference_graph)) =
-                (gpu_insert_context.as_mut(), &gpu_block_reference)
-                && let Some(gpu_graph) =
-                    crate::index::hnsw_index::hnsw::gpu_build::build_block_on_gpu(
-                        id_tracker,
-                        vector_storage,
-                        context.quantized_vectors,
-                        gpu_insert_context,
-                        reference_graph,
-                        &points_to_index,
-                        stopped,
-                    )?
-            {
-                graph_layers_builder.merge_from_other(gpu_graph);
-                return Ok(());
             }
 
             graph_builder.build_block_graph(

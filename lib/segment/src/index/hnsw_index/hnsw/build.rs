@@ -28,12 +28,13 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod additional_links;
+#[cfg(feature = "gpu")]
+mod gpu_builder;
 mod graph_builder;
 mod hnsw_builder;
 
 use self::additional_links::{additional_links_fields, build_additional_links};
 use self::graph_builder::{GraphBuildContext, GraphBuilder as _, GraphBuilderEnum};
-use self::hnsw_builder::HnswGraphBuilder;
 
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
@@ -81,7 +82,7 @@ impl HNSWIndex {
         let total_vector_count = vector_storage_ref.total_vector_count();
         let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
 
-        let mut build_main_graph = config.m > 0;
+        let build_main_graph = config.m > 0;
         if !build_main_graph {
             debug!("skip building main HNSW graph");
         }
@@ -111,18 +112,8 @@ impl HNSWIndex {
         // Build main index graph
         let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
-        #[cfg(feature = "gpu")]
-        let gpu_name_postfix = if let Some(gpu_device) = gpu_device {
-            format!(" and GPU {}", gpu_device.device().name())
-        } else {
-            Default::default()
-        };
-        #[cfg(not(feature = "gpu"))]
-        let gpu_name_postfix = "";
-        #[cfg(not(feature = "gpu"))]
-        let _ = gpu_device;
         debug!(
-            "building HNSW for {total_vector_count} vectors with {} CPUs{gpu_name_postfix}",
+            "building HNSW for {total_vector_count} vectors with {} CPUs",
             permit.num_cpus,
         );
 
@@ -134,14 +125,6 @@ impl HNSWIndex {
                 * 10,
         );
 
-        let mut graph_layers_builder = GraphLayersBuilder::new(
-            total_vector_count,
-            HnswM::new(config.m, config.m0),
-            config.ef_construct,
-            num_entries,
-            HNSW_USE_HEURISTIC,
-        );
-
         let pool = build_thread_pool(permit.num_cpus as usize)?;
         let context = GraphBuildContext {
             id_tracker: id_tracker_ref.deref(),
@@ -149,9 +132,23 @@ impl HNSWIndex {
             quantized_vectors: &quantized_vectors_ref,
             pool: &pool,
             progress: &progress,
+            gpu_device,
             stopped,
         };
-        let mut graph_builder = GraphBuilderEnum::Hnsw(HnswGraphBuilder);
+
+        let mut graph_builder = GraphBuilderEnum::select(
+            context,
+            build_main_graph || !payload_fields.is_empty(),
+            num_entries,
+        )?;
+
+        let mut graph_layers_builder = GraphLayersBuilder::new(
+            total_vector_count,
+            HnswM::new(config.m, config.m0),
+            config.ef_construct,
+            num_entries,
+            HNSW_USE_HEURISTIC,
+        );
 
         let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
 
@@ -170,30 +167,6 @@ impl HNSWIndex {
             graph_layers_builder.set_levels(vector_id, level);
         }
 
-        // Try to build graphs on GPU if possible.
-        #[cfg(feature = "gpu")]
-        let (gpu_vectors, gpu_graph) = super::gpu_build::upload_and_build_main_graph(
-            gpu_device,
-            build_main_graph,
-            !payload_fields.is_empty(),
-            id_tracker_ref.deref(),
-            &vector_storage_ref,
-            &quantized_vectors_ref,
-            &graph_layers_builder,
-            deleted_bitslice,
-            num_entries,
-            stopped,
-        )?;
-        #[cfg(not(feature = "gpu"))]
-        let gpu_graph: Option<GraphLayersBuilder> = None;
-
-        if let Some(gpu_graph) = gpu_graph {
-            graph_layers_builder = gpu_graph;
-            build_main_graph = false;
-        }
-
-        check_process_stopped(stopped)?;
-
         if build_main_graph {
             graph_layers_builder =
                 graph_builder.build_main_graph(context, graph_layers_builder, old_index)?;
@@ -202,19 +175,9 @@ impl HNSWIndex {
         }
 
         if !payload_fields.is_empty() {
-            #[cfg(feature = "gpu")]
-            let mut gpu_insert_context = super::gpu_build::create_gpu_insert_context(
-                gpu_vectors.as_ref(),
-                payload_m,
-                config.ef_construct,
-            )?;
-            #[cfg(not(feature = "gpu"))]
-            let mut gpu_insert_context = None;
-
             let indexed_payload_vectors = build_additional_links(
                 context,
                 &payload_index_ref,
-                &mut gpu_insert_context,
                 &mut graph_builder,
                 &mut graph_layers_builder,
                 &config,
@@ -229,6 +192,9 @@ impl HNSWIndex {
         } else {
             debug!("skip building additional HNSW links");
         }
+        // Release what the graph builder holds, such as GPU memory, before saving the graph
+        #[allow(clippy::drop_non_drop, reason = "only some builders hold resources")]
+        drop(graph_builder);
 
         config.indexed_vector_count.replace(indexed_vectors);
 

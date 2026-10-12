@@ -28,11 +28,12 @@ pub struct GpuRequest {
 /// Structure to perform insert and update entries operations on GPU.
 /// It handles all GPU resources and shaders instead of gpu vector storage,
 /// which may be shared between multiple hnsw constructions.
-pub struct GpuInsertContext<'a> {
+pub struct GpuInsertContext {
     context: gpu::Context,
     groups_count: usize,
 
-    gpu_vector_storage: &'a GpuVectorStorage,
+    /// Shared with whoever uploaded the vectors, so the vector buffers outlive the context.
+    gpu_vector_storage: Arc<GpuVectorStorage>,
     gpu_links: GpuLinks,
     gpu_visited_flags: GpuVisitedFlags,
     insert_resources: GpuInsertResources,
@@ -178,9 +179,9 @@ impl GpuInsertResources {
     }
 }
 
-impl<'a> GpuInsertContext<'a> {
+impl GpuInsertContext {
     pub fn new(
-        gpu_vector_storage: &'a GpuVectorStorage,
+        gpu_vector_storage: Arc<GpuVectorStorage>,
         // Parallel inserts count.
         groups_count: usize,
         hnsw_m: HnswM,
@@ -196,7 +197,7 @@ impl<'a> GpuInsertContext<'a> {
         let device = gpu_vector_storage.device();
         let points_count = gpu_vector_storage.num_vectors();
         let insert_resources =
-            GpuInsertResources::new(gpu_vector_storage, groups_count, points_count, ef, exact)?;
+            GpuInsertResources::new(&gpu_vector_storage, groups_count, points_count, ef, exact)?;
 
         let gpu_links = GpuLinks::new(device.clone(), hnsw_m.m, hnsw_m.m0, points_count)?;
 
@@ -209,7 +210,7 @@ impl<'a> GpuInsertContext<'a> {
 
         let greedy_search_shader = ShaderBuilder::new(device.clone())
             .with_shader_code(include_str!("shaders/run_greedy_search.comp"))
-            .with_parameters(gpu_vector_storage)
+            .with_parameters(gpu_vector_storage.as_ref())
             .with_parameters(&gpu_links)
             .with_parameters(&gpu_visited_flags)
             .with_parameters(&insert_resources)
@@ -217,7 +218,7 @@ impl<'a> GpuInsertContext<'a> {
 
         let insert_shader = ShaderBuilder::new(device.clone())
             .with_shader_code(include_str!("shaders/run_insert_vector.comp"))
-            .with_parameters(gpu_vector_storage)
+            .with_parameters(gpu_vector_storage.as_ref())
             .with_parameters(&gpu_links)
             .with_parameters(&gpu_visited_flags)
             .with_parameters(&insert_resources)
@@ -502,7 +503,7 @@ mod tests {
         groups_count: usize,
         m: usize,
         ef: usize,
-        gpu_vector_storage: GpuVectorStorage,
+        gpu_vector_storage: Arc<GpuVectorStorage>,
         vector_holder: TestRawScorerProducer,
         graph_layers_builder: GraphLayersBuilder,
     }
@@ -546,8 +547,9 @@ mod tests {
         let instance = gpu::GPU_TEST_INSTANCE.clone();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let gpu_vector_storage =
-            GpuVectorStorage::new(device.clone(), &storage, None, false, &false.into()).unwrap();
+        let gpu_vector_storage = Arc::new(
+            GpuVectorStorage::new(device.clone(), &storage, None, false, &false.into()).unwrap(),
+        );
 
         TestData {
             groups_count,
@@ -559,12 +561,12 @@ mod tests {
         }
     }
 
-    fn create_insert_context(test_data: &TestData) -> GpuInsertContext<'_> {
+    fn create_insert_context(test_data: &TestData) -> GpuInsertContext {
         let total_num_vectors = test_data.gpu_vector_storage.num_vectors() + test_data.groups_count;
         let point_ids = (0..total_num_vectors as PointOffsetType).collect_vec();
 
         let mut gpu_insert_context = GpuInsertContext::new(
-            &test_data.gpu_vector_storage,
+            test_data.gpu_vector_storage.clone(),
             test_data.groups_count,
             HnswM::new(test_data.m, test_data.m),
             test_data.ef,
@@ -615,7 +617,7 @@ mod tests {
 
         let search_shader = ShaderBuilder::new(device.clone())
             .with_shader_code(include_str!("shaders/tests/test_hnsw_search.comp"))
-            .with_parameters(gpu_insert_context.gpu_vector_storage)
+            .with_parameters(gpu_insert_context.gpu_vector_storage.as_ref())
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
             .with_parameters(&gpu_insert_context.insert_resources)
@@ -886,7 +888,7 @@ mod tests {
         // Create test pipeline
         let shader = ShaderBuilder::new(device.clone())
             .with_shader_code(include_str!("shaders/tests/test_heuristic.comp"))
-            .with_parameters(gpu_insert_context.gpu_vector_storage)
+            .with_parameters(gpu_insert_context.gpu_vector_storage.as_ref())
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
             .with_parameters(&gpu_insert_context.insert_resources)
