@@ -8,7 +8,7 @@ use super::super::inverted_index::{ParsedQuery, TokenId};
 use super::super::tokenizers::Tokenizer;
 use super::MutableFullTextIndex;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::full_text_index::inverted_index::bm25::Bm25Query;
+use crate::index::field_index::full_text_index::inverted_index::bm25::{Bm25Accept, Bm25Query};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::StorageType;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -49,7 +49,7 @@ impl FullTextIndexRead for MutableFullTextIndex {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
