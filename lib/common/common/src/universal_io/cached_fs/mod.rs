@@ -426,6 +426,26 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         }
     }
 
+    fn prefetch_error(&self) -> UioResult<()> {
+        let files_prefetched = self.files_prefetched.lock();
+        let failed = files_prefetched
+            .iter()
+            .find_map(|(path, scheduled)| match scheduled {
+                ScheduledFile::Ready(Err(err)) if self.file_info(path).is_some() => Some(err),
+                ScheduledFile::Ready(_) | ScheduledFile::Future(_) | ScheduledFile::Unchanged => {
+                    None
+                }
+            });
+        match failed {
+            Some(err) => Err(err.duplicate()),
+            None => Ok(()),
+        }
+    }
+
+    fn discard_prefetched(&self) {
+        self.files_prefetched.lock().clear();
+    }
+
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo> {
         self.files_info.as_ref()?.get(path).cloned()
     }

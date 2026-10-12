@@ -187,6 +187,17 @@ pub trait CachedReadFs: UniversalReadFs {
     /// driven after the `&self` borrow ends.
     fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Self>;
 
+    /// The error of a prefetched open that failed, for a caller that waited on
+    /// [`Self::wait_all`] and must not apply a reload whose files did not arrive.
+    /// Only opens of listed paths count: an unlisted path's `NotFound` is the
+    /// expected answer to a probe for an optional file.
+    fn prefetch_error(&self) -> UioResult<()>;
+
+    /// Drop every prefetched handle without rotating the listing snapshot, so
+    /// the next round schedules every open again against its own snapshot.
+    /// For a round that was staged but will not be applied.
+    fn discard_prefetched(&self);
+
     /// Return the file info from the current snapshot.
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;
 

@@ -69,16 +69,16 @@ where
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
+    ) -> UioResult<impl Future<Output = UioResult<()>> + Send + 'static> {
         let mut future = self.live_preload_impl(get_file_info)?;
 
         // Poll once so that actual async work begins right away
         let future = match (&mut future).now_or_never() {
-            Some(()) => ready(()).left_future(),
+            Some(result) => ready(result).left_future(),
             None => future.right_future(),
         };
 
-        Ok(future)
+        Ok(future.map(|result| result.map_err(|err| err.duplicate())))
     }
 
     fn read_bytes<P: AccessPattern>(

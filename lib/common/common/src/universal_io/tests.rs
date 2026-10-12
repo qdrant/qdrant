@@ -196,3 +196,29 @@ async fn cached_fs_select_files_async() {
     assert_eq!(selected[0].path, file1);
     assert_eq!(selected[0].size, 3);
 }
+
+/// A failed prefetch of a listed file is reported until the pool is
+/// discarded; a probe for an unlisted file is not a failure.
+#[tokio::test]
+async fn cached_fs_prefetch_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let listed = dir.path().join("listed.dat");
+    let unlisted = dir.path().join("unlisted.dat");
+    fs_err::write(&listed, b"123").unwrap();
+
+    let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+
+    cached_fs.schedule_open(&unlisted, None, None);
+    cached_fs.wait_all().await;
+    cached_fs.prefetch_error().unwrap();
+
+    // Vanishes between the listing and the open.
+    fs_err::remove_file(&listed).unwrap();
+    cached_fs.schedule_open(&listed, None, None);
+    cached_fs.wait_all().await;
+    assert!(cached_fs.prefetch_error().unwrap_err().is_not_found());
+
+    cached_fs.discard_prefetched();
+    cached_fs.prefetch_error().unwrap();
+}

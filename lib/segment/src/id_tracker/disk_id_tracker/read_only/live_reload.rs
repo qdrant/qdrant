@@ -3,8 +3,9 @@
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkUnchanged, Populate, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{
+    CachedReadFs, OkUnchanged, Populate, PreloadFuture, UniversalRead, UniversalReadFs,
+};
 
 use super::ReadOnlyDiskIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -16,7 +17,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         fs.reschedule_open(
             &deleted_path(&self.path),
             Some(Self::deleted_open_options()),
