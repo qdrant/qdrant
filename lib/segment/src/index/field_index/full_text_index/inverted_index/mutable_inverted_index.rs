@@ -64,6 +64,30 @@ impl MutableInvertedIndex {
         self.point_to_doc_len.is_some()
     }
 
+    /// Whether postings carry term frequencies: an index that scores does,
+    /// and needs the ordered document to count them from.
+    pub fn stores_frequencies(&self) -> bool {
+        self.point_to_doc.is_some() && self.point_to_doc_len.is_some()
+    }
+
+    /// Term frequency of every token in `tokens`, in the same order, counted
+    /// from the stored document. Every token of a stored document is in its
+    /// token set, so an absent document means the frequencies are not wanted
+    /// and membership stands in for them.
+    pub(super) fn term_frequencies(document: Option<&Document>, tokens: &TokenSet) -> Vec<u32> {
+        let mut frequencies = vec![1; tokens.len()];
+        let Some(document) = document else {
+            return frequencies;
+        };
+        frequencies.fill(0);
+        for token in document.tokens() {
+            if let Ok(at) = tokens.tokens().binary_search(token) {
+                frequencies[at] += 1;
+            }
+        }
+        frequencies
+    }
+
     /// Record a point's length, replacing any previous value so an overwrite
     /// does not double-count in `total_tokens`. The only writer, so that every
     /// path agrees on what a record without a length means: `None` zeroes the
@@ -198,18 +222,34 @@ impl InvertedIndex for MutableInvertedIndex {
             self.point_to_tokens.resize_with(new_len, Default::default);
         }
 
-        for token_id in tokens.tokens() {
+        // The ordered document is stored before the token set, so it is there
+        // to count from when the postings carry frequencies.
+        let with_frequencies = self.stores_frequencies();
+        let frequencies = with_frequencies.then(|| {
+            let document = self
+                .point_to_doc
+                .as_ref()
+                .and_then(|docs| docs.get(point_id as usize))
+                .and_then(Option::as_ref);
+            Self::term_frequencies(document, &tokens)
+        });
+
+        for (at, token_id) in tokens.tokens().iter().enumerate() {
             let token_idx_usize = *token_id as usize;
 
             if self.postings.len() <= token_idx_usize {
                 let new_len = token_idx_usize + 1;
-                self.postings.resize_with(new_len, Default::default);
+                self.postings
+                    .resize_with(new_len, || PostingList::new(with_frequencies));
             }
 
+            let tf = frequencies
+                .as_ref()
+                .map_or(1, |frequencies| frequencies[at]);
             self.postings
                 .get_mut(token_idx_usize)
                 .expect("posting must exist")
-                .insert(point_id);
+                .insert(point_id, tf);
         }
         self.point_to_tokens[point_id as usize] = Some(tokens);
 
@@ -297,23 +337,18 @@ impl InvertedIndex for MutableInvertedIndex {
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let Some(documents) = self.point_to_doc.as_deref() else {
+        if !self.stores_frequencies() {
             return Err(OperationError::service_error(
-                "text index stores no positions, term frequencies cannot be computed",
+                "text index does not score: BM25 needs positions and document lengths",
             ));
-        };
+        }
+        let lengths = self.point_to_doc_len.as_deref().unwrap_or_default();
         let postings = query
             .terms()
             .iter()
             .map(|term| self.postings.get(term.token_id as usize))
             .collect();
-        let mut cursors = MutableCursors::new(postings, documents, query.terms());
-        let lengths = self.point_to_doc_len.as_deref();
-        if query.normalizes_length() && lengths.is_none() {
-            return Err(OperationError::service_error(
-                "text index stores no document lengths, BM25 cannot normalize by length",
-            ));
-        }
+        let mut cursors = MutableCursors::new(postings);
         // Deleted points are removed from these postings, so only the caller's
         // filter applies.
         // In RAM: nothing to gain from reading lengths in batches.
@@ -322,7 +357,7 @@ impl InvertedIndex for MutableInvertedIndex {
             &mut cursors,
             |point_ids, out| {
                 for (point_id, doc_len) in point_ids.iter().zip(out) {
-                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                    *doc_len = lengths.get(*point_id as usize).copied();
                 }
                 Ok(())
             },

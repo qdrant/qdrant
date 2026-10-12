@@ -12,6 +12,7 @@ use rstest::rstest;
 use super::super::InvertedIndex;
 use super::super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
+use super::super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::*;
 use crate::data_types::query_context::fancy_idf;
@@ -209,7 +210,6 @@ fn block_size_does_not_change_the_ranking(#[values(1, 10, 1000)] limit: usize) {
 
 fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
     let index = fixture(23, 500, &[3, 30, 300]);
-    let documents = index.point_to_doc.as_deref().unwrap();
     let lengths = index.point_to_doc_len.as_deref().unwrap();
     for terms in queries() {
         let query = query(&index, &terms, Bm25Params::default());
@@ -218,7 +218,7 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
             .iter()
             .map(|term| index.postings.get(term.token_id as usize))
             .collect();
-        let mut cursors = MutableCursors::new(postings, documents, query.terms());
+        let mut cursors = MutableCursors::new(postings);
         let mut asked: Vec<PointOffsetType> = Vec::new();
         let actual = score_top_k::<_, BLOCK>(
             &query,
@@ -344,33 +344,33 @@ fn positions_are_required() {
     );
 }
 
-/// A query that normalizes by length is refused by an index that records
-/// no lengths, rather than silently scored as `b = 0`.
 #[test]
-fn length_normalization_requires_lengths() {
+fn lengths_are_required() {
     let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_lengths = MutableInvertedIndex::new(true, false);
     without_lengths
         .index_str_tokens(0, ["alpha", "beta"], None)
         .unwrap();
-    let term = [Bm25Term {
-        token_id: 0,
-        idf: 1.0,
-    }];
-    let normalized = Bm25Query::new(term, Bm25Params::default(), Some(2.0)).unwrap();
+    let query = Bm25Query::new(
+        [Bm25Term {
+            token_id: 0,
+            idf: 1.0,
+        }],
+        Bm25Params::default(),
+        None,
+    )
+    .unwrap();
     assert!(
         without_lengths
-            .score_bm25(&normalized, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &|_| true, 10, &is_stopped)
             .is_err()
     );
-    let unnormalized = Bm25Query::new(term, Bm25Params::default(), None).unwrap();
-    assert_eq!(
-        without_lengths
-            .score_bm25(&unnormalized, &|_| true, 10, &is_stopped)
-            .unwrap()
-            .len(),
-        1
+    let immutable = ImmutableInvertedIndex::from(without_lengths);
+    assert!(
+        immutable
+            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .is_err()
     );
 }
 
@@ -495,6 +495,47 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
         max_relative_deviation < 0.25,
         "deleted documents move scores by {max_relative_deviation}"
     );
+}
+
+/// The postings a reopen rebuilds through the builder carry the same
+/// frequencies as the ones the live path built.
+#[test]
+fn builder_rebuilds_the_same_frequencies() {
+    let live = fixture(17, 200, &[3, 30]);
+    let mut builder = MutableInvertedIndexBuilder::new(true, true);
+    let documents = live.point_to_doc.as_ref().unwrap();
+    let vocab: HashMap<TokenId, &str> =
+        live.vocab.iter().map(|(s, id)| (*id, s.as_str())).collect();
+    for (idx, document) in documents.iter().enumerate() {
+        let Some(document) = document else { continue };
+        let tokens: Vec<String> = document
+            .tokens()
+            .iter()
+            .map(|t| vocab[t].to_owned())
+            .collect();
+        let len = live.point_to_doc_len.as_ref().unwrap()[idx];
+        builder.add(idx as PointOffsetType, tokens, Some(len));
+    }
+    let rebuilt = builder.build();
+
+    for (term, &token_id) in &live.vocab {
+        let rebuilt_id = rebuilt.vocab[term];
+        let (live_posting, rebuilt_posting) = (
+            &live.postings[token_id as usize],
+            &rebuilt.postings[rebuilt_id as usize],
+        );
+        assert_eq!(
+            (
+                live_posting.iter().collect::<Vec<_>>(),
+                live_posting.frequencies()
+            ),
+            (
+                rebuilt_posting.iter().collect::<Vec<_>>(),
+                rebuilt_posting.frequencies()
+            ),
+            "postings of {term} differ",
+        );
+    }
 }
 
 /// Parameters outside the domain the MaxScore bound holds in are refused

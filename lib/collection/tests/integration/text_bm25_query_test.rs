@@ -40,20 +40,13 @@ fn text_of(i: u64) -> String {
     ["alpha"; 5][..(i % 5 + 1) as usize].join(" ") + &" gamma".repeat((i / 5) as usize)
 }
 
+/// A text index that scores: BM25 needs the document lengths `scoring` records,
+/// and the positions term frequencies come from, which `scoring` implies.
 async fn text_collection(path: &std::path::Path, shard_number: u32) -> Collection {
-    // Term frequencies come from positions, which phrase matching stores.
     let params = TextIndexParams {
-        phrase_matching: Some(true),
+        scoring: Some(TextScoringParams::default()),
         ..TextIndexParams::default()
     };
-    text_collection_with(path, shard_number, params).await
-}
-
-async fn text_collection_with(
-    path: &std::path::Path,
-    shard_number: u32,
-    params: TextIndexParams,
-) -> Collection {
     let collection = simple_collection_fixture(path, shard_number).await;
     collection
         .create_payload_index_with_wait(
@@ -137,60 +130,6 @@ fn id_of(point: &ScoredPoint) -> u64 {
         ExtendedPointId::NumId(id) => id,
         ExtendedPointId::Uuid(_) => panic!("the fixture uses numeric ids"),
     }
-}
-
-/// One shard, so the statistics cover the whole corpus: every score equals
-/// BM25 by definition. No lengths are recorded until the index params can ask
-/// for them, so length normalization is off and `b` has no effect.
-#[tokio::test(flavor = "multi_thread")]
-async fn text_query_scores_by_definition() {
-    let dir = Builder::new().prefix("collection").tempdir().unwrap();
-    let collection = text_collection(dir.path(), 1).await;
-
-    // Mixed case on purpose: the shard tokenizes with the field's tokenizer.
-    let points = query(
-        &collection,
-        request(text_query("Alpha GAMMA"), POINTS as usize, 0),
-        ShardSelectorInternal::All,
-    )
-    .await;
-
-    let Bm25Params { k1, .. } = Bm25Params::default();
-    let counts = |i: u64| {
-        let text = text_of(i);
-        let count = |term| text.split(' ').filter(|t| *t == term).count() as ScoreType;
-        (count("alpha"), count("gamma"))
-    };
-    let n = POINTS as ScoreType;
-    let df_alpha = POINTS as ScoreType;
-    let df_gamma = (0..POINTS).filter(|&i| counts(i).1 > 0.0).count() as ScoreType;
-    let term = |tf: ScoreType, df: ScoreType| {
-        if tf == 0.0 {
-            0.0
-        } else {
-            fancy_idf(n, df).max(0.0) * tf * (k1 + 1.0) / (tf + k1)
-        }
-    };
-    let expected = |i: u64| {
-        let (alpha, gamma) = counts(i);
-        term(alpha, df_alpha) + term(gamma, df_gamma)
-    };
-
-    assert!(!points.is_empty());
-    for pair in points.windows(2) {
-        assert!(pair[0].score >= pair[1].score, "ranked best first");
-    }
-    for point in &points {
-        let reference = expected(id_of(point));
-        assert!(
-            (point.score - reference).abs() <= 1e-4 * reference.max(1.0),
-            "point {}: engine {}, reference {reference}",
-            id_of(point),
-            point.score,
-        );
-    }
-    // Every point holds `alpha`, whose IDF is small but positive.
-    assert_eq!(points.len(), POINTS as usize);
 }
 
 /// Two shards, each scoring against its own statistics: the collection's
@@ -378,18 +317,13 @@ async fn text_query_rescores_a_dense_prefetch() {
     assert_eq!(ids, expected, "the prefetched points with `gamma`");
 }
 
-/// With `scoring` on, the shards record document lengths as they ingest, and
-/// scores normalize by them: BM25 by definition with `b` in effect. The index
-/// asks for scoring alone; the positions term frequencies need come from the
-/// `phrase_matching` scoring implies.
+/// One shard, so the statistics cover the whole corpus: every score equals
+/// BM25 by definition, normalized by the document lengths the shard recorded
+/// as it ingested.
 #[tokio::test(flavor = "multi_thread")]
-async fn text_query_normalizes_by_length_when_the_index_scores() {
+async fn text_query_scores_by_definition() {
     let dir = Builder::new().prefix("collection").tempdir().unwrap();
-    let params = TextIndexParams {
-        scoring: Some(TextScoringParams::default()),
-        ..TextIndexParams::default()
-    };
-    let collection = text_collection_with(dir.path(), 1, params).await;
+    let collection = text_collection(dir.path(), 1).await;
 
     let points = query(
         &collection,
@@ -444,11 +378,7 @@ async fn text_query_normalizes_by_length_when_the_index_scores() {
 #[tokio::test(flavor = "multi_thread")]
 async fn text_query_scores_over_the_idf_corpus() {
     let dir = Builder::new().prefix("collection").tempdir().unwrap();
-    let params = TextIndexParams {
-        scoring: Some(TextScoringParams::default()),
-        ..TextIndexParams::default()
-    };
-    let collection = text_collection_with(dir.path(), 1, params).await;
+    let collection = text_collection(dir.path(), 1).await;
 
     // Half of these hold `gamma`, against 30 of all 35 points, and they are
     // the shortest documents.
@@ -521,11 +451,7 @@ async fn text_query_scores_over_the_idf_corpus() {
 #[tokio::test(flavor = "multi_thread")]
 async fn text_rescore_scores_over_the_idf_corpus() {
     let dir = Builder::new().prefix("collection").tempdir().unwrap();
-    let params = TextIndexParams {
-        scoring: Some(TextScoringParams::default()),
-        ..TextIndexParams::default()
-    };
-    let collection = text_collection_with(dir.path(), 1, params).await;
+    let collection = text_collection(dir.path(), 1).await;
     let corpus = || SearchParams {
         idf: Some(IdfParams::Corpus(IdfCorpusParams {
             corpus: Filter::new_must(Condition::HasId(HasIdCondition::from(
