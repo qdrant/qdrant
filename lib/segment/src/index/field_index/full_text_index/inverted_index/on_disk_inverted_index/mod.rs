@@ -851,9 +851,14 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let OnDiskPostingsEnum::WithPositions(postings) = &self.storage.postings else {
             return Err(OperationError::service_error(
-                "text index stores no positions, term frequencies cannot be computed",
+                "text index does not score: BM25 needs positions and document lengths",
             ));
         };
+        if !self.records_doc_len() {
+            return Err(OperationError::service_error(
+                "text index does not score: BM25 needs positions and document lengths",
+            ));
+        }
         let terms = query.terms();
         let token_ids: Vec<TokenId> = terms.iter().map(|term| term.token_id).collect();
         // A term without a posting list contributes nothing, so only the
