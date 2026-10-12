@@ -243,7 +243,6 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
                 }
                 Ok(())
             },
-            |_| true,
             &Bm25Accept::new(&|_| true, None),
             limit,
             &AtomicBool::new(false),
@@ -317,7 +316,6 @@ fn filtered_in_blocks<const BLOCK: usize>(
             }
             Ok(())
         },
-        |_| true,
         accept,
         limit,
         &AtomicBool::new(false),

@@ -17,7 +17,7 @@ mod positional_cursors;
 mod tests;
 mod top_k;
 
-use common::condition_checker::{CheckItem, ConditionChecker as _, Rest, Select};
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::{PointOffsetType, ScoreType};
 pub use mutable_cursors::MutableCursors;
 pub use positional_cursors::PositionalCursors;
@@ -58,28 +58,61 @@ impl<'a> Bm25Accept<'a> {
         Self { visible, filter }
     }
 
-    /// Whether a query sees `point_id`. In memory, so asked per point.
+    /// Whether a query sees `point_id`.
     pub fn is_visible(&self, point_id: PointOffsetType) -> bool {
         (self.visible)(point_id)
     }
 
-    /// Whether the filter allows `point_id`. A filter that fails to read
-    /// reports the error rather than leaving the point out.
-    pub fn filter(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+    /// The same filter behind a narrower mask, for an index whose posting
+    /// lists keep the points removed from it.
+    pub fn with_visible<'b>(
+        &'b self,
+        visible: &'b dyn Fn(PointOffsetType) -> bool,
+    ) -> Bm25Accept<'b> {
+        Bm25Accept {
+            visible,
+            filter: self.filter,
+        }
+    }
+}
+
+/// A batch is masked in memory first, and the outer filter then reads storage
+/// once for what is left. A filter that fails to read reports the error rather
+/// than leaving the points out.
+impl ConditionChecker for Bm25Accept<'_> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        if !self.is_visible(point_id) {
+            return Ok(false);
+        }
         match self.filter {
             Some(filter) => filter.check(point_id),
             None => Ok(true),
         }
     }
 
-    /// [`Self::filter`] over a batch: move the `items` the filter allows to the front, in no particular
-    /// order, and return how many there are. One batch, so that a filter
-    /// reading storage reads it once for all of them. A filter that fails to
-    /// read reports the error rather than leaving the points out.
-    pub fn filter_batched<K: CheckItem>(&self, items: &mut [K]) -> OperationResult<usize> {
-        match self.filter {
-            Some(filter) => filter.check_batched(items, Select::Matches, Rest::Discard),
-            None => Ok(items.len()),
+    fn check_batched<K: CheckItem>(
+        &self,
+        items: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        match select {
+            Select::Matches => {
+                let visible = default_check_batched(items, Select::Matches, rest, |point_id| {
+                    Ok::<_, OperationError>(self.is_visible(point_id))
+                })?;
+                match self.filter {
+                    Some(filter) => {
+                        filter.check_batched(&mut items[..visible], Select::Matches, rest)
+                    }
+                    None => Ok(visible),
+                }
+            }
+            Select::NonMatches => {
+                default_check_batched(items, select, rest, |point_id| self.check(point_id))
+            }
         }
     }
 }

@@ -2,11 +2,11 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicBool;
 
-use common::condition_checker::CheckItem;
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
-use super::{Bm25Accept, Bm25Query, TermCursors};
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use super::{Bm25Query, TermCursors};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 
 /// Candidates the on-disk index gathers before reading their lengths, one
 /// batch per block. Large enough to hide a remote read's latency behind the
@@ -24,14 +24,14 @@ pub const ON_DISK_BLOCK: usize = 128;
 /// still make the top `limit` without them. The bound needs no stored data,
 /// since a term's contribution is capped at `idf * (k1 + 1)`.
 ///
-/// `is_indexed` masks the deletions the posting lists do not know about, and
-/// `accept` the points a query does not see; both are checked per document,
-/// before its term frequencies are read. `accept`'s outer filter is checked
-/// there too with a `BLOCK` of 1, and otherwise once per block, over the
-/// documents gathered for it: batching pays off where the filter may read
-/// storage, and the frequencies of the documents it drops are cheap to have
-/// read, which holds for the on-disk index and not for the mutable one. A
-/// failing check stops the query with its error.
+/// `accept` decides which documents may be scored at all: deletions the
+/// posting lists do not know about, the points a query does not see, and any
+/// outer filter. With a `BLOCK` of 1 it is checked per document, before its
+/// term frequencies are read, and otherwise once per block, over the documents
+/// gathered for it: batching pays off where the filter may read storage, and
+/// the frequencies of the documents it drops are cheap to have read, which
+/// holds for the on-disk index and not for the mutable one. A failing check
+/// stops the query with its error.
 ///
 /// Candidates are gathered in blocks of up to `BLOCK` before any of them
 /// is scored, so that `doc_lens` fetches their lengths in one batch, filling
@@ -46,8 +46,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     query: &Bm25Query,
     cursors: &mut C,
     mut doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
-    is_indexed: impl Fn(PointOffsetType) -> bool,
-    accept: &Bm25Accept<'_>,
+    accept: &impl ConditionChecker<Error = OperationError>,
     limit: usize,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<ScoredPointOffset>> {
@@ -108,9 +107,8 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
 
             // Move every essential cursor standing on this document, whether
             // or not it gets scored, keeping its frequency if it may be. In
-            // blocks, the outer filter waits for the whole block.
-            let accepted =
-                is_indexed(doc) && accept.is_visible(doc) && (BLOCK > 1 || accept.filter(doc)?);
+            // blocks, the check waits for the whole block.
+            let accepted = BLOCK > 1 || accept.check(doc)?;
             let hits_start = hits.len();
             for term in block_essential..term_count {
                 if cursors.current(term) == Some(doc) {
@@ -131,7 +129,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
             break;
         }
 
-        // The outer filter, in one batch over the block. What it drops leaves
+        // The check, in one batch over the block. What it drops leaves
         // gaps, closed in document order: the non-essential cursors only move
         // forward, so the candidates must reach them ascending.
         let kept = if BLOCK > 1 {
@@ -141,7 +139,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
                     index,
                 };
             }
-            accept.filter_batched(&mut slots[..count])?
+            accept.check_batched(&mut slots[..count], Select::Matches, Rest::Discard)?
         } else {
             count
         };
@@ -221,7 +219,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     Ok(result)
 }
 
-/// A gathered candidate as the batched filter moves it around: the document,
+/// A gathered candidate as the batched check moves it around: the document,
 /// and where its hits sit in the block.
 #[derive(Debug, Clone, Copy, Default)]
 struct Slot {

@@ -361,7 +361,6 @@ impl InvertedIndex for MutableInvertedIndex {
                 }
                 Ok(())
             },
-            |_| true,
             accept,
             limit,
             is_stopped,
