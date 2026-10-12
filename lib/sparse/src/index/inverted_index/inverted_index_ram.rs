@@ -157,6 +157,17 @@ impl InvertedIndexRam {
             .ok_or_else(|| out_of_bounds(id, self.len()))
     }
 
+    /// Whether `vector` is already indexed under `id`. Checks only the posting
+    /// of the vector's first dimension: an indexed vector is present in all of
+    /// its dimensions' postings. An empty vector is never indexed.
+    pub fn contains(&self, id: PointOffsetType, vector: &RemappedSparseVector) -> bool {
+        vector.indices.first().is_some_and(|&dim_id| {
+            self.postings
+                .get(dim_id as usize)
+                .is_some_and(|posting| posting.contains(id))
+        })
+    }
+
     /// Upsert a vector into the inverted index.
     pub fn upsert(
         &mut self,
