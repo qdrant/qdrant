@@ -254,13 +254,18 @@ impl UniversalIoError {
     }
 
     /// An owned copy for an error that more than one party reports, such as a
-    /// shared prefetch. Keeps the not-found classification and the message;
-    /// any other variant becomes an [`Self::Io`] error carrying the message.
+    /// shared prefetch. Keeps the not-found classification, the io error kind
+    /// and the message; any other variant becomes an [`Self::Io`] error.
     pub fn duplicate(&self) -> Self {
         if let Self::NotFound { path } = self {
             return Self::NotFound { path: path.clone() };
         }
-        let kind = if self.is_not_found() {
+        let kind = if let Self::Io(err)
+        | Self::IoUringNotSupported(err)
+        | Self::Mmap(crate::mmap::Error::Io(err)) = self
+        {
+            err.kind()
+        } else if self.is_not_found() {
             io::ErrorKind::NotFound
         } else {
             io::ErrorKind::Other
@@ -342,5 +347,15 @@ mod tests {
             description: "missing bucket".into(),
         };
         assert!(e.to_string().contains("missing bucket"));
+    }
+
+    #[test]
+    fn duplicate_keeps_io_kind() {
+        let err = UniversalIoError::Io(io::Error::new(io::ErrorKind::OutOfMemory, "no memory"));
+        let UniversalIoError::Io(copy) = err.duplicate() else {
+            panic!("expected an io error");
+        };
+        assert_eq!(copy.kind(), io::ErrorKind::OutOfMemory);
+        assert_eq!(copy.to_string(), "no memory");
     }
 }
