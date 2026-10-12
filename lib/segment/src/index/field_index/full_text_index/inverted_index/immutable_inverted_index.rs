@@ -348,12 +348,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         let mut cursors = PositionalCursors::new(views);
         // Deleted points stay in these postings and are masked here, as the
         // filter path does.
-        let is_active = |point_id: PointOffsetType| {
-            Ok(self
-                .point_to_tokens_count
+        let visible = |point_id: PointOffsetType| {
+            self.point_to_tokens_count
                 .get(point_id as usize)
                 .is_some_and(|count| *count > 0)
-                && accept.check(point_id)?)
+                && accept.is_visible(point_id)
         };
         // In RAM: nothing to gain from reading lengths in batches.
         score_top_k::<_, 1>(
@@ -365,7 +364,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
                 }
                 Ok(())
             },
-            is_active,
+            &accept.with_visible(&visible),
             limit,
             is_stopped,
         )
