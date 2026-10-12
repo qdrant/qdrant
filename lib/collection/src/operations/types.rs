@@ -62,6 +62,39 @@ use crate::shards::resharding::ReshardingStage;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::transfer::ShardTransferMethod;
 
+fn deserialize_limit<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_usize_field(deserializer, "limit", 1)
+}
+
+fn deserialize_optional_offset<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_option_usize_field(deserializer, "offset", 0)
+}
+
+fn deserialize_optional_score_threshold<'de, D>(
+    deserializer: D,
+) -> Result<Option<ScoreType>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    common::validation::deserialize_option_f32_field(deserializer, "score_threshold")
+}
+
+fn deserialize_optional_recommend_strategy<'de, D>(
+    deserializer: D,
+) -> Result<Option<api::rest::RecommendStrategy>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<api::rest::RecommendStrategy>::deserialize(deserializer)
+        .map_err(|err| serde::de::Error::custom(format!("strategy: {err}")))
+}
+
 /// Current state of the collection.
 /// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -675,6 +708,7 @@ pub struct RecommendRequestInternal {
     pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative examples to find the results
+    #[serde(default, deserialize_with = "deserialize_optional_recommend_strategy")]
     pub strategy: Option<api::rest::RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
@@ -687,12 +721,14 @@ pub struct RecommendRequestInternal {
 
     /// Max number of result to return
     #[serde(alias = "top")]
+    #[serde(deserialize_with = "deserialize_limit")]
     #[validate(range(min = 1))]
     pub limit: usize,
 
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
+    #[serde(default, deserialize_with = "deserialize_optional_offset")]
     pub offset: Option<usize>,
 
     /// Select which payload to return with the response. Default is false.
@@ -706,6 +742,7 @@ pub struct RecommendRequestInternal {
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    #[serde(default, deserialize_with = "deserialize_optional_score_threshold")]
     pub score_threshold: Option<ScoreType>,
 
     /// Define which vector to use for recommendation, if not specified - try to use default vector
@@ -747,7 +784,7 @@ pub struct RecommendGroupsRequestInternal {
     pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative examples to find the results
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_recommend_strategy")]
     pub strategy: Option<RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
@@ -769,6 +806,7 @@ pub struct RecommendGroupsRequestInternal {
     /// If defined, less similar results will not be returned.
     /// Score of the returned result might be higher or smaller than the threshold depending on the
     /// Distance function used. E.g. for cosine similarity only higher scores will be returned.
+    #[serde(default, deserialize_with = "deserialize_optional_score_threshold")]
     pub score_threshold: Option<ScoreType>,
 
     /// Define which vector to use for recommendation, if not specified - try to use default vector
@@ -845,12 +883,14 @@ pub struct DiscoverRequestInternal {
 
     /// Max number of result to return
     #[serde(alias = "top")]
+    #[serde(deserialize_with = "deserialize_limit")]
     #[validate(range(min = 1))]
     pub limit: usize,
 
     /// Offset of the first result to return.
     /// May be used to paginate results.
     /// Note: large offset values may cause performance issues.
+    #[serde(default, deserialize_with = "deserialize_optional_offset")]
     pub offset: Option<usize>,
 
     /// Select which payload to return with the response. Default is false.
@@ -2008,5 +2048,21 @@ mod tests {
             expected["uuid"] = json!(Uuid::nil().anonymize());
             assert_eq!(serde_json::to_value(info.anonymize()).unwrap(), expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod serde_error_tests {
+    use super::*;
+
+    #[test]
+    fn recommend_strategy_deserialization_error_names_field() {
+        let err = serde_json::from_str::<RecommendRequestInternal>(
+            r#"{"positive":[1],"limit":5,"strategy":123}"#,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("strategy"), "{err}");
     }
 }
