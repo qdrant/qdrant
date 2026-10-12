@@ -248,13 +248,15 @@ fn test_io_uring_eintr_handling() -> UioResult<()> {
     let chunk_size = NUM_ELEMENTS / RANGES_PER_ROUND;
     let mut eintr_errors = 0u64;
     let mut panics = 0u64;
+    let mut last_err = String::new();
     let mut rounds = 0u64;
     let start = std::time::Instant::now();
 
     while start.elapsed().as_secs() < TEST_DURATION_SECS {
         rounds += 1;
 
-        // Evict pages so reads actually block in io_uring_enter.
+        // Evict pages so reads actually block in io_uring_enter / page-fault
+        // waits (where CQE-level -EINTR is also possible).
         file.clear_ram_cache().ok();
 
         let ranges = (0..RANGES_PER_ROUND).map(|i| {
@@ -266,23 +268,31 @@ fn test_io_uring_eintr_handling() -> UioResult<()> {
         // which panics when in-flight requests leak due to EINTR.
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut errors = 0u64;
+            let mut err_msg = String::new();
 
-            let Ok(iter) = file.read_iter(ranges, Sequential) else {
-                return 1;
+            let iter = match file.read_iter(ranges, Sequential) {
+                Ok(iter) => iter,
+                Err(e) => return (1u64, format!("read_iter setup: {e:?}")),
             };
 
             for record in iter {
-                if record.is_err() {
+                if let Err(e) = record {
+                    err_msg = format!("{e:?}");
                     errors += 1;
                     break;
                 }
             }
 
-            errors
+            (errors, err_msg)
         }));
 
         match result {
-            Ok(n) => eintr_errors += n,
+            Ok((n, msg)) => {
+                eintr_errors += n;
+                if n > 0 {
+                    last_err = msg;
+                }
+            }
             Err(_) => panics += 1,
         }
 
@@ -299,9 +309,10 @@ fn test_io_uring_eintr_handling() -> UioResult<()> {
 
     assert_eq!(
         failures, 0,
-        "io_uring submit_and_wait does not retry on EINTR: \
+        "io_uring did not handle EINTR transparently: \
          {eintr_errors} errors, {panics} panics in {rounds} rounds ({total_signals} signals). \
-         Fix: retry submit_and_wait when it returns io::ErrorKind::Interrupted."
+         last_err={last_err}. \
+         Fix: retry submit_and_wait on Interrupted, and resubmit SQEs whose CQE returns -EINTR."
     );
 
     Ok(())
