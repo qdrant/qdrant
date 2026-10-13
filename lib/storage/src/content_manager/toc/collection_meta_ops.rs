@@ -809,13 +809,12 @@ pub(crate) fn apply_alias_actions(
 ) -> Result<(), StorageError> {
     for action in actions {
         match action {
-            AliasOperations::CreateAlias(CreateAliasOperation {
-                create_alias:
-                    CreateAlias {
-                        collection_name,
-                        alias_name,
-                    },
-            }) => {
+            AliasOperations::CreateAlias(CreateAliasOperation { create_alias }) => {
+                let CreateAlias {
+                    collection_name,
+                    alias_name,
+                } = create_alias;
+
                 // `collection_name` must name a collection, not an alias
                 if !collection_exists(collection_name) {
                     return Err(StorageError::not_found(format!(
@@ -832,20 +831,19 @@ pub(crate) fn apply_alias_actions(
                 aliases.insert(alias_name.clone(), collection_name.clone());
             }
 
-            AliasOperations::DeleteAlias(DeleteAliasOperation {
-                delete_alias: DeleteAlias { alias_name },
-            }) => {
+            AliasOperations::DeleteAlias(DeleteAliasOperation { delete_alias }) => {
+                let DeleteAlias { alias_name } = delete_alias;
+
                 // Deleting an alias that does not exist is a no-op, not an error
                 aliases.remove(alias_name);
             }
 
-            AliasOperations::RenameAlias(RenameAliasOperation {
-                rename_alias:
-                    RenameAlias {
-                        old_alias_name,
-                        new_alias_name,
-                    },
-            }) => {
+            AliasOperations::RenameAlias(RenameAliasOperation { rename_alias }) => {
+                let RenameAlias {
+                    old_alias_name,
+                    new_alias_name,
+                } = rename_alias;
+
                 if collection_exists(new_alias_name) {
                     return Err(StorageError::already_exists(format!(
                         "Collection `{new_alias_name}` already exists"
