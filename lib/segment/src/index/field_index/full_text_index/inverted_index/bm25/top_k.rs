@@ -15,6 +15,10 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 /// do not go stale for long.
 pub const ON_DISK_BLOCK: usize = 128;
 
+/// Steps between two checks of `is_stopped`. The dense norm pass steps a
+/// `BLOCK` at a time, so it checks this often only when `BLOCK` divides it.
+const STOP_CHECK_INTERVAL: usize = 1024;
+
 /// From this many essential terms on, a block finds its next candidate with a
 /// min-heap of their cursors keyed by current document, which costs
 /// `O(hits * log terms)` a candidate. Below it, scanning every essential
@@ -184,7 +188,7 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
 
         while count < BLOCK {
             visited += 1;
-            if visited.is_multiple_of(1024) {
+            if visited.is_multiple_of(STOP_CHECK_INTERVAL) {
                 check_process_stopped(is_stopped)?;
             }
 
@@ -361,6 +365,9 @@ fn score_dense<C: TermCursors, const BLOCK: usize>(
         let mut ids: [PointOffsetType; BLOCK] = [0; BLOCK];
         let mut lengths: [Option<u32>; BLOCK] = [None; BLOCK];
         for (start, out) in (0..doc_count).step_by(BLOCK).zip(norms.chunks_mut(BLOCK)) {
+            if start.is_multiple_of(STOP_CHECK_INTERVAL) {
+                check_process_stopped(is_stopped)?;
+            }
             let n = out.len();
             for (offset, id) in ids[..n].iter_mut().enumerate() {
                 *id = (start + offset) as PointOffsetType;
@@ -372,21 +379,26 @@ fn score_dense<C: TermCursors, const BLOCK: usize>(
         }
     }
 
-    let mut scores: Vec<ScoreType> = vec![0.0; doc_count];
-    let mut touched: Vec<bool> = vec![false; doc_count];
+    // A document no term hits keeps `-0.0`. Every contribution is `+0.0` or
+    // positive, and adding one clears the sign, so the sign bit tells the
+    // documents a term hit from the others. `-0.0 + x` is `x` exactly, so the
+    // sums match document at a time, which starts from `0.0`.
+    let mut scores: Vec<ScoreType> = vec![-0.0; doc_count];
     // Ids past `doc_count`: the caller bounds its own offsets, so none is
     // expected, and one is a broken invariant rather than a result to drop.
     let mut out_of_range = false;
     for (term, weight) in query.terms().iter().enumerate() {
         check_process_stopped(is_stopped)?;
+        // Validation admits an idf of `-0.0`, whose contributions would leave
+        // the sign set. `abs` makes it `+0.0` and changes no other idf.
+        let idf = weight.idf.abs();
         cursors.for_each_posting(term, |doc, tf| {
             let at = doc as usize;
             if at >= doc_count {
                 out_of_range = true;
                 return;
             }
-            scores[at] += query.term_score_with_norm(weight.idf, tf, norms[at]);
-            touched[at] = true;
+            scores[at] += query.term_score_with_norm(idf, tf, norms[at]);
         });
     }
     if out_of_range {
@@ -398,8 +410,11 @@ fn score_dense<C: TermCursors, const BLOCK: usize>(
     let mut heap: BinaryHeap<Reverse<ScoredPointOffset>> =
         BinaryHeap::with_capacity(limit.min(1024) + 1);
     let mut threshold = ScoreType::NEG_INFINITY;
-    for (at, (&score, &hit)) in scores.iter().zip(&touched).enumerate() {
-        if !hit || score <= threshold {
+    for (at, &score) in scores.iter().enumerate() {
+        if at.is_multiple_of(STOP_CHECK_INTERVAL) {
+            check_process_stopped(is_stopped)?;
+        }
+        if score.is_sign_negative() || score <= threshold {
             continue;
         }
         let doc = at as PointOffsetType;

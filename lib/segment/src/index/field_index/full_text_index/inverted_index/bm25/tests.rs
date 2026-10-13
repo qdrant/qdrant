@@ -851,4 +851,26 @@ fn dense_matches_document_at_a_time(#[values(1, 3, 10, 1000)] limit: usize) {
             limit,
         );
     }
+    // Documents hit only by zero-idf terms score zero, and are still hits: the
+    // dense pass tells them apart by the sign bit, which a `-0.0` idf must not
+    // leave set.
+    let mut vocab: Vec<TokenId> = mutable.vocab.values().copied().collect();
+    vocab.sort_unstable();
+    for idf in [0.0, -0.0] {
+        let terms = vocab
+            .iter()
+            .take(3)
+            .map(|&token_id| Bm25Term { token_id, idf });
+        let query = Bm25Query::new(terms, Bm25Params::default(), None).unwrap();
+        let dense = rank(&query, 0.0);
+        let by_document = rank(&query, f32::INFINITY);
+        assert!(!dense.is_empty());
+        let bits = |ranking: &[ScoredPointOffset]| {
+            ranking
+                .iter()
+                .map(|hit| (hit.idx, hit.score.to_bits()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(bits(&dense), bits(&by_document), "idf {idf:?}");
+    }
 }
