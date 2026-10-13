@@ -209,6 +209,9 @@ impl ShardHolder {
     }
 
     pub async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> CollectionResult<()> {
+        // A process crash after saving the reduced shard count or key mapping can leave
+        // shard files behind. Those shards are not loaded after restart, so replay may
+        // skip their cleanup.
         if let Some(replica_set) = self.shards.get(&shard_id) {
             let shard_path = replica_set.shard_path.clone();
             replica_set.stop_gracefully().await;
