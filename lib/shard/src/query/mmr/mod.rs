@@ -1,9 +1,9 @@
-mod similarity;
+mod lazy_matrix;
 
 #[cfg(test)]
 mod tests;
 
-use common::types::{PointOffsetType, ScoreType};
+use common::types::ScoreType;
 use indexmap::IndexSet;
 use itertools::Itertools as _;
 use ordered_float::OrderedFloat;
@@ -17,7 +17,7 @@ use segment::vector_storage::{
     VectorStorage as _, VectorStorageEnum, VectorStorageRead as _, new_raw_scorer,
 };
 
-use self::similarity::SimilarityToSelected;
+use self::lazy_matrix::LazyMatrix;
 use super::MmrInternal;
 
 /// Calculate the MMR (Maximal Marginal Relevance) score for a set of points with vectors.
@@ -72,14 +72,14 @@ pub fn mmr_from_points_with_vector(
     // get similarities against query
     let query_similarities = relevance_similarities(&volatile_storage, mmr.vector)?;
 
-    // similarities between candidates
-    let similarity = similarity_to_selected(&volatile_storage, vectors)?;
+    // get similarity matrix between candidates
+    let similarity_matrix = similarity_matrix(&volatile_storage, vectors)?;
 
     // compute MMR
     maximal_marginal_relevance(
         candidates,
         query_similarities,
-        similarity,
+        similarity_matrix,
         mmr.lambda.0,
         limit,
     )
@@ -140,28 +140,30 @@ fn relevance_similarities(
     Ok(similarities)
 }
 
-/// Scores candidates against a selected candidate, see [`SimilarityToSelected`].
+/// Returns a symmetric matrix where entry (i,j) represents the similarity
+/// between vector i and vector j. Diagonal entries are 0 (self-similarity is not calculated).
+/// Only computes each pair once for efficiency since similarity is symmetric.
 ///
 /// Errors if there are less than 2 vectors.
-fn similarity_to_selected(
+fn similarity_matrix(
     volatile_storage: &VectorStorageEnum,
     vectors: Vec<VectorInternal>,
-) -> OperationResult<SimilarityToSelected<'_>> {
+) -> OperationResult<LazyMatrix<'_>> {
     let num_vectors = vectors.len();
 
-    // if we have less than 2 points, we can't compare them
+    // if we have less than 2 points, we can't build a matrix
     debug_assert!(
         num_vectors >= 2,
-        "There should be at least two vectors to calculate similarities"
+        "There should be at least two vectors to calculate similarity matrix"
     );
 
     if num_vectors < 2 {
         return Err(OperationError::service_error(
-            "There should be at least two vectors to calculate similarities",
+            "There should be at least two vectors to calculate similarity matrix",
         ));
     }
 
-    SimilarityToSelected::new(vectors, volatile_storage)
+    LazyMatrix::new(vectors, volatile_storage)
 }
 
 /// Maximal Marginal Relevance (MMR) algorithm
@@ -173,13 +175,13 @@ fn similarity_to_selected(
 ///
 /// * `candidates` - the list of points to select from
 /// * `query_similarities` - similarities to the query for each candidate. Offsets refer to the index of the candidate in the `candidates` vector.
-/// * `similarity` - similarities between candidates
+/// * `similarity_matrix` - full pairwise similarity matrix between candidates
 /// * `lambda` - the lambda parameter for the MMR algorithm (0.0 = max diversity, 1.0 = max relevance)
 /// * `limit` - the maximum number of points to select
 fn maximal_marginal_relevance(
     candidates: Vec<ScoredPoint>,
     query_similarities: Vec<ScoreType>,
-    similarity: SimilarityToSelected,
+    mut similarity_matrix: LazyMatrix,
     lambda: f32,
     limit: usize,
 ) -> OperationResult<Vec<ScoredPoint>> {
@@ -190,13 +192,6 @@ fn maximal_marginal_relevance(
 
     let mut selected_indices = Vec::with_capacity(limit.min(num_candidates));
     let mut remaining_indices: IndexSet<usize, ahash::RandomState> = (0..num_candidates).collect();
-
-    // Maximum similarity of each candidate to any already selected point. Only
-    // the newest selected point can raise it, so each round scores the
-    // remaining candidates against that point alone.
-    let mut max_similarity_to_selected = vec![ScoreType::NEG_INFINITY; num_candidates];
-    let mut remaining_ids = Vec::with_capacity(num_candidates);
-    let mut similarities = Vec::with_capacity(num_candidates);
 
     // Select first point with highest relevance score
     if let Some(best_idx) = remaining_indices
@@ -210,40 +205,35 @@ fn maximal_marginal_relevance(
 
     // Iteratively select remaining points using MMR
     while selected_indices.len() < limit && !remaining_indices.is_empty() {
-        let newest_selected = *selected_indices
-            .last()
-            .expect("the first point is selected above");
-
-        remaining_ids.clear();
-        remaining_ids.extend(remaining_indices.iter().map(|&idx| idx as PointOffsetType));
-        similarities.clear();
-        similarities.resize(remaining_ids.len(), 0.0);
-        similarity.score(
-            newest_selected as PointOffsetType,
-            &remaining_ids,
-            &mut similarities,
-        )?;
-
-        for (&candidate_idx, &similarity) in remaining_indices.iter().zip(&similarities) {
-            // `>=` keeps the last of equal maxima, as `max_by_key` does
-            let max_similarity = &mut max_similarity_to_selected[candidate_idx];
-            if OrderedFloat(similarity) >= OrderedFloat(*max_similarity) {
-                *max_similarity = similarity;
-            }
-        }
-
         let best_candidate = remaining_indices
             .iter()
-            .map(|&candidate_idx| {
+            .map(|&candidate_idx| -> OperationResult<_> {
                 let relevance_score = query_similarities[candidate_idx];
 
-                // Calculate MMR score: λ * relevance - (1 - λ) * max_similarity_to_selected
-                let mmr_score = lambda * relevance_score
-                    - (1.0 - lambda) * max_similarity_to_selected[candidate_idx];
+                debug_assert!(
+                    selected_indices
+                        .iter()
+                        .all(|&selected_idx| selected_idx != candidate_idx)
+                );
 
-                (candidate_idx, mmr_score)
+                // Find maximum similarity to any already selected point
+                let max_similarity_to_selected = selected_indices
+                    .iter()
+                    .map(|selected_idx| {
+                        similarity_matrix.get_similarity(candidate_idx, *selected_idx)
+                    })
+                    .process_results(|sims| sims.max_by_key(|&sim| OrderedFloat(sim)))?
+                    .unwrap_or(0.0);
+
+                // Calculate MMR score: λ * relevance - (1 - λ) * max_similarity_to_selected
+                let mmr_score =
+                    lambda * relevance_score - (1.0 - lambda) * max_similarity_to_selected;
+
+                Ok((candidate_idx, mmr_score))
             })
-            .max_by_key(|(_candidate_idx, mmr_score)| OrderedFloat(*mmr_score));
+            .process_results(|scored| {
+                scored.max_by_key(|(_candidate_idx, mmr_score)| OrderedFloat(*mmr_score))
+            })?;
 
         if let Some((selected_idx, _mmr_score)) = best_candidate {
             // Select the best candidate and remove from remaining
