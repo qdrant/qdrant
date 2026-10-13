@@ -273,24 +273,16 @@ pub trait GraphLayersBase {
         is_stopped: &AtomicBool,
     ) -> OperationResult<ScoredPointOffset> {
         let mut links_buffer = Vec::new();
-        let mut result = None;
-        let mut level_entry = entry_point;
+        let mut current_point = ScoredPointOffset {
+            idx: entry_point,
+            score: points_scorer.score_point(entry_point)?,
+        };
         for level in rev_range(top_level, target_level) {
             check_process_stopped(is_stopped)?;
-            let search_result =
-                self.search_entry_on_level(level_entry, level, points_scorer, &mut links_buffer)?;
-            level_entry = search_result.idx;
-            result = Some(search_result);
+            current_point =
+                self.search_entry_on_level(current_point, level, points_scorer, &mut links_buffer)?;
         }
-        if let Some(result) = result {
-            Ok(result)
-        } else {
-            // If no levels, return the entry point with it's score
-            Ok(ScoredPointOffset {
-                idx: entry_point,
-                score: points_scorer.score_point(entry_point)?,
-            })
-        }
+        Ok(current_point)
     }
 
     /// Simplified version of `search_on_level` that uses beam size of 1.
@@ -298,7 +290,7 @@ pub trait GraphLayersBase {
     /// See [module docs](self) for comparison with other search functions.
     fn search_entry_on_level(
         &self,
-        entry_point: PointOffsetType,
+        entry_point: ScoredPointOffset,
         level: usize,
         points_scorer: &mut FilteredScorer,
         // Temporary buffer for links to avoid unnecessary allocations.
@@ -311,10 +303,7 @@ pub trait GraphLayersBase {
         links.reserve(2 * self.get_m(0));
 
         let mut changed = true;
-        let mut current_point = ScoredPointOffset {
-            idx: entry_point,
-            score: points_scorer.score_point(entry_point)?,
-        };
+        let mut current_point = entry_point;
         while changed {
             changed = false;
 

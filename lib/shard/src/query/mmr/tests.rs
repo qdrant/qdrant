@@ -1,18 +1,22 @@
 use std::collections::HashMap;
 
 use common::ambient;
+use indexmap::IndexSet;
 use ordered_float::OrderedFloat;
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 use segment::data_types::vectors::{
-    MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
+    MultiDenseVectorInternal, QueryVector, VectorInternal, VectorStructInternal,
 };
 use segment::types::{
     Distance, MultiVectorComparator, MultiVectorConfig, PointIdType, ScoredPoint, VectorNameBuf,
 };
+use segment::vector_storage::new_raw_scorer;
 use sparse::common::sparse_vector::SparseVector;
 use strum::IntoEnumIterator;
 
-use super::mmr_from_points_with_vector;
+use super::{create_volatile_storage, mmr_from_points_with_vector, relevance_similarities};
 use crate::query::MmrInternal;
 
 /// Create a ScoredPoint with a dense vector attached.
@@ -360,5 +364,155 @@ fn test_mmr_multi_vector() {
         );
         let multi_scored_points = multi_result.unwrap();
         assert_eq!(multi_scored_points.len(), 3);
+    }
+}
+
+/// MMR as it was before scoring in batches: every round compares each
+/// remaining candidate (as the query) with every selected point. Returns the
+/// selected candidates' positions in order.
+fn pairwise_reference_mmr(
+    vectors: &[VectorInternal],
+    query: VectorInternal,
+    distance: Distance,
+    multivector_config: Option<MultiVectorConfig>,
+    lambda: f32,
+    limit: usize,
+) -> Vec<usize> {
+    let storage = create_volatile_storage(vectors, distance, multivector_config).unwrap();
+    let relevance = relevance_similarities(&storage, query).unwrap();
+    let scorers: Vec<_> = vectors
+        .iter()
+        .map(|vector| new_raw_scorer(QueryVector::Nearest(vector.clone()), &storage).unwrap())
+        .collect();
+
+    let mut remaining: IndexSet<usize, ahash::RandomState> = (0..vectors.len()).collect();
+    let first = *remaining
+        .iter()
+        .max_by_key(|&&idx| OrderedFloat(relevance[idx]))
+        .unwrap();
+    remaining.swap_remove(&first);
+    let mut selected = vec![first];
+
+    while selected.len() < limit && !remaining.is_empty() {
+        let (best, _) = remaining
+            .iter()
+            .map(|&candidate| {
+                let max_similarity = selected
+                    .iter()
+                    .map(|&selected| scorers[candidate].score_point(selected as u32).unwrap())
+                    .max_by_key(|&similarity| OrderedFloat(similarity))
+                    .unwrap();
+                let mmr_score = lambda * relevance[candidate] - (1.0 - lambda) * max_similarity;
+                (candidate, mmr_score)
+            })
+            .max_by_key(|(_, mmr_score)| OrderedFloat(*mmr_score))
+            .unwrap();
+        remaining.swap_remove(&best);
+        selected.push(best);
+    }
+    selected
+}
+
+fn assert_matches_pairwise_reference(
+    vectors: Vec<VectorInternal>,
+    query: VectorInternal,
+    distance: Distance,
+    multivector_config: Option<MultiVectorConfig>,
+    lambda: f32,
+) {
+    const LIMIT: usize = 12;
+
+    let points = vectors.iter().enumerate().map(|(idx, vector)| ScoredPoint {
+        id: (idx as u64).into(),
+        version: 0,
+        score: 0.0,
+        payload: None,
+        vector: Some(VectorStructInternal::Named(HashMap::from([(
+            String::new(),
+            vector.clone(),
+        )]))),
+        shard_key: None,
+        order_value: None,
+    });
+    let mmr = MmrInternal {
+        vector: query.clone(),
+        using: VectorNameBuf::from(""),
+        lambda: OrderedFloat(lambda),
+        candidates_limit: 100,
+    };
+
+    ambient::test(|| {
+        let selected: Vec<_> =
+            mmr_from_points_with_vector(points, mmr, distance, multivector_config, LIMIT)
+                .unwrap()
+                .into_iter()
+                .map(|point| point.id)
+                .collect();
+        let expected: Vec<_> =
+            pairwise_reference_mmr(&vectors, query, distance, multivector_config, lambda, LIMIT)
+                .into_iter()
+                .map(|idx| PointIdType::from(idx as u64))
+                .collect();
+        assert_eq!(selected, expected, "{distance:?}, lambda {lambda}");
+    });
+}
+
+/// Scoring the remaining candidates against each newly selected point in one
+/// batch must select the same points, in the same order, as comparing every
+/// candidate with every selected point.
+#[rstest]
+fn test_mmr_matches_pairwise_reference(
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid, Distance::Manhattan)]
+    distance: Distance,
+    #[values(0.0, 0.3, 0.7, 1.0)] lambda: f32,
+) {
+    const COUNT: usize = 60;
+    const DIM: usize = 8;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    // Cosine vectors are stored normalized, so that is what MMR gets.
+    let dense = |rng: &mut StdRng, dim: usize| -> Vec<f32> {
+        let vector: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+        if distance == Distance::Cosine {
+            let length = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+            vector.into_iter().map(|x| x / length).collect()
+        } else {
+            vector
+        }
+    };
+
+    let vectors = (0..COUNT)
+        .map(|_| VectorInternal::Dense(dense(&mut rng, DIM)))
+        .collect();
+    let query = VectorInternal::Dense(dense(&mut rng, DIM));
+    assert_matches_pairwise_reference(vectors, query, distance, None, lambda);
+
+    let multivector_config = MultiVectorConfig {
+        comparator: MultiVectorComparator::MaxSim,
+    };
+    let multi = |rng: &mut StdRng| {
+        let count = rng.random_range(1..=4);
+        let inner = (0..count).map(|_| dense(rng, DIM)).collect();
+        VectorInternal::MultiDense(MultiDenseVectorInternal::new_unchecked(inner))
+    };
+    let vectors = (0..COUNT).map(|_| multi(&mut rng)).collect();
+    let query = multi(&mut rng);
+    assert_matches_pairwise_reference(vectors, query, distance, Some(multivector_config), lambda);
+
+    if distance == Distance::Dot {
+        let sparse = |rng: &mut StdRng| {
+            let mut indices: Vec<u32> = (0..20).filter(|_| rng.random_bool(0.3)).collect();
+            if indices.is_empty() {
+                indices.push(rng.random_range(0..20));
+            }
+            let values = indices
+                .iter()
+                .map(|_| rng.random_range(-1.0..1.0))
+                .collect();
+            VectorInternal::Sparse(SparseVector::new(indices, values).unwrap())
+        };
+        let vectors = (0..COUNT).map(|_| sparse(&mut rng)).collect();
+        let query = sparse(&mut rng);
+        assert_matches_pairwise_reference(vectors, query, distance, None, lambda);
     }
 }
