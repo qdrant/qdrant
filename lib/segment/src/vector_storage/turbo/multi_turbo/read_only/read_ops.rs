@@ -221,28 +221,6 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
             .collect()
     }
 
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType {
-        let Some(offset) = self.get_offset::<Random>(key) else {
-            log::error!("Multivector not found");
-            return ScoreType::NEG_INFINITY;
-        };
-
-        let records = self
-            .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
-            .expect("Multivector not found");
-
-        HwMetric::Cpu.bump(records.len() * query.len());
-        let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump(records.len() * mul);
-
-        self.score_records_max_similarity(query, &records)
-    }
-
     fn score_internal_max_similarity(
         &self,
         point_a: PointOffsetType,

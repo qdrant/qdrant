@@ -99,12 +99,6 @@ where
         Ok(())
     }
 
-    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
-        let mut score = [0.0];
-        self.score_stored_batch(&[idx], &mut score)?;
-        Ok(score[0])
-    }
-
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer compares against multiple vectors, not just one")
     }

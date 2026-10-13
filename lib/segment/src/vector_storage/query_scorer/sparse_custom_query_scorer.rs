@@ -1,5 +1,4 @@
 use common::ambient::hw::HwScale;
-use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
@@ -63,17 +62,6 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>>
 impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> QueryScorer
     for SparseCustomQueryScorer<'_, TVectorStorage, TQuery>
 {
-    #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
-        let stored = self.vector_storage.get_sparse::<Random>(idx)?;
-
-        // not exactly correct for Gridstore where the indices are compressed into u8
-        self.hw
-            .vector_io_read(stored.indices.len() + stored.values.len());
-
-        Ok(self.score(&stored))
-    }
-
     fn score_stored_batch(
         &self,
         ids: &[PointOffsetType],

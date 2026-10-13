@@ -11,6 +11,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
+    use crate::scoring::ScorePoint;
 
     #[rstest]
     #[case(ScalarQuantizationMethod::Int8)]

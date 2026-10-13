@@ -88,6 +88,19 @@ fn open_turbo_single_uring(
     )
 }
 
+/// Score one stored point the way [`RawScorer::score_point`] does: as a
+/// batch of one.
+///
+/// [`RawScorer::score_point`]: crate::vector_storage::RawScorer::score_point
+fn score_one(
+    scorer: &impl crate::vector_storage::query_scorer::QueryScorer,
+    id: PointOffsetType,
+) -> ScoreType {
+    let mut score = [0.0];
+    scorer.score_stored_batch(&[id], &mut score).unwrap();
+    score[0]
+}
+
 /// Deterministic test vectors in `[-1, 1]`, seeded so that the storage and
 /// the independent oracle observe exactly the same inputs across runs.
 fn make_vectors(dim: usize, count: usize, seed: u64) -> Vec<DenseVector> {
@@ -784,7 +797,7 @@ fn nearest_scorer_ranks_self_first(
                     // Asymmetric path: the query must score best against its
                     // own stored (lossy) encoding.
                     let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                        .map(|k| scorer.score_stored(k).unwrap())
+                        .map(|k| score_one(&scorer, k))
                         .collect();
                     let best = (0..COUNT)
                         .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -814,12 +827,12 @@ fn nearest_scorer_ranks_self_first(
     }
 }
 
-/// `score_bytes` must agree with `score_stored` on a stored vector's own
+/// `score_bytes` must agree with scoring the stored vector on its own
 /// encoded bytes, for both the nearest and the multi-vector (reco) scorers —
 /// the inline-rescoring path scores the exact same TQ bytes the storage
 /// holds, so the two must produce identical scores.
 #[rstest]
-fn score_bytes_matches_score_stored(
+fn score_bytes_matches_stored_score(
     #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     use common::typelevel::True;
@@ -864,14 +877,14 @@ fn score_bytes_matches_score_stored(
 
                     assert_eq!(
                         nearest.score_bytes(True, &bytes),
-                        nearest.score_stored(key).unwrap(),
-                        "nearest score_bytes != score_stored at {key} \
+                        score_one(&nearest, key),
+                        "nearest score_bytes != stored score at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
                     assert_eq!(
                         reco.score_bytes(True, &bytes),
-                        reco.score_stored(key).unwrap(),
-                        "reco score_bytes != score_stored at {key} \
+                        score_one(&reco, key),
+                        "reco score_bytes != stored score at {key} \
                              (dim {dim}, {distance:?}, seed {seed:#x})",
                     );
                 }
@@ -898,7 +911,7 @@ fn custom_reco_scorer_ranks_positive_first(
     /// Offset of the highest-scoring stored vector.
     fn top_scored(scorer: &impl QueryScorer, count: usize) -> usize {
         let scores: Vec<ScoreType> = (0..count as PointOffsetType)
-            .map(|k| scorer.score_stored(k).unwrap())
+            .map(|k| score_one(scorer, k))
             .collect();
         (0..count)
             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
@@ -1350,12 +1363,12 @@ fn uring_backend_matches_mmap_and_oracle(
     }
 }
 
-/// `score_stored_batch` must agree exactly with per-point `score_stored`
-/// on every backend and both scorers. Keys are shuffled, contain
+/// `score_stored_batch` must agree exactly with scoring each point on its
+/// own on every backend and both scorers. Keys are shuffled, contain
 /// duplicates, and exceed `VECTOR_READ_BATCH_SIZE`, so chunking and the
 /// idx→key mapping are actually exercised.
 #[rstest]
-fn score_stored_batch_matches_score_stored(
+fn score_stored_batch_matches_single_points(
     #[values(TQBits::Bits4, TQBits::Bits8, TQBits::Bits16)] bits: TQBits,
 ) {
     use rand::seq::SliceRandom;
@@ -1434,12 +1447,12 @@ fn score_stored_batch_matches_score_stored(
         for (idx, &id) in ids.iter().enumerate() {
             assert_eq!(
                 nearest_scores[idx],
-                nearest.score_stored(id).unwrap(),
+                score_one(&nearest, id),
                 "nearest batch score diverges at idx {idx} (key {id}, {backend})",
             );
             assert_eq!(
                 reco_scores[idx],
-                reco.score_stored(id).unwrap(),
+                score_one(&reco, id),
                 "reco batch score diverges at idx {idx} (key {id}, {backend})",
             );
         }
@@ -1607,7 +1620,7 @@ fn batch_scoring_accumulates_same_hw_counters(
         let _scope = per_point_ctx.measure_guard();
         let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
         for &id in &ids {
-            scorer.score_stored(id).unwrap();
+            score_one(&scorer, id);
         }
     }
 

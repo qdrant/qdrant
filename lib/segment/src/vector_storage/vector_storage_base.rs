@@ -588,14 +588,6 @@ pub trait TurboMultiScoring: MultiTQVectorStorageRead {
     /// Preprocess and precompute each inner query vector of a multi-query once.
     fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ>;
 
-    /// Asymmetric MaxSim score of a precomputed multi-query against stored point
-    /// `key`.
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType;
-
     /// Symmetric MaxSim score between two stored points.
     fn score_internal_max_similarity(
         &self,

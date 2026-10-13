@@ -5,6 +5,8 @@ pub mod load_validation;
 #[cfg(test)]
 pub mod metrics;
 #[cfg(test)]
+pub mod scoring;
+#[cfg(test)]
 pub mod standalone_encoders;
 #[cfg(test)]
 pub mod stop_condition;

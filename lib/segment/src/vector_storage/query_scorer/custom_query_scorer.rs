@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use common::ambient::hw::HwScale;
-use common::generic_consts::Random;
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use zerocopy::FromBytes;
@@ -70,7 +69,7 @@ impl<
     }
 
     /// Score the query against an explicit vector (not one stored in the
-    /// storage). Used internally by `score_stored`/`score_stored_batch`/
+    /// storage). Used internally by `score_stored_batch` and
     /// [`QueryScorer::score_bytes`].
     #[inline]
     fn score(&self, against: &[TElement]) -> ScoreType {
@@ -88,14 +87,6 @@ impl<
     TStoredQuery: Query<TypedDenseVector<TElement>>,
 > QueryScorer for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
-    #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
-        let stored = self.vector_storage.get_dense::<Random>(idx);
-        self.hw.vector_io_read(1);
-
-        Ok(self.score(&stored))
-    }
-
     #[inline]
     fn score_stored_batch(
         &self,

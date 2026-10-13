@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::slice;
 
@@ -136,8 +137,7 @@ where
         if QuantizedStorage::is_in_ram_or_mmap() {
             // This function is optimized of in-ram access
             // it doesn't do extra mem copies and assume reference access
-            self.score_points_batch_in_mem_like(point_ids, scorer, scores);
-            Ok(())
+            self.score_points_batch_in_mem_like(point_ids, scorer, scores)
         } else {
             // Optimized for remote access from external storage,
             // does memory copy, but minimizes assessed to external storage
@@ -151,18 +151,30 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => (),
         }
 
+        // `scorer` takes an infallible closure, so a failed read is kept here
+        // and returned once the point it failed on is scored.
+        let failed = Cell::new(None);
         for (index, &point_id) in point_ids.iter().enumerate() {
             scores[index] = scorer(&|query| {
-                self.score_point_max_similarity(query, point_id) // inhibit rustfmt
+                self.score_point_max_similarity(query, point_id)
+                    .unwrap_or_else(|err| {
+                        failed.set(Some(err));
+                        ScoreType::NEG_INFINITY
+                    })
             });
+            if let Some(err) = failed.take() {
+                return Err(err);
+            }
         }
+        Ok(())
     }
 
     #[inline]
@@ -317,8 +329,10 @@ where
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         point_id: PointOffsetType,
-    ) -> ScoreType {
-        let offset = self.offsets.get_offset(point_id);
+    ) -> OperationResult<ScoreType> {
+        let mut offset = MultivectorOffset::default();
+        self.offsets
+            .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
@@ -333,10 +347,9 @@ where
                         max_sim[query_idx] = sim;
                     }
                 }
-            })
-            .expect("read quantized sub-vectors");
+            })?;
 
-        max_sim.into_iter().sum()
+        Ok(max_sim.into_iter().sum())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -418,14 +431,14 @@ where
         unimplemented!("quantized multi-vector storage does not support `score`");
     }
 
-    fn score_point(
+    fn score_points(
         &self,
         query: &Vec<QuantizedStorage::EncodedQuery>,
-        i: PointOffsetType,
-    ) -> ScoreType {
-        match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i),
-        }
+        offsets: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> std::io::Result<()> {
+        self.score_points_batch(offsets, |score| score(query), scores)
+            .map_err(std::io::Error::other)
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> ScoreType {

@@ -132,7 +132,8 @@ mod tests {
     use super::*;
     use crate::common::live_reload::LiveReload;
     use crate::data_types::vectors::{
-        DenseVector, MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorRef,
+        DenseVector, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
+        VectorInternal, VectorRef,
     };
     use crate::segment_constructor::batched_reader::merge_from_single_source;
     use crate::types::{
@@ -147,7 +148,8 @@ mod tests {
     use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
         self, open_appendable_memmap_multi_vector_storage_impl,
     };
-    use crate::vector_storage::{VectorStorage, VectorStorageRead};
+    use crate::vector_storage::query::RecoQuery;
+    use crate::vector_storage::{RawScorerBuilder, VectorStorage, VectorStorageRead};
 
     const DIM: usize = 16;
 
@@ -170,6 +172,29 @@ mod tests {
         std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
             .take(DIM)
             .collect()
+    }
+
+    /// Score a point past the stored vectors, which fails the way an
+    /// unreachable object store does, with a nearest and a recommend query.
+    /// HNSW search scores its entry point on its own, so this is the first
+    /// read a search on such a storage makes.
+    fn assert_score_point_reports_a_failed_read(
+        storage: &VectorStorageReadEnum<MmapFile>,
+        example: VectorInternal,
+    ) {
+        let past_the_end = storage.total_vector_count() as PointOffsetType + 8;
+        let queries = [
+            QueryVector::Nearest(example.clone()),
+            QueryVector::RecommendBestScore(RecoQuery::new(vec![example.clone()], vec![example])),
+        ];
+        for query in queries {
+            let scorer = storage.build_raw_scorer(query).unwrap();
+            assert!(scorer.score_point(0).is_ok());
+            assert!(
+                scorer.score_point(past_the_end).is_err(),
+                "a read past the stored vectors must be an error, not a panic",
+            );
+        }
     }
 
     /// The `Memory` storage type is a no-op: nothing to open read-only.
@@ -231,6 +256,7 @@ mod tests {
             .try_into()
             .unwrap();
         assert_eq!(got, vectors[7]);
+        assert_score_point_reports_a_failed_read(&storage, vectors[7].clone().into());
     }
 
     /// `Mmap` single-dense config routes to the immutable `DenseVectorStorageImpl`.
@@ -274,6 +300,7 @@ mod tests {
             .try_into()
             .unwrap();
         assert_eq!(got, vectors[1]);
+        assert_score_point_reports_a_failed_read(&storage, vectors[1].clone().into());
     }
 
     /// A multivector config routes to the chunked multi-dense read-only storage.
@@ -333,6 +360,7 @@ mod tests {
         let multi: TypedMultiDenseVectorRef<VectorElementType> =
             stored.as_vec_ref().try_into().unwrap();
         assert_eq!(multi.to_owned(), multis[5]);
+        assert_score_point_reports_a_failed_read(&storage, multis[5].clone().into());
     }
 
     /// Build a per-directory `CachedFs` with the listing snapshot taken, the
@@ -785,6 +813,7 @@ mod tests {
                     "{storage_type:?} score @{id}",
                 );
             }
+            assert_score_point_reports_a_failed_read(&ro, vectors[3].clone().into());
         }
     }
 
@@ -879,5 +908,6 @@ mod tests {
                 "score @{id}",
             );
         }
+        assert_score_point_reports_a_failed_read(&ro, multis[5].clone().into());
     }
 }

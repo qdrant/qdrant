@@ -21,12 +21,12 @@ pub mod turbo_multi_query_scorer;
 pub mod turbo_query_scorer;
 
 pub trait QueryScorer {
-    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType>;
-
     /// Score a batch of points
     ///
     /// Enables underlying storage to optimize pre-fetching of data.
-    /// Fallible because the vectors may come from remote storage.
+    /// Fallible because the vectors may come from remote storage. A single
+    /// point is scored as a batch of one, see
+    /// [`RawScorer::score_point`](crate::vector_storage::RawScorer::score_point).
     fn score_stored_batch(
         &self,
         ids: &[PointOffsetType],
@@ -37,23 +37,6 @@ pub trait QueryScorer {
 
     type SupportsBytes: TBool;
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType;
-}
-
-/// Reference implementation of [`QueryScorer::score_stored_batch`].
-///
-/// Kept as a free function instead of a default trait method so every scorer has to opt in
-/// explicitly. Currently unused, as all scorers provide their own batch implementation.
-pub fn default_score_stored_batch<Q: QueryScorer + ?Sized>(
-    this: &Q,
-    ids: &[u32],
-    scores: &mut [f32],
-) -> OperationResult<()> {
-    debug_assert_eq!(ids.len(), scores.len());
-
-    for (idx, id) in ids.iter().enumerate() {
-        scores[idx] = this.score_stored(*id)?;
-    }
-    Ok(())
 }
 
 pub trait QueryScorerBytes {

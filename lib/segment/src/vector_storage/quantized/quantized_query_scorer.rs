@@ -93,12 +93,6 @@ where
         Ok(())
     }
 
-    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
-        let mut score = [0.0];
-        self.score_stored_batch(&[idx], &mut score)?;
-        Ok(score[0])
-    }
-
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.quantized_data.score_internal(point_a, point_b)
     }

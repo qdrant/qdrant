@@ -922,12 +922,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(&self, query: &EncodedQueryBQ<TBitsStoreType>, i: PointOffsetType) -> f32 {
-        let vector_data = self.encoded_vectors.get_vector_data(i);
-
-        self.score_bytes(True, query, &vector_data)
-    }
-
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         let vector_data_1 = self.encoded_vectors.get_vector_data(i);
         let vector_data_2 = self.encoded_vectors.get_vector_data(j);
