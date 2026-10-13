@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use common::counter::hw::HwScale;
-use common::generic_consts::Random;
+use common::ambient::hw::HwScale;
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use zerocopy::FromBytes;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
@@ -69,7 +69,7 @@ impl<
     }
 
     /// Score the query against an explicit vector (not one stored in the
-    /// storage). Used internally by `score_stored`/`score_stored_batch`/
+    /// storage). Used internally by `score_stored_batch` and
     /// [`QueryScorer::score_bytes`].
     #[inline]
     fn score(&self, against: &[TElement]) -> ScoreType {
@@ -88,22 +88,17 @@ impl<
 > QueryScorer for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_dense::<Random>(idx);
-        self.hw.vector_io_read(1);
-
-        self.score(&stored)
-    }
-
-    #[inline]
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.hw.vector_io_read(ids.len());
 
         self.vector_storage
             .for_each_in_dense_batch(ids, |idx, vector| scores[idx] = self.score(vector))
-            .expect("read vectors");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

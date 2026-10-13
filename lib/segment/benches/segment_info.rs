@@ -1,4 +1,4 @@
-use common::counter::hw;
+use common::ambient;
 use criterion::{Criterion, criterion_group, criterion_main};
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
@@ -18,7 +18,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut payload: Map<String, Value> = Map::default();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     for i in 0..3 {
         let key = format!("key{i}");
         payload.insert(key.clone(), "value".to_string().into());

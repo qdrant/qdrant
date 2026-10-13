@@ -9,8 +9,8 @@ pub struct ImmutableNullIndex(pub(super) MutableNullIndex);
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::bitvec::BitVec;
-    use common::counter::hw;
     use itertools::Itertools as _;
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -25,7 +25,7 @@ mod tests {
     fn test_remove_idempotent() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
         let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let null_value = Value::Null;
         let null_value_in_array =
@@ -228,7 +228,7 @@ mod tests {
     fn test_remove_reopen() {
         let dir = TempDir::with_prefix("test_immutable_null_index").unwrap();
         let mut builder = ImmutableNullIndex::builder(dir.path(), 0).unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         builder.add_point(0, &[&json!(true)]).unwrap();
         builder.add_point(1, &[&json!(true)]).unwrap();
         builder.add_point(2, &[&json!(false)]).unwrap();

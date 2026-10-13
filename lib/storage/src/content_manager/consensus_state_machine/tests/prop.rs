@@ -403,10 +403,19 @@ pub fn arb_consensus_operation(
     // Weighted by how many operations each arm covers, so one operation is as likely as another
     prop_oneof![
         14 => collection_meta,
+        1 => arb_add_peer(),
+        1 => arb_peer_id().prop_map(ConsensusOperations::RemovePeer),
         1 => arb_update_peer_metadata(),
         1 => arb_update_cluster_metadata(),
         1 => arb_quota_config().prop_map(ConsensusOperations::SetQuotaConfig),
     ]
+}
+
+fn arb_add_peer() -> impl Strategy<Value = ConsensusOperations> {
+    arb_peer_id().prop_map(|peer_id| ConsensusOperations::AddPeer {
+        peer_id,
+        uri: peer_address(peer_id).to_string(),
+    })
 }
 
 fn arb_collection_meta_operation(
@@ -421,11 +430,11 @@ fn arb_collection_meta_operation(
         arb_update_collection(collection_names.clone()),
         arb_delete_collection(collection_names.clone()),
         arb_change_aliases(collection_names.clone()),
-        arb_create_shard_key(collection_names.clone(), peer_ids),
-        arb_drop_shard_key(collection_names.clone()),
         arb_resharding(collection_names.clone()),
         arb_transfer(collection_names.clone()),
         arb_set_shard_replica_state(collection_names.clone()),
+        arb_create_shard_key(collection_names.clone(), peer_ids),
+        arb_drop_shard_key(collection_names.clone()),
         arb_create_named_vector(collection_names.clone()),
         arb_delete_named_vector(collection_names.clone()),
         arb_create_payload_index(collection_names.clone()),

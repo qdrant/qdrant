@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 use common::typelevel::True;
@@ -21,7 +21,9 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{
+    EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
+};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 
@@ -57,8 +59,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
     /// Encode vector data using product quantization.
     ///
+    /// Every vector of `data` is encoded, but the centroids are fitted only on the vectors whose
+    /// flag in `keep` is set.
+    ///
     /// # Arguments
     /// * `data` - iterator over original vector data
+    /// * `keep` - one flag per vector of `data`, set for the vectors to fit the centroids on;
+    ///   clear it for vectors that are not real (e.g. the placeholders of deleted vectors)
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
@@ -67,9 +74,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
         vector_parameters: &VectorParameters,
-        count: usize,
         chunk_size: usize,
         max_kmeans_threads: usize,
         meta_path: Option<&Path>,
@@ -81,11 +88,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         let vector_division = Self::get_vector_division(vector_parameters.dim, chunk_size);
 
         // then, find flattened centroid positions
+        let (calibration_data, calibration_count) = calibration_vectors(data.clone(), keep);
         let centroids = Self::find_centroids(
-            data.clone(),
+            calibration_data,
             &vector_division,
             vector_parameters,
-            count,
+            calibration_count,
             CENTROIDS_COUNT,
             max_kmeans_threads,
             stopped,
@@ -340,7 +348,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// * `max_kmeans_threads` - Max allowed threads for kmeans process
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     fn find_centroids<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
         vector_division: &[Range<usize>],
         vector_parameters: &VectorParameters,
         count: usize,
@@ -537,18 +545,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
         self.score_bytes(True, query, encoded_vector)
-    }
-
-    fn score_point(&self, query: &EncodedQueryPQ, i: PointOffsetType) -> f32 {
-        let centroids = self.encoded_vectors.get_vector_data(i);
-
-        self.score_bytes(True, query, &centroids)
     }
 
     /// Score two points inside endoded data by their indexes

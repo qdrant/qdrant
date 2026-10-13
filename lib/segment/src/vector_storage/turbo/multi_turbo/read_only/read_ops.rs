@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
@@ -157,11 +157,10 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedMultiTurboVectorStor
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
             callback(user_data, key, self.dequantize_records(records));
         })
-        .expect("read TQ multivectors");
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
@@ -220,28 +219,6 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
                 self.quantizer.precompute_query(&preprocessed)
             })
             .collect()
-    }
-
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType {
-        let Some(offset) = self.get_offset::<Random>(key) else {
-            log::error!("Multivector not found");
-            return ScoreType::NEG_INFINITY;
-        };
-
-        let records = self
-            .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
-            .expect("Multivector not found");
-
-        HwMetric::Cpu.bump(records.len() * query.len());
-        let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump(records.len() * mul);
-
-        self.score_records_max_similarity(query, &records)
     }
 
     fn score_internal_max_similarity(

@@ -1,8 +1,7 @@
 use std::borrow::{Borrow, Cow};
 use std::iter;
 
-use common::counter::HwMeasurementIteratorExt;
-use common::counter::hw::HwMetric;
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::persisted_hashmap::{Key, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalRead, UserData};

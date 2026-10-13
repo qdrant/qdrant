@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::{Blob, BlobstoreReader};
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
@@ -60,7 +61,7 @@ where
         };
 
         let mut in_memory_index = InMemoryNumericIndex::default();
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?.min(max_point_offset),
@@ -80,5 +81,18 @@ where
             in_memory_index,
             storage,
         }))
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear read-only appendable numeric index gridstore cache: {err}"
+            ))
+        })
     }
 }

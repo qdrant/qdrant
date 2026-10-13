@@ -20,7 +20,6 @@ use crate::index::field_index::null_index::{
 use crate::index::field_index::numeric_index::{
     NumericIndexInner, RangeConditionChecker, ReadOnlyNumericIndexInner,
 };
-use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 #[cfg(feature = "testing")]
 use crate::index::plain_payload_index::PlainFilterContext;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
@@ -40,7 +39,6 @@ type MapRoCC<'a, S, T> = MapConditionChecker<'a, T, ReadOnlyMapIndex<T, S>>;
 
 /// All [`ConditionChecker`] implementations used in this [crate].
 pub enum ConditionCheckerEnum<'a> {
-    Build(BuildConditionChecker<'a>),
     Constant(ConstantConditionChecker<OperationError>),
     Dyn(Box<dyn ConditionChecker<Error = OperationError> + 'a>),
     Filter(OptimizedFilter<'a>),
@@ -103,7 +101,6 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
     ) -> OperationResult<usize> {
         match self {
             Self::Dyn(c) => default_check_batched(ids, select, rest, |id| c.check(id)),
-            Self::Build(c) => c.check_batched(ids, select, rest),
             Self::Constant(c) => c.check_batched(ids, select, rest),
             Self::Filter(c) => c.check_batched(ids, select, rest),
             Self::Ids(c) => c.check_batched(ids, select, rest),
@@ -142,7 +139,6 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
         match self {
-            Self::Build(c) => c.check(point_id),
             Self::Constant(c) => c.check(point_id),
             Self::Dyn(c) => c.check(point_id),
             Self::Filter(c) => c.check(point_id),
@@ -182,7 +178,6 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
 
     fn check_infallible(&self, point_id: PointOffsetType) -> bool {
         match self {
-            Self::Build(c) => c.check_infallible(point_id),
             Self::Constant(c) => c.check_infallible(point_id),
             Self::Dyn(c) => c.check_infallible(point_id),
             Self::Filter(c) => c.check_infallible(point_id),

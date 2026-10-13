@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 #[expect(deprecated, reason = "legacy code")]
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
 use crate::encoded_storage::validate_storage_vector_size;
-use crate::encoded_vectors::validate_vector_parameters;
+use crate::encoded_vectors::{calibration_vectors, validate_vector_parameters};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
@@ -598,8 +598,16 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         &mut self.encoded_vectors
     }
 
+    /// Encode vector data using binary quantization.
+    ///
+    /// Every vector of `orig_data` is encoded, but the per-coordinate stats, if the encodings
+    /// need them, are computed only on the vectors whose flag in `keep` is set. `keep` holds one
+    /// flag per vector; clear the flags of vectors that are not real (e.g. the placeholders of
+    /// deleted vectors).
+    #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
         encoding: Encoding,
@@ -621,7 +629,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
         };
 
         let vector_stats = if storage_encoding_needs_states || query_encoding_needs_stats {
-            Some(VectorStats::build(orig_data.clone(), vector_parameters.dim))
+            let (calibration_data, _) = calibration_vectors(orig_data.clone(), keep);
+            Some(VectorStats::build(calibration_data, vector_parameters.dim))
         } else {
             None
         };
@@ -905,18 +914,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
         self.score_bytes(True, query, encoded_vector)
-    }
-
-    fn score_point(&self, query: &EncodedQueryBQ<TBitsStoreType>, i: PointOffsetType) -> f32 {
-        let vector_data = self.encoded_vectors.get_vector_data(i);
-
-        self.score_bytes(True, query, &vector_data)
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {

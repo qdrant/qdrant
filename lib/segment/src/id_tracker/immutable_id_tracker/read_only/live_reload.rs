@@ -1,7 +1,8 @@
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, OkUnchanged, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{
+    CachedReadFs, OkUnchanged, PreloadFuture, UniversalRead, UniversalReadFs,
+};
 
 use super::ReadOnlyImmutableIdTracker;
 use crate::common::operation_error::OperationResult;
@@ -13,7 +14,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         fs.reschedule_open(&deleted_path(&self.path), Some(Self::open_options()), None);
         Ok(Vec::new())
     }

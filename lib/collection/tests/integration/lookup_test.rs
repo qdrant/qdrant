@@ -10,8 +10,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::shard::ShardId;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, RngExt, SeedableRng};
@@ -71,11 +70,11 @@ async fn setup() -> Resources {
         PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
     );
 
-    let hw_counter = AmbientContext::new();
+    let ctx = AmbientContext::new();
 
     collection
         .update_from_client_simple(upsert_points, true, None, WriteOrdering::default())
-        .measured(hw_counter)
+        .measured(ctx)
         .await
         .unwrap();
 

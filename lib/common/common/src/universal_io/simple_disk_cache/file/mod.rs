@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use aligned_vec::{AVec, RuntimeAlign};
@@ -14,11 +15,18 @@ use parking_lot::Mutex;
 use super::local_state::LocalState;
 use super::{DiskCacheFs, DiskCacheRemote};
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
-use crate::universal_io::{OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs};
+use crate::universal_io::{
+    OpenOptions, OwnedPipeline, UioResult, UniversalIoError, UniversalRead, UniversalReadFs,
+};
 
 mod init;
 mod read;
 mod reopen;
+
+/// A staged tail fetch, shared by every waiter. Resolves to a copy of the
+/// fetch error, while the owned result travels to the apply through the
+/// staged `data` receiver.
+type SharedFetch = Shared<BoxFuture<'static, Result<(), Arc<UniversalIoError>>>>;
 
 /// A lazily-populated local mirror of an append-only remote file.
 ///
@@ -113,14 +121,14 @@ pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
     Resize { target_len: u64 },
     /// Bounded tail fetch for populated files with known length.
     Tail {
-        future: Shared<BoxFuture<'static, ()>>,
+        future: SharedFetch,
         data: Receiver<UioResult<(R, AVec<u8, RuntimeAlign>)>>,
         blocks_range: Range<u32>,
         target_len: u64,
     },
     /// Unbounded tail fetch for populated files with unknown length.
     UnboundedTail {
-        future: Shared<BoxFuture<'static, ()>>,
+        future: SharedFetch,
         data: Receiver<UioResult<(R, u64, AVec<u8, RuntimeAlign>)>>,
         from: u64,
     },
@@ -147,14 +155,20 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
         }
     }
 
-    pub(super) fn future(&self) -> Shared<BoxFuture<'static, ()>> {
+    pub(super) fn future(&self) -> SharedFetch {
         match self {
             ScheduledReopen::Tail { future, .. }
             | ScheduledReopen::UnboundedTail { future, .. } => future.clone(),
             ScheduledReopen::Unchanged | ScheduledReopen::Resize { .. } => {
-                async {}.boxed().shared()
+                async { Ok(()) }.boxed().shared()
             }
         }
+    }
+
+    /// `true` if a staged fetch already completed with an error. Such a
+    /// reopen can only fail, so the next `live_preload` stages it again.
+    pub(super) fn has_failed(&self) -> bool {
+        self.future().peek().is_some_and(Result::is_err)
     }
 }
 

@@ -3,6 +3,7 @@
 // Deprecated storage placement params (`on_disk`, `always_ram`, `on_disk_payload`) are still
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
+use common::ambient;
 use quantization::turboquant::TQBits;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -114,6 +115,7 @@ fn test_gpu_vector_storage_sq(
     #[case] dim: usize,
     #[case] num_vectors: usize,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -215,6 +217,7 @@ fn test_gpu_vector_storage_bq(
     #[case] num_vectors: usize,
     #[case] encoding: BinaryQuantizationEncoding,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -306,6 +309,7 @@ fn test_gpu_vector_storage_pq(
     #[case] dim: usize,
     #[case] num_vectors: usize,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -396,6 +400,7 @@ fn test_gpu_vector_storage(
     #[case] dim: usize,
     #[case] num_vectors: usize,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -436,6 +441,7 @@ fn test_gpu_vector_storage_force_half(
     #[case] dim: usize,
     #[case] num_vectors: usize,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -488,6 +494,7 @@ fn test_gpu_vector_storage_without_half(
     #[case] dim: usize,
     #[case] num_vectors: usize,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -545,6 +552,7 @@ fn test_gpu_vector_storage_tq_falls_back_to_half_precision(
     #[case] num_vectors: usize,
     #[case] skip_half_support: bool,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -621,6 +629,7 @@ fn test_gpu_vector_storage_turbo_dense(
     #[case] dim: usize,
     #[case] num_vectors: usize,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -699,6 +708,7 @@ fn test_gpu_vector_storage_turbo_multi(
     #[case] dim: usize,
     #[case] num_points: usize,
 ) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)

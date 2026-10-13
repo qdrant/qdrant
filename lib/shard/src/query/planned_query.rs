@@ -306,7 +306,6 @@ impl PlannedQuery {
                     collection_level: Some(collection_level),
                 })
             }
-            // `Text` is refused by the merge plan's validation.
             rescore @ (ScoringQuery::Vector(_)
             | ScoringQuery::OrderBy(_)
             | ScoringQuery::Formula(_)
@@ -508,23 +507,13 @@ fn leaf_source_from_scoring_query(
             Source::SearchesIdx(idx)
         }
         Some(ScoringQuery::Text(query)) => {
-            // Text statistics always cover the whole shard, which is what the default `idf`
-            // scope means. A corpus scope would change the scores, and ignoring it silently is
-            // what the vector path refuses to do as well.
-            if params
-                .as_ref()
-                .and_then(|params| params.idf.as_ref())
-                .is_some_and(|idf| idf.corpus().is_some())
-            {
-                return Err(OperationError::validation_error(
-                    "search param `idf` with a corpus does not apply to BM25 over a text index \
-                     yet: its statistics cover the whole collection"
-                        .to_string(),
-                ));
-            }
+            let idf_corpus = params
+                .and_then(|params| params.idf)
+                .and_then(|idf| idf.corpus().cloned());
             let text = TextSearchRequestInternal {
                 query,
                 filter,
+                idf_corpus,
                 limit,
                 score_threshold,
                 with_vector,

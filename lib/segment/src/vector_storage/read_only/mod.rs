@@ -118,7 +118,7 @@ impl<S: UniversalRead> RawScorerBuilder for VectorStorageReadEnum<S> {
 mod tests {
     use std::path::Path;
 
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
@@ -132,7 +132,8 @@ mod tests {
     use super::*;
     use crate::common::live_reload::LiveReload;
     use crate::data_types::vectors::{
-        DenseVector, MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorRef,
+        DenseVector, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
+        VectorInternal, VectorRef,
     };
     use crate::segment_constructor::batched_reader::merge_from_single_source;
     use crate::types::{
@@ -147,7 +148,8 @@ mod tests {
     use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
         self, open_appendable_memmap_multi_vector_storage_impl,
     };
-    use crate::vector_storage::{VectorStorage, VectorStorageRead};
+    use crate::vector_storage::query::RecoQuery;
+    use crate::vector_storage::{RawScorerBuilder, VectorStorage, VectorStorageRead};
 
     const DIM: usize = 16;
 
@@ -172,6 +174,29 @@ mod tests {
             .collect()
     }
 
+    /// Score a point past the stored vectors, which fails the way an
+    /// unreachable object store does, with a nearest and a recommend query.
+    /// HNSW search scores its entry point on its own, so this is the first
+    /// read a search on such a storage makes.
+    fn assert_score_point_reports_a_failed_read(
+        storage: &VectorStorageReadEnum<MmapFile>,
+        example: VectorInternal,
+    ) {
+        let past_the_end = storage.total_vector_count() as PointOffsetType + 8;
+        let queries = [
+            QueryVector::Nearest(example.clone()),
+            QueryVector::RecommendBestScore(RecoQuery::new(vec![example.clone()], vec![example])),
+        ];
+        for query in queries {
+            let scorer = storage.build_raw_scorer(query).unwrap();
+            assert!(scorer.score_point(0).is_ok());
+            assert!(
+                scorer.score_point(past_the_end).is_err(),
+                "a read past the stored vectors must be an error, not a panic",
+            );
+        }
+    }
+
     /// The `Memory` storage type is a no-op: nothing to open read-only.
     #[test]
     fn open_memory_is_noop() {
@@ -193,7 +218,7 @@ mod tests {
     fn open_routes_chunked_mmap_to_dense_chunked() {
         let dir = Builder::new().prefix("disp_chunked").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(1);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..300).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -231,6 +256,7 @@ mod tests {
             .try_into()
             .unwrap();
         assert_eq!(got, vectors[7]);
+        assert_score_point_reports_a_failed_read(&storage, vectors[7].clone().into());
     }
 
     /// `Mmap` single-dense config routes to the immutable `DenseVectorStorageImpl`.
@@ -238,7 +264,7 @@ mod tests {
     fn open_routes_mmap_to_dense() {
         let dir = Builder::new().prefix("disp_mmap").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(2);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..3).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -274,6 +300,7 @@ mod tests {
             .try_into()
             .unwrap();
         assert_eq!(got, vectors[1]);
+        assert_score_point_reports_a_failed_read(&storage, vectors[1].clone().into());
     }
 
     /// A multivector config routes to the chunked multi-dense read-only storage.
@@ -281,7 +308,7 @@ mod tests {
     fn open_routes_multivector_to_multi_dense_chunked() {
         let dir = Builder::new().prefix("disp_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(3);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let multis: Vec<MultiDenseVectorInternal> = (0..200)
             .map(|_| {
                 let inner = rng.random_range(1..=3);
@@ -333,6 +360,7 @@ mod tests {
         let multi: TypedMultiDenseVectorRef<VectorElementType> =
             stored.as_vec_ref().try_into().unwrap();
         assert_eq!(multi.to_owned(), multis[5]);
+        assert_score_point_reports_a_failed_read(&storage, multis[5].clone().into());
     }
 
     /// Build a per-directory `CachedFs` with the listing snapshot taken, the
@@ -357,7 +385,7 @@ mod tests {
     fn preopen_then_open_chunked_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_chunked").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(4);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..300).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -416,7 +444,7 @@ mod tests {
     fn preopen_then_open_mmap_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_mmap").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(5);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let vectors: Vec<DenseVector> = (0..3).map(|_| rand_vec(&mut rng)).collect();
 
         {
@@ -473,7 +501,7 @@ mod tests {
     fn preopen_then_open_multi_through_cached_fs() {
         let dir = Builder::new().prefix("preopen_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(6);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let multis: Vec<MultiDenseVectorInternal> = (0..200)
             .map(|_| {
                 let inner = rng.random_range(1..=3);
@@ -543,7 +571,7 @@ mod tests {
     fn live_reload_dispatches_to_active_variant() {
         let dir = Builder::new().prefix("disp_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(9);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let first: Vec<DenseVector> = (0..200).map(|_| rand_vec(&mut rng)).collect();
         let second: Vec<DenseVector> = (0..100).map(|_| rand_vec(&mut rng)).collect();
 
@@ -648,7 +676,7 @@ mod tests {
         const COUNT: PointOffsetType = 300;
 
         let mut rng = StdRng::seed_from_u64(17);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let stopped = AtomicBool::new(false);
         let vectors: Vec<DenseVector> = (0..COUNT).map(|_| rand_vec(&mut rng)).collect();
         let mut deleted_ids = Vec::new();
@@ -785,6 +813,7 @@ mod tests {
                     "{storage_type:?} score @{id}",
                 );
             }
+            assert_score_point_reports_a_failed_read(&ro, vectors[3].clone().into());
         }
     }
 
@@ -798,7 +827,7 @@ mod tests {
         let multivector_config = MultiVectorConfig::default();
         let dir = Builder::new().prefix("ro_turbo_multi").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(23);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let multis: Vec<MultiDenseVectorInternal> = (0..COUNT)
             .map(|_| {
@@ -879,5 +908,6 @@ mod tests {
                 "score @{id}",
             );
         }
+        assert_score_point_reports_a_failed_read(&ro, multis[5].clone().into());
     }
 }

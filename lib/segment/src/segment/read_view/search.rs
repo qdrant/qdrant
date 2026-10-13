@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::bitvec::BitSliceExt as _;
-use common::condition_checker::ConditionChecker;
 use common::generic_consts::Random;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
@@ -16,7 +15,7 @@ use crate::data_types::query_context::{
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
 use crate::id_tracker::IdTrackerRead;
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
@@ -374,7 +373,7 @@ where
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        let _hw = query_context.hardware_usage_accumulator().enter_guard();
+        let _scope = query_context.handoff().enter_guard();
         check_query_vectors(vector_name, query_vectors, self.segment_config)?;
         let vector_data = self
             .vector_data
@@ -429,7 +428,7 @@ where
         top: usize,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let _hw = query_context.hardware_usage_accumulator().enter_guard();
+        let _scope = query_context.handoff().enter_guard();
         let context = query_context.get_text_context(field).ok_or_else(|| {
             OperationError::service_error(format!(
                 "no text statistics were gathered for field {field}",
@@ -440,15 +439,13 @@ where
             .transpose()?;
         let (cutoff, deleted, shadowed) = self.id_tracker.point_mappings().visible_scan_masks();
         let deleted = context.deleted_points().unwrap_or(deleted);
-        let accept = |point_id: PointOffsetType| {
+        let visible = |point_id: PointOffsetType| {
             let bit = point_id as usize;
             cutoff.is_none_or(|cutoff| point_id < cutoff)
                 && !deleted.get_bit(bit).unwrap_or(false)
                 && !shadowed.get_bit(bit).unwrap_or(false)
-                && filter_context
-                    .as_ref()
-                    .is_none_or(|filter| filter.check_infallible(point_id))
         };
+        let accept = Bm25Accept::new(&visible, filter_context.as_ref());
 
         let internal_result = self
             .payload_index
@@ -466,8 +463,8 @@ where
 
     pub fn fill_query_context(&self, query_context: &mut QueryContext) -> OperationResult<()> {
         query_context.add_available_point_count(self.available_point_count_without_deferred());
-        let hw_acc = query_context.hardware_usage_accumulator().clone();
-        let _hw = hw_acc.enter_guard();
+        let handoff = query_context.handoff().clone();
+        let _scope = handoff.enter_guard();
         let is_stopped = query_context.is_stopped_handle();
 
         let QueryIdfStats { scopes } = query_context.mut_idf_stats();
@@ -525,7 +522,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use blobstore::Blob as _;
-    use common::counter::hw;
+    use common::ambient;
     use common::types::DeferredBehavior;
     use rstest::rstest;
     use sparse::common::sparse_vector::SparseVector;
@@ -578,7 +575,7 @@ mod tests {
             id_tracker_memory: None,
         };
         let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // Point 1: dense + sparse vectors, with payload.
         let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
@@ -643,7 +640,7 @@ mod tests {
     ) {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (segment, payload) = build_two_point_segment(dir.path());
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // Id 3 does not exist; both functions must skip it the same way.
         let point_ids = [1.into(), 2.into(), 3.into()];
@@ -788,7 +785,7 @@ mod tests {
     fn test_retrieve_and_retrieve_raw_deleted_vector_equivalence() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let (mut segment, _payload) = build_two_point_segment(dir.path());
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let is_stopped = AtomicBool::new(false);
 
         assert!(segment.delete_vector(103, 1.into(), DENSE_NAME).unwrap());

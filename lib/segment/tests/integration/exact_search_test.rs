@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
@@ -50,7 +50,7 @@ fn exact_search_test() {
 
     let int_key = "int";
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();

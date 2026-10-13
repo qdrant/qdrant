@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
-use common::counter::hw::{self, HwScale};
+use common::ambient::hw::{self, HwScale};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::EncodedVectors;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{MultiDenseVectorInternal, TypedMultiDenseVector};
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffset, MultivectorOffsets, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
+    MultivectorOffset, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -97,7 +98,11 @@ where
     OffsetStorage: MultivectorOffsetsStorage,
     TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
 {
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.hw
@@ -109,23 +114,8 @@ where
                 |score_fn| self.query.score_by(score_fn),
                 scores,
             )
-        });
-    }
-
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
-        let sub_vectors_count = multi_vector_offset.count as usize;
-        // compute vector IO read once for all examples
-        self.hw.vector_io_read(
-            size_of::<MultivectorOffset>()
-                + self.quantized_multivector_storage.quantized_vector_size() * sub_vectors_count,
-        );
-        self.query.score_by(|this| {
-            // quantized multivector storage handles hardware counter to batch vector IO
-            hw::scale_cpu(self.hw.cpu, || {
-                self.quantized_multivector_storage.score_point(this, idx)
-            })
-        })
+        })?;
+        Ok(())
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

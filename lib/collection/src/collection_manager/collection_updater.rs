@@ -113,7 +113,7 @@ mod tests {
     use std::assert_matches;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hw;
+    use common::ambient;
     use common::types::DeferredBehavior;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
@@ -179,7 +179,7 @@ mod tests {
             },
         ];
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let (num_deleted, num_new, num_updated) =
             sync_points(&segments.read(), 100, Some(10.into()), None, &points, None).unwrap();
@@ -209,7 +209,7 @@ mod tests {
             },
         ];
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let res = upsert_points(&segments.read(), 100, &points, None);
         assert_matches!(res, Ok(1));
@@ -280,7 +280,7 @@ mod tests {
 
         let points = vec![1.into(), 2.into(), 3.into()];
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         process_payload_operation(
             &segments.read(),
@@ -401,7 +401,7 @@ mod tests {
         let meta_key_path = JsonPath::new("meta");
         let nested_key_path: JsonPath = JsonPath::new("meta.color");
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut segment1 = build_segment_1(path);
         segment1

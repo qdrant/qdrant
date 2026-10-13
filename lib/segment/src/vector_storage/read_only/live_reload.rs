@@ -1,7 +1,6 @@
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::VectorStorageReadEnum;
 use crate::common::live_reload::LiveReload;
@@ -13,7 +12,7 @@ impl<S: UniversalRead> LiveReload for VectorStorageReadEnum<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         match self {
             VectorStorageReadEnum::Dense(s) => s.live_preload(fs),
             VectorStorageReadEnum::DenseByte(s) => s.live_preload(fs),

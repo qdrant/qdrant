@@ -55,11 +55,9 @@ pub trait EncodedVectors: Sized {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    );
+    ) -> std::io::Result<()>;
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32;
-
-    fn score_point(&self, query: &Self::EncodedQuery, i: PointOffsetType) -> f32;
 
     /// Score a batch: `scores[i]` ← score of `query` against point
     /// `offsets[i]`.
@@ -73,11 +71,11 @@ pub trait EncodedVectors: Sized {
         query: &Self::EncodedQuery,
         offsets: &[PointOffsetType],
         scores: &mut [f32],
-    ) {
+    ) -> std::io::Result<()> {
         debug_assert_eq!(offsets.len(), scores.len());
         self.for_each_batch(offsets, |i, vector| {
             scores[i] = self.score(query, &vector);
-        });
+        })
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32;
@@ -126,6 +124,25 @@ impl DistanceType {
     }
 }
 
+/// The vectors of `data` to fit the quantization parameters on, and how many there are.
+///
+/// `keep` holds one flag per vector of `data`, set for the vectors to fit on.
+pub(crate) fn calibration_vectors<V>(
+    data: impl Iterator<Item = V> + Clone,
+    keep: impl Iterator<Item = bool> + Clone,
+) -> (impl Iterator<Item = V> + Clone, usize) {
+    debug_assert_eq!(
+        keep.clone().count(),
+        data.clone().count(),
+        "calibration mask must have one flag per vector",
+    );
+    let count = keep.clone().filter(|&keep| keep).count();
+    let vectors = data
+        .zip(keep)
+        .filter_map(|(vector, keep)| keep.then_some(vector));
+    (vectors, count)
+}
+
 pub(crate) fn validate_vector_parameters<'a>(
     data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
     vector_parameters: &VectorParameters,
@@ -150,4 +167,35 @@ pub(crate) fn validate_vector_parameters<'a>(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calibration_vectors() {
+        let data = [[1.0f32], [2.0], [3.0]];
+        let (vectors, count) = calibration_vectors(data.iter(), [true, false, true].into_iter());
+        assert_eq!(count, 2);
+        assert_eq!(vectors.collect::<Vec<_>>(), [&[1.0], &[3.0]]);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "calibration mask must have one flag per vector")]
+    fn test_calibration_vectors_rejects_short_mask() {
+        let data = [[1.0f32], [2.0], [3.0]];
+        let (vectors, _) = calibration_vectors(data.iter(), [true, true].into_iter());
+        vectors.for_each(drop);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "calibration mask must have one flag per vector")]
+    fn test_calibration_vectors_rejects_long_mask() {
+        let data = [[1.0f32], [2.0], [3.0]];
+        let (vectors, _) = calibration_vectors(data.iter(), [true; 4].into_iter());
+        vectors.for_each(drop);
+    }
 }

@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use common::counter::hw;
+use common::ambient;
+use common::ambient::hw;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
@@ -142,7 +143,7 @@ impl LocalShard {
             operation: operation_in_ram,
             sender: callback_sender,
             wait_for_deferred: wait.wait_for_deferred(),
-            hw_measurements: hw::current(),
+            handoff: ambient::current(),
         }));
 
         Ok(SubmitOutcome::Submitted {

@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -21,9 +21,9 @@ use segment::data_types::query_context::{
 use segment::entry::entry_point::SegmentEntry;
 use segment::entry::{NonAppendableSegmentEntry, ReadSegmentEntry};
 use segment::index::field_index::FieldIndex;
-use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::field_index::full_text_index::full_text_index_read::score_bm25;
 use segment::index::field_index::full_text_index::tokenizers::Tokenizer;
+use segment::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
@@ -83,7 +83,7 @@ fn build_text_segment_deferred(
         id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(path, &config, deferred_internal_id, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut op_num: SeqNumberType = 0;
     segment
         .create_field_index(
@@ -239,7 +239,7 @@ fn engine_rank(
         terms,
         context,
         Bm25Params::default(),
-        &|_| true,
+        &Bm25Accept::new(&|_| true, None),
         limit,
         &AtomicBool::new(false),
     )
@@ -319,7 +319,7 @@ fn bm25_matches_the_reference_end_to_end() {
         tokenizer.tokenize_query(query, |token| terms.push(token.into_owned()));
 
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field(), terms.iter().cloned());
+        query_context.init_text_stats(&field(), None, terms.iter().cloned());
         for segment in &segments {
             segment.fill_query_context(&mut query_context).unwrap();
         }
@@ -422,7 +422,7 @@ fn segment_entry_point_scores_what_a_query_sees() {
         tokenizer.tokenize_query(&query, |token| terms.push(token.into_owned()));
 
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field(), terms.iter().cloned());
+        query_context.init_text_stats(&field(), None, terms.iter().cloned());
         segment.fill_query_context(&mut query_context).unwrap();
         let segment_context = query_context.get_segment_query_context();
         let expected = reference.rank(0, &terms);
@@ -526,7 +526,7 @@ fn segment_entry_point_skips_deferred_points() {
         tokenizer.tokenize_query(&query, |token| terms.push(token.into_owned()));
 
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field(), terms.iter().cloned());
+        query_context.init_text_stats(&field(), None, terms.iter().cloned());
         segment.fill_query_context(&mut query_context).unwrap();
         let segment_context = query_context.get_segment_query_context();
         let context = segment_context.get_text_context(&field()).unwrap();

@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, BlobstoreReader};
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
@@ -10,7 +11,7 @@ use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, Un
 use super::super::MapIndexKey;
 use super::super::in_memory::InMemoryMapIndex;
 use super::ReadOnlyAppendableMapIndex;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
@@ -67,7 +68,7 @@ where
         // the gridstore carries no prefix marker, and this open path has no
         // schema access. Prefix conditions fall back to slower checks.
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?.min(max_point_offset),
             |idx, values: Vec<_>| {
@@ -81,5 +82,18 @@ where
             in_memory_index,
             storage,
         }))
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear read-only appendable map index gridstore cache: {err}"
+            ))
+        })
     }
 }

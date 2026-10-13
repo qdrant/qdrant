@@ -13,7 +13,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hw;
+    use common::ambient;
     use common::mmap::Flusher;
     use common::types::PointOffsetType;
     use quantization::encoded_storage::{
@@ -24,6 +24,8 @@ mod tests {
     use quantization::encoded_vectors_u8;
     use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use rand::{RngExt, SeedableRng};
+
+    use crate::scoring::ScorePoint;
 
     /// Wraps a storage so every read returns a freshly allocated `Cow::Owned` buffer.
     struct OwnedStorage(TestEncodedStorage);
@@ -74,8 +76,8 @@ mod tests {
             &self,
             offsets: &[PointOffsetType],
             callback: impl FnMut(usize, Cow<'_, [u8]>),
-        ) {
-            default_for_each_batch(self, offsets, callback);
+        ) -> std::io::Result<()> {
+            default_for_each_batch(self, offsets, callback)
         }
 
         fn files(&self) -> Vec<PathBuf> {
@@ -128,9 +130,9 @@ mod tests {
 
         let encoded_owned = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             OwnedStorageBuilder(TestEncodedStorageBuilder::new(None, quantized_vector_size)),
             &vector_parameters,
-            vectors_count,
             None,
             ScalarQuantizationMethod::Int8,
             None,
@@ -139,9 +141,9 @@ mod tests {
         .unwrap();
         let encoded_borrowed = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             ScalarQuantizationMethod::Int8,
             None,
@@ -149,7 +151,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // Offset + code accessor must return identical data through owning and borrowed
         // storages, and the code must have the quantized vector size minus the offset constant.

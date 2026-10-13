@@ -22,8 +22,8 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use bm25::{Bm25, Bm25Params as SparseBm25Params};
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs};
 use rand::SeedableRng;
@@ -38,7 +38,7 @@ use segment::index::field_index::FieldIndexBuilderTrait;
 use segment::index::field_index::full_text_index::full_text_index_read::{
     fill_text_statistics, score_bm25,
 };
-use segment::index::field_index::full_text_index::{Bm25Params, FullTextIndex};
+use segment::index::field_index::full_text_index::{Bm25Accept, Bm25Params, FullTextIndex};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
@@ -143,7 +143,7 @@ fn build_text(shape: TextShape, documents: &[Vec<String>]) -> (FullTextIndex, te
         .prefix("bm25_compare_text")
         .tempdir()
         .unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let empty_deleted = BitVec::new();
 
     fn fill<B: FieldIndexBuilderTrait<FieldIndexType = FullTextIndex>>(
@@ -181,13 +181,14 @@ fn text_search(
     field: &JsonPath,
     terms: &[String],
 ) -> Vec<ScoredPointOffset> {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut query_context = QueryContext::default();
-    query_context.init_text_stats(field, terms.iter().cloned());
+    query_context.init_text_stats(field, None, terms.iter().cloned());
     fill_text_statistics(
         index,
         query_context.mut_text_stats().get_mut(field).unwrap(),
+        None,
         &is_stopped,
     )
     .unwrap();
@@ -198,7 +199,7 @@ fn text_search(
         terms,
         &context,
         Bm25Params::default(),
-        &|_| true,
+        &Bm25Accept::new(&|_| true, None),
         LIMIT,
         &is_stopped,
     )
@@ -221,7 +222,7 @@ fn sparse_search<I: sparse::index::inverted_index::InvertedIndex>(
     bm25: &Bm25,
     terms: &[String],
 ) -> Vec<ScoredPointOffset> {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let tokens: Vec<_> = terms.iter().map(|t| t.as_str().into()).collect();
     let mut query = bm25.embed_query(&tokens);

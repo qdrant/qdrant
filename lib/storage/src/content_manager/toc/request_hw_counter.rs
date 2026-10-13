@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use common::counter::hw::HwMetric;
-use common::counter::{AmbientContext, HwSharedDrain};
+use common::ambient::AmbientContext;
+use common::ambient::hw::{HwMetric, HwSharedDrain};
 
 use super::TableOfContent;
 

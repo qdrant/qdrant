@@ -261,6 +261,9 @@ pub type Flusher = Box<dyn FnOnce() -> UioResult<()> + Send>;
 
 pub type UioResult<T> = Result<T, UniversalIoError>;
 
+/// A staged fetch from a `live_preload`, resolving to the fetch's error if it failed.
+pub type PreloadFuture = futures::future::BoxFuture<'static, UioResult<()>>;
+
 pub fn read_whole_via<Fs, T>(
     fs: &Fs,
     path: impl AsRef<Path>,

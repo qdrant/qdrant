@@ -2,8 +2,7 @@ use blobstore::Blob;
 use common::persisted_hashmap::Key;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::super::MapIndexKey;
 use super::ReadOnlyMapIndex;
@@ -19,7 +18,7 @@ where
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         match self {
             Self::Appendable(index) => index.live_preload(fs),
             Self::Immutable(index) => index.live_preload(fs),

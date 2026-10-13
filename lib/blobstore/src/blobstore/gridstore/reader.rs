@@ -1,10 +1,11 @@
 use std::cmp;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Sequential};
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
+use common::universal_io::{
+    CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UserData,
+};
 
 use super::pages::Pages;
 use super::view::GridstoreView;
@@ -223,7 +224,7 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
     pub(crate) fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+    ) -> Result<Vec<PreloadFuture>> {
         self.tracker.live_preload(fs);
         self.pages.live_preload(fs, self.populate)?;
         Ok(Vec::new())

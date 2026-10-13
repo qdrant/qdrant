@@ -1,7 +1,8 @@
 use std::cmp;
+use std::num::NonZeroU32;
 use std::sync::{Arc, LazyLock};
 
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};
@@ -30,6 +31,19 @@ pub static ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: LazyLock<Version> =
     LazyLock::new(|| Version::parse("1.16.3-dev").expect("valid version string"));
 
 impl Collection {
+    /// Persist the shard count used to load auto shards after restart
+    pub async fn set_shard_number(&self, shard_number: NonZeroU32) -> CollectionResult<()> {
+        let mut config = self.collection_config.write().await;
+        if config.params.shard_number != shard_number {
+            let mut new_config = config.clone();
+            new_config.params.shard_number = shard_number;
+            new_config.save(&self.path)?;
+            *config = new_config;
+        }
+
+        Ok(())
+    }
+
     /// Updates collection params:
     /// Saves new params on disk
     ///
@@ -336,6 +350,17 @@ impl Collection {
     /// recreation has already been applied and persisted by the time we get here, so there is no
     /// caller left to propagate them to. Failures are also surfaced as optimizer errors per shard
     /// (see `LocalShard::on_optimizer_config_update`).
+    /// Whether any local shard of this collection has an optimizer error recorded.
+    pub async fn has_optimizer_errors(&self) -> bool {
+        let shard_holder = self.shards_holder.read().await;
+        for replica_set in shard_holder.all_shards() {
+            if replica_set.has_local_optimizer_errors().await {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn recreate_optimizers_background(&self) {
         // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
         // into a queued re-run handled by the task that is already running.

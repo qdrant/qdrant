@@ -8,7 +8,7 @@ use common::universal_io::UserData;
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
-use super::bm25::{Bm25Query, PositionalCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, PositionalCursors, score_top_k};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -329,13 +329,15 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let ImmutablePostings::WithPositions(postings) = &self.postings else {
+        let (ImmutablePostings::WithPositions(postings), Some(lengths)) =
+            (&self.postings, self.point_to_doc_len.as_deref())
+        else {
             return Err(OperationError::service_error(
-                "text index stores no positions, term frequencies cannot be computed",
+                "text index does not score: BM25 needs positions and document lengths",
             ));
         };
         let views = query
@@ -344,14 +346,13 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
             .collect();
         let mut cursors = PositionalCursors::new(views);
-        let lengths = self.point_to_doc_len.as_deref();
         // Deleted points stay in these postings and are masked here, as the
         // filter path does.
-        let is_active = |point_id: PointOffsetType| {
+        let visible = |point_id: PointOffsetType| {
             self.point_to_tokens_count
                 .get(point_id as usize)
                 .is_some_and(|count| *count > 0)
-                && accept(point_id)
+                && accept.is_visible(point_id)
         };
         // In RAM: nothing to gain from reading lengths in batches.
         score_top_k::<_, 1>(
@@ -359,11 +360,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
             &mut cursors,
             |point_ids, out| {
                 for (point_id, doc_len) in point_ids.iter().zip(out) {
-                    *doc_len = lengths.and_then(|lengths| lengths.get(*point_id as usize).copied());
+                    *doc_len = lengths.get(*point_id as usize).copied();
                 }
                 Ok(())
             },
-            is_active,
+            &accept.with_visible(&visible),
             limit,
             is_stopped,
         )

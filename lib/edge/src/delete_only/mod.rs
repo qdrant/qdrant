@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ahash::AHashMap;
+use common::ambient;
+use common::reason::Reason;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
 use rayon::ThreadPool;
@@ -38,19 +40,23 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// appendable writer would drop slots claimed by an in-flight batch, so
     /// writers are opened in [`delete_points`](Self::delete_points).
     pub fn open(fs: Fs, enumerator: impl SegmentEnumerator) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let pool = build_segment_pool(
             "edge-delete",
             common::defaults::search_thread_count(0),
             None,
         )?;
         let listed: Vec<(Uuid, ListedSegment)> = enumerator.list_segments()?.into_iter().collect();
-        let segments = pool.install(|| {
-            listed
-                .into_par_iter()
-                .map(|(uuid, ListedSegment { path, writable: _ })| {
-                    Ok((uuid, TrackerLookup::open(fs.clone(), &path)?))
-                })
-                .collect::<OperationResult<HashMap<_, _>>>()
+        let segments = ambient::parallel(|handoff| {
+            pool.install(|| {
+                listed
+                    .into_par_iter()
+                    .map(|(uuid, ListedSegment { path, writable: _ })| {
+                        let _scope = handoff.enter_guard();
+                        Ok((uuid, TrackerLookup::open(fs.clone(), &path)?))
+                    })
+                    .collect::<OperationResult<HashMap<_, _>>>()
+            })
         })?;
         Ok(Self { fs, segments, pool })
     }
@@ -58,10 +64,14 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// Reload the id trackers to pick up changes written since the last open
     /// or reload.
     pub fn live_reload(&mut self) -> OperationResult<()> {
-        self.pool.install(|| {
-            self.segments
-                .par_iter_mut()
-                .try_for_each(|(_, segment)| segment.live_reload())
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        ambient::parallel(|handoff| {
+            self.pool.install(|| {
+                self.segments.par_iter_mut().try_for_each(|(_, segment)| {
+                    let _scope = handoff.enter_guard();
+                    segment.live_reload()
+                })
+            })
         })
     }
 
@@ -79,6 +89,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         &self,
         versions: &HashMap<PointIdType, SeqNumberType>,
     ) -> OperationResult<Vec<PointIdType>> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let ids: Vec<PointIdType> = versions.keys().copied().collect();
         Ok(self
             .locate(&ids)?
@@ -97,6 +108,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
     /// copy written since the last read would be deleted too. On error, some
     /// segments may already be written.
     pub fn delete_points(&mut self, ids: &[PointIdType]) -> OperationResult<usize> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let mut by_segment: HashMap<Uuid, Vec<(PointIdType, PointOffsetType)>> = HashMap::new();
         for (id, located) in self.locate(ids)? {
             for (segment, internal_id) in located.slots {
@@ -127,11 +139,16 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         &self,
         ids: &[PointIdType],
     ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
-        let per_segment = self.pool.install(|| {
-            self.segments
-                .par_iter()
-                .map(|(uuid, segment)| locate_in(*uuid, segment, ids))
-                .collect::<OperationResult<Vec<_>>>()
+        let per_segment = ambient::parallel(|handoff| {
+            self.pool.install(|| {
+                self.segments
+                    .par_iter()
+                    .map(|(uuid, segment)| {
+                        let _scope = handoff.enter_guard();
+                        locate_in(*uuid, segment, ids)
+                    })
+                    .collect::<OperationResult<Vec<_>>>()
+            })
         })?;
         Ok(merge_locations(per_segment))
     }

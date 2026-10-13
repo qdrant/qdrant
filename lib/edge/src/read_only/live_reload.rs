@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
@@ -35,11 +35,14 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     ///
     /// Leader-side segment churn is absorbed: a segment whose files vanish while its live-reload
     /// runs is checked against a re-read manifest, and if the leader indeed removed it, the segment
-    /// is dropped and the live_reload re-runs (bounded) to pick up its replacements. `Err` therefore
-    /// means the shard genuinely needs attention: a component failed to reload, or a segment's
-    /// essential files are missing while the manifest still lists it. Either way the shard stays
-    /// consistent — every swap is atomic, a failed segment keeps serving its pre-live_reload state,
-    /// and the next live_reload replays its unapplied delta (see `pending_reload`).
+    /// is dropped and the live_reload re-runs (bounded) to pick up its replacements. A segment whose
+    /// reload fails after its files were fetched is reopened in place. `Err` therefore means the
+    /// shard genuinely needs attention:
+    /// - a segment's files could not be fetched: its reload was skipped, it keeps serving its
+    ///   previous state, and the next live_reload retries it;
+    /// - a segment failed to reload and could not be reopened either, so it serves a partially
+    ///   applied reload;
+    /// - a segment's essential files are missing while the manifest still lists it.
     ///
     /// Not cancellable; see [`live_reload_with_cancellation`](Self::live_reload_with_cancellation).
     pub fn live_reload(&self) -> OperationResult<LiveReloadOutcome>
@@ -87,7 +90,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.live_reload_impl(is_stopped)
     }
 
@@ -214,7 +217,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         check_process_stopped(is_stopped)?;
 
         // 4. Live-reload survivors to assimilate new appends and deletes from data.
-        let results = reload_segments_parallel(&self.load_pool, survivors, is_stopped)?;
+        let results = reload_segments_parallel(
+            &self.load_pool,
+            &self.fs,
+            survivors,
+            self.load_profile.as_ref(),
+            is_stopped,
+        )?;
 
         let mut not_found: Vec<(Uuid, OperationError)> = Vec::new();
         let mut first_hard_error: Option<OperationError> = None;

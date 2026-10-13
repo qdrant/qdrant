@@ -389,7 +389,7 @@ where
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice (it chunks it for batched reads), but we still want
         // `user_data[idx]` available inside the callback.
@@ -402,7 +402,6 @@ where
                 let vector = CowVector::from(T::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
             })
-            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -479,7 +478,7 @@ mod tests {
     use std::mem::transmute;
     use std::sync::Arc;
 
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     #[expect(deprecated, reason = "legacy code")]
     use common::mmap::transmute_to_u8_slice;
@@ -523,7 +522,7 @@ mod tests {
                 .expect("storage is missing required file");
         }
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -620,7 +619,7 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -746,7 +745,7 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -816,7 +815,7 @@ mod tests {
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
         let id_tracker = create_id_tracker_fixture(points.len());
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -840,6 +839,7 @@ mod tests {
         let mut query_points: Vec<PointOffsetType> = vec![0, 2, 4];
         let res = scorer
             .score_points(&mut query_points, 0)
+            .unwrap()
             .collect::<Vec<_>>();
 
         assert_eq!(res.len(), 3);
@@ -884,7 +884,7 @@ mod tests {
         let mut storage =
             open_dense_vector_storage(dir.path(), 4, Distance::Dot, Memory::Cold).unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         {
             let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
@@ -925,8 +925,8 @@ mod tests {
         let scorer_orig = new_raw_scorer(query.clone(), &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);
@@ -947,8 +947,8 @@ mod tests {
         let scorer_orig = new_raw_scorer(query, &storage).unwrap();
 
         for i in 0..5 {
-            let quant = scorer_quant.score_point(i);
-            let orig = scorer_orig.score_point(i);
+            let quant = scorer_quant.score_point(i).unwrap();
+            let orig = scorer_orig.score_point(i).unwrap();
             assert!((orig - quant).abs() < 0.15);
 
             let quant = scorer_quant.score_internal(0, i);

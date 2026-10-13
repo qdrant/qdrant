@@ -99,6 +99,13 @@ impl BoolIndexRead for BoolIndex {
             BoolIndex::Immutable(index) => index.falses_count(),
         }
     }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            BoolIndex::Mutable(_) => Vec::new(),
+            BoolIndex::Immutable(_) => BoolIndexRead::files(self),
+        }
+    }
 }
 
 impl PayloadFieldIndexRead for BoolIndex {
@@ -160,10 +167,7 @@ impl PayloadFieldIndex for BoolIndex {
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            BoolIndex::Mutable(index) => index.immutable_files(),
-            BoolIndex::Immutable(index) => index.immutable_files(),
-        }
+        BoolIndexRead::immutable_files(self)
     }
 }
 
@@ -270,7 +274,7 @@ impl ValueIndexer for BoolIndex {
 mod tests {
     use std::path::Path;
 
-    use common::counter::{AmbientContext, hw};
+    use common::ambient;
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -360,7 +364,7 @@ mod tests {
 
         builder.add_point(0, &[&given]).unwrap();
 
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let index = builder.finalize().unwrap();
         let count = index
             .filter(&match_bool(match_on))
@@ -440,7 +444,7 @@ mod tests {
 
         let new_index = I::open_at(tmp_dir.path());
 
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
         let point_offsets = new_index
             .filter(&match_bool(false))
             .unwrap()
@@ -476,7 +480,7 @@ mod tests {
         let idx = 1000;
         index.add_point(idx, &[&before]).unwrap();
 
-        let _hw = AmbientContext::new().measure_guard_owned();
+        let _scope = ambient::test_guard();
 
         let point_offsets = index
             .filter(&match_bool(false))
@@ -569,7 +573,7 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut builder = I::builder(tmp_dir.path());
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         bools_fixture()
             .into_iter()

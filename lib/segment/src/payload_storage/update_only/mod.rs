@@ -4,7 +4,7 @@ mod tests;
 use std::path::Path;
 
 use blobstore::config::LogstoreConfig;
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 

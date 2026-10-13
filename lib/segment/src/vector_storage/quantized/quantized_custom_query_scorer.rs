@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 
-use common::counter::hw::{self, HwScale};
+use common::ambient::hw::{self, HwScale};
 use common::types::{PointOffsetType, ScoreType};
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
@@ -76,7 +77,11 @@ where
     TEncodedVectors: quantization::EncodedVectors,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         let storage = self.quantized_storage;
@@ -90,17 +95,8 @@ where
                     storage.score(query, &vector) // inhibit `rustfmt`
                 });
             })
-        });
-    }
-
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        // account for read outside of `score_by` because the closure is called once per example
-        self.hw
-            .vector_io_read(self.quantized_storage.quantized_vector_size());
-        hw::scale_cpu(self.hw.cpu, || {
-            self.query
-                .score_by(|this| self.quantized_storage.score_point(this, idx))
-        })
+        })?;
+        Ok(())
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

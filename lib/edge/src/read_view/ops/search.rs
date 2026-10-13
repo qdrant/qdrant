@@ -1,7 +1,7 @@
 use std::cmp;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::modifier::Modifier;
@@ -46,7 +46,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _hw = hw::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if searches.is_empty() {
             return Ok(Vec::new());
         }
@@ -175,7 +175,7 @@ fn postprocess_scores(
 ///
 /// Read-handle equivalent of [`shard::query::query_context::fill_query_context`], which is hard-typed
 /// to a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
-fn fill_query_context_over<H: ReadSegmentHandle>(
+pub(super) fn fill_query_context_over<H: ReadSegmentHandle>(
     mut query_context: QueryContext,
     segments: &[H],
     is_stopped: &AtomicBool,

@@ -3,8 +3,7 @@ use std::fmt::Debug;
 use std::mem::size_of;
 
 use bitpacking::BitPacker as _;
-use common::counter::HwMeasurementIteratorExt;
-use common::counter::hw::HwMetric;
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
@@ -684,7 +683,7 @@ fn count_le_sorted<T: Copy + Eq + Ord>(val: T, data: &[T]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
 
     use super::*;
 
@@ -704,7 +703,7 @@ mod tests {
     fn test_iter() {
         for case in cases() {
             let list = CompressedPostingList::<f32>::from(case.clone());
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
 
             let mut iter = list.iter();
 
@@ -724,7 +723,7 @@ mod tests {
     #[test]
     #[allow(clippy::needless_range_loop)] // for consistency
     fn test_try_till_id() {
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         for i in 0..CASES.len() {
             for j in i..CASES.len() {

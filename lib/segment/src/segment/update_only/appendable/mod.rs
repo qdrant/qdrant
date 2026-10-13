@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use common::counter::hw::{self, HwHandoff};
+use common::ambient::{self, Handoff};
 use common::types::PointOffsetType;
 use common::universal_io::{CachedFs, CachedReadFs, UniversalAppendFs};
 use rayon::ThreadPool;
@@ -53,8 +53,8 @@ struct StoreComponents<Fs: UniversalAppendFs> {
 /// The writers of one named vector.
 struct VectorComponents<Fs: UniversalAppendFs> {
     storage: UpdateOnlyVectorStorage<Fs::File>,
-    /// Quantized overlay — only for dense, non-multivector vectors whose
-    /// quantization method supports incremental appends.
+    /// Quantized overlay — only for vectors whose quantization method supports
+    /// incremental appends.
     quantized: Option<UpdateOnlyQuantizedVectors>,
 }
 
@@ -66,7 +66,7 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
         points: &[FullyQualifiedPoint],
         start_slot: u32,
         fs: &Fs,
-        hw_acc: &HwHandoff,
+        handoff: &Handoff,
         vector_name: &String,
     ) -> OperationResult<()> {
         let vectors: Vec<VectorToStore> = points
@@ -90,14 +90,14 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
         let mut quantized_res = Ok(());
         pool.scope(|s| {
             s.spawn(|_| {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 original_res = self
                     .storage
                     .append_many(fs, start_slot, vectors.iter().copied());
             });
             if let Some(quantized) = &mut self.quantized {
                 s.spawn(|_| {
-                    let _hw = hw_acc.enter_guard();
+                    let _scope = handoff.enter_guard();
                     quantized_res = quantized.append_many(fs, start_slot, vectors.iter().copied());
                 });
             }
@@ -117,48 +117,64 @@ impl<Fs: UniversalAppendFs> StoreComponents<Fs> {
         let mut payload_indexes = None;
         let mut dense_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
         let mut sparse_vectors: OperationResult<Vec<_>> = Ok(Vec::new());
-        pool.scope(|s| {
-            s.spawn(|_| {
-                payload_storage = Some(UpdateOnlyPayloadStorage::open(fs, segment_path));
-            });
-            s.spawn(|_| {
-                payload_indexes = Some(UpdateOnlyStructPayloadIndex::par_open(fs, segment_path));
-            });
+        ambient::parallel(|handoff| {
+            pool.scope(|s| {
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_storage = Some(UpdateOnlyPayloadStorage::open(fs, segment_path));
+                });
+                s.spawn(|_| {
+                    let _scope = handoff.enter_guard();
+                    payload_indexes =
+                        Some(UpdateOnlyStructPayloadIndex::par_open(fs, segment_path));
+                });
 
-            s.spawn(|_| {
-                dense_vectors = config
-                    .vector_data
-                    .par_iter()
-                    .map(|(vector_name, vector_config)| {
-                        let path = get_vector_storage_path(segment_path, vector_name);
+                s.spawn(|_| {
+                    dense_vectors = config
+                        .vector_data
+                        .par_iter()
+                        .map(|(vector_name, vector_config)| {
+                            let path = get_vector_storage_path(segment_path, vector_name);
 
-                        let (original, quantized) = rayon::join(
-                            || UpdateOnlyVectorStorage::<Fs::File>::open(fs, &path, vector_config),
-                            || UpdateOnlyQuantizedVectors::open(fs, &path, vector_config),
-                        );
+                            let (original, quantized) = rayon::join(
+                                || {
+                                    let _scope = handoff.enter_guard();
+                                    UpdateOnlyVectorStorage::<Fs::File>::open(
+                                        fs,
+                                        &path,
+                                        vector_config,
+                                    )
+                                },
+                                || {
+                                    let _scope = handoff.enter_guard();
+                                    UpdateOnlyQuantizedVectors::open(fs, &path, vector_config)
+                                },
+                            );
 
-                        let components = VectorComponents {
-                            storage: original?,
-                            quantized: quantized?,
-                        };
-                        Ok((vector_name.clone(), components))
-                    })
-                    .collect();
-            });
+                            let components = VectorComponents {
+                                storage: original?,
+                                quantized: quantized?,
+                            };
+                            Ok((vector_name.clone(), components))
+                        })
+                        .collect();
+                });
 
-            s.spawn(|_| {
-                sparse_vectors = config
-                    .sparse_vector_data
-                    .par_iter()
-                    .map(|(vector_name, _config)| {
-                        let path = get_vector_storage_path(segment_path, vector_name);
-                        let components = VectorComponents {
-                            storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
-                            quantized: None,
-                        };
-                        Ok((vector_name.clone(), components))
-                    })
-                    .collect();
+                s.spawn(|_| {
+                    sparse_vectors = config
+                        .sparse_vector_data
+                        .par_iter()
+                        .map(|(vector_name, _config)| {
+                            let _scope = handoff.enter_guard();
+                            let path = get_vector_storage_path(segment_path, vector_name);
+                            let components = VectorComponents {
+                                storage: UpdateOnlyVectorStorage::open_sparse(fs, &path)?,
+                                quantized: None,
+                            };
+                            Ok((vector_name.clone(), components))
+                        })
+                        .collect();
+                });
             });
         });
 
@@ -278,7 +294,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         let mut vectors_res = Ok(());
         let mut payload_res = Ok(());
         let mut indexes_res = Ok(());
-        hw::parallel(|hw_acc| {
+        ambient::parallel(|handoff| {
             pool.scope(|s| {
                 s.spawn(|_| {
                     vectors_res =
@@ -291,19 +307,19 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
                                     points,
                                     start_slot,
                                     fs,
-                                    hw_acc,
+                                    handoff,
                                     vector_name,
                                 )
                             });
                 });
 
                 s.spawn(|_| {
-                    let _hw = hw_acc.enter_guard();
+                    let _scope = handoff.enter_guard();
                     payload_res = store.payload_storage.append_many(fs, slot_payloads());
                 });
 
                 s.spawn(|_| {
-                    let _hw = hw_acc.enter_guard();
+                    let _scope = handoff.enter_guard();
                     indexes_res = store.payload_indexes.par_append_many(fs, slot_payloads());
                 });
             });

@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
 use common::types::TelemetryDetail;
@@ -93,7 +93,7 @@ fn test_multi_filterable_hnsw(
 
     let int_key = "int";
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
     for n in 0..num_points {

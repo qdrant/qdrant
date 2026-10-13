@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
-use common::counter::hw;
+use common::ambient;
 use common::reason::reason;
 use segment::entry::ReadSegmentEntry;
 use segment::segment_constructor::load_segment;
@@ -77,7 +77,8 @@ fn main() {
             if internal_id.is_some() {
                 let version = segment.point_version(point_id);
                 let payload =
-                    hw::unmeasured(reason("Debugging tool"), || segment.payload(point_id)).unwrap();
+                    ambient::unmeasured(reason("Debugging tool"), || segment.payload(point_id))
+                        .unwrap();
                 // let vectors = segment.all_vectors(point_id).unwrap();
 
                 println!("Internal ID: {internal_id:?}");

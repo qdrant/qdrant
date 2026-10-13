@@ -36,10 +36,21 @@ use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSpars
 use crate::vector_storage::{TurboMultiScoring, TurboScoring};
 
 pub trait RawScorer {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()>;
 
     /// Score stored vector with vector under the given index
-    fn score_point(&self, point: PointOffsetType) -> ScoreType;
+    ///
+    /// A batch of one: scorers read stored vectors only in batches, which
+    /// report a failed read instead of panicking on it.
+    fn score_point(&self, point: PointOffsetType) -> OperationResult<ScoreType> {
+        let mut score = [0.0];
+        self.score_points(&[point], &mut score)?;
+        Ok(score[0])
+    }
 
     /// Return distance between stored points selected by IDs
     ///
@@ -479,13 +490,13 @@ fn new_multi_scorer_with_metric<
 }
 
 impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         assert_eq!(points.len(), scores.len());
-        self.query_scorer.score_stored_batch(points, scores);
-    }
-
-    fn score_point(&self, point: PointOffsetType) -> ScoreType {
-        self.query_scorer.score_stored(point)
+        self.query_scorer.score_stored_batch(points, scores)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

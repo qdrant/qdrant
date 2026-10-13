@@ -7,8 +7,8 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::condition_checker::ConditionChecker as _;
-use common::counter::hw;
 use common::flags::FeatureFlags;
 use common::types::{DeferredBehavior, PointOffsetType};
 use rand::rngs::StdRng;
@@ -374,7 +374,7 @@ fn assert_field_indexes_equal(flat: &Segment, nested: &Segment, field: &JsonPath
 
 fn assert_equal(flat: &Segment, nested: &Segment) {
     let stopped = AtomicBool::new(false);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     assert_eq!(flat.available_point_count(), nested.available_point_count());
 
@@ -494,7 +494,7 @@ fn optimize(segment: &Segment, dir: &Path) -> Segment {
 fn run(seed: u64, memory: Option<Memory>) {
     let dir = Builder::new().prefix("nested_index").tempdir().unwrap();
     let mut rng = StdRng::seed_from_u64(seed);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut pair = Pair::new(dir.path());
 
@@ -589,7 +589,7 @@ fn nested_index_matches_flattened_index_on_disk() {
 fn element_map_lifecycle() {
     let dir = Builder::new().prefix("nested_index").tempdir().unwrap();
     let mut rng = StdRng::seed_from_u64(7);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut pair = Pair::new(dir.path());
     pair.upsert(&mut rng, 0..NUM_POINTS);

@@ -3,7 +3,7 @@ use std::iter;
 use std::path::PathBuf;
 
 use blobstore::Blob;
-use common::counter::hw;
+use common::ambient;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use ecow::EcoString;
@@ -323,7 +323,7 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixR
     for_each_prefix_payload_block(index, threshold, &key, f)?;
 
     index.for_each_value(|value| {
-        let count = hw::unmeasured(
+        let count = ambient::unmeasured(
             reason(
                 "`for_each_payload_block` is only used while building HNSW, which \
                  intentionally bypasses hardware measurement.",
@@ -351,7 +351,7 @@ fn for_each_prefix_payload_block<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefi
     key: &PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
-    let _hw = hw::unmeasured_guard(reason(
+    let _scope = ambient::unmeasured_guard(reason(
         "HNSW build; hardware measurement intentionally bypassed (see above).",
     ));
     let Some(entries) = index.prefix_keys_with_counts("")? else {

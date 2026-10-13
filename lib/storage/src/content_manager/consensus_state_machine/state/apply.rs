@@ -7,6 +7,15 @@ impl ClusterState {
     /// Apply one action. Cannot fail.
     pub fn apply_action(&mut self, action: &Action) {
         match action {
+            Action::AddPeer { peer_id, uri } => {
+                self.peer_address_by_id.insert(*peer_id, uri.clone());
+            }
+
+            Action::RemovePeer { peer_id } => {
+                self.peer_address_by_id.remove(peer_id);
+                self.peer_metadata_by_id.remove(peer_id);
+            }
+
             Action::CreateCollection { collection, state } => {
                 self.collections
                     .insert(collection.clone(), (**state).clone());

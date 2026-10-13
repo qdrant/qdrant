@@ -3,8 +3,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hw;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::reason::reason;
@@ -244,7 +244,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
         Some(flattened_to_multi_vector(flattened, self.vectors.dim()))
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
@@ -254,13 +258,14 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
             .offsets
             .resolve_rows::<Sequential, _, _>(keys.iter().copied().enumerate());
 
-        self.vectors
-            .for_each_vector::<Sequential, _>(row_offsets.into_iter(), |index, flattened| {
+        self.vectors.for_each_vector::<Sequential, _>(
+            row_offsets.into_iter(),
+            |index, flattened| {
                 let vector = TypedMultiDenseVectorRef::new(flattened.as_ref(), self.vector_dim());
                 callback(index, vector);
                 Ok(())
-            })
-            .expect("read vectors");
+            },
+        )
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
@@ -291,7 +296,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.offsets.len() as PointOffsetType;
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.offsets.len() as PointOffsetType;
@@ -338,7 +343,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
             let vector = CowVector::MultiDense(T::into_float_multivector(
                 flattened_to_multi_vector(flattened, self.vectors.dim()),
@@ -346,7 +351,6 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
 
             callback(user_data, point_offset, vector);
         })
-        .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -670,7 +674,7 @@ mod tests {
         .unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {
@@ -723,7 +727,7 @@ mod tests {
         const DIM: usize = 4;
 
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let open = || {
             open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
@@ -794,7 +798,7 @@ mod tests {
 
         const DIM: usize = 128;
         let dir = Builder::new().prefix("legacy_pad").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let padded = multivec(3, 7.0, DIM);
         let per_chunk = CHUNK_SIZE / (DIM * std::mem::size_of::<VectorElementType>());
 

@@ -11,10 +11,10 @@ use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
-use crate::index::field_index::full_text_index::Bm25Params;
 use crate::index::field_index::full_text_index::full_text_index_read::{
     FullTextIndexRead, fill_text_statistics, score_bm25,
 };
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::nested_index::{FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
@@ -248,11 +248,12 @@ impl FieldIndexRead for FieldIndex {
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,
+        corpus: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<bool> {
         match self {
             FieldIndex::FullTextIndex(index) => {
-                fill_text_statistics(index, stats, is_stopped)?;
+                fill_text_statistics(index, stats, corpus, is_stopped)?;
                 Ok(true)
             }
             FieldIndex::IntIndex(_)
@@ -265,7 +266,7 @@ impl FieldIndexRead for FieldIndex {
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::NullIndex(_) => Ok(false),
-            FieldIndex::Nested(index) => index.fill_text_statistics(stats, is_stopped),
+            FieldIndex::Nested(index) => index.fill_text_statistics(stats, corpus, is_stopped),
         }
     }
 
@@ -274,7 +275,7 @@ impl FieldIndexRead for FieldIndex {
         terms: &[String],
         context: &TextQueryContext<'_>,
         params: Bm25Params,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Option<Vec<ScoredPointOffset>>> {
         match self {

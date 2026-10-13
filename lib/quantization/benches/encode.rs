@@ -28,9 +28,9 @@ fn encode_dot_bench(c: &mut Criterion) {
     let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        std::iter::repeat_n(true, vectors_count),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
-        vectors_count,
         None,
         ScalarQuantizationMethod::Int8,
         None,
@@ -62,6 +62,32 @@ fn encode_dot_bench(c: &mut Criterion) {
             }
         });
     });
+
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+        group.bench_function("score all u8 avx512 vnni", |b| {
+            b.iter(|| {
+                let mut _s = 0.0;
+                for i in 0..vectors_count as u32 {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx512_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avxvnni") {
+        group.bench_function("score all u8 avx vnni", |b| {
+            b.iter(|| {
+                let mut _s = 0.0;
+                for i in 0..vectors_count as u32 {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
 
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score all u8 neon", |b| {
@@ -102,6 +128,32 @@ fn encode_dot_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+        group.bench_function("score random access u8 avx512 vnni", |b| {
+            let mut _s = 0.0;
+            b.iter(|| {
+                for &i in &permutation {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx512_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avxvnni") {
+        group.bench_function("score random access u8 avx vnni", |b| {
+            let mut _s = 0.0;
+            b.iter(|| {
+                for &i in &permutation {
+                    let quantized_vector = i8_encoded.get_quantized_vector(i);
+                    _s = i8_encoded.score_point_avx_vnni(&encoded_query, &quantized_vector);
+                }
+            });
+        });
+    }
+
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score random access u8 neon", |b| {
         let mut _s = 0.0;
@@ -135,9 +187,9 @@ fn encode_l1_bench(c: &mut Criterion) {
     let quantized_vector_size = encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
     let i8_encoded = EncodedVectorsU8::encode(
         (0..vectors_count).map(|i| &list[i * vector_dim..(i + 1) * vector_dim]),
+        std::iter::repeat_n(true, vectors_count),
         TestEncodedStorageBuilder::new(None, quantized_vector_size),
         &vector_parameters,
-        vectors_count,
         None,
         ScalarQuantizationMethod::Int8,
         None,

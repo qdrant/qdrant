@@ -114,8 +114,12 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(self.state.plan_set_quota_config(config))
             }
 
-            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
-                ApplyOutcome::NotCovered
+            ConsensusOperations::AddPeer { peer_id, uri } => {
+                ApplyOutcome::new(self.state.plan_add_peer(*peer_id, uri))
+            }
+
+            ConsensusOperations::RemovePeer(peer_id) => {
+                ApplyOutcome::new(self.state.plan_remove_peer(&self.context, *peer_id))
             }
 
             // Never reach the apply path: consensus handles them in its own thread
@@ -145,21 +149,10 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_change_aliases(operation))
             }
 
-            CollectionMetaOperations::CreateShardKey(operation) => {
-                ApplyOutcome::new(self.state.plan_create_shard_key(&self.context, operation))
-            }
-
-            CollectionMetaOperations::DropShardKey(operation) => {
-                ApplyOutcome::new(self.state.plan_drop_shard_key(&self.context, operation))
-            }
-
-            CollectionMetaOperations::Resharding(collection, operation) => {
-                let result = self
-                    .state
-                    .plan_resharding(&self.context, collection, operation);
-
-                ApplyOutcome::new(result)
-            }
+            CollectionMetaOperations::Resharding(collection, operation) => ApplyOutcome::new(
+                self.state
+                    .plan_resharding(&self.context, collection, operation),
+            ),
 
             CollectionMetaOperations::TransferShard(collection, operation) => ApplyOutcome::new(
                 self.state
@@ -170,6 +163,13 @@ impl ConsensusStateMachine {
                 self.state
                     .plan_set_shard_replica_state(&self.context, operation),
             ),
+
+            CollectionMetaOperations::CreateShardKey(operation) => {
+                ApplyOutcome::new(self.state.plan_create_shard_key(&self.context, operation))
+            }
+            CollectionMetaOperations::DropShardKey(operation) => {
+                ApplyOutcome::new(self.state.plan_drop_shard_key(&self.context, operation))
+            }
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
                 ApplyOutcome::new(self.state.plan_create_named_vector(operation))
@@ -185,12 +185,11 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_drop_payload_index(operation))
             }
 
-            // Sleeps on a peer, or fails at random. The roll is not deterministic, so it
-            // belongs to the applier, not to planning.
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(operation) => {
                 ApplyOutcome::Accepted(vec![Action::TestSlowDown(operation.clone())])
             }
+
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestTransientError(operation) => {
                 ApplyOutcome::Accepted(vec![Action::TestTransientError(operation.clone())])

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
@@ -228,7 +228,7 @@ fn build_random_index(
 }
 
 pub fn parse_query(query: &[String], is_phrase: bool, index: &FullTextIndex) -> ParsedQuery {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let tokens = resolve_tokens(index, query).into_iter();
     match is_phrase {
         false => ParsedQuery::AllTokens(tokens.collect::<Option<TokenSet>>().unwrap()),
@@ -256,7 +256,7 @@ fn test_congruence(
     const KEYWORD_COUNT: usize = 20;
     const KEYWORD_LEN: usize = 2;
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let (mut indices, _data): (Vec<_>, Vec<_>) = TYPES
         .iter()
@@ -495,7 +495,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
         phrases.push(phrase);
     }
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     for (index, index_type) in check_indexes {
         eprintln!("Checking index type: {index_type:?}");
@@ -529,7 +529,7 @@ fn check_phrase<const KEYWORD_COUNT: usize>(
 fn test_phrase_matching_respects_array_boundaries(
     #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
 
     // ID 1: ["quick", "brown"] — words in separate elements
@@ -596,7 +596,7 @@ fn test_phrase_matching_respects_array_boundaries(
 fn test_phrase_matching_single_element_array(
     #[values(IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable)] index_type: IndexType,
 ) {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(index_type, true);
 
     let p1 = serde_json::json!(["the quick brown fox"]);
@@ -623,7 +623,7 @@ fn test_phrase_matching_single_element_array(
 /// segment had been optimized yet.
 #[rstest]
 fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matching: bool) {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let payloads = [
         Value::String("alpha beta".to_string()),
         // Punctuation only: indexed, but no tokens survive.
@@ -660,7 +660,7 @@ fn a_value_without_tokens_is_not_a_document(#[values(false, true)] phrase_matchi
 /// decrement for every point it found.
 #[rstest]
 fn removing_a_value_without_tokens_keeps_the_count(#[values(false, true)] phrase_matching: bool) {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let (mut builder, _temp_dir, _db) = create_builder(IndexType::Mutable, phrase_matching);
     for (idx, payload) in [
         Value::String("alpha beta".to_string()),
@@ -681,4 +681,69 @@ fn removing_a_value_without_tokens_keeps_the_count(#[values(false, true)] phrase
 
     index.remove_point(0).unwrap();
     assert_eq!(index.points_count(), 0);
+}
+
+/// Corpus statistics count a term the same way whether the corpus documents
+/// are probed into its posting list or the list is walked against them, on
+/// every shape. `common` is held by `3 * CHUNK_LEN` points: two documents are
+/// probed into it, three walk it. `rare` is always walked.
+#[rstest]
+fn corpus_frequencies_agree_between_probe_and_walk(#[values(false, true)] phrase_matching: bool) {
+    use crate::data_types::query_context::TextFieldStats;
+    use crate::index::field_index::full_text_index::full_text_index_read::fill_text_statistics;
+
+    let _scope = ambient::test_guard();
+    let is_stopped = std::sync::atomic::AtomicBool::new(false);
+    let points = 3 * posting_list::CHUNK_LEN as PointOffsetType;
+    let text_of = |id: PointOffsetType| {
+        if id == points {
+            // Punctuation only: in a corpus, but no document.
+            "!!! ???".to_string()
+        } else if id.is_multiple_of(50) {
+            "common rare".to_string()
+        } else {
+            "common".to_string()
+        }
+    };
+
+    for index_type in TYPES {
+        let (mut builder, _temp_dir, _db) = create_builder(*index_type, phrase_matching);
+        for id in 0..=points {
+            builder
+                .add_point(id, &[&Value::String(text_of(id))])
+                .unwrap();
+        }
+        let index = builder.finalize().unwrap();
+
+        for corpus in [&[0, 1, points][..], &[0, 1, 50, points]] {
+            let mut stats = TextFieldStats {
+                df: ["common", "rare"].map(|term| (term.to_string(), 0)).into(),
+                ..Default::default()
+            };
+            fill_text_statistics(&index, &mut stats, Some(corpus), &is_stopped).unwrap();
+
+            let documents = &corpus[..corpus.len() - 1];
+            let holding = |term: &str| {
+                documents
+                    .iter()
+                    .filter(|&&id| text_of(id).split(' ').any(|token| token == term))
+                    .count()
+            };
+            assert_eq!(
+                stats.documents,
+                documents.len(),
+                "{index_type:?} {corpus:?}"
+            );
+            assert_eq!(
+                stats.df["common"],
+                holding("common"),
+                "{index_type:?} {corpus:?}"
+            );
+            assert_eq!(
+                stats.df["rare"],
+                holding("rare"),
+                "{index_type:?} {corpus:?}"
+            );
+        }
+    }
 }

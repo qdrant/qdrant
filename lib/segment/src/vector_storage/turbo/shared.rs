@@ -14,6 +14,7 @@ use quantization::encoded_storage::EncodedStorage;
 use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
@@ -166,27 +167,28 @@ pub(super) fn score_query_batch<TStorage: EncodedStorage>(
     query: &EncodedQueryTQ,
     ids: &[PointOffsetType],
     scores: &mut [ScoreType],
-) {
+) -> OperationResult<()> {
     debug_assert_eq!(ids.len(), scores.len());
 
     if !TStorage::prefers_run_scoring(ids) {
         storage.for_each_batch(ids, |idx, bytes| {
             scores[idx] = score_query_bytes(quantizer, distance, query, &bytes);
-        });
-        return;
+        })?;
+        return Ok(());
     }
 
     // The record size every Turbo datatype storage is created with.
     let stride = quantizer.quantized_size();
     storage.for_each_run(ids, |first, count, bytes| {
         quantizer.score_precomputed_batch(query, &bytes, stride, &mut scores[first..first + count]);
-    });
+    })?;
 
     if invert_score(distance) {
         for score in scores {
             *score = -*score;
         }
     }
+    Ok(())
 }
 
 /// Symmetric score between two encoded vectors, applying the metric sign
@@ -223,7 +225,7 @@ pub(super) fn dequantize_vector<'a>(
 /// `keep_rotated` is set the inverse rotation is skipped and the result is
 /// dequantized straight into `f32`, avoiding the intermediate `Vec<f64>` that
 /// the rotation would need.
-pub(super) fn dequantize_for_requantization(
+pub(crate) fn dequantize_for_requantization(
     quantizer: &TurboQuantizer,
     dim: usize,
     quantized: &[u8],

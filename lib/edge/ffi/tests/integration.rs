@@ -36,6 +36,7 @@ fn make_config() -> EdgeConfig {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     }
 }
 
@@ -379,6 +380,7 @@ fn scalar_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
 
     let shard = EdgeShard::load(path, Some(config)).expect("Scalar quantization must be accepted");
@@ -649,6 +651,7 @@ fn product_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
 
     let shard = EdgeShard::load(path, Some(config));
@@ -694,6 +697,7 @@ fn turbo_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
 
     let shard = EdgeShard::load(path, Some(config));
@@ -738,6 +742,7 @@ fn binary_quantization_accepted_at_load() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
 
     let shard = EdgeShard::load(path, Some(config)).expect("Binary quantization must be accepted");
@@ -886,6 +891,7 @@ fn hnsw_config_optimize_and_search() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
 
     let shard: Arc<EdgeShard> =
@@ -969,6 +975,7 @@ fn oversized_hnsw_params_rejected_not_allocated() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
     let sane = HnswIndexConfig {
         m: 16,
@@ -1130,6 +1137,7 @@ fn config_with_distance(distance: Distance) -> EdgeConfig {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     }
 }
 
@@ -1150,6 +1158,7 @@ fn two_field_config() -> EdgeConfig {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     }
 }
 
@@ -2220,6 +2229,7 @@ fn multivector_round_trips() {
         sparse_vector_data: HashMap::new(),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
     let shard: Arc<EdgeShard> =
         EdgeShard::load(path, Some(config)).expect("load with multivector config failed");
@@ -2377,6 +2387,7 @@ fn sparse_vector_round_trips() {
         )]),
         payload_memory: None,
         id_tracker_memory: None,
+        wal_enabled: None,
     };
     let shard: Arc<EdgeShard> =
         EdgeShard::load(path, Some(config)).expect("load with sparse config failed");
@@ -4495,6 +4506,7 @@ fn text_index_with_params_filters_with_stopwords() {
                         memory: None,
                         stemmer: None,
                         enable_hnsw: None,
+                        scoring: None,
                     },
                 },
             )
@@ -4535,4 +4547,117 @@ fn text_index_with_params_filters_with_stopwords() {
     // "point" is in the custom stopword set: it was never indexed, so no
     // point matches even though every title contains it.
     assert_eq!(count_matching("point"), 0);
+}
+
+/// A text query ranks points by BM25 over a text index created with
+/// `scoring`, and is refused on one created without it.
+#[test]
+fn text_query_ranks_by_bm25() {
+    use qdrant_edge_ffi::{
+        Bm25Params, PayloadIndexParams, QueryRequest, ScoringQuery, TextIndexParams,
+        TextQueryScoring, TextScoringParams, TextScoringType,
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, Some(make_config())).expect("load failed");
+    upsert_three(&shard);
+
+    let text_index = |scoring| PayloadIndexParams::Text {
+        config: TextIndexParams {
+            tokenizer: None,
+            min_token_len: None,
+            max_token_len: None,
+            lowercase: None,
+            ascii_folding: None,
+            phrase_matching: None,
+            stopwords: None,
+            memory: None,
+            stemmer: None,
+            enable_hnsw: None,
+            scoring,
+        },
+    };
+    let bm25 = TextScoringParams {
+        r#type: TextScoringType::Bm25,
+    };
+    for (field, scoring) in [("title", Some(bm25)), ("plain", None)] {
+        let op =
+            UpdateOperation::create_field_index_with_params(field.to_string(), text_index(scoring))
+                .expect("create_field_index_with_params failed");
+        shard.update(op).expect("update failed");
+    }
+
+    let text_query = |field: &str, query: &str, scoring| QueryRequest {
+        limit: 3,
+        offset: None,
+        query: Some(ScoringQuery::Text {
+            field: field.to_string(),
+            query: query.to_string(),
+            scoring,
+        }),
+        prefetches: vec![],
+        with_vector: None,
+        with_payload: None,
+        filter: None,
+        score_threshold: None,
+        params: None,
+    };
+
+    // Only "point two" holds "two"; "point" is in every title.
+    let hits = shard
+        .query(text_query("title", "two point", None))
+        .expect("text query failed");
+    assert_eq!(hits.len(), 3);
+    assert!(matches!(hits[0].id, PointId::NumId { value: 2 }));
+    assert!(hits[0].score > hits[1].score);
+
+    let err = shard
+        .query(text_query(
+            "title",
+            "two",
+            Some(TextQueryScoring::Bm25 {
+                params: Bm25Params {
+                    k: None,
+                    b: Some(2.0),
+                },
+            }),
+        ))
+        .expect_err("b out of range must be refused");
+    assert!(err.to_string().contains("BM25 b"), "{err}");
+
+    let err = shard
+        .query(text_query("plain", "two", None))
+        .expect_err("a text index without scoring must be refused");
+    assert!(err.to_string().contains("does not score"), "{err}");
+}
+
+/// `wal_enabled: Some(false)` reaches the engine on create, reads back from
+/// `config()`, survives a reload, and cannot be flipped on an existing shard.
+#[test]
+fn wal_less_shard_roundtrip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+
+    {
+        let config = EdgeConfig {
+            wal_enabled: Some(false),
+            ..make_config()
+        };
+        let shard = EdgeShard::create(path.clone(), config).expect("create failed");
+        upsert_three(&shard);
+        assert_eq!(shard.config().unwrap().wal_enabled, Some(false));
+        assert!(!dir.path().join(edge::WAL_PATH).exists());
+        shard.unload().expect("unload failed");
+    }
+
+    let flipped = EdgeConfig {
+        wal_enabled: Some(true),
+        ..make_config()
+    };
+    assert!(EdgeShard::load(path.clone(), Some(flipped)).is_err());
+
+    let shard = EdgeShard::load(path, None).expect("reload failed");
+    assert_eq!(shard.info().unwrap().points_count, 3);
+    assert_eq!(shard.config().unwrap().wal_enabled, Some(false));
 }

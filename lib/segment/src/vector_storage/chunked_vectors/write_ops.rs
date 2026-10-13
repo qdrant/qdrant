@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::universal_io::UniversalWrite;
 use num_traits::AsPrimitive;
 

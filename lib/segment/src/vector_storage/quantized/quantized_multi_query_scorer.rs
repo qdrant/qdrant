@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
-use common::counter::hw::HwScale;
+use common::ambient::hw::HwScale;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::EncodedVectors;
 
 use super::quantized_query_scorer::InternalScorerUnsupported;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
-    MultivectorOffset, MultivectorOffsets, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
+    MultivectorOffset, MultivectorOffsetsStorage, QuantizedMultivectorStorage,
 };
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -95,7 +96,11 @@ where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
 {
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.hw
@@ -105,19 +110,8 @@ where
             ids,
             |score_fn| score_fn(&self.query),
             scores,
-        )
-    }
-
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let multi_vector_offset = self.quantized_multivector_storage.get_offset(idx);
-        let sub_vectors_count = multi_vector_offset.count as usize;
-        self.hw.vector_io_read(
-            size_of::<MultivectorOffset>()
-                + self.quantized_multivector_storage.quantized_vector_size() * sub_vectors_count,
-        );
-        // quantized multivector storage handles hardware counter to batch vector IO
-        self.quantized_multivector_storage
-            .score_point(&self.query, idx)
+        )?;
+        Ok(())
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

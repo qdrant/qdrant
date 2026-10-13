@@ -18,6 +18,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_pq<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send,
+        keep: impl Iterator<Item = bool> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         pq_config: &ProductQuantizationConfig,
@@ -47,9 +48,9 @@ impl QuantizedVectors {
             )?;
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
+                keep,
                 storage_builder,
                 vector_parameters,
-                vectors_count,
                 bucket_size,
                 max_threads,
                 Some(meta_path.as_path()),
@@ -63,9 +64,9 @@ impl QuantizedVectors {
             )?;
             Ok(QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::encode(
                 vectors,
+                keep,
                 storage_builder,
                 vector_parameters,
-                vectors_count,
                 bucket_size,
                 max_threads,
                 Some(meta_path.as_path()),
@@ -77,6 +78,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_pq_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send,
+        keep: impl Iterator<Item = bool> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -110,9 +112,9 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsPQ::encode(
                 vectors,
+                keep,
                 storage_builder,
                 vector_parameters,
-                inner_vectors_count,
                 bucket_size,
                 max_threads,
                 Some(meta_path.as_path()),
@@ -135,9 +137,9 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsPQ::encode(
                 vectors,
+                keep,
                 storage_builder,
                 vector_parameters,
-                inner_vectors_count,
                 bucket_size,
                 max_threads,
                 Some(meta_path.as_path()),

@@ -17,6 +17,7 @@ mod positional_cursors;
 mod tests;
 mod top_k;
 
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::{PointOffsetType, ScoreType};
 pub use mutable_cursors::MutableCursors;
 pub use positional_cursors::PositionalCursors;
@@ -24,6 +25,7 @@ pub use top_k::{ON_DISK_BLOCK, score_top_k};
 
 use super::TokenId;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 
 /// Saturation and length normalization. Request-time parameters: they are not
 /// part of the index, so changing them never rebuilds anything.
@@ -36,6 +38,82 @@ pub struct Bm25Params {
 impl Default for Bm25Params {
     fn default() -> Self {
         Self { k1: 1.2, b: 0.75 }
+    }
+}
+
+/// Which documents a BM25 query may score: the points a query sees, and of
+/// those the ones an outer filter allows.
+pub struct Bm25Accept<'a> {
+    /// In-memory masks: deletions, deferred and shadowed points.
+    visible: &'a dyn Fn(PointOffsetType) -> bool,
+    /// May read storage, and fail.
+    filter: Option<&'a OptimizedFilter<'a>>,
+}
+
+impl<'a> Bm25Accept<'a> {
+    pub fn new(
+        visible: &'a dyn Fn(PointOffsetType) -> bool,
+        filter: Option<&'a OptimizedFilter<'a>>,
+    ) -> Self {
+        Self { visible, filter }
+    }
+
+    /// Whether a query sees `point_id`.
+    pub fn is_visible(&self, point_id: PointOffsetType) -> bool {
+        (self.visible)(point_id)
+    }
+
+    /// The same filter behind a narrower mask, for an index whose posting
+    /// lists keep the points removed from it.
+    pub fn with_visible<'b>(
+        &'b self,
+        visible: &'b dyn Fn(PointOffsetType) -> bool,
+    ) -> Bm25Accept<'b> {
+        Bm25Accept {
+            visible,
+            filter: self.filter,
+        }
+    }
+}
+
+/// A batch is masked in memory first, and the outer filter then reads storage
+/// once for what is left. A filter that fails to read reports the error rather
+/// than leaving the points out.
+impl ConditionChecker for Bm25Accept<'_> {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        if !self.is_visible(point_id) {
+            return Ok(false);
+        }
+        match self.filter {
+            Some(filter) => filter.check(point_id),
+            None => Ok(true),
+        }
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        items: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        match select {
+            Select::Matches => {
+                let visible = default_check_batched(items, Select::Matches, rest, |point_id| {
+                    Ok::<_, OperationError>(self.is_visible(point_id))
+                })?;
+                match self.filter {
+                    Some(filter) => {
+                        filter.check_batched(&mut items[..visible], Select::Matches, rest)
+                    }
+                    None => Ok(visible),
+                }
+            }
+            Select::NonMatches => {
+                default_check_batched(items, select, rest, |point_id| self.check(point_id))
+            }
+        }
     }
 }
 

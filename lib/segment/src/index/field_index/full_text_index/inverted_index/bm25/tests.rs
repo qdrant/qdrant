@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
+use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use rand::rngs::StdRng;
@@ -12,9 +13,13 @@ use rstest::rstest;
 use super::super::InvertedIndex;
 use super::super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
+use super::super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::*;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::query_context::fancy_idf;
+use crate::index::condition_checker::{ConditionCheckerEnum, TestBitOfId};
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 
 const VOCAB: usize = 40;
 
@@ -27,7 +32,7 @@ fn word(rng: &mut StdRng) -> String {
 
 fn fixture(seed: u64, documents: u32, deleted: &[PointOffsetType]) -> MutableInvertedIndex {
     let mut rng = StdRng::seed_from_u64(seed);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut index = MutableInvertedIndex::new(true, true);
     for idx in 0..documents {
         let len = rng.random_range(3..=60);
@@ -143,7 +148,15 @@ fn run<I: InvertedIndex>(
     accept: impl Fn(PointOffsetType) -> bool,
     limit: usize,
 ) -> Vec<ScoredPointOffset> {
-    hw::test(|| index.score_bm25(query, &accept, limit, &AtomicBool::new(false))).unwrap()
+    ambient::test(|| {
+        index.score_bm25(
+            query,
+            &Bm25Accept::new(&accept, None),
+            limit,
+            &AtomicBool::new(false),
+        )
+    })
+    .unwrap()
 }
 
 fn queries() -> Vec<Vec<&'static str>> {
@@ -209,7 +222,6 @@ fn block_size_does_not_change_the_ranking(#[values(1, 10, 1000)] limit: usize) {
 
 fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
     let index = fixture(23, 500, &[3, 30, 300]);
-    let documents = index.point_to_doc.as_deref().unwrap();
     let lengths = index.point_to_doc_len.as_deref().unwrap();
     for terms in queries() {
         let query = query(&index, &terms, Bm25Params::default());
@@ -218,7 +230,7 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
             .iter()
             .map(|term| index.postings.get(term.token_id as usize))
             .collect();
-        let mut cursors = MutableCursors::new(postings, documents, query.terms());
+        let mut cursors = MutableCursors::new(postings);
         let mut asked: Vec<PointOffsetType> = Vec::new();
         let actual = score_top_k::<_, BLOCK>(
             &query,
@@ -231,7 +243,7 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
                 }
                 Ok(())
             },
-            |_| true,
+            &Bm25Accept::new(&|_| true, None),
             limit,
             &AtomicBool::new(false),
         )
@@ -246,6 +258,70 @@ fn rank_in_blocks<const BLOCK: usize>(limit: usize) {
             "block {BLOCK}: a length was read twice"
         );
     }
+}
+
+/// The outer filter, checked a block at a time, keeps exactly the documents
+/// it allows on every shape and block size, whatever order its batched check
+/// leaves them in: this one keeps odd ids and reverses what it is given.
+#[rstest]
+fn the_filter_is_checked_per_block(#[values(1, 10, 1000)] limit: usize) {
+    let mutable = fixture(37, 400, &[8, 9, 100]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
+    let odd = OptimizedFilter::from_checker(ConditionCheckerEnum::TestBitOfId(TestBitOfId(0)));
+    let accept = Bm25Accept::new(&|_| true, Some(&odd));
+    let is_odd = |idx: PointOffsetType| idx % 2 == 1;
+    let is_stopped = AtomicBool::new(false);
+    let _scope = ambient::test_guard();
+
+    for terms in queries() {
+        let query = query(&mutable, &terms, Bm25Params::default());
+        let expected = reference(&mutable, &query, is_odd);
+        for actual in [
+            mutable.score_bm25(&query, &accept, limit, &is_stopped),
+            immutable.score_bm25(&query, &accept, limit, &is_stopped),
+            on_disk.score_bm25(&query, &accept, limit, &is_stopped),
+        ] {
+            let actual = actual.unwrap();
+            assert_top_k(&actual, &expected, limit);
+            assert!(actual.iter().all(|hit| is_odd(hit.idx)));
+        }
+        filtered_in_blocks::<2>(&mutable, &query, &accept, &expected, limit);
+        filtered_in_blocks::<7>(&mutable, &query, &accept, &expected, limit);
+        filtered_in_blocks::<ON_DISK_BLOCK>(&mutable, &query, &accept, &expected, limit);
+    }
+}
+
+fn filtered_in_blocks<const BLOCK: usize>(
+    index: &MutableInvertedIndex,
+    query: &Bm25Query,
+    accept: &Bm25Accept<'_>,
+    expected: &[ScoredPointOffset],
+    limit: usize,
+) {
+    let lengths = index.point_to_doc_len.as_deref().unwrap();
+    let postings = query
+        .terms()
+        .iter()
+        .map(|term| index.postings.get(term.token_id as usize))
+        .collect();
+    let mut cursors = MutableCursors::new(postings);
+    let actual = score_top_k::<_, BLOCK>(
+        query,
+        &mut cursors,
+        |point_ids, out| {
+            for (point_id, doc_len) in point_ids.iter().zip(out) {
+                *doc_len = Some(lengths[*point_id as usize]);
+            }
+            Ok(())
+        },
+        accept,
+        limit,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_top_k(&actual, expected, limit);
 }
 
 /// The caller's filter is applied on every shape, and the pruning
@@ -272,11 +348,56 @@ fn accept_restricts_the_ranking() {
     }
 }
 
+/// A filter condition whose every check fails, as a storage read can.
+struct FailingCondition;
+
+impl ConditionChecker for FailingCondition {
+    type Error = OperationError;
+
+    fn check(&self, _point_id: PointOffsetType) -> OperationResult<bool> {
+        Err(OperationError::service_error("filter read failed"))
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        default_check_batched(ids, select, rest, |id| self.check(id))
+    }
+}
+
+/// A filter that fails to read stops the query with its error, on every
+/// shape, instead of leaving the point out of the ranking.
+#[test]
+fn a_failing_filter_reports_its_error() {
+    let mutable = fixture(7, 100, &[]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
+    let query = query(&mutable, &["w0", "w1"], Bm25Params::default());
+
+    let filter =
+        OptimizedFilter::from_checker(ConditionCheckerEnum::Dyn(Box::new(FailingCondition)));
+    let accept = Bm25Accept::new(&|_| true, Some(&filter));
+    let is_stopped = AtomicBool::new(false);
+    let _scope = ambient::test_guard();
+    for result in [
+        mutable.score_bm25(&query, &accept, 10, &is_stopped),
+        immutable.score_bm25(&query, &accept, 10, &is_stopped),
+        on_disk.score_bm25(&query, &accept, 10, &is_stopped),
+    ] {
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("filter read failed"), "{error}");
+    }
+}
+
 /// No average length means no length normalization: the same ranking as
 /// `b = 0` with one, which is what the sparse route produces.
 #[test]
 fn missing_average_length_degrades_to_b_zero() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mutable = fixture(9, 200, &[]);
 
@@ -294,7 +415,12 @@ fn missing_average_length_degrades_to_b_zero() {
     )
     .unwrap();
     let actual = mutable
-        .score_bm25(&without_average, &|_| true, 20, &is_stopped)
+        .score_bm25(
+            &without_average,
+            &Bm25Accept::new(&|_| true, None),
+            20,
+            &is_stopped,
+        )
         .unwrap();
     assert_top_k(&actual, &expected, 20);
 
@@ -303,7 +429,7 @@ fn missing_average_length_degrades_to_b_zero() {
     let normalized = mutable
         .score_bm25(
             &query(&mutable, &terms, Bm25Params::default()),
-            &|_| true,
+            &Bm25Accept::new(&|_| true, None),
             20,
             &is_stopped,
         )
@@ -316,7 +442,7 @@ fn missing_average_length_degrades_to_b_zero() {
 
 #[test]
 fn positions_are_required() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_positions = MutableInvertedIndex::new(false, true);
     without_positions
@@ -333,63 +459,63 @@ fn positions_are_required() {
     .unwrap();
     assert!(
         without_positions
-            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .is_err()
     );
     let immutable = ImmutableInvertedIndex::from(without_positions);
     assert!(
         immutable
-            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .is_err()
     );
 }
 
-/// A query that normalizes by length is refused by an index that records
-/// no lengths, rather than silently scored as `b = 0`.
 #[test]
-fn length_normalization_requires_lengths() {
-    let _hw = hw::test_guard();
+fn lengths_are_required() {
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mut without_lengths = MutableInvertedIndex::new(true, false);
     without_lengths
         .index_str_tokens(0, ["alpha", "beta"], None)
         .unwrap();
-    let term = [Bm25Term {
-        token_id: 0,
-        idf: 1.0,
-    }];
-    let normalized = Bm25Query::new(term, Bm25Params::default(), Some(2.0)).unwrap();
+    let query = Bm25Query::new(
+        [Bm25Term {
+            token_id: 0,
+            idf: 1.0,
+        }],
+        Bm25Params::default(),
+        None,
+    )
+    .unwrap();
     assert!(
         without_lengths
-            .score_bm25(&normalized, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .is_err()
     );
-    let unnormalized = Bm25Query::new(term, Bm25Params::default(), None).unwrap();
-    assert_eq!(
-        without_lengths
-            .score_bm25(&unnormalized, &|_| true, 10, &is_stopped)
-            .unwrap()
-            .len(),
-        1
+    let immutable = ImmutableInvertedIndex::from(without_lengths);
+    assert!(
+        immutable
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
+            .is_err()
     );
 }
 
 #[test]
 fn empty_query_and_zero_limit_return_nothing() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
     let mutable = fixture(3, 50, &[]);
     let empty = Bm25Query::new([], Bm25Params::default(), None).unwrap();
     assert!(
         mutable
-            .score_bm25(&empty, &|_| true, 10, &is_stopped)
+            .score_bm25(&empty, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .unwrap()
             .is_empty()
     );
     let query = query(&mutable, &["w0"], Bm25Params::default());
     assert!(
         mutable
-            .score_bm25(&query, &|_| true, 0, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 0, &is_stopped)
             .unwrap()
             .is_empty()
     );
@@ -397,13 +523,13 @@ fn empty_query_and_zero_limit_return_nothing() {
 
 #[test]
 fn stop_flag_interrupts_the_scan() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(true);
     let mutable = fixture(3, 3000, &[]);
     let query = query(&mutable, &["w0"], Bm25Params::default());
     assert!(
         mutable
-            .score_bm25(&query, &|_| true, 10, &is_stopped)
+            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
             .is_err()
     );
 }
@@ -442,7 +568,7 @@ fn query_dedups_and_orders_by_bound() {
 /// alone, not in the scorer.
 #[test]
 fn deleted_documents_inflate_df_on_immutable_shapes() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mutable = fixture(21, 500, &[]);
     let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
     let mut live = mutable;
@@ -495,6 +621,47 @@ fn deleted_documents_inflate_df_on_immutable_shapes() {
         max_relative_deviation < 0.25,
         "deleted documents move scores by {max_relative_deviation}"
     );
+}
+
+/// The postings a reopen rebuilds through the builder carry the same
+/// frequencies as the ones the live path built.
+#[test]
+fn builder_rebuilds_the_same_frequencies() {
+    let live = fixture(17, 200, &[3, 30]);
+    let mut builder = MutableInvertedIndexBuilder::new(true, true);
+    let documents = live.point_to_doc.as_ref().unwrap();
+    let vocab: HashMap<TokenId, &str> =
+        live.vocab.iter().map(|(s, id)| (*id, s.as_str())).collect();
+    for (idx, document) in documents.iter().enumerate() {
+        let Some(document) = document else { continue };
+        let tokens: Vec<String> = document
+            .tokens()
+            .iter()
+            .map(|t| vocab[t].to_owned())
+            .collect();
+        let len = live.point_to_doc_len.as_ref().unwrap()[idx];
+        builder.add(idx as PointOffsetType, tokens, Some(len));
+    }
+    let rebuilt = builder.build();
+
+    for (term, &token_id) in &live.vocab {
+        let rebuilt_id = rebuilt.vocab[term];
+        let (live_posting, rebuilt_posting) = (
+            &live.postings[token_id as usize],
+            &rebuilt.postings[rebuilt_id as usize],
+        );
+        assert_eq!(
+            (
+                live_posting.iter().collect::<Vec<_>>(),
+                live_posting.frequencies()
+            ),
+            (
+                rebuilt_posting.iter().collect::<Vec<_>>(),
+                rebuilt_posting.frequencies()
+            ),
+            "postings of {term} differ",
+        );
+    }
 }
 
 /// Parameters outside the domain the MaxScore bound holds in are refused

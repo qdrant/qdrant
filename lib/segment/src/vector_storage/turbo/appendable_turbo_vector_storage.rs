@@ -11,8 +11,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hw;
 use common::generic_consts::AccessPattern;
 use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
@@ -228,7 +228,7 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         for (user_data, key) in keys {
             let vector = shared::dequantize_vector(
                 &self.quantizer,
@@ -237,6 +237,7 @@ impl VectorStorageRead for AppendableMmapTurboVectorStorage {
             );
             callback(user_data, key, vector);
         }
+        Ok(())
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -316,7 +317,7 @@ impl TurboScoring for AppendableMmapTurboVectorStorage {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         shared::score_query_batch(
             &self.storage,
             &self.quantizer,
@@ -397,7 +398,7 @@ impl DenseTQVectorStorage for AppendableMmapTurboVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let start_index = self.storage.vectors_count() as PointOffsetType;
         let mut key = start_index;
 

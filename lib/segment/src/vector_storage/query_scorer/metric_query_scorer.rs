@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use common::counter::hw::HwScale;
+use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use zerocopy::FromBytes;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
@@ -70,14 +71,11 @@ impl<
 > QueryScorer for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.hw.cpu(1);
-        self.hw.vector_io_read(1);
-        TMetric::similarity(&self.query, &self.vector_storage.get_dense::<Random>(idx))
-    }
-
-    #[inline]
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.hw.cpu(ids.len());
@@ -87,7 +85,6 @@ impl<
             .for_each_in_dense_batch(ids, |idx, vector| {
                 scores[idx] = TMetric::similarity(&self.query, vector);
             })
-            .expect("read vectors");
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

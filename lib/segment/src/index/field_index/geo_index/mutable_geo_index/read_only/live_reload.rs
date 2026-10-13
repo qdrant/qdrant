@@ -1,9 +1,8 @@
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyAppendableGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -16,7 +15,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         Ok(self.storage.live_preload(fs)?)
     }
 
@@ -44,6 +43,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableGeoIndex<S> {
                         .into_iter()
                         .map(GeoPoint::from)
                         .collect::<Vec<_>>();
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed: drop them first so the replay is idempotent.
+                    in_memory_index.remove_point(point_offset)?;
                     in_memory_index.add_many_geo_points(point_offset, geo_points)?;
                     Ok(true)
                 },

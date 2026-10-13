@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 use common::typelevel::True;
@@ -16,7 +16,9 @@ use crate::EncodingError;
 use crate::encoded_storage::{
     EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, validate_storage_vector_size,
 };
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{
+    EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
+};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
@@ -132,11 +134,16 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
 
     /// Encode vector data
     ///
+    /// Every vector of `data` is encoded, but the TQ+ error correction is fitted only on the
+    /// vectors whose flag in `keep` is set.
+    ///
     /// # Arguments
     /// * `data` - iterator over original vector data
+    /// * `keep` - one flag per vector of `data`, set for the vectors to fit the TQ+ error
+    ///   correction on; clear it for vectors that are not real (e.g. the placeholders of deleted
+    ///   vectors)
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
-    /// * `count` - number of vectors in `data` iterator
     /// * `bits` - bits for quantization
     /// * `mode` - quantization mode
     /// * `rotation` - rotation applied to vectors and queries ([`TQRotation::Padded`]
@@ -149,9 +156,9 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + 'a,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
-        count: usize,
         bits: TQBits,
         mode: TQMode,
         rotation: TQRotation,
@@ -167,7 +174,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         // (`input_already_rotated`), the encode pass skips rotating them again.
         let rotate_input = !input_already_rotated;
 
-        // TQ+: first pass over `data` to fit per-coordinate shift/scale that
+        // TQ+: first pass over `calibration_data` to fit per-coordinate shift/scale that
         // pulls the rotated, length-rescaled coordinates onto the Lloyd-Max
         // N(0, 1) codebook before quantization.
         //
@@ -220,11 +227,12 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
                 // no reservoir, no intermediate `Vec<Vec<f32>>`, only a
                 // small fixed-size batch scratch (~192 KB at padded_dim=1536).
                 let pre_quantizer_ref = &pre_quantizer;
+                let (calibration_data, calibration_count) = calibration_vectors(data.clone(), keep);
                 let intervals = find_quantile_interval_per_coordinate_with_preprocess(
-                    data.clone(),
+                    calibration_data,
                     vector_parameters.dim,
                     padded_dim,
-                    count,
+                    calibration_count,
                     quantile_param,
                     num_threads,
                     bits.sample_size(),
@@ -414,7 +422,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
@@ -422,24 +430,18 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(&self, query: &EncodedQueryTQ, i: PointOffsetType) -> f32 {
-        let encoded_vector = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, &encoded_vector)
-    }
-
     fn score_points(
         &self,
         query: &EncodedQueryTQ,
         offsets: &[PointOffsetType],
         scores: &mut [f32],
-    ) {
+    ) -> std::io::Result<()> {
         debug_assert_eq!(offsets.len(), scores.len());
 
         if !TStorage::prefers_run_scoring(offsets) {
-            self.for_each_batch(offsets, |i, vector| {
+            return self.for_each_batch(offsets, |i, vector| {
                 scores[i] = self.score_bytes(True, query, &vector);
             });
-            return;
         }
 
         HwMetric::Cpu.bump(offsets.len() * self.quantized_vector_size());
@@ -453,13 +455,14 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
                     stride,
                     &mut scores[first..first + count],
                 );
-            });
+            })?;
 
         if self.metadata.vector_parameters.invert {
             for score in scores {
                 *score = -*score;
             }
         }
+        Ok(())
     }
 
     /// Score two points inside endoded data by their indexes

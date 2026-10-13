@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
 use blobstore::fixtures::{empty_storage, random_payload};
-use common::counter::hw;
-use common::counter::hw::HwMetric;
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::RngExt;
 use rand::rngs::SmallRng;
@@ -18,7 +18,7 @@ pub fn flush_bench(c: &mut Criterion) {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
             let mut rng = rand::make_rng::<SmallRng>();
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
             let hw_metric = HwMetric::PayloadIoWrite;
 
             // Pre-populate storage with sequential random data
@@ -56,7 +56,7 @@ pub fn flush_bench(c: &mut Criterion) {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
             let mut rng = rand::make_rng::<SmallRng>();
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
             let hw_metric = HwMetric::PayloadIoWrite;
 
             // Pre-populate storage with random data

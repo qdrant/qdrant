@@ -3,13 +3,14 @@ mod test_immutable_payload_index_files;
 mod test_vector_name_ops;
 
 use std::assert_matches;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashSet;
-use common::counter::hw;
-use common::tar_ext;
+use common::generic_consts::Random;
 use common::tar_unpack::tar_unpack_file;
 use common::types::{DeferredBehavior, PointOffsetType};
+use common::{ambient, tar_ext};
 use fs_err as fs;
 use fs_err::File;
 use ordered_float::OrderedFloat;
@@ -43,16 +44,21 @@ use crate::segment_constructor::simple_segment_constructor::{
 };
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
+    BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, CompressionRatio,
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
     MultiVectorConfig, Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType,
-    PointIdType, QuantizationConfig, SearchParams, SnapshotFormat, SparseVectorDataConfig,
-    SparseVectorStorageType, TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
-    ValueVariants, VectorDataConfig, VectorStorageDatatype, VectorStorageType, WithPayload,
-    WithVector,
+    PointIdType, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
+    ScalarQuantization, ScalarQuantizationConfig, ScalarType, SearchParams, SnapshotFormat,
+    SparseVectorDataConfig, SparseVectorStorageType, TurboQuantBitSize,
+    TurboQuantQuantizationConfig, TurboQuantization, ValueVariants, VectorDataConfig,
+    VectorStorageDatatype, VectorStorageType, WithPayload, WithVector,
 };
 use crate::utils::maybe_arc::MaybeArc;
-use crate::vector_storage::new_raw_scorer;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
+};
 use crate::vector_storage::query::{FeedbackItem, NaiveFeedbackCoefficients, NaiveFeedbackQuery};
+use crate::vector_storage::{VectorStorageRead as _, new_raw_scorer};
 
 fn init_logger() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -66,7 +72,7 @@ fn test_search_batch_equivalence_single() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
@@ -129,7 +135,7 @@ fn test_from_filter_attributes() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let dim = 2;
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment
@@ -193,6 +199,69 @@ fn test_from_filter_attributes() {
     assert!(results_with_invalid_filter.is_empty());
 }
 
+/// A `must_not` condition equal to a primary `must` clause must still exclude its points.
+///
+/// This is the filter a proxy segment builds when it is read with `HasId` of exactly the points
+/// it has deleted: `must: HasId(ids)` plus `must_not: HasId(ids)`.
+/// See <https://github.com/qdrant/qdrant/issues/11056>.
+#[test]
+fn test_read_filtered_must_not_equal_to_primary_clause() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let _scope = ambient::test_guard();
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for id in 0..20u64 {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let color = if id < 2 { "red" } else { "blue" };
+        let payload: Payload =
+            serde_json::from_value(serde_json::json!({ "color": color })).unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+    segment
+        .create_field_index(
+            20,
+            &JsonPath::new("color"),
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        )
+        .unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let read = |filter: &Filter| {
+        segment
+            .read_filtered(
+                None,
+                None,
+                Some(filter),
+                &is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap()
+    };
+    let must_and_must_not = |condition: Condition| Filter {
+        must: Some(vec![condition.clone()]),
+        must_not: Some(vec![condition]),
+        ..Default::default()
+    };
+
+    let has_id = Condition::HasId(HasIdCondition::from_iter([PointIdType::from(1)]));
+    let red = Condition::Field(FieldCondition::new_match(
+        JsonPath::new("color"),
+        "red".to_string().into(),
+    ));
+
+    // Primary `HasId` clause, and primary clause from the keyword index
+    assert_eq!(
+        (
+            read(&must_and_must_not(has_id)),
+            read(&must_and_must_not(red)),
+        ),
+        (vec![], vec![]),
+    );
+}
+
 #[rstest]
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
@@ -213,7 +282,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
 
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
 
@@ -335,7 +404,7 @@ fn test_snapshot_streamable_without_files_wrapper() {
 
     let segment_base_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(segment_base_dir.path(), 2, Distance::Dot).unwrap();
 
@@ -429,7 +498,7 @@ fn test_check_consistency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
@@ -515,7 +584,7 @@ fn test_point_vector_count() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert point ID 4 and 6, assert counts
     segment
@@ -558,7 +627,7 @@ fn test_point_vector_count_multivec() {
     let mut segment =
         build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert point ID 4 and 6 fully, 8 and 10 partially, assert counts
     segment
@@ -663,7 +732,7 @@ fn test_retrieve_raw_dense_bytes() {
     let dim = 4;
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
     segment
@@ -723,7 +792,7 @@ fn test_retrieve_raw_multivec_bytes() {
         true,
     )
     .unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Two inner vectors of `dim` elements each, flattened.
     let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
@@ -785,7 +854,7 @@ fn test_retrieve_raw_sparse_bytes() {
     )
     .unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
     let mut vectors = NamedVectors::default();
     vectors.insert(
@@ -847,7 +916,7 @@ fn test_upsert_raw_dense_roundtrip() {
 
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![0.1_f32, 0.2, 0.3, 0.4];
     src.upsert_point(100, 7.into(), only_default_vector(&vec))
@@ -897,7 +966,7 @@ fn test_upsert_raw_append_only_replace() {
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
     dst.append_only_mutations = true;
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let old_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     dst.upsert_point(100, 7.into(), only_default_vector(&old_vec))
@@ -952,7 +1021,7 @@ fn test_append_only_clone_stamps_payload_version() {
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut segment = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
     segment.append_only_mutations = true;
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     segment
@@ -1012,7 +1081,7 @@ fn test_append_only_delete_is_tombstone_only_on_non_appendable() {
     let dim = 4;
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     segment
@@ -1057,7 +1126,7 @@ fn test_upsert_moved_point_single_slot() {
     let mut src = build_simple_segment(src_dir.path(), dim, Distance::Dot).unwrap();
     let mut dst = build_simple_segment(dst_dir.path(), dim, Distance::Dot).unwrap();
     dst.append_only_mutations = true;
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let raw_vec = vec![1.0_f32, 0.0, 1.0, 0.0];
     src.upsert_point(100, 7.into(), only_default_vector(&raw_vec))
@@ -1119,7 +1188,7 @@ fn test_append_only_every_step_clones() {
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment.append_only_mutations = true;
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // A whole point in one operation: one slot.
     let vec = vec![1.0_f32, 0.0, 1.0, 0.0];
@@ -1169,7 +1238,7 @@ fn test_upsert_raw_multivec_roundtrip() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Two inner vectors of `dim` elements each, flattened.
     let flattened = vec![0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6];
@@ -1218,7 +1287,7 @@ fn test_upsert_raw_sparse_roundtrip() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let sparse = SparseVector::new(vec![1, 5, 42], vec![0.5, 1.5, 2.5]).unwrap();
     let mut vectors = NamedVectors::default();
@@ -1269,7 +1338,7 @@ fn test_upsert_raw_dense_narrow_datatypes_roundtrip() {
         let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
         let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
         let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // Values exactly representable in both u8 and f16.
         let vec = vec![0.0_f32, 1.0, 128.0, 255.0];
@@ -1363,7 +1432,7 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
     };
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut rng = StdRng::seed_from_u64(42);
     for i in 0..num_points {
@@ -1391,8 +1460,8 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
         let quantized_scorer = quantized_vectors.raw_scorer(query.clone()).unwrap();
         let original_scorer = new_raw_scorer(query.clone(), &vector_storage).unwrap();
         for i in 0..num_points as PointOffsetType {
-            let quantized = quantized_scorer.score_point(i);
-            let original = original_scorer.score_point(i);
+            let quantized = quantized_scorer.score_point(i).unwrap();
+            let original = original_scorer.score_point(i).unwrap();
             assert!(
                 (quantized - original).abs() < 0.05,
                 "point {i}: quantized score {quantized} vs original {original}",
@@ -1414,6 +1483,292 @@ fn test_appendable_segment_turbo_quantization(#[case] bits: TurboQuantBitSize) {
     )
     .unwrap();
     check_quantized_scores(&segment);
+}
+
+fn quantization_case(case: &str) -> QuantizationConfig {
+    #![allow(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    let scalar = |quantile| {
+        QuantizationConfig::Scalar(ScalarQuantization {
+            scalar: ScalarQuantizationConfig {
+                r#type: ScalarType::Int8,
+                quantile,
+                always_ram: Some(true),
+                memory: None,
+            },
+        })
+    };
+    let binary = |encoding| {
+        QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: Some(true),
+                memory: None,
+                encoding: Some(encoding),
+                query_encoding: None,
+            },
+        })
+    };
+    let turbo = |bits| {
+        QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                memory: None,
+                bits: Some(bits),
+            },
+        })
+    };
+    match case {
+        "scalar" => scalar(None),
+        "scalar_quantile" => scalar(Some(0.99)),
+        "pq" => QuantizationConfig::Product(ProductQuantization {
+            product: ProductQuantizationConfig {
+                compression: CompressionRatio::X4,
+                always_ram: Some(true),
+                memory: None,
+            },
+        }),
+        "binary_1bit" => binary(BinaryQuantizationEncoding::OneBit),
+        "binary_2bit" => binary(BinaryQuantizationEncoding::TwoBits),
+        "binary_1_5bit" => binary(BinaryQuantizationEncoding::OneAndHalfBits),
+        "turbo_bits1" => turbo(TurboQuantBitSize::Bits1),
+        "turbo_bits4" => turbo(TurboQuantBitSize::Bits4),
+        "turbo_bits8" => turbo(TurboQuantBitSize::Bits8),
+        _ => unreachable!("unknown quantization case {case}"),
+    }
+}
+
+/// `count` points of random unit vectors, each with `inner_count` vectors (1 for dense).
+fn random_points(count: usize, inner_count: usize, dim: usize) -> Vec<Vec<Vec<f32>>> {
+    let mut rng = StdRng::seed_from_u64(20261012);
+    (0..count)
+        .map(|_| {
+            (0..inner_count)
+                .map(|_| {
+                    let vector: Vec<f32> = (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect();
+                    let norm = vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+                    vector.into_iter().map(|x| x / norm).collect()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn point_query(point: &[Vec<f32>], multivector: bool) -> QueryVector {
+    if multivector {
+        QueryVector::from(&MultiDenseVectorInternal::new_unchecked(point.to_vec()))
+    } else {
+        QueryVector::from(point[0].clone())
+    }
+}
+
+/// Segment with a Cosine `VECTOR1_NAME` and a 4-dimensional `VECTOR2_NAME`. Holds `missing`
+/// points (ids `0..missing`) with only `VECTOR2_NAME`, followed by `points` with both.
+fn segment_with_missing_vectors(
+    path: &Path,
+    dim: usize,
+    multivector: bool,
+    missing: u64,
+    points: &[Vec<Vec<f32>>],
+) -> Segment {
+    let vector_config = |size, multivector_config| VectorDataConfig {
+        size,
+        distance: Distance::Cosine,
+        storage_type: VectorStorageType::default(),
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config,
+        datatype: None,
+    };
+    let config = SegmentConfig {
+        vector_data: HashMap::from([
+            (
+                VECTOR1_NAME.to_owned(),
+                vector_config(dim, multivector.then(MultiVectorConfig::default)),
+            ),
+            (VECTOR2_NAME.to_owned(), vector_config(4, None)),
+        ]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
+    let _scope = ambient::test_guard();
+
+    let other_vector = VectorInternal::from(vec![1.0, 0.0, 0.0, 0.0]);
+    for id in 0..missing {
+        let mut named_vectors = NamedVectors::default();
+        named_vectors.insert(VECTOR2_NAME.into(), other_vector.clone());
+        segment.upsert_point(100, id.into(), named_vectors).unwrap();
+    }
+    for (i, point) in points.iter().enumerate() {
+        let vector = if multivector {
+            VectorInternal::from(MultiDenseVectorInternal::new_unchecked(point.clone()))
+        } else {
+            VectorInternal::from(point[0].clone())
+        };
+        let mut named_vectors = NamedVectors::default();
+        named_vectors.insert(VECTOR1_NAME.into(), vector);
+        named_vectors.insert(VECTOR2_NAME.into(), other_vector.clone());
+        segment
+            .upsert_point(100, (missing + i as u64).into(), named_vectors)
+            .unwrap();
+    }
+
+    // The absent vectors are backed by deleted placeholders
+    let id_tracker = segment.id_tracker.borrow();
+    let vector_storage = segment.vector_data[VECTOR1_NAME].vector_storage.borrow();
+    for id in 0..missing {
+        let offset = id_tracker
+            .internal_id_with_behavior(id.into(), DeferredBehavior::WithDeferred)
+            .unwrap();
+        assert!(vector_storage.is_deleted_vector(offset));
+        if !multivector {
+            let placeholder = vector_storage.get_vector::<Random>(offset).to_owned();
+            assert_eq!(placeholder, VectorInternal::from(vec![1.0; dim]));
+        }
+    }
+    drop((id_tracker, vector_storage));
+    segment
+}
+
+fn quantize_vector1(
+    segment: &Segment,
+    config: &QuantizationConfig,
+    path: &Path,
+) -> QuantizedVectors {
+    QuantizedVectors::create(
+        &segment.vector_data[VECTOR1_NAME].vector_storage.borrow(),
+        config,
+        QuantizedVectorsStorageType::Immutable,
+        path,
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap()
+}
+
+fn internal_id(segment: &Segment, id: u64) -> PointOffsetType {
+    segment
+        .id_tracker
+        .borrow()
+        .internal_id_with_behavior(id.into(), DeferredBehavior::WithDeferred)
+        .unwrap()
+}
+
+/// Points without a named vector must not change how the other points are quantized.
+///
+/// A point upserted without `VECTOR1_NAME` still gets a slot in that storage, filled with a
+/// placeholder and marked deleted: `[1.0; dim]` for dense vectors, which for Cosine is not even
+/// unit length, and a single zero vector for multivectors. The segment builder copies the
+/// placeholder verbatim into the optimized segment. Quantization must fit its parameters
+/// (value range, centroids, per-coordinate stats, TQ+ correction) on the real vectors only, so
+/// the quantized scores between the very same valid vectors must not change when a few points
+/// lack the vector.
+///
+/// The sizes keep every method deterministic: PQ uses the points themselves as centroids up to
+/// 256 vectors, and TurboQuant calibrates on all vectors below its sample size. They are large
+/// enough for scalar quantization to apply the quantile (127 vectors).
+#[rstest]
+fn test_quantization_ignores_missing_named_vectors(
+    #[values(
+        "scalar",
+        "scalar_quantile",
+        "pq",
+        "binary_1bit",
+        "binary_2bit",
+        "binary_1_5bit",
+        "turbo_bits1",
+        "turbo_bits4",
+        "turbo_bits8"
+    )]
+    case: &str,
+    #[values(false, true)] multivector: bool,
+) {
+    init_logger();
+    let quantization_config = quantization_case(case);
+    let dim = 256;
+    let (num_valid, inner_count) = if multivector { (40, 4) } else { (150, 1) };
+    let num_missing = 4;
+    let points = random_points(num_valid, inner_count, dim);
+
+    // Quantized scores between all valid points, after `missing` points without
+    // `VECTOR1_NAME` were inserted first.
+    let quantized_scores = |missing: u64| -> Vec<Vec<f32>> {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let quant_dir = Builder::new().prefix("quant_dir").tempdir().unwrap();
+        let segment = segment_with_missing_vectors(dir.path(), dim, multivector, missing, &points);
+        let quantized_vectors = quantize_vector1(&segment, &quantization_config, quant_dir.path());
+        let _scope = ambient::test_guard();
+
+        let offsets: Vec<_> = (0..num_valid as u64)
+            .map(|i| internal_id(&segment, missing + i))
+            .collect();
+        points
+            .iter()
+            .map(|point| {
+                let scorer = quantized_vectors
+                    .raw_scorer(point_query(point, multivector))
+                    .unwrap();
+                offsets
+                    .iter()
+                    .map(|&offset| scorer.score_point(offset).unwrap())
+                    .collect()
+            })
+            .collect()
+    };
+
+    let control = quantized_scores(0);
+    let treatment = quantized_scores(num_missing);
+    for (query, (control, treatment)) in control.iter().zip(&treatment).enumerate() {
+        for (point, (&control, &treatment)) in control.iter().zip(treatment).enumerate() {
+            assert!(
+                (control - treatment).abs() <= 1e-5 * control.abs().max(1.0),
+                "{case}: score of query {query} against point {point} changed from {control} \
+                 to {treatment} after adding {num_missing} points without `{VECTOR1_NAME}`",
+            );
+        }
+    }
+}
+
+/// Quantizing a vector that no point has: every slot holds a deleted placeholder, so there is
+/// nothing to fit the quantization on. Every slot must still be encoded, since the quantized
+/// storage is addressed by offset.
+#[rstest]
+fn test_quantization_of_vector_missing_from_all_points(
+    #[values(
+        "scalar",
+        "scalar_quantile",
+        "pq",
+        "binary_1bit",
+        "binary_2bit",
+        "binary_1_5bit",
+        "turbo_bits1",
+        "turbo_bits4",
+        "turbo_bits8"
+    )]
+    case: &str,
+    #[values(false, true)] multivector: bool,
+) {
+    init_logger();
+    let quantization_config = quantization_case(case);
+    let dim = 256;
+    let num_missing = 10;
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let quant_dir = Builder::new().prefix("quant_dir").tempdir().unwrap();
+    let segment = segment_with_missing_vectors(dir.path(), dim, multivector, num_missing, &[]);
+    let quantized_vectors = quantize_vector1(&segment, &quantization_config, quant_dir.path());
+    let _scope = ambient::test_guard();
+
+    let query = &random_points(1, if multivector { 4 } else { 1 }, dim)[0];
+    let scorer = quantized_vectors
+        .raw_scorer(point_query(query, multivector))
+        .unwrap();
+    for id in 0..num_missing {
+        let score = scorer.score_point(internal_id(&segment, id)).unwrap();
+        assert!(score.is_finite(), "{case}: score of point {id} is {score}");
+    }
 }
 
 /// TurboQuant dense raw round-trip: the encoded TQ blob must be ingested
@@ -1445,7 +1800,7 @@ fn test_upsert_raw_dense_turbo_bytes() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec: Vec<f32> = (0..dim).map(|i| (i as f32).sin()).collect();
     src.upsert_point(100, 7.into(), only_default_vector(&vec))
@@ -1498,7 +1853,7 @@ fn test_upsert_raw_multivec_turbo_bytes() {
     let dst_dir = Builder::new().prefix("segment_dst").tempdir().unwrap();
     let (mut src, _) = build_segment(src_dir.path(), &config, None, true).unwrap();
     let (mut dst, _) = build_segment(dst_dir.path(), &config, None, true).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Three inner vectors of `dim` elements each, flattened.
     let flattened: Vec<f32> = (0..3 * dim).map(|i| (i as f32).cos()).collect();
@@ -1572,7 +1927,7 @@ fn test_append_only_mutate_does_not_degrade_turbo_vectors() {
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
     segment.append_only_mutations = true;
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let point_id: PointIdType = 7.into();
     let original: Vec<f32> = (0..DIM).map(|i| (i as f32 * 0.37).sin()).collect();
     segment
@@ -1641,7 +1996,7 @@ fn test_vector_compatibility_checks() {
 
     let mut segment = build_segment_with_two_named_vecs(dir.path(), 4, 2, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Insert one point for a reference internal ID
     let point_id = 4.into();
@@ -1796,7 +2151,7 @@ fn test_handle_point_version() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
     segment
@@ -1842,7 +2197,7 @@ fn create_deferred_segment(
     n_vectors: usize,
     n_deferred: usize,
 ) -> Segment {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let deferred_internal_id = (n_deferred > 0).then_some(n_vectors as PointOffsetType);
 
@@ -2163,7 +2518,7 @@ fn test_deferred_point_estimation_with_filter() {
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_read_operations() {
     init_logger();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Search
     assert_deferred_points_excluded(
@@ -2278,7 +2633,7 @@ fn test_deferred_point_read_operations() {
 /// `prevent_unoptimized` whose internal id is beyond the deferred threshold).
 #[test]
 fn test_deferred_point_with_deferred_reads() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 4;
 
@@ -2458,7 +2813,7 @@ fn test_deferred_point_sparse() {
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_facets() {
     init_logger();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let key = JsonPath::new("color-indexed");
 
@@ -2744,7 +3099,7 @@ fn test_deleted_deferred_point_count() {
 fn test_flush_does_not_claim_an_unfinished_operation() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
     segment
@@ -2780,7 +3135,7 @@ fn test_flush_does_not_claim_an_unfinished_operation() {
 fn test_flush_of_unfinished_operation_reloads_dirty() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
     let segment_path = segment.segment_path.clone();
 
@@ -2820,7 +3175,7 @@ fn test_flush_survives_concurrent_field_index_drop() {
     init_logger();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     segment
         .upsert_point(1, 1.into(), only_default_vector(&[1.0, 0.0, 0.0, 0.0]))

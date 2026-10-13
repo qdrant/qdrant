@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient::hw::HwMetric;
 use common::bitvec::{BitSlice, DeletedBitVec};
-use common::counter::hw::HwMetric;
 use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapSlice};
@@ -17,7 +17,7 @@ use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
-use super::bm25::{Bm25Query, ON_DISK_BLOCK, PositionalCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, ON_DISK_BLOCK, PositionalCursors, score_top_k};
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
@@ -845,15 +845,20 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     fn score_bm25(
         &self,
         query: &Bm25Query,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let OnDiskPostingsEnum::WithPositions(postings) = &self.storage.postings else {
             return Err(OperationError::service_error(
-                "text index stores no positions, term frequencies cannot be computed",
+                "text index does not score: BM25 needs positions and document lengths",
             ));
         };
+        if !self.records_doc_len() {
+            return Err(OperationError::service_error(
+                "text index does not score: BM25 needs positions and document lengths",
+            ));
+        }
         let terms = query.terms();
         let token_ids: Vec<TokenId> = terms.iter().map(|term| term.token_id).collect();
         // A term without a posting list contributes nothing, so only the
@@ -870,8 +875,8 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             let mut cursors = PositionalCursors::new(by_term);
             // Deleted points stay in these postings and are masked here, as
             // the filter path does.
-            let is_active =
-                |point_id: PointOffsetType| self.is_active(point_id) && accept(point_id);
+            let visible =
+                |point_id: PointOffsetType| self.is_active(point_id) && accept.is_visible(point_id);
             score_top_k::<_, ON_DISK_BLOCK>(
                 query,
                 &mut cursors,
@@ -880,7 +885,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                         lengths[index] = doc_len;
                     })
                 },
-                is_active,
+                &accept.with_visible(&visible),
                 limit,
                 is_stopped,
             )

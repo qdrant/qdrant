@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hw;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::{
@@ -12,6 +12,7 @@ mod tests {
     use strum::IntoEnumIterator;
 
     use crate::metrics::dot_similarity;
+    use crate::scoring::ScorePoint;
 
     fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
         rng.random_range(-1.0..1.0)
@@ -75,6 +76,7 @@ mod tests {
 
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, vector_data.len()),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &VectorParameters {
                         dim: vector_dim,
@@ -105,7 +107,9 @@ mod tests {
             .map(|encoded| {
                 let query_encoded = encoded.encode_query(&query);
                 let scores: Vec<f32> = (0..vector_data.len())
-                    .map(|index| hw::test(|| encoded.score_point(&query_encoded, index as u32)))
+                    .map(|index| {
+                        ambient::test(|| encoded.score_point(&query_encoded, index as u32))
+                    })
                     .collect();
                 let tops = get_top(&scores, top, false);
                 match_count(&original_top, &tops)
@@ -171,6 +175,7 @@ mod tests {
 
                 EncodedVectorsBin::<TBitsStoreType, _>::encode(
                     vector_data.iter(),
+                    std::iter::repeat_n(true, vector_data.len()),
                     TestEncodedStorageBuilder::new(None, quantized_vector_size),
                     &VectorParameters {
                         dim: vector_dim,
@@ -201,7 +206,9 @@ mod tests {
             .map(|encoded| {
                 let query_encoded = encoded.encode_query(&query);
                 let scores: Vec<f32> = (0..vector_data.len())
-                    .map(|index| hw::test(|| encoded.score_point(&query_encoded, index as u32)))
+                    .map(|index| {
+                        ambient::test(|| encoded.score_point(&query_encoded, index as u32))
+                    })
                     .collect();
                 let tops = get_top(&scores, top, false);
                 match_count(&original_top, &tops)

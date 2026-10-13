@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use api::grpc::UpdateBatchInternal;
 use async_trait::async_trait;
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use common::tar_ext;
 use common::types::{DeferredBehavior, TelemetryDetail};

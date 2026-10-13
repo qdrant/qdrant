@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
 
-use common::counter::hw::HwScale;
+use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -83,22 +84,18 @@ impl<
     TVectorStorage: MultiVectorStorageRead<TElement>,
 > QueryScorer for MultiMetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
-    #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_multi::<Random>(idx);
-        self.hw.vector_io_read(stored.as_ref().vectors_count());
-
-        self.score_multi(TypedMultiDenseVectorRef::from(&self.query), stored.as_ref())
-    }
-
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.vector_storage
             .for_each_in_batch_multi(ids, |idx, vector| {
                 self.hw.vector_io_read(vector.vectors_count());
                 scores[idx] = self.score_ref(vector);
-            });
+            })
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

@@ -1,10 +1,10 @@
-use common::counter::hw::HwScale;
-use common::generic_consts::Random;
+use common::ambient::hw::HwScale;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
+use crate::common::operation_error::OperationResult;
 use crate::vector_storage::SparseVectorStorageRead;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -62,21 +62,11 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>>
 impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> QueryScorer
     for SparseCustomQueryScorer<'_, TVectorStorage, TQuery>
 {
-    #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self
-            .vector_storage
-            .get_sparse::<Random>(idx)
-            .expect("Failed to get sparse vector");
-
-        // not exactly correct for Gridstore where the indices are compressed into u8
-        self.hw
-            .vector_io_read(stored.indices.len() + stored.values.len());
-
-        self.score(&stored)
-    }
-
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
         self.vector_storage
@@ -87,7 +77,6 @@ impl<TVectorStorage: SparseVectorStorageRead, TQuery: Query<SparseVector>> Query
 
                 scores[idx] = self.score(&vector);
             })
-            .expect("sparse vectors read");
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use blobstore::Blob;
 use blobstore::config::{Compression, DEFAULT_PAGE_SIZE_BYTES, LogstoreConfig};
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use serde_json::Value;

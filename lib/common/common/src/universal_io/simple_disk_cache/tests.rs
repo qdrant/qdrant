@@ -501,7 +501,7 @@ mod tests_mod {
         let new_data = scn.grow_remote(BLOCK_SIZE);
         futures::executor::block_on(async {
             let staged = cache.live_preload(scn.snapshot_file_info::<R>()).unwrap();
-            staged.await;
+            staged.await.unwrap();
         });
         cache.live_reload().unwrap();
 
@@ -613,7 +613,7 @@ mod tests_mod {
         let new_data = scn.grow_remote(BLOCK_SIZE);
 
         let staged = cache.live_preload(|_| None).unwrap();
-        futures::executor::block_on(staged);
+        futures::executor::block_on(staged).unwrap();
 
         // Before live_reload, local file is not resized yet
         assert_eq!(cache.len::<u8>().unwrap(), original_len);
@@ -636,14 +636,46 @@ mod tests_mod {
         let staged1 = cache.live_preload(|_| None).unwrap();
         let staged2 = cache.live_preload(|_| None).unwrap();
         futures::executor::block_on(async {
-            staged1.await;
-            staged2.await;
+            staged1.await.unwrap();
+            staged2.await.unwrap();
         });
         cache.live_reload().unwrap();
 
         assert_eq!(cache.len::<u8>().unwrap(), new_data.len() as u64);
         let bytes = cache.read_whole::<u8>().unwrap();
         assert_eq!(&*bytes, &new_data[..]);
+    }
+
+    /// A staged tail fetch that fails resolves to its error, and staging
+    /// again fetches anew instead of handing back the failed fetch.
+    #[test]
+    fn live_preload_reports_failed_fetch_and_restages() {
+        if !PREFILL {
+            // A lazy cache stages a resize, not a fetch.
+            return;
+        }
+        let mut scn = Scenario::new(BLOCK_SIZE * 2);
+        let mut cache = scn.open::<R>(PREFILL);
+        let _ = cache.read::<_, u8>(ReadRange::one(0), Sequential).unwrap();
+
+        // The listing claims a block the remote does not have yet.
+        let claimed_len = (scn.data.len() + BLOCK_SIZE) as u64;
+        let claimed = |_: &Path| {
+            Some(FileInfo {
+                size: claimed_len,
+                last_modified: None,
+                etag: None,
+            })
+        };
+        let staged = cache.live_preload(claimed).unwrap();
+        futures::executor::block_on(staged).unwrap_err();
+
+        let new_data = scn.grow_remote(BLOCK_SIZE);
+        let staged = cache.live_preload(claimed).unwrap();
+        futures::executor::block_on(staged).unwrap();
+        cache.live_reload().unwrap();
+
+        assert_eq!(&*cache.read_whole::<u8>().unwrap(), &new_data[..]);
     }
 
     /// `Populate::Partial` prefetches only the requested (block-aligned) range;

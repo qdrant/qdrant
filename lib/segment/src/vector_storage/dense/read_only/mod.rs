@@ -22,7 +22,7 @@ pub struct ReadOnlyChunkedDenseVectorStorage<T: PrimitiveVectorElement, S: Unive
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::mmap::AdviceSetting;
     use common::sorted_slice::SortedSlice;
@@ -47,7 +47,7 @@ mod tests {
 
         let dir = Builder::new().prefix("ro_dense").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT)
             .map(|_| {
@@ -127,7 +127,7 @@ mod tests {
         const DIM: usize = 64;
         let dir = Builder::new().prefix("ro_dense_reload").tempdir().unwrap();
         let mut rng = StdRng::seed_from_u64(7);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let rand_vec = |rng: &mut StdRng| -> DenseVector {
             std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
@@ -222,7 +222,7 @@ mod tests {
             .prefix("ro_dense_appended_deleted")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
             dir.path(),
@@ -274,7 +274,7 @@ mod tests {
             .prefix("ro_dense_appended_batch")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut writer = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
             dir.path(),
@@ -331,5 +331,79 @@ mod tests {
             );
         }
         assert!(!reader.is_deleted_vector(0));
+    }
+
+    /// A panic here takes down a rayon search worker instead of failing the query.
+    #[test]
+    fn score_stored_batch_reports_a_failed_read() {
+        use crate::spaces::simple::DotProductMetric;
+        use crate::vector_storage::query_scorer::QueryScorer;
+        use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+
+        let dir = Builder::new().prefix("ro_dense_err").tempdir().unwrap();
+        let _scope = ambient::test_guard();
+        let storage = stored_vectors(dir.path());
+
+        let query: DenseVector = vec![1.0; DIM];
+        let scorer =
+            MetricQueryScorer::<VectorElementType, DotProductMetric, _>::new(query, &storage);
+
+        let mut scores = [0.0; 1];
+        assert!(
+            scorer
+                .score_stored_batch(&[POINT_COUNT + 8], &mut scores)
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
+
+    #[test]
+    fn read_vectors_reports_a_failed_read() {
+        let dir = Builder::new()
+            .prefix("ro_dense_read_err")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+        let storage = stored_vectors(dir.path());
+
+        let keys = [((), 0), ((), POINT_COUNT + 8)];
+        assert!(
+            storage
+                .read_vectors::<Random, _>(keys, |_, _, _| {})
+                .is_err(),
+            "a read past the stored vectors must be an error, not a panic",
+        );
+    }
+
+    const POINT_COUNT: PointOffsetType = 64;
+    const DIM: usize = 16;
+
+    fn stored_vectors(
+        dir: &std::path::Path,
+    ) -> ReadOnlyChunkedDenseVectorStorage<VectorElementType, MmapFile> {
+        {
+            let mut storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
+                dir,
+                DIM,
+                Distance::Dot,
+                AdviceSetting::Global,
+                false,
+            )
+            .unwrap();
+            for id in 0..POINT_COUNT {
+                let vector: DenseVector = vec![id as VectorElementType; DIM];
+                storage.insert_vector(id, VectorRef::from(&vector)).unwrap();
+            }
+            storage.flusher()().unwrap();
+        }
+        ReadOnlyChunkedDenseVectorStorage::open(
+            &MmapFs,
+            dir,
+            DIM,
+            Distance::Dot,
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap()
     }
 }

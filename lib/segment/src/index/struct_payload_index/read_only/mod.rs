@@ -6,8 +6,7 @@ use ahash::AHashMap;
 use atomic_refcell::AtomicRefCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalReadFs};
 
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::OperationResult;
@@ -77,7 +76,7 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyStructPayloadIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         let mut futs = Vec::new();
         for field_index in self.field_indexes.values().flatten() {
             futs.extend(field_index.live_preload(fs)?);

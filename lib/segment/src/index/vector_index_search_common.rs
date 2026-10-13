@@ -78,7 +78,7 @@ where
         )?;
 
         search_result = scorer
-            .score_points(&mut search_result.iter().map(|x| x.idx).collect_vec(), 0)
+            .score_points(&mut search_result.iter().map(|x| x.idx).collect_vec(), 0)?
             .collect();
         search_result.sort_unstable();
         search_result.reverse();

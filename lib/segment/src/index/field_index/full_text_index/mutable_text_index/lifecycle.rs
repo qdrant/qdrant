@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::Blobstore;
-use common::counter::hw::{self, HwMetric};
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
@@ -51,7 +52,7 @@ impl MutableFullTextIndex {
         let phrase_matching = config.phrase_matching.unwrap_or_default();
         let tokenizer = Tokenizer::new_from_text_index_params(&config);
 
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         let mut builder = MutableInvertedIndexBuilder::new(phrase_matching, scoring);
         let mut records_without_length = 0usize;
@@ -181,7 +182,7 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc_len(&self, idx: PointOffsetType) -> Option<u32> {
         use common::generic_consts::Random;
-        hw::test(|| self.storage.get_value::<Random>(idx))
+        ambient::test(|| self.storage.get_value::<Random>(idx))
             .unwrap()
             .and_then(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().doc_len)
     }
@@ -190,7 +191,7 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
         use common::generic_consts::Random;
-        hw::test(|| self.storage.get_value::<Random>(idx))
+        ambient::test(|| self.storage.get_value::<Random>(idx))
             .unwrap()
             .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().tokens)
     }

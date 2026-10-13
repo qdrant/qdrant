@@ -3,8 +3,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hw;
 use common::generic_consts::AccessPattern;
 use common::mmap::AdviceSetting;
 use common::reason::reason;
@@ -129,7 +129,7 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVec
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
-        let _hw = hw::unmeasured_guard(reason(
+        let _scope = ambient::unmeasured_guard(reason(
             "This function is only used for internal operations.",
         ));
         for (other_vector, other_deleted) in other_vectors {
@@ -174,7 +174,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let keys = keys
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
@@ -185,7 +185,6 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapDenseVectorS
                 callback(user_data, point_offset, vector);
                 Ok(())
             })
-            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -375,7 +374,7 @@ mod tests {
         .unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {

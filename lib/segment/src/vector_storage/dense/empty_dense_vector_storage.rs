@@ -144,7 +144,11 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         ((key as usize) < self.num_points).then(|| self.get_multi::<P>(key))
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, VectorElementType>),
     {
@@ -152,6 +156,7 @@ impl MultiVectorStorageRead<VectorElementType> for EmptyDenseVectorStorage {
         for idx in 0..keys.len() {
             callback(idx, TypedMultiDenseVectorRef::new(&zeros, self.dim));
         }
+        Ok(())
     }
 
     fn iterate_inner_vectors(
@@ -242,7 +247,7 @@ impl VectorStorage for EmptyDenseVectorStorage {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hw;
+    use common::ambient;
     use common::generic_consts::Random;
 
     use super::*;
@@ -348,7 +353,7 @@ mod tests {
             10,
         );
         let vector = vec![1.0, 2.0, 3.0, 4.0];
-        let result = hw::test(|| storage.insert_vector(0, VectorRef::from(&vector)));
+        let result = ambient::test(|| storage.insert_vector(0, VectorRef::from(&vector)));
         assert!(result.is_err());
     }
 
@@ -385,13 +390,13 @@ mod tests {
             MultiDenseVectorInternal::new(vec![1.0; 8], 4),
         ));
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let scorer = new_raw_scorer(query, &storage)
             .expect("multivector query on an empty placeholder must not fail");
 
         // Slots are deleted zero placeholders: scoring them must not panic.
         let mut scores = [0.0; 3];
-        scorer.score_points(&[0, 1, 2], &mut scores);
+        scorer.score_points(&[0, 1, 2], &mut scores).unwrap();
         assert!(scores.iter().all(|score| score.is_finite()));
     }
 }

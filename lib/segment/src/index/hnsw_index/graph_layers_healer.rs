@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use common::counter::hw;
+use common::ambient;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::generic_consts::Random;
 use common::reason::reason;
@@ -93,7 +93,7 @@ impl<'a> GraphLayersHealer<'a> {
         offset: PointOffsetType,
         level: usize,
         scorer: &dyn RawScorer,
-    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.visited_pool.get(self.links_layers.len());
 
         // Result of the search is stored here.
@@ -115,16 +115,23 @@ impl<'a> GraphLayersHealer<'a> {
         {
             let links = self.links_layers[offset as usize][level].read();
             for &point in links.links() {
-                if !self.point_deleted(point) {
-                    visited_list.check_and_update_visited(point);
+                if self.point_deleted(point) {
+                    neighbours.push(point);
                 } else {
-                    pending.push(ScoredPointOffset {
-                        idx: point,
-                        score: scorer.score_point(point),
-                    });
+                    visited_list.check_and_update_visited(point);
                 }
             }
         }
+        if scores_buffer.len() < neighbours.len() {
+            scores_buffer.resize(neighbours.len(), 0.0);
+        }
+        scorer.score_points(&neighbours, &mut scores_buffer[..neighbours.len()])?;
+        pending.extend(
+            neighbours
+                .iter()
+                .zip(&scores_buffer)
+                .map(|(&idx, &score)| ScoredPointOffset { idx, score }),
+        );
 
         // At this moment `pending` is initialized with at least one deleted point,
         // now we need to find borders of all "deleted" points sub-graphs
@@ -150,7 +157,7 @@ impl<'a> GraphLayersHealer<'a> {
                 scores_buffer.resize(neighbours.len(), 0.0);
             }
 
-            scorer.score_points(&neighbours, &mut scores_buffer[..neighbours.len()]);
+            scorer.score_points(&neighbours, &mut scores_buffer[..neighbours.len()])?;
             for (&idx, &score) in neighbours.iter().zip(&scores_buffer) {
                 if !self.point_deleted(idx) {
                     // This point is on the "border", as it is reachable from the deleted
@@ -163,10 +170,15 @@ impl<'a> GraphLayersHealer<'a> {
             }
         }
 
-        nearest
+        Ok(nearest)
     }
 
-    fn heal_point_on_level(&self, offset: PointOffsetType, level: usize, scorer: &dyn RawScorer) {
+    fn heal_point_on_level(
+        &self,
+        offset: PointOffsetType,
+        level: usize,
+        scorer: &dyn RawScorer,
+    ) -> OperationResult<()> {
         let level_m = self.hnsw_m.level_m(level);
 
         // Get current links and filter out deleted ones
@@ -180,7 +192,7 @@ impl<'a> GraphLayersHealer<'a> {
         );
 
         // First: generate list of candidates using shortcuts search
-        let shortcuts = self.search_shortcuts_on_level(offset, level, scorer);
+        let shortcuts = self.search_shortcuts_on_level(offset, level, scorer)?;
 
         // Second: process list of candidates with heuristic
         let mut container = LinksContainer::with_capacity(level_m);
@@ -213,6 +225,7 @@ impl<'a> GraphLayersHealer<'a> {
                 );
             }
         }
+        Ok(())
     }
 
     pub fn heal(
@@ -230,7 +243,7 @@ impl<'a> GraphLayersHealer<'a> {
                 .try_for_each(|(offset, level)| {
                     check_process_stopped(stopped)?;
 
-                    let _hw = hw::unmeasured_guard(reason("Internal operation"));
+                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
                     let query = vector_storage
                         .get_vector::<Random>(offset)
                         .as_vec_ref()
@@ -240,7 +253,7 @@ impl<'a> GraphLayersHealer<'a> {
                     } else {
                         new_raw_scorer(query, vector_storage)?
                     };
-                    self.heal_point_on_level(offset, level, scorer.as_ref());
+                    self.heal_point_on_level(offset, level, scorer.as_ref())?;
                     counter.fetch_add(1, Ordering::Relaxed);
                     Ok(())
                 })

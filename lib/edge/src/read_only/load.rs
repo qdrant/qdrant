@@ -2,8 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
-use common::uio_trace;
+use common::ambient;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::StreamExt;
 use futures::future::join_all;
@@ -56,18 +55,18 @@ where
             (index, uuid, path, cached_fs)
         })
         .collect();
-    let ctx = uio_trace::Context::current();
+    let handoff = ambient::current();
     let staged_opens = Mutex::new(Vec::new());
     // Keep polling all listings on the caller while workers stage each ready segment.
     // An in-place scope leaves every pool worker available, including in a single-thread pool.
     pool.in_place_scope(|scope| {
-        let ctx = &ctx;
+        let handoff = &handoff;
         let staged_opens = &staged_opens;
         futures::executor::block_on(async {
             while let Some((index, uuid, segment_path, cached_fs)) = listed_futs.next().await {
                 check_process_stopped(is_stopped)?;
                 scope.spawn(move |_| {
-                    let staged_open = ctx.in_scope(|| {
+                    let staged_open = handoff.enter(|| {
                         cached_fs.and_then(|cached_fs| {
                             ReadOnlySegment::<S>::schedule_open_with_cached_fs(
                                 cached_fs,
@@ -110,21 +109,23 @@ where
     check_process_stopped(is_stopped)?;
 
     // Assemble from the resolved handles on the pool.
-    let loaded = pool.install(|| {
-        staged
-            .into_par_iter()
-            .filter_map(|(uuid, staged)| match ctx.in_scope(|| staged.finish(fs)) {
-                Ok(segment) => Some(Ok((uuid, segment))),
-                Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
-                Err(err) => {
-                    log::log!(
-                        skip_level(&err),
-                        "read-only open: skipping unloadable segment {uuid}: {err}"
-                    );
-                    None
-                }
-            })
-            .collect::<OperationResult<Vec<_>>>()
+    let loaded = ambient::parallel(|handoff| {
+        pool.install(|| {
+            staged
+                .into_par_iter()
+                .filter_map(|(uuid, staged)| match handoff.enter(|| staged.finish(fs)) {
+                    Ok(segment) => Some(Ok((uuid, segment))),
+                    Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
+                    Err(err) => {
+                        log::log!(
+                            skip_level(&err),
+                            "read-only open: skipping unloadable segment {uuid}: {err}"
+                        );
+                        None
+                    }
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })
     })?;
     check_process_stopped(is_stopped)?;
     Ok(loaded)
@@ -155,8 +156,10 @@ fn skip_level(err: &OperationError) -> log::Level {
 ///
 /// Like [`load_segments_parallel`], the preloads are driven to completion on
 /// the calling thread; `pool` only runs the CPU-bound apply.
-/// A failed preload is benign (warn): its reload still runs and surfaces
-/// anything real. Returns each segment's reload result, in input order.
+/// A failed preload skips its segment's reload and becomes that segment's
+/// result. A reload that fails after a successful preload reopens the segment
+/// (see [`reopen_after_failed_reload`]). Returns each segment's reload result,
+/// in input order.
 ///
 /// Cooperative cancellation: `is_stopped` is checked between segments and
 /// between stages; a set flag yields [`OperationError::Cancelled`] as the
@@ -169,7 +172,9 @@ fn skip_level(err: &OperationError) -> log::Level {
 #[expect(clippy::await_holding_lock)]
 pub(crate) fn reload_segments_parallel<S>(
     pool: &ThreadPool,
+    fs: &S::Fs,
     segments: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)>,
+    load_profile: Option<&LoadProfile>,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<(Uuid, OperationResult<()>)>>
 where
@@ -192,17 +197,21 @@ where
     check_process_stopped(is_stopped)?;
 
     let reloads: Vec<_> = segments.into_iter().zip(preloads).collect();
-    let ctx = uio_trace::Context::current();
-    let results = hw::parallel(|acc| {
+    let results = ambient::parallel(|handoff| {
         pool.install(|| {
             reloads
                 .into_par_iter()
                 .map(|((uuid, segment), (_, max_committed_id_res))| {
                     check_process_stopped(is_stopped)?;
-                    let _hw = acc.enter_guard();
-                    let result = ctx.in_scope(|| {
-                        max_committed_id_res.and_then(|max_committed_id| {
-                            segment.write().live_reload(max_committed_id)
+                    let _scope = handoff.enter_guard();
+                    let result = max_committed_id_res.and_then(|max_committed_id| {
+                        let mut segment = segment.write();
+                        segment.live_reload(max_committed_id).or_else(|err| {
+                            if requires_reopen(&err) {
+                                reopen_after_failed_reload(&mut segment, err, fs, load_profile)
+                            } else {
+                                Err(err)
+                            }
                         })
                     });
                     Ok((uuid, result))
@@ -212,4 +221,66 @@ where
     })?;
     check_process_stopped(is_stopped)?;
     Ok(results)
+}
+
+/// Whether a failed reload left the segment in a state only a reopen recovers.
+/// A cancelled reload replays its delta next time, and a not-found one is
+/// resolved against the manifest by the caller.
+fn requires_reopen(err: &OperationError) -> bool {
+    match err {
+        OperationError::Cancelled { .. } | OperationError::FileNotFound { .. } => false,
+        OperationError::WrongVectorDimension { .. }
+        | OperationError::MalformedVectorBlob { .. }
+        | OperationError::MalformedPayloadBlob { .. }
+        | OperationError::VectorNameNotExists { .. }
+        | OperationError::PointIdError { .. }
+        | OperationError::TypeError { .. }
+        | OperationError::TypeInferenceError { .. }
+        | OperationError::ServiceError { .. }
+        | OperationError::InconsistentStorage { .. }
+        | OperationError::OutOfMemory { .. }
+        | OperationError::Timeout { .. }
+        | OperationError::ValidationError { .. }
+        | OperationError::WrongSparse
+        | OperationError::WrongMulti
+        | OperationError::MissingRangeIndexForOrderBy { .. }
+        | OperationError::MissingMapIndexForFacet { .. }
+        | OperationError::VariableTypeError { .. }
+        | OperationError::NonFiniteNumber { .. }
+        | OperationError::OutOfAppendableCapacity { .. } => true,
+    }
+}
+
+/// Replace a segment whose reload failed after a successful preload with a
+/// fresh open of its files, under the segment's write lock.
+///
+/// The preload already reported files that could not be fetched, so this
+/// reload met data it could not apply on top of the loaded state. It may have
+/// failed after some components applied it, and retrying would fail the same
+/// way. Reads of this segment wait for the reopen, so none sees the partially
+/// applied reload. The reopen is not cancellable for the same reason. If it
+/// fails, the segment keeps its partially applied state and the error is
+/// returned.
+pub(super) fn reopen_after_failed_reload<S>(
+    segment: &mut ReadOnlySegment<S>,
+    reload_err: OperationError,
+    fs: &S::Fs,
+    load_profile: Option<&LoadProfile>,
+) -> OperationResult<()>
+where
+    S: UniversalReadExt + 'static,
+    S::Fs: UniversalReadFsAsync,
+{
+    let uuid = segment.uuid;
+    log::warn!("live_reload of segment {uuid} failed, reopening it: {reload_err}");
+    match ReadOnlySegment::open(fs, &segment.segment_path, uuid, None, load_profile) {
+        Ok(reopened) => {
+            *segment = reopened;
+            Ok(())
+        }
+        Err(err) => {
+            log::error!("reopening segment {uuid} after a failed live_reload failed: {err}");
+            Err(err)
+        }
+    }
 }

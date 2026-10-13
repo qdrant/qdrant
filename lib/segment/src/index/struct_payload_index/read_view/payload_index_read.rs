@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::condition_checker::ConditionChecker;
-use common::counter::HwMeasurementIteratorExt;
-use common::counter::hw::HwMetric;
 use common::either_variant::EitherVariant;
 use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
@@ -15,7 +14,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
@@ -97,9 +96,14 @@ where
         let Some(indexes) = self.field_indexes.get(field) else {
             return Ok(());
         };
+        let corpus = stats
+            .corpus
+            .as_ref()
+            .map(|corpus| self.query_points(corpus, is_stopped))
+            .transpose()?;
         // At most one text index per field.
         for index in indexes {
-            if index.fill_text_statistics(stats, is_stopped)? {
+            if index.fill_text_statistics(stats, corpus.as_deref(), is_stopped)? {
                 break;
             }
         }
@@ -112,7 +116,7 @@ where
         terms: &[String],
         context: &TextQueryContext<'_>,
         params: Bm25Params,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let Some(indexes) = self.field_indexes.get(field) else {
@@ -209,9 +213,16 @@ where
                 .collect();
 
             if let Some(primary_iterators) = primary_clause_iterators? {
+                // Primary clauses only come from positive conditions, so they never cover a
+                // `must_not` condition, even one equal to a primary clause. E.g. a proxy segment
+                // reads `HasId` of its deleted points as `must: HasId(ids), must_not: HasId(ids)`.
                 let all_conditions_are_primary = filter
-                    .iter_conditions()
-                    .all(|condition| query_cardinality.is_primary(condition));
+                    .must_not
+                    .as_ref()
+                    .is_none_or(|conditions| conditions.is_empty())
+                    && filter
+                        .iter_conditions()
+                        .all(|condition| query_cardinality.is_primary(condition));
 
                 // Primary clause iterators come from field indexes and don't go through
                 // the mapping, so deferred filtering must be applied to them explicitly.

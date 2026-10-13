@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::counter::hw;
+use common::ambient;
 use ordered_float::OrderedFloat;
 use rstest::rstest;
 use segment::data_types::vectors::{
@@ -123,7 +123,8 @@ fn test_mmr_lambda(#[case] lambda: f32, #[case] expected_order: &[u64]) {
         candidates_limit: 100,
     };
 
-    let result = hw::test(|| mmr_from_points_with_vector(points.clone(), mmr, distance, None, 3));
+    let result =
+        ambient::test(|| mmr_from_points_with_vector(points.clone(), mmr, distance, None, 3));
 
     let scored_points = result.unwrap();
     assert_eq!(scored_points.len(), 3);
@@ -195,7 +196,7 @@ fn test_mmr_points_without_required_vector() {
         candidates_limit: 100,
     };
 
-    let result = hw::test(|| mmr_from_points_with_vector(points, mmr, distance, None, 5));
+    let result = ambient::test(|| mmr_from_points_with_vector(points, mmr, distance, None, 5));
 
     assert!(result.is_ok());
     let scored_points = result.unwrap();
@@ -225,7 +226,7 @@ fn test_mmr_duplicate_points() {
         candidates_limit: 100,
     };
 
-    let result = hw::test(|| mmr_from_points_with_vector(points, mmr, distance, None, 5));
+    let result = ambient::test(|| mmr_from_points_with_vector(points, mmr, distance, None, 5));
 
     assert!(result.is_ok());
     let scored_points = result.unwrap();
@@ -254,7 +255,7 @@ fn test_mmr_dense_vectors() {
 
     // Test with all distance metrics for dense vectors
     for distance in Distance::iter() {
-        let result = hw::test(|| {
+        let result = ambient::test(|| {
             mmr_from_points_with_vector(dense_points.clone(), mmr.clone(), distance, None, 3)
         });
 
@@ -303,7 +304,7 @@ fn test_mmr_sparse_vectors() {
     };
 
     let sparse_result =
-        hw::test(|| mmr_from_points_with_vector(sparse_points, sparse_mmr, distance, None, 3))
+        ambient::test(|| mmr_from_points_with_vector(sparse_points, sparse_mmr, distance, None, 3))
             .unwrap();
 
     assert_eq!(sparse_result.len(), 3);
@@ -343,7 +344,7 @@ fn test_mmr_multi_vector() {
     };
 
     for distance in Distance::iter() {
-        let multi_result = hw::test(|| {
+        let multi_result = ambient::test(|| {
             mmr_from_points_with_vector(
                 multi_points.clone(),
                 multi_mmr.clone(),

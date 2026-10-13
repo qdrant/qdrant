@@ -262,7 +262,7 @@ impl<S: UniversalRead> HnswGraph<S> {
                 return Ok(None);
             }
             let mut scores = vec![0.0; seed_ids.len()];
-            scorer.raw_scorer().score_points(&seed_ids, &mut scores);
+            scorer.raw_scorer().score_points(&seed_ids, &mut scores)?;
             let seeds = std::iter::zip(seed_ids, scores)
                 .map(|(idx, score)| ScoredPointOffset { idx, score })
                 .collect();

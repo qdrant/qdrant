@@ -4,14 +4,16 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use common::types::ScoreType;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::query_context::QueryContext;
 use segment::index::field_index::full_text_index::Bm25Params;
 use segment::index::field_index::full_text_index::tokenizers::Tokenizer;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadSchemaParams, WithPayloadInterface, WithVector};
+use segment::types::{
+    Filter, PayloadFieldSchema, PayloadSchemaParams, ScoredPoint, WithPayloadInterface, WithVector,
+};
 use serde::Serialize;
 
 use crate::operation_rate_cost;
@@ -48,6 +50,10 @@ impl Hash for TextScoringQuery {
 pub struct TextSearchRequestInternal {
     pub query: TextScoringQuery,
     pub filter: Option<Filter>,
+    /// The `idf` corpus of the request's search params: the points the text
+    /// statistics are gathered over, independent of `filter`. `None` gathers
+    /// them over every point.
+    pub idf_corpus: Option<Filter>,
     pub limit: usize,
     /// Keep only points scoring above this.
     pub score_threshold: Option<ScoreType>,
@@ -71,7 +77,16 @@ impl TextScoringQuery {
     /// query. A field the schema holds no text index for is an error: there
     /// is nothing to score it with.
     pub fn tokenize(&self, schema: &PayloadIndexSchema) -> OperationResult<Vec<String>> {
-        let field_schema = schema.schema.get(&self.field).ok_or_else(|| {
+        self.tokenize_field(schema.schema.get(&self.field))
+    }
+
+    /// Like [`tokenize`](Self::tokenize), given the schema of the field
+    /// alone, `None` when the field has no index.
+    pub fn tokenize_field(
+        &self,
+        field_schema: Option<&PayloadFieldSchema>,
+    ) -> OperationResult<Vec<String>> {
+        let field_schema = field_schema.ok_or_else(|| {
             OperationError::validation_error(format!(
                 "BM25 requires a text index on field {}, which has none",
                 self.field,
@@ -91,18 +106,30 @@ impl TextScoringQuery {
     }
 }
 
-/// A query context seeded with the text statistics of `field` for `terms`,
-/// ready to be filled over the shard's segments by
+/// Keep only the points scoring above `score_threshold`, from a list sorted
+/// best first. Strict, as the threshold of a search over a larger-is-better
+/// distance.
+pub fn cut_at_threshold(points: &mut Vec<ScoredPoint>, score_threshold: Option<ScoreType>) {
+    if let Some(threshold) = score_threshold {
+        let keep = points.partition_point(|point| point.score > threshold);
+        points.truncate(keep);
+    }
+}
+
+/// A query context seeded with the text statistics of `field` for `terms`
+/// over `idf_corpus` (every point when `None`), ready to be filled over the
+/// shard's segments by
 /// [`fill_query_context`](super::query_context::fill_query_context).
 pub fn init_text_query_context(
     field: &JsonPath,
+    idf_corpus: Option<&Filter>,
     terms: &[String],
     is_stopped: Arc<AtomicBool>,
 ) -> QueryContext {
     // The threshold only picks between plain and indexed vector search.
     let mut query_context =
-        QueryContext::new(usize::MAX, hw::current()).with_is_stopped(is_stopped);
-    query_context.init_text_stats(field, terms.iter().cloned());
+        QueryContext::new(usize::MAX, ambient::current()).with_is_stopped(is_stopped);
+    query_context.init_text_stats(field, idf_corpus, terms.iter().cloned());
     query_context
 }
 
@@ -111,7 +138,7 @@ mod tests {
     use std::collections::HashMap;
 
     use segment::data_types::index::{Language, StopwordsInterface, TextIndexParams};
-    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+    use segment::types::PayloadSchemaType;
 
     use super::*;
 

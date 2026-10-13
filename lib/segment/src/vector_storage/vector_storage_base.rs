@@ -119,10 +119,11 @@ pub trait VectorStorageRead {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         for (user_data, key) in keys {
             callback(user_data, key, self.get_vector::<P>(key));
         }
+        Ok(())
     }
 
     /// Get the vector by the given key if it exists
@@ -413,7 +414,11 @@ pub trait MultiVectorStorageRead<T: PrimitiveVectorElement>: VectorStorageRead {
         key: PointOffsetType,
     ) -> Option<CowMultiVector<'_, T>>;
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>);
 
@@ -564,7 +569,7 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    );
+    ) -> OperationResult<()>;
 
     fn score_internal_encoded(
         &self,
@@ -582,14 +587,6 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
 pub trait TurboMultiScoring: MultiTQVectorStorageRead {
     /// Preprocess and precompute each inner query vector of a multi-query once.
     fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ>;
-
-    /// Asymmetric MaxSim score of a precomputed multi-query against stored point
-    /// `key`.
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType;
 
     /// Symmetric MaxSim score between two stored points.
     fn score_internal_max_similarity(
@@ -1668,7 +1665,7 @@ impl VectorStorageRead for VectorStorageEnum {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         match self {
             VectorStorageEnum::DenseVolatile(v) => v.read_vectors::<P, U>(keys, callback),
             #[cfg(test)]

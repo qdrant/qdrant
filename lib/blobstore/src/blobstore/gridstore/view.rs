@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random};
 use common::universal_io::{UniversalRead, UserData};
 

@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
-use common::counter::AmbientContext;
-use common::counter::hw::HwMetric;
+use common::ambient::AmbientContext;
+use common::ambient::hw::HwMetric;
 use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_hw_counter(c: &mut Criterion) {

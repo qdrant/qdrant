@@ -39,7 +39,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::payload_config::FullPayloadIndexType;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
@@ -424,6 +424,7 @@ impl FieldIndexRead for NestedFieldIndex {
     fn fill_text_statistics(
         &self,
         _stats: &mut TextFieldStats,
+        _corpus: Option<&[PointOffsetType]>,
         _is_stopped: &AtomicBool,
     ) -> OperationResult<bool> {
         // Full-text indexes are not supported per element
@@ -435,7 +436,7 @@ impl FieldIndexRead for NestedFieldIndex {
         _terms: &[String],
         _context: &TextQueryContext<'_>,
         _params: Bm25Params,
-        _accept: &dyn Fn(PointOffsetType) -> bool,
+        _accept: &Bm25Accept<'_>,
         _limit: usize,
     ) -> OperationResult<Option<Vec<ScoredPointOffset>>> {
         // Full-text indexes are not supported per element

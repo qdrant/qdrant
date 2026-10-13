@@ -3,15 +3,15 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::{BitSlice, BitSliceExt as _, BitVec, bitvec_set_deleted};
-use common::counter::hw;
 use common::generic_consts::AccessPattern;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::UserData;
 
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
@@ -211,14 +211,21 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T> for VolatileMultiDense
         self.get_multi_impl(key)
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
         for (idx, &key) in keys.iter().enumerate() {
-            let vector = self.get_multi_impl(key).expect("multi vector exists");
+            let vector = self.get_multi_impl(key).ok_or_else(|| {
+                OperationError::service_error(format!("multi vector {key} is not readable"))
+            })?;
             callback(idx, vector.as_ref());
         }
+        Ok(())
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
@@ -244,7 +251,7 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for VolatileMultiDenseVect
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.vectors_metadata.len() as PointOffsetType;
-            hw::unmeasured(
+            ambient::unmeasured(
                 reason("This function is only used by internal operations"),
                 || self.insert_multi_native(new_id, other_vector.as_ref(), other_deleted),
             )?;

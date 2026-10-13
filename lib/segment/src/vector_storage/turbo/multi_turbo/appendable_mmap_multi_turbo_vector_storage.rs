@@ -14,8 +14,9 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::counter::hw::{self, HwMetric};
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
 use common::reason::reason;
@@ -434,32 +435,6 @@ impl AppendableMmapMultiTurboVectorStorage {
         max_sim.into_iter().sum()
     }
 
-    /// Asymmetric MaxSim score of a precomputed multi-query against stored point
-    /// `key`: each inner query vector takes its best similarity to any of the
-    /// point's inner records, summed.
-    pub fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType {
-        let Some(offset) = self.get_offset::<Random>(key) else {
-            log::error!("Multivector not found");
-            return ScoreType::NEG_INFINITY;
-        };
-
-        let records = self
-            .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
-            .expect("Multivector not found");
-
-        HwMetric::Cpu.bump(records.len() * query.len());
-
-        let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump(records.len() * mul);
-
-        self.score_records_max_similarity(query, &records)
-    }
-
     /// Symmetric MaxSim score between two stored points. Reads both points'
     /// records, so it accounts its own IO and CPU.
     pub fn score_internal_max_similarity(
@@ -556,11 +531,10 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_record_range::<P, _>(keys, |user_data, key, records| {
             callback(user_data, key, self.dequantize_records(records));
         })
-        .expect("read TQ multivectors");
     }
 
     fn read_vector_bytes<P: AccessPattern, U: Copy + UserData>(
@@ -617,14 +591,6 @@ impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
         AppendableMmapMultiTurboVectorStorage::preprocess_query(self, query)
     }
 
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType {
-        AppendableMmapMultiTurboVectorStorage::score_point_max_similarity(self, query, key)
-    }
-
     fn score_internal_max_similarity(
         &self,
         point_a: PointOffsetType,
@@ -676,7 +642,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let record_size = self.quantizer.quantized_size();
-        let _hw = hw::unmeasured_guard(reason("Internal operation"));
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let start_index = self.offsets.len() as PointOffsetType;
 
         for (blob, deleted) in other_vectors {
@@ -829,7 +795,7 @@ mod tests {
             for dim in [1, 127, 128, 1025] {
                 let distance = Distance::Dot;
                 let dir = Builder::new().prefix("turbo_multi").tempdir().unwrap();
-                let _hw = hw::test_guard();
+                let _scope = ambient::test_guard();
 
                 let oracle = Oracle::new(dim, distance);
                 let inputs = make_multi_vectors(dim, COUNT, seed);
@@ -1028,7 +994,7 @@ mod tests {
             let distance = Distance::Dot;
             let src_dir = Builder::new().prefix("turbo_multi_src").tempdir().unwrap();
             let dst_dir = Builder::new().prefix("turbo_multi_dst").tempdir().unwrap();
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
             let stopped = AtomicBool::new(false);
 
             let mut src = open_appendable_turbo_multi_vector_storage(
@@ -1125,7 +1091,7 @@ mod tests {
         const DIM: usize = 128;
         let distance = Distance::Dot;
         let dir = Builder::new().prefix("turbo_multi_cap").tempdir().unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
             dir.path(),
@@ -1209,7 +1175,7 @@ mod tests {
             .prefix("turbo_multi_straddle")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
@@ -1284,7 +1250,7 @@ mod tests {
             .prefix("turbo_multi_oversized")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
@@ -1333,7 +1299,7 @@ mod tests {
                 .prefix("turbo_multi_reinsert")
                 .tempdir()
                 .unwrap();
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1376,7 +1342,7 @@ mod tests {
                 .prefix("turbo_multi_avail")
                 .tempdir()
                 .unwrap();
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1452,7 +1418,7 @@ mod tests {
                 .prefix("turbo_multi_read_batch")
                 .tempdir()
                 .unwrap();
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
 
             let mut storage = open_appendable_turbo_multi_vector_storage(
                 dir.path(),
@@ -1470,9 +1436,11 @@ mod tests {
                 (0..COUNT).map(|i| (i * 10, i as PointOffsetType)).collect();
 
             let mut seen: Vec<(usize, PointOffsetType, MultiDenseVectorInternal)> = Vec::new();
-            storage.read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
-                seen.push((tag, offset, to_multi(vector)));
-            });
+            storage
+                .read_vectors::<Random, usize>(keys.iter().copied(), |tag, offset, vector| {
+                    seen.push((tag, offset, to_multi(vector)));
+                })
+                .unwrap();
 
             // Order is not guaranteed (the trait permits parallel reads), so check
             // each callback against its own offset, not its arrival position.
@@ -1588,7 +1556,7 @@ mod tests {
             .prefix("turbo_multi_model_dst")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         let stopped = AtomicBool::new(false);
 
         let mut model: Vec<Slot> = Vec::new();
@@ -1762,7 +1730,7 @@ mod tests {
             .prefix("turbo_multi_files")
             .tempdir()
             .unwrap();
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage = open_appendable_turbo_multi_vector_storage(
             dir.path(),
@@ -1829,7 +1797,7 @@ mod tests {
                         .prefix("turbo_multi_score")
                         .tempdir()
                         .unwrap();
-                    let _hw = hw::test_guard();
+                    let _scope = ambient::test_guard();
                     let mut storage = open_appendable_turbo_multi_vector_storage(
                         dir.path(),
                         dim,
@@ -1845,9 +1813,9 @@ mod tests {
                     for (q, query) in inputs.iter().enumerate() {
                         let scorer = TurboMultiQueryScorer::new(query, &storage);
 
-                        let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                            .map(|k| scorer.score_stored(k))
-                            .collect();
+                        let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
+                        let mut scores: Vec<ScoreType> = vec![0.0; COUNT];
+                        scorer.score_stored_batch(&ids, &mut scores).unwrap();
                         let best = (0..COUNT)
                             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
                             .unwrap();
@@ -1891,7 +1859,7 @@ mod tests {
             for dim in [32, 128] {
                 for seed in SEEDS {
                     let dir = Builder::new().prefix("turbo_multi_reco").tempdir().unwrap();
-                    let _hw = hw::test_guard();
+                    let _scope = ambient::test_guard();
                     let mut storage = open_appendable_turbo_multi_vector_storage(
                         dir.path(),
                         dim,
@@ -1911,9 +1879,9 @@ mod tests {
                         ));
                         let scorer = TurboMultiCustomQueryScorer::new(reco, &storage);
 
-                        let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                            .map(|k| scorer.score_stored(k))
-                            .collect();
+                        let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
+                        let mut scores: Vec<ScoreType> = vec![0.0; COUNT];
+                        scorer.score_stored_batch(&ids, &mut scores).unwrap();
                         let best = (0..COUNT)
                             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
                             .unwrap();

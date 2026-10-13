@@ -6,7 +6,7 @@ use super::payload_field_index::PayloadFieldIndexRead;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::facet_index::FacetIndex;
-use crate::index::field_index::full_text_index::Bm25Params;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -69,11 +69,13 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// [`PayloadIndexRead::numeric_index_for`]: crate::index::PayloadIndexRead::numeric_index_for
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_>;
 
-    /// Add this index's text statistics to `stats`, and report whether it is
-    /// a text index at all.
+    /// Add this index's text statistics to `stats`, counting only the
+    /// `corpus` points when given, and report whether it is a text index at
+    /// all.
     fn fill_text_statistics(
         &self,
         stats: &mut TextFieldStats,
+        corpus: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<bool>;
 
@@ -85,7 +87,7 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
         terms: &[String],
         context: &TextQueryContext<'_>,
         params: Bm25Params,
-        accept: &dyn Fn(PointOffsetType) -> bool,
+        accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Option<Vec<ScoredPointOffset>>>;
 

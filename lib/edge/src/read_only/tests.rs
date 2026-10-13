@@ -68,6 +68,7 @@ pub(crate) fn test_config() -> EdgeConfig {
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: None,
         search_pool_core: None,
     }
@@ -391,6 +392,7 @@ fn provided_config_overrides_tunables_at_open() {
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: Some(2),
         search_pool_core: None,
     };
@@ -712,4 +714,49 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
     armed.store(false, Ordering::Relaxed);
     follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 30);
+}
+
+/// A segment whose reload failed is reopened in place: it serves the leader's
+/// current state, and later reloads continue from the reopened segment.
+#[test]
+fn failed_reload_reopens_segment() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-reopen")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush().unwrap();
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10);
+
+    upsert(&leader, 11..=20);
+    leader.flush().unwrap();
+    let segments: Vec<_> = {
+        let holder = follower.segments.read();
+        holder
+            .uuids()
+            .into_iter()
+            .filter_map(|uuid| holder.segment_arc(&uuid))
+            .collect()
+    };
+    for segment in segments {
+        let injected = segment::common::operation_error::OperationError::service_error("injected");
+        crate::read_only::load::reopen_after_failed_reload(
+            &mut segment.write(),
+            injected,
+            &MmapFs,
+            None,
+        )
+        .unwrap();
+    }
+    assert_eq!(exact_count(&follower), 20);
+    assert_follower_vectors(&follower, &[1, 20]);
+
+    upsert(&leader, 21..=30);
+    leader.flush().unwrap();
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 30);
+    assert_follower_vectors(&follower, &[30]);
 }

@@ -1,7 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -23,7 +23,7 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
 
     let mut volatile_sparse_vector_storage = VolatileSparseVectorStorage::default();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     group.bench_function("insert-volatile", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {

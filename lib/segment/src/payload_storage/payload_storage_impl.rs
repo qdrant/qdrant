@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use blobstore::config::CreateOptions;
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, Blobstore};
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, Populate, UniversalAppend, UniversalWrite};

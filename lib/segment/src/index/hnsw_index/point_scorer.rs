@@ -62,6 +62,45 @@ pub struct ScorerFilters<'a> {
     deleted: NotDeletedChecker<'a>,
 }
 
+/// Scores points given by their position in `to_global` with a scorer over segment ids.
+struct RemappedRawScorer<'a> {
+    inner: Box<dyn RawScorer + 'a>,
+    to_global: &'a [PointOffsetType],
+}
+
+impl RawScorer for RemappedRawScorer<'_> {
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
+        let mut global = [0; VECTOR_READ_BATCH_SIZE];
+        for (points, scores) in points
+            .chunks(VECTOR_READ_BATCH_SIZE)
+            .zip(scores.chunks_mut(VECTOR_READ_BATCH_SIZE))
+        {
+            let global = &mut global[..points.len()];
+            for (global, &local) in global.iter_mut().zip(points) {
+                *global = self.to_global[local as usize];
+            }
+            self.inner.score_points(global, scores)?;
+        }
+        Ok(())
+    }
+
+    fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
+        self.inner.score_internal(
+            self.to_global[point_a as usize],
+            self.to_global[point_b as usize],
+        )
+    }
+
+    fn scorer_bytes(&self) -> Option<&dyn QueryScorerBytes> {
+        // Graph building scores by id only.
+        None
+    }
+}
+
 impl<'a> ScorerFilters<'a> {
     pub fn new(
         filter_context: Option<OptimizedFilter<'a>>,
@@ -213,6 +252,37 @@ impl<'a> FilteredScorer<'a> {
         })
     }
 
+    /// Scorer for a payload block built in its own id space: point ids are positions in
+    /// `to_global`, which maps them to segment ids, and `block_deleted` holds one flag per block
+    /// point. Scores are those of [`Self::new_internal`] for the same segment points.
+    pub fn new_block_scorer<V, Q>(
+        point_id: PointOffsetType,
+        to_global: &'a [PointOffsetType],
+        vectors: &'a V,
+        quantized_vectors: Option<&'a Q>,
+        block_deleted: &'a BitSlice,
+    ) -> OperationResult<Self>
+    where
+        V: VectorStorageRead + RawScorerBuilder,
+        Q: QuantizedVectorsRead,
+    {
+        let scorer = Self::new_internal(point_id, vectors, quantized_vectors, None, block_deleted)?;
+        Ok(FilteredScorer {
+            raw_scorer: Box::new(RemappedRawScorer {
+                inner: scorer.raw_scorer,
+                to_global,
+            }),
+            filters: ScorerFilters::new(
+                None,
+                NotDeletedChecker {
+                    point_deleted: block_deleted,
+                    vec_deleted: block_deleted,
+                },
+            ),
+            scores_buffer: Vec::new(),
+        })
+    }
+
     /// Create a new filtered scorer for testing purposes.
     ///
     /// # Panics
@@ -262,7 +332,7 @@ impl<'a> FilteredScorer<'a> {
         &mut self,
         point_ids: &mut Vec<PointOffsetType>,
         limit: usize,
-    ) -> impl Iterator<Item = ScoredPointOffset> {
+    ) -> OperationResult<impl Iterator<Item = ScoredPointOffset>> {
         let mut n = self
             .filters
             .check_batched(point_ids, Select::Matches, Rest::Discard)
@@ -278,19 +348,19 @@ impl<'a> FilteredScorer<'a> {
     pub fn score_points_unfiltered(
         &mut self,
         point_ids: &[PointOffsetType],
-    ) -> impl Iterator<Item = ScoredPointOffset> {
+    ) -> OperationResult<impl Iterator<Item = ScoredPointOffset>> {
         if self.scores_buffer.len() < point_ids.len() {
             self.scores_buffer.resize(point_ids.len(), 0.0);
         }
 
         self.raw_scorer
-            .score_points(point_ids, &mut self.scores_buffer[..point_ids.len()]);
+            .score_points(point_ids, &mut self.scores_buffer[..point_ids.len()])?;
 
-        std::iter::zip(point_ids, &self.scores_buffer)
-            .map(|(&idx, &score)| ScoredPointOffset { idx, score })
+        Ok(std::iter::zip(point_ids, &self.scores_buffer)
+            .map(|(&idx, &score)| ScoredPointOffset { idx, score }))
     }
 
-    pub fn score_point(&self, point_id: PointOffsetType) -> ScoreType {
+    pub fn score_point(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         self.raw_scorer.score_point(point_id)
     }
 
@@ -500,7 +570,7 @@ impl<'a> BatchFilteredSearcher<'a> {
 
             // Switching the loops improves batching performance, but slightly degrades single-query performance.
             for BatchSearch { raw_scorer, top_k } in &mut self.scorer_batch {
-                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size]);
+                raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size])?;
 
                 for i in 0..chunk_size {
                     top_k.push(ScoredPointOffset {
@@ -537,7 +607,7 @@ fn score_chunk(
         return Ok(());
     }
     for BatchSearch { raw_scorer, top_k } in scorer_batch {
-        raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()]);
+        raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()])?;
         for i in 0..chunk.len() {
             top_k.push(ScoredPointOffset {
                 idx: chunk[i],
@@ -550,8 +620,8 @@ fn score_chunk(
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::bitvec::{BitSliceExt as _, BitVec};
-    use common::counter::hw;
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
@@ -581,7 +651,7 @@ mod tests {
         const TOP: usize = 20;
 
         let mut rng = StdRng::seed_from_u64(42);
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
 
         let mut storage = new_volatile_dense_vector_storage(DIM, Distance::Dot);
         for i in 0..TOTAL {

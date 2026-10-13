@@ -7,7 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CountRequestInternal, PointRequestInternal};
 use collection::operations::verification::{VerificationPass, new_unchecked_verification_pass};
 use collection::shards::shard::ShardId;
-use common::counter::hw::HwFutureExt;
+use common::ambient::AmbientFutureExt;
 use futures::FutureExt;
 use segment::types::{Condition, Filter};
 use serde::Deserialize;

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use common::counter::hw;
+use common::ambient;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, Flusher};
 use common::reason::reason;
@@ -128,7 +128,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         let offsets = offsets
             .iter()
             .enumerate()
@@ -139,20 +139,21 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
                 callback(index, vector);
                 Ok(())
             })
-            .expect("vectors read");
+            .map_err(std::io::Error::other)
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for run in quantization::encoded_storage::consecutive_runs(offsets) {
             let bytes = self
                 .get_many::<Random>(run.start, run.len)
-                .expect("vectors read");
+                .ok_or_else(|| run.unreadable())?;
             callback(run.first, run.len, bytes);
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -208,7 +209,7 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageBuilder
     }
 
     fn push_vector_data(&mut self, other: &[u8]) -> std::io::Result<()> {
-        hw::unmeasured(reason("Internal operation"), || self.data.push(other))
+        ambient::unmeasured(reason("Internal operation"), || self.data.push(other))
             .map(|_| ())
             .map_err(|e| std::io::Error::other(format!("Failed to push vector data: {e}")))
     }

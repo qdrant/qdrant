@@ -1,9 +1,10 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::slice;
 
 use ahash::HashMapExt as _;
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -127,7 +128,8 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         debug_assert_eq!(point_ids.len(), scores.len());
@@ -135,11 +137,11 @@ where
         if QuantizedStorage::is_in_ram_or_mmap() {
             // This function is optimized of in-ram access
             // it doesn't do extra mem copies and assume reference access
-            self.score_points_batch_in_mem_like(point_ids, scorer, scores);
+            self.score_points_batch_in_mem_like(point_ids, scorer, scores)
         } else {
             // Optimized for remote access from external storage,
             // does memory copy, but minimizes assessed to external storage
-            self.score_points_batch_uring_like(point_ids, scorer, scores);
+            self.score_points_batch_uring_like(point_ids, scorer, scores)
         }
     }
 
@@ -149,18 +151,30 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => (),
         }
 
+        // `scorer` takes an infallible closure, so a failed read is kept here
+        // and returned once the point it failed on is scored.
+        let failed = Cell::new(None);
         for (index, &point_id) in point_ids.iter().enumerate() {
             scores[index] = scorer(&|query| {
-                self.score_point_max_similarity(query, point_id) // inhibit rustfmt
+                self.score_point_max_similarity(query, point_id)
+                    .unwrap_or_else(|err| {
+                        failed.set(Some(err));
+                        ScoreType::NEG_INFINITY
+                    })
             });
+            if let Some(err) = failed.take() {
+                return Err(err);
+            }
         }
+        Ok(())
     }
 
     #[inline]
@@ -169,7 +183,8 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         match self.multi_vector_config.comparator {
@@ -178,7 +193,7 @@ where
 
         self.for_each_in_multi_batch(point_ids, |index, multi_vector| {
             scores[index] = scorer(&|query| self.score_vector_max_similarity(query, multi_vector));
-        });
+        })
     }
 
     /// Read the quantized sub-vectors for a batch of multi-vector points and hand
@@ -198,7 +213,7 @@ where
         &self,
         point_ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, &[Cow<'_, [u8]>]),
-    ) {
+    ) -> OperationResult<()> {
         debug_assert!(point_ids.len() <= u32::MAX as usize);
 
         /// Identifies, for a single sub-vector read, the multi-vector it is part of.
@@ -228,8 +243,7 @@ where
                 }
 
                 sub_vector_offsets.extend(offset.start..offset.start + offset.count);
-            })
-            .expect("multi-vector offsets read");
+            })?;
 
         let mul = usize::from(self.quantized_storage.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump(sub_vector_offsets.len() * self.quantized_vector_size() * mul);
@@ -275,9 +289,10 @@ where
                     callback(point_index as _, &multi_vector);
                 }
             },
-        );
+        )?;
 
         debug_assert!(partial_multi_vectors.is_empty());
+        Ok(())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors.
@@ -314,8 +329,10 @@ where
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         point_id: PointOffsetType,
-    ) -> ScoreType {
-        let offset = self.offsets.get_offset(point_id);
+    ) -> OperationResult<ScoreType> {
+        let mut offset = MultivectorOffset::default();
+        self.offsets
+            .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
@@ -330,9 +347,9 @@ where
                         max_sim[query_idx] = sim;
                     }
                 }
-            });
+            })?;
 
-        max_sim.into_iter().sum()
+        Ok(max_sim.into_iter().sum())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -402,7 +419,11 @@ where
             .collect()
     }
 
-    fn for_each_batch(&self, _: &[PointOffsetType], _: impl FnMut(usize, Cow<'_, [u8]>)) {
+    fn for_each_batch(
+        &self,
+        _: &[PointOffsetType],
+        _: impl FnMut(usize, Cow<'_, [u8]>),
+    ) -> std::io::Result<()> {
         unimplemented!("quantized multi-vector storage does not support `for_each_batch`");
     }
 
@@ -410,14 +431,14 @@ where
         unimplemented!("quantized multi-vector storage does not support `score`");
     }
 
-    fn score_point(
+    fn score_points(
         &self,
         query: &Vec<QuantizedStorage::EncodedQuery>,
-        i: PointOffsetType,
-    ) -> ScoreType {
-        match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i),
-        }
+        offsets: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> std::io::Result<()> {
+        self.score_points_batch(offsets, |score| score(query), scores)
+            .map_err(std::io::Error::other)
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> ScoreType {

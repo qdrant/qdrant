@@ -1,10 +1,10 @@
 use std::sync::atomic::AtomicBool;
 
-use common::counter::AmbientContext;
-use common::counter::hw::{self, HwHandoff, HwMetric};
+use common::ambient::hw::HwMetric;
+use common::ambient::{AmbientContext, Handoff};
 use common::flags::{FeatureFlags, init_feature_flags};
-use common::tar_ext;
 use common::types::DeferredBehavior;
+use common::{ambient, tar_ext};
 use fs_err::File;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
@@ -66,7 +66,7 @@ impl ProxySegment {
 /// finalize-after-race (fixed) — entirely at the proxy level, no model-testing harness involved.
 #[test]
 fn test_proxy_deleted_mask_resync_after_race_window_write() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let query_vector: QueryVector = [1.0, 1.0, 1.0, 1.0].into();
 
     // Build a wrapped segment with 2 points (internal offsets 0 and 1) and an unsynced proxy
@@ -152,7 +152,7 @@ fn test_proxy_deleted_mask_resync_after_race_window_write() {
 fn test_search_batch_equivalence_single() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     original_segment
@@ -186,11 +186,8 @@ fn test_search_batch_equivalence_single() {
 
     eprintln!("search_result = {search_result:#?}");
 
-    let hardware_accumulator = AmbientContext::new();
-    let query_context = QueryContext::new(
-        10000,
-        HwHandoff::measured(AmbientContext::clone(&hardware_accumulator)),
-    );
+    let ctx = AmbientContext::new();
+    let query_context = QueryContext::new(10000, Handoff::Measured(AmbientContext::clone(&ctx)));
     let segment_query_context = query_context.get_segment_query_context();
 
     let search_batch_result = proxy_segment
@@ -210,7 +207,7 @@ fn test_search_batch_equivalence_single() {
 
     assert!(!search_result.is_empty());
     assert_eq!(search_result, search_batch_result[0].clone());
-    assert!(hardware_accumulator.hw_data()[HwMetric::Cpu] > 0);
+    assert!(ctx.hw_data()[HwMetric::Cpu] > 0);
 }
 
 #[test]
@@ -320,7 +317,7 @@ fn test_read_filter() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
         "color".parse().unwrap(),
@@ -378,6 +375,35 @@ fn test_read_filter() {
     assert_eq!(original_points.len() - 1, proxy_res.len());
 }
 
+/// Reading a proxy with `HasId` of exactly the points it has deleted must return nothing.
+/// See <https://github.com/qdrant/qdrant/issues/11056>.
+#[test]
+fn test_read_filter_has_id_of_deleted_points() {
+    let is_stopped = AtomicBool::new(false);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+
+    let _scope = ambient::test_guard();
+
+    let mut proxy_segment = wrap_proxy(original_segment);
+    proxy_segment.delete_point(100, 2.into()).unwrap();
+
+    let filter = Filter::new_must(Condition::HasId(HasIdCondition::from_iter([
+        PointIdType::from(2),
+    ])));
+    let proxy_res = proxy_segment
+        .read_filtered(
+            None,
+            Some(100),
+            Some(&filter),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+
+    assert_eq!(proxy_res, Vec::<PointIdType>::new());
+}
+
 #[test]
 fn test_read_range() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -403,7 +429,7 @@ fn test_sync_indexes() {
     let original_segment = LockedSegment::new(build_segment_1(dir.path()));
     let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     original_segment
         .get()
@@ -598,7 +624,7 @@ fn test_point_vector_count_multivec() {
     let mut original_segment =
         build_segment_with_two_named_vecs(dir.path(), dim, dim, Distance::Dot).unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     original_segment
         .upsert_point(
@@ -1239,7 +1265,7 @@ fn build_text_segment(path: &std::path::Path, count: u64) -> segment::segment::S
     use segment::payload_json;
     use segment::types::{PayloadFieldSchema, PayloadSchemaParams};
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut segment = empty_segment(path);
     let params = TextIndexParams {
         phrase_matching: Some(true),
@@ -1284,13 +1310,13 @@ fn test_score_bm25_hides_proxy_deletions() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let count = 60;
     let original_segment = LockedSegment::new(build_text_segment(dir.path(), count));
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let field = JsonPath::new("text");
     let terms = ["alpha".to_owned(), "gamma".to_owned()];
     let score = |segment: &dyn ReadSegmentEntry, stats_from: &dyn ReadSegmentEntry| {
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field, terms.iter().cloned());
+        query_context.init_text_stats(&field, None, terms.iter().cloned());
         stats_from.fill_query_context(&mut query_context).unwrap();
         segment
             .score_bm25(
@@ -1354,7 +1380,7 @@ fn test_bm25_skips_a_stale_wrapped_text_index() {
     use segment::types::{PayloadFieldSchema, PayloadSchemaParams};
 
     let _scoring = TextIndexParams::override_scoring(true);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let field = JsonPath::new("text");
     let terms = ["alpha".to_owned(), "gamma".to_owned()];
     let count = 20;
@@ -1378,7 +1404,7 @@ fn test_bm25_skips_a_stale_wrapped_text_index() {
         let mut proxy = ProxySegment::new(wrapped);
         change(&mut proxy);
         let mut query_context = QueryContext::default();
-        query_context.init_text_stats(&field, terms.iter().cloned());
+        query_context.init_text_stats(&field, None, terms.iter().cloned());
         proxy.fill_query_context(&mut query_context).unwrap();
         let documents = query_context.mut_text_stats()[&field].documents;
         let scored = proxy

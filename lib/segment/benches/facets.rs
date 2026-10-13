@@ -4,7 +4,7 @@ mod prof;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hw;
+use common::ambient;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use ordered_float::OrderedFloat;
 use rand::distr::Distribution;
@@ -69,7 +69,7 @@ fn uuid_str(n: u64) -> String {
 /// Vectors are irrelevant to faceting, so every point gets the same trivial
 /// 1-dimensional vector just to register the point in the segment.
 fn build_facet_segment(path: &Path) -> Segment {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let mut rng = SmallRng::seed_from_u64(SEED);
 
     let mut segment = build_simple_segment(path, 1, Distance::Dot).unwrap();
@@ -202,7 +202,7 @@ fn facet_benchmark(c: &mut Criterion) {
     let dir = Builder::new().prefix("facet_segment").tempdir().unwrap();
     let segment = build_facet_segment(dir.path());
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = AtomicBool::new(false);
 
     let mut group = c.benchmark_group("facet");

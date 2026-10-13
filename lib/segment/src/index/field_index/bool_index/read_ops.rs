@@ -18,9 +18,8 @@
 
 use std::path::PathBuf;
 
+use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
-use common::counter::HwMeasurementIteratorExt;
-use common::counter::hw::HwMetric;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -176,6 +175,15 @@ pub trait BoolIndexRead {
         let mut files = self.trues_flags().files();
         files.extend(self.falses_flags().files());
         files
+    }
+
+    /// Files that never change after the index is built.
+    ///
+    /// Default returns [`Self::files`] — correct for immutable and read-only
+    /// variants where every backing file is immutable. Mutable variants
+    /// override this to return an empty list.
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        self.files()
     }
 
     fn get_storage_type(&self) -> StorageType {

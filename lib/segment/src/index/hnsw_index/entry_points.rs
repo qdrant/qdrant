@@ -48,6 +48,17 @@ impl EntryPoints {
         taken
     }
 
+    /// Like [`Self::merge_from_other`], for entry points of a graph built in its own id space;
+    /// `to_global` maps its ids to segment ids.
+    pub fn merge_translated(&mut self, other: EntryPoints, to_global: &[PointOffsetType]) {
+        self.entry_points
+            .extend(other.entry_points.into_iter().map(|entry| EntryPoint {
+                point_id: to_global[entry.point_id as usize],
+                level: entry.level,
+            }));
+        // Do not merge `extra_entry_points` to prevent duplications
+    }
+
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
         // Do not merge `extra_entry_points` to prevent duplications

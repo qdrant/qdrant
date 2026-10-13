@@ -2,7 +2,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
-    use common::counter::hw;
+    use common::ambient;
     use quantization::encoded_storage::TestEncodedStorageBuilder;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8;
@@ -11,6 +11,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
+    use crate::scoring::ScorePoint;
 
     #[rstest]
     #[case(ScalarQuantizationMethod::Int8)]
@@ -37,9 +38,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -81,9 +82,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -129,9 +130,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -173,9 +174,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -217,9 +218,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -257,9 +258,9 @@ mod tests {
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             Some(0.99),
             ScalarQuantizationMethod::Int8,
             None,
@@ -401,9 +402,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -444,9 +445,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -454,7 +455,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         for i in 1..vectors_count {
             let score = encoded.score_internal(0, i as u32);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
@@ -486,9 +487,9 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
             None,
             method,
             None,
@@ -496,7 +497,7 @@ mod tests {
         )
         .unwrap();
 
-        let _hw = hw::test_guard();
+        let _scope = ambient::test_guard();
         for i in 1..vectors_count {
             let score = encoded.score_internal(0, i as u32);
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
@@ -529,10 +530,11 @@ mod tests {
             encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vectors_count),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &vector_parameters,
-            vectors_count,
-            Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+            Some(1.0 - f32::EPSILON),
+            // almost 1.0 value, but not 1.0
             method,
             None,
             &AtomicBool::new(false),
@@ -577,17 +579,18 @@ mod tests {
 
             let encoded = EncodedVectorsU8::encode(
                 vector_data.iter(),
+                std::iter::repeat_n(true, vectors_count),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters,
-                vectors_count,
-                Some(1.0 - f32::EPSILON), // almost 1.0 value, but not 1.0
+                Some(1.0 - f32::EPSILON),
+                // almost 1.0 value, but not 1.0
                 method.clone(),
                 None,
                 &AtomicBool::new(false),
             )
             .unwrap();
 
-            let _hw = hw::test_guard();
+            let _scope = ambient::test_guard();
             for (i, vector) in vector_data.iter().enumerate() {
                 // encode vector using the encode_query method
                 let query = encoded.encode_query(vector);

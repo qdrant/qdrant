@@ -1,8 +1,9 @@
-use common::counter::hw::HwScale;
+use common::ambient::hw::HwScale;
 use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::DenseVector;
 use crate::vector_storage::TurboScoring;
 use crate::vector_storage::query::{Query, TransformInto};
@@ -59,35 +60,23 @@ where
     TStorage: TurboScoring,
     TQuery: Query<EncodedQueryTQ>,
 {
-    fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        // Read the stored vector once (one vector of IO), then score every
-        // sub-query against it — each sub-query is one vector of CPU work.
-        // The per-vector byte cost is the counter multiplier set in `new`.
-        let bytes = self.storage.get_quantized_vector(idx);
-        self.hw.vector_io_read(1);
-
-        self.query.score_by(|query| {
-            self.hw.cpu(1);
-            self.storage.score_query_bytes(query, &bytes)
-        })
-    }
-
     #[inline]
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_stored_batch(
+        &self,
+        ids: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         debug_assert_eq!(ids.len(), scores.len());
 
-        // One vector of IO per point; CPU is counted per sub-query below,
-        // matching `score_stored`.
+        // One vector of IO per point; CPU is counted per sub-query below.
         self.hw.vector_io_read(ids.len());
 
-        self.storage
-            .for_each_in_dense_tq_batch(ids, |idx, bytes| {
-                scores[idx] = self.query.score_by(|query| {
-                    self.hw.cpu(1);
-                    self.storage.score_query_bytes(query, bytes)
-                });
-            })
-            .expect("read TQ vectors");
+        self.storage.for_each_in_dense_tq_batch(ids, |idx, bytes| {
+            scores[idx] = self.query.score_by(|query| {
+                self.hw.cpu(1);
+                self.storage.score_query_bytes(query, bytes)
+            });
+        })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
@@ -97,7 +86,7 @@ where
     type SupportsBytes = True;
     fn score_bytes(&self, _: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
         // `bytes` are an already-fetched TQ-encoded vector: no IO, and one
-        // vector of CPU work per sub-query (matching `score_stored`).
+        // vector of CPU work per sub-query (matching `score_stored_batch`).
         self.query.score_by(|query| {
             self.hw.cpu(1);
             self.storage.score_query_bytes(query, bytes)

@@ -17,8 +17,7 @@ use api::grpc::qdrant::{
 };
 use api::grpc::{PointsOperationResponseInternal, Usage};
 use collection::operations::types::CoreSearchRequest;
-use common::counter::AmbientContext;
-use common::counter::hw::HwFutureExt;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
@@ -51,8 +50,10 @@ impl PointsService {
         collection_name: String,
         wait: Option<bool>,
     ) -> RequestHwCounter {
-        let counter = AmbientContext::new_with_metrics_drain(
-            self.dispatcher.get_collection_hw_metrics(collection_name),
+        let counter = AmbientContext::request(
+            &collection_name,
+            self.dispatcher
+                .get_collection_hw_metrics(collection_name.clone()),
         );
 
         let waiting = wait != Some(false);

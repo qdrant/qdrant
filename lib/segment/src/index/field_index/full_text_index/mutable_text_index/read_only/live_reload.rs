@@ -1,9 +1,8 @@
-use common::counter::hw::HwMetric;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::Sequential;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyAppendableFullTextIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -17,7 +16,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         Ok(self.storage.live_preload(fs)?)
     }
 
@@ -40,6 +39,9 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
             .read_values::<Sequential, _, OperationError>(
                 new_points.iter().map(|&id| ((), id)),
                 |_, point_offset, maybe_value: Option<Vec<u8>>| {
+                    // A retried reload replays offsets an earlier, failed attempt
+                    // already indexed: drop them first so the replay is idempotent.
+                    inner.inverted_index.remove(point_offset);
                     let Some(value) = maybe_value else {
                         return Ok(true);
                     };

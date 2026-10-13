@@ -80,7 +80,7 @@ impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStora
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         // Split into parallel arrays in one pass: `for_each_in_batch` needs an
         // offsets slice, but we still want `user_data[idx]` in the callback.
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
@@ -90,7 +90,6 @@ impl<B: DenseVectorBlob> VectorStorageRead for ReadOnlyImmutableDenseVectorStora
                 let vector = CowVector::from(B::Element::slice_to_float_cow(Cow::Borrowed(vector)));
                 callback(user_data[idx], point_offsets[idx], vector);
             })
-            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

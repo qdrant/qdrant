@@ -1,7 +1,6 @@
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::storage::{BinaryChunkedMulti, TQChunkedMulti};
 use super::{ReadOnlyQuantizedVectorStorage, ReadOnlyQuantizedVectors};
@@ -14,7 +13,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectors<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         self.storage_impl.live_preload(fs)
     }
 
@@ -36,7 +35,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyQuantizedVectorStorage<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         let mut futs = Vec::new();
         match self {
             // Ram/Mmap layouts are immutable: nothing to stage.

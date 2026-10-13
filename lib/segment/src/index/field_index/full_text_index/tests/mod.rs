@@ -6,8 +6,8 @@ mod test_congruence;
 
 use std::path::PathBuf;
 
+use common::ambient;
 use common::bitvec::BitVec;
-use common::counter::hw;
 use common::types::PointOffsetType;
 use tempfile::Builder;
 
@@ -186,7 +186,7 @@ fn test_prefix_search() {
             .unwrap()
             .unwrap();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let texts = movie_titles();
 
@@ -214,7 +214,7 @@ fn test_prefix_search() {
 
 #[test]
 fn test_phrase_matching() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     // Create a text index with phrase matching enabled
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
@@ -332,7 +332,7 @@ fn test_phrase_matching() {
 
 #[test]
 fn test_ascii_folding_in_full_text_index_word() {
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config_enabled = TextIndexParams {
@@ -429,7 +429,7 @@ fn test_special_check_condition_match_text_any() {
     use crate::json_path::JsonPath;
     use crate::types::{FieldCondition, Match, MatchTextAny};
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
 
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
@@ -627,7 +627,7 @@ fn read_surface_exposes_doc_len_and_total() {
     let temp_dir = Builder::new().prefix("doc_len_reads").tempdir().unwrap();
     let index = two_document_mmap_index(temp_dir.path().to_path_buf(), true);
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     // The third is outside the index. Not a zero-length document.
     assert_eq!(doc_lens(&index, &[0, 1, 2]), [Some(3), Some(7), None]);
     assert_eq!(index.total_tokens(), Some(10));
@@ -654,7 +654,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
 
     let scoring_dir = Builder::new().prefix("stats_scoring").tempdir().unwrap();
     let index = two_document_mmap_index(scoring_dir.path().to_path_buf(), true);
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let is_stopped = std::sync::atomic::AtomicBool::new(false);
 
     let mut stats = TextFieldStats {
@@ -663,7 +663,7 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
             .into(),
         ..Default::default()
     };
-    fill_text_statistics(&index, &mut stats, &is_stopped).unwrap();
+    fill_text_statistics(&index, &mut stats, None, &is_stopped).unwrap();
 
     assert_eq!(stats.documents, 2);
     assert_eq!(stats.total_tokens, Some(10), "3 tokens plus 7");
@@ -675,9 +675,54 @@ fn text_statistics_gather_sums_lengths_and_frequencies() {
     // corpus rather than letting it be taken over the segments that do.
     let plain_dir = Builder::new().prefix("stats_plain").tempdir().unwrap();
     let plain = two_document_mmap_index(plain_dir.path().to_path_buf(), false);
-    fill_text_statistics(&plain, &mut stats, &is_stopped).unwrap();
+    fill_text_statistics(&plain, &mut stats, None, &is_stopped).unwrap();
 
     assert_eq!(stats.documents, 4);
     assert_eq!(stats.df["the"], 2, "frequencies still sum");
     assert_eq!(stats.total_tokens, None);
+}
+
+/// The per-segment gather over a corpus: only its points holding a token
+/// count, for the document count, the frequencies and the total alike.
+#[test]
+fn text_statistics_gather_over_a_corpus() {
+    use crate::data_types::query_context::TextFieldStats;
+    use crate::index::field_index::full_text_index::full_text_index_read::fill_text_statistics;
+
+    let seeded = || TextFieldStats {
+        df: ["the", "alpha", "absent"]
+            .map(|term| (term.to_string(), 0))
+            .into(),
+        ..Default::default()
+    };
+    let _scope = ambient::test_guard();
+    let is_stopped = std::sync::atomic::AtomicBool::new(false);
+
+    let scoring_dir = Builder::new().prefix("corpus_scoring").tempdir().unwrap();
+    let index = two_document_mmap_index(scoring_dir.path().to_path_buf(), true);
+
+    // Point 2 is outside the index: in the corpus, but no document.
+    let mut stats = seeded();
+    fill_text_statistics(&index, &mut stats, Some(&[1, 2]), &is_stopped).unwrap();
+    assert_eq!(stats.documents, 1);
+    assert_eq!(stats.total_tokens, Some(7));
+    assert_eq!(stats.df["the"], 1);
+    assert_eq!(stats.df["alpha"], 0, "held outside the corpus only");
+    assert_eq!(stats.df["absent"], 0);
+
+    let mut stats = seeded();
+    fill_text_statistics(&index, &mut stats, Some(&[]), &is_stopped).unwrap();
+    assert_eq!(stats.documents, 0);
+    assert_eq!(stats.total_tokens, Some(0));
+    assert_eq!(stats.df["the"], 0);
+
+    // Without lengths, documents and frequencies still count, the total not.
+    let plain_dir = Builder::new().prefix("corpus_plain").tempdir().unwrap();
+    let plain = two_document_mmap_index(plain_dir.path().to_path_buf(), false);
+    let mut stats = seeded();
+    fill_text_statistics(&plain, &mut stats, Some(&[0]), &is_stopped).unwrap();
+    assert_eq!(stats.documents, 1);
+    assert_eq!(stats.total_tokens, None);
+    assert_eq!(stats.df["alpha"], 1);
+    assert_eq!(stats.df["the"], 0);
 }

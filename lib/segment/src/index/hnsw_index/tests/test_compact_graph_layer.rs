@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use common::counter::hw;
+use common::ambient;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
 use rand::SeedableRng;
@@ -80,7 +80,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         .map(|_| random_vector(&mut rng, dim))
         .collect_vec();
 
-    let _hw = hw::test_guard();
+    let _scope = ambient::test_guard();
     let reference_results = queries
         .iter()
         .map(|query| {

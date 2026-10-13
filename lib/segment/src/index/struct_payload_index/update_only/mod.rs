@@ -6,7 +6,7 @@ mod tests;
 use std::path::Path;
 
 use ahash::AHashMap;
-use common::counter::hw;
+use common::ambient;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppend, UniversalAppendFs};
 use rayon::iter::{IntoParallelIterator as _, IntoParallelRefIterator, ParallelIterator as _};
@@ -49,36 +49,45 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
         let config = PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(&path))?
             .unwrap_or_default();
 
-        let field_indexes = config
-            .indices
-            .par_iter()
-            .map(|(field, indexed)| {
-                if indexed.types.is_empty() {
-                    return Err(OperationError::service_error(format!(
-                        "Payload index of field {field} does not record which indexes it has; \
-                         open the segment for writing once to have them derived and stored",
-                    )));
-                }
-                if let Some(nested) = indexed.schema.nested() {
-                    return Err(OperationError::service_error(format!(
-                        "Update-only payload index doesn't support per-element index of field \
-                         `{field}` (nested `{nested}`)",
-                    )));
-                }
+        let field_indexes = ambient::parallel(|handoff| {
+            config
+                .indices
+                .par_iter()
+                .map(|(field, indexed)| {
+                    if indexed.types.is_empty() {
+                        return Err(OperationError::service_error(format!(
+                            "Payload index of field {field} does not record which indexes it has; \
+                             open the segment for writing once to have them derived and stored",
+                        )));
+                    }
+                    if let Some(nested) = indexed.schema.nested() {
+                        return Err(OperationError::service_error(format!(
+                            "Update-only payload index doesn't support per-element index of \
+                             field `{field}` (nested `{nested}`)",
+                        )));
+                    }
 
-                let indexes = indexed
-                    .types
-                    .par_iter()
-                    .map(|index_type| {
-                        UpdateOnlyFieldIndex::open(fs, &path, field, &indexed.schema, index_type)
-                    })
-                    .collect::<OperationResult<Vec<_>>>()?;
+                    let indexes = indexed
+                        .types
+                        .par_iter()
+                        .map(|index_type| {
+                            let _scope = handoff.enter_guard();
+                            UpdateOnlyFieldIndex::open(
+                                fs,
+                                &path,
+                                field,
+                                &indexed.schema,
+                                index_type,
+                            )
+                        })
+                        .collect::<OperationResult<Vec<_>>>()?;
 
-                Ok((field.clone(), indexes))
-            })
-            .collect::<OperationResult<Vec<_>>>()?
-            .into_iter()
-            .collect();
+                    Ok((field.clone(), indexes))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })?
+        .into_iter()
+        .collect();
 
         Ok(Self { field_indexes })
     }
@@ -100,9 +109,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
             .iter_mut()
             .flat_map(|(field, indexes)| indexes.iter_mut().map(move |index| (field, index)))
             .collect::<Vec<_>>();
-        hw::parallel(|hw_acc| {
+        ambient::parallel(|handoff| {
             indexes.into_par_iter().try_for_each(|(field, index)| {
-                let _hw = hw_acc.enter_guard();
+                let _scope = handoff.enter_guard();
                 for (slot, payload) in &points {
                     let values = payload.get_value(field);
                     index.add_point(fs, *slot, &values)?;
