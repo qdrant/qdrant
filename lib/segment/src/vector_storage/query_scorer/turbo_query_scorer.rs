@@ -41,13 +41,6 @@ impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
 }
 
 impl<TStorage: TurboScoring> QueryScorer for TurboQueryScorer<'_, TStorage> {
-    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
-        let bytes = self.storage.get_quantized_vector(idx);
-        self.hw.vector_io_read(1);
-        self.hw.cpu(1);
-        Ok(self.storage.score_query_bytes(&self.query, &bytes))
-    }
-
     #[inline]
     fn score_stored_batch(
         &self,

@@ -805,9 +805,13 @@ mod tests {
             let mut scorer = test
                 .vector_holder
                 .internal_scorer((num_vectors + i) as PointOffsetType);
+            let entry_point = ScoredPointOffset {
+                idx: 0,
+                score: scorer.score_point(0).unwrap(),
+            };
             let search_result = test
                 .graph_layers_builder
-                .search_entry_on_level(0, 0, &mut scorer, &mut Vec::new())
+                .search_entry_on_level(entry_point, 0, &mut scorer, &mut Vec::new())
                 .unwrap();
             assert_eq!(search_result.idx, gpu_search_result);
         }

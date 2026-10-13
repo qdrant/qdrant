@@ -88,10 +88,6 @@ impl RawScorer for RemappedRawScorer<'_> {
         Ok(())
     }
 
-    fn score_point(&self, point: PointOffsetType) -> OperationResult<ScoreType> {
-        self.inner.score_point(self.to_global[point as usize])
-    }
-
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.inner.score_internal(
             self.to_global[point_a as usize],

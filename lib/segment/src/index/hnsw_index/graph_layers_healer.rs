@@ -115,16 +115,23 @@ impl<'a> GraphLayersHealer<'a> {
         {
             let links = self.links_layers[offset as usize][level].read();
             for &point in links.links() {
-                if !self.point_deleted(point) {
-                    visited_list.check_and_update_visited(point);
+                if self.point_deleted(point) {
+                    neighbours.push(point);
                 } else {
-                    pending.push(ScoredPointOffset {
-                        idx: point,
-                        score: scorer.score_point(point)?,
-                    });
+                    visited_list.check_and_update_visited(point);
                 }
             }
         }
+        if scores_buffer.len() < neighbours.len() {
+            scores_buffer.resize(neighbours.len(), 0.0);
+        }
+        scorer.score_points(&neighbours, &mut scores_buffer[..neighbours.len()])?;
+        pending.extend(
+            neighbours
+                .iter()
+                .zip(&scores_buffer)
+                .map(|(&idx, &score)| ScoredPointOffset { idx, score }),
+        );
 
         // At this moment `pending` is initialized with at least one deleted point,
         // now we need to find borders of all "deleted" points sub-graphs

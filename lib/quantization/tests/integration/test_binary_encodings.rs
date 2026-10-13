@@ -12,6 +12,7 @@ mod tests {
     use strum::IntoEnumIterator;
 
     use crate::metrics::dot_similarity;
+    use crate::scoring::ScorePoint;
 
     fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
         rng.random_range(-1.0..1.0)

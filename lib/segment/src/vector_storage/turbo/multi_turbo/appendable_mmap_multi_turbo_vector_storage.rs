@@ -435,32 +435,6 @@ impl AppendableMmapMultiTurboVectorStorage {
         max_sim.into_iter().sum()
     }
 
-    /// Asymmetric MaxSim score of a precomputed multi-query against stored point
-    /// `key`: each inner query vector takes its best similarity to any of the
-    /// point's inner records, summed.
-    pub fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType {
-        let Some(offset) = self.get_offset::<Random>(key) else {
-            log::error!("Multivector not found");
-            return ScoreType::NEG_INFINITY;
-        };
-
-        let records = self
-            .storage
-            .get_many::<Random>(offset.offset, offset.count as usize)
-            .expect("Multivector not found");
-
-        HwMetric::Cpu.bump(records.len() * query.len());
-
-        let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
-        HwMetric::VectorIoRead.bump(records.len() * mul);
-
-        self.score_records_max_similarity(query, &records)
-    }
-
     /// Symmetric MaxSim score between two stored points. Reads both points'
     /// records, so it accounts its own IO and CPU.
     pub fn score_internal_max_similarity(
@@ -615,14 +589,6 @@ impl VectorStorage for AppendableMmapMultiTurboVectorStorage {
 impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
     fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
         AppendableMmapMultiTurboVectorStorage::preprocess_query(self, query)
-    }
-
-    fn score_point_max_similarity(
-        &self,
-        query: &[EncodedQueryTQ],
-        key: PointOffsetType,
-    ) -> ScoreType {
-        AppendableMmapMultiTurboVectorStorage::score_point_max_similarity(self, query, key)
     }
 
     fn score_internal_max_similarity(
@@ -1847,9 +1813,9 @@ mod tests {
                     for (q, query) in inputs.iter().enumerate() {
                         let scorer = TurboMultiQueryScorer::new(query, &storage);
 
-                        let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                            .map(|k| scorer.score_stored(k).unwrap())
-                            .collect();
+                        let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
+                        let mut scores: Vec<ScoreType> = vec![0.0; COUNT];
+                        scorer.score_stored_batch(&ids, &mut scores).unwrap();
                         let best = (0..COUNT)
                             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
                             .unwrap();
@@ -1913,9 +1879,9 @@ mod tests {
                         ));
                         let scorer = TurboMultiCustomQueryScorer::new(reco, &storage);
 
-                        let scores: Vec<ScoreType> = (0..COUNT as PointOffsetType)
-                            .map(|k| scorer.score_stored(k).unwrap())
-                            .collect();
+                        let ids: Vec<PointOffsetType> = (0..COUNT as PointOffsetType).collect();
+                        let mut scores: Vec<ScoreType> = vec![0.0; COUNT];
+                        scorer.score_stored_batch(&ids, &mut scores).unwrap();
                         let best = (0..COUNT)
                             .max_by(|&a, &b| scores[a].partial_cmp(&scores[b]).unwrap())
                             .unwrap();

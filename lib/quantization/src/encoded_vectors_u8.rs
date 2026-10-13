@@ -763,11 +763,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(&self, query: &EncodedQueryU8, i: PointOffsetType) -> f32 {
-        let bytes = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, &bytes)
-    }
-
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         HwMetric::Cpu.bump(self.metadata.vector_parameters().dim);
 
