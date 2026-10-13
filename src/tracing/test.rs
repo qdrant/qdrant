@@ -130,6 +130,26 @@ fn deseriailze_config_with_explicit_nulls() {
     assert_eq!(config, LoggerConfig::default());
 }
 
+#[test]
+fn utc_timer_matches_default_timer_format() {
+    let utc = format_time(&Timer::Utc);
+    let default = format_time(&tracing_subscriber::fmt::time::SystemTime);
+
+    // e.g. `2026-10-13T02:04:27.604091Z`
+    assert_eq!(utc.len(), default.len(), "{utc} vs {default}");
+    assert!(utc.ends_with('Z'), "{utc}");
+
+    let utc = chrono::DateTime::parse_from_rfc3339(&utc).unwrap();
+    let default = chrono::DateTime::parse_from_rfc3339(&default).unwrap();
+    assert!((utc - default).abs() < chrono::TimeDelta::seconds(1));
+}
+
+fn format_time(timer: &impl FormatTime) -> String {
+    let mut buf = String::new();
+    timer.format_time(&mut Writer::new(&mut buf)).unwrap();
+    buf
+}
+
 fn deserialize_config(json: serde_json::Value) -> LoggerConfig {
     serde_json::from_value(json).unwrap()
 }
