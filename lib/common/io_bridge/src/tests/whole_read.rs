@@ -413,7 +413,7 @@ impl ChunkSink for TestSink {
 
 #[tokio::test]
 async fn blob_file_read_from_into_async_tail_and_empty() {
-    let _scope = ambient::test_guard();
+    let _scope = ambient::async_test_guard();
     use common::universal_io::UniversalReadAsync;
 
     let source = CountingSource::new(DATA);

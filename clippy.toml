@@ -1,4 +1,3 @@
-
 disallowed-types = [
   # Use fs_err instead of std::fs and tokio::fs
   { path = "std::fs::DirEntry", replacement = "fs_err::DirEntry" },
@@ -94,3 +93,10 @@ disallowed-methods = [
   { path = "tokio::fs::try_exists", replacement = "fs_err::tokio::try_exists" },
   { path = "tokio::fs::write", replacement = "fs_err::tokio::write" },
 ]
+
+[[await-holding-invalid-types]]
+path = "common::ambient::Scope"
+reason = """
+Another future polled at this `.await` would run inside this scope.
+- Inside `#[tokio::test]` use `ambient::async_test_guard()`.
+- In any other future, use `AmbientFutureExt`."""

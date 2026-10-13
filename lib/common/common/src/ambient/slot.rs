@@ -227,6 +227,11 @@ impl Scope {
             _owned: owned,
         })
     }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub(super) fn is_outermost(&self) -> bool {
+        self.depth == 0
+    }
 }
 
 impl Drop for Scope {

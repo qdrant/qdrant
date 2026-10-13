@@ -22,7 +22,17 @@ use std::panic::Location;
 ///    }
 ///    ```
 ///
-/// 2) In internal operation that shouldn't be billed to any request
+/// 2) In async tests:
+///
+///    ```ignore
+///    #[tokio::test]
+///    async fn my_test() {
+///        let _scope = ambient::async_test_guard(); // ← add this
+///        /* … */
+///    }
+///    ```
+///
+/// 3) In internal operation that shouldn't be billed to any request
 ///    (e.g., loading, optimization, …). Opt out explicitly, stating why:
 ///
 ///    ```ignore
@@ -39,7 +49,7 @@ use std::panic::Location;
 /// Re-run with `RUST_BACKTRACE=1` and find the nearest frame where execution
 /// crossed to another thread or task. Carry the scope across it:
 ///
-/// 3) Spawned thread or blocking task (sync), e.g. [`std::thread::spawn`] or
+/// 4) Spawned thread or blocking task (sync), e.g. [`std::thread::spawn`] or
 ///    [`tokio::task::spawn_blocking`]:
 ///
 ///    ```ignore
@@ -51,7 +61,7 @@ use std::panic::Location;
 ///    .await
 ///    ```
 ///
-/// 4) Spawned async task, e.g. [`tokio::spawn`]:
+/// 5) Spawned async task, e.g. [`tokio::spawn`]:
 ///
 ///    ```ignore
 ///    use common::ambient::{self, AmbientFutureExt}; // ← add this
@@ -63,7 +73,7 @@ use std::panic::Location;
 ///    .await
 ///    ```
 ///
-/// 5) Rayon or another work-stealing pool:
+/// 6) Rayon or another work-stealing pool:
 ///
 ///    ```ignore
 ///    ambient::parallel(|handoff| {               // ← wrap inside `ambient::parallel`
