@@ -355,13 +355,18 @@ pub(super) fn locate_points<Fs: UniversalReadFsAsync>(
     pool: &ThreadPool,
 ) -> OperationResult<AHashMap<PointIdType, PointLocations>> {
     let ids: Vec<PointIdType> = plan.point_ids().collect();
-    let per_segment = pool.install(|| {
-        segments
-            .iter()
-            .collect::<Vec<_>>()
-            .into_par_iter()
-            .map(|(uuid, segment)| locate_in(uuid, &*segment.read(), &ids))
-            .collect::<OperationResult<Vec<_>>>()
+    let per_segment = ambient::parallel(|handoff| {
+        pool.install(|| {
+            segments
+                .iter()
+                .collect::<Vec<_>>()
+                .into_par_iter()
+                .map(|(uuid, segment)| {
+                    let _scope = handoff.enter_guard();
+                    locate_in(uuid, &*segment.read(), &ids)
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })
     })?;
     Ok(merge_locations(per_segment))
 }
