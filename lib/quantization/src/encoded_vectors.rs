@@ -59,8 +59,6 @@ pub trait EncodedVectors: Sized {
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32;
 
-    fn score_point(&self, query: &Self::EncodedQuery, i: PointOffsetType) -> f32;
-
     /// Score a batch: `scores[i]` ← score of `query` against point
     /// `offsets[i]`.
     ///

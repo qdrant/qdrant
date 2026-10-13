@@ -4,6 +4,7 @@ use std::hint::black_box;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
+use common::typelevel::True;
 use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -62,7 +63,11 @@ fn binary_bench(c: &mut Criterion) {
     group.bench_function("score binary linear access u128", |b| {
         b.iter(|| {
             for i in 0..vectors_count as u32 {
-                let s = encoded_u128.score_point(&encoded_query, i);
+                let s = encoded_u128.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u128.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -77,7 +82,11 @@ fn binary_bench(c: &mut Criterion) {
     group.bench_function("score binary random access u128", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u128.score_point(&encoded_query, i);
+                let s = encoded_u128.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u128.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -109,7 +118,11 @@ fn binary_bench(c: &mut Criterion) {
     group.bench_function("score binary linear access u8", |b| {
         b.iter(|| {
             for i in 0..vectors_count as u32 {
-                let s = encoded_u8.score_point(&encoded_query, i);
+                let s = encoded_u8.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u8.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -124,7 +137,11 @@ fn binary_bench(c: &mut Criterion) {
     group.bench_function("score binary random access u8", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u8.score_point(&encoded_query, i);
+                let s = encoded_u8.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u8.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -178,7 +195,11 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     group.bench_function("binary u128 scalar query", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u128.score_point(&encoded_query, i);
+                let s = encoded_u128.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u128.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });
@@ -236,7 +257,11 @@ fn binary_scalar_query_bench_impl(c: &mut Criterion) {
     group.bench_function("binary u8 scalar query", |b| {
         b.iter(|| {
             for &i in &permutation {
-                let s = encoded_u8.score_point(&encoded_query, i);
+                let s = encoded_u8.score_bytes(
+                    True,
+                    &encoded_query,
+                    &encoded_u8.get_quantized_vector(i),
+                );
                 black_box(s);
             }
         });

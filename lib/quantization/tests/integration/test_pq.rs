@@ -10,6 +10,7 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
+    use crate::scoring::ScorePoint;
 
     const VECTORS_COUNT: usize = 513;
     const VECTOR_DIM: usize = 65;

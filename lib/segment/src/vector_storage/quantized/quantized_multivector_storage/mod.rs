@@ -164,7 +164,7 @@ where
         let failed = Cell::new(None);
         for (index, &point_id) in point_ids.iter().enumerate() {
             scores[index] = scorer(&|query| {
-                self.try_score_point_max_similarity(query, point_id)
+                self.score_point_max_similarity(query, point_id)
                     .unwrap_or_else(|err| {
                         failed.set(Some(err));
                         ScoreType::NEG_INFINITY
@@ -329,17 +329,6 @@ where
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         point_id: PointOffsetType,
-    ) -> ScoreType {
-        self.try_score_point_max_similarity(query, point_id)
-            .expect("read quantized sub-vectors")
-    }
-
-    /// [`Self::score_point_max_similarity`] that reports a failed read of the
-    /// point's offset or sub-vectors, as the storage may be remote.
-    fn try_score_point_max_similarity(
-        &self,
-        query: &[QuantizedStorage::EncodedQuery],
-        point_id: PointOffsetType,
     ) -> OperationResult<ScoreType> {
         let mut offset = MultivectorOffset::default();
         self.offsets
@@ -442,14 +431,14 @@ where
         unimplemented!("quantized multi-vector storage does not support `score`");
     }
 
-    fn score_point(
+    fn score_points(
         &self,
         query: &Vec<QuantizedStorage::EncodedQuery>,
-        i: PointOffsetType,
-    ) -> ScoreType {
-        match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i),
-        }
+        offsets: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> std::io::Result<()> {
+        self.score_points_batch(offsets, |score| score(query), scores)
+            .map_err(std::io::Error::other)
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> ScoreType {

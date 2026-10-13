@@ -11,6 +11,7 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use crate::metrics::{dot_similarity, l1_similarity, l2_similarity};
+    use crate::scoring::ScorePoint;
 
     fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
         let n = f32::signum(rng.random_range(-1.0..1.0));

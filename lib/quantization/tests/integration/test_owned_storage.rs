@@ -25,6 +25,8 @@ mod tests {
     use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
     use rand::{RngExt, SeedableRng};
 
+    use crate::scoring::ScorePoint;
+
     /// Wraps a storage so every read returns a freshly allocated `Cow::Owned` buffer.
     struct OwnedStorage(TestEncodedStorage);
 

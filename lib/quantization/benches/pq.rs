@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
+use common::typelevel::True;
 use criterion::{Criterion, criterion_group, criterion_main};
 use quantization::encoded_storage::TestEncodedStorageBuilder;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -49,7 +50,11 @@ fn encode_bench(c: &mut Criterion) {
     group.bench_function("score random access pq", |b| {
         b.iter(|| {
             let random_idx = rng.random_range(0..vectors_count as u32);
-            total += pq_encoded.score_point(&encoded_query, random_idx);
+            total += pq_encoded.score_bytes(
+                True,
+                &encoded_query,
+                &pq_encoded.get_quantized_vector(random_idx),
+            );
         });
     });
 

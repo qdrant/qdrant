@@ -422,11 +422,6 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         self.score_bytes(True, query, encoded_vector)
     }
 
-    fn score_point(&self, query: &EncodedQueryTQ, i: PointOffsetType) -> f32 {
-        let encoded_vector = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, &encoded_vector)
-    }
-
     fn score_points(
         &self,
         query: &EncodedQueryTQ,
