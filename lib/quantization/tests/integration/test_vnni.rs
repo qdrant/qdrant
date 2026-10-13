@@ -39,9 +39,9 @@ mod tests {
                 encoded_vectors_u8::get_quantized_vector_size(&vector_parameters);
             let encoded = EncodedVectorsU8::encode(
                 vector_data.iter(),
+                std::iter::repeat_n(true, vectors_count),
                 TestEncodedStorageBuilder::new(None, quantized_vector_size),
                 &vector_parameters,
-                vectors_count,
                 None,
                 ScalarQuantizationMethod::Int8,
                 None,

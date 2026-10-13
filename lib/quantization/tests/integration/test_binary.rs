@@ -48,6 +48,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -100,6 +101,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -152,6 +154,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -201,6 +204,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -249,6 +253,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -316,6 +321,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -383,6 +389,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -447,6 +454,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -511,6 +519,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -578,6 +587,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -645,6 +655,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
@@ -709,6 +720,7 @@ mod tests {
         >(vector_dim, Encoding::OneBit);
         let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
             vector_data.iter(),
+            std::iter::repeat_n(true, vector_data.len()),
             TestEncodedStorageBuilder::new(None, quantized_vector_size),
             &VectorParameters {
                 dim: vector_dim,
