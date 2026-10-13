@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use common::ambient;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use fs_err as fs;
@@ -824,6 +825,7 @@ fn test_probe_committed_over_disk_cache() {
         DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFs,
     };
 
+    let _scope = ambient::test_guard();
     let tmp = Builder::new()
         .prefix("disk_cache_tracker")
         .tempdir()

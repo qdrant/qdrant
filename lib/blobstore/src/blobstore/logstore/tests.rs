@@ -920,6 +920,7 @@ async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
         UniversalReadFs,
     };
 
+    let _scope = ambient::async_test_guard();
     let dir = TempDir::new().unwrap();
     let remote_root = dir.path().join("remote");
     let local_root = dir.path().join("local");

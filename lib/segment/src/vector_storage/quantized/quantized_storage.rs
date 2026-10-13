@@ -480,6 +480,7 @@ impl<S> QuantizedStorageBuilder<S> {
 mod tests {
     use std::sync::Arc;
 
+    use common::ambient;
     use common::universal_io::{DiskCache, DiskCacheConfig, DiskCacheFs};
     use quantization::EncodedStorage;
     use tempfile::TempDir;
@@ -562,6 +563,7 @@ mod tests {
     /// platform, so this covers the branch io_uring takes on Linux.
     #[test]
     fn disk_cache_runs_match_per_point_reads() {
+        let _scope = ambient::test_guard();
         let dir = TempDir::with_prefix("quantized_storage_disk_cache").unwrap();
         let remote_dir = dir.path().join("remote");
         let local_dir = dir.path().join("local");

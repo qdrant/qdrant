@@ -1,4 +1,5 @@
 use ahash::AHashMap;
+use common::ambient;
 use common::types::DeferredBehavior;
 use common::universal_io::{MmapFile, MmapFs, Populate};
 use rand::SeedableRng as _;
@@ -432,6 +433,7 @@ fn deletion_and_live_reload_disk_cache() {
 
     use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("disk").tempdir().unwrap();
     let remote_root = dir.path().join("remote");
     let local_root = dir.path().join("local");

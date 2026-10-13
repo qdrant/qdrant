@@ -347,6 +347,7 @@ fn async_prefill_open(
 
 #[test]
 fn disk_cache_async_prefill_streams_whole_get() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::Builder::new()
         .prefix("uio_whole_read")
         .tempdir()
@@ -368,6 +369,7 @@ fn disk_cache_async_prefill_streams_whole_get() {
 /// The mirror takes the length of the file as read, not the stale one the open was given.
 #[test]
 fn disk_cache_async_prefill_sizes_mirror_from_the_file_read() {
+    let _scope = ambient::test_guard();
     for stale_len in [3, DATA.len() as u64 * 2] {
         let tmp = tempfile::Builder::new()
             .prefix("uio_whole_read")
