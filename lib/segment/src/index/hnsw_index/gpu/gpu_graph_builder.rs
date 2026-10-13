@@ -104,6 +104,8 @@ pub fn build_hnsw_on_gpu<'a, 'b>(
 mod tests {
     use std::borrow::Borrow;
 
+    use common::ambient;
+
     use super::*;
     use crate::index::hnsw_index::HnswM;
     use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
@@ -163,6 +165,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_equivalency() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -184,6 +187,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality_exact() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -208,6 +212,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_quality() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)

@@ -475,6 +475,7 @@ impl<'a> GpuInsertContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::generic_consts::Random;
     use common::types::ScoredPointOffset;
     use itertools::Itertools;
@@ -582,6 +583,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_search_on_level() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -769,6 +771,7 @@ mod tests {
 
     #[test]
     fn test_gpu_greedy_search() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -812,6 +815,7 @@ mod tests {
 
     #[test]
     fn test_gpu_heuristic() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
