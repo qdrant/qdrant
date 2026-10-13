@@ -96,14 +96,16 @@ impl StructPayloadIndex {
     ) -> OperationResult<Vec<FieldIndex>> {
         indexes
             .into_iter()
-            .map(|index| match index {
-                FieldIndex::NullIndex(_) => Ok(index),
-                index => Ok(FieldIndex::Nested(Box::new(NestedFieldIndex::new(
+            .map(|index| {
+                if let FieldIndex::NullIndex(_) = index {
+                    return Ok(index);
+                }
+                Ok(FieldIndex::Nested(Box::new(NestedFieldIndex::new(
                     field,
                     array_key.clone(),
                     element_map.clone(),
                     index,
-                )?))),
+                )?)))
             })
             .collect()
     }
@@ -191,10 +193,7 @@ impl StructPayloadIndex {
 
     /// Remove `point_id` from all element maps. Its per-element indexes must have
     /// been cleared before.
-    pub(super) fn clear_nested_elements(
-        &mut self,
-        point_id: PointOffsetType,
-    ) -> OperationResult<()> {
+    pub(super) fn clear_nested_elements(&self, point_id: PointOffsetType) -> OperationResult<()> {
         for map in self.element_maps.values() {
             map.borrow_mut().assign(point_id, 0)?;
         }

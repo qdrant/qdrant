@@ -545,4 +545,32 @@ mod tests {
             .metadata_only()
         );
     }
+
+    #[test]
+    fn nested_change_is_incompatible() {
+        use crate::json_path::JsonPath;
+
+        let field: JsonPath = "offers[].shop".parse().unwrap();
+        let flat = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let nested = |path: &str| {
+            flat.clone()
+                .with_nested(&field, &path.parse().unwrap())
+                .unwrap()
+        };
+
+        // Both spellings of the array are the same schema
+        assert_eq!(
+            classify(&nested("offers"), &nested("offers[]")),
+            SchemaTransition::Identical,
+        );
+        // Per-element and flattened indexes have different data
+        assert_eq!(
+            classify(&flat, &nested("offers")),
+            SchemaTransition::Incompatible
+        );
+        assert_eq!(
+            classify(&nested("offers"), &flat),
+            SchemaTransition::Incompatible
+        );
+    }
 }

@@ -81,29 +81,28 @@ impl StructPayloadIndex {
             let field_value = &point_payload.get_value(field);
             null_builder.add_point(point_id, field_value)?;
 
-            match (&nested, &element_map) {
-                (Some((array_key, relative_path, _)), Some(element_map)) => {
-                    let elements = nested_elements(point_payload, array_key);
-                    let element_ids = element_map.point_elements(point_id);
-                    if element_ids.len() != elements.len() {
-                        log::warn!(
-                            "Point {point_id} has {} elements in `{array_key}`, but its element \
-                             map has {}; indexing the common part",
-                            elements.len(),
-                            element_ids.len(),
-                        );
-                    }
-                    for (element_id, element) in element_ids.zip(elements) {
-                        let element_value = &relative_path.value_get(element);
-                        for builder in builders.iter_mut() {
-                            builder.add_point(element_id, element_value)?;
-                        }
+            if let (Some((array_key, relative_path, _)), Some(element_map)) =
+                (&nested, &element_map)
+            {
+                let elements = nested_elements(point_payload, array_key);
+                let element_ids = element_map.point_elements(point_id);
+                if element_ids.len() != elements.len() {
+                    log::warn!(
+                        "Point {point_id} has {} elements in `{array_key}`, but its element \
+                         map has {}; indexing the common part",
+                        elements.len(),
+                        element_ids.len(),
+                    );
+                }
+                for (element_id, element) in element_ids.zip(elements) {
+                    let element_value = &relative_path.value_get(element);
+                    for builder in builders.iter_mut() {
+                        builder.add_point(element_id, element_value)?;
                     }
                 }
-                _ => {
-                    for builder in builders.iter_mut() {
-                        builder.add_point(point_id, field_value)?;
-                    }
+            } else {
+                for builder in builders.iter_mut() {
+                    builder.add_point(point_id, field_value)?;
                 }
             }
             Ok(true)

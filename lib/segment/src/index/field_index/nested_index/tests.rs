@@ -61,7 +61,7 @@ fn random_offer(rng: &mut StdRng) -> Value {
     if rng.random_bool(0.8) {
         offer.insert(
             "rating".into(),
-            json!(rng.random_range(0..500) as f64 / 100.0),
+            json!(f64::from(rng.random_range(0..500)) / 100.0),
         );
     }
     if rng.random_bool(0.8) {
@@ -77,8 +77,8 @@ fn random_offer(rng: &mut StdRng) -> Value {
         offer.insert(
             "location".into(),
             json!({
-                "lon": rng.random_range(0..1000) as f64 / 1000.0,
-                "lat": rng.random_range(0..1000) as f64 / 1000.0,
+                "lon": f64::from(rng.random_range(0..1000)) / 1000.0,
+                "lat": f64::from(rng.random_range(0..1000)) / 1000.0,
             }),
         );
     }
@@ -152,9 +152,12 @@ fn field_conditions() -> Vec<FieldCondition> {
     filters()
         .into_iter()
         .flat_map(|filter| filter.must.unwrap_or_default())
-        .filter_map(|condition| match condition {
-            crate::types::Condition::Field(condition) => Some(condition),
-            _ => None,
+        .filter_map(|condition| {
+            if let crate::types::Condition::Field(condition) = condition {
+                Some(condition)
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -173,7 +176,9 @@ fn schema(
             crate::types::PayloadSchemaParams::Float(p) => p.memory = Some(memory),
             crate::types::PayloadSchemaParams::Bool(p) => p.memory = Some(memory),
             crate::types::PayloadSchemaParams::Geo(p) => p.memory = Some(memory),
-            _ => unreachable!(),
+            crate::types::PayloadSchemaParams::Text(_)
+            | crate::types::PayloadSchemaParams::Datetime(_)
+            | crate::types::PayloadSchemaParams::Uuid(_) => unreachable!("not in FIELDS"),
         }
         schema = PayloadFieldSchema::FieldParams(params);
     }
@@ -516,6 +521,21 @@ fn run(seed: u64, memory: Option<Memory>) {
     pair.mutate(&mut rng, NUM_POINTS as usize);
     assert_equal(&pair.flat, &pair.nested);
 
+    // Rebuild one per-element index over the element map, which has moved ranges by now
+    let (field, field_type) = FIELDS[1];
+    let key = JsonPath::from_str(field).unwrap();
+    pair.apply(|segment, op_num| {
+        segment.delete_field_index(op_num, &key).unwrap();
+    });
+    pair.op_num += 1;
+    pair.flat
+        .create_field_index(pair.op_num, &key, Some(&schema(field_type, false, memory)))
+        .unwrap();
+    pair.nested
+        .create_field_index(pair.op_num, &key, Some(&schema(field_type, true, memory)))
+        .unwrap();
+    assert_equal(&pair.flat, &pair.nested);
+
     let Pair {
         flat,
         nested,
@@ -588,9 +608,12 @@ fn element_map_lifecycle() {
             .field_indexes
             .values()
             .flatten()
-            .filter_map(|index| match index {
-                FieldIndex::Nested(index) => Some(index.element_map().clone()),
-                _ => None,
+            .filter_map(|index| {
+                if let FieldIndex::Nested(index) = index {
+                    Some(index.element_map().clone())
+                } else {
+                    None
+                }
             })
             .collect();
         assert!(maps.len() > FIELDS.len());

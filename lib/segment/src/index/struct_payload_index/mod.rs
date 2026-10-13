@@ -216,13 +216,14 @@ impl StructPayloadIndex {
                 // Load each index
                 .map(|index| {
                     let selector = self.selector_with_type(index, &payload_schema.schema);
+                    // The null index stays an index of points
                     let deleted = match &nested {
                         Some((_, _, deleted_elements))
                             if index.index_type != PayloadIndexType::NullIndex =>
                         {
                             deleted_elements
                         }
-                        _ => deleted_points,
+                        Some(_) | None => deleted_points,
                     };
                     selector.new_index_with_type(
                         field,
