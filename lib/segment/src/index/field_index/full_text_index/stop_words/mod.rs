@@ -1,4 +1,4 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 
 use ahash::{AHashMap, AHashSet};
 use parking_lot::RwLock;
@@ -103,23 +103,27 @@ impl StopwordsFilter {
         this
     }
 
-    /// Like [`new`](Self::new), but built once per process for each distinct
-    /// configuration and shared: a query builds a tokenizer per request, and
-    /// filling this set was most of that cost. The configurations come from
-    /// text index schemas, so there are few of them.
+    /// Like [`new`](Self::new), but shared between all tokenizers with the same
+    /// configuration: a query builds a tokenizer per request, and filling this
+    /// set was most of that cost. Only weak references are kept, so a filter
+    /// lives as long as some text index using it, and dead entries are pruned
+    /// whenever a new filter is built.
     pub fn shared(option: &Option<StopwordsInterface>, lowercase: bool) -> Arc<Self> {
-        type Shared = AHashMap<(Option<StopwordsInterface>, bool), Arc<StopwordsFilter>>;
+        type Shared = AHashMap<(Option<StopwordsInterface>, bool), Weak<StopwordsFilter>>;
         static SHARED: LazyLock<RwLock<Shared>> = LazyLock::new(Default::default);
 
         let key = (option.clone(), lowercase);
-        if let Some(filter) = SHARED.read().get(&key) {
-            return filter.clone();
+        if let Some(filter) = SHARED.read().get(&key).and_then(Weak::upgrade) {
+            return filter;
         }
-        SHARED
-            .write()
-            .entry(key)
-            .or_insert_with(|| Arc::new(Self::new(option, lowercase)))
-            .clone()
+        let mut shared = SHARED.write();
+        if let Some(filter) = shared.get(&key).and_then(Weak::upgrade) {
+            return filter;
+        }
+        shared.retain(|_, filter| filter.strong_count() > 0);
+        let filter = Arc::new(Self::new(option, lowercase));
+        shared.insert(key, Arc::downgrade(&filter));
+        filter
     }
 
     /// Check if a token is a stopword
@@ -205,6 +209,20 @@ mod tests {
         assert!(Arc::ptr_eq(&b, &StopwordsFilter::shared(&set, true)));
         assert!(b.is_stopword("the") && b.is_stopword("foo"));
         assert!(!Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn test_shared_filter_is_freed_with_its_last_user() {
+        // A configuration no other test uses, so nothing else keeps it alive.
+        let set = Some(StopwordsInterface::Set(StopwordsSet {
+            languages: None,
+            custom: Some(["freed".to_string()].into_iter().collect()),
+        }));
+        let filter = StopwordsFilter::shared(&set, true);
+        let weak = Arc::downgrade(&filter);
+        drop(filter);
+        assert!(weak.upgrade().is_none());
+        assert!(StopwordsFilter::shared(&set, true).is_stopword("freed"));
     }
 
     #[test]
