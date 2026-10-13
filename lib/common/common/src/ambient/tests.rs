@@ -7,7 +7,8 @@ use super::hw::{self, HwMetric};
 use super::trace::testing::{file_sink, lines, run};
 use super::trace::{Sink, mark, span};
 use super::{
-    self as ambient, AmbientContext, AmbientFutureExt as _, current, parallel, test, test_guard,
+    self as ambient, AmbientContext, AmbientFutureExt as _, async_test_guard, current, parallel,
+    test, test_guard,
 };
 use crate::reason::reason;
 
@@ -178,6 +179,31 @@ fn unscoped_bump_panics() {
 )]
 fn unscoped_current_panics() {
     drop(current());
+}
+
+#[test]
+fn async_test_guard_is_outermost() {
+    {
+        let _test = async_test_guard();
+        let _inner = test_guard();
+    }
+    let _test = async_test_guard();
+}
+
+#[test]
+#[should_panic(expected = "must be the outermost scope")]
+fn async_test_guard_under_a_scope_panics() {
+    let _scope = test_guard();
+    let _test = async_test_guard();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn async_test_guard_in_a_task_panics() {
+    let _test = async_test_guard();
+    let err = tokio::spawn(async { drop(async_test_guard()) })
+        .await
+        .unwrap_err();
+    assert!(err.is_panic());
 }
 
 #[test]
