@@ -114,8 +114,12 @@ impl ConsensusStateMachine {
                 ApplyOutcome::Accepted(self.state.plan_set_quota_config(config))
             }
 
-            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
-                ApplyOutcome::NotCovered
+            ConsensusOperations::AddPeer { peer_id, uri } => {
+                ApplyOutcome::new(self.state.plan_add_peer(*peer_id, uri))
+            }
+
+            ConsensusOperations::RemovePeer(peer_id) => {
+                ApplyOutcome::new(self.state.plan_remove_peer(&self.context, *peer_id))
             }
 
             // Never reach the apply path: consensus handles them in its own thread

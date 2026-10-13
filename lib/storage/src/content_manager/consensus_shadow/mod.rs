@@ -79,13 +79,13 @@ impl ShadowStateMachine {
         state_machine.apply(operation)
     }
 
-    pub fn compare(
+    pub fn compare<T>(
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &StorageResult<bool>,
+        result: &StorageResult<T>,
     ) {
         let Some(report) = self.diff(toc, persistent, operation, outcome, result) else {
             return;
@@ -98,13 +98,13 @@ impl ShadowStateMachine {
         log::error!("Consensus state machine diverged from applied state: {report}");
     }
 
-    fn diff(
+    fn diff<T>(
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &StorageResult<bool>,
+        result: &StorageResult<T>,
     ) -> Option<String> {
         let Some(state_machine) = &self.state_machine else {
             return None;
@@ -218,8 +218,19 @@ pub fn read_shallow_state(toc: &impl CollectionContainer, persistent: &Persisten
 
 /// Collections an operation might change, including any alias target
 fn target_collections(operation: &ConsensusOperations, state: &ClusterState) -> Vec<CollectionId> {
-    let ConsensusOperations::CollectionMeta(operation) = operation else {
-        return Vec::new();
+    let operation = match operation {
+        ConsensusOperations::RemovePeer(_) => {
+            let mut collections: Vec<_> = state.collections.keys().cloned().collect();
+            collections.sort();
+            return collections;
+        }
+        ConsensusOperations::CollectionMeta(operation) => operation,
+        ConsensusOperations::AddPeer { .. }
+        | ConsensusOperations::UpdatePeerMetadata { .. }
+        | ConsensusOperations::UpdateClusterMetadata { .. }
+        | ConsensusOperations::SetQuotaConfig(_)
+        | ConsensusOperations::RequestSnapshot
+        | ConsensusOperations::ReportSnapshot { .. } => return Vec::new(),
     };
 
     let collection = match operation.as_ref() {

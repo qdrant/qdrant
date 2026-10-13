@@ -25,7 +25,9 @@ impl TableOfContent {
                 persistence.apply_state(aliases)
             }
 
-            Action::CreateCollection { .. }
+            Action::AddPeer { .. }
+            | Action::RemovePeer { .. }
+            | Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::UpdateCollectionConfig { .. }
             | Action::AddNamedVector { .. }
