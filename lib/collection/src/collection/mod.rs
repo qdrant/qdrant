@@ -701,7 +701,33 @@ impl Collection {
         }
     }
 
+    /// Check whether removing this peer requires a resharding abort that would reject
+    pub async fn check_remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        let shard_holder = self.shards_holder.read().await;
+        let Some(resharding) = shard_holder.resharding_state() else {
+            return Ok(());
+        };
+
+        // Removing the driver force-aborts resharding before cleaning up transfers
+        if resharding.peer_id == peer_id {
+            return Ok(());
+        }
+
+        let transfers = shard_holder.get_transfers(|transfer| {
+            transfer.is_resharding() && (transfer.from == peer_id || transfer.to == peer_id)
+        });
+
+        if !transfers.is_empty() {
+            shard_holder.check_abort_resharding(&resharding.key())?;
+        }
+
+        Ok(())
+    }
+
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        // Reject before aborting any ordinary transfers or removing replicas
+        self.check_remove_shards_at_peer(peer_id).await?;
+
         // Abort resharding, if shards are removed from peer driving resharding
         // (which *usually* means the *peer* is being removed from consensus)
         let resharding_state = self
