@@ -110,10 +110,13 @@ impl StopwordsFilter {
     /// whenever a new filter is built.
     pub fn shared(option: &Option<StopwordsInterface>, lowercase: bool) -> Arc<Self> {
         type Shared = AHashMap<Option<StopwordsInterface>, Weak<StopwordsFilter>>;
-        // One map per `lowercase` value, so a lookup borrows the configuration
-        // and only an insert clones it.
+        // Two maps: index 0 holds the filters built with `lowercase = false`,
+        // index 1 those built with `lowercase = true`. Splitting on it instead
+        // of keying by `(configuration, lowercase)` lets a lookup borrow the
+        // configuration, so only an insert clones it.
         static SHARED: LazyLock<[RwLock<Shared>; 2]> = LazyLock::new(Default::default);
 
+        // `false` -> 0, `true` -> 1
         let shared = &SHARED[usize::from(lowercase)];
         if let Some(filter) = shared.read().get(option).and_then(Weak::upgrade) {
             return filter;
