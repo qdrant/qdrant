@@ -33,6 +33,20 @@ where
         }
     }
 
+    fn value_id(&self, value: &N) -> Option<u32> {
+        match self {
+            ReadOnlyMapIndex::Immutable(index) => index.value_id(value),
+            ReadOnlyMapIndex::Appendable(_) | ReadOnlyMapIndex::OnDisk(_) => None,
+        }
+    }
+
+    fn check_value_id(&self, idx: PointOffsetType, id: u32) -> Option<bool> {
+        match self {
+            ReadOnlyMapIndex::Immutable(index) => index.check_value_id(idx, id),
+            ReadOnlyMapIndex::Appendable(_) | ReadOnlyMapIndex::OnDisk(_) => None,
+        }
+    }
+
     fn for_each_matching_value<I, F, M, U>(
         &self,
         items: I,

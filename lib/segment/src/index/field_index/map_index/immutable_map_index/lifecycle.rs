@@ -12,7 +12,7 @@ use common::universal_io::{UniversalRead, UniversalWrite};
 use super::super::MapIndexKey;
 use super::super::on_disk_map_index::OnDiskMapIndex;
 use super::super::read_ops::MapIndexRead;
-use super::{ContainerSegment, ImmutableMapIndex};
+use super::{ContainerSegment, ImmutableMapIndex, MANY_VALUES, NO_VALUE};
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
@@ -60,9 +60,11 @@ where
             }
             let range = range_start..value_to_points_container.len() as u32;
             if !range.is_empty() {
+                let id = value_to_points.len() as u32;
                 value_to_points.insert(
                     MapIndexKey::to_owned(value),
                     ContainerSegment {
+                        id,
                         count: range.len() as u32,
                         range,
                     },
@@ -70,6 +72,16 @@ where
             }
             Ok(())
         })?;
+        let point_value_ids = point_to_values
+            .iter()
+            .map(|values| match values.as_slice() {
+                [] => NO_VALUE,
+                [value] => value_to_points
+                    .get(value.borrow())
+                    .map_or(NO_VALUE, |segment| segment.id),
+                _ => MANY_VALUES,
+            })
+            .collect();
         let point_to_values = ImmutablePointToValues::new(point_to_values);
         value_to_points.shrink_to_fit();
 
@@ -109,6 +121,7 @@ where
             value_to_points_container,
             deleted_value_to_points_container: BitVec::new(),
             point_to_values,
+            point_value_ids,
             sorted_keys,
             indexed_points,
             values_count,
@@ -237,6 +250,9 @@ where
             self.values_count = self.values_count.saturating_sub(removed_values_count);
         }
         self.point_to_values.remove_point(idx);
+        if let Some(id) = self.point_value_ids.get_mut(idx as usize) {
+            *id = NO_VALUE;
+        }
         Ok(())
     }
 
