@@ -1002,3 +1002,59 @@ fn test_prefix_index_file_tracking(#[case] with_prefix: bool) {
         with_prefix
     );
 }
+
+/// A value match answers the same by id as by reading the point's values: one
+/// value, several, a value the index does not hold, and a point removed (which
+/// then holds none).
+#[rstest]
+#[case(IndexType::MutableGridstore)]
+#[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
+fn test_value_match_by_id(#[case] index_type: IndexType) {
+    use common::condition_checker::ConditionChecker as _;
+    let _scope = ambient::test_guard();
+
+    let data: Vec<Vec<EcoString>> = vec![
+        vec!["a".into()],
+        vec!["b".into()],
+        vec!["a".into(), "c".into()],
+        vec!["d".into()],
+        vec!["a".into()],
+        vec!["c".into(), "b".into()],
+    ];
+    let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
+    save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
+    let mut index = load_map_index::<str>(&data, temp_dir.path(), index_type);
+
+    let expected = |data: &[Vec<EcoString>], value: &str| -> Vec<bool> {
+        data.iter()
+            .map(|values| values.iter().any(|v| v == value))
+            .collect()
+    };
+    let matched = |index: &MapIndex<str>, value: &str| -> Vec<bool> {
+        let checker = index.match_value_checker(value);
+        (0..data.len() as PointOffsetType)
+            .map(|point_id| checker.check(point_id).unwrap())
+            .collect()
+    };
+    for value in ["a", "b", "c", "d", "zzz"] {
+        assert_eq!(
+            matched(&index, value),
+            expected(&data, value),
+            "value {value}"
+        );
+    }
+    // A removed point holds nothing, whichever way it is asked.
+    index.remove_point(0).unwrap();
+    index.remove_point(2).unwrap();
+    let mut after = data.clone();
+    after[0].clear();
+    after[2].clear();
+    for value in ["a", "b", "c", "d"] {
+        assert_eq!(
+            matched(&index, value),
+            expected(&after, value),
+            "value {value} after removal"
+        );
+    }
+}

@@ -25,6 +25,11 @@ where
     pub(super) value_to_points_container: Vec<PointOffsetType>,
     pub(super) deleted_value_to_points_container: BitVec,
     pub(super) point_to_values: ImmutablePointToValues<<N as MapIndexKey>::Owned>,
+    /// Per point, the id of its one value ([`ContainerSegment::id`]), or
+    /// [`NO_VALUE`] / [`MANY_VALUES`]. A match on one value then compares ids
+    /// in a dense array instead of reading the point's values and comparing
+    /// them as keys, which on a large segment is a cache miss per point.
+    pub(super) point_value_ids: Vec<u32>,
     /// Keys of `value_to_points` in ascending order, built at load time only
     /// when the backing storage carries a prefix index; enables prefix range
     /// scans without touching the storage. Keys whose postings become empty
@@ -40,7 +45,15 @@ where
     pub(super) cached_ram_usage_bytes: usize,
 }
 
+/// [`ImmutableMapIndex::point_value_ids`] of a point without values.
+pub(super) const NO_VALUE: u32 = u32::MAX;
+/// [`ImmutableMapIndex::point_value_ids`] of a point with several values,
+/// whose values are compared as keys.
+pub(super) const MANY_VALUES: u32 = u32::MAX - 1;
+
 pub(super) struct ContainerSegment {
+    /// The value's id in this index, stable for the index's lifetime.
+    id: u32,
     /// Range in the container which holds point IDs for the value.
     range: Range<u32>,
     /// Number of available point IDs in the range, excludes number of deleted points.
