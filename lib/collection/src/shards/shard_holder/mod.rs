@@ -1736,6 +1736,33 @@ mod transfer_registration_tests {
         }
     }
 
+    #[test]
+    fn restart_transfer_replay_notifies() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        holder
+            .register_start_shard_transfer(transfer.clone())
+            .unwrap();
+        let mut changes = holder.shard_transfer_changes.subscribe();
+
+        for _ in 0..2 {
+            let updated = holder
+                .register_restart_transfer(&transfer.key(), ShardTransferMethod::Snapshot)
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(
+                changes.try_recv().unwrap(),
+                ShardTransferChange::Abort(transfer.key()),
+            );
+            assert_eq!(
+                changes.try_recv().unwrap(),
+                ShardTransferChange::Start(updated),
+            );
+            assert!(changes.is_empty());
+        }
+    }
+
     fn make_holder() -> (tempfile::TempDir, ShardHolder) {
         let dir = tempfile::tempdir().unwrap();
         let holder = ShardHolder::new(dir.path(), ShardingMethod::Auto).unwrap();

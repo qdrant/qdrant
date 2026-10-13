@@ -207,6 +207,26 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::SetTransferMethod {
+                collection,
+                key,
+                method,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let transfer = shard_holder
+                    .read()
+                    .await
+                    .register_restart_transfer(key, *method)?;
+
+                // Planning accepted an existing transfer, so a missing record is an apply failure
+                transfer.ok_or_else(|| {
+                    StorageError::service_error(format!("Transfer {key:?} does not exist"))
+                })?;
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -232,7 +252,6 @@ impl TableOfContent {
             | Action::RemoveShardKey { .. }
             | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }
-            | Action::SetTransferMethod { .. }
             | Action::DeleteMigratedPoints { .. }
             | Action::RevertHashRing { .. }
             | Action::SetReshardingState { .. }

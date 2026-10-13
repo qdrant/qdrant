@@ -531,6 +531,69 @@ fn register_transfer_action_replay() {
     assert_eq!(transfers, persisted);
 }
 
+#[test]
+fn set_transfer_method_action_replay() {
+    for sync in [false, true] {
+        let (storage_dir, handle, dispatcher) = new_dispatcher();
+        create_collection(&handle, &dispatcher, "test");
+
+        let pass = new_unchecked_verification_pass();
+        let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+        let mut transfer = ordinary_transfer();
+        transfer.sync = sync;
+        let mut unrelated = ordinary_transfer();
+        unrelated.to = 2;
+        for transfer in [&transfer, &unrelated] {
+            toc.apply_action(Action::RegisterTransfer {
+                collection: "test".into(),
+                transfer: transfer.clone(),
+            })
+            .unwrap();
+        }
+
+        let action = Action::SetTransferMethod {
+            collection: "test".into(),
+            key: transfer.key(),
+            method: ShardTransferMethod::Snapshot,
+        };
+        toc.apply_action(action.clone()).unwrap();
+        toc.apply_action(action).unwrap();
+
+        transfer.method = Some(ShardTransferMethod::Snapshot);
+        let expected = HashSet::from([transfer, unrelated]);
+        let state = toc.collection_state("test").unwrap();
+        assert_eq!(state.transfers, expected);
+
+        let holder = ShardHolder::new(
+            &storage_dir.path().join("collections/test"),
+            ShardingMethod::Auto,
+        )
+        .unwrap();
+        let persisted = holder.get_transfers(|_| true).into_iter().collect();
+        assert_eq!(expected, persisted);
+    }
+}
+
+#[test]
+fn set_transfer_method_action_missing_transfer() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    let action = Action::SetTransferMethod {
+        collection: "test".into(),
+        key: transfer.key(),
+        method: ShardTransferMethod::Snapshot,
+    };
+
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(toc.collection_state("test").unwrap().transfers.is_empty());
+}
+
 fn ordinary_transfer() -> ShardTransfer {
     ShardTransfer {
         shard_id: 0,
