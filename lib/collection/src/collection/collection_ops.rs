@@ -35,8 +35,10 @@ impl Collection {
     pub async fn set_shard_number(&self, shard_number: NonZeroU32) -> CollectionResult<()> {
         let mut config = self.collection_config.write().await;
         if config.params.shard_number != shard_number {
-            config.params.shard_number = shard_number;
-            config.save(&self.path)?;
+            let mut new_config = config.clone();
+            new_config.params.shard_number = shard_number;
+            new_config.save(&self.path)?;
+            *config = new_config;
         }
 
         Ok(())

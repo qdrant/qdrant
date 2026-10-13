@@ -9,6 +9,9 @@
 //! `test_resharding_replay.py`); here we cover what a single process can drive
 //! deterministically.
 
+use std::num::NonZeroU32;
+
+use collection::config::{COLLECTION_CONFIG_FILE, CollectionConfigInternal};
 use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::types::CollectionError;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
@@ -17,6 +20,33 @@ use tempfile::Builder;
 use uuid::Uuid;
 
 use crate::common::{NoopReshardingConsensus, simple_collection_fixture};
+
+#[tokio::test]
+async fn set_shard_number_retry_after_save_failure() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(dir.path(), 1).await;
+    let config_path = dir.path().join(COLLECTION_CONFIG_FILE);
+    let saved_config_path = dir.path().join("saved_config.json");
+    let shard_number = NonZeroU32::new(2).unwrap();
+
+    // A directory at the config path makes the atomic replacement fail
+    fs_err::rename(&config_path, &saved_config_path).unwrap();
+    fs_err::create_dir(&config_path).unwrap();
+
+    let result = collection.set_shard_number(shard_number).await;
+
+    assert!(matches!(result, Err(CollectionError::ServiceError { .. })));
+    assert_eq!(collection.config().await.params.shard_number.get(), 1);
+
+    fs_err::remove_dir(&config_path).unwrap();
+    fs_err::rename(&saved_config_path, &config_path).unwrap();
+
+    collection.set_shard_number(shard_number).await.unwrap();
+
+    let persisted = CollectionConfigInternal::load(dir.path()).unwrap();
+    assert_eq!(persisted.params.shard_number, shard_number);
+    assert_eq!(collection.config().await.params.shard_number, shard_number);
+}
 
 /// [audit-B] Setting a resharding-*up* replica `Dead` aborts the resharding
 /// first (dropping the shard) and then converges: the shard is gone, the
