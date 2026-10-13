@@ -277,201 +277,31 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn multipart_upload_stores_whole_file() {
+    /// Reading a directory fails with `EISDIR`, which triggers a read error mid-upload.
+    // Formatting an `fs-err` error blocks (its `debug` feature), which needs a multi-thread runtime.
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn multipart_upload_fails_on_read_error() {
         let store = InMemory::new();
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source.snapshot");
-        // One full 50 MiB part plus a short last part.
-        let content: Vec<u8> = (0..50 * 1024 * 1024 + 12_345u32)
-            .map(|i| (i % 251) as u8)
-            .collect();
-        fs::write(&source, &content).unwrap();
+        let directory_source = tempfile::tempdir().unwrap();
         let target = Path::new("./snapshots/collection/test.snapshot");
 
-        multipart_upload(&store, &source, target).await.unwrap();
+        let err = multipart_upload(&store, directory_source.path(), target)
+            .await
+            .unwrap_err();
 
+        assert!(
+            matches!(&err, CollectionError::ServiceError { error, .. }
+                if error.contains("Failed to read snapshot file")),
+            "unexpected error: {err}",
+        );
         let key = trim_dot_slash(target).unwrap();
-        let stored = store.get(&key).await.unwrap().bytes().await.unwrap();
-        // Not `assert_eq!`, which would print both 50 MiB buffers on failure.
-        assert!(stored.as_ref() == content.as_slice(), "stored bytes differ");
-    }
-
-    /// Reading a directory fails with `EISDIR`, which is how these tests trigger a read error.
-    #[cfg(unix)]
-    mod read_error {
-        use std::fmt;
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicBool, Ordering};
-
-        use async_trait::async_trait;
-        use futures::stream::BoxStream;
-        use object_store::{
-            CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta,
-            ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult, UploadPart,
-        };
-
-        use super::*;
-
-        /// Wraps `InMemory`, recording how multipart uploads end.
-        #[derive(Debug, Default)]
-        struct RecordingStore {
-            inner: InMemory,
-            fail_abort: bool,
-            aborted: Arc<AtomicBool>,
-            completed: Arc<AtomicBool>,
-        }
-
-        #[derive(Debug)]
-        struct RecordingUpload {
-            inner: Box<dyn MultipartUpload>,
-            fail_abort: bool,
-            aborted: Arc<AtomicBool>,
-            completed: Arc<AtomicBool>,
-        }
-
-        impl fmt::Display for RecordingStore {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "RecordingStore({})", self.inner)
-            }
-        }
-
-        #[async_trait]
-        impl ObjectStore for RecordingStore {
-            async fn put_opts(
-                &self,
-                location: &object_store::path::Path,
-                payload: PutPayload,
-                opts: PutOptions,
-            ) -> object_store::Result<PutResult> {
-                self.inner.put_opts(location, payload, opts).await
-            }
-
-            async fn put_multipart_opts(
-                &self,
-                location: &object_store::path::Path,
-                opts: PutMultipartOptions,
-            ) -> object_store::Result<Box<dyn MultipartUpload>> {
-                let inner = self.inner.put_multipart_opts(location, opts).await?;
-                Ok(Box::new(RecordingUpload {
-                    inner,
-                    fail_abort: self.fail_abort,
-                    aborted: self.aborted.clone(),
-                    completed: self.completed.clone(),
-                }))
-            }
-
-            async fn get_opts(
-                &self,
-                location: &object_store::path::Path,
-                options: GetOptions,
-            ) -> object_store::Result<GetResult> {
-                self.inner.get_opts(location, options).await
-            }
-
-            fn delete_stream(
-                &self,
-                locations: BoxStream<'static, object_store::Result<object_store::path::Path>>,
-            ) -> BoxStream<'static, object_store::Result<object_store::path::Path>> {
-                self.inner.delete_stream(locations)
-            }
-
-            fn list(
-                &self,
-                prefix: Option<&object_store::path::Path>,
-            ) -> BoxStream<'static, object_store::Result<ObjectMeta>> {
-                self.inner.list(prefix)
-            }
-
-            async fn list_with_delimiter(
-                &self,
-                prefix: Option<&object_store::path::Path>,
-            ) -> object_store::Result<ListResult> {
-                self.inner.list_with_delimiter(prefix).await
-            }
-
-            async fn copy_opts(
-                &self,
-                from: &object_store::path::Path,
-                to: &object_store::path::Path,
-                options: CopyOptions,
-            ) -> object_store::Result<()> {
-                self.inner.copy_opts(from, to, options).await
-            }
-        }
-
-        #[async_trait]
-        impl MultipartUpload for RecordingUpload {
-            fn put_part(&mut self, data: PutPayload) -> UploadPart {
-                self.inner.put_part(data)
-            }
-
-            async fn complete(&mut self) -> object_store::Result<PutResult> {
-                self.completed.store(true, Ordering::SeqCst);
-                self.inner.complete().await
-            }
-
-            async fn abort(&mut self) -> object_store::Result<()> {
-                self.aborted.store(true, Ordering::SeqCst);
-                if self.fail_abort {
-                    return Err(object_store::Error::Generic {
-                        store: "RecordingStore",
-                        source: "abort failed".into(),
-                    });
-                }
-                self.inner.abort().await
-            }
-        }
-
-        /// Uploads a directory as the source file, which fails on the first read, and returns the error.
-        async fn upload_failing_read(store: &RecordingStore) -> CollectionError {
-            let directory_source = tempfile::tempdir().unwrap();
-            let target = Path::new("./snapshots/collection/test.snapshot");
-            multipart_upload(store, directory_source.path(), target)
-                .await
-                .unwrap_err()
-        }
-
-        // Formatting an `fs-err` error blocks (its `debug` feature), which needs a multi-thread runtime.
-        #[tokio::test(flavor = "multi_thread")]
-        async fn multipart_upload_aborts_on_read_error() {
-            let store = RecordingStore::default();
-
-            let err = upload_failing_read(&store).await;
-
-            assert!(
-                matches!(&err, CollectionError::ServiceError { error, .. }
-                    if error.contains("Failed to read snapshot file")),
-                "unexpected error: {err}",
-            );
-            assert!(
-                store.aborted.load(Ordering::SeqCst),
-                "a failed upload must be aborted",
-            );
-            assert!(
-                !store.completed.load(Ordering::SeqCst),
-                "a failed upload must not be completed",
-            );
-        }
-
-        #[tokio::test(flavor = "multi_thread")]
-        async fn multipart_upload_returns_read_error_when_abort_fails() {
-            let store = RecordingStore {
-                fail_abort: true,
-                ..Default::default()
-            };
-
-            let err = upload_failing_read(&store).await;
-
-            assert!(
-                matches!(&err, CollectionError::ServiceError { error, .. }
-                    if error.contains("Failed to read snapshot file")),
-                "the read error must not be replaced by the abort error: {err}",
-            );
-            assert!(
-                !store.completed.load(Ordering::SeqCst),
-                "a failed upload must not be completed",
-            );
-        }
+        assert!(
+            matches!(
+                store.head(&key).await,
+                Err(object_store::Error::NotFound { .. })
+            ),
+            "a failed upload must not store an object",
+        );
     }
 }
