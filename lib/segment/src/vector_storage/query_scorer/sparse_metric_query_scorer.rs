@@ -47,13 +47,6 @@ impl<'a> SparseMetricQueryScorer<'a> {
 
 impl QueryScorer for SparseMetricQueryScorer<'_> {
     #[inline]
-    fn score_stored(&self, idx: PointOffsetType) -> OperationResult<ScoreType> {
-        let stored = self.vector_storage.get_sparse::<Random>(idx)?;
-
-        Ok(self.score_ref(&stored))
-    }
-
-    #[inline]
     fn score_stored_batch(
         &self,
         ids: &[PointOffsetType],

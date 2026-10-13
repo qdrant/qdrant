@@ -16,14 +16,16 @@ use rstest::rstest;
 use super::ReadOnlyQuantizedVectors;
 use crate::common::live_reload::LiveReload;
 use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::fixtures::payload_fixtures::random_multi_vector;
 use crate::segment_constructor::batched_reader::merge_from_single_source;
 use crate::types::{
-    BinaryQuantizationConfig, Distance, Memory, ProductQuantizationConfig, QuantizationConfig,
-    ScalarQuantizationConfig, TurboQuantQuantizationConfig, VectorDataConfig,
+    BinaryQuantizationConfig, Distance, Memory, MultiVectorConfig, ProductQuantizationConfig,
+    QuantizationConfig, ScalarQuantizationConfig, TurboQuantQuantizationConfig, VectorDataConfig,
 };
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::dense_vector_storage::open_dense_vector_storage;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
+use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
@@ -285,6 +287,19 @@ fn cold_override_demotes_pinned_to_mmap(#[case] config: QuantizationConfig) {
     }
 }
 
+fn build_multivector_storage(
+    multivector_config: MultiVectorConfig,
+    rng: &mut StdRng,
+) -> VectorStorageEnum {
+    let mut storage = new_volatile_multi_dense_vector_storage(DIMS, DISTANCE, multivector_config);
+    for id in 0..NUM_POINTS as PointOffsetType {
+        let count = rng.random_range(1..=4);
+        let multi = random_multi_vector(rng, DIMS, count);
+        storage.insert_vector(id, VectorRef::from(&multi)).unwrap();
+    }
+    storage
+}
+
 /// Same parity check for multi-vector storages, exercising the `*Multi` variants
 /// and the [`UniversalRead`]-backed multivector offsets loaders.
 #[rstest]
@@ -296,10 +311,6 @@ fn read_only_matches_read_write_multivector(
     #[case] config: QuantizationConfig,
     #[case] storage_type: QuantizedVectorsStorageType,
 ) {
-    use crate::fixtures::payload_fixtures::random_multi_vector;
-    use crate::types::MultiVectorConfig;
-    use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
-
     let quant_dir = tempfile::Builder::new()
         .prefix("quant-multi")
         .tempdir()
@@ -308,12 +319,7 @@ fn read_only_matches_read_write_multivector(
     let multivector_config = MultiVectorConfig::default();
 
     let _scope = ambient::test_guard();
-    let mut storage = new_volatile_multi_dense_vector_storage(DIMS, DISTANCE, multivector_config);
-    for id in 0..NUM_POINTS as PointOffsetType {
-        let count = rng.random_range(1..=4);
-        let multi = random_multi_vector(&mut rng, DIMS, count);
-        storage.insert_vector(id, VectorRef::from(&multi)).unwrap();
-    }
+    let storage = build_multivector_storage(multivector_config, &mut rng);
     let on_disk = storage.is_cold();
 
     let rw = QuantizedVectors::create(
@@ -355,6 +361,60 @@ fn read_only_matches_read_write_multivector(
             );
         }
     }
+}
+
+/// A read past the stored multi-vectors stands in for a failed object-storage
+/// read. These storages score through the in-RAM path, which reads each
+/// point's offset and sub-vectors one point at a time.
+#[rstest]
+#[case::scalar_mmap_multi(scalar_config(false), QuantizedVectorsStorageType::Immutable)]
+#[case::binary_chunked_multi(binary_config(false), QuantizedVectorsStorageType::Mutable)]
+#[case::turbo_chunked_multi(turbo_config(false), QuantizedVectorsStorageType::Mutable)]
+fn multivector_score_point_reports_a_failed_read(
+    #[case] config: QuantizationConfig,
+    #[case] storage_type: QuantizedVectorsStorageType,
+) {
+    let quant_dir = tempfile::Builder::new()
+        .prefix("quant-multi-err")
+        .tempdir()
+        .unwrap();
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let multivector_config = MultiVectorConfig::default();
+
+    let _scope = ambient::test_guard();
+    let storage = build_multivector_storage(multivector_config, &mut rng);
+    QuantizedVectors::create(
+        &storage,
+        &config,
+        storage_type,
+        quant_dir.path(),
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
+        &MmapFs,
+        quant_dir.path(),
+        storage.distance(),
+        storage.datatype(),
+        Some(&multivector_config),
+        // Cold, so the scalar storage is mapped rather than loaded into RAM:
+        // a read past offsets held in RAM is an index panic, not a failed read.
+        true,
+        None,
+    )
+    .unwrap()
+    .expect("quantization config exists");
+
+    let query = QueryVector::Nearest(storage.get_vector::<Random>(0).to_owned());
+    let scorer = ro.raw_scorer(query).unwrap();
+    assert!(scorer.score_point(0).is_ok());
+    assert!(
+        scorer
+            .score_point(NUM_POINTS as PointOffsetType + 8)
+            .is_err(),
+        "a read past the stored vectors must be an error, not a panic",
+    );
 }
 
 /// Build a `CachedFs` over `dir` with the listing snapshot taken, the way the
@@ -482,10 +542,6 @@ fn preopen_then_open_multivector_through_cached_fs(
     #[case] config: QuantizationConfig,
     #[case] storage_type: QuantizedVectorsStorageType,
 ) {
-    use crate::fixtures::payload_fixtures::random_multi_vector;
-    use crate::types::MultiVectorConfig;
-    use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
-
     let quant_dir = tempfile::Builder::new()
         .prefix("quant-multi")
         .tempdir()
@@ -494,12 +550,7 @@ fn preopen_then_open_multivector_through_cached_fs(
     let multivector_config = MultiVectorConfig::default();
 
     let _scope = ambient::test_guard();
-    let mut storage = new_volatile_multi_dense_vector_storage(DIMS, DISTANCE, multivector_config);
-    for id in 0..NUM_POINTS as PointOffsetType {
-        let count = rng.random_range(1..=4);
-        let multi = random_multi_vector(&mut rng, DIMS, count);
-        storage.insert_vector(id, VectorRef::from(&multi)).unwrap();
-    }
+    let storage = build_multivector_storage(multivector_config, &mut rng);
     let on_disk = storage.is_cold();
 
     let rw = QuantizedVectors::create(
