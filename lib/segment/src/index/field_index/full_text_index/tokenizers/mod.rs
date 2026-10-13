@@ -3,7 +3,6 @@
 #![allow(deprecated)]
 
 use std::borrow::Cow;
-use std::sync::Arc;
 mod ascii_folding;
 mod japanese;
 mod multilingual;
@@ -189,7 +188,7 @@ impl Tokenizer {
 
         let lowercase = lowercase.unwrap_or(true);
         let ascii_folding = ascii_folding.unwrap_or(false);
-        let stopwords_filter = Arc::new(StopwordsFilter::new(stopwords, lowercase));
+        let stopwords_filter = StopwordsFilter::shared(stopwords, lowercase);
 
         let tokens_processor = TokensProcessor::new(
             lowercase,
@@ -247,6 +246,7 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use std::default::Default;
+    use std::sync::Arc;
 
     use itertools::Itertools;
 
