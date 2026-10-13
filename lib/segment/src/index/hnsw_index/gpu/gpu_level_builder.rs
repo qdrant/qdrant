@@ -99,6 +99,7 @@ fn gpu_batched_apply_entries(batch: &Batch, new_entries: Vec<PointOffsetType>) {
 mod tests {
     use std::borrow::Borrow;
 
+    use common::ambient;
     use common::types::PointOffsetType;
     use rstest::rstest;
 
@@ -181,6 +182,7 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_level_equivalency() {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -199,6 +201,7 @@ mod tests {
 
     #[rstest]
     fn test_gpu_hnsw_level_quality(#[values(1, 2)] visited_flags_factor: usize) {
+        let _scope = ambient::test_guard();
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
