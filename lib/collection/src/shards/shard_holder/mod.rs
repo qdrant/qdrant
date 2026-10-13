@@ -209,7 +209,10 @@ impl ShardHolder {
     }
 
     pub async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> CollectionResult<()> {
-        if let Some(replica_set) = self.shards.remove(&shard_id) {
+        // A process crash after saving the reduced shard count or key mapping can leave
+        // shard files behind. Those shards are not loaded after restart, so replay may
+        // skip their cleanup.
+        if let Some(replica_set) = self.shards.get(&shard_id) {
             let shard_path = replica_set.shard_path.clone();
             replica_set.stop_gracefully().await;
 
@@ -226,6 +229,8 @@ impl ShardHolder {
             sync_parent_dir_async(&shard_config_path).await?;
 
             tokio_fs::remove_dir_all(shard_path).await?;
+
+            self.shards.remove(&shard_id);
         }
         Ok(())
     }
