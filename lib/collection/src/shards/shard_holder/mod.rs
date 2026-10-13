@@ -1709,12 +1709,32 @@ pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::not_found(format!("shard {shard_id}"))
 }
 
+/// Transfer registration must notify watchers even when replay leaves the record unchanged.
 /// `register_restart_transfer` completes transfer restart by updating its record on disk.
 /// These tests assert its replay-safety: the record is never removed, so replaying operation
 /// after record is already updated should be a no-op instead of returning "no transfer" error.
 #[cfg(test)]
-mod restart_transfer_tests {
+mod transfer_registration_tests {
     use super::*;
+
+    #[test]
+    fn register_transfer_replay_notifies() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let mut changes = holder.shard_transfer_changes.subscribe();
+
+        for _ in 0..2 {
+            holder
+                .register_start_shard_transfer(transfer.clone())
+                .unwrap();
+
+            assert_eq!(
+                changes.try_recv().unwrap(),
+                ShardTransferChange::Start(transfer.clone()),
+            );
+            assert!(changes.is_empty());
+        }
+    }
 
     fn make_holder() -> (tempfile::TempDir, ShardHolder) {
         let dir = tempfile::tempdir().unwrap();

@@ -1,11 +1,15 @@
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+use collection::config::ShardingMethod;
 use collection::operations::config_diff::HnswConfigDiff;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
+use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::json_path::JsonPath;
@@ -487,6 +491,56 @@ fn missing_collection_is_service_error() {
         .unwrap_err();
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
+}
+
+#[test]
+fn register_transfer_action_replay() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let initial_state = toc.collection_state("test").unwrap();
+    let transfer = ordinary_transfer();
+    let mut resharding_transfer = transfer.clone();
+    resharding_transfer.to_shard_id = Some(1);
+    resharding_transfer.sync = true;
+    resharding_transfer.method = Some(ShardTransferMethod::ReshardingStreamRecords);
+    resharding_transfer.filter = Some(segment::types::Filter::default());
+    let transfers = HashSet::from([transfer, resharding_transfer]);
+
+    for transfer in &transfers {
+        let action = Action::RegisterTransfer {
+            collection: "test".into(),
+            transfer: transfer.clone(),
+        };
+        toc.apply_action(action.clone()).unwrap();
+        toc.apply_action(action).unwrap();
+    }
+
+    let state = toc.collection_state("test").unwrap();
+    assert_eq!(state.transfers, transfers);
+    assert_eq!(state.shards, initial_state.shards);
+
+    let holder = ShardHolder::new(
+        &storage_dir.path().join("collections/test"),
+        ShardingMethod::Auto,
+    )
+    .unwrap();
+    let persisted = holder.get_transfers(|_| true).into_iter().collect();
+    assert_eq!(transfers, persisted);
+}
+
+fn ordinary_transfer() -> ShardTransfer {
+    ShardTransfer {
+        shard_id: 0,
+        to_shard_id: None,
+        from: 0,
+        to: 1,
+        sync: false,
+        method: Some(ShardTransferMethod::WalDelta),
+        filter: None,
+    }
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {

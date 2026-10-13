@@ -193,6 +193,20 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::RegisterTransfer {
+                collection,
+                transfer,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder
+                    .read()
+                    .await
+                    .register_start_shard_transfer(transfer.clone())?;
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -218,7 +232,6 @@ impl TableOfContent {
             | Action::RemoveShardKey { .. }
             | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }
-            | Action::RegisterTransfer { .. }
             | Action::SetTransferMethod { .. }
             | Action::DeleteMigratedPoints { .. }
             | Action::RevertHashRing { .. }
