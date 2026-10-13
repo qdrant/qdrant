@@ -167,7 +167,6 @@ impl ConsensusStateMachine {
             CollectionMetaOperations::CreateShardKey(operation) => {
                 ApplyOutcome::new(self.state.plan_create_shard_key(&self.context, operation))
             }
-
             CollectionMetaOperations::DropShardKey(operation) => {
                 ApplyOutcome::new(self.state.plan_drop_shard_key(&self.context, operation))
             }
@@ -186,12 +185,11 @@ impl ConsensusStateMachine {
                 ApplyOutcome::new(self.state.plan_drop_payload_index(operation))
             }
 
-            // Sleeps on a peer, or fails at random. The roll is not deterministic, so it
-            // belongs to the applier, not to planning.
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(operation) => {
                 ApplyOutcome::Accepted(vec![Action::TestSlowDown(operation.clone())])
             }
+
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestTransientError(operation) => {
                 ApplyOutcome::Accepted(vec![Action::TestTransientError(operation.clone())])
