@@ -232,10 +232,6 @@ impl Action {
             | Action::InvalidateCleanLocalShards { collection, .. }
             | Action::RemoveShardKey { collection, .. }
             | Action::DropShard { collection, .. }
-            | Action::AddNamedVector { collection, .. }
-            | Action::DropNamedVector { collection, .. }
-            | Action::SetPayloadIndex { collection, .. }
-            | Action::DropPayloadIndex { collection, .. }
             | Action::SetShardNumber { collection, .. }
             | Action::RemoveShardFromKeyMapping { collection, .. }
             | Action::SetReplicaState { collection, .. }
@@ -251,7 +247,11 @@ impl Action {
             | Action::RevertProxyShard { collection, .. }
             | Action::UnproxifyShard { collection, .. }
             | Action::SpawnTransferDriver { collection, .. }
-            | Action::UnregisterTransfer { collection, .. } => Some(collection),
+            | Action::UnregisterTransfer { collection, .. }
+            | Action::AddNamedVector { collection, .. }
+            | Action::DropNamedVector { collection, .. }
+            | Action::SetPayloadIndex { collection, .. }
+            | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
             Action::AddPeer { .. }
             | Action::RemovePeer { .. }
