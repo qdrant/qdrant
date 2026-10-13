@@ -177,6 +177,7 @@ fn segment_without_indexes_opens_empty() {
 /// builds no indexes, so it cannot derive them the way the writable index does.
 #[test]
 fn undeclared_index_types_are_refused() {
+    let _scope = ambient::test_guard();
     let dir = TempDir::with_prefix("update_only_struct_index").unwrap();
     write_config(dir.path(), vec![]);
 

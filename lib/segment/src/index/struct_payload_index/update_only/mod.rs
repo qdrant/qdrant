@@ -49,30 +49,39 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
         let config = PayloadConfig::load_universal(fs, &PayloadConfig::get_config_path(&path))?
             .unwrap_or_default();
 
-        let field_indexes = config
-            .indices
-            .par_iter()
-            .map(|(field, indexed)| {
-                if indexed.types.is_empty() {
-                    return Err(OperationError::service_error(format!(
-                        "Payload index of field {field} does not record which indexes it has; \
-                         open the segment for writing once to have them derived and stored",
-                    )));
-                }
+        let field_indexes = ambient::parallel(|handoff| {
+            config
+                .indices
+                .par_iter()
+                .map(|(field, indexed)| {
+                    if indexed.types.is_empty() {
+                        return Err(OperationError::service_error(format!(
+                            "Payload index of field {field} does not record which indexes it has; \
+                             open the segment for writing once to have them derived and stored",
+                        )));
+                    }
 
-                let indexes = indexed
-                    .types
-                    .par_iter()
-                    .map(|index_type| {
-                        UpdateOnlyFieldIndex::open(fs, &path, field, &indexed.schema, index_type)
-                    })
-                    .collect::<OperationResult<Vec<_>>>()?;
+                    let indexes = indexed
+                        .types
+                        .par_iter()
+                        .map(|index_type| {
+                            let _scope = handoff.enter_guard();
+                            UpdateOnlyFieldIndex::open(
+                                fs,
+                                &path,
+                                field,
+                                &indexed.schema,
+                                index_type,
+                            )
+                        })
+                        .collect::<OperationResult<Vec<_>>>()?;
 
-                Ok((field.clone(), indexes))
-            })
-            .collect::<OperationResult<Vec<_>>>()?
-            .into_iter()
-            .collect();
+                    Ok((field.clone(), indexes))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        })?
+        .into_iter()
+        .collect();
 
         Ok(Self { field_indexes })
     }
