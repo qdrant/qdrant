@@ -2,7 +2,9 @@ use collection::events::IndexCreatedEvent;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 
 use super::TableOfContent;
-use crate::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
+use crate::content_manager::consensus_state_machine::{
+    Action, CollectionConfigDiff, TransferOutcome,
+};
 use crate::content_manager::errors::{StorageError, StorageResult};
 
 impl TableOfContent {
@@ -227,6 +229,23 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::UnregisterTransfer {
+                collection,
+                key,
+                outcome,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let shard_holder = shard_holder.read().await;
+
+                match outcome {
+                    TransferOutcome::Finish => shard_holder.register_finish_transfer(key)?,
+                    TransferOutcome::Abort => shard_holder.register_abort_transfer(key)?,
+                };
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -260,7 +279,6 @@ impl TableOfContent {
             | Action::RevertProxyShard { .. }
             | Action::UnproxifyShard { .. }
             | Action::SpawnTransferDriver { .. }
-            | Action::UnregisterTransfer { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(

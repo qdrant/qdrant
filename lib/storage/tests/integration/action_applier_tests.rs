@@ -19,7 +19,9 @@ use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::collection_meta_ops::{CollectionMetaOperations, CreateShardKey};
-use storage::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
+use storage::content_manager::consensus_state_machine::{
+    Action, CollectionConfigDiff, TransferOutcome,
+};
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
@@ -592,6 +594,57 @@ fn set_transfer_method_action_missing_transfer() {
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
     assert!(toc.collection_state("test").unwrap().transfers.is_empty());
+}
+
+#[test]
+fn unregister_transfer_action_finish_replay() {
+    unregister_transfer_action_replay(TransferOutcome::Finish);
+}
+
+#[test]
+fn unregister_transfer_action_abort_replay() {
+    unregister_transfer_action_replay(TransferOutcome::Abort);
+}
+
+fn unregister_transfer_action_replay(outcome: TransferOutcome) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    let mut unrelated = ordinary_transfer();
+    unrelated.to = 2;
+    for transfer in [&transfer, &unrelated] {
+        toc.apply_action(Action::RegisterTransfer {
+            collection: "test".into(),
+            transfer: transfer.clone(),
+        })
+        .unwrap();
+    }
+    let initial_shards = toc.collection_state("test").unwrap().shards;
+    let expected = HashSet::from([unrelated]);
+    let action = Action::UnregisterTransfer {
+        collection: "test".into(),
+        key: transfer.key(),
+        outcome,
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        let state = toc.collection_state("test").unwrap();
+        assert_eq!(state.transfers, expected);
+        assert_eq!(state.shards, initial_shards);
+
+        let holder = ShardHolder::new(
+            &storage_dir.path().join("collections/test"),
+            ShardingMethod::Auto,
+        )
+        .unwrap();
+        let persisted = holder.get_transfers(|_| true).into_iter().collect();
+        assert_eq!(expected, persisted);
+    }
 }
 
 fn ordinary_transfer() -> ShardTransfer {

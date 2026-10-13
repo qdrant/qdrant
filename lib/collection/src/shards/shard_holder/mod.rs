@@ -1763,6 +1763,40 @@ mod transfer_registration_tests {
         }
     }
 
+    #[test]
+    fn finish_transfer_replay_notifies() {
+        unregister_transfer_replay_notifies(true);
+    }
+
+    #[test]
+    fn abort_transfer_replay_notifies() {
+        unregister_transfer_replay_notifies(false);
+    }
+
+    fn unregister_transfer_replay_notifies(finish: bool) {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let key = transfer.key();
+        holder.register_start_shard_transfer(transfer).unwrap();
+        let mut changes = holder.shard_transfer_changes.subscribe();
+        let expected = if finish {
+            ShardTransferChange::Finish(key)
+        } else {
+            ShardTransferChange::Abort(key)
+        };
+
+        for _ in 0..2 {
+            if finish {
+                holder.register_finish_transfer(&key).unwrap();
+            } else {
+                holder.register_abort_transfer(&key).unwrap();
+            }
+
+            assert_eq!(changes.try_recv().unwrap(), expected);
+            assert!(changes.is_empty());
+        }
+    }
+
     fn make_holder() -> (tempfile::TempDir, ShardHolder) {
         let dir = tempfile::tempdir().unwrap();
         let holder = ShardHolder::new(dir.path(), ShardingMethod::Auto).unwrap();
