@@ -9,10 +9,10 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::VectorNameBuf;
 use storage::content_manager::errors::StorageError;
 
-/// Validate vector dimensions in an upsert operation against the collection config.
+/// Validate vector names, sparse payload kinds, and dimensions against the collection config.
 ///
 /// This performs an early O(n) check before the operation is written to WAL,
-/// ensuring that dimension mismatches are reported even for async (wait=false) operations.
+/// ensuring that invalid vectors are reported even for async (wait=false) operations.
 pub fn validate_vector_dimensions(
     operation: &PointInsertOperationsInternal,
     vectors_config: &VectorsConfig,
@@ -70,7 +70,7 @@ fn validate_batch_vectors(
         BatchVectorStructPersisted::Named(named_vectors) => {
             for (name, vectors) in named_vectors {
                 let Some(params) = vectors_config.get_params(name) else {
-                    validate_unknown_vector_name(name, sparse_vectors_config)?;
+                    validate_sparse_vectors(name, vectors, sparse_vectors_config)?;
                     continue;
                 };
                 let expected_dim = params.size.get() as usize;
@@ -118,7 +118,11 @@ fn validate_point_vectors(
         VectorStructPersisted::Named(named_vectors) => {
             for (name, vector) in named_vectors {
                 let Some(params) = vectors_config.get_params(name) else {
-                    validate_unknown_vector_name(name, sparse_vectors_config)?;
+                    validate_sparse_vectors(
+                        name,
+                        std::slice::from_ref(vector),
+                        sparse_vectors_config,
+                    )?;
                     continue;
                 };
                 let expected_dim = params.size.get() as usize;
@@ -129,20 +133,26 @@ fn validate_point_vectors(
     Ok(())
 }
 
-/// Sparse vectors are configured separately from dense ones and carry no fixed
-/// dimension to check, but the name still has to exist in one of the two
-/// configs. An unknown name is not an apply-time error: applying the operation
-/// silently drops it (see `retain_vector_names`, which tolerates names deleted
-/// by concurrent vector CRUD), so an upsert against a name the collection never
-/// had must be rejected here, before the operation is written to WAL.
-fn validate_unknown_vector_name(
+/// A name absent from the dense config must exist in the sparse config, and all
+/// its payloads must be sparse. Reject mismatches before writing to WAL rather
+/// than acknowledging an operation that will fail during apply.
+fn validate_sparse_vectors(
     name: &VectorNameBuf,
+    vectors: &[VectorPersisted],
     sparse_vectors_config: Option<&BTreeMap<VectorNameBuf, SparseVectorParams>>,
 ) -> Result<(), StorageError> {
     let is_known_sparse = sparse_vectors_config.is_some_and(|config| config.contains_key(name));
     if !is_known_sparse {
         return Err(StorageError::bad_input(format!(
             "Not existing vector name error: {name}"
+        )));
+    }
+    if vectors
+        .iter()
+        .any(|vector| !matches!(vector, VectorPersisted::Sparse(_)))
+    {
+        return Err(StorageError::bad_input(format!(
+            "Wrong vector type for sparse vector name: {name}"
         )));
     }
     Ok(())
@@ -197,7 +207,7 @@ mod tests {
         PointStructPersisted {
             id: 1.into(),
             vector: VectorStructPersisted::Named(HashMap::from([(
-                name.to_string().into(),
+                name.to_string(),
                 VectorPersisted::Dense(vec![0.1; dim]),
             )])),
             payload: None,
@@ -219,7 +229,7 @@ mod tests {
     #[test]
     fn mistyped_named_vector_is_rejected() {
         let named = BTreeMap::from([(
-            "image".to_string().into(),
+            "image".to_string(),
             VectorParamsBuilder::new(4, Distance::Cosine).build(),
         )]);
         let config = VectorsConfig::Multi(named);
@@ -235,7 +245,7 @@ mod tests {
     #[test]
     fn known_named_vector_still_validates_dimensions() {
         let named = BTreeMap::from([(
-            "image".to_string().into(),
+            "image".to_string(),
             VectorParamsBuilder::new(4, Distance::Cosine).build(),
         )]);
         let config = VectorsConfig::Multi(named);
@@ -255,7 +265,7 @@ mod tests {
     fn sparse_named_vector_passes_but_unknown_name_still_rejected() {
         let config = single_collection_config(4);
         let sparse_config = BTreeMap::from([(
-            "splade".to_string().into(),
+            "splade".to_string(),
             SparseVectorParams {
                 index: None,
                 modifier: None,
@@ -265,7 +275,7 @@ mod tests {
         let sparse_point = PointStructPersisted {
             id: 1.into(),
             vector: VectorStructPersisted::Named(HashMap::from([(
-                "splade".to_string().into(),
+                "splade".to_string(),
                 VectorPersisted::new_sparse(vec![1, 2], vec![0.5, 0.6]),
             )])),
             payload: None,
@@ -289,7 +299,7 @@ mod tests {
         let op = PointInsertOperationsInternal::PointsBatch(BatchPersisted {
             ids: vec![1.into(), 2.into()],
             vectors: BatchVectorStructPersisted::Named(HashMap::from([(
-                "name".to_string().into(),
+                "name".to_string(),
                 vec![
                     VectorPersisted::Dense(vec![0.1; 4]),
                     VectorPersisted::Dense(vec![0.2; 4]),
@@ -303,6 +313,95 @@ mod tests {
                 .contains("Not existing vector name error: name"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn non_sparse_payload_for_sparse_name_is_rejected() {
+        let config = single_collection_config(4);
+        let sparse_config = BTreeMap::from([(
+            "splade".to_string(),
+            SparseVectorParams {
+                index: None,
+                modifier: None,
+            },
+        )]);
+
+        for vector in [
+            VectorPersisted::Dense(vec![0.1; 4]),
+            VectorPersisted::MultiDense(vec![vec![0.1; 4]]),
+        ] {
+            let point = PointStructPersisted {
+                id: 1.into(),
+                vector: VectorStructPersisted::Named(HashMap::from([(
+                    "splade".to_string(),
+                    vector,
+                )])),
+                payload: None,
+            };
+            let op = PointInsertOperationsInternal::PointsList(vec![point]);
+            let err = validate_vector_dimensions(&op, &config, Some(&sparse_config)).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("Wrong vector type for sparse vector name: splade"),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn batch_with_non_sparse_payload_for_sparse_name_is_rejected() {
+        let config = single_collection_config(4);
+        let sparse_config = BTreeMap::from([(
+            "splade".to_string(),
+            SparseVectorParams {
+                index: None,
+                modifier: None,
+            },
+        )]);
+
+        for vector in [
+            VectorPersisted::Dense(vec![0.1; 4]),
+            VectorPersisted::MultiDense(vec![vec![0.1; 4]]),
+        ] {
+            let op = PointInsertOperationsInternal::PointsBatch(BatchPersisted {
+                ids: vec![1.into(), 2.into()],
+                vectors: BatchVectorStructPersisted::Named(HashMap::from([(
+                    "splade".to_string(),
+                    vec![VectorPersisted::new_sparse(vec![1], vec![0.5]), vector],
+                )])),
+                payloads: None,
+            });
+            let err = validate_vector_dimensions(&op, &config, Some(&sparse_config)).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("Wrong vector type for sparse vector name: splade"),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn batch_with_sparse_named_vectors_is_accepted() {
+        let config = single_collection_config(4);
+        let sparse_config = BTreeMap::from([(
+            "splade".to_string(),
+            SparseVectorParams {
+                index: None,
+                modifier: None,
+            },
+        )]);
+        let op = PointInsertOperationsInternal::PointsBatch(BatchPersisted {
+            ids: vec![1.into(), 2.into()],
+            vectors: BatchVectorStructPersisted::Named(HashMap::from([(
+                "splade".to_string(),
+                vec![
+                    VectorPersisted::new_sparse(vec![1], vec![0.5]),
+                    VectorPersisted::new_sparse(vec![1, 2], vec![0.5, 0.6]),
+                ],
+            )])),
+            payloads: None,
+        });
+        validate_vector_dimensions(&op, &config, Some(&sparse_config)).unwrap();
     }
 
     #[test]
