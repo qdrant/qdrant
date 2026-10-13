@@ -195,6 +195,18 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::InvalidateCleanLocalShards {
+                collection,
+                shard_ids,
+            } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .invalidate_clean_local_shards(shard_ids.iter().copied())
+                    .await;
+
+                Ok(())
+            }
+
             Action::StopTransferDriver { collection, key } => {
                 self.get_collection_unchecked(collection)
                     .await?
@@ -276,7 +288,6 @@ impl TableOfContent {
             | Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
-            | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
             | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }

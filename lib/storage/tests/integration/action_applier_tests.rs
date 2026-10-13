@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use collection::config::ShardingMethod;
 use collection::operations::config_diff::HnswConfigDiff;
+use collection::operations::types::UpdateStatus;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use collection::shards::replica_set::replica_set_state::ReplicaState;
@@ -670,6 +671,37 @@ fn stop_transfer_driver_action_replay() {
     toc.apply_action(action.clone()).unwrap();
     toc.apply_action(action).unwrap();
 
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+#[test]
+fn invalidate_clean_local_shards_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let result = handle
+        .block_on(collection.cleanup_local_shard(0, true, Some(Duration::from_secs(5))))
+        .unwrap();
+    assert_eq!(result.status, UpdateStatus::Completed);
+    assert!(collection.clean_local_shards_statuses().contains_key(&0));
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::InvalidateCleanLocalShards {
+        collection: "test".into(),
+        shard_ids: vec![0, 99],
+    };
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    assert!(collection.clean_local_shards_statuses().is_empty());
     assert_eq!(toc.collection_state("test").unwrap(), initial_state);
 }
 
