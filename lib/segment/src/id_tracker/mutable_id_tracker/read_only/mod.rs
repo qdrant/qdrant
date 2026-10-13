@@ -45,7 +45,8 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// Inserts read from the mappings log whose version is not flushed yet, keyed by external id.
     ///
     /// Their data may be partially written. Each moves to [`Self::staged_inserts`] once its offset
-    /// is covered by the versions file, or is dropped if a delete for it arrives first.
+    /// is covered by the versions file, or is dropped if a delete or a complete insert of the same
+    /// point arrives first. A point's committed copy goes on serving meanwhile.
     unversioned_inserts: HashMap<PointIdType, PointOffsetType>,
 
     /// Fully written inserts reported by a reload but not linked yet, keyed by external id.
