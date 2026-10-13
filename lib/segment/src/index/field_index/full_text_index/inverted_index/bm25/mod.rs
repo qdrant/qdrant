@@ -264,13 +264,21 @@ pub trait TermCursors {
     /// Entries in the posting list of `term`, as when the cursors were made.
     fn posting_len(&self, term: usize) -> usize;
 
-    /// Call `f(doc, tf)` for every document from the cursor's current one to
-    /// the end of `term`'s list, in order, and leave the cursor exhausted.
-    fn for_each_posting(&mut self, term: usize, mut f: impl FnMut(PointOffsetType, u32))
-    where
+    /// Call `f(doc, tf)` for every document from the cursor's current one up
+    /// to `end`, excluded, in order, and leave the cursor on the first
+    /// document at or past `end`, if any.
+    fn for_each_posting_below(
+        &mut self,
+        term: usize,
+        end: PointOffsetType,
+        mut f: impl FnMut(PointOffsetType, u32),
+    ) where
         Self: Sized,
     {
         while let Some(doc) = self.current(term) {
+            if doc >= end {
+                break;
+            }
             let tf = self.tf(term, doc);
             f(doc, tf);
             self.advance(term);

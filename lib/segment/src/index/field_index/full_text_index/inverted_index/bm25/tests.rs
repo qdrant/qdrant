@@ -224,6 +224,7 @@ fn heap_matches_scan<const BLOCK: usize>(limit: usize) {
             Strategy {
                 heap_min_essential,
                 dense_min_postings_per_doc: f32::INFINITY,
+                dense_window: usize::MAX,
             },
         )
         .unwrap()
@@ -777,7 +778,10 @@ fn parameters_outside_the_bound_domain_are_rejected() {
 /// in the same order. Lengths are read once per document, in batches no larger
 /// than the block.
 #[rstest]
-fn dense_matches_document_at_a_time(#[values(1, 3, 10, 1000)] limit: usize) {
+fn dense_matches_document_at_a_time(
+    #[values(1, 3, 10, 1000)] limit: usize,
+    #[values(1, 7, 128, 300, usize::MAX)] window: usize,
+) {
     let mutable = fixture(41, 500, &[1, 10, 100]);
     let immutable = ImmutableInvertedIndex::from(mutable.clone());
     let dir = tempfile::tempdir().unwrap();
@@ -813,6 +817,7 @@ fn dense_matches_document_at_a_time(#[values(1, 3, 10, 1000)] limit: usize) {
             Strategy {
                 heap_min_essential: HEAP_MIN_ESSENTIAL,
                 dense_min_postings_per_doc: dense,
+                dense_window: window,
             },
         )
         .unwrap();

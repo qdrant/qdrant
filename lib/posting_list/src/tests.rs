@@ -139,6 +139,24 @@ fn test_len_iter_matches_values() {
                 cursor.advance_until_greater_or_equal(elem.id);
                 assert_eq!(walk(&mut cursor), lens[at..], "after seeking {}", elem.id);
             }
+            // Bounded walks over consecutive windows yield the same elements,
+            // each stopping on the first element at or past its bound.
+            for window in [1, 3, 50, 1000] {
+                let mut cursor = posting_list.view().len_iter();
+                let mut out = Vec::new();
+                let mut end: PointOffsetType = 0;
+                loop {
+                    end += window;
+                    let more = cursor.for_each_below(end, |elem| out.push(elem));
+                    let first_past = lens.iter().find(|elem| elem.id >= end).copied();
+                    assert_eq!(cursor.current(), first_past, "window {window}, end {end}");
+                    assert_eq!(more, first_past.is_some());
+                    if !more {
+                        break;
+                    }
+                }
+                assert_eq!(out, lens, "window {window}");
+            }
         });
     }
 

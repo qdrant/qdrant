@@ -55,11 +55,19 @@ impl TermCursors for PositionalCursors<'_> {
     }
 
     /// A chunk at a time, without the per-element offset arithmetic.
-    fn for_each_posting(&mut self, term: usize, mut f: impl FnMut(PointOffsetType, u32)) {
-        if let Some(mut cursor) = self.cursors[term].take() {
-            cursor.for_each_remaining(|elem| {
+    fn for_each_posting_below(
+        &mut self,
+        term: usize,
+        end: PointOffsetType,
+        mut f: impl FnMut(PointOffsetType, u32),
+    ) {
+        if let Some(cursor) = self.cursors[term].as_mut() {
+            let more = cursor.for_each_below(end, |elem| {
                 f(elem.id, (elem.value_len / size_of::<u32>()) as u32);
             });
+            if !more {
+                self.cursors[term] = None;
+            }
         }
     }
 

@@ -127,11 +127,23 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
     /// The same elements a loop of [`Iterator::next`] would yield, a chunk at
     /// a time: each chunk is decompressed once and its lengths read from
     /// neighbouring offsets, with no per-element offset arithmetic.
-    pub fn for_each_remaining(&mut self, mut f: impl FnMut(PostingLen)) {
+    pub fn for_each_remaining(&mut self, f: impl FnMut(PostingLen)) {
+        self.walk(None, f);
+    }
+
+    /// [`Self::for_each_remaining`] up to the first element whose id is at or
+    /// past `end`, which becomes the current one. Returns whether there is
+    /// such an element: `false` leaves the iterator exhausted.
+    pub fn for_each_below(&mut self, end: PointOffsetType, f: impl FnMut(PostingLen)) -> bool {
+        self.walk(Some(end), f)
+    }
+
+    fn walk(&mut self, end: Option<PointOffsetType>, mut f: impl FnMut(PostingLen)) -> bool {
         let mut offset = self.current_offset.unwrap_or(self.offset);
         let len = self.visitor.len();
         let chunks = self.visitor.list.chunks_len();
         let var_data_len = self.visitor.list.var_size_data.len();
+        let mut stop = None;
         while offset < len {
             let chunk_idx = offset / CHUNK_LEN;
             if chunk_idx < chunks {
@@ -144,7 +156,16 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
                     .get_chunk(chunk_idx + 1)
                     .map(|chunk| chunk.sized_values[0])
                     .or_else(|| list.get_remainder(0).map(|e| e.value));
-                for local in offset % CHUNK_LEN..CHUNK_LEN {
+                // Ids rise within a chunk, so one comparison with its last
+                // tells whether `end` falls inside it.
+                let from = offset % CHUNK_LEN;
+                let upto = match end {
+                    Some(end) if ids[CHUNK_LEN - 1] >= end => {
+                        from + ids[from..].partition_point(|&id| id < end)
+                    }
+                    _ => CHUNK_LEN,
+                };
+                for local in from..upto {
                     let next = sized_values.get(local + 1).copied().or(after);
                     let value_len =
                         V::Handler::value_len(sized_values[local], || next, var_data_len);
@@ -153,11 +174,19 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
                         value_len,
                     });
                 }
+                if upto < CHUNK_LEN {
+                    stop = Some(chunk_idx * CHUNK_LEN + upto);
+                    break;
+                }
                 offset = (chunk_idx + 1) * CHUNK_LEN;
             } else {
                 let list = &self.visitor.list;
                 for local in offset % CHUNK_LEN..list.remainders_len() {
                     let e = list.get_remainder(local).expect("within the remainders");
+                    if end.is_some_and(|end| e.id.get() >= end) {
+                        stop = Some(chunks * CHUNK_LEN + local);
+                        break;
+                    }
                     let next = list.get_remainder(local + 1).map(|r| r.value);
                     let value_len = V::Handler::value_len(e.value, || next, var_data_len);
                     f(PostingLen {
@@ -165,12 +194,24 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
                         value_len,
                     });
                 }
-                offset = len;
+                break;
             }
         }
-        self.offset = len;
-        self.current = None;
-        self.current_offset = None;
+        match stop {
+            // As if `next` had just yielded it.
+            Some(at) => {
+                self.current = self.visitor.value_len_by_offset(at);
+                self.current_offset = Some(at);
+                self.offset = at + 1;
+                true
+            }
+            None => {
+                self.offset = len;
+                self.current = None;
+                self.current_offset = None;
+                false
+            }
+        }
     }
 
     /// The element most recently yielded by [`Iterator::next`] or
