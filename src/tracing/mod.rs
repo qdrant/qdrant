@@ -6,9 +6,12 @@ pub mod on_disk;
 #[cfg(test)]
 mod test;
 
+use std::env;
 use std::fmt::Write as _;
 use std::str::FromStr as _;
 
+use tracing_subscriber::fmt::format::Writer;
+use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, reload};
 
@@ -105,6 +108,39 @@ fn filter(user_filters: &str) -> filter::EnvFilter {
     filter::EnvFilter::builder()
         .with_regex(false)
         .parse_lossy(filter)
+}
+
+/// Log timestamp formatter
+///
+/// Timestamps are in UTC by default. If the `TZ` environment variable is set, they follow that
+/// timezone instead.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum Timer {
+    Utc,
+    Local,
+}
+
+impl Timer {
+    fn from_env() -> Self {
+        if env::var_os("TZ").is_some() {
+            Self::Local
+        } else {
+            Self::Utc
+        }
+    }
+}
+
+impl FormatTime for Timer {
+    fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
+        let now = match self {
+            Self::Utc => chrono::Utc::now().fixed_offset(),
+            Self::Local => chrono::Local::now().fixed_offset(),
+        };
+
+        // Matches the default `tracing_subscriber` timer, e.g. `2026-10-13T02:04:27.604091Z`
+        // With a non-UTC timezone the offset is included, e.g. `2026-10-13T10:04:27.604091+08:00`
+        w.write_str(&now.to_rfc3339_opts(chrono::SecondsFormat::Micros, true))
+    }
 }
 
 #[rustfmt::skip] // `rustfmt` formats this into unreadable single line
