@@ -41,7 +41,7 @@ jobs:
       - name: Build
         run: cargo build --features "service_debug data-consistency-check staging" --locked
       - name: Upload qdrant binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qdrant-debug
           path: target/debug/qdrant
@@ -124,7 +124,7 @@ jobs:
             --durations-path tests/consensus_tests/.test_durations --store-durations --clean-durations
         timeout-minutes: 60
       - name: Upload test durations
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: consensus-test-durations-${{ matrix.shard }}
@@ -132,7 +132,7 @@ jobs:
           include-hidden-files: true
           retention-days: 7
       - name: upload logs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           path: consensus_test_logs
@@ -291,7 +291,7 @@ jobs:
       - name: Compress image
         run: zstd -T0 -3 --rm /tmp/e2e-image.tar -o /tmp/e2e-image.tar.zst
       - name: Upload image
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-image
           path: /tmp/e2e-image.tar.zst
@@ -364,7 +364,7 @@ jobs:
         shell: bash
         timeout-minutes: 20
       - name: Upload test logs on failure
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: e2e-test-logs-${{ matrix.group }}
