@@ -109,20 +109,22 @@ impl StopwordsFilter {
     /// lives as long as some text index using it, and dead entries are pruned
     /// whenever a new filter is built.
     pub fn shared(option: &Option<StopwordsInterface>, lowercase: bool) -> Arc<Self> {
-        type Shared = AHashMap<(Option<StopwordsInterface>, bool), Weak<StopwordsFilter>>;
-        static SHARED: LazyLock<RwLock<Shared>> = LazyLock::new(Default::default);
+        type Shared = AHashMap<Option<StopwordsInterface>, Weak<StopwordsFilter>>;
+        // One map per `lowercase` value, so a lookup borrows the configuration
+        // and only an insert clones it.
+        static SHARED: LazyLock<[RwLock<Shared>; 2]> = LazyLock::new(Default::default);
 
-        let key = (option.clone(), lowercase);
-        if let Some(filter) = SHARED.read().get(&key).and_then(Weak::upgrade) {
+        let shared = &SHARED[usize::from(lowercase)];
+        if let Some(filter) = shared.read().get(option).and_then(Weak::upgrade) {
             return filter;
         }
-        let mut shared = SHARED.write();
-        if let Some(filter) = shared.get(&key).and_then(Weak::upgrade) {
+        let mut shared = shared.write();
+        if let Some(filter) = shared.get(option).and_then(Weak::upgrade) {
             return filter;
         }
         shared.retain(|_, filter| filter.strong_count() > 0);
         let filter = Arc::new(Self::new(option, lowercase));
-        shared.insert(key, Arc::downgrade(&filter));
+        shared.insert(option.clone(), Arc::downgrade(&filter));
         filter
     }
 
