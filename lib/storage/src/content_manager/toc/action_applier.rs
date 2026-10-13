@@ -195,6 +195,15 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::StopTransferDriver { collection, key } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .stop_shard_transfer(key)
+                    .await;
+
+                Ok(())
+            }
+
             Action::RegisterTransfer {
                 collection,
                 transfer,
@@ -275,7 +284,6 @@ impl TableOfContent {
             | Action::RevertHashRing { .. }
             | Action::SetReshardingState { .. }
             | Action::SetReshardingStage { .. }
-            | Action::StopTransferDriver { .. }
             | Action::RevertProxyShard { .. }
             | Action::UnproxifyShard { .. }
             | Action::SpawnTransferDriver { .. }

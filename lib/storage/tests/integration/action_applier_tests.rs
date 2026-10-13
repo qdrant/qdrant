@@ -647,6 +647,32 @@ fn unregister_transfer_action_replay(outcome: TransferOutcome) {
     }
 }
 
+#[test]
+fn stop_transfer_driver_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    toc.apply_action(Action::RegisterTransfer {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::StopTransferDriver {
+        collection: "test".into(),
+        key: transfer.key(),
+    };
+
+    // A restarted node has the transfer record but no driver task
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
 fn ordinary_transfer() -> ShardTransfer {
     ShardTransfer {
         shard_id: 0,
