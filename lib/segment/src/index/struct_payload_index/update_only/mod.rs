@@ -59,6 +59,12 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
                          open the segment for writing once to have them derived and stored",
                     )));
                 }
+                if let Some(nested) = indexed.schema.nested() {
+                    return Err(OperationError::service_error(format!(
+                        "Update-only payload index doesn't support per-element index of field \
+                         `{field}` (nested `{nested}`)",
+                    )));
+                }
 
                 let indexes = indexed
                     .types

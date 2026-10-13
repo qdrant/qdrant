@@ -48,7 +48,7 @@ use crate::data_types::tiny_map::TinyMap;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
-use crate::json_path::JsonPath;
+use crate::json_path::{JsonPath, JsonPathItem};
 use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::utils::unordered_hash_unique;
@@ -456,21 +456,27 @@ pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<PayloadSchemaParams>,
+    /// Array whose elements are indexed as separate entries, if any
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
     /// Number of points indexed with this index
     pub points: usize,
 }
 
 impl PayloadIndexInfo {
     pub fn new(field_type: PayloadFieldSchema, points_count: usize) -> Self {
+        let (field_type, nested) = field_type.split_nested();
         match field_type {
             PayloadFieldSchema::FieldType(data_type) => PayloadIndexInfo {
                 data_type,
                 params: None,
+                nested,
                 points: points_count,
             },
             PayloadFieldSchema::FieldParams(schema_params) => PayloadIndexInfo {
                 data_type: schema_params.kind(),
                 params: Some(schema_params),
+                nested,
                 points: points_count,
             },
         }
@@ -2743,6 +2749,36 @@ impl PayloadSchemaParams {
         Memory::resolve(memory, on_disk.map(Memory::from_on_disk_heap)).unwrap_or(Memory::Pinned)
     }
 
+    /// Path to the array whose elements this index treats as separate entries, if any.
+    ///
+    /// Always stored as the array key, e.g. `offers[]`. Full-text indexes don't support it.
+    pub fn nested(&self) -> Option<&JsonPath> {
+        match self {
+            PayloadSchemaParams::Keyword(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Integer(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Float(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Datetime(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Uuid(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Geo(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Bool(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Text(_) => None,
+        }
+    }
+
+    /// Mutable access to the `nested` parameter, `None` for index types that don't support it.
+    fn nested_mut(&mut self) -> Option<&mut Option<JsonPath>> {
+        match self {
+            PayloadSchemaParams::Keyword(params) => Some(&mut params.nested),
+            PayloadSchemaParams::Integer(params) => Some(&mut params.nested),
+            PayloadSchemaParams::Float(params) => Some(&mut params.nested),
+            PayloadSchemaParams::Datetime(params) => Some(&mut params.nested),
+            PayloadSchemaParams::Uuid(params) => Some(&mut params.nested),
+            PayloadSchemaParams::Geo(params) => Some(&mut params.nested),
+            PayloadSchemaParams::Bool(params) => Some(&mut params.nested),
+            PayloadSchemaParams::Text(_) => None,
+        }
+    }
+
     pub fn enable_hnsw(&self) -> bool {
         match self {
             PayloadSchemaParams::Keyword(params) => params.enable_hnsw.unwrap_or(true),
@@ -2881,6 +2917,51 @@ impl PayloadFieldSchema {
         }
     }
 
+    /// Path to the array whose elements this index treats as separate entries, if any.
+    /// See [`PayloadSchemaParams::nested`].
+    pub fn nested(&self) -> Option<&JsonPath> {
+        match self {
+            PayloadFieldSchema::FieldType(_) => None,
+            PayloadFieldSchema::FieldParams(params) => params.nested(),
+        }
+    }
+
+    /// Make this an index of the elements of the `nested` array, see
+    /// [`PayloadSchemaParams::nested`].
+    ///
+    /// Validates the combination with `field` and stores `nested` as its array key, so
+    /// `offers` and `offers[]` give the same schema. A bare type is expanded into its
+    /// default params.
+    pub fn with_nested(self, field: &JsonPath, nested: &JsonPath) -> Result<Self, String> {
+        let nested = validate_nested_index_path(field, nested)?;
+        let mut params = self.expand().into_owned();
+        if params.tenant_optimization() {
+            return Err(format!(
+                "nested `{nested}` can't be combined with `is_tenant` or `is_principal`",
+            ));
+        }
+        let Some(slot) = params.nested_mut() else {
+            return Err(format!(
+                "nested `{nested}` is not supported for {} indexes",
+                params.name(),
+            ));
+        };
+        *slot = Some(nested);
+        Ok(PayloadFieldSchema::FieldParams(params))
+    }
+
+    /// Split off the `nested` parameter, which the API shows next to the schema
+    /// rather than inside it.
+    pub fn split_nested(self) -> (Self, Option<JsonPath>) {
+        match self {
+            PayloadFieldSchema::FieldType(_) => (self, None),
+            PayloadFieldSchema::FieldParams(mut params) => {
+                let nested = params.nested_mut().and_then(Option::take);
+                (PayloadFieldSchema::FieldParams(params), nested)
+            }
+        }
+    }
+
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
             PayloadFieldSchema::FieldType(t) => Cow::Owned(t.expand()),
@@ -2968,6 +3049,33 @@ impl From<PayloadSchemaType> for PayloadFieldSchema {
     }
 }
 
+/// Check that `field` can be indexed per element of the `nested` array, and return
+/// `nested` as its array key, e.g. `offers[]`.
+///
+/// `nested` must be a single array level (`offers` or `offers[]`, not `offers[].items`),
+/// and `field` must be a path inside its elements, e.g. `offers[].price`.
+pub fn validate_nested_index_path(field: &JsonPath, nested: &JsonPath) -> Result<JsonPath, String> {
+    let array_key = nested.array_key();
+    let single_level = array_key
+        .rest
+        .iter()
+        .filter(|item| !matches!(item, JsonPathItem::Key(_)))
+        .count()
+        == 1;
+    if !single_level {
+        return Err(format!(
+            "nested `{nested}` must point to a single array level, like `offers` or `offers[]`",
+        ));
+    }
+    if field.strip_prefix(&array_key).is_none() {
+        return Err(format!(
+            "field `{field}` must be inside the elements of nested `{nested}`, \
+             like `{array_key}.price`",
+        ));
+    }
+    Ok(array_key)
+}
+
 impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
@@ -2975,20 +3083,38 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
         let PayloadIndexInfo {
             data_type,
             params,
+            nested,
             points: _,
         } = index_info;
 
-        match params {
-            None => Ok(PayloadFieldSchema::FieldType(data_type)),
+        let schema = match params {
+            None => PayloadFieldSchema::FieldType(data_type),
 
-            Some(params) if data_type == params.kind() => {
+            Some(params) if data_type == params.kind() => PayloadFieldSchema::FieldParams(params),
+
+            Some(params) => {
+                return Err(format!(
+                    "payload field with type {data_type:?} has parameters of type {:?}",
+                    params.kind(),
+                ));
+            }
+        };
+
+        match nested {
+            None => Ok(schema),
+            // Already validated against the field when the index was created
+            Some(nested) => {
+                let mut params = schema.expand().into_owned();
+                match params.nested_mut() {
+                    Some(slot) => *slot = Some(nested),
+                    None => {
+                        return Err(format!(
+                            "payload field with type {data_type:?} can't be nested",
+                        ));
+                    }
+                }
                 Ok(PayloadFieldSchema::FieldParams(params))
             }
-
-            Some(params) => Err(format!(
-                "payload field with type {data_type:?} has parameters of type {:?}",
-                params.kind(),
-            )),
         }
     }
 }

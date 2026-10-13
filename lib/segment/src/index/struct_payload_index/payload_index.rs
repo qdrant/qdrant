@@ -59,6 +59,7 @@ impl PayloadIndex for StructPayloadIndex {
             .iter()
             .map(|i| i.get_full_index_type())
             .collect();
+        self.register_element_map(&field_index);
         self.field_indexes.insert(field.clone(), field_index);
 
         self.config.indices.insert(
@@ -114,6 +115,8 @@ impl PayloadIndex for StructPayloadIndex {
 
         self.save_config()?;
 
+        self.drop_unused_element_maps()?;
+
         Ok(is_removed)
     }
 
@@ -140,8 +143,10 @@ impl PayloadIndex for StructPayloadIndex {
             // `on_disk` flipped on a non-appendable (mmap) segment: keep the
             // existing files and reload the index in the new mode during
             // `build_index` instead of dropping and rebuilding from payload.
+            // Per-element indexes are always rebuilt, over their element map.
             SchemaTransition::Compatible(_)
-                if matches!(self.storage_type, StorageType::NonAppendable) =>
+                if matches!(self.storage_type, StorageType::NonAppendable)
+                    && new_payload_schema.nested().is_none() =>
             {
                 Ok(false)
             }
@@ -163,16 +168,15 @@ impl PayloadIndex for StructPayloadIndex {
 
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
-            if !field_value.is_empty() {
-                for index in field_index {
+            for index in field_index.iter_mut().filter(|index| !index.is_nested()) {
+                if !field_value.is_empty() {
                     index.add_point(point_id, &field_value)?;
-                }
-            } else {
-                for index in field_index {
+                } else {
                     index.remove_point(point_id)?;
                 }
             }
         }
+        self.update_nested_indexes(point_id, payload, |_| true)?;
         Ok(())
     }
 
@@ -199,16 +203,17 @@ impl PayloadIndex for StructPayloadIndex {
                 continue;
             }
             let field_value = updated_payload.get_value(field);
-            if !field_value.is_empty() {
-                for index in field_index {
+            for index in field_index.iter_mut().filter(|index| !index.is_nested()) {
+                if !field_value.is_empty() {
                     index.add_point(point_id, &field_value)?;
-                }
-            } else {
-                for index in field_index {
+                } else {
                     index.remove_point(point_id)?;
                 }
             }
         }
+        self.update_nested_indexes(point_id, &updated_payload, |array_key| {
+            array_key.is_affected_by_value_set(&payload.0, key.as_ref())
+        })?;
         Ok(())
     }
 
@@ -218,15 +223,29 @@ impl PayloadIndex for StructPayloadIndex {
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Vec<Value>> {
         if let Some(indexes) = self.field_indexes.get_mut(key) {
-            for index in indexes {
+            for index in indexes.iter_mut().filter(|index| !index.is_nested()) {
                 index.remove_point(point_id)?;
             }
         }
-        self.payload.borrow_mut().delete(point_id, key)
+        let deleted = self.payload.borrow_mut().delete(point_id, key)?;
+
+        // Elements are re-read from what is left of the array
+        if self
+            .element_maps
+            .keys()
+            .any(|array_key| array_key.is_affected_by_value_remove(key))
+        {
+            let updated_payload = self.payload.borrow().get(point_id)?;
+            self.update_nested_indexes(point_id, &updated_payload, |array_key| {
+                array_key.is_affected_by_value_remove(key)
+            })?;
+        }
+        Ok(deleted)
     }
 
     fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         self.clear_index_for_point(point_id)?;
+        self.clear_nested_elements(point_id)?;
         self.payload.borrow_mut().clear(point_id)
     }
 
@@ -239,6 +258,11 @@ impl PayloadIndex for StructPayloadIndex {
             for index in field_indexes {
                 field_flushers.push(index.flusher());
             }
+        }
+        // After the field indexes: an element offset that the indexes know but the
+        // map doesn't is never resolved, see `ElementMap`
+        for element_map in self.element_maps.values() {
+            field_flushers.push(element_map.borrow().flusher());
         }
         let payload_flusher = self.payload.borrow().flusher();
 
@@ -269,6 +293,10 @@ impl PayloadIndex for StructPayloadIndex {
             .values()
             .flat_map(|indexes| indexes.iter().flat_map(|index| index.files().into_iter()))
             .collect::<Vec<PathBuf>>();
+        // Element maps change with every point update, none of their files is immutable
+        for element_map in self.element_maps.values() {
+            files.extend(element_map.borrow().files());
+        }
         files.push(self.config_path());
         files
     }

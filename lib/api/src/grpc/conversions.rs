@@ -248,6 +248,8 @@ impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams
             memory,
             enable_hnsw,
             prefix,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::KeywordIndexParams(KeywordIndexParams {
@@ -271,6 +273,8 @@ impl From<segment::data_types::index::IntegerIndexParams> for PayloadIndexParams
             memory,
             is_principal,
             enable_hnsw,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::IntegerIndexParams(IntegerIndexParams {
@@ -293,6 +297,8 @@ impl From<segment::data_types::index::FloatIndexParams> for PayloadIndexParams {
             memory,
             is_principal,
             enable_hnsw,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::FloatIndexParams(FloatIndexParams {
@@ -312,6 +318,8 @@ impl From<segment::data_types::index::GeoIndexParams> for PayloadIndexParams {
             on_disk,
             memory,
             enable_hnsw,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::GeoIndexParams(GeoIndexParams {
@@ -404,6 +412,8 @@ impl From<segment::data_types::index::BoolIndexParams> for PayloadIndexParams {
             on_disk,
             memory,
             enable_hnsw,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::BoolIndexParams(BoolIndexParams {
@@ -423,6 +433,8 @@ impl From<segment::data_types::index::UuidIndexParams> for PayloadIndexParams {
             on_disk,
             memory,
             enable_hnsw,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::UuidIndexParams(UuidIndexParams {
@@ -443,6 +455,8 @@ impl From<segment::data_types::index::DatetimeIndexParams> for PayloadIndexParam
             memory,
             is_principal,
             enable_hnsw,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::DatetimeIndexParams(DatetimeIndexParams {
@@ -460,12 +474,14 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
         let segment::types::PayloadIndexInfo {
             data_type,
             params,
+            nested,
             points,
         } = schema;
         PayloadSchemaInfo {
             data_type: PayloadSchemaType::from(data_type) as i32,
             params: params.map(Into::into),
             points: Some(points as u64),
+            nested: nested.map(|nested| nested.to_string()),
         }
     }
 }
@@ -601,6 +617,7 @@ impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexPar
             // Presence of the (currently empty) message enables prefix
             // matching.
             prefix: prefix.map(|KeywordPrefixParams {}| true),
+            nested: None,
         })
     }
 }
@@ -624,6 +641,7 @@ impl TryFrom<IntegerIndexParams> for segment::data_types::index::IntegerIndexPar
             on_disk,
             memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
+            nested: None,
         })
     }
 }
@@ -643,6 +661,7 @@ impl TryFrom<FloatIndexParams> for segment::data_types::index::FloatIndexParams 
             memory: convert_memory_from_proto(memory)?,
             is_principal,
             enable_hnsw,
+            nested: None,
         })
     }
 }
@@ -660,6 +679,7 @@ impl TryFrom<GeoIndexParams> for segment::data_types::index::GeoIndexParams {
             on_disk,
             memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
+            nested: None,
         })
     }
 }
@@ -785,6 +805,7 @@ impl TryFrom<BoolIndexParams> for segment::data_types::index::BoolIndexParams {
             on_disk,
             memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
+            nested: None,
         })
     }
 }
@@ -804,6 +825,7 @@ impl TryFrom<DatetimeIndexParams> for segment::data_types::index::DatetimeIndexP
             memory: convert_memory_from_proto(memory)?,
             is_principal,
             enable_hnsw,
+            nested: None,
         })
     }
 }
@@ -823,6 +845,7 @@ impl TryFrom<UuidIndexParams> for segment::data_types::index::UuidIndexParams {
             on_disk,
             memory: convert_memory_from_proto(memory)?,
             enable_hnsw,
+            nested: None,
         })
     }
 }
@@ -868,6 +891,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
             data_type,
             params,
             points,
+            nested,
         } = schema;
         let data_type = match PayloadSchemaType::try_from(data_type) {
             Err(_) => {
@@ -899,9 +923,15 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
             }) => Some(index_params.try_into()?),
         };
 
+        let nested = nested
+            .as_deref()
+            .map(crate::conversions::json::json_path_from_proto)
+            .transpose()?;
+
         Ok(segment::types::PayloadIndexInfo {
             data_type,
             params,
+            nested,
             points: points.unwrap_or(0) as usize,
         })
     }

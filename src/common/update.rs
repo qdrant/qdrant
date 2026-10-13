@@ -306,6 +306,11 @@ pub struct CreateFieldIndex {
     #[serde(alias = "field_type")]
     #[validate(nested)]
     pub field_schema: Option<PayloadFieldSchema>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements.
+    /// Not supported for full-text indexes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 pub async fn do_upsert_points(
@@ -916,6 +921,16 @@ pub async fn do_create_index(
             "Can't auto-detect field type, please specify `field_schema` in the request",
         ));
     };
+
+    let toc = dispatcher.toc(&auth, &pass).clone();
+
+    let field_schema = with_nested(
+        &toc,
+        &operation.field_name,
+        field_schema,
+        operation.nested.as_ref(),
+    )?;
+
     // Once, before the schema is proposed and applied: every node, and the
     // direct index operation below, must see the same params.
     let field_schema = field_schema.normalized();
@@ -925,8 +940,6 @@ pub async fn do_create_index(
         field_name: operation.field_name.clone(),
         field_schema: field_schema.clone(),
     });
-
-    let toc = dispatcher.toc(&auth, &pass).clone();
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
@@ -942,6 +955,36 @@ pub async fn do_create_index(
         params,
     )
     .await
+}
+
+/// Apply the top-level `nested` parameter of a create-index request to its schema.
+fn with_nested(
+    toc: &TableOfContent,
+    field_name: &JsonPath,
+    field_schema: PayloadFieldSchema,
+    nested: Option<&JsonPath>,
+) -> Result<PayloadFieldSchema, StorageError> {
+    // The schema carries `nested` internally, but the API only takes it top-level
+    if field_schema.nested().is_some() {
+        return Err(StorageError::bad_request(
+            "`nested` is a parameter of the request, not of `field_schema`",
+        ));
+    }
+    let Some(nested) = nested else {
+        return Ok(field_schema);
+    };
+    if !toc
+        .get_channel_service()
+        .all_peers_at_version(&NESTED_PAYLOAD_INDEX_FROM_VERSION)
+    {
+        return Err(StorageError::bad_request(format!(
+            "`nested` requires all peers to run version {} or later",
+            *NESTED_PAYLOAD_INDEX_FROM_VERSION,
+        )));
+    }
+    field_schema
+        .with_nested(field_name, nested)
+        .map_err(StorageError::bad_request)
 }
 
 pub async fn do_create_index_internal(

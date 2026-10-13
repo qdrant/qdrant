@@ -142,6 +142,7 @@ impl TestSegments {
                         on_disk: None,
                         enable_hnsw: None,
                         prefix: Some(true),
+                        nested: None,
                     },
                 ))),
             )
@@ -163,6 +164,7 @@ impl TestSegments {
                         is_principal: None,
                         on_disk: None,
                         enable_hnsw: None,
+                        nested: None,
                     },
                 ))),
             )
@@ -180,6 +182,7 @@ impl TestSegments {
                         is_principal: None,
                         on_disk: None,
                         enable_hnsw: None,
+                        nested: None,
                     },
                 ))),
             )
@@ -309,6 +312,7 @@ impl TestSegments {
                         on_disk: Some(true),
                         enable_hnsw: None,
                         prefix: Some(true),
+                        nested: None,
                     },
                 ))),
             )
@@ -326,6 +330,7 @@ impl TestSegments {
                         is_principal: None,
                         on_disk: Some(true),
                         enable_hnsw: None,
+                        nested: None,
                     },
                 ))),
             )
@@ -343,6 +348,7 @@ impl TestSegments {
                         is_principal: None,
                         on_disk: Some(true),
                         enable_hnsw: None,
+                        nested: None,
                     },
                 ))),
             )
@@ -360,6 +366,7 @@ impl TestSegments {
                         is_principal: None,
                         on_disk: Some(true),
                         enable_hnsw: None,
+                        nested: None,
                     },
                 ))),
             )
@@ -374,6 +381,7 @@ impl TestSegments {
                     is_principal: None,
                     on_disk: Some(true),
                     enable_hnsw: None,
+                    nested: None,
                 }))),
             )
             .unwrap();

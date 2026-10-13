@@ -1,10 +1,11 @@
 use common::types::PointOffsetType;
 
 use super::StructPayloadIndex;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::BuildIndexResult;
 use crate::index::field_index::index_selector::wipe_field_dirs;
+use crate::index::field_index::nested_index::nested_elements;
 use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait as _};
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{PayloadContainer, PayloadFieldSchema, PayloadKeyTypeRef};
@@ -21,6 +22,26 @@ impl StructPayloadIndex {
         // would leak stale postings into the fresh build.
         wipe_field_dirs(&self.path, field)?;
 
+        // A per-element index is built over the element map of its array, which is
+        // shared with the other per-element indexes of that array. A new map is built
+        // and flushed here: it is not installed yet, so no flusher of it is captured.
+        let nested = match payload_schema.nested() {
+            Some(array_key) => {
+                let relative_path = field.strip_prefix(array_key).ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "field `{field}` is not inside the elements of `{array_key}`",
+                    ))
+                })?;
+                Some((
+                    array_key,
+                    relative_path,
+                    self.element_map_for_build(array_key)?,
+                ))
+            }
+            None => None,
+        };
+        let element_map = nested.as_ref().map(|(_, _, map)| map.borrow());
+
         // Note: durability of the state this build reads (id tracker, payload storage)
         // is the caller's responsibility. Component flushers must not be invoked here:
         // flusher executions are serialized end-to-end with their capture by the shard
@@ -31,10 +52,15 @@ impl StructPayloadIndex {
         let payload_storage = self.payload.borrow();
         let id_tracker_borrow = self.id_tracker.borrow();
         let selector = self.selector(payload_schema);
+        let deleted_elements = element_map
+            .as_ref()
+            .map(|map| map.deleted_elements(id_tracker_borrow.deleted_point_bitslice()));
         let mut builders = selector.index_builder(
             field,
             payload_schema,
-            id_tracker_borrow.deleted_point_bitslice(),
+            deleted_elements
+                .as_deref()
+                .unwrap_or(id_tracker_borrow.deleted_point_bitslice()),
         )?;
 
         // Special null index complements every index. Seed it with the segment's total
@@ -42,10 +68,9 @@ impl StructPayloadIndex {
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
         let total_point_count = self.id_tracker.borrow().total_point_count();
-        let null_index = selector.null_builder(field, total_point_count)?;
-        builders.push(null_index);
+        let mut null_builder = selector.null_builder(field, total_point_count)?;
 
-        for index in &mut builders {
+        for index in builders.iter_mut().chain([&mut null_builder]) {
             index.init()?;
             if !self.journaled {
                 index.disable_journal();
@@ -54,16 +79,48 @@ impl StructPayloadIndex {
 
         payload_storage.iter(|point_id, point_payload| {
             let field_value = &point_payload.get_value(field);
-            for builder in builders.iter_mut() {
-                builder.add_point(point_id, field_value)?;
+            null_builder.add_point(point_id, field_value)?;
+
+            match (&nested, &element_map) {
+                (Some((array_key, relative_path, _)), Some(element_map)) => {
+                    let elements = nested_elements(point_payload, array_key);
+                    let element_ids = element_map.point_elements(point_id);
+                    if element_ids.len() != elements.len() {
+                        log::warn!(
+                            "Point {point_id} has {} elements in `{array_key}`, but its element \
+                             map has {}; indexing the common part",
+                            elements.len(),
+                            element_ids.len(),
+                        );
+                    }
+                    for (element_id, element) in element_ids.zip(elements) {
+                        let element_value = &relative_path.value_get(element);
+                        for builder in builders.iter_mut() {
+                            builder.add_point(element_id, element_value)?;
+                        }
+                    }
+                }
+                _ => {
+                    for builder in builders.iter_mut() {
+                        builder.add_point(point_id, field_value)?;
+                    }
+                }
             }
             Ok(true)
         })?;
 
-        builders
+        let mut indexes = builders
             .into_iter()
             .map(|builder| builder.finalize())
-            .collect()
+            .collect::<OperationResult<Vec<_>>>()?;
+
+        if let Some((array_key, _, map)) = &nested {
+            drop(element_map);
+            indexes = Self::wrap_nested(field, array_key, map, indexes)?;
+        }
+
+        indexes.push(null_builder.finalize()?);
+        Ok(indexes)
     }
 
     /// Build a field index by reusing its already-persisted files, loaded in
@@ -75,6 +132,13 @@ impl StructPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<BuildIndexResult> {
+        // Per-element indexes are opened over their element map, rebuilding is simpler
+        if payload_schema.nested().is_some() {
+            return Ok(BuildIndexResult::Built(
+                self.build_field_indexes(field, payload_schema)?,
+            ));
+        }
+
         let loaded = {
             let selector = self.selector(payload_schema);
             let id_tracker = self.id_tracker.borrow();

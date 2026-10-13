@@ -278,6 +278,8 @@ impl SegmentBuilder {
                 FieldIndex::FullTextIndex(_) => {}
                 FieldIndex::BoolIndex(_) => {}
                 FieldIndex::NullIndex(_) => {}
+                // Values are keyed by elements, not points
+                FieldIndex::Nested(_) => {}
             }
         }
         ordering

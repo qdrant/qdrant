@@ -1,4 +1,5 @@
 mod build;
+mod nested;
 mod payload_index;
 mod read_view;
 
@@ -9,7 +10,7 @@ pub mod read_only;
 mod tests;
 pub mod update_only;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -22,12 +23,16 @@ use fs_err as fs;
 
 use super::field_index::FieldIndex;
 use super::field_index::index_selector::IndexSelector;
-use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
-use crate::common::operation_error::OperationResult;
+use super::field_index::nested_index::SharedElementMap;
+use super::payload_config::{
+    FullPayloadIndexType, PayloadFieldSchemaWithIndexType, PayloadIndexType,
+};
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::visited_pool::VisitedPool;
+use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{PayloadFieldSchema, PayloadKeyType, VectorNameBuf};
 use crate::vector_storage::VectorStorageEnum;
@@ -70,6 +75,8 @@ pub struct StructPayloadIndex {
     pub(super) vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,
+    /// Element maps of the nested arrays with per-element indexes, by array key
+    element_maps: HashMap<JsonPath, SharedElementMap>,
     config: PayloadConfig,
     /// Root of index persistence dir
     path: PathBuf,
@@ -101,13 +108,20 @@ impl StructPayloadIndex {
     fn load_all_fields(&mut self, create_if_missing: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
 
+        // Before the fields: per-element indexes are opened over their element map
+        let rebuilt_element_maps = self.load_element_maps()?;
+
         let mut indices = std::mem::take(&mut self.config.indices);
         let mut is_dirty = false;
 
         for (field, payload_schema) in indices.iter_mut() {
             let started = Instant::now();
-            let (field_index, dirty) =
-                self.load_from_db(field, payload_schema, create_if_missing)?;
+            let (field_index, dirty) = self.load_from_db(
+                field,
+                payload_schema,
+                create_if_missing,
+                &rebuilt_element_maps,
+            )?;
             log_load_timing(&self.path, &format!("field `{field}`"), started);
             field_indexes.insert(field.clone(), field_index);
             is_dirty |= dirty;
@@ -130,6 +144,7 @@ impl StructPayloadIndex {
         // TODO: refactor this and remove the &mut reference.
         payload_schema: &mut PayloadFieldSchemaWithIndexType,
         create_if_missing: bool,
+        rebuilt_element_maps: &HashSet<JsonPath>,
     ) -> OperationResult<(Vec<FieldIndex>, bool)> {
         let id_tracker_borrow = self.id_tracker.borrow();
         let deleted_points = id_tracker_borrow.deleted_point_bitslice();
@@ -137,7 +152,28 @@ impl StructPayloadIndex {
         let mut load_error = None;
         let mut is_dirty = false;
 
-        let mut indexes = if payload_schema.types.is_empty() {
+        // Per-element indexes are keyed by the element offsets of their array
+        let nested = match payload_schema.schema.nested() {
+            Some(array_key) => {
+                let element_map = self.element_maps.get(array_key).cloned().ok_or_else(|| {
+                    OperationError::service_error(format!(
+                        "element map of `{array_key}` is not loaded",
+                    ))
+                })?;
+                let deleted_elements = element_map.borrow().deleted_elements(deleted_points);
+                Some((array_key, element_map, deleted_elements))
+            }
+            None => None,
+        };
+
+        let mut indexes = if let Some((array_key, _, _)) = &nested
+            && (payload_schema.types.is_empty() || rebuilt_element_maps.contains(*array_key))
+        {
+            // No exact index types to load, or the stored indexes refer to a lost
+            // element map
+            rebuild = true;
+            vec![]
+        } else if payload_schema.types.is_empty() {
             let selector = self.selector(&payload_schema.schema);
             let indexes = selector.new_index(
                 field,
@@ -180,13 +216,21 @@ impl StructPayloadIndex {
                 // Load each index
                 .map(|index| {
                     let selector = self.selector_with_type(index, &payload_schema.schema);
+                    let deleted = match &nested {
+                        Some((_, _, deleted_elements))
+                            if index.index_type != PayloadIndexType::NullIndex =>
+                        {
+                            deleted_elements
+                        }
+                        _ => deleted_points,
+                    };
                     selector.new_index_with_type(
                         field,
                         &payload_schema.schema,
                         index,
                         create_if_missing,
                         &id_tracker_borrow,
-                        deleted_points,
+                        deleted,
                     )
                 })
                 // Interrupt loading indices if one fails to load
@@ -202,6 +246,12 @@ impl StructPayloadIndex {
                 .filter_map(|index| index.transpose())
                 .collect::<OperationResult<Vec<_>>>()?
         };
+
+        if let Some((array_key, element_map, _)) = &nested
+            && !rebuild
+        {
+            indexes = Self::wrap_nested(field, array_key, element_map, indexes)?;
+        }
 
         // If index is not properly loaded or when migrating, rebuild indices
         if rebuild {
@@ -258,6 +308,7 @@ impl StructPayloadIndex {
             id_tracker,
             vector_storages,
             field_indexes: Default::default(),
+            element_maps: Default::default(),
             config,
             path: path.to_owned(),
             visited_pool: Default::default(),

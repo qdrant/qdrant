@@ -87,6 +87,7 @@ fn test_on_disk_segment_snapshot(
                     on_disk: Some(true),
                     enable_hnsw: None,
                     prefix: None,
+                    nested: None,
                 }),
             )),
         )
@@ -104,6 +105,7 @@ fn test_on_disk_segment_snapshot(
                     is_principal: None,
                     on_disk: Some(true),
                     enable_hnsw: None,
+                    nested: None,
                 }),
             )),
         )

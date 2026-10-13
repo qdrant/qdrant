@@ -911,6 +911,8 @@ message PayloadSchemaInfo {
   optional PayloadIndexParams params = 2;
   // Number of points indexed within this field
   optional uint64 points = 3;
+  // Array whose elements are indexed as separate entries, if any
+  optional string nested = 4;
 }
 
 message UpdateQueueInfo {

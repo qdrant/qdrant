@@ -42,6 +42,11 @@ use crate::content_manager::shard_distribution::ShardDistributionProposal;
 pub(crate) static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
     LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
+/// First version that builds per-element (`nested`) payload indexes. Older peers would
+/// ignore the parameter and silently build a flattened index instead.
+pub static NESTED_PAYLOAD_INDEX_FROM_VERSION: LazyLock<semver::Version> =
+    LazyLock::new(|| semver::Version::parse("1.19.3-dev").unwrap());
+
 // *Operation wrapper structure is only required for better OpenAPI generation
 
 /// Create alternative name for a collection.

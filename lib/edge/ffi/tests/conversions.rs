@@ -1242,6 +1242,7 @@ fn legacy_on_disk_flag_resolves_to_memory_on_read() {
             memory,
             enable_hnsw: None,
             prefix: None,
+            nested: None,
         })
     };
     let reported_memory = |params: PayloadSchemaParams| {

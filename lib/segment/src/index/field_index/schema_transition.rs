@@ -143,6 +143,7 @@ mod tests {
             on_disk,
             enable_hnsw,
             prefix: None,
+            nested: None,
         })
     }
 
@@ -159,6 +160,7 @@ mod tests {
             is_principal: None,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -169,6 +171,7 @@ mod tests {
             is_principal: None,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -178,6 +181,7 @@ mod tests {
             r#type: GeoIndexType::Geo,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -209,6 +213,7 @@ mod tests {
             r#type: BoolIndexType::Bool,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -223,6 +228,7 @@ mod tests {
             is_principal,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -237,6 +243,7 @@ mod tests {
             is_tenant,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -310,6 +317,7 @@ mod tests {
             on_disk: Some(false),
             enable_hnsw: None,
             prefix: Some(true),
+            nested: None,
         }));
         assert_eq!(
             classify(&plain, &with_prefix),

@@ -10,6 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
 
+use crate::json_path::JsonPath;
 use crate::types::Memory;
 
 // Keyword
@@ -52,6 +53,15 @@ pub struct KeywordIndexParams {
     /// field. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix: Option<bool>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 // Integer
@@ -98,6 +108,15 @@ pub struct IntegerIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 impl Validate for IntegerIndexParams {
@@ -110,6 +129,7 @@ impl Validate for IntegerIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = &self;
         validate_integer_index_params(lookup, range)
     }
@@ -185,6 +205,15 @@ pub struct UuidIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 // Float
@@ -222,6 +251,15 @@ pub struct FloatIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 // Geo
@@ -255,6 +293,15 @@ pub struct GeoIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 // Text
@@ -738,6 +785,15 @@ pub struct BoolIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 // Datetime
@@ -775,6 +831,15 @@ pub struct DatetimeIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 #[cfg(test)]

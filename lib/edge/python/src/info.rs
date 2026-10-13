@@ -100,6 +100,7 @@ impl PyPayloadIndexInfo {
             data_type: _,
             params: _,
             points: _,
+            nested: _,
         } = self.0;
     }
 }

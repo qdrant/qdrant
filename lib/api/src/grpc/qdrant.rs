@@ -1748,6 +1748,9 @@ pub struct PayloadSchemaInfo {
     /// Number of points indexed within this field
     #[prost(uint64, optional, tag = "3")]
     pub points: ::core::option::Option<u64>,
+    /// Array whose elements are indexed as separate entries, if any
+    #[prost(string, optional, tag = "4")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -5640,6 +5643,10 @@ pub struct CreateFieldIndexCollection {
     /// Timeout for the request in seconds
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Not supported for full-text indexes.
+    #[prost(string, optional, tag = "8")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

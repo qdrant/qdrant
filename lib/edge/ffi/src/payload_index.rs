@@ -48,6 +48,7 @@ impl From<SegmentPayloadIndexInfo> for PayloadIndexInfo {
             data_type,
             params,
             points,
+            nested: _,
         } = info;
         PayloadIndexInfo {
             data_type: PayloadSchemaType::from(data_type),
@@ -614,6 +615,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
                         prefix,
+                        nested: None,
                     },
                 ))
             }
@@ -642,6 +644,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         on_disk: None,
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
+                        nested: None,
                     },
                 ))
             }
@@ -658,6 +661,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         on_disk: None,
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
+                        nested: None,
                     },
                 ))
             }
@@ -671,6 +675,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     on_disk: None,
                     memory: memory.map(SegmentMemory::from),
                     enable_hnsw,
+                    nested: None,
                 }))
             }
             PayloadIndexParams::Text { config } => {
@@ -726,6 +731,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     on_disk: None,
                     memory: memory.map(SegmentMemory::from),
                     enable_hnsw,
+                    nested: None,
                 }))
             }
             PayloadIndexParams::Datetime { config } => {
@@ -741,6 +747,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         on_disk: None,
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
+                        nested: None,
                     },
                 ))
             }
@@ -756,6 +763,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     on_disk: None,
                     memory: memory.map(SegmentMemory::from),
                     enable_hnsw,
+                    nested: None,
                 }))
             }
         }
@@ -788,6 +796,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     memory: _,
                     enable_hnsw,
                     prefix,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Keyword {
                     config: KeywordIndexParams {
@@ -808,6 +817,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Integer {
                     config: IntegerIndexParams {
@@ -827,6 +837,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Float {
                     config: FloatIndexParams {
@@ -843,6 +854,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Geo {
                     config: GeoIndexParams {
@@ -891,6 +903,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Bool {
                     config: BoolIndexParams {
@@ -907,6 +920,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Datetime {
                     config: DatetimeIndexParams {
@@ -924,6 +938,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Uuid {
                     config: UuidIndexParams {

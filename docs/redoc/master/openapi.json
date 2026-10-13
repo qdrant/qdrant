@@ -7715,6 +7715,11 @@
               }
             ]
           },
+          "nested": {
+            "description": "Array whose elements are indexed as separate entries, if any",
+            "type": "string",
+            "nullable": true
+          },
           "points": {
             "description": "Number of points indexed with this index",
             "type": "integer",
@@ -10535,6 +10540,11 @@
                 "nullable": true
               }
             ]
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Not supported for full-text indexes.",
+            "type": "string",
+            "nullable": true
           }
         }
       },

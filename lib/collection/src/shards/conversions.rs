@@ -512,8 +512,16 @@ pub fn internal_create_index(
     wait_timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CreateFieldIndexCollectionInternal {
-    let (field_type, field_index_params) = create_index
-        .field_schema
+    // gRPC carries `nested` next to the params, not inside them
+    let (field_schema, nested) = match create_index.field_schema {
+        Some(field_schema) => {
+            let (field_schema, nested) = field_schema.split_nested();
+            (Some(field_schema), nested)
+        }
+        None => (None, None),
+    };
+
+    let (field_type, field_index_params) = field_schema
         .map(|field_schema| match field_schema {
             PayloadFieldSchema::FieldType(field_type) => {
                 (api::grpc::qdrant::FieldType::from(field_type) as i32, None)
@@ -538,6 +546,7 @@ pub fn internal_create_index(
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),
             timeout: wait_timeout,
+            nested: nested.map(|nested| nested.to_string()),
         }),
     }
 }
