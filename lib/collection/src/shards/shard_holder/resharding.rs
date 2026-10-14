@@ -200,15 +200,15 @@ impl ShardHolder {
         // TODO(resharding): Delete shard on error!?
 
         let ring_res = get_ring(&mut self.rings, &shard_key);
-        match ring_res {
-            Ok(_) => {}
+        let previous_ring = match ring_res {
+            Ok(ring) => ring.clone(),
             Err(err) => {
                 if let Some(new_shard) = new_shard {
                     new_shard.stop_gracefully().await;
                 }
                 return Err(err);
             }
-        }
+        };
 
         // Add new shard if resharding up
         if let Some(new_shard) = new_shard {
@@ -217,8 +217,15 @@ impl ShardHolder {
                 .await?;
         }
 
-        let state = ReshardState::new(uuid, direction, peer_id, shard_id, shard_key);
-        self.set_resharding_state(Some(state))
+        let state = ReshardState::new(uuid, direction, peer_id, shard_id, shard_key.clone());
+        if let Err(err) = self.set_resharding_state(Some(state)) {
+            // Registration adds the new shard to routing. Until state is saved,
+            // updates must keep reaching the shards that already hold their points.
+            self.rings.insert(shard_key, previous_ring);
+            return Err(err);
+        }
+
+        Ok(())
     }
 
     pub fn commit_read_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {

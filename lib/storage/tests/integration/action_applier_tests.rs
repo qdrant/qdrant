@@ -600,6 +600,112 @@ fn remove_shard_key_action_replay() {
 }
 
 #[test]
+fn start_resharding_custom_scale_up_save_failure_retry() {
+    start_resharding_scale_up_save_failure_retry(true);
+}
+
+#[test]
+fn start_resharding_auto_scale_up_save_failure_retry() {
+    start_resharding_scale_up_save_failure_retry(false);
+}
+
+fn start_resharding_scale_up_save_failure_retry(custom: bool) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    let mut state =
+        create_resharding_collection(&handle, &dispatcher, custom, ReshardingDirection::Up);
+    state.shard_id = if custom { 4 } else { 2 };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let new_shard = handle
+        .block_on(collection.create_replica_set(
+            state.shard_id,
+            state.shard_key.clone(),
+            &[0],
+            Some(ReplicaState::Resharding),
+        ))
+        .unwrap();
+    let path = storage_dir
+        .path()
+        .join("collections/test/resharding_state.json");
+    fs_err::write(&path, "null").unwrap();
+    let backup = path.with_extension("backup");
+    fs_err::rename(&path, &backup).unwrap();
+    fs_err::create_dir(&path).unwrap();
+
+    handle.block_on(async {
+        let mut holder = holder.write().await;
+        let old_id = if custom { 1 } else { 0 };
+        let old_ring = holder.hash_ring_router(old_id).unwrap().clone();
+
+        assert!(
+            holder
+                .start_resharding_unchecked(state.key(), Some(new_shard))
+                .await
+                .is_err()
+        );
+
+        assert!(holder.contains_shard(state.shard_id));
+        assert_eq!(holder.resharding_state(), None);
+        assert_eq!(holder.hash_ring_router(old_id).unwrap(), &old_ring);
+
+        fs_err::remove_dir(&path).unwrap();
+        fs_err::rename(&backup, &path).unwrap();
+        let mut expected_ring = old_ring;
+        expected_ring.start_resharding(state.shard_id, ReshardingDirection::Up);
+        for _ in 0..2 {
+            holder.check_start_resharding(&state.key()).unwrap();
+            holder
+                .start_resharding_unchecked(state.key(), None)
+                .await
+                .unwrap();
+
+            assert_eq!(holder.resharding_state(), Some(state.clone()));
+            assert_eq!(holder.hash_ring_router(old_id).unwrap(), &expected_ring);
+        }
+
+        // A failed replay of Start must also preserve an existing dual ring and stage
+        holder.commit_read_hashring(&state.key()).unwrap();
+        let before = holder.resharding_state();
+        fs_err::rename(&path, &backup).unwrap();
+        fs_err::create_dir(&path).unwrap();
+
+        assert!(
+            holder
+                .start_resharding_unchecked(state.key(), None)
+                .await
+                .is_err()
+        );
+        assert_eq!(holder.resharding_state(), before);
+        assert_eq!(holder.hash_ring_router(old_id).unwrap(), &expected_ring);
+
+        fs_err::remove_dir(&path).unwrap();
+        fs_err::rename(&backup, &path).unwrap();
+        holder
+            .start_resharding_unchecked(state.key(), None)
+            .await
+            .unwrap();
+        assert_eq!(holder.resharding_state(), Some(state.clone()));
+        assert_eq!(holder.hash_ring_router(old_id).unwrap(), &expected_ring);
+    });
+
+    let sharding = if custom {
+        ShardingMethod::Custom
+    } else {
+        ShardingMethod::Auto
+    };
+    let persisted =
+        ShardHolder::new(&storage_dir.path().join("collections/test"), sharding).unwrap();
+    assert_eq!(persisted.resharding_state(), Some(state));
+}
+
+#[test]
 fn set_resharding_state_action_custom_scale_up_replay() {
     set_resharding_state_action_replay(true, ReshardingDirection::Up);
 }
