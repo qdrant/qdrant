@@ -19,6 +19,7 @@ use tempfile::Builder;
 
 use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::index::{TextIndexParams, TextScoringParams};
 use crate::data_types::load_profile::LoadProfile;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
@@ -27,15 +28,16 @@ use crate::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry, SegmentEntry as _, StorageSegmentEntry as _,
 };
 use crate::json_path::JsonPath;
+use crate::payload_json;
 use crate::segment::Segment;
 use crate::segment::read_only::{ReadOnlySegment, build_cached_fs_async};
-use crate::segment_constructor::build_segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
+use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Condition, Distance, FieldCondition, Filter, HasVectorCondition, HnswConfig, HnswGlobalConfig,
-    Indexes, Match, PayloadFieldSchema, PayloadSchemaType, PointIdType, QuantizationConfig, Range,
-    ScalarQuantizationConfig, ScalarType, SegmentConfig, ValueVariants, VectorDataConfig,
-    VectorStorageType, WithPayload,
+    Indexes, Match, Memory, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    PointIdType, QuantizationConfig, Range, ScalarQuantizationConfig, ScalarType, SegmentConfig,
+    ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
 };
 
 const DIM: usize = 8;
@@ -1987,4 +1989,213 @@ fn test_retried_live_reload_matches_fresh_open(#[case] applied: Option<&'static 
         search(&read_only),
         "sparse IDF search mismatch"
     );
+}
+
+/// Text statistics as a scored query sees them on one segment: `N`, the `df` of
+/// each term, and the average document length.
+fn text_stats(segment: &impl ReadSegmentEntry, terms: &[&str]) -> (usize, Vec<usize>, Option<f32>) {
+    let field = JsonPath::new("text");
+    let mut query_context = QueryContext::default();
+    query_context.init_text_stats(&field, None, terms.iter().map(|term| term.to_string()));
+    segment.fill_query_context(&mut query_context).unwrap();
+    let segment_context = query_context.get_segment_query_context();
+    let text = segment_context.get_text_context(&field).unwrap();
+    let df = terms
+        .iter()
+        .map(|term| text.document_frequency(term))
+        .collect();
+    (text.document_count(), df, text.avg_doc_len())
+}
+
+fn scoring_text_index(memory: Memory) -> PayloadFieldSchema {
+    PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+        phrase_matching: Some(true),
+        memory: Some(memory),
+        scoring: Some(TextScoringParams::default()),
+        ..TextIndexParams::default()
+    }))
+}
+
+const TEXT_DOCUMENTS: [&str; 6] = [
+    "quick brown fox",
+    "lazy dog sleeps",
+    "quick fox jumps over the dog",
+    "brown bear",
+    "fox",
+    "the quick dog",
+];
+const TEXT_TERMS: [&str; 3] = ["quick", "fox", "dog"];
+
+/// Under append-only mutations a tombstone never reaches the text index, and
+/// it counts in `N`, `df` and the total until the segment is rebuilt, whoever
+/// opened the segment, and when. Four views of the same files: the writer that
+/// made the tombstones, the writer reopened, a reader opened before them and
+/// live-reloaded, and a reader opened after. `documents` is `N` with every
+/// tombstone counted.
+fn assert_text_stats_agree_across_views(
+    writer: &Segment,
+    mut reader_before: ReadOnlySegment<MmapFile>,
+    documents: usize,
+) {
+    preload_then_reload(&mut reader_before).expect("live reload");
+    let reader_after =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &writer.data_path(), writer.uuid, None, None)
+            .expect("read-only open");
+    let reopened = load_segment(
+        &writer.data_path(),
+        writer.uuid,
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("reopen");
+
+    let views = [
+        ("writer", text_stats(writer, &TEXT_TERMS)),
+        ("writer reopened", text_stats(&reopened, &TEXT_TERMS)),
+        (
+            "reader live-reloaded",
+            text_stats(&reader_before, &TEXT_TERMS),
+        ),
+        (
+            "reader opened after",
+            text_stats(&reader_after, &TEXT_TERMS),
+        ),
+    ];
+    let (_, first) = &views[0];
+    assert!(
+        views.iter().all(|(_, stats)| stats == first),
+        "(N, df of {TEXT_TERMS:?}, avgdl) differ between views: {views:?}",
+    );
+    assert_eq!(
+        first.0, documents,
+        "tombstones count until the segment is rebuilt"
+    );
+}
+
+/// The mutable text index of an appendable segment, after a delete and an
+/// update (clone and tombstone).
+#[test]
+fn text_stats_ignore_load_history_appendable() {
+    let segments_dir = Builder::new().prefix("text_stats_ao").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let config = SegmentConfig {
+        vector_data: Default::default(),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let (mut writer, _) = build_segment(segments_dir.path(), &config, None, true).unwrap();
+    writer.append_only_mutations = true;
+
+    let mut op_num = 1;
+    writer
+        .create_field_index(
+            op_num,
+            &JsonPath::new("text"),
+            Some(&scoring_text_index(Memory::Pinned)),
+        )
+        .unwrap();
+    for (i, document) in TEXT_DOCUMENTS.iter().enumerate() {
+        op_num += 1;
+        let point_id = (i as u64 + 1).into();
+        writer
+            .upsert_point(op_num, point_id, NamedVectors::default())
+            .unwrap();
+        writer
+            .set_full_payload(op_num, point_id, &payload_json! { "text": *document })
+            .unwrap();
+    }
+    writer.flush(true).unwrap();
+
+    let reader_before =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &writer.data_path(), writer.uuid, None, None)
+            .expect("read-only open");
+
+    writer.delete_point(op_num + 1, 1.into()).unwrap();
+    writer
+        .set_full_payload(op_num + 2, 3.into(), &payload_json! { "text": "slow dog" })
+        .unwrap();
+    writer.flush(true).unwrap();
+
+    // The six documents, and the copy the update cloned point 3 into.
+    assert_text_stats_agree_across_views(&writer, reader_before, TEXT_DOCUMENTS.len() + 1);
+}
+
+/// The immutable (`Pinned`) and on-disk (`Cold`) text indexes of an optimized
+/// segment, after a delete.
+#[rstest]
+fn text_stats_ignore_load_history_optimized(
+    #[values(Memory::Pinned, Memory::Cold)] memory: Memory,
+) {
+    let segments_dir = Builder::new().prefix("text_stats_opt").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("text_stats_tmp").tempdir().unwrap();
+    let source_dir = Builder::new().prefix("text_stats_src").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let vector_config = |storage_type| VectorDataConfig {
+        size: DIM,
+        distance: Distance::Cosine,
+        storage_type,
+        index: Indexes::Plain {},
+        quantization_config: None,
+        multivector_config: None,
+        datatype: None,
+    };
+    let segment_config = |storage_type| SegmentConfig {
+        vector_data: HashMap::from([(DEFAULT_VECTOR_NAME.to_owned(), vector_config(storage_type))]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+
+    let (mut source, _) = build_segment(
+        source_dir.path(),
+        &segment_config(VectorStorageType::default()),
+        None,
+        true,
+    )
+    .unwrap();
+    for (i, document) in TEXT_DOCUMENTS.iter().enumerate() {
+        let op_num = i as u64 + 1;
+        let point_id = (i as u64 + 1).into();
+        let vector = vec![i as f32 + 1.0; DIM];
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        source.upsert_point(op_num, point_id, vectors).unwrap();
+        source
+            .set_full_payload(op_num, point_id, &payload_json! { "text": *document })
+            .unwrap();
+    }
+    source
+        .create_field_index(
+            TEXT_DOCUMENTS.len() as u64 + 1,
+            &JsonPath::new("text"),
+            Some(&scoring_text_index(memory)),
+        )
+        .unwrap();
+
+    let target_config = segment_config(VectorStorageType::Mmap);
+    assert!(!target_config.is_appendable());
+    let mut builder = SegmentBuilder::new(
+        temp_dir.path(),
+        &target_config,
+        &HnswGlobalConfig::default(),
+        FeatureFlags::default(),
+    )
+    .unwrap();
+    builder.update(&[&source], &AtomicBool::new(false)).unwrap();
+    let mut writer = builder.build_for_test(segments_dir.path());
+    writer.append_only_mutations = true;
+
+    let reader_before =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &writer.data_path(), writer.uuid, None, None)
+            .expect("read-only open");
+
+    writer
+        .delete_point(TEXT_DOCUMENTS.len() as u64 + 2, 1.into())
+        .unwrap();
+    writer.flush(true).unwrap();
+
+    assert_text_stats_agree_across_views(&writer, reader_before, TEXT_DOCUMENTS.len());
 }
