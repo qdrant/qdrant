@@ -4,8 +4,20 @@ from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
 POINTS = [
-    {"id": 1, "offers": [{"shop": "a", "price": 450}, {"shop": "b", "price": 520}]},
-    {"id": 2, "offers": [{"shop": "a", "price": 600}, {"shop": "a", "price": 300}]},
+    {
+        "id": 1,
+        "offers": [
+            {"shop": "a", "price": 450, "title": "red bag"},
+            {"shop": "b", "price": 520, "title": "blue shoes"},
+        ],
+    },
+    {
+        "id": 2,
+        "offers": [
+            {"shop": "a", "price": 600, "title": "red running shoes"},
+            {"shop": "a", "price": 300},
+        ],
+    },
     {"id": 3, "offers": [{"shop": "c", "price": 100}, 5, {"shop": "b"}]},
     {"id": 4, "offers": []},
     {"id": 5},
@@ -150,6 +162,24 @@ def test_filters_match_flattened_semantics(collection_name):
     ) == [2]
 
 
+def test_text_matches_within_one_element(collection_name):
+    response = create_index(
+        collection_name,
+        {"field_name": "offers[].title", "field_schema": "text", "nested": "offers"},
+    )
+    assert response.ok, response.text
+
+    # Point 1 has both words, but in different offers
+    assert scroll_ids(
+        collection_name,
+        {"filter": {"must": [{"key": "offers[].title", "match": {"text": "red shoes"}}]}},
+    ) == [2]
+    assert scroll_ids(
+        collection_name,
+        {"filter": {"must": [{"key": "offers[].title", "match": {"text_any": "bag shoes"}}]}},
+    ) == [1, 2]
+
+
 def test_facet_counts_points(collection_name):
     response = request_with_validation(
         api="/collections/{collection_name}/facet",
@@ -185,8 +215,6 @@ def test_order_by(collection_name):
         {"field_name": "offers[]", "field_schema": "keyword", "nested": "offers"},
         # Only one array level
         {"field_name": "offers[].items[].size", "field_schema": "integer", "nested": "offers[].items"},
-        # Not supported for full-text indexes
-        {"field_name": "offers[].title", "field_schema": "text", "nested": "offers"},
         # Not combined with tenant indexes
         {
             "field_name": "offers[].tenant",

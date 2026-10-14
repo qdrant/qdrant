@@ -226,7 +226,7 @@ pub(super) fn load_changes(path: &Path) -> OperationResult<LoadedChanges> {
         match read_entry(&mut reader, file_len - valid_len) {
             ReadEntry::Change(change, entry_bytes) => {
                 valid_len += entry_bytes;
-                changes.push(change);
+                changes.push(*change);
             }
             ReadEntry::EndOfFile => break,
             // A torn entry at the end of the file, truncate it below
@@ -266,7 +266,7 @@ pub(super) fn load_changes(path: &Path) -> OperationResult<LoadedChanges> {
 /// Result of reading a single entry from a pending changes log.
 enum ReadEntry {
     /// A complete, valid entry, and the number of bytes it takes in the file.
-    Change(PendingChange, u64),
+    Change(Box<PendingChange>, u64),
     /// The reader was exactly at the end of the file.
     EndOfFile,
     /// The file ends with a partially written entry.
@@ -309,7 +309,7 @@ fn read_entry(reader: &mut impl std::io::Read, remaining: u64) -> ReadEntry {
     let entry_bytes = size_of::<u32>() as u64 + u64::from(entry_len);
 
     match serde_json::from_slice(&payload) {
-        Ok(change) => ReadEntry::Change(change, entry_bytes),
+        Ok(change) => ReadEntry::Change(Box::new(change), entry_bytes),
         // The payload bytes are all present but malformed; only a torn write of the very last
         // entry can explain that, anything before it is corruption
         Err(err) if entry_bytes == remaining => {

@@ -39,7 +39,10 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
-use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
+use crate::index::field_index::full_text_index::full_text_index_read::{
+    fill_text_statistics, score_bm25,
+};
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params, FullTextIndex};
 use crate::index::payload_config::FullPayloadIndexType;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
@@ -207,6 +210,23 @@ impl NestedFieldIndex {
             self.inner.facet_view()?,
             self.element_map.borrow(),
         ))
+    }
+
+    fn text_index(&self) -> Option<&FullTextIndex> {
+        match &self.inner {
+            FieldIndex::FullTextIndex(index) => Some(index),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => None,
+        }
     }
 
     /// Whether the flattened index of the field would keep each value once per point.
@@ -421,26 +441,75 @@ impl FieldIndexRead for NestedFieldIndex {
         self.numeric_view()
     }
 
+    /// Statistics over elements: every element is a document of its own.
     fn fill_text_statistics(
         &self,
-        _stats: &mut TextFieldStats,
-        _corpus: Option<&[PointOffsetType]>,
-        _is_stopped: &AtomicBool,
+        stats: &mut TextFieldStats,
+        corpus: Option<&[PointOffsetType]>,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<bool> {
-        // Full-text indexes are not supported per element
-        Ok(false)
+        let Some(index) = self.text_index() else {
+            return Ok(false);
+        };
+        let corpus_elements = corpus.map(|points| {
+            let map = self.element_map.borrow();
+            points
+                .iter()
+                .flat_map(|&point| map.point_elements(point))
+                .collect::<Vec<_>>()
+        });
+        fill_text_statistics(index, stats, corpus_elements.as_deref(), is_stopped)?;
+        Ok(true)
     }
 
+    /// Scores every element as a document; a point scores as its best element.
     fn score_bm25(
         &self,
-        _terms: &[String],
-        _context: &TextQueryContext<'_>,
-        _params: Bm25Params,
-        _accept: &Bm25Accept<'_>,
-        _limit: usize,
+        terms: &[String],
+        context: &TextQueryContext<'_>,
+        params: Bm25Params,
+        accept: &Bm25Accept<'_>,
+        limit: usize,
     ) -> OperationResult<Option<Vec<ScoredPointOffset>>> {
-        // Full-text indexes are not supported per element
-        Ok(None)
+        let Some(index) = self.text_index() else {
+            return Ok(None);
+        };
+        let map = self.element_map.borrow();
+        let element_point = |element| map.element_point(element);
+        let visible = |element| {
+            map.element_point(element)
+                .is_some_and(|point| accept.is_visible(point))
+        };
+        let element_accept = accept.for_elements(&visible, &element_point);
+
+        // Every point above the `limit`-th best point has at most
+        // `max_elements_per_point` elements, so the best element of each of the
+        // `limit` best points is among this many best elements.
+        let elements_limit = limit
+            .saturating_mul(map.max_elements_per_point())
+            .min(map.elements_count());
+        let scored_elements = score_bm25(
+            index,
+            terms,
+            context,
+            params,
+            &element_accept,
+            elements_limit,
+            context.is_stopped(),
+        )?;
+
+        // Highest first, so the first element of a point is its best
+        let mut seen = BitVec::repeat(false, map.points_upper_bound());
+        let scored_points = scored_elements
+            .into_iter()
+            .filter_map(|ScoredPointOffset { idx, score }| {
+                let point = map.element_point(idx)?;
+                (!seen.replace(point as usize, true))
+                    .then_some(ScoredPointOffset { idx: point, score })
+            })
+            .take(limit)
+            .collect();
+        Ok(Some(scored_points))
     }
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {

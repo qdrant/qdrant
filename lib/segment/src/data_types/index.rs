@@ -387,6 +387,15 @@ pub struct TextIndexParams {
     )]
     #[schemars(with = "Option<TextScoringInterface>")]
     pub scoring: Option<TextScoringParams>,
+
+    /// Path to the array of objects whose elements this index treats as separate entries,
+    /// e.g. `offers` for the field `offers[].price`.
+    ///
+    /// Not part of the public field schema: set through the top-level `nested` parameter
+    /// of the create-index request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub nested: Option<JsonPath>,
 }
 
 /// How a text index ranks documents.
@@ -445,6 +454,7 @@ impl Validate for TextIndexParams {
             stemmer: _,
             enable_hnsw: _,
             scoring: _,
+            nested: _,
         } = &self;
         validate_text_index_params(min_token_len, max_token_len)
     }

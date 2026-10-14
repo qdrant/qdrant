@@ -204,6 +204,7 @@ mod tests {
             stemmer: None,
             enable_hnsw,
             scoring: None,
+            nested: None,
         })
     }
 

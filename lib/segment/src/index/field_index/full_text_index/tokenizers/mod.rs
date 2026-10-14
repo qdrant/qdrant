@@ -185,6 +185,7 @@ impl Tokenizer {
             stemmer,
             enable_hnsw: _,
             scoring: _,
+            nested: _,
         } = params;
 
         let lowercase = lowercase.unwrap_or(true);
@@ -433,6 +434,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -468,6 +470,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -514,6 +517,7 @@ mod tests {
                 stemmer: None,
                 enable_hnsw: None,
                 scoring: None,
+                nested: None,
             };
 
             let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -553,6 +557,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -592,6 +597,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -634,6 +640,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -676,6 +683,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -721,6 +729,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
 
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
@@ -772,6 +781,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
         let tokenizer_disabled = Tokenizer::new_from_text_index_params(&params_disabled);
         let mut tokens_disabled = Vec::new();
@@ -793,6 +803,7 @@ mod tests {
             stemmer: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         };
         let tokenizer_enabled = Tokenizer::new_from_text_index_params(&params_enabled);
         let mut tokens_enabled = Vec::new();

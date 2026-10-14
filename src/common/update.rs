@@ -308,7 +308,8 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
     /// `offers[].price`. The field must be inside the array's elements.
-    /// Not supported for full-text indexes.
+    /// A full-text condition matches a point when a single element matches it, and BM25
+    /// scores every element as its own document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }

@@ -775,6 +775,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     stemmer: stemmer.map(segment_index::StemmingAlgorithm::from),
                     enable_hnsw,
                     scoring: scoring.map(segment_index::TextScoringParams::from),
+                    nested: None,
                 }))
             }
             PayloadIndexParams::Bool { config } => {
@@ -935,6 +936,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     stemmer,
                     enable_hnsw,
                     scoring,
+                    nested: _,
                 } = params;
                 PayloadIndexParams::Text {
                     config: TextIndexParams {

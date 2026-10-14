@@ -347,6 +347,8 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
             stemmer,
             enable_hnsw,
             scoring,
+            // Sent next to the params, see `CreateFieldIndexCollection::nested`
+            nested: _,
         } = params;
         let tokenizer = TokenizerType::from(tokenizer);
 
@@ -761,6 +763,7 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
             scoring: scoring
                 .map(segment::data_types::index::TextScoringParams::try_from)
                 .transpose()?,
+            nested: None,
         })
     }
 }

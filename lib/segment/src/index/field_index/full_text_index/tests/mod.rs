@@ -179,6 +179,7 @@ fn test_prefix_search() {
         ascii_folding: None,
         enable_hnsw: None,
         scoring: None,
+        nested: None,
     };
 
     let mut index =
@@ -232,6 +233,7 @@ fn test_phrase_matching() {
         ascii_folding: None,
         enable_hnsw: None,
         scoring: None,
+        nested: None,
     };
 
     let mut mutable_index =
@@ -349,6 +351,7 @@ fn test_ascii_folding_in_full_text_index_word() {
         ascii_folding: Some(true),
         enable_hnsw: None,
         scoring: None,
+        nested: None,
     };
     let config_disabled = TextIndexParams {
         ascii_folding: Some(false),
@@ -446,6 +449,7 @@ fn test_special_check_condition_match_text_any() {
         ascii_folding: None,
         enable_hnsw: None,
         scoring: None,
+        nested: None,
     };
 
     let mut index = FullTextIndex::new_gridstore(temp_dir.path().to_path_buf(), config, true)
@@ -530,6 +534,7 @@ fn two_document_mmap_index(path: PathBuf, scoring: bool) -> FullTextIndex {
         ascii_folding: None,
         enable_hnsw: None,
         scoring: None,
+        nested: None,
     };
 
     let empty_deleted = BitVec::new();

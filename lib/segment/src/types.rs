@@ -2759,7 +2759,7 @@ impl PayloadSchemaParams {
 
     /// Path to the array whose elements this index treats as separate entries, if any.
     ///
-    /// Always stored as the array key, e.g. `offers[]`. Full-text indexes don't support it.
+    /// Always stored as the array key, e.g. `offers[]`.
     pub fn nested(&self) -> Option<&JsonPath> {
         match self {
             PayloadSchemaParams::Keyword(params) => params.nested.as_ref(),
@@ -2769,21 +2769,20 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Uuid(params) => params.nested.as_ref(),
             PayloadSchemaParams::Geo(params) => params.nested.as_ref(),
             PayloadSchemaParams::Bool(params) => params.nested.as_ref(),
-            PayloadSchemaParams::Text(_) => None,
+            PayloadSchemaParams::Text(params) => params.nested.as_ref(),
         }
     }
 
-    /// Mutable access to the `nested` parameter, `None` for index types that don't support it.
-    fn nested_mut(&mut self) -> Option<&mut Option<JsonPath>> {
+    fn nested_mut(&mut self) -> &mut Option<JsonPath> {
         match self {
-            PayloadSchemaParams::Keyword(params) => Some(&mut params.nested),
-            PayloadSchemaParams::Integer(params) => Some(&mut params.nested),
-            PayloadSchemaParams::Float(params) => Some(&mut params.nested),
-            PayloadSchemaParams::Datetime(params) => Some(&mut params.nested),
-            PayloadSchemaParams::Uuid(params) => Some(&mut params.nested),
-            PayloadSchemaParams::Geo(params) => Some(&mut params.nested),
-            PayloadSchemaParams::Bool(params) => Some(&mut params.nested),
-            PayloadSchemaParams::Text(_) => None,
+            PayloadSchemaParams::Keyword(params) => &mut params.nested,
+            PayloadSchemaParams::Integer(params) => &mut params.nested,
+            PayloadSchemaParams::Float(params) => &mut params.nested,
+            PayloadSchemaParams::Datetime(params) => &mut params.nested,
+            PayloadSchemaParams::Uuid(params) => &mut params.nested,
+            PayloadSchemaParams::Geo(params) => &mut params.nested,
+            PayloadSchemaParams::Bool(params) => &mut params.nested,
+            PayloadSchemaParams::Text(params) => &mut params.nested,
         }
     }
 
@@ -2948,13 +2947,7 @@ impl PayloadFieldSchema {
                 "nested `{nested}` can't be combined with `is_tenant` or `is_principal`",
             ));
         }
-        let Some(slot) = params.nested_mut() else {
-            return Err(format!(
-                "nested `{nested}` is not supported for {} indexes",
-                params.name(),
-            ));
-        };
-        *slot = Some(nested);
+        *params.nested_mut() = Some(nested);
         Ok(PayloadFieldSchema::FieldParams(params))
     }
 
@@ -2964,7 +2957,7 @@ impl PayloadFieldSchema {
         match self {
             PayloadFieldSchema::FieldType(_) => (self, None),
             PayloadFieldSchema::FieldParams(mut params) => {
-                let nested = params.nested_mut().and_then(Option::take);
+                let nested = params.nested_mut().take();
                 (PayloadFieldSchema::FieldParams(params), nested)
             }
         }
@@ -3113,14 +3106,7 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
             // Already validated against the field when the index was created
             Some(nested) => {
                 let mut params = schema.expand().into_owned();
-                match params.nested_mut() {
-                    Some(slot) => *slot = Some(nested),
-                    None => {
-                        return Err(format!(
-                            "payload field with type {data_type:?} can't be nested",
-                        ));
-                    }
-                }
+                *params.nested_mut() = Some(nested);
                 Ok(PayloadFieldSchema::FieldParams(params))
             }
         }

@@ -633,3 +633,258 @@ fn element_map_lifecycle() {
         );
     }
 }
+
+/// Words of the per-element text tests, skewed so queries mix common and rare ones.
+fn text_word(rng: &mut StdRng) -> String {
+    let rank = (rng.random::<f64>().powi(2) * 12.0) as usize;
+    format!("w{rank}")
+}
+
+fn random_titles(rng: &mut StdRng) -> Vec<String> {
+    (0..rng.random_range(0..4))
+        .map(|_| {
+            (0..rng.random_range(1..6))
+                .map(|_| text_word(rng))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+fn titles_payload(titles: &[String]) -> Payload {
+    let offers: Vec<_> = titles
+        .iter()
+        .map(|title| json!({ "title": title }))
+        .collect();
+    let mut payload = Payload::default();
+    payload.0.insert("offers".into(), Value::Array(offers));
+    payload
+}
+
+fn text_schema(nested: bool) -> PayloadFieldSchema {
+    let schema = PayloadFieldSchema::FieldParams(crate::types::PayloadSchemaParams::Text(
+        crate::data_types::index::TextIndexParams {
+            lowercase: Some(true),
+            scoring: Some(Default::default()),
+            ..Default::default()
+        },
+    ));
+    if !nested {
+        return schema;
+    }
+    schema
+        .with_nested(
+            &JsonPath::from_str("offers[].title").unwrap(),
+            &JsonPath::from_str("offers").unwrap(),
+        )
+        .unwrap()
+}
+
+/// Segment with a text index on `offers[].title` and the given titles per point;
+/// points without an entry don't exist.
+fn text_segment(dir: &Path, points: &[(u64, Vec<String>)], nested: bool) -> Segment {
+    let mut segment = build_simple_segment(dir, 2, Distance::Dot).unwrap();
+    let key = JsonPath::from_str("offers[].title").unwrap();
+    segment
+        .create_field_index(0, &key, Some(&text_schema(nested)))
+        .unwrap();
+    for (op_num, (id, titles)) in points.iter().enumerate() {
+        let op_num = op_num as u64 + 1;
+        segment
+            .upsert_point(op_num, (*id).into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        segment
+            .set_full_payload(op_num, (*id).into(), &titles_payload(titles))
+            .unwrap();
+    }
+    segment
+}
+
+/// Per element, a text index matches and scores every element as a document of its
+/// own: the same as a flattened index over a segment with one point per element.
+fn check_text_against_reference(
+    nested: &Segment,
+    points: &HashMap<u64, Vec<String>>,
+    dir: &Path,
+    rng: &mut StdRng,
+) {
+    use crate::data_types::query_context::QueryContext;
+    use crate::index::field_index::full_text_index::Bm25Params;
+    use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
+    use crate::types::{WithPayload, WithVector};
+
+    const LIMIT: usize = 5;
+
+    // One reference point per element, remembering the point that owns it
+    let mut owners = Vec::new();
+    let mut reference_points = Vec::new();
+    let mut ids: Vec<_> = points.keys().copied().collect();
+    ids.sort_unstable();
+    for id in ids {
+        for title in &points[&id] {
+            reference_points.push((owners.len() as u64, vec![title.clone()]));
+            owners.push(id);
+        }
+    }
+    let reference = text_segment(dir, &reference_points, false);
+
+    let key = JsonPath::from_str("offers[].title").unwrap();
+    let crate::types::PayloadSchemaParams::Text(params) = text_schema(false).expand().into_owned()
+    else {
+        unreachable!()
+    };
+    let tokenizer = Tokenizer::new_from_text_index_params(&params);
+    let id_of = |point: &crate::types::ScoredPoint| match point.id {
+        ExtendedPointId::NumId(id) => id,
+        ExtendedPointId::Uuid(_) => unreachable!(),
+    };
+    let ids_filter = |ids: Vec<u64>| -> Filter {
+        serde_json::from_value(json!({"must": [{"has_id": ids}]})).unwrap()
+    };
+    let even = ids_filter(points.keys().copied().filter(|id| id % 2 == 0).collect());
+    let reference_even = ids_filter(
+        (0..owners.len() as u64)
+            .filter(|&element| owners[element as usize] % 2 == 0)
+            .collect(),
+    );
+
+    let mut matched_any = false;
+    let mut scored_any = false;
+    for _ in 0..20 {
+        let query = (0..rng.random_range(1..=3))
+            .map(|_| text_word(rng))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // A point matches when one of its elements has all the words
+        let filter: Filter = serde_json::from_value(
+            json!({"must": [{"key": "offers[].title", "match": {"text": query}}]}),
+        )
+        .unwrap();
+        let read = |segment: &Segment| {
+            segment
+                .read_filtered(
+                    None,
+                    None,
+                    Some(&filter),
+                    &AtomicBool::new(false),
+                    DeferredBehavior::WithDeferred,
+                )
+                .unwrap()
+        };
+        let mut expected: Vec<_> = read(&reference)
+            .into_iter()
+            .map(|element| match element {
+                ExtendedPointId::NumId(element) => ExtendedPointId::from(owners[element as usize]),
+                ExtendedPointId::Uuid(_) => unreachable!(),
+            })
+            .collect();
+        expected.sort_unstable();
+        expected.dedup();
+        matched_any |= !expected.is_empty();
+        assert_eq!(read(nested), expected, "match text `{query}`");
+
+        let mut terms = Vec::new();
+        tokenizer.tokenize_query(&query, |token| terms.push(token.into_owned()));
+        for (corpus, reference_corpus, filter, reference_filter) in [
+            (None, None, None, None),
+            (
+                Some(&even),
+                Some(&reference_even),
+                Some(&even),
+                Some(&reference_even),
+            ),
+        ] {
+            let score = |segment: &Segment, corpus: Option<&Filter>, filter, limit| {
+                let mut query_context = QueryContext::default();
+                query_context.init_text_stats(&key, corpus, terms.iter().cloned());
+                segment.fill_query_context(&mut query_context).unwrap();
+                segment
+                    .score_bm25(
+                        &key,
+                        &terms,
+                        Bm25Params::default(),
+                        &WithPayload::from(false),
+                        &WithVector::Bool(false),
+                        filter,
+                        limit,
+                        &query_context.get_segment_query_context(),
+                    )
+                    .unwrap()
+            };
+
+            // A point scores as its best element
+            let mut best: HashMap<u64, f32> = HashMap::new();
+            for element in score(&reference, reference_corpus, reference_filter, usize::MAX) {
+                let owner = owners[id_of(&element) as usize];
+                let best = best.entry(owner).or_insert(element.score);
+                *best = best.max(element.score);
+            }
+            let mut expected_scores: Vec<_> = best.values().copied().collect();
+            expected_scores.sort_by(|a, b| b.total_cmp(a));
+            expected_scores.truncate(LIMIT);
+
+            let scored = score(nested, corpus, filter, LIMIT);
+            scored_any |= !scored.is_empty();
+            let scores: Vec<_> = scored.iter().map(|point| point.score).collect();
+            let close = |a: f32, b: f32| (a - b).abs() <= 1e-4 * a.abs().max(1.0);
+            assert!(
+                scores.len() == expected_scores.len()
+                    && scores
+                        .iter()
+                        .zip(&expected_scores)
+                        .all(|(&a, &b)| close(a, b)),
+                "BM25 `{query}`: {scores:?} != {expected_scores:?}",
+            );
+            for point in &scored {
+                let id = id_of(point);
+                assert!(close(point.score, best[&id]), "score of point {id}");
+            }
+        }
+    }
+    assert!(matched_any && scored_any, "queries must hit something");
+}
+
+#[test]
+fn nested_text_index_scores_elements() {
+    let dir = Builder::new().prefix("nested_text").tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(3);
+    let _scope = ambient::test_guard();
+
+    let mut points: HashMap<u64, Vec<String>> = (0..NUM_POINTS)
+        .map(|id| (id, random_titles(&mut rng)))
+        .collect();
+    let initial: Vec<_> = (0..NUM_POINTS)
+        .map(|id| (id, points[&id].clone()))
+        .collect();
+    let mut nested = text_segment(&dir.path().join("nested"), &initial, true);
+    check_text_against_reference(&nested, &points, &dir.path().join("reference_1"), &mut rng);
+
+    // Overwrites move growing points to new element ranges, deletions free them
+    let mut op_num = NUM_POINTS + 1;
+    for id in (0..NUM_POINTS).step_by(3) {
+        op_num += 1;
+        if id % 2 == 0 {
+            let titles = random_titles(&mut rng);
+            nested
+                .set_full_payload(op_num, id.into(), &titles_payload(&titles))
+                .unwrap();
+            points.insert(id, titles);
+        } else {
+            nested.delete_point(op_num, id.into()).unwrap();
+            points.remove(&id);
+        }
+    }
+    check_text_against_reference(&nested, &points, &dir.path().join("reference_2"), &mut rng);
+
+    let nested = reload(nested);
+    check_text_against_reference(&nested, &points, &dir.path().join("reference_3"), &mut rng);
+
+    let optimized = optimize(&nested, &dir.path().join("optimized"));
+    check_text_against_reference(
+        &optimized,
+        &points,
+        &dir.path().join("reference_4"),
+        &mut rng,
+    );
+}

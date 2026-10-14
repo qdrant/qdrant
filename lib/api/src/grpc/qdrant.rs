@@ -5644,7 +5644,9 @@ pub struct CreateFieldIndexCollection {
     #[prost(uint64, optional, tag = "7")]
     pub timeout: ::core::option::Option<u64>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Not supported for full-text indexes.
+    /// The field must be inside the array's elements.
+    /// A full-text condition matches a point when a single element matches it, and BM25
+    /// scores every element as its own document.
     #[prost(string, optional, tag = "8")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
