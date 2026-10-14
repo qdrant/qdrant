@@ -99,6 +99,44 @@ fn test_slow_down_action_other_peer() {
 }
 
 #[test]
+#[cfg(feature = "staging")]
+fn test_transient_error_action_replay() {
+    use storage::content_manager::collection_meta_ops::TestTransientError;
+
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    // The endpoints make the draw deterministic while still exercising the applier
+    for peer_id in [None, Some(toc.this_peer_id), Some(toc.this_peer_id + 1)] {
+        for probability in [0, 100] {
+            let operation = TestTransientError {
+                peer_id,
+                failure_probability_percent: probability,
+            };
+            let action = Action::TestTransientError(operation);
+            let should_fail = probability == 100 && peer_id.is_none_or(|id| id == toc.this_peer_id);
+
+            for _ in 0..2 {
+                let result = toc.apply_action(action.clone());
+
+                if should_fail {
+                    let error = result.unwrap_err();
+                    assert!(matches!(error, StorageError::ServiceError { .. }));
+                    assert!(
+                        error
+                            .to_string()
+                            .contains("simulated transient consensus error")
+                    );
+                } else {
+                    result.unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn set_payload_index_action_replay() {
     let (_storage_dir, handle, dispatcher) = new_dispatcher();
     create_collection(&handle, &dispatcher, "test");
