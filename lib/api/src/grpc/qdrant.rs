@@ -2083,7 +2083,7 @@ pub struct Replica {
     #[prost(uint64, tag = "2")]
     pub peer_id: u64,
     /// Drop the replica only if at least this many other replicas of the shard are active
-    /// when the operation is applied. If not set, the replica is dropped unconditionally.
+    /// when the request is received. If not set, the replica is dropped unconditionally.
     #[prost(uint32, optional, tag = "3")]
     pub min_other_active_replicas: ::core::option::Option<u32>,
 }

@@ -311,7 +311,7 @@ pub struct Replica {
     pub shard_id: ShardId,
     pub peer_id: PeerId,
     /// Drop the replica only if at least this many *other* replicas of the shard are active
-    /// when the operation is applied. If fewer are active, the operation is refused.
+    /// when the request is received. If fewer are active, the request is refused.
     /// If not set, the replica is dropped unconditionally.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_other_active_replicas: Option<u32>,
