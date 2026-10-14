@@ -21,8 +21,7 @@ const STOP_CHECK_INTERVAL: usize = 1024;
 
 /// Point offsets the dense pass scores at a time: its scores and norms take 8
 /// bytes per offset, 128 KiB here, which stays in L2. Forced dense on Quora
-/// (523k points), it took 34% fewer cycles than one array over the segment;
-/// 2048 took 28% fewer, paying more per window.
+/// (523k points), 2048 took 8% more cycles per query, paying more per window.
 const DENSE_WINDOW: usize = 1 << 14;
 
 /// From this many essential terms on, a block finds its next candidate with a
