@@ -659,8 +659,9 @@ impl ShardHolder {
         }
 
         let shard_key = self.shard_id_to_key_mapping.get(&shard_id).cloned();
-        let router = self.rings.get(&shard_key).expect("hashring exists");
-        Some(router)
+        // Shard-key removal deletes routing before separate actions drop the shards.
+        // A new cleanup request can still find one of those shards in between.
+        self.rings.get(&shard_key)
     }
 
     pub fn hash_ring_filter(&self, shard_id: ShardId) -> Option<hash_ring::HashRingFilter> {

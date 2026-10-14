@@ -547,12 +547,25 @@ fn remove_shard_key_action_replay() {
                     .iter()
                     .all(|id| !holder.get_shard_id_to_key_mapping().contains_key(id))
             );
+            for id in &removed_ids {
+                assert!(holder.hash_ring_router(*id).is_none());
+            }
             let other_id = *expected_mapping[&ShardKey::from("other")]
                 .iter()
                 .next()
                 .unwrap();
             assert!(holder.hash_ring_router(other_id).is_some());
         });
+
+        for id in &removed_ids {
+            let error = handle
+                .block_on(collection.cleanup_local_shard(*id, true, Some(Duration::from_secs(5))))
+                .unwrap_err();
+            assert!(
+                error.to_string().contains("failed to get shard hash ring"),
+                "{error}"
+            );
+        }
 
         let persisted = ShardHolder::new(
             &storage_dir.path().join("collections/test"),
