@@ -67,7 +67,7 @@ jobs:
 
       - name: Install mold
         if: runner.os == 'Linux'
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
 
       - name: Enable mold
         if: runner.os == 'Linux'

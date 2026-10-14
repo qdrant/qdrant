@@ -92,7 +92,7 @@ jobs:
     - name: Install Protoc
       uses: ./.github/actions/setup-protoc
     - name: Install mold
-      uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+      uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
     - name: Install nextest
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
