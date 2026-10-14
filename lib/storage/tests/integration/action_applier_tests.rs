@@ -17,7 +17,7 @@ use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndex
 use collection::shards::channel_service::ChannelService;
 use collection::shards::remote_shard::RemoteShard;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
-use collection::shards::resharding::ReshardKey;
+use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
 use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
 use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
@@ -597,6 +597,192 @@ fn remove_shard_key_action_replay() {
         );
     }
     assert_eq!(toc.collection_state("test").unwrap().shards.len(), 1);
+}
+
+#[test]
+fn set_resharding_state_action_custom_scale_up_replay() {
+    set_resharding_state_action_replay(true, ReshardingDirection::Up);
+}
+
+#[test]
+fn set_resharding_state_action_custom_scale_down_replay() {
+    set_resharding_state_action_replay(true, ReshardingDirection::Down);
+}
+
+#[test]
+fn set_resharding_state_action_auto_scale_up_replay() {
+    set_resharding_state_action_replay(false, ReshardingDirection::Up);
+}
+
+#[test]
+fn set_resharding_state_action_auto_scale_down_replay() {
+    set_resharding_state_action_replay(false, ReshardingDirection::Down);
+}
+
+fn set_resharding_state_action_replay(custom: bool, direction: ReshardingDirection) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    let state = create_resharding_collection(&handle, &dispatcher, custom, direction);
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let mut expected = toc.collection_state("test").unwrap();
+    let mut expected_ring = handle.block_on(async {
+        holder
+            .read()
+            .await
+            .hash_ring_router(state.shard_id)
+            .unwrap()
+            .clone()
+    });
+    expected_ring.start_resharding(state.shard_id, direction);
+    let sharding = if custom {
+        ShardingMethod::Custom
+    } else {
+        ShardingMethod::Auto
+    };
+
+    // The action carries a complete state, including stages not emitted by Start
+    for stage in [
+        ReshardingStage::MigratingPoints,
+        ReshardingStage::ReadHashRingCommitted,
+        ReshardingStage::WriteHashRingCommitted,
+    ] {
+        let mut state = state.clone();
+        state.stage = stage;
+        expected.resharding = Some(state.clone());
+        let mut ring = expected_ring.clone();
+        if stage == ReshardingStage::WriteHashRingCommitted {
+            ring.commit_resharding();
+        }
+        let action = Action::SetReshardingState {
+            collection: "test".into(),
+            state: Some(state),
+        };
+
+        for _ in 0..2 {
+            toc.apply_action(action.clone()).unwrap();
+
+            assert_eq!(toc.collection_state("test").unwrap(), expected);
+            handle.block_on(async {
+                let holder = holder.read().await;
+                assert_eq!(
+                    holder.hash_ring_router(if custom { 1 } else { 0 }).unwrap(),
+                    &ring
+                );
+                if custom {
+                    assert!(!holder.hash_ring_router(3).unwrap().is_resharding());
+                }
+            });
+            let persisted =
+                ShardHolder::new(&storage_dir.path().join("collections/test"), sharding).unwrap();
+            assert_eq!(persisted.resharding_state(), expected.resharding);
+        }
+    }
+
+    // Clearing state must preserve the ring prepared by finish or abort
+    let ring = handle.block_on(async {
+        holder
+            .read()
+            .await
+            .hash_ring_router(if custom { 1 } else { 0 })
+            .unwrap()
+            .clone()
+    });
+    expected.resharding = None;
+    for _ in 0..2 {
+        toc.apply_action(Action::SetReshardingState {
+            collection: "test".into(),
+            state: None,
+        })
+        .unwrap();
+
+        assert_eq!(toc.collection_state("test").unwrap(), expected);
+        handle.block_on(async {
+            assert_eq!(
+                holder
+                    .read()
+                    .await
+                    .hash_ring_router(if custom { 1 } else { 0 })
+                    .unwrap(),
+                &ring
+            );
+        });
+        let persisted =
+            ShardHolder::new(&storage_dir.path().join("collections/test"), sharding).unwrap();
+        assert_eq!(persisted.resharding_state(), None);
+    }
+}
+
+fn create_resharding_collection(
+    handle: &Handle,
+    dispatcher: &Dispatcher,
+    custom: bool,
+    direction: ReshardingDirection,
+) -> ReshardState {
+    if custom {
+        create_custom_collection(handle, dispatcher, "test");
+    } else {
+        create_collection(handle, dispatcher, "test");
+    }
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    if custom {
+        toc.get_channel_service()
+            .id_to_address
+            .write()
+            .insert(0, "http://localhost:6335".parse().unwrap());
+        for (key, placement) in [("tenant", vec![vec![0], vec![0]]), ("other", vec![vec![0]])] {
+            CollectionContainer::perform_collection_meta_op(
+                toc.as_ref(),
+                CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                    collection_name: "test".into(),
+                    shard_key: key.into(),
+                    placement,
+                    initial_state: Some(ReplicaState::Active),
+                }),
+            )
+            .unwrap();
+        }
+    } else {
+        let collection_pass = FULL_ACCESS
+            .check_collection_access("test", AccessRequirements::new(), "test")
+            .unwrap();
+        let collection = handle
+            .block_on(toc.get_collection(&collection_pass))
+            .unwrap();
+        handle.block_on(async {
+            let shard = collection
+                .create_replica_set(1, None, &[0], Some(ReplicaState::Active))
+                .await
+                .unwrap();
+            collection
+                .shards_holder()
+                .write()
+                .await
+                .add_shard(1, shard, None)
+                .await
+                .unwrap();
+        });
+        toc.apply_action(Action::SetShardNumber {
+            collection: "test".into(),
+            shard_number: NonZeroU32::new(2).unwrap(),
+        })
+        .unwrap();
+    }
+
+    ReshardState::new(
+        uuid::Uuid::new_v4(),
+        direction,
+        0,
+        if custom { 2 } else { 1 },
+        custom.then(|| "tenant".into()),
+    )
 }
 
 #[test]

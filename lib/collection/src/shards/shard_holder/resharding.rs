@@ -39,6 +39,40 @@ impl ShardHolder {
         self.resharding_state.read().clone()
     }
 
+    /// Apply resolved resharding state without operation validation
+    pub fn set_resharding_state(&mut self, state: Option<ReshardState>) -> CollectionResult<()> {
+        let ring = if let Some(state) = &state {
+            // Build from registered shards so replay does not start scale-down on an
+            // already reduced ring. Keep the current ring until persistence succeeds.
+            get_ring(&mut self.rings, &state.shard_key)?;
+
+            let mut ring = HashRingRouter::single();
+            for &shard_id in self.shards.keys() {
+                if self.shard_id_to_key_mapping.get(&shard_id) == state.shard_key.as_ref() {
+                    ring.add(shard_id);
+                }
+            }
+            ring.start_resharding(state.shard_id, state.direction);
+            if state.stage >= ReshardingStage::WriteHashRingCommitted {
+                ring.commit_resharding();
+            }
+
+            Some((state.shard_key.clone(), ring))
+        } else {
+            // Finish and abort update the ring before clearing the state
+            None
+        };
+
+        self.resharding_state
+            .write_optional(|current| (current != &state).then(|| state.clone()))?;
+
+        if let Some((key, ring)) = ring {
+            self.rings.insert(key, ring);
+        }
+
+        Ok(())
+    }
+
     pub fn check_start_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let ReshardKey {
             uuid: _,
@@ -156,16 +190,15 @@ impl ShardHolder {
         // TODO(resharding): Delete shard on error!?
 
         let ring_res = get_ring(&mut self.rings, &shard_key);
-        let ring = match ring_res {
-            Ok(ring) => ring,
+        match ring_res {
+            Ok(_) => {}
             Err(err) => {
                 if let Some(new_shard) = new_shard {
                     new_shard.stop_gracefully().await;
                 }
                 return Err(err);
             }
-        };
-        ring.start_resharding(shard_id, direction);
+        }
 
         // Add new shard if resharding up
         if let Some(new_shard) = new_shard {
@@ -174,18 +207,8 @@ impl ShardHolder {
                 .await?;
         }
 
-        // Idempotent: if matching state is already persisted (replay after a
-        // successful apply), leave it alone. Only write if missing or stale.
-        self.resharding_state.write_optional(|state| {
-            let new_state =
-                ReshardState::new(uuid, direction, peer_id, shard_id, shard_key.clone());
-            match state {
-                Some(existing) if *existing == new_state => None,
-                _ => Some(Some(new_state)),
-            }
-        })?;
-
-        Ok(())
+        let state = ReshardState::new(uuid, direction, peer_id, shard_id, shard_key);
+        self.set_resharding_state(Some(state))
     }
 
     pub fn commit_read_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
@@ -853,6 +876,35 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    #[test]
+    fn set_resharding_state_save_failure_retry() {
+        let (dir, mut holder) = make_holder();
+        holder.resharding_state.save().unwrap();
+        let key = make_reshard_key(1);
+        let state = ReshardState::new(key.uuid, key.direction, key.peer_id, key.shard_id, None);
+        let path = dir.path().join(super::super::RESHARDING_STATE_FILE);
+        let backup = dir.path().join("resharding-backup");
+
+        for next in [Some(state.clone()), None] {
+            let before = holder.resharding_state();
+            let ring = holder.rings[&None].clone();
+            fs_err::rename(&path, &backup).unwrap();
+            fs_err::create_dir(&path).unwrap();
+
+            assert!(holder.set_resharding_state(next.clone()).is_err());
+            assert_eq!(holder.resharding_state(), before);
+            assert_eq!(holder.rings[&None], ring);
+
+            fs_err::remove_dir(&path).unwrap();
+            fs_err::rename(&backup, &path).unwrap();
+            holder.set_resharding_state(next.clone()).unwrap();
+
+            assert_eq!(holder.resharding_state(), next);
+            let persisted = ShardHolder::new(dir.path(), ShardingMethod::Auto).unwrap();
+            assert_eq!(persisted.resharding_state(), next);
+        }
+    }
 
     fn make_reshard_key(shard_id: ShardId) -> ReshardKey {
         ReshardKey {
