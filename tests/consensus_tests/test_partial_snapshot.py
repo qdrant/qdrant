@@ -118,8 +118,11 @@ def test_partial_snapshot(
 def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
     assert_project_root()
 
-    # 100k points make recovery slow enough to observe the lock; big batches keep loading them fast
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000, bootstrap_batch_size = 1_000)
+    # The write peer sleeps while creating the partial snapshot, so the read peer holds its recovery
+    # lock at least that long and the concurrent requests below are rejected deterministically
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1_000, write_env = {
+        "QDRANT__STAGING__SNAPSHOT_SHARD_CLOCKS_DELAY": "3",
+    })
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
     futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = wait) for _ in range(3)]
@@ -131,8 +134,11 @@ def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path, wait: bool):
 def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
     assert_project_root()
 
-    # 100k points make recovery slow enough to observe the lock; big batches keep loading them fast
-    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 100_000, bootstrap_batch_size = 1_000)
+    # The read peer holds the search lock at least this long while applying the partial snapshot,
+    # so the searches below are rejected deterministically
+    write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points = 1_000, read_env = {
+        "QDRANT__STAGING__PARTIAL_SNAPSHOT_RECOVERY_DELAY": "3",
+    })
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
     recover_future = executor.submit(recover_partial_snapshot_from, read_peer, write_peer)
@@ -236,20 +242,20 @@ def test_partial_snapshot_recreate_payload_field_index(tmp_path: pathlib.Path):
     assert_http_ok(resp)
 
 
-def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False, wait_for_green = False, bootstrap_batch_size = 10):
-    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points, wait_for_green=wait_for_green, batch_size=bootstrap_batch_size)
-    read_peer = bootstrap_read_peer(tmp, shards, write_peer if recover_read else None)
+def bootstrap_peers(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, recover_read = False, wait_for_green = False, write_env = None, read_env = None):
+    write_peer = bootstrap_write_peer(tmp, shards, bootstrap_points, wait_for_green=wait_for_green, env=write_env)
+    read_peer = bootstrap_read_peer(tmp, shards, write_peer if recover_read else None, env=read_env)
     return write_peer, read_peer
 
-def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, wait_for_green = False, batch_size = 10):
-    write_peer = bootstrap_peer(tmp / "write", 6331, "write_")
-    bootstrap_collection(write_peer, shards, bootstrap_points, batch_size)
+def bootstrap_write_peer(tmp: pathlib.Path, shards = 1, bootstrap_points = 0, wait_for_green = False, env = None):
+    write_peer = bootstrap_peer(tmp / "write", 6331, "write_", env)
+    bootstrap_collection(write_peer, shards, bootstrap_points)
     if wait_for_green:
         wait_collection_green(write_peer, collection_name=COLLECTION)
     return write_peer
 
-def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | None = None):
-    read_peer = bootstrap_peer(tmp / "read", 63331, "read_")
+def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | None = None, env = None):
+    read_peer = bootstrap_peer(tmp / "read", 63331, "read_", env)
 
     if recover_from_url is None:
         bootstrap_collection(read_peer, shards)
@@ -258,18 +264,19 @@ def bootstrap_read_peer(tmp: pathlib.Path, shards = 1, recover_from_url: str | N
 
     return read_peer
 
-def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = ""):
+def bootstrap_peer(path: pathlib.Path, port: int, log_file_prefix = "", extra_env = None):
     path.mkdir(exist_ok = True)
 
     config = {
         "QDRANT__LOG_LEVEL": "debug,collection::common::file_utils=trace",
+        **(extra_env or {}),
     }
 
     uris, _, _ = start_cluster(path, 1, port_seed = port, extra_env = config, log_file_prefix = log_file_prefix)
 
     return uris[0]
 
-def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0, batch_size = 10):
+def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0):
     create_collection(
         peer_url,
         shard_number = shards,
@@ -282,7 +289,7 @@ def bootstrap_collection(peer_url, shards = 1, bootstrap_points = 0, batch_size 
     wait_collection_exists_and_active_on_all_peers(COLLECTION, [peer_url])
 
     if bootstrap_points > 0:
-        upsert(peer_url, bootstrap_points, batch_size = batch_size)
+        upsert(peer_url, bootstrap_points)
 
 def recover_collection(peer_url: str, recover_from_url: str):
     snapshot_url = create_collection_snapshot(recover_from_url)
@@ -377,8 +384,8 @@ def scroll_points(peer_url: str):
     return points
 
 
-def upsert(peer_url: str, points: int, offset = 0, batch_size = 10):
-    upsert_random_points(peer_url, points, offset = offset, batch_size = batch_size, with_sparse_vector = False)
+def upsert(peer_url: str, points: int, offset = 0):
+    upsert_random_points(peer_url, points, offset = offset, batch_size = 10, with_sparse_vector = False)
 
 def delete(peer_url: str, until_id: int, from_id = 0):
     resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/delete?wait=true", json = {
