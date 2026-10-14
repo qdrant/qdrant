@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use common::types::PointOffsetType;
 
 use super::ElementMap;
+use super::element_points::ElementPoints;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
@@ -19,19 +20,6 @@ pub struct NestedFacetView<'a> {
 impl<'a> NestedFacetView<'a> {
     pub fn new(inner: FacetIndexEnum<'a>, element_map: &'a ElementMap) -> Self {
         Self { inner, element_map }
-    }
-
-    /// Sorted unique points owning `elements`.
-    fn to_points(
-        &self,
-        elements: &mut dyn Iterator<Item = PointOffsetType>,
-    ) -> Vec<PointOffsetType> {
-        let mut points: Vec<_> = elements
-            .filter_map(|element| self.element_map.element_point(element))
-            .collect();
-        points.sort_unstable();
-        points.dedup();
-        points
     }
 }
 
@@ -78,8 +66,9 @@ impl FacetIndex for NestedFacetView<'_> {
         values: impl Iterator<Item = FacetValue>,
         mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
+        let mut points = ElementPoints::new(self.element_map);
         self.inner.for_values_map(values, |value, elements| {
-            f(value, &mut self.to_points(elements).into_iter())
+            f(value, &mut points.sorted(elements).iter().copied())
         })
     }
 
@@ -97,8 +86,9 @@ impl FacetIndex for NestedFacetView<'_> {
             &mut dyn Iterator<Item = PointOffsetType>,
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
+        let mut points = ElementPoints::new(self.element_map);
         self.inner.for_each_value_map(|value, elements| {
-            f(value, &mut self.to_points(elements).into_iter())
+            f(value, &mut points.sorted(elements).iter().copied())
         })
     }
 
@@ -108,12 +98,9 @@ impl FacetIndex for NestedFacetView<'_> {
         mut f: impl FnMut(FacetHit<FacetValueRef<'_>>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         let max_id = deferred_internal_id.unwrap_or(PointOffsetType::MAX);
+        let mut points = ElementPoints::new(self.element_map);
         self.inner.for_each_value_map(|value, elements| {
-            let count = self
-                .to_points(elements)
-                .into_iter()
-                .take_while(|&point| point < max_id)
-                .count();
+            let count = points.count_below(elements, max_id);
             f(FacetHit { value, count })
         })
     }

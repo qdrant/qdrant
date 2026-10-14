@@ -10,6 +10,7 @@
 //! as those of the flattened index of the field.
 
 mod element_map;
+mod element_points;
 mod facet;
 mod numeric;
 mod point_runs;
