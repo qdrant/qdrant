@@ -12,7 +12,8 @@ use super::{ElementMap, ElementOffsetType};
 /// the sort handles in close to linear time.
 pub(super) struct ElementPoints<'a> {
     element_map: &'a ElementMap,
-    /// Points of the current value
+    /// Points of the current value. Cleared for every value, but keeps its capacity, so a
+    /// facet over many distinct values doesn't allocate a vector for each of them.
     points: Vec<PointOffsetType>,
 }
 
