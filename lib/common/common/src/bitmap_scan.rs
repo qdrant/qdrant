@@ -1,3 +1,4 @@
+use bitvec::domain::Domain;
 use bitvec::field::BitField as _;
 
 use crate::bitvec::BitSlice;
@@ -108,6 +109,72 @@ fn expand_word(
             candidates &= candidates - 1;
         }
         n
+    }
+}
+
+/// The positions set in `fresh` and unset in `baseline`, in ascending order: the bits a newer read
+/// of a bitmap gained over an older one. Positions past the end of `baseline` read as unset there.
+///
+/// Compares a 64-bit word at a time, so the cost is one step per word plus one per gained bit,
+/// however many bits both bitmaps share.
+pub fn newly_set<'a>(
+    fresh: &'a BitSlice,
+    baseline: &'a BitSlice,
+) -> impl Iterator<Item = PointOffsetType> + 'a {
+    let (fresh_words, baseline_words) = (Words::new(fresh), Words::new(baseline));
+    (0..fresh.len().div_ceil(64)).flat_map(move |index| {
+        let mut gained = fresh_words.get(index) & !baseline_words.get(index);
+        let base = (index * 64) as PointOffsetType;
+        std::iter::from_fn(move || {
+            if gained == 0 {
+                return None;
+            }
+            let offset = gained.trailing_zeros();
+            // Clear the lowest set bit
+            gained &= gained - 1;
+            Some(base + offset)
+        })
+    })
+}
+
+/// A bitmap read a 64-bit word at a time.
+enum Words<'a> {
+    /// A bitmap that starts on a word boundary: its full words, then the bits of the partial last
+    /// word, if any.
+    Aligned {
+        body: &'a [u64],
+        tail: u64,
+    },
+    Unaligned(&'a BitSlice),
+}
+
+impl<'a> Words<'a> {
+    fn new(bitmap: &'a BitSlice) -> Self {
+        match bitmap.domain() {
+            Domain::Region {
+                head: None,
+                body,
+                tail,
+            } => Words::Aligned {
+                body,
+                tail: tail.map_or(0, |tail| tail.load_value()),
+            },
+            Domain::Enclave(_) | Domain::Region { .. } => Words::Unaligned(bitmap),
+        }
+    }
+
+    /// The word covering positions `index * 64..(index + 1) * 64`. Positions past the end read as
+    /// 0.
+    #[inline]
+    fn get(&self, index: usize) -> u64 {
+        match self {
+            Words::Aligned { body, tail } => match body.get(index) {
+                Some(&word) => word,
+                None if index == body.len() => *tail,
+                None => 0,
+            },
+            Words::Unaligned(bitmap) => bitmap_word(bitmap, index * 64),
+        }
     }
 }
 
