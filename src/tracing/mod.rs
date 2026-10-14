@@ -10,6 +10,7 @@ use std::env;
 use std::fmt::Write as _;
 use std::str::FromStr as _;
 
+use chrono::{DateTime, Datelike as _, FixedOffset, Timelike as _};
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::prelude::*;
@@ -137,10 +138,37 @@ impl FormatTime for TimeFormat {
             Self::Local => chrono::Local::now().fixed_offset(),
         };
 
-        // Matches the default `tracing_subscriber` timer, e.g. `2026-10-13T02:04:27.604091Z`
-        // With a non-UTC timezone the offset is included, e.g. `2026-10-13T10:04:27.604091+08:00`
-        w.write_str(&now.to_rfc3339_opts(chrono::SecondsFormat::Micros, true))
+        write_rfc3339(w, now)
     }
+}
+
+/// Write an RFC 3339 timestamp with microsecond precision, without allocating
+///
+/// Matches the default `tracing_subscriber` timer, e.g. `2026-10-13T02:04:27.604091Z`
+/// With a non-UTC offset the offset is included, e.g. `2026-10-13T10:04:27.604091+08:00`
+fn write_rfc3339(w: &mut impl std::fmt::Write, time: DateTime<FixedOffset>) -> std::fmt::Result {
+    let local = time.naive_local();
+    write!(
+        w,
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}",
+        local.year(),
+        local.month(),
+        local.day(),
+        local.hour(),
+        local.minute(),
+        local.second(),
+        local.nanosecond() / 1_000,
+    )?;
+
+    let offset = time.offset().local_minus_utc();
+    if offset == 0 {
+        return w.write_char('Z');
+    }
+
+    let sign = if offset < 0 { '-' } else { '+' };
+    let offset_minutes = offset.unsigned_abs() / 60;
+    let (hours, minutes) = (offset_minutes / 60, offset_minutes % 60);
+    write!(w, "{sign}{hours:02}:{minutes:02}")
 }
 
 #[rustfmt::skip] // `rustfmt` formats this into unreadable single line
