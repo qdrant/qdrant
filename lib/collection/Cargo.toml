@@ -19,7 +19,7 @@ data-consistency-check = []
 # adds the `StagingOperation` variant, and edge's match over it is gated on its own `staging`.
 staging = ["shard/staging", "edge?/staging"]
 # Implies `testing`: the only consumer is the model_testing module, which is testing-gated.
-edge-verify = ["dep:edge", "testing"]
+edge-verify = ["dep:edge", "edge/serverless", "testing"]
 
 [dev-dependencies]
 bm25 = { path = "../bm25" }
