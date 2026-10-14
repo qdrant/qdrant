@@ -27,7 +27,7 @@ use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::json_path::JsonPath;
-use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType, ShardKey};
+use segment::types::{Distance, ExtendedPointId, PayloadFieldSchema, PayloadSchemaType, ShardKey};
 use shard::count::CountRequestInternal;
 use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations};
 use shard::segment_holder::SegmentHolder;
@@ -597,6 +597,147 @@ fn remove_shard_key_action_replay() {
         );
     }
     assert_eq!(toc.collection_state("test").unwrap().shards.len(), 1);
+}
+
+#[test]
+fn delete_migrated_points_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_custom_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    for peer_id in [0, 1] {
+        toc.get_channel_service()
+            .id_to_address
+            .write()
+            .insert(peer_id, "http://localhost:6335".parse().unwrap());
+    }
+
+    for (key, placement) in [
+        ("tenant", vec![vec![0], vec![0], vec![1]]),
+        ("other", vec![vec![0], vec![0]]),
+    ] {
+        CollectionContainer::perform_collection_meta_op(
+            toc.as_ref(),
+            CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name: "test".into(),
+                shard_key: key.into(),
+                placement,
+                initial_state: Some(ReplicaState::Active),
+            }),
+        )
+        .unwrap();
+    }
+
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let context = AmbientContext::request("test", toc.get_collection_hw_metrics("test".into()));
+    let point_ids: Vec<ExtendedPointId> = (0..64u64).map(Into::into).collect();
+    let points = point_ids
+        .iter()
+        .map(|&id| PointStructPersisted {
+            id,
+            vector: VectorStructPersisted::Single(vec![1.0; 10]),
+            payload: None,
+        })
+        .collect();
+    let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(points),
+    ));
+    handle
+        .block_on(
+            collection
+                .update_all_local(operation, WaitUntil::Visible, true)
+                .measured(context.clone()),
+        )
+        .unwrap();
+
+    // Cleanup must force deletion even after a surviving replica has become dead
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 1,
+        peer_id: 0,
+        state: ReplicaState::Dead,
+    })
+    .unwrap();
+    let key = ReshardKey {
+        uuid: uuid::Uuid::new_v4(),
+        direction: ReshardingDirection::Down,
+        peer_id: 0,
+        shard_id: 2,
+        shard_key: Some("tenant".into()),
+    };
+    let old_ring = handle.block_on(async {
+        let mut holder = holder.write().await;
+        let old_ring = holder.hash_ring_router(1).unwrap().clone();
+        holder
+            .start_resharding_unchecked(key.clone(), None)
+            .await
+            .unwrap();
+        assert!(!holder.get_shard(3).unwrap().has_local_shard().await);
+        old_ring
+    });
+    let expected_ids: Vec<_> = point_ids
+        .iter()
+        .copied()
+        .filter(|id| old_ring.is_in_shard(id, 1))
+        .collect();
+    assert!(!expected_ids.is_empty());
+    assert!(expected_ids.len() < point_ids.len());
+    let before = toc.collection_state("test").unwrap();
+    let action = Action::DeleteMigratedPoints {
+        collection: "test".into(),
+        key,
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        handle.block_on(async {
+            let holder = holder.read().await;
+            // Shard 2 is the scale-down target; shards 4 and 5 belong to another key.
+            // They retain every point, while shard 1 keeps only its old-ring points.
+            for (id, expected) in [
+                (1, &expected_ids),
+                (2, &point_ids),
+                (4, &point_ids),
+                (5, &point_ids),
+            ] {
+                let replica_set = holder.get_shard(id).unwrap();
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    loop {
+                        let records = replica_set
+                            .local_scroll_by_id(
+                                None,
+                                65,
+                                &false.into(),
+                                &false.into(),
+                                None,
+                                None,
+                                None,
+                                DeferredBehavior::WithDeferred,
+                            )
+                            .measured(context.clone())
+                            .await
+                            .unwrap();
+                        let ids: Vec<_> = records.into_iter().map(|record| record.id).collect();
+                        if &ids == expected {
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("local points did not converge after cleanup");
+            }
+        });
+        assert_eq!(toc.collection_state("test").unwrap(), before);
+    }
 }
 
 #[test]

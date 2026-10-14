@@ -278,6 +278,18 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::DeleteMigratedPoints { collection, key } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder
+                    .read()
+                    .await
+                    .scale_down_cleanup_points(key)
+                    .await?;
+
+                Ok(())
+            }
+
             Action::RevertHashRing { collection, key } => {
                 let collection = self.get_collection_unchecked(collection).await?;
                 let shard_holder = collection.shards_holder();
@@ -359,7 +371,6 @@ impl TableOfContent {
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::InitLocalShard { .. }
-            | Action::DeleteMigratedPoints { .. }
             | Action::SetReshardingState { .. }
             | Action::SetReshardingStage { .. }
             | Action::SpawnTransferDriver { .. }
