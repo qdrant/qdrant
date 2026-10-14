@@ -1,12 +1,15 @@
 //! Element map of a mutable index, held in RAM and persisted per point in a
 //! [`Blobstore`].
 //!
-//! An update that keeps the number of elements of a point (or shrinks it) keeps its
-//! range, a growing one moves the point to a fresh range at the end. Offsets are not
-//! reused while the map is open, so an offset that isn't owned by any point is never
-//! resolved, whatever stale values the index may still hold for it.
+//! Every point keeps the list of its element offsets, in array order. The offsets of a
+//! point don't need to be contiguous, so the offsets freed by one point are given to the
+//! next one that needs more: the offsets in use stay close to the number of elements,
+//! however long the map is updated.
+//!
+//! An offset that isn't owned by any point is never resolved, whatever stale values the
+//! index may still hold for it. Once given to a point again, all of its values are
+//! written: the index is updated for every element of the point.
 
-use std::ops::Range;
 use std::path::PathBuf;
 
 use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS};
@@ -20,60 +23,66 @@ use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
 use super::{
-    ElementMapBuilder, ElementOffsetType, ElementRange, ElementUpdate, NO_POINT,
-    elements_exhausted, too_many_elements,
+    ElementMapBuilder, ElementOffsetType, ElementUpdate, NO_POINT, elements_exhausted,
+    too_many_elements,
 };
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-/// Size of a stored [`ElementRange`], in bytes.
-const RANGE_SIZE: usize = 2 * size_of::<u32>();
+/// Block size of the stored element lists: four offsets.
+const BLOCK_SIZE: usize = 4 * size_of::<ElementOffsetType>();
 
-impl Blob for ElementRange {
+/// The element offsets of one point, as stored per point.
+#[derive(Debug, Default)]
+struct PointElements(Vec<ElementOffsetType>);
+
+impl Blob for PointElements {
     fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(RANGE_SIZE);
-        bytes.extend_from_slice(&self.start.to_le_bytes());
-        bytes.extend_from_slice(&self.len.to_le_bytes());
-        bytes
+        self.0
+            .iter()
+            .flat_map(|element| element.to_le_bytes())
+            .collect()
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, BlobstoreError> {
-        let Some((start, len)) = bytes
-            .split_first_chunk::<4>()
-            .and_then(|(start, rest)| Some((start, <[u8; 4]>::try_from(rest).ok()?)))
-        else {
+        let (elements, rest) = bytes.as_chunks::<4>();
+        if !rest.is_empty() {
             return Err(BlobstoreError::decode_error(format!(
-                "unexpected number of bytes for an element range: {}",
+                "unexpected number of bytes for element offsets: {}",
                 bytes.len(),
             )));
-        };
-        Ok(Self {
-            start: u32::from_le_bytes(*start),
-            len: u32::from_le_bytes(len),
-        })
+        }
+        Ok(Self(
+            elements
+                .iter()
+                .map(|&element| ElementOffsetType::from_le_bytes(element))
+                .collect(),
+        ))
     }
 }
 
 /// See the [module docs](self).
 #[derive(Debug)]
 pub struct MutableElementMap {
-    /// Elements of each point, empty for points without elements
-    point_to_elements: Vec<ElementRange>,
+    /// Element offsets of each point, in array order; empty for points without elements
+    point_to_elements: Vec<Vec<ElementOffsetType>>,
     /// Owning point of each element offset, [`NO_POINT`] if none
     element_to_point: Vec<PointOffsetType>,
+    /// Offsets below `element_to_point.len()` owned by no point, given out before new ones
+    free: Vec<ElementOffsetType>,
     /// Number of elements owned by a point
     elements_count: usize,
     /// Largest number of elements a point had since the map was opened
     max_elements_per_point: usize,
-    storage: Blobstore<ElementRange>,
+    storage: Blobstore<PointElements>,
 }
 
 impl MutableElementMap {
     fn storage_options() -> blobstore::config::StorageConfig {
-        // Always mutable: point updates rewrite their range in place
+        // Always mutable: point updates rewrite their elements in place
         CreateOptions {
-            page_size_bytes: RANGE_SIZE * DEFAULT_REGION_SIZE_BLOCKS * 32,
-            block_size_bytes: RANGE_SIZE,
+            page_size_bytes: BLOCK_SIZE * DEFAULT_REGION_SIZE_BLOCKS * 32,
+            block_size_bytes: BLOCK_SIZE,
             compression: blobstore::config::Compression::None,
         }
         .into_config(false)
@@ -97,9 +106,10 @@ impl MutableElementMap {
         }
         let mut map = Self::empty(storage);
         for &(point, range) in ranges {
+            let elements = PointElements(range.offsets().collect());
             map.storage
-                .put_value(point, &range, HwMetric::PayloadIndexIoWrite)?;
-            map.load_range(point, range);
+                .put_value(point, &elements, HwMetric::PayloadIndexIoWrite)?;
+            map.load_elements(point, elements.0);
         }
         Ok(map)
     }
@@ -110,12 +120,12 @@ impl MutableElementMap {
             OperationError::service_error(format!("failed to open element map: {err}"))
         })?;
 
-        let mut ranges = Vec::new();
+        let mut points = Vec::new();
         let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, BlobstoreError>(
-                |point, range: ElementRange| {
-                    ranges.push((point, range));
+                |point, elements: PointElements| {
+                    points.push((point, elements.0));
                     Ok(true)
                 },
                 HwMetric::PayloadIndexIoRead,
@@ -125,60 +135,75 @@ impl MutableElementMap {
             })?;
 
         let mut map = Self::empty(storage);
-        for (point, range) in ranges {
-            map.load_range(point, range);
+        for (point, elements) in points {
+            map.load_elements(point, elements);
         }
+        // Lowest offsets are given out first
+        map.free = (0..map.element_to_point.len() as ElementOffsetType)
+            .rev()
+            .filter(|&element| map.element_to_point[element as usize] == NO_POINT)
+            .collect();
         Ok(Some(map))
     }
 
-    fn empty(storage: Blobstore<ElementRange>) -> Self {
+    fn empty(storage: Blobstore<PointElements>) -> Self {
         Self {
             point_to_elements: Vec::new(),
             element_to_point: Vec::new(),
+            free: Vec::new(),
             elements_count: 0,
             max_elements_per_point: 0,
             storage,
         }
     }
 
-    fn load_range(&mut self, point: PointOffsetType, range: ElementRange) {
-        if range.len == 0 {
+    fn load_elements(&mut self, point: PointOffsetType, elements: Vec<ElementOffsetType>) {
+        let Some(&max_element) = elements.iter().max() else {
+            return;
+        };
+        if max_element == NO_POINT {
+            log::warn!("Element map: elements of point {point} are out of range, skipped");
             return;
         }
-        let end = range.offsets().end as usize;
-        if self.element_to_point.len() < end {
-            self.element_to_point.resize(end, NO_POINT);
+        if self.element_to_point.len() <= max_element as usize {
+            self.element_to_point
+                .resize(max_element as usize + 1, NO_POINT);
         }
-        let owned = &mut self.element_to_point[range.offsets().start as usize..end];
-        if owned.iter().any(|&owner| owner != NO_POINT) {
-            // Only a damaged storage has overlapping ranges, keep the first owner
+        let owned = elements
+            .iter()
+            .any(|&element| self.element_to_point[element as usize] != NO_POINT);
+        if owned {
+            // Only a damaged storage has elements owned twice, keep the first owner
             log::warn!("Element map: elements of point {point} overlap another point, skipped");
             return;
         }
-        owned.fill(point);
-        self.set_range(point, range);
+        for &element in &elements {
+            self.element_to_point[element as usize] = point;
+        }
+        self.set_elements(point, elements);
     }
 
-    fn set_range(&mut self, point: PointOffsetType, range: ElementRange) {
+    /// Replace the elements of `point`, return the previous ones.
+    fn set_elements(
+        &mut self,
+        point: PointOffsetType,
+        elements: Vec<ElementOffsetType>,
+    ) -> Vec<ElementOffsetType> {
         let point = point as usize;
         if self.point_to_elements.len() <= point {
-            self.point_to_elements
-                .resize(point + 1, ElementRange::default());
+            self.point_to_elements.resize_with(point + 1, Vec::new);
         }
-        let old = std::mem::replace(&mut self.point_to_elements[point], range);
-        self.elements_count = self.elements_count - old.len as usize + range.len as usize;
-        self.max_elements_per_point = self.max_elements_per_point.max(range.len as usize);
+        self.elements_count += elements.len();
+        self.max_elements_per_point = self.max_elements_per_point.max(elements.len());
+        let old = std::mem::replace(&mut self.point_to_elements[point], elements);
+        self.elements_count -= old.len();
+        old
     }
 
-    fn range(&self, point: PointOffsetType) -> ElementRange {
+    pub fn point_elements(&self, point: PointOffsetType) -> &[ElementOffsetType] {
         self.point_to_elements
             .get(point as usize)
-            .copied()
-            .unwrap_or_default()
-    }
-
-    pub fn point_elements(&self, point: PointOffsetType) -> Range<ElementOffsetType> {
-        self.range(point).offsets()
+            .map_or(&[], Vec::as_slice)
     }
 
     pub fn element_point(&self, element: ElementOffsetType) -> Option<PointOffsetType> {
@@ -200,54 +225,58 @@ impl MutableElementMap {
         self.max_elements_per_point
     }
 
-    /// Give `point` `count` elements, keeping its range when it has enough room and
-    /// moving it to the end otherwise.
+    /// Give `point` `count` elements: it keeps the first ones it has, frees the rest, and
+    /// takes freed offsets before new ones for any it lacks.
     pub fn assign(
         &mut self,
         point: PointOffsetType,
         count: usize,
     ) -> OperationResult<ElementUpdate> {
-        let old = self.range(point);
-        let count = u32::try_from(count).map_err(|_| too_many_elements(point))?;
+        if u32::try_from(count).is_err() {
+            return Err(too_many_elements(point));
+        }
+        let old = self.point_elements(point).to_vec();
+        if count == old.len() {
+            return Ok(ElementUpdate {
+                new: old.clone(),
+                old,
+            });
+        }
 
-        let new = if count == 0 {
-            ElementRange::default()
-        } else if count <= old.len {
-            ElementRange {
-                start: old.start,
-                len: count,
-            }
-        } else {
-            let start = u32::try_from(self.element_to_point.len())
-                .ok()
-                .filter(|start| start.checked_add(count).is_some_and(|end| end < NO_POINT))
-                .ok_or_else(elements_exhausted)?;
-            self.element_to_point
-                .resize(start as usize + count as usize, NO_POINT);
-            ElementRange { start, len: count }
-        };
-
-        for element in old.offsets() {
+        let mut new = old[..count.min(old.len())].to_vec();
+        // In reverse, so that the lowest freed offset is given out first
+        for &element in old[new.len()..].iter().rev() {
             self.element_to_point[element as usize] = NO_POINT;
+            self.free.push(element);
         }
-        for element in new.offsets() {
+        while new.len() < count {
+            let element = match self.free.pop() {
+                Some(element) => element,
+                None => {
+                    let element = ElementOffsetType::try_from(self.element_to_point.len())
+                        .ok()
+                        .filter(|&element| element < NO_POINT)
+                        .ok_or_else(elements_exhausted)?;
+                    self.element_to_point.push(NO_POINT);
+                    element
+                }
+            };
             self.element_to_point[element as usize] = point;
+            new.push(element);
         }
 
-        if new != old {
-            if new.len == 0 {
-                self.storage.delete_value(point)?;
-            } else {
-                self.storage
-                    .put_value(point, &new, HwMetric::PayloadIndexIoWrite)?;
-            }
-            self.set_range(point, new);
+        if new.is_empty() {
+            self.storage.delete_value(point)?;
+        } else {
+            self.storage.put_value(
+                point,
+                &PointElements(new.clone()),
+                HwMetric::PayloadIndexIoWrite,
+            )?;
         }
+        self.set_elements(point, new.clone());
 
-        Ok(ElementUpdate {
-            old: old.offsets(),
-            new: new.offsets(),
-        })
+        Ok(ElementUpdate { old, new })
     }
 
     pub fn deleted_elements(&self, deleted_points: &BitSlice) -> BitVec {
@@ -278,9 +307,23 @@ impl MutableElementMap {
     }
 
     pub fn ram_usage_bytes(&self) -> usize {
-        self.point_to_elements.capacity() * size_of::<ElementRange>()
-            + self.element_to_point.capacity() * size_of::<PointOffsetType>()
-            + self.storage.ram_usage_bytes()
+        let Self {
+            point_to_elements,
+            element_to_point,
+            free,
+            elements_count: _,
+            max_elements_per_point: _,
+            storage,
+        } = self;
+        let elements_bytes: usize = point_to_elements
+            .iter()
+            .map(|elements| elements.capacity() * size_of::<ElementOffsetType>())
+            .sum();
+        point_to_elements.capacity() * size_of::<Vec<ElementOffsetType>>()
+            + elements_bytes
+            + element_to_point.capacity() * size_of::<PointOffsetType>()
+            + free.capacity() * size_of::<ElementOffsetType>()
+            + storage.ram_usage_bytes()
     }
 
     pub fn populate(&self) -> OperationResult<()> {

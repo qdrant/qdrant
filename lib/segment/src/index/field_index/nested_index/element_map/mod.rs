@@ -6,18 +6,23 @@
 //! them, whenever and however each index was built.
 //!
 //! Element offsets, the IDs an index stores values under, belong to one index only:
-//! indexes of the same array may lay them out differently. The elements of a point are a
-//! contiguous range of offsets in array order, so the position of an element is its
-//! distance from the start of the range.
+//! indexes of the same array may lay them out differently. A map lists the offsets of a
+//! point in array order, so the position of an element is its place in that list: a
+//! contiguous range in an immutable map, any offsets in a mutable one.
 
 mod immutable;
 mod mutable;
+#[cfg(test)]
+mod tests;
 
+use std::iter::Copied;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::slice;
 
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+use itertools::Either;
 use serde_json::{Map, Value};
 
 use self::immutable::ImmutableElementMap;
@@ -62,12 +67,26 @@ impl ElementRange {
     }
 }
 
-/// Element offsets of a point before and after [`ElementMap::assign`].
+/// Element offsets of a point before and after [`ElementMap::assign`], in array order.
+///
+/// `new` starts with the elements of `old` the point keeps, so the elements of `old`
+/// past the length of `new` are the ones it dropped.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ElementUpdate {
-    pub old: Range<ElementOffsetType>,
-    pub new: Range<ElementOffsetType>,
+    pub old: Vec<ElementOffsetType>,
+    pub new: Vec<ElementOffsetType>,
 }
+
+impl ElementUpdate {
+    /// The elements of `old` the point no longer has.
+    pub fn dropped(&self) -> &[ElementOffsetType] {
+        &self.old[self.new.len().min(self.old.len())..]
+    }
+}
+
+/// Element offsets of one point, in array order, see [`ElementMap::point_elements`].
+pub type PointElements<'a> =
+    Either<Range<ElementOffsetType>, Copied<slice::Iter<'a, ElementOffsetType>>>;
 
 /// Assigns element offsets while an index is built: the elements of each added point
 /// get the next offsets.
@@ -158,11 +177,11 @@ impl ElementMap {
         }
     }
 
-    /// Element offsets of `point`, empty if it has no elements.
-    pub fn point_elements(&self, point: PointOffsetType) -> Range<ElementOffsetType> {
+    /// Element offsets of `point` in array order, empty if it has no elements.
+    pub fn point_elements(&self, point: PointOffsetType) -> PointElements<'_> {
         match self {
-            ElementMap::Mutable(map) => map.point_elements(point),
-            ElementMap::Immutable(map) => map.point_elements(point),
+            ElementMap::Mutable(map) => Either::Right(map.point_elements(point).iter().copied()),
+            ElementMap::Immutable(map) => Either::Left(map.point_elements(point)),
         }
     }
 
@@ -289,205 +308,4 @@ fn too_many_elements(point: PointOffsetType) -> OperationError {
 
 fn elements_exhausted() -> OperationError {
     OperationError::service_error("element offsets of the nested index exhausted")
-}
-
-#[cfg(test)]
-mod tests {
-    use common::ambient;
-
-    use super::*;
-
-    fn ranges(map: &ElementMap, points: Range<PointOffsetType>) -> Vec<Range<u32>> {
-        points.map(|point| map.point_elements(point)).collect()
-    }
-
-    fn owners(map: &ElementMap, elements: Range<ElementOffsetType>) -> Vec<Option<u32>> {
-        elements.map(|element| map.element_point(element)).collect()
-    }
-
-    #[test]
-    fn mutable_assign_keeps_moves_and_frees_ranges() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("map");
-        let _scope = ambient::test_guard();
-
-        let mut builder = ElementMapBuilder::default();
-        assert_eq!(builder.add(0, 2).unwrap(), 0..2);
-        assert_eq!(builder.add(1, 3).unwrap(), 2..5);
-        let mut map =
-            ElementMap::create(path.clone(), IndexMutability::Mutable, &builder, 0, true).unwrap();
-        assert_eq!(map.assign(2, 0).unwrap().new, 0..0);
-
-        // Same count keeps the range
-        assert_eq!(
-            map.assign(0, 2).unwrap(),
-            ElementUpdate {
-                old: 0..2,
-                new: 0..2
-            },
-        );
-        // Shrinking keeps the start, the dropped element is no longer owned
-        assert_eq!(map.assign(1, 1).unwrap().new, 2..3);
-        assert_eq!(map.element_point(3), None);
-        // Growing moves to the end, the old offsets are not reused
-        assert_eq!(map.assign(0, 3).unwrap().new, 5..8);
-        assert_eq!(map.element_point(0), None);
-        assert_eq!(map.element_point(6), Some(0));
-
-        assert_eq!(map.elements_count(), 4);
-        assert_eq!(ranges(&map, 0..3), vec![5..8, 2..3, 0..0]);
-
-        let deleted = map.deleted_elements(&BitVec::from_iter([false, true]));
-        assert_eq!(
-            deleted.iter().by_vals().collect::<Vec<_>>(),
-            // 0,1,3,4 unowned; 2 is owned by the deleted point 1
-            vec![true, true, true, true, true, false, false, false],
-        );
-
-        map.flusher()().unwrap();
-        drop(map);
-
-        let map = ElementMap::open(path, IndexMutability::Mutable)
-            .unwrap()
-            .unwrap();
-        assert_eq!(ranges(&map, 0..3), vec![5..8, 2..3, 0..0]);
-        assert_eq!(map.elements_count(), 4);
-        assert_eq!(map.element_point(2), Some(1));
-        assert_eq!(map.element_point(4), None);
-    }
-
-    #[test]
-    fn immutable_map_resolves_both_ways() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("map");
-
-        let mut builder = ElementMapBuilder::default();
-        builder.add(1, 2).unwrap();
-        builder.add(2, 0).unwrap();
-        builder.add(3, 3).unwrap();
-        builder.add(6, 1).unwrap();
-        let mut map =
-            ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, 0, true)
-                .unwrap();
-
-        let check = |map: &ElementMap| {
-            assert_eq!(
-                ranges(map, 0..8),
-                vec![0..0, 0..2, 2..2, 2..5, 5..5, 5..5, 5..6, 0..0],
-            );
-            assert_eq!(
-                owners(map, 0..7),
-                vec![Some(1), Some(1), Some(3), Some(3), Some(3), Some(6), None],
-            );
-            assert_eq!(map.elements_count(), 6);
-            assert_eq!(map.points_upper_bound(), 7);
-            assert_eq!(map.max_elements_per_point(), 3);
-        };
-        check(&map);
-
-        let deleted = map.deleted_elements(&BitVec::from_iter([false, false, false, true]));
-        assert_eq!(
-            deleted.iter().by_vals().collect::<Vec<_>>(),
-            vec![false, false, true, true, true, false],
-        );
-
-        // Elements can be kept or dropped, but not changed in number
-        assert_eq!(map.assign(3, 3).unwrap().new, 2..5);
-        assert_eq!(map.assign(3, 0).unwrap().new, 0..0);
-        assert!(map.assign(3, 2).is_err());
-        check(&map);
-
-        drop(map);
-        let map = ElementMap::open(path, IndexMutability::Immutable)
-            .unwrap()
-            .unwrap();
-        check(&map);
-    }
-
-    /// Stored bit-packed: two bits per point for points with up to three elements, instead
-    /// of the four bytes of the start offset.
-    #[test]
-    fn immutable_map_is_stored_compact() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("map");
-        const POINTS: u32 = 10_000;
-
-        let mut builder = ElementMapBuilder::default();
-        for point in 0..POINTS {
-            builder.add(point, (point % 4) as usize).unwrap();
-        }
-        let map = ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, 0, true)
-            .unwrap();
-        let stored: u64 = map
-            .files()
-            .iter()
-            .map(|file| fs_err::metadata(file).unwrap().len())
-            .sum();
-        // The 32-byte header, then per block of 128 starts a width byte and 2 bits per start
-        let blocks = u64::from(POINTS + 1).div_ceil(128);
-        assert_eq!(stored, 32 + blocks * (1 + 128 * 2 / 8));
-
-        let reopened = ElementMap::open(path, IndexMutability::Immutable)
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            ranges(&reopened, 0..POINTS + 1),
-            ranges(&map, 0..POINTS + 1)
-        );
-        for element in [0, 7_777, 14_999, 15_000] {
-            assert_eq!(reopened.element_point(element), map.element_point(element));
-        }
-    }
-
-    /// An immutable map keeps the indexed points of its build, minus deleted points with
-    /// elements. A mutable map doesn't keep them.
-    #[test]
-    fn immutable_map_keeps_indexed_points() {
-        let dir = tempfile::tempdir().unwrap();
-        let _scope = ambient::test_guard();
-        let mut builder = ElementMapBuilder::default();
-        builder.add(0, 2).unwrap();
-        builder.add(2, 1).unwrap();
-        builder.add(3, 3).unwrap();
-
-        let path = dir.path().join("immutable");
-        let map = ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, 3, true)
-            .unwrap();
-        drop(map);
-        let map = ElementMap::open(path, IndexMutability::Immutable)
-            .unwrap()
-            .unwrap();
-        assert_eq!(map.indexed_points(BitSlice::empty()), Some(3));
-        // Point 1 has no elements, points 2 and 3 have
-        let deleted = BitVec::from_iter([false, true, true, true]);
-        assert_eq!(map.indexed_points(&deleted), Some(1));
-
-        let mutable = ElementMap::create(
-            dir.path().join("mutable"),
-            IndexMutability::Mutable,
-            &builder,
-            3,
-            true,
-        )
-        .unwrap();
-        assert_eq!(mutable.indexed_points(BitSlice::empty()), None);
-    }
-
-    #[test]
-    fn immutable_map_requires_point_order() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut builder = ElementMapBuilder::default();
-        builder.add(3, 1).unwrap();
-        builder.add(1, 1).unwrap();
-        assert!(
-            ElementMap::create(
-                dir.path().join("map"),
-                IndexMutability::Immutable,
-                &builder,
-                0,
-                true
-            )
-            .is_err()
-        );
-    }
 }

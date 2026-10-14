@@ -17,7 +17,6 @@ mod point_runs;
 #[cfg(test)]
 mod tests;
 
-use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
@@ -121,7 +120,10 @@ impl NestedFieldIndex {
         &self.inner
     }
 
-    fn has_values(&self, elements: Range<ElementOffsetType>) -> OperationResult<bool> {
+    fn has_values(
+        &self,
+        elements: impl IntoIterator<Item = ElementOffsetType>,
+    ) -> OperationResult<bool> {
         for element in elements {
             if !self.inner.values_is_empty(element)? {
                 return Ok(true);
@@ -138,14 +140,12 @@ impl NestedFieldIndex {
     ) -> OperationResult<()> {
         let elements = nested_elements(payload, &self.array_key);
         let update = self.element_map.assign(point, elements.len())?;
-        let had_values = self.has_values(update.old.clone())?;
+        let had_values = self.has_values(update.old.iter().copied())?;
 
-        for element in update.old.clone() {
-            if !update.new.contains(&element) {
-                self.inner.remove_point(element)?;
-            }
+        for &element in update.dropped() {
+            self.inner.remove_point(element)?;
         }
-        for (element, object) in update.new.clone().zip(elements) {
+        for (&element, object) in update.new.iter().zip(elements) {
             let values = self.relative_path.value_get(object);
             if values.is_empty() {
                 self.inner.remove_point(element)?;
@@ -154,7 +154,7 @@ impl NestedFieldIndex {
             }
         }
 
-        let has_values = self.has_values(update.new.clone())?;
+        let has_values = self.has_values(update.new.iter().copied())?;
         match (had_values, has_values) {
             (false, true) => self.indexed_points += 1,
             (true, false) => self.indexed_points -= 1,

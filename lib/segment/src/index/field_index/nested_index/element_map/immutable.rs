@@ -156,11 +156,11 @@ impl ImmutableElementMap {
     }
 
     pub fn assign(&self, point: PointOffsetType, count: usize) -> OperationResult<ElementUpdate> {
-        let current = self.point_elements(point);
+        let current: Vec<ElementOffsetType> = self.point_elements(point).collect();
         if count == 0 {
             return Ok(ElementUpdate {
                 old: current,
-                new: 0..0,
+                new: Vec::new(),
             });
         }
         if count != current.len() {
@@ -197,7 +197,13 @@ impl ImmutableElementMap {
     }
 
     pub fn ram_usage_bytes(&self) -> usize {
-        self.starts.capacity() * size_of::<ElementOffsetType>()
+        let Self {
+            starts,
+            built_indexed_points: _,
+            max_elements_per_point: _,
+            path: _,
+        } = self;
+        starts.capacity() * size_of::<ElementOffsetType>()
     }
 }
 
