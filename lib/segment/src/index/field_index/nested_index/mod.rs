@@ -12,6 +12,7 @@
 mod element_map;
 mod facet;
 mod numeric;
+mod point_runs;
 #[cfg(test)]
 mod tests;
 

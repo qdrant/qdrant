@@ -2,6 +2,7 @@ use common::types::PointOffsetType;
 use itertools::Either;
 
 use super::ElementMap;
+use super::point_runs::PointRuns;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
@@ -30,20 +31,10 @@ impl NumericFieldIndexRead for NestedNumericView<'_> {
         &self,
         range: &RangeInterface,
     ) -> OperationResult<impl DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + '_> {
-        // Elements of a point are not ordered like points, and a value can repeat across
-        // elements, so restore the `(value, point)` order and uniqueness of the flattened
-        // index by materializing the range.
-        let mut values: Vec<_> = self
-            .inner
-            .stream_range(range)?
-            .filter_map(|(value, element)| {
-                let point = self.element_map.element_point(element)?;
-                Some((value, point))
-            })
-            .collect();
-        values.sort_unstable();
-        values.dedup();
-        Ok(values.into_iter())
+        Ok(PointRuns::new(
+            self.inner.stream_range(range)?,
+            self.element_map,
+        ))
     }
 }
 
