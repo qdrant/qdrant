@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use collection::config::ShardingMethod;
+use collection::hash_ring::HashRingRouter;
+use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::config_diff::HnswConfigDiff;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
@@ -15,6 +17,7 @@ use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndex
 use collection::shards::channel_service::ChannelService;
 use collection::shards::remote_shard::RemoteShard;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
+use collection::shards::resharding::ReshardKey;
 use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
 use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
@@ -581,6 +584,113 @@ fn remove_shard_key_action_replay() {
         );
     }
     assert_eq!(toc.collection_state("test").unwrap().shards.len(), 1);
+}
+
+#[test]
+fn revert_hash_ring_action_scale_up_replay() {
+    revert_hash_ring_action_replay(ReshardingDirection::Up);
+}
+
+#[test]
+fn revert_hash_ring_action_scale_down_replay() {
+    revert_hash_ring_action_replay(ReshardingDirection::Down);
+}
+
+fn revert_hash_ring_action_replay(direction: ReshardingDirection) {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_custom_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.get_channel_service()
+        .id_to_address
+        .write()
+        .insert(0, "http://localhost:6335".parse().unwrap());
+
+    for (key, placement) in [("tenant", vec![vec![0], vec![0]]), ("other", vec![vec![0]])] {
+        CollectionContainer::perform_collection_meta_op(
+            toc.as_ref(),
+            CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name: "test".into(),
+                shard_key: key.into(),
+                placement,
+                initial_state: Some(ReplicaState::Active),
+            }),
+        )
+        .unwrap();
+    }
+
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let key = ReshardKey {
+        uuid: uuid::Uuid::new_v4(),
+        direction,
+        peer_id: 0,
+        shard_id: 2,
+        shard_key: Some("tenant".into()),
+    };
+    let other_ring = handle.block_on(async {
+        let mut holder = holder.write().await;
+        holder
+            .start_resharding_unchecked(key.clone(), None)
+            .await
+            .unwrap();
+        assert!(holder.hash_ring_router(1).unwrap().is_resharding());
+        holder.hash_ring_router(3).unwrap().clone()
+    });
+    let before = toc.collection_state("test").unwrap();
+    let action = Action::RevertHashRing {
+        collection: "test".into(),
+        key,
+    };
+    let mut expected_ring = HashRingRouter::single();
+    expected_ring.add(1);
+    if direction == ReshardingDirection::Down {
+        expected_ring.add(2);
+    }
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        handle.block_on(async {
+            let holder = holder.read().await;
+            assert_eq!(holder.hash_ring_router(1).unwrap(), &expected_ring);
+            assert_eq!(holder.hash_ring_router(3).unwrap(), &other_ring);
+        });
+        assert_eq!(toc.collection_state("test").unwrap(), before);
+    }
+}
+
+#[test]
+fn revert_hash_ring_action_missing_ring() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let before = toc.collection_state("test").unwrap();
+    let key = ReshardKey {
+        uuid: uuid::Uuid::new_v4(),
+        direction: ReshardingDirection::Up,
+        peer_id: 0,
+        shard_id: 1,
+        shard_key: Some("missing".into()),
+    };
+    let action = Action::RevertHashRing {
+        collection: "test".into(),
+        key,
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert_eq!(toc.collection_state("test").unwrap(), before);
+    }
 }
 
 #[test]

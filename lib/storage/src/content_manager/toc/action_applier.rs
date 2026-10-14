@@ -278,6 +278,14 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::RevertHashRing { collection, key } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder.write().await.revert_resharding_hashring(key);
+
+                Ok(())
+            }
+
             Action::RegisterTransfer {
                 collection,
                 transfer,
@@ -352,7 +360,6 @@ impl TableOfContent {
             | Action::CreateAndRegisterShards { .. }
             | Action::InitLocalShard { .. }
             | Action::DeleteMigratedPoints { .. }
-            | Action::RevertHashRing { .. }
             | Action::SetReshardingState { .. }
             | Action::SetReshardingStage { .. }
             | Action::SpawnTransferDriver { .. }
