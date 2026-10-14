@@ -439,6 +439,10 @@ opt-level = 3
 [profile.ci.package.sha2]
 opt-level = 3
 
+# Override for fast quantization in ci builds
+[profile.ci.package.quantization]
+opt-level = 3
+
 [package.metadata.deb]
 maintainer = "Qdrant Team <team@qdrant.com>"
 depends = "$auto"
