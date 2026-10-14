@@ -28,7 +28,7 @@ use serde_json::Value;
 
 pub use self::builder::NestedFieldIndexBuilder;
 use self::element_map::nested_elements;
-pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType};
+pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType, PointElements};
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
 use super::numeric_index::NumericFieldIndexRead;
@@ -66,6 +66,27 @@ pub struct NestedFieldIndex {
     /// Number of points with at least one value in `inner`. For immutable indexes,
     /// an upper bound: opening restores the build-time count, ignoring prior deletions.
     indexed_points: usize,
+}
+
+/// A condition checked on the elements of one per-element index.
+///
+/// Element offsets belong to one index, so an element is checked through the
+/// [`ElementMap`] of the index that answers the condition: the offset of a point's
+/// element at a position is its place in [`ElementMap::point_elements`].
+pub struct ElementConditionChecker<'a> {
+    element_map: &'a ElementMap,
+    checker: ConditionCheckerEnum<'a>,
+}
+
+impl<'a> ElementConditionChecker<'a> {
+    pub fn element_map(&self) -> &'a ElementMap {
+        self.element_map
+    }
+
+    /// Check the element at `element`, an offset from [`Self::element_map`].
+    pub fn check(&self, element: ElementOffsetType) -> OperationResult<bool> {
+        self.checker.check(element)
+    }
 }
 
 impl NestedFieldIndex {
@@ -592,5 +613,27 @@ impl FieldIndexRead for NestedFieldIndex {
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
         self.facet_view()
+    }
+
+    fn element_map(&self, array_key: &JsonPath) -> Option<&ElementMap> {
+        (&self.array_key == array_key).then_some(&self.element_map)
+    }
+
+    fn element_condition_checker<'a>(
+        &'a self,
+        array_key: &JsonPath,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
+        if &self.array_key != array_key {
+            return Ok(None);
+        }
+        // The inner index is keyed by element offsets
+        let Some(checker) = self.inner.condition_checker(condition)? else {
+            return Ok(None);
+        };
+        Ok(Some(ElementConditionChecker {
+            element_map: &self.element_map,
+            checker,
+        }))
     }
 }

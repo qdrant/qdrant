@@ -16,11 +16,14 @@ use crate::index::field_index::full_text_index::full_text_index_read::{
 };
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
-use crate::index::field_index::nested_index::{FacetView, NumericView};
+use crate::index::field_index::nested_index::{
+    ElementConditionChecker, ElementMap, FacetView, NumericView,
+};
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
+use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -317,6 +320,44 @@ impl FieldIndexRead for FieldIndex {
             | FieldIndex::GeoIndex(_)
             | FieldIndex::FullTextIndex(_)
             | FieldIndex::NullIndex(_) => self.facet_view().map(FacetView::Plain),
+        }
+    }
+
+    fn element_map(&self, array_key: &JsonPath) -> Option<&ElementMap> {
+        match self {
+            FieldIndex::Nested(index) => FieldIndexRead::element_map(index.as_ref(), array_key),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => None,
+        }
+    }
+
+    fn element_condition_checker<'a>(
+        &'a self,
+        array_key: &JsonPath,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
+        match self {
+            FieldIndex::Nested(index) => index.element_condition_checker(array_key, condition),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => Ok(None),
         }
     }
 }
