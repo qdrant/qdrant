@@ -5,29 +5,44 @@ use futures::future::BoxFuture;
 
 use crate::universal_io::cached_fs::FileInfo;
 use crate::universal_io::traits::append::UniversalAppend;
+use crate::universal_io::traits::async_io::UniversalReadFsAsync;
 use crate::universal_io::traits::open_extra::OpenExtra;
 use crate::universal_io::traits::read::UniversalRead;
 use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 
-/// Filesystem-level handle for read-only operations.
+/// Filesystem-level handle for read-only operations: listing, probing and
+/// opening files for reading.
 ///
 /// Constructed once per backend instance from a
 /// [`Self::ContextConfig`] (e.g. a bucket name + credentials for S3, an
-/// `Arc<CacheController>` for the block cache, or `()` for local mmap)
-/// and used to list/probe the filesystem.
-///
-/// Deliberately does NOT depend on [`UniversalRead`] or `UniversalWrite`:
-/// a backend can implement this trait to expose metadata-style operations
-/// without ever opening file handles. The "open files" capability lives on
-/// the [`UniversalReadFs`] subtrait, and mutating operations live on the
-/// [`UniversalWriteFileOps`] subtrait.
+/// `Arc<CacheController>` for the block cache, or `()` for local mmap).
+/// Mutating operations live on the [`UniversalWriteFs`] subtrait.
 ///
 /// Handles are cheap to clone and shareable across threads, e.g. to move
 /// them into background flushers. They own their resources (`'static`), so
 /// futures built from a cloned handle can be parked or spawned.
-///
-/// [`UniversalWrite`]: super::UniversalWrite
-pub trait UniversalReadFileOps: Clone + Debug + Send + Sync + Sized + 'static {
+pub trait UniversalReadFs: Clone + Debug + Send + Sync + Sized + 'static {
+    /// File handle type produced by [`Self::open`].
+    ///
+    /// Deliberately NOT pinned back to `Self` (no `Fs = Self` bound):
+    /// several filesystems may produce the same file type. The canonical
+    /// backend for a file type is still unique — [`UniversalRead::Fs`]
+    /// names it — but wrappers like
+    /// [`CachedReadFs`](crate::universal_io::CachedReadFs) reuse the
+    /// wrapped backend's file type, so generic code bounded on
+    /// `UniversalReadFs<File = S>` accepts the raw backend and any such
+    /// wrapper interchangeably.
+    type File: UniversalRead;
+
+    /// Backend-specific per-open knobs.
+    ///
+    /// Universal options live on [`OpenOptions`]; backend-specific per-call
+    /// switches (e.g. `io_uring`'s `prevent_caching` → `O_DIRECT`) live
+    /// here. Generic callers pass `Default::default()` and chain
+    /// [`OpenExtra`] setters (e.g. [`OpenExtra::with_prevent_caching`]) for
+    /// behaviors that have universal meaning across backends.
+    type OpenExtra: OpenExtra + Send;
+
     /// Implementation-specific construction config. Backends are free to
     /// require explicit construction; callers that want to opt into the
     /// `<Fs::ContextConfig>::default()` pattern must constrain
@@ -49,25 +64,34 @@ pub trait UniversalReadFileOps: Clone + Debug + Send + Sync + Sized + 'static {
     /// Check whether a file exists at the given path.
     fn exists(&self, path: &Path) -> UioResult<bool>;
 
+    /// Open a file for reading.
+    ///
+    /// `path` is interpreted relative to whatever the backend instance
+    /// considers its root (a local directory, an S3 bucket, etc.).
+    fn open(
+        &self,
+        path: impl AsRef<Path>,
+        options: OpenOptions,
+        extra: Self::OpenExtra,
+    ) -> UioResult<Self::File>;
+
     // When adding provided methods, don't forget to update impls in
     // `crate::universal_io::wrappers::*`.
 }
 
 /// Filesystem-level handle for mutating operations.
 ///
-/// Extends [`UniversalReadFileOps`] with create/remove/save operations and
+/// Extends [`UniversalReadFs`] with create/remove/save operations and
 /// with opening append handles ([`Self::open_append`]). Read-only backends
 /// (e.g. `ReadOnlyFs`, the disk caches) implement only the read side, making
 /// the absence of write support a compile-time property instead of a runtime
 /// error.
-pub trait UniversalWriteFileOps: UniversalReadFileOps {
+pub trait UniversalWriteFs: UniversalReadFs {
     /// File handle type produced by [`Self::open_append`].
     ///
-    /// Deliberately not tied to [`UniversalReadFs::File`]: the two capabilities
-    /// live on independent traits, so a backend may serve reads through one
-    /// handle type and appends through another (and a filesystem that opens no
-    /// read handles at all still names an append handle here). Backends whose
-    /// read handle appends — every local one — simply name it twice.
+    /// Deliberately not tied to [`UniversalReadFs::File`]: a backend may serve
+    /// reads through one handle type and appends through another. Backends
+    /// whose read handle appends — every local one — simply name it twice.
     type AppendFile: UniversalAppend;
 
     /// Create or truncate a file at the given path.
@@ -113,44 +137,6 @@ pub trait UniversalWriteFileOps: UniversalReadFileOps {
     // `crate::universal_io::wrappers::*`.
 }
 
-/// Filesystem handle that can open files for reading.
-///
-/// Extends [`UniversalReadFileOps`] (list/exists) with the ability to open
-/// a single file handle implementing [`UniversalRead`].
-pub trait UniversalReadFs: UniversalReadFileOps {
-    /// File handle type produced by [`Self::open`].
-    ///
-    /// Deliberately NOT pinned back to `Self` (no `Fs = Self` bound):
-    /// several filesystems may produce the same file type. The canonical
-    /// backend for a file type is still unique — [`UniversalRead::Fs`]
-    /// names it — but wrappers like
-    /// [`CachedReadFs`](crate::universal_io::CachedReadFs) reuse the
-    /// wrapped backend's file type, so generic code bounded on
-    /// `UniversalReadFs<File = S>` accepts the raw backend and any such
-    /// wrapper interchangeably.
-    type File: UniversalRead;
-
-    /// Backend-specific per-open knobs.
-    ///
-    /// Universal options live on [`OpenOptions`]; backend-specific per-call
-    /// switches (e.g. `io_uring`'s `prevent_caching` → `O_DIRECT`) live
-    /// here. Generic callers pass `Default::default()` and chain
-    /// [`OpenExtra`] setters (e.g. [`OpenExtra::with_prevent_caching`]) for
-    /// behaviors that have universal meaning across backends.
-    type OpenExtra: OpenExtra + Send;
-
-    /// Open a file for reading.
-    ///
-    /// `path` is interpreted relative to whatever the backend instance
-    /// considers its root (a local directory, an S3 bucket, etc.).
-    fn open(
-        &self,
-        path: impl AsRef<Path>,
-        options: OpenOptions,
-        extra: Self::OpenExtra,
-    ) -> UioResult<Self::File>;
-}
-
 /// Capability extension over [`UniversalReadFs`]: a filesystem that snapshots
 /// its file listing and serves opens from explicitly prefetched handles.
 ///
@@ -158,6 +144,11 @@ pub trait UniversalReadFs: UniversalReadFileOps {
 /// only callable when the caller opens through a caching filesystem;
 /// plain-`UniversalReadFs` open paths never see these methods.
 pub trait CachedReadFs: UniversalReadFs {
+    type Inner: UniversalReadFsAsync<File = Self::File>;
+
+    /// The wrapped inner filesystem.
+    fn inner(&self) -> &Self::Inner;
+
     /// Take the file listing snapshot. From this point on, listing and
     /// existence checks are answered locally and opens of unlisted paths
     /// fail with `NotFound` without touching the underlying filesystem.
@@ -196,6 +187,21 @@ pub trait CachedReadFs: UniversalReadFs {
     /// driven after the `&self` borrow ends.
     fn wait_all(&self) -> impl Future<Output = ()> + Send + 'static + use<Self>;
 
+    /// The error of a prefetched open that failed, for a caller that waited on
+    /// [`Self::wait_all`] and must not apply a reload whose files did not arrive.
+    /// Only opens of listed paths count: an unlisted path's `NotFound` is the
+    /// expected answer to a probe for an optional file.
+    fn prefetch_error(&self) -> UioResult<()>;
+
+    /// Drop every prefetched handle without rotating the listing snapshot, so
+    /// the next round schedules every open again against its own snapshot.
+    /// For a round that was staged but will not be applied.
+    fn discard_prefetched(&self);
+
     /// Return the file info from the current snapshot.
     fn cached_file_info(&self, path: &Path) -> Option<FileInfo>;
+
+    /// Return true if the file existed in both the previous and current
+    /// snapshot and its metadata (size, last modified, etag) has not changed.
+    fn is_file_unchanged(&self, path: &Path) -> bool;
 }

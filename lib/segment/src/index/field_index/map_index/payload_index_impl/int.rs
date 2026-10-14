@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::Blob;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::reason;
 use common::types::PointOffsetType;
 
 use super::super::MapIndex;
@@ -49,17 +49,15 @@ impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition, hw_counter)
+        filter_impl(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(estimate_cardinality_impl(self, condition, hw_counter))
+        Ok(estimate_cardinality_impl(self, condition))
     }
 
     fn for_each_payload_block(
@@ -74,10 +72,8 @@ impl PayloadFieldIndexRead for MapIndex<IntPayloadType> {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(condition_checker_impl(self, condition, hw_acc)
-            .map(ConditionCheckerEnum::MapIntWritable))
+        Ok(condition_checker_impl(self, condition).map(ConditionCheckerEnum::MapIntWritable))
     }
 }
 
@@ -92,17 +88,15 @@ where
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition, hw_counter)
+        filter_impl(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        Ok(estimate_cardinality_impl(self, condition, hw_counter))
+        Ok(estimate_cardinality_impl(self, condition))
     }
 
     fn for_each_payload_block(
@@ -117,9 +111,8 @@ where
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        Ok(condition_checker_impl(self, condition, hw_acc).map(S::condition_checker_map_int))
+        Ok(condition_checker_impl(self, condition).map(S::condition_checker_map_int))
     }
 }
 
@@ -129,14 +122,11 @@ where
 fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     index: &'a T,
     condition: &'a FieldCondition,
-    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
     let result: Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
             ValueVariants::String(_) => None,
-            ValueVariants::Integer(integer) => {
-                Some(Box::new(index.get_iterator(integer, hw_counter)))
-            }
+            ValueVariants::Integer(integer) => Some(Box::new(index.get_iterator(integer))),
             ValueVariants::Bool(_) => None,
         },
         Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
@@ -147,13 +137,11 @@ fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
                     None
                 }
             }
-            AnyVariants::Integers(integers) => {
-                Some(index.iter_for_values(integers.iter(), hw_counter)?)
-            }
+            AnyVariants::Integers(integers) => Some(index.iter_for_values(integers.iter())?),
         },
         Some(Match::Except(MatchExcept { except })) => match except {
             AnyVariants::Strings(_) => None,
-            AnyVariants::Integers(integers) => Some(index.except_set(integers, hw_counter)?),
+            AnyVariants::Integers(integers) => Some(index.except_set(integers)?),
         },
         _ => None,
     };
@@ -164,13 +152,12 @@ fn filter_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
 fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     index: &'a T,
     condition: &FieldCondition,
-    hw_counter: &HardwareCounterCell,
 ) -> Option<CardinalityEstimation> {
     match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
             ValueVariants::String(_) => None,
             ValueVariants::Integer(integer) => {
-                let mut estimation = index.match_cardinality(integer, hw_counter);
+                let mut estimation = index.match_cardinality(integer);
                 estimation
                     .primary_clauses
                     .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -191,7 +178,7 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
             AnyVariants::Integers(integers) => {
                 let estimations = integers
                     .iter()
-                    .map(|integer| index.match_cardinality(integer, hw_counter))
+                    .map(|integer| index.match_cardinality(integer))
                     .collect::<Vec<_>>();
                 let estimation = if estimations.is_empty() {
                     CardinalityEstimation::exact(0)
@@ -207,9 +194,7 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
         },
         Some(Match::Except(MatchExcept { except })) => match except {
             AnyVariants::Strings(_) => None,
-            AnyVariants::Integers(integers) => {
-                Some(index.except_cardinality(integers.iter(), hw_counter))
-            }
+            AnyVariants::Integers(integers) => Some(index.except_cardinality(integers.iter())),
         },
         _ => None,
     }
@@ -222,10 +207,11 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
     index.for_each_value(|value| {
-        let count = index
-            // Only used in HNSW building so no measurement needed here.
-            .get_count_for_value(value, &HardwareCounterCell::disposable())
-            .unwrap_or(0);
+        let count = ambient::unmeasured(
+            reason("Only used in HNSW building so no measurement needed here."),
+            || index.get_count_for_value(value),
+        )
+        .unwrap_or(0);
         if count >= threshold {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_match(key.clone(), (*value).into()),
@@ -239,7 +225,6 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, IntPayloadType>>(
 fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
     index: &'a T,
     condition: &FieldCondition,
-    hw_acc: HwMeasurementAcc,
 ) -> Option<MapConditionChecker<'a, IntPayloadType, T>> {
     // Destructure explicitly (no `..`) so a new field added to
     // `FieldCondition` forces this method to be revisited.
@@ -256,17 +241,16 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
     } = condition;
 
     let cond_match = r#match.as_ref()?;
-    let hw_counter = hw_acc.get_counter_cell();
     match cond_match {
         Match::Value(MatchValue {
             value: ValueVariants::Integer(value),
-        }) => Some(index.match_value_checker(hw_counter, *value)),
+        }) => Some(index.match_value_checker(*value)),
         Match::Any(MatchAny {
             any: AnyVariants::Integers(list),
-        }) => Some(index.match_any_checker(hw_counter, list.clone(), false)),
+        }) => Some(index.match_any_checker(list.clone(), false)),
         Match::Except(MatchExcept {
             except: AnyVariants::Integers(list),
-        }) => Some(index.match_any_checker(hw_counter, list.clone(), true)),
+        }) => Some(index.match_any_checker(list.clone(), true)),
         // Conditions this index can't serve.
         Match::Value(MatchValue {
             value: ValueVariants::String(_) | ValueVariants::Bool(_),

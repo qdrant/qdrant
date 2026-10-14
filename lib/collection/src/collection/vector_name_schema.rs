@@ -4,7 +4,8 @@
 
 use std::num::NonZeroU64;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use segment::data_types::vector_name_config::{
     DenseVectorConfig, SparseVectorConfig, VectorNameConfig,
 };
@@ -24,12 +25,12 @@ impl Collection {
         &self,
         vector_name: VectorNameBuf,
         config: VectorNameConfig,
-        hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<()> {
-        self.update_collection_vector_config(|params| {
-            add_vector_to_config(params, &vector_name, &config)
-        })
-        .await?;
+        let params_changed = self
+            .update_collection_vector_config(|params| {
+                add_vector_to_config(params, &vector_name, &config)
+            })
+            .await?;
 
         let operation = CollectionUpdateOperations::VectorNameOperation(
             VectorNameOperations::CreateVectorName(CreateVectorName {
@@ -38,8 +39,9 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(operation, WaitUntil::from(false), hw_acc, true)
-            .await?;
+        let update_result = self
+            .update_all_local(operation, WaitUntil::from(false), true)
+            .await;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` picks up the
         // new vector schema. Otherwise optimization-built destination segments use the
@@ -48,8 +50,16 @@ impl Collection {
         // Done in the background: this path is reached from consensus, where blocking can stall the
         // whole cluster. The refresh itself is unchanged - it already ran on a spawned task either
         // way - so this does not widen the window in which the stale config is in effect.
-        self.recreate_optimizers_background();
+        //
+        // Skipped if the vector already existed with the same schema: recreating optimizers
+        // cancels in-flight optimizations, and clients may re-send the same request on every run.
+        // So it must not be skipped if the shard update fails: a retry would see unchanged params,
+        // while some shards may have applied the new vector already.
+        if params_changed {
+            self.recreate_optimizers_background();
+        }
 
+        update_result?;
         Ok(())
     }
 
@@ -67,9 +77,9 @@ impl Collection {
         self.update_all_local(
             operation,
             WaitUntil::from(true),
-            HwMeasurementAcc::disposable(),
             true, // Delete even in dead shards
         )
+        .unmeasured(reason("Schema changes aren't measured"))
         .await?;
 
         // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the
@@ -84,14 +94,17 @@ impl Collection {
     }
 
     /// Apply a mutation to collection params and persist.
+    ///
+    /// Returns `true` if the mutation changed the params.
     async fn update_collection_vector_config(
         &self,
         mutate: impl FnOnce(&mut crate::config::CollectionParams) -> CollectionResult<()>,
-    ) -> CollectionResult<()> {
+    ) -> CollectionResult<bool> {
         let mut config = self.collection_config.write().await;
+        let params_before = config.params.clone();
         mutate(&mut config.params)?;
         config.save(&self.path)?;
-        Ok(())
+        Ok(config.params != params_before)
     }
 }
 
@@ -250,5 +263,9 @@ fn storage_datatype_to_collection(
         }
         segment::types::VectorStorageDatatype::Uint8 => crate::operations::types::Datatype::Uint8,
         segment::types::VectorStorageDatatype::Turbo4 => crate::operations::types::Datatype::Turbo4,
+        segment::types::VectorStorageDatatype::Turbo8 => crate::operations::types::Datatype::Turbo8,
+        segment::types::VectorStorageDatatype::Turbo16 => {
+            crate::operations::types::Datatype::Turbo16
+        }
     }
 }

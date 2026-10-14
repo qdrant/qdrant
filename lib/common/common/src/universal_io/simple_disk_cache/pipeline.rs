@@ -2,12 +2,10 @@ use std::cell::OnceCell;
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::sync::Arc;
-use std::time::Instant;
 
 use slab::Slab;
 
 use super::placeholder::{Placeholder, PlaceholderGuard, PlaceholderResult, WaitResult};
-use super::stats::FetchStats;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
@@ -31,7 +29,6 @@ where
 {
     file: &'file DiskCache<R>,
     guard: PlaceholderGuard,
-    fetch: FetchStats,
 }
 
 impl<'file, R: UniversalRead> RemoteFetch<'file, R> {
@@ -145,12 +142,7 @@ unsafe fn commit_and_complete<'file, R>(fetch: RemoteFetch<'file, R>, bytes: &[u
 where
     R: DiskCacheRemote,
 {
-    let RemoteFetch {
-        file,
-        guard,
-        fetch: timing,
-    } = fetch;
-    timing.complete(bytes.len());
+    let RemoteFetch { file, guard } = fetch;
 
     let local = file.state()?.local;
 
@@ -216,7 +208,6 @@ where
     {
         let remote_pipeline = Self::get_or_init_remote_pipeline(&mut self.remote_pipeline)?;
         let entry = self.in_flight.vacant_entry();
-        let started = Instant::now();
         let placeholder = guard.placeholder().clone();
         let state = file.state()?;
 
@@ -236,11 +227,7 @@ where
             )?;
         }
 
-        entry.insert(RemoteFetch {
-            file,
-            guard,
-            fetch: file.stats.fetch(started),
-        });
+        entry.insert(RemoteFetch { file, guard });
 
         Ok(placeholder)
     }

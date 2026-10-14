@@ -1,15 +1,14 @@
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::reason::reason;
 use common::types::PointOffsetType;
 
 use super::{FINISH_MAIN_GRAPH_LOG_MESSAGE, SINGLE_THREADED_HNSW_BUILD_THRESHOLD};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
-use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::hnsw_index::HnswM;
-use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::gpu::get_gpu_groups_count;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::{
@@ -19,8 +18,6 @@ use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::index::query_optimization::optimized_filter::OptimizedFilter;
-use crate::index::visited_pool::VisitedListHandle;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
@@ -76,14 +73,12 @@ fn build_main_graph_on_gpu(
     stopped: &AtomicBool,
 ) -> OperationResult<Option<GraphLayersBuilder>> {
     let points_scorer_builder = |vector_id| {
-        let hardware_counter = HardwareCounterCell::disposable();
         FilteredScorer::new_internal(
             vector_id,
             vector_storage,
             quantized_vectors.as_ref(),
             None,
             id_tracker.deleted_point_bitslice(),
-            hardware_counter,
         )
     };
 
@@ -112,36 +107,31 @@ fn build_main_graph_on_gpu(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn build_filtered_graph_on_gpu(
+/// Build one payload block on the GPU, linking its points only to each other. Points keep
+/// their segment ids, so `reference_graph` is segment-sized; only block points get links.
+pub(super) fn build_block_on_gpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
-    gpu_insert_context: Option<&mut GpuInsertContext<'_>>,
-    graph_layers_builder: &GraphLayersBuilder,
-    block_filter_list: &VisitedListHandle,
+    gpu_insert_context: &mut GpuInsertContext<'_>,
+    reference_graph: &GraphLayersBuilder,
     points_to_index: &[PointOffsetType],
     stopped: &AtomicBool,
 ) -> OperationResult<Option<GraphLayersBuilder>> {
+    // Searches start from block points and follow links between block points, so they cannot
+    // reach other points and need no block filter.
     build_graph_on_gpu(
-        gpu_insert_context,
-        graph_layers_builder,
+        Some(gpu_insert_context),
+        reference_graph,
         points_to_index.iter().copied(),
         1,
-        |block_point_id| -> OperationResult<_> {
-            let hardware_counter = HardwareCounterCell::disposable();
-            let block_condition_checker =
-                OptimizedFilter::from_checker(ConditionCheckerEnum::Build(BuildConditionChecker {
-                    filter_list: block_filter_list,
-                    current_point: block_point_id,
-                }));
+        |block_point_id| {
             FilteredScorer::new_internal(
                 block_point_id,
                 vector_storage,
                 quantized_vectors.as_ref(),
-                Some(block_condition_checker),
+                None,
                 id_tracker.deleted_point_bitslice(),
-                hardware_counter,
             )
         },
         stopped,
@@ -157,15 +147,20 @@ fn build_graph_on_gpu<'a, 'b>(
     stopped: &AtomicBool,
 ) -> OperationResult<Option<GraphLayersBuilder>> {
     if let Some(gpu_insert_context) = gpu_insert_context {
-        let gpu_constructed_graph = build_hnsw_on_gpu(
-            gpu_insert_context,
-            graph_layers_builder,
-            get_gpu_groups_count(),
-            entry_points_num,
-            SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
-            points_to_index.collect::<Vec<_>>(),
-            points_scorer_builder,
-            stopped,
+        let gpu_constructed_graph = ambient::unmeasured(
+            reason("internal operation, the scorers are used within this call"),
+            || {
+                build_hnsw_on_gpu(
+                    gpu_insert_context,
+                    graph_layers_builder,
+                    get_gpu_groups_count(),
+                    entry_points_num,
+                    SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
+                    points_to_index.collect::<Vec<_>>(),
+                    points_scorer_builder,
+                    stopped,
+                )
+            },
         );
 
         // GPU construction does not return an error. If it fails, it will fall back to CPU.

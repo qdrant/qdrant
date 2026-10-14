@@ -4,7 +4,7 @@
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -37,11 +37,11 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
@@ -153,13 +153,13 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
 
     let id_tracker = create_id_tracker_fixture(points.len());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     {
         let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
         {
             points.iter().enumerate().for_each(|(i, vec)| {
                 storage2
-                    .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+                    .insert_vector(i as PointOffsetType, vec.as_slice().into())
                     .unwrap();
                 if delete_mask[i] {
                     storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -216,11 +216,11 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     ];
     let mut id_tracker = create_id_tracker_fixture(points.len());
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
@@ -257,7 +257,6 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         None::<&QuantizedVectors>,
         None,
         id_tracker.deleted_point_bitslice(),
-        HardwareCounterCell::new(),
     )
     .unwrap();
 
@@ -268,7 +267,6 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         None,
         2,
         id_tracker.deleted_point_bitslice(),
-        HardwareCounterCell::new(),
     )
     .unwrap();
     let closest = searcher
@@ -282,10 +280,12 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
 
     let raw_res1 = raw_scorer
         .score_points(&mut query_points.clone(), 0)
+        .unwrap()
         .collect::<Vec<_>>();
 
     let raw_res2 = raw_scorer
         .score_points(&mut query_points.clone(), 0)
+        .unwrap()
         .collect::<Vec<_>>();
 
     assert_eq!(raw_res1, raw_res2);
@@ -315,10 +315,10 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         vec![1.0, 0.0, 0.0, 0.0],
     ];
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
+            .insert_vector(i as PointOffsetType, vec.as_slice().into())
             .unwrap();
     }
 
@@ -348,13 +348,11 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     .unwrap();
 
     let query: QueryVector = vec![0.5, 0.5, 0.5, 0.5].into();
-    let scorer_quant = quantized_vectors
-        .raw_scorer(query.clone(), HardwareCounterCell::new())
-        .unwrap();
-    let scorer_orig = new_raw_scorer(query.clone(), storage, HardwareCounterCell::new()).unwrap();
+    let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
+    let scorer_orig = new_raw_scorer(query.clone(), storage).unwrap();
     for i in 0..5 {
-        let quant = scorer_quant.score_point(i);
-        let orig = scorer_orig.score_point(i);
+        let quant = scorer_quant.score_point(i).unwrap();
+        let orig = scorer_orig.score_point(i).unwrap();
         assert!((orig - quant).abs() < 0.15);
 
         let quant = scorer_quant.score_internal(0, i);
@@ -372,13 +370,11 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     assert_eq!(files, storage.files());
     assert_eq!(quantization_files, quantized_vectors.files());
 
-    let scorer_quant = quantized_vectors
-        .raw_scorer(query.clone(), HardwareCounterCell::new())
-        .unwrap();
-    let scorer_orig = new_raw_scorer(query, storage, HardwareCounterCell::new()).unwrap();
+    let scorer_quant = quantized_vectors.raw_scorer(query.clone()).unwrap();
+    let scorer_orig = new_raw_scorer(query, storage).unwrap();
     for i in 0..5 {
-        let quant = scorer_quant.score_point(i);
-        let orig = scorer_orig.score_point(i);
+        let quant = scorer_quant.score_point(i).unwrap();
+        let orig = scorer_orig.score_point(i).unwrap();
         assert!((orig - quant).abs() < 0.15);
 
         let quant = scorer_quant.score_internal(0, i);

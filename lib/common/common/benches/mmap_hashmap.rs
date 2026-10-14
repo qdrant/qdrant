@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use common::bench_cache::{build_once, cache_path};
 use common::persisted_hashmap::{MmapHashMap, UniversalHashMap, serialize_hashmap};
-use common::universal_io::{OpenOptions, UniversalIoError, UniversalReadFileOps};
+use common::universal_io::{OpenOptions, UniversalIoError, UniversalReadFs};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};

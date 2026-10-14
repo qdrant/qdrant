@@ -7,6 +7,11 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     labels: [dependencies]
+    # One PR for all minor and patch bumps: each merged Cargo.lock change makes every Rust CI job
+    # save a new ~1.3 GB cache copy, so separate PRs merged in a row flood the Actions cache
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
   - package-ecosystem: "github-actions"
     target-branch: "dev"
     directory: "/"

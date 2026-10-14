@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::reason::Reason;
 use common::universal_io::{MmapFs, UniversalAppendFs, UniversalWriteFsAsync};
 use futures::StreamExt as _;
 use parking_lot::RwLock;
@@ -25,7 +26,7 @@ impl UpdateOnlyEdgeShard<MmapFs> {
     /// scanning the `segments/` directory — the writer owns the directory it
     /// writes to, so there is no manifest to agree with.
     pub fn open_mmap(path: &Path) -> OperationResult<Self> {
-        Self::open(MmapFs, path, LocalSegmentEnumerator::new(path))
+        Self::open(MmapFs, path, LocalSegmentEnumerator::new(path), None)
     }
 }
 
@@ -42,11 +43,19 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// unopened until a point is actually stored. A segment that fails to load
     /// is an error, not a skip — a writer that misses a segment would resolve
     /// a point against a stale copy of itself, or duplicate it.
+    ///
+    /// `deferred_threshold_kb` is the deferred-points threshold of the shard,
+    /// in KB like the indexing threshold, as readers and the rebuilder apply
+    /// it. A point stored past it is deferred, so its previous copies in other
+    /// segments are kept visible instead of retired (see
+    /// [`PointApplyRecord::shadowed`](crate::PointApplyRecord::shadowed)).
     pub fn open(
         fs: Fs,
         path: &Path,
         enumerator: impl SegmentEnumerator + 'static,
+        deferred_threshold_kb: Option<usize>,
     ) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         // Sized like the search pools: over-provisioned relative to the CPU
         // count, since on a remote backend the threads mostly wait on IO.
         let pool = build_segment_pool(
@@ -57,24 +66,25 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
 
         let segments: Vec<(Uuid, ListedSegment)> =
             enumerator.list_segments()?.into_iter().collect();
-        let opened: Vec<_> = pool.install(|| {
-            segments
-                .into_par_iter()
-                .map(|(uuid, listing)| {
-                    let ListedSegment { path, writable } = listing;
-                    // No deferred threshold yet: it belongs to the coordination
-                    // with an external rebuilder, which does not exist in this
-                    // iteration.
-                    let segment = LookupSegment::open(fs.clone(), &path, None)?;
-                    let writer = UpdateOnlySegmentEnum::open(
-                        fs.clone(),
-                        &path,
-                        &segment.segment_config,
-                        segment.writer_state(),
-                    )?;
-                    Ok((uuid, segment, writer, writable))
-                })
-                .collect::<OperationResult<Vec<_>>>()
+        let opened: Vec<_> = ambient::parallel(|handoff| {
+            pool.install(|| {
+                segments
+                    .into_par_iter()
+                    .map(|(uuid, listing)| {
+                        let _scope = handoff.enter_guard();
+                        let ListedSegment { path, writable } = listing;
+                        let segment =
+                            LookupSegment::open(fs.clone(), &path, deferred_threshold_kb)?;
+                        let writer = UpdateOnlySegmentEnum::open(
+                            fs.clone(),
+                            &path,
+                            &segment.segment_config,
+                            segment.writer_state(),
+                        )?;
+                        Ok((uuid, segment, writer, writable))
+                    })
+                    .collect::<OperationResult<Vec<_>>>()
+            })
         })?;
 
         let mut holder = LookupSegmentHolder::default();
@@ -90,6 +100,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             segments: RwLock::new(holder),
             writers,
             pool,
+            deferred_threshold_kb,
         })
     }
 }
@@ -137,9 +148,9 @@ where
             .map_err(|err| OperationError::service_error(format!("create scratch dir: {err}")))?;
         let (mut segment, token) = build_segment(scratch.path(), config, None, true)?;
         let uuid = token.id();
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         for (key, schema) in indexed_fields {
-            segment.create_field_index(0, key, Some(schema), &hw_counter)?;
+            segment.create_field_index(0, key, Some(schema))?;
         }
         segment.flush(true)?;
         let local = segment.data_path();
@@ -148,7 +159,8 @@ where
         let remote = self.path.join(SEGMENTS_PATH).join(uuid.to_string());
         futures::executor::block_on(copy_dir(&self.fs, &local, &remote))?;
 
-        let lookup = LookupSegment::<Fs>::open(self.fs.clone(), &remote, None)?;
+        let lookup =
+            LookupSegment::<Fs>::open(self.fs.clone(), &remote, self.deferred_threshold_kb)?;
         let writer = UpdateOnlySegmentEnum::open(
             self.fs.clone(),
             &remote,

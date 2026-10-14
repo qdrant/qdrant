@@ -15,14 +15,28 @@ use crate::common::inference::api_keys::InferenceToken;
 type Request<Body> = http::Request<Body>;
 type Response<Body> = http::Response<Body>;
 
+/// Which gRPC API the auth layer guards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthScope {
+    /// Public API: read-write keys, the read-only key and JWTs are all accepted,
+    /// and the resulting `Access` is enforced per request by the handlers.
+    Public,
+
+    /// Internal (p2p) API: only the read-write keys are accepted. Consensus and
+    /// shard traffic never checks `Access` per request, so the key is the gate.
+    Internal,
+}
+
 #[derive(Clone)]
 pub struct AuthMiddleware<S> {
     auth_keys: Arc<AuthKeys>,
+    scope: AuthScope,
     service: S,
 }
 
 async fn check<Body>(
     auth_keys: Arc<AuthKeys>,
+    scope: AuthScope,
     mut req: Request<Body>,
 ) -> Result<Request<Body>, Status>
 where
@@ -70,17 +84,21 @@ where
     }
 
     let headers = req.headers();
-    let (access, inference_token, auth_type, subject) = auth_keys
-        .validate_request(move |key| headers.get(key).and_then(|val| val.to_str().ok()))
-        .await
-        .map_err(|e| {
-            log_denied_auth(path, remote.clone(), tracing_id.clone(), &e);
-            match e {
-                AuthError::Unauthorized(e) => Status::unauthenticated(e),
-                AuthError::Forbidden(e) => Status::permission_denied(e),
-                AuthError::StorageError(e) => Status::from(e),
-            }
-        })?;
+    let get_header = move |key| headers.get(key).and_then(|val| val.to_str().ok());
+    let validated = match scope {
+        AuthScope::Public => auth_keys.validate_request(get_header).await,
+        AuthScope::Internal => auth_keys
+            .validate_internal_request(get_header)
+            .map(|(access, auth_type)| (access, InferenceToken(None), auth_type, None)),
+    };
+    let (access, inference_token, auth_type, subject) = validated.map_err(|e| {
+        log_denied_auth(path, remote.clone(), tracing_id.clone(), &e);
+        match e {
+            AuthError::Unauthorized(e) => Status::unauthenticated(e),
+            AuthError::Forbidden(e) => Status::permission_denied(e),
+            AuthError::StorageError(e) => Status::from(e),
+        }
+    })?;
 
     let auth = Auth::new(access, subject, remote, auth_type, tracing_id).with_api(path.to_string());
 
@@ -118,10 +136,11 @@ where
 
     fn call(&mut self, request: Request<ReqBody>) -> Self::Future {
         let auth_keys = self.auth_keys.clone();
+        let scope = self.scope;
         let mut service = self.service.clone();
 
         Box::pin(async move {
-            match check(auth_keys, request).await {
+            match check(auth_keys, scope, request).await {
                 Ok(req) => service.call(req).await,
                 Err(e) => Ok(e.into_http()),
             }
@@ -132,12 +151,23 @@ where
 #[derive(Clone)]
 pub struct AuthLayer {
     auth_keys: Arc<AuthKeys>,
+    scope: AuthScope,
 }
 
 impl AuthLayer {
+    /// Auth layer for the public gRPC API.
     pub fn new(auth_keys: AuthKeys) -> Self {
         Self {
             auth_keys: Arc::new(auth_keys),
+            scope: AuthScope::Public,
+        }
+    }
+
+    /// Auth layer for the internal (p2p) gRPC API, accepting read-write keys only.
+    pub fn new_internal(auth_keys: AuthKeys) -> Self {
+        Self {
+            auth_keys: Arc::new(auth_keys),
+            scope: AuthScope::Internal,
         }
     }
 }
@@ -148,6 +178,7 @@ impl<S> Layer<S> for AuthLayer {
     fn layer(&self, service: S) -> Self::Service {
         Self::Service {
             auth_keys: self.auth_keys.clone(),
+            scope: self.scope,
             service,
         }
     }

@@ -2,9 +2,10 @@
 //! indices — generic over the packing width and the query precision.
 //!
 //! [`QuerySimd<PLANES, QUERY_BYTES>`] scores against vectors whose codes are
-//! packed `PLANES` per byte: two 4-bit codes, four 2-bit codes or eight
-//! 1-bit codes (`PLANES = 8 / bits`).  The widths differ only in their
-//! integer codebook (see [`Encoding`]); the query layout, the scalar
+//! packed `PLANES` per byte: one 8-bit code, two 4-bit codes, four 2-bit
+//! codes or eight 1-bit codes (`PLANES = 8 / bits`).  The widths differ only
+//! in their integer codebook (see [`Encoding`]) — the 8-bit width has none,
+//! its code is the value (see `query8bit`); the query layout, the scalar
 //! reference and every SIMD kernel are shared.
 //!
 //! # Query layout
@@ -39,7 +40,7 @@
 //!   keeps full i8 bytes.  The offset contributes a per-query bias
 //!   `offset · Σ q_signed`, subtracted once per vector.
 
-use super::{SimdBackend, query1bit, query2bit, query4bit};
+use super::{SimdBackend, query1bit, query2bit, query4bit, query8bit};
 
 /// Codebook entry in the storage form the kernels multiply: signed on
 /// aarch64 (`vmull_s8` / `SDOT`), unsigned everywhere else (`maddubs` /
@@ -84,12 +85,30 @@ pub(crate) const fn pad_codebook<const N: usize>(codebook: [Code; N]) -> [Code; 
 /// The encoding of the width packing `planes` codes per byte.
 const fn encoding(planes: usize) -> Encoding {
     match planes {
+        1 => query8bit::ENCODING,
         2 => query4bit::ENCODING,
         4 => query2bit::ENCODING,
         8 => query1bit::ENCODING,
-        _ => panic!("QuerySimd: PLANES must be 2, 4 or 8"),
+        _ => panic!("QuerySimd: PLANES must be 1, 2, 4 or 8"),
     }
 }
+
+/// The arch-native value of code `k` of the packed data `byte` — a
+/// codebook lookup, or for the 8-bit width (no codebook) the byte itself.
+#[inline(always)]
+fn code_value<const PLANES: usize>(byte: u8, k: usize) -> Code {
+    if PLANES == 1 {
+        return query8bit::code_value(byte);
+    }
+    let bits = 8 / PLANES;
+    let code = (byte >> (k * bits)) & ((1u8 << bits) - 1);
+    encoding(PLANES).codebook[code as usize]
+}
+
+/// Longest 8-bit vector (bytes) the AVX2 batch kernel scores; longer ones go
+/// through the per-vector kernel (see `QuerySimd::dotprod_batch`).
+#[cfg(target_arch = "x86_64")]
+const AVX2_8BIT_BATCH_MAX_BYTES: usize = 512;
 
 /// Widest block of packed data bytes any kernel consumes at once (AVX-512:
 /// 64 bytes).  Every query plane is padded to a multiple of it.
@@ -219,9 +238,6 @@ pub struct QuerySimd<const PLANES: usize, const QUERY_BYTES: usize> {
 impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTES> {
     const ENCODING: Encoding = encoding(PLANES);
 
-    /// Bits per code.
-    const BITS: usize = 8 / PLANES;
-
     /// Radix of the query bytes.
     const RADIX: i64 = Self::ENCODING.query_high_coef;
 
@@ -324,6 +340,14 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
         match self.backend {
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx512Vnni => unsafe { self.dotprod_batch_avx512_vnni(data, stride, out) },
+            // Long 8-bit vectors score faster one call at a time on AVX2: the
+            // batch loop took 4-9x the cache misses of the per-vector loop over
+            // the same rows on some Zen 3 hosts (2.9x slower at 1536 dims) and
+            // was never faster above 512 bytes.
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx2 if PLANES == 1 && self.vector_bytes > AVX2_8BIT_BATCH_MAX_BYTES => {
+                self.dotprod_batch_per_vector(data, stride, out)
+            }
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx2 => unsafe { self.dotprod_batch_avx2(data, stride, out) },
             #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -387,13 +411,10 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
             vector.len(),
             self.vector_bytes,
         );
-        let encoding = Self::ENCODING;
-        let mask = (1u8 << Self::BITS) - 1;
         let mut sums = [0i64; QUERY_BYTES];
         for (j, &byte) in vector.iter().enumerate() {
             for k in 0..PLANES {
-                let code = (byte >> (k * Self::BITS)) & mask;
-                let c = i64::from(encoding.codebook[code as usize]);
+                let c = i64::from(code_value::<PLANES>(byte, k));
                 for (b, sum) in sums.iter_mut().enumerate() {
                     *sum += i64::from(self.planes.plane(b, k)[j]) * c;
                 }
@@ -466,6 +487,7 @@ mod tests {
     /// The width packing `PLANES` codes per byte.
     fn bits<const PLANES: usize>() -> TQBits {
         match PLANES {
+            1 => TQBits::Bits8,
             2 => TQBits::Bits4,
             4 => TQBits::Bits2,
             8 => TQBits::Bits1,
@@ -521,6 +543,7 @@ mod tests {
     #[case::matryoshka(135)]
     #[case::large_with_tail(1023)]
     fn test_dotprod_matches_float(#[case] bytes: usize) {
+        dotprod_matches_float::<1, 2>(bytes);
         dotprod_matches_float::<2, 2>(bytes * 2);
         dotprod_matches_float::<4, 2>(bytes * 4);
         dotprod_matches_float::<8, 1>(bytes * 8);
@@ -586,6 +609,7 @@ mod tests {
 
     #[test]
     fn test_simd_noise_below_pq_noise() {
+        simd_noise_below_pq_noise::<1, 2>();
         simd_noise_below_pq_noise::<2, 2>();
         simd_noise_below_pq_noise::<4, 2>();
         simd_noise_below_pq_noise::<8, 1>();
@@ -621,6 +645,7 @@ mod tests {
 
     #[test]
     fn test_dotprod_batch_matches_dotprod() {
+        dotprod_batch_matches_dotprod::<1, 2>();
         dotprod_batch_matches_dotprod::<2, 2>();
         dotprod_batch_matches_dotprod::<4, 2>();
         dotprod_batch_matches_dotprod::<8, 1>();

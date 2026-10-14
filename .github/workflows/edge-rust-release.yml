@@ -37,13 +37,13 @@ jobs:
 
       - name: Install mold
         if: startsWith(matrix.os, 'ubuntu')
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
 
       - name: Install Just
         uses: ./.github/actions/setup-just
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli
@@ -91,7 +91,7 @@ jobs:
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       - name: Install ast-grep
         run: uv tool install ast-grep-cli

@@ -1,7 +1,8 @@
 use std::time::{Duration, Instant};
 
 use blobstore::fixtures::{empty_storage, random_payload};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw::HwMetric;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::RngExt;
 use rand::rngs::SmallRng;
@@ -17,13 +18,13 @@ pub fn flush_bench(c: &mut Criterion) {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
             let mut rng = rand::make_rng::<SmallRng>();
-            let hw_counter = HardwareCounterCell::new();
-            let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+            let _scope = ambient::test_guard();
+            let hw_metric = HwMetric::PayloadIoWrite;
 
             // Pre-populate storage with sequential random data
             for i in 0..prepopulation_size {
                 let payload = random_payload(&mut rng, 1); // Small payload to speed up setup
-                storage.put_value(i, &payload, hw_counter_ref).unwrap();
+                storage.put_value(i, &payload, hw_metric).unwrap();
             }
 
             b.iter_custom(|iters| {
@@ -32,7 +33,7 @@ pub fn flush_bench(c: &mut Criterion) {
                     // apply sequential ids
                     for i in 0..*unflushed_updates {
                         let payload = random_payload(&mut rng, 1);
-                        storage.put_value(i, &payload, hw_counter_ref).unwrap();
+                        storage.put_value(i, &payload, hw_metric).unwrap();
                     }
 
                     // Benchmark the flush operation after accumulating updates
@@ -55,13 +56,13 @@ pub fn flush_bench(c: &mut Criterion) {
             // Setup: Create a storage with a specified number of records
             let (_dir, mut storage) = empty_storage();
             let mut rng = rand::make_rng::<SmallRng>();
-            let hw_counter = HardwareCounterCell::new();
-            let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+            let _scope = ambient::test_guard();
+            let hw_metric = HwMetric::PayloadIoWrite;
 
             // Pre-populate storage with random data
             for i in 0..prepopulation_size {
                 let payload = random_payload(&mut rng, 1); // Small payload to speed up setup
-                storage.put_value(i, &payload, hw_counter_ref).unwrap();
+                storage.put_value(i, &payload, hw_metric).unwrap();
             }
 
             b.iter_custom(|iters| {
@@ -71,7 +72,7 @@ pub fn flush_bench(c: &mut Criterion) {
                     for _ in 0..*unflushed_updates {
                         let id = rng.random_range(0..prepopulation_size);
                         let payload = random_payload(&mut rng, 1);
-                        storage.put_value(id, &payload, hw_counter_ref).unwrap();
+                        storage.put_value(id, &payload, hw_metric).unwrap();
                     }
 
                     // Benchmark the flush operation after accumulating updates

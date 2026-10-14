@@ -22,7 +22,7 @@ use api::grpc::transport_channel_pool::{MAX_GRPC_CHANNEL_TIMEOUT, PoolIntercepto
 use api::grpc::update_operation::Update;
 use api::grpc::{UpdateBatchInternal, UpdateOperation, WithPayloadSelector};
 use async_trait::async_trait;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::hw::{self, HardwareData};
 use common::types::{DeferredBehavior, TelemetryDetail};
 use itertools::Itertools;
 use parking_lot::Mutex;
@@ -34,7 +34,6 @@ use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
-use semver::Version;
 use shard::count::CountRequestInternal;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 use shard::retrieve::record_internal::RecordInternal;
@@ -112,14 +111,6 @@ impl RemoteShard {
             telemetry_search_durations: OperationDurationsAggregator::new(),
             telemetry_update_durations: OperationDurationsAggregator::new(),
         }
-    }
-
-    /// Checks that remote shard is at least at the given version
-    /// - Returns `true` if we know that the peer is at least at the given version
-    /// - Returns `false` if we know that the peer not at the given version or version is unknown
-    pub fn check_version(&self, version: &Version) -> bool {
-        self.channel_service
-            .peer_is_at_version(self.peer_id, version)
     }
 
     pub fn restore_snapshot(_snapshot_path: &Path) {
@@ -242,13 +233,17 @@ impl RemoteShard {
         }
     }
 
-    pub async fn initiate_transfer(&self) -> CollectionResult<CollectionOperationResponse> {
+    pub async fn initiate_transfer(
+        &self,
+        from_peer_id: PeerId,
+    ) -> CollectionResult<CollectionOperationResponse> {
         let res = self
             .with_collections_client(|mut client| async move {
                 client
                     .initiate(InitiateShardTransferRequest {
                         collection_name: self.collection_id.clone(),
                         shard_id: self.id,
+                        from_peer_id: Some(from_peer_id),
                     })
                     .await
             })
@@ -587,7 +582,6 @@ impl RemoteShard {
     pub async fn forward_update_batch(
         &self,
         batch_request: Arc<UpdateBatchInternal>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         let encoded = AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
             PreEncodedMessage::encode(&*batch_request)
@@ -605,7 +599,7 @@ impl RemoteShard {
             .into_inner();
 
         if let Some(hw_usage) = point_operation_response.hardware_usage {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         match point_operation_response.result {
@@ -625,7 +619,6 @@ impl RemoteShard {
         wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: WriteOrdering,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::execute_update_operation` is cancel safe, so this method is cancel safe.
 
@@ -636,7 +629,6 @@ impl RemoteShard {
             wait,
             timeout,
             Some(ordering),
-            hw_measurement_acc,
         )
         .await
     }
@@ -653,7 +645,6 @@ impl RemoteShard {
         wait: WaitUntil,
         timeout: Option<Duration>,
         ordering: Option<WriteOrdering>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // Cancelling remote request should always be safe on the client side and update API
         // *should be* cancel safe on the server side, so this method is cancel safe.
@@ -1034,7 +1025,7 @@ impl RemoteShard {
         };
 
         if let Some(hw_usage) = point_operation_response.hardware_usage {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         match point_operation_response.result {
@@ -1064,6 +1055,7 @@ impl RemoteShard {
         url: &Url,
         snapshot_priority: SnapshotPriority,
         api_key: Option<&str>,
+        from_peer_id: PeerId,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
             .with_shard_snapshots_client_timeout(
@@ -1080,6 +1072,7 @@ impl RemoteShard {
                             ) as i32,
                             checksum: None,
                             api_key: api_key.map(Into::into),
+                            from_peer_id: Some(from_peer_id),
                         })
                         .await
                 },
@@ -1262,7 +1255,6 @@ impl ShardOperation for RemoteShard {
         operation: OperationWithClockTag,
         wait: WaitUntil,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::execute_update_operation` is cancel safe, so this method is cancel safe.
 
@@ -1275,7 +1267,6 @@ impl ShardOperation for RemoteShard {
             wait,
             timeout,
             None,
-            hw_measurement_acc,
         )
         .await
     }
@@ -1285,7 +1276,6 @@ impl ShardOperation for RemoteShard {
         request: Arc<ScrollRequestInternal>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let processed_timeout = Self::process_read_timeout(timeout, "scroll")?;
         let ScrollRequestInternal {
@@ -1335,7 +1325,7 @@ impl ShardOperation for RemoteShard {
             .into_inner();
 
         if let Some(hw_usage) = scroll_response.usage.unwrap_or_default().hardware {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         let result: Result<Vec<RecordInternal>, Status> = scroll_response
@@ -1356,7 +1346,6 @@ impl ShardOperation for RemoteShard {
         _filter: Option<&Filter>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         _timeout: Option<Duration>,
-        _hw_measurement_acc: HwMeasurementAcc,
         _overwrite_deferred: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         debug_assert!(false, "RemoteShard does not support local_scroll_by_id");
@@ -1389,7 +1378,6 @@ impl ShardOperation for RemoteShard {
         batch_request: Arc<CoreSearchRequestBatch>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let processed_timeout = Self::process_read_timeout(timeout, "search")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -1427,7 +1415,7 @@ impl ShardOperation for RemoteShard {
         } = search_batch_response;
 
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = result
@@ -1458,7 +1446,6 @@ impl ShardOperation for RemoteShard {
         request: Arc<CountRequestInternal>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         // TODO(deferred): Find a solution for this parameter, and don't` simply ignore it. E.g. we might call `count` directly and remove the parameter from the trait signature.
         _deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
@@ -1494,7 +1481,7 @@ impl ShardOperation for RemoteShard {
         } = count_response;
 
         if let Some(hw_usage) = usage.unwrap_or_default().hardware {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         result.map_or_else(
@@ -1514,7 +1501,6 @@ impl ShardOperation for RemoteShard {
         with_vector: &WithVector,
         _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         // TODO(deferred): Find a solution for this parameter, and don't simply ignore it.
         _deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
@@ -1550,7 +1536,7 @@ impl ShardOperation for RemoteShard {
             .into_inner();
 
         if let Some(hw_usage) = get_response.usage.unwrap_or_default().hardware {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         let result: Result<Vec<RecordInternal>, Status> = get_response
@@ -1567,7 +1553,6 @@ impl ShardOperation for RemoteShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let processed_timeout = Self::process_read_timeout(timeout, "query_batch")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -1608,7 +1593,7 @@ impl ShardOperation for RemoteShard {
         } = batch_response;
 
         if let Some(hw_usage) = hardware_usage {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         let result = results
@@ -1641,7 +1626,6 @@ impl ShardOperation for RemoteShard {
         request: Arc<FacetParams>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let processed_timeout = Self::process_read_timeout(timeout, "facet")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -1678,7 +1662,7 @@ impl ShardOperation for RemoteShard {
             .into_inner();
 
         if let Some(hw_usage) = response.usage {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            hw::accumulate_request(HardwareData::from(hw_usage));
         }
 
         let hits = response

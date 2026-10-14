@@ -7,11 +7,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
+use common::ambient;
 use common::generic_consts::Sequential;
 use common::universal_io::{
-    DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, OpenOptions, OwnedPipeline,
-    Populate, ReadRange, UioResult, UniversalIoError, UniversalKind, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    ChunkSink, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, MmapFs,
+    OpenExtra as _, OpenOptions, OwnedPipeline, Populate, ReadRange, UioResult, UniversalIoError,
+    UniversalKind, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
 };
 use futures::stream::{BoxStream, StreamExt};
 
@@ -33,6 +34,7 @@ struct Counters {
 struct CountingConfig {
     data: Bytes,
     counters: Counters,
+    short_body: bool,
 }
 
 /// Test [`AsyncRead`] backend serving a fixed blob and counting the remote
@@ -42,6 +44,8 @@ struct CountingConfig {
 struct CountingSource {
     data: Bytes,
     counters: Counters,
+    /// Announce one byte more than the body carries, like a response cut off mid-body.
+    short_body: bool,
 }
 
 impl CountingSource {
@@ -49,6 +53,7 @@ impl CountingSource {
         Self {
             data: Bytes::from_static(data),
             counters: Counters::default(),
+            short_body: false,
         }
     }
 
@@ -56,6 +61,7 @@ impl CountingSource {
         CountingConfig {
             data: self.data.clone(),
             counters: self.counters.clone(),
+            short_body: self.short_body,
         }
     }
 }
@@ -67,6 +73,7 @@ impl AsyncRead for CountingSource {
         Ok(Self {
             data: config.data.clone(),
             counters: config.counters.clone(),
+            short_body: config.short_body,
         })
     }
 
@@ -102,7 +109,7 @@ impl AsyncRead for CountingSource {
         } else {
             self.counters.from.fetch_add(1, Ordering::Relaxed);
         }
-        let size = self.data.len() as u64;
+        let size = self.data.len() as u64 + u64::from(self.short_body);
         let data = self.data.clone();
         async move {
             // A positive offset at or past EOF is an unsatisfiable range; mimic
@@ -136,6 +143,7 @@ const DATA: &[u8] = b"the quick brown fox jumps over the lazy dog";
 
 #[test]
 fn blob_file_read_whole_uses_single_get_without_head() {
+    let _scope = ambient::test_guard();
     let source = CountingSource::new(DATA);
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
@@ -158,6 +166,7 @@ fn blob_file_read_whole_uses_single_get_without_head() {
 
 #[test]
 fn owned_pipeline_tail_read_uses_single_get_without_head() {
+    let _scope = ambient::test_guard();
     let source = CountingSource::new(DATA);
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
@@ -184,6 +193,7 @@ fn owned_pipeline_tail_read_uses_single_get_without_head() {
 
 #[test]
 fn owned_pipeline_empty_tail_resolves_to_empty_read() {
+    let _scope = ambient::test_guard();
     let source = CountingSource::new(DATA);
     let counters = source.counters.clone();
     let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
@@ -207,6 +217,7 @@ fn owned_pipeline_empty_tail_resolves_to_empty_read() {
 
 #[test]
 fn disk_cache_read_whole_skips_remote_len() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::Builder::new()
         .prefix("uio_whole_read")
         .tempdir()
@@ -259,6 +270,7 @@ fn disk_cache_read_whole_skips_remote_len() {
 
 #[test]
 fn disk_cache_prefill_open_uses_whole_get_without_head() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::Builder::new()
         .prefix("uio_whole_read")
         .tempdir()
@@ -303,4 +315,130 @@ fn disk_cache_prefill_open_uses_whole_get_without_head() {
     assert_eq!(&bytes[..], DATA);
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
     assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+}
+
+fn async_prefill_open(
+    source: &CountingSource,
+    local_dir: &Path,
+    known_len: Option<u64>,
+) -> UioResult<impl UniversalRead> {
+    let _scope = ambient::test_guard();
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), local_dir.to_path_buf()).unwrap();
+    let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
+        config: Arc::new(config),
+        remote: source.config(),
+    })
+    .unwrap();
+    let mut extra =
+        <DiskCacheFs<BlobFile<CountingSource>> as UniversalReadFs>::OpenExtra::default();
+    if let Some(len) = known_len {
+        extra = extra.with_known_len(len);
+    }
+    futures::executor::block_on(fs.open_async(
+        PathBuf::from("bucket/data.bin"),
+        OpenOptions {
+            writeable: false,
+            populate: Populate::Blocking,
+            ..OpenOptions::new_for_test()
+        },
+        extra,
+    ))
+}
+
+#[test]
+fn disk_cache_async_prefill_streams_whole_get() {
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = async_prefill_open(&source, tmp.path(), None).unwrap();
+
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+
+    let bytes = file.read_whole::<u8>().expect("read_whole");
+    assert_eq!(&bytes[..], DATA);
+    assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.range.load(Ordering::Relaxed), 0);
+}
+
+/// The mirror takes the length of the file as read, not the stale one the open was given.
+#[test]
+fn disk_cache_async_prefill_sizes_mirror_from_the_file_read() {
+    for stale_len in [3, DATA.len() as u64 * 2] {
+        let tmp = tempfile::Builder::new()
+            .prefix("uio_whole_read")
+            .tempdir()
+            .unwrap();
+        let source = CountingSource::new(DATA);
+        let file = async_prefill_open(&source, tmp.path(), Some(stale_len)).unwrap();
+
+        assert_eq!(file.len::<u8>().unwrap(), DATA.len() as u64);
+        assert_eq!(&file.read_whole::<u8>().unwrap()[..], DATA);
+    }
+}
+
+/// A prefill cut off mid-body fails the open without leaving its partial mirror behind.
+#[test]
+fn disk_cache_failed_async_prefill_removes_the_mirror() {
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let source = CountingSource {
+        short_body: true,
+        ..CountingSource::new(DATA)
+    };
+
+    let Err(err) = async_prefill_open(&source, tmp.path(), None) else {
+        panic!("a prefill cut off mid-body must fail the open");
+    };
+    assert!(err.to_string().contains("short read"), "{err}");
+    let leftovers = MmapFs.list_files(&tmp.path().join("data.bin")).unwrap();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+#[derive(Default)]
+struct TestSink(Vec<(u64, Vec<u8>)>);
+
+impl ChunkSink for TestSink {
+    fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()> {
+        self.0.push((offset, bytes.to_vec()));
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn blob_file_read_from_into_async_tail_and_empty() {
+    let _scope = ambient::test_guard();
+    use common::universal_io::UniversalReadAsync;
+
+    let source = CountingSource::new(DATA);
+    let counters = source.counters.clone();
+    let file = BlobFile::new(source, BridgeRuntime::global(), "obj");
+
+    // Tail read from a positive offset
+    let from = 10u64;
+    let sink = file
+        .read_from_into_async(from, |_| Ok(TestSink::default()))
+        .await
+        .unwrap();
+
+    assert_eq!(&sink.0[0].1[..], &DATA[from as usize..]);
+    assert_eq!(sink.0[0].0, from);
+    assert_eq!(counters.from.load(Ordering::Relaxed), 1);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+
+    // Empty tail at EOF
+    let sink = file
+        .read_from_into_async(DATA.len() as u64, |_| Ok(TestSink::default()))
+        .await
+        .unwrap();
+
+    assert!(sink.0.is_empty());
+    assert_eq!(counters.from.load(Ordering::Relaxed), 2);
+    assert_eq!(counters.len.load(Ordering::Relaxed), 1);
 }

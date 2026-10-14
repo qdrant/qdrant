@@ -25,3 +25,13 @@ path = "junit.xml"
 [[profile.default.overrides]]
 filter = 'package(collection) and test(test_hw_metrics_cancellation)'
 threads-required = "num-test-threads"
+
+# The `model_testing` harnesses write their storage to TMPDIR, which is the size-limited `/dev/shm`
+# tmpfs on Linux CI (see rust.yml). Running them all at once together with other tests can fill
+# it up and fail unrelated tests; allow at most two at a time.
+[test-groups]
+model-testing = { max-threads = 2 }
+
+[[profile.ci.overrides]]
+filter = 'package(collection) and test(/^model_testing::tests::harness/)'
+test-group = "model-testing"

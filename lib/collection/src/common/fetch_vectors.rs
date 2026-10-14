@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use api::rest::ShardKeySelector;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::cow::ArcCow;
 use futures::Future;
 use futures::future::try_join_all;
 use segment::data_types::vectors::{VectorInternal, VectorRef};
@@ -33,7 +33,6 @@ pub async fn retrieve_points(
     routing_token: Option<RoutingToken>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<RecordInternal>> {
     collection
         .retrieve(
@@ -46,55 +45,8 @@ pub async fn retrieve_points(
             routing_token,
             shard_selector,
             timeout,
-            hw_measurement_acc,
         )
         .await
-}
-
-pub enum CollectionRefHolder<'a> {
-    Ref(&'a Collection),
-    Arc(Arc<Collection>),
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn retrieve_points_with_locked_collection(
-    collection_holder: CollectionRefHolder<'_>,
-    ids: Vec<PointIdType>,
-    vector_names: Vec<VectorNameBuf>,
-    read_consistency: Option<ReadConsistency>,
-    routing_token: Option<RoutingToken>,
-    shard_selector: &ShardSelectorInternal,
-    timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
-) -> CollectionResult<Vec<RecordInternal>> {
-    match collection_holder {
-        CollectionRefHolder::Ref(collection) => {
-            retrieve_points(
-                collection,
-                ids,
-                vector_names,
-                read_consistency,
-                routing_token,
-                shard_selector,
-                timeout,
-                hw_measurement_acc,
-            )
-            .await
-        }
-        CollectionRefHolder::Arc(guard) => {
-            retrieve_points(
-                &guard,
-                ids,
-                vector_names,
-                read_consistency,
-                routing_token,
-                shard_selector,
-                timeout,
-                hw_measurement_acc,
-            )
-            .await
-        }
-    }
 }
 
 pub type CollectionName = String;
@@ -223,7 +175,6 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
         collection_by_name: &F,
         shard_selector: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ReferencedVectors>
     where
         F: Fn(String) -> Fut,
@@ -246,38 +197,27 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                 .unwrap()
                 .into_iter()
                 .collect();
-            match collection_name {
-                None => vector_retrieves.push(retrieve_points_with_locked_collection(
-                    CollectionRefHolder::Ref(collection),
+            let referenced_collection = match collection_name {
+                None => ArcCow::Borrowed(collection),
+                Some(name) => ArcCow::Owned(
+                    collection_by_name(name.clone())
+                        .await
+                        .ok_or_else(|| CollectionError::not_found(format!("Collection {name}")))?,
+                ),
+            };
+            let shard_selector = &shard_selector;
+            vector_retrieves.push(async move {
+                retrieve_points(
+                    &referenced_collection,
                     points,
                     vector_names,
                     read_consistency,
                     routing_token,
-                    &shard_selector,
+                    shard_selector,
                     timeout,
-                    hw_measurement_acc.clone(),
-                )),
-                Some(name) => {
-                    let other_collection = collection_by_name(name.clone()).await;
-                    match other_collection {
-                        Some(other_collection) => {
-                            vector_retrieves.push(retrieve_points_with_locked_collection(
-                                CollectionRefHolder::Arc(other_collection),
-                                points,
-                                vector_names,
-                                read_consistency,
-                                routing_token,
-                                &shard_selector,
-                                timeout,
-                                hw_measurement_acc.clone(),
-                            ))
-                        }
-                        None => {
-                            return Err(CollectionError::not_found(format!("Collection {name}")));
-                        }
-                    }
-                }
-            }
+                )
+                .await
+            });
         }
         let all_reference_vectors: Vec<Vec<RecordInternal>> =
             try_join_all(vector_retrieves).await?;
@@ -340,7 +280,6 @@ pub async fn resolve_referenced_vectors_batch<F, Fut, Req: RetrieveRequest>(
     read_consistency: Option<ReadConsistency>,
     routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<ReferencedVectors>
 where
     F: Fn(String) -> Fut,
@@ -381,7 +320,6 @@ where
                 &collection_by_name,
                 shard_selector,
                 timeout,
-                hw_measurement_acc.clone(),
             );
             requests.push(fetch);
             Ok(())

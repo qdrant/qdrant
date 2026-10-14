@@ -10,6 +10,7 @@ mod query;
 mod retrieve;
 mod scroll;
 mod search;
+mod text;
 
 pub use self::grouping::Group;
 pub use self::info::ShardInfo;

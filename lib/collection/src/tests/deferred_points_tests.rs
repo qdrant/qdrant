@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use segment::data_types::vectors::VectorStructInternal;
@@ -86,9 +86,9 @@ async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
             &WithVector::Bool(false),
             &current_runtime,
             None,
-            HwMeasurementAcc::new(),
             DeferredBehavior::VisibleOnly,
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     !retrieved.is_empty()
@@ -115,12 +115,11 @@ async fn test_deferred_points_wait_true() {
     let config = create_deferred_points_config();
     let shard = build_shard(&config, collection_dir.path(), payload_index_schema).await;
 
-    let hw_acc = HwMeasurementAcc::new();
-
     for i in 1..=NUM_POINTS {
         let op = make_upsert_op(i);
         let result = shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::new())
             .await;
         assert!(
             result.is_ok(),
@@ -169,7 +168,7 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     config.optimizer_config.max_optimization_threads = Some(0);
 
     let shard = Arc::new(build_shard(&config, collection_dir.path(), payload_index_schema).await);
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     // Build up deferred state so that when A is processed, `has_deferred_points`
     // is already true and the worker enters the deferred-wait branch.
@@ -179,12 +178,8 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     // behind a backlog of setup upserts (observed as a 5 s timeout on slow CI).
     for i in 1..=NUM_POINTS {
         shard
-            .update(
-                make_upsert_op(i).into(),
-                WaitUntil::Wal,
-                None,
-                hw_acc.clone(),
-            )
+            .update(make_upsert_op(i).into(), WaitUntil::Wal, None)
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -194,15 +189,15 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     // stays alive while B races. If dropped, the worker would detect the closed
     // receiver and exit the deferred wait early — masking the regression.
     let shard_a = Arc::clone(&shard);
-    let hw_acc_a = hw_acc.clone();
+    let ctx_a = AmbientContext::clone(&ctx);
     let a_handle = tokio::spawn(async move {
         shard_a
             .update(
                 make_upsert_op(NUM_POINTS + 1).into(),
                 WaitUntil::Visible,
                 None,
-                hw_acc_a,
             )
+            .measured(ctx_a)
             .await
     });
 
@@ -211,12 +206,13 @@ async fn test_wait_deferred_does_not_block_update_worker() {
 
     let b_result = tokio::time::timeout(
         Duration::from_secs(5),
-        shard.update(
-            make_upsert_op(NUM_POINTS + 2).into(),
-            WaitUntil::Segment,
-            None,
-            hw_acc.clone(),
-        ),
+        shard
+            .update(
+                make_upsert_op(NUM_POINTS + 2).into(),
+                WaitUntil::Segment,
+                None,
+            )
+            .measured(AmbientContext::clone(&ctx)),
     )
     .await
     .expect("B should complete within 5s — update worker appears blocked on A's deferred wait")
@@ -255,13 +251,12 @@ async fn test_deferred_points_wait_false() {
     let config = create_deferred_points_config();
     let shard = build_shard(&config, collection_dir.path(), payload_index_schema).await;
 
-    let hw_acc = HwMeasurementAcc::new();
-
     // Push all points with wait=false — returns immediately without waiting for application
     for i in 1..=NUM_POINTS {
         let op = make_upsert_op(i);
         let result = shard
-            .update(op.into(), WaitUntil::Wal, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Wal, None)
+            .measured(AmbientContext::new())
             .await;
         assert!(
             result.is_ok(),

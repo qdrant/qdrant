@@ -18,15 +18,17 @@ testing = []
 [dependencies]
 ahash = { workspace = true }
 aligned-vec = "0.6.4"
+arc-swap = { workspace = true }
 atomicwrites = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
+ecow = { workspace = true }
 fs-err = { workspace = true }
 fs4 = { workspace = true }
 fs_extra = { workspace = true }
-futures.workspace = true
+futures = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
@@ -37,6 +39,7 @@ num_cpus = "1.17"
 ordered-float = { workspace = true }
 parking_lot = { workspace = true }
 ph = { workspace = true }
+pin-project-lite = { workspace = true }
 quick_cache = "0.7.0"
 rand = { workspace = true }
 roaring = { workspace = true }

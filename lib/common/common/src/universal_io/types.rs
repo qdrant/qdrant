@@ -129,11 +129,11 @@ pub struct OpenOptions {
 
 impl OpenOptions {
     /// The same options with `writeable` forced on, as
-    /// [`UniversalWriteFileOps::open_append`] opens them: an append handle
+    /// [`UniversalWriteFs::open_append`] opens them: an append handle
     /// mutates the file by definition, so the flag carries no information
     /// there.
     ///
-    /// [`UniversalWriteFileOps::open_append`]: super::UniversalWriteFileOps::open_append
+    /// [`UniversalWriteFs::open_append`]: super::UniversalWriteFs::open_append
     pub fn for_append(self) -> Self {
         let Self {
             writeable: _,
@@ -237,10 +237,10 @@ pub struct ReadBytesItem<U: UserData> {
     pub align: usize,
 }
 
-/// A single file matched by [`UniversalReadFileOps::list_files`]: its path
+/// A single file matched by [`UniversalReadFs::list_files`]: its path
 /// and size in bytes.
 ///
-/// [`UniversalReadFileOps::list_files`]: super::UniversalReadFileOps::list_files
+/// [`UniversalReadFs::list_files`]: super::UniversalReadFs::list_files
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ListedFile {
     pub path: std::path::PathBuf,
@@ -260,6 +260,9 @@ pub type FileIndex = usize;
 pub type Flusher = Box<dyn FnOnce() -> UioResult<()> + Send>;
 
 pub type UioResult<T> = Result<T, UniversalIoError>;
+
+/// A staged fetch from a `live_preload`, resolving to the fetch's error if it failed.
+pub type PreloadFuture = futures::future::BoxFuture<'static, UioResult<()>>;
 
 pub fn read_whole_via<Fs, T>(
     fs: &Fs,

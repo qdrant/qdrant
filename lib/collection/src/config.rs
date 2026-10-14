@@ -9,10 +9,12 @@ use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use chrono::{DateTime, Utc};
 use common::types::PointOffsetType;
 use fs_err::File;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::common::deferred_points::deferred_point_offset;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
@@ -314,10 +316,6 @@ impl CollectionParams {
     ) -> Option<PointOffsetType> {
         let threshold_bytes = deferred_point_threshold_bytes?.get();
 
-        // Because we cannot predict multivector size,
-        // define here a constant-size inner vectors count for multivector.
-        const MULTIVECTOR_SIZE: usize = 16;
-
         self.vectors
             .params_iter()
             // Skip vectors without HNSW indexing
@@ -328,25 +326,12 @@ impl CollectionParams {
                     .then_some(params)
             })
             .map(|params| {
-                let element_bytes = match params.datatype {
-                    Some(Datatype::Float16) => 2,
-                    Some(Datatype::Uint8) => 1,
-                    // Placeholder: Turbo4 is ~0.5 byte/dim + per-row scale.
-                    // Mirroring Uint8 (1 byte) until accurate accounting is implemented.
-                    Some(Datatype::Turbo4) => 1,
-                    Some(Datatype::Float32) | None => 4,
-                };
-
-                let dim = params.size.get() as usize;
-
-                let vector_bytes = if params.multivector_config.is_some() {
-                    element_bytes * dim * MULTIVECTOR_SIZE
-                } else {
-                    element_bytes * dim
-                };
-
-                let deferred_from = threshold_bytes.div_ceil(vector_bytes);
-                PointOffsetType::try_from(deferred_from).unwrap_or(PointOffsetType::MAX)
+                deferred_point_offset(
+                    threshold_bytes,
+                    params.size.get() as usize,
+                    params.datatype.map(VectorStorageDatatype::from),
+                    params.multivector_config.is_some(),
+                )
             })
             .min()
     }
@@ -399,9 +384,40 @@ pub struct CollectionConfigInternal {
     /// such as creation time, migration data, inference model info, etc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Payload>,
+    /// Time of the collection creation, assigned once when the creation is submitted.
+    /// Absent for collections created before this field was introduced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl CollectionConfigInternal {
+    /// Returns `true` if `other` differs in the parts of the config that optimizers are built
+    /// from, so optimizers have to be recreated to apply it.
+    ///
+    /// Same rule as `Collection::apply_config` uses for configs from a Raft snapshot.
+    pub fn is_core_config_updated(&self, other: &Self) -> bool {
+        // Destructure, so a new field has to be explicitly classified here
+        let Self {
+            params,
+            hnsw_config,
+            optimizer_config,
+            // Only applied on restart
+            wal_config: _,
+            quantization_config,
+            // Applied to shards directly, see `Collection::update_strict_mode_config`
+            strict_mode_config: _,
+            // Identity and user data, not used by optimizers
+            uuid: _,
+            metadata: _,
+            created_at: _,
+        } = self;
+
+        params != &other.params
+            || hnsw_config != &other.hnsw_config
+            || optimizer_config != &other.optimizer_config
+            || quantization_config != &other.quantization_config
+    }
+
     /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`)
     /// storage datatype.
     ///
@@ -466,17 +482,20 @@ impl CollectionConfigInternal {
 }
 
 impl CollectionParams {
-    /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`)
-    /// storage datatype.
+    /// Returns `true` if any named dense vector uses a TurboQuant (`Turbo4`,
+    /// `Turbo8`, `Turbo16`) storage datatype.
     ///
     /// Its primary vector storage keeps TurboQuant-encoded codes in-place, so
     /// reading storage-native bytes yields those codes. Relocating them verbatim
     /// (raw shard transfer) avoids a lossy decode→encode round-trip that would
     /// otherwise drift the encoding.
     pub fn has_turbo_vector_storage(&self) -> bool {
-        self.vectors
-            .params_iter()
-            .any(|(_, params)| matches!(params.datatype, Some(Datatype::Turbo4)))
+        self.vectors.params_iter().any(|(_, params)| {
+            matches!(
+                params.datatype,
+                Some(Datatype::Turbo4 | Datatype::Turbo8 | Datatype::Turbo16)
+            )
+        })
     }
 
     pub fn empty() -> Self {
@@ -812,6 +831,26 @@ mod tests {
     }
 
     #[test]
+    fn core_config_updated_only_by_optimizer_inputs() {
+        let config = crate::tests::fixtures::create_collection_config();
+        assert!(!config.is_core_config_updated(&config.clone()));
+
+        let mut optimizer_changed = config.clone();
+        optimizer_changed.optimizer_config.flush_interval_sec += 1;
+        assert!(config.is_core_config_updated(&optimizer_changed));
+
+        let mut hnsw_changed = config.clone();
+        hnsw_changed.hnsw_config.m += 1;
+        assert!(config.is_core_config_updated(&hnsw_changed));
+
+        // Optimizers are not built from metadata
+        let mut metadata_changed = config.clone();
+        let metadata = serde_json::Map::from_iter([("owner".to_string(), "test".into())]);
+        metadata_changed.metadata = Some(Payload::from(metadata));
+        assert!(!config.is_core_config_updated(&metadata_changed));
+    }
+
+    #[test]
     fn has_turbo_vector_storage_by_datatype() {
         // No explicit datatype (defaults to float32).
         assert!(!single(None).has_turbo_vector_storage());
@@ -821,6 +860,8 @@ mod tests {
         assert!(!single(Some(Datatype::Uint8)).has_turbo_vector_storage());
         // TurboQuant storage datatype.
         assert!(single(Some(Datatype::Turbo4)).has_turbo_vector_storage());
+        assert!(single(Some(Datatype::Turbo8)).has_turbo_vector_storage());
+        assert!(single(Some(Datatype::Turbo16)).has_turbo_vector_storage());
     }
 
     #[test]

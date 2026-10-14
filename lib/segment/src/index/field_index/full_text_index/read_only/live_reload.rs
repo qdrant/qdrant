@@ -1,8 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::ReadOnlyFullTextIndex;
 use crate::common::operation_error::OperationResult;
@@ -14,7 +12,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFullTextIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         match self {
             Self::Appendable(index) => index.live_preload(fs),
             Self::Immutable(index) => index.live_preload(fs),
@@ -27,17 +25,16 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFullTextIndex<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFullTextIndex::Immutable(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
             ReadOnlyFullTextIndex::OnDisk(index) => {
-                index.live_reload(fs, deleted_points, new_points, hw_counter)
+                index.live_reload(fs, deleted_points, new_points)
             }
         }
     }

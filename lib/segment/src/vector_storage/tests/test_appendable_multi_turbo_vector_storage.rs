@@ -7,10 +7,11 @@
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSliceExt;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{Random, Sequential};
 use common::types::PointOffsetType;
+use quantization::turboquant::TQBits;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use tempfile::Builder;
@@ -70,11 +71,14 @@ fn open_both_appendable(
     AppendableMmapTurboVectorStorage,
     AppendableMmapMultiTurboVectorStorage,
 ) {
-    let dense = open_appendable_turbo_vector_storage(dense_dir, dim, distance, in_ram).unwrap();
+    let dense =
+        open_appendable_turbo_vector_storage(dense_dir, dim, distance, TQBits::Bits4, in_ram)
+            .unwrap();
     let multi = open_appendable_turbo_multi_vector_storage(
         multi_dir,
         dim,
         distance,
+        TQBits::Bits4,
         MultiVectorConfig::default(),
         in_ram,
     )
@@ -88,11 +92,10 @@ fn insert_both(
     multi: &mut AppendableMmapMultiTurboVectorStorage,
     key: PointOffsetType,
     v: &DenseVector,
-    hw: &HardwareCounterCell,
 ) {
-    dense.insert_vector(key, v.as_slice().into(), hw).unwrap();
+    dense.insert_vector(key, v.as_slice().into()).unwrap();
     multi
-        .insert_vector(key, TypedMultiDenseVectorRef::from(&as_multi(v)).into(), hw)
+        .insert_vector(key, TypedMultiDenseVectorRef::from(&as_multi(v)).into())
         .unwrap();
 }
 
@@ -118,7 +121,7 @@ fn assert_congruent(
 ) {
     assert_eq!(dense.distance(), multi.distance(), "{ctx}: distance");
     assert_eq!(dense.datatype(), multi.datatype(), "{ctx}: datatype");
-    assert_eq!(dense.is_on_disk(), multi.is_on_disk(), "{ctx}: is_on_disk");
+    assert_eq!(dense.is_cold(), multi.is_cold(), "{ctx}: is_cold");
     assert_eq!(dense.vector_dim(), multi.vector_dim(), "{ctx}: vector_dim");
     assert_eq!(
         DenseTQVectorStorageRead::quantized_vector_size(dense),
@@ -235,13 +238,13 @@ fn congruent_upsert_read_all_distances() {
                 let mut rng = SmallRng::seed_from_u64(seed);
                 let dense_dir = Builder::new().prefix("tq_congr_dense").tempdir().unwrap();
                 let multi_dir = Builder::new().prefix("tq_congr_multi").tempdir().unwrap();
-                let hw = HardwareCounterCell::new();
+                let _scope = ambient::test_guard();
 
                 let (mut dense, mut multi) =
                     open_both_appendable(dense_dir.path(), multi_dir.path(), dim, distance, true);
                 for key in 0..COUNT as PointOffsetType {
                     let v = random_unit_vector(&mut rng, dim);
-                    insert_both(&mut dense, &mut multi, key, &v, &hw);
+                    insert_both(&mut dense, &mut multi, key, &v);
                 }
                 let ctx = format!("live (dim {dim}, {distance:?}, seed {seed:#x})");
                 assert_congruent(&dense, &multi, &ctx);
@@ -275,7 +278,7 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
         .prefix("tq_congr_multi_dst")
         .tempdir()
         .unwrap();
-    let hw = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let stopped = AtomicBool::new(false);
 
     let mut count: PointOffsetType = 0;
@@ -295,14 +298,14 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
             // Append a new vector at the next contiguous key.
             0..=34 => {
                 let v = random_unit_vector(&mut rng, dim);
-                insert_both(&mut dense, &mut multi, count, &v, &hw);
+                insert_both(&mut dense, &mut multi, count, &v);
                 count += 1;
             }
             // Overwrite an existing key (revives it if deleted).
             35..=59 => {
                 let k = rng.random_range(0..count);
                 let v = random_unit_vector(&mut rng, dim);
-                insert_both(&mut dense, &mut multi, k, &v, &hw);
+                insert_both(&mut dense, &mut multi, k, &v);
             }
             // Soft-delete an existing key (possibly already deleted).
             60..=84 => {
@@ -334,12 +337,19 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
 
     // Optimizer-style copy: byte-identical encoded streams plus deleted flags.
     let total = dense.total_vector_count() as PointOffsetType;
-    let mut dense_dst =
-        open_appendable_turbo_vector_storage(dense_dst_dir.path(), dim, distance, false).unwrap();
+    let mut dense_dst = open_appendable_turbo_vector_storage(
+        dense_dst_dir.path(),
+        dim,
+        distance,
+        TQBits::Bits4,
+        false,
+    )
+    .unwrap();
     let mut multi_dst = open_appendable_turbo_multi_vector_storage(
         multi_dst_dir.path(),
         dim,
         distance,
+        TQBits::Bits4,
         MultiVectorConfig::default(),
         false,
     )
@@ -368,12 +378,19 @@ fn run_congruence_scenario(dim: usize, distance: Distance, seed: u64, ops: usize
     multi_dst.flusher()().unwrap();
     drop(dense_dst);
     drop(multi_dst);
-    let dense_dst =
-        open_appendable_turbo_vector_storage(dense_dst_dir.path(), dim, distance, true).unwrap();
+    let dense_dst = open_appendable_turbo_vector_storage(
+        dense_dst_dir.path(),
+        dim,
+        distance,
+        TQBits::Bits4,
+        true,
+    )
+    .unwrap();
     let multi_dst = open_appendable_turbo_multi_vector_storage(
         multi_dst_dir.path(),
         dim,
         distance,
+        TQBits::Bits4,
         MultiVectorConfig::default(),
         true,
     )

@@ -54,6 +54,14 @@ pub struct PostingElement<V> {
     pub value: V,
 }
 
+/// An id and the byte length of its value, as yielded by
+/// [`PostingLenIterator`](crate::PostingLenIterator).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PostingLen {
+    pub id: PointOffsetType,
+    pub value_len: usize,
+}
+
 #[derive(Debug, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 pub struct PostingChunk<S: Sized> {

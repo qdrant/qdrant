@@ -2,8 +2,6 @@ mod helpers;
 
 use std::collections::{HashMap, HashSet};
 
-use common::counter::hardware_counter::HardwareCounterCell;
-
 use self::helpers::variable_retriever;
 use super::StructPayloadIndexReadView;
 use crate::common::operation_error::OperationResult;
@@ -26,7 +24,6 @@ where
     pub(crate) fn retrievers_map<'b, 'q>(
         &'b self,
         variables: HashSet<JsonPath>,
-        hw_counter: &'q HardwareCounterCell,
     ) -> OperationResult<HashMap<JsonPath, VariableRetrieverFn<'q>>>
     where
         'b: 'q,
@@ -38,12 +35,7 @@ where
         for key in variables {
             let payload_provider = payload_provider.clone();
 
-            let retriever = variable_retriever(
-                self.field_indexes,
-                &key,
-                payload_provider.clone(),
-                hw_counter,
-            )?;
+            let retriever = variable_retriever(self.field_indexes, &key, payload_provider.clone())?;
 
             var_retrievers.insert(key, retriever);
         }

@@ -36,7 +36,6 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::Distance;
 use tempfile::Builder;
 use tokio::time::sleep;
@@ -73,13 +72,7 @@ async fn upsert_point(collection: &Collection, id: u64, wait: bool) {
         PointInsertOperationsInternal::PointsList(vec![point]),
     ));
     collection
-        .update_from_client_simple(
-            operation,
-            wait,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(operation, wait, None, WriteOrdering::default())
         .await
         .unwrap();
 }
@@ -122,6 +115,7 @@ async fn test_wal_less_snapshot_clocks_not_ahead_of_data() {
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();

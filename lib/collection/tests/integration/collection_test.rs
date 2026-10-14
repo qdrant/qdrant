@@ -16,7 +16,7 @@ use collection::operations::types::{
 };
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use fs_err::File;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -59,15 +59,10 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
-    let hw_counter = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let insert_result = collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(ctx)
         .await;
 
     match insert_result {
@@ -88,7 +83,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let search_res = collection
         .search(
             search_request.into(),
@@ -96,8 +91,8 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(ctx)
         .await;
 
     match search_res {
@@ -137,15 +132,10 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         PointInsertOperationsInternal::from(batch),
     ));
 
-    let hw_counter = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let insert_result = collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(ctx)
         .await;
 
     match insert_result {
@@ -166,7 +156,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         score_threshold: None,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let search_res = collection
         .search(
             search_request.into(),
@@ -174,8 +164,8 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
         )
+        .measured(ctx)
         .await;
 
     match search_res {
@@ -202,16 +192,10 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         exact: true,
     };
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let count_res = collection
-        .count(
-            count_request,
-            None,
-            None,
-            &ShardSelectorInternal::All,
-            None,
-            hw_acc,
-        )
+        .count(count_request, None, None, &ShardSelectorInternal::All, None)
+        .measured(ctx)
         .await
         .unwrap();
     assert_eq!(count_res.count, 1);
@@ -245,15 +229,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
         );
 
-        let hw_counter = HwMeasurementAcc::new();
+        let ctx = AmbientContext::new();
         collection
-            .update_from_client_simple(
-                insert_points,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter,
-            )
+            .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+            .measured(ctx)
             .await
             .unwrap();
 
@@ -267,15 +246,10 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                 key: None,
             }));
 
-        let hw_counter = HwMeasurementAcc::new();
+        let ctx = AmbientContext::new();
         collection
-            .update_from_client_simple(
-                assign_payload,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter,
-            )
+            .update_from_client_simple(assign_payload, true, None, WriteOrdering::default())
+            .measured(ctx)
             .await
             .unwrap();
 
@@ -295,14 +269,8 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         with_vector: true.into(),
     };
     let retrieved = loaded_collection
-        .retrieve(
-            request,
-            None,
-            None,
-            &ShardSelectorInternal::All,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .retrieve(request, None, None, &ShardSelectorInternal::All, None)
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -405,15 +373,10 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_acc.clone(),
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     let result = recommend_by(
@@ -429,8 +392,8 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        hw_acc,
     )
+    .measured(ctx)
     .await
     .unwrap();
     assert!(!result.is_empty());
@@ -472,15 +435,10 @@ async fn test_read_api_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
-    let hw_counter = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(ctx)
         .await
         .unwrap();
 
@@ -498,8 +456,8 @@ async fn test_read_api_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -528,13 +486,8 @@ async fn test_scroll_without_payload_or_vectors() {
         PointInsertOperationsInternal::from(batch),
     ));
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     collection
@@ -542,8 +495,8 @@ async fn test_scroll_without_payload_or_vectors() {
             KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -554,21 +507,22 @@ async fn test_scroll_without_payload_or_vectors() {
     });
     for order_by in [None, Some(order_by)] {
         let scroll = |with_payload| {
-            collection.scroll_by(
-                ScrollRequestInternal {
-                    offset: None,
-                    limit: Some(4),
-                    filter: None,
-                    with_payload: Some(WithPayloadInterface::Bool(with_payload)),
-                    with_vector: false.into(),
-                    order_by: order_by.clone(),
-                },
-                None,
-                None,
-                &ShardSelectorInternal::All,
-                None,
-                HwMeasurementAcc::new(),
-            )
+            collection
+                .scroll_by(
+                    ScrollRequestInternal {
+                        offset: None,
+                        limit: Some(4),
+                        filter: None,
+                        with_payload: Some(WithPayloadInterface::Bool(with_payload)),
+                        with_vector: false.into(),
+                        order_by: order_by.clone(),
+                    },
+                    None,
+                    None,
+                    &ShardSelectorInternal::All,
+                    None,
+                )
+                .measured(AmbientContext::new())
         };
         let full = scroll(true).await.unwrap();
         let bare = scroll(false).await.unwrap();
@@ -662,15 +616,10 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
-    let hw_counter = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter.clone(),
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -679,8 +628,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_FLOAT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
-            hw_counter.clone(),
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -689,8 +638,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_INT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
-            hw_counter.clone(),
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -699,8 +648,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             MULTI_VALUE_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
-            hw_counter.clone(),
         )
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -724,8 +673,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .unwrap();
 
@@ -757,8 +706,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .unwrap();
 
@@ -799,8 +748,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .unwrap();
 
@@ -840,8 +789,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
-                HwMeasurementAcc::new(),
             )
+            .measured(AmbientContext::new())
             .await
             .unwrap();
 
@@ -878,8 +827,8 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -927,15 +876,10 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         PointInsertOperationsInternal::from(batch),
     ));
 
-    let hw_counter = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let insert_result = collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter.clone(),
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::clone(&ctx))
         .await;
 
     match insert_result {
@@ -955,13 +899,8 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     );
 
     let delete_result = collection
-        .update_from_client_simple(
-            delete_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            hw_counter,
-        )
+        .update_from_client_simple(delete_points, true, None, WriteOrdering::default())
+        .measured(ctx)
         .await;
 
     match delete_result {
@@ -985,8 +924,8 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -1069,13 +1008,8 @@ async fn test_random_sample_huge_limit_does_not_abort() {
         PointInsertOperationsInternal::from(batch),
     ));
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -1094,14 +1028,8 @@ async fn test_random_sample_huge_limit_does_not_abort() {
     };
 
     let result = collection
-        .query(
-            request,
-            None,
-            None,
-            ShardSelectorInternal::All,
-            None,
-            HwMeasurementAcc::new(),
-        )
+        .query(request, None, None, ShardSelectorInternal::All, None)
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -1130,13 +1058,8 @@ async fn test_mmr_pagination_applies_offset_after_rescoring() {
         PointInsertOperationsInternal::from(batch),
     ));
     collection
-        .update_from_client_simple(
-            insert_points,
-            true,
-            None,
-            WriteOrdering::default(),
-            HwMeasurementAcc::new(),
-        )
+        .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -1164,8 +1087,8 @@ async fn test_mmr_pagination_applies_offset_after_rescoring() {
             None,
             ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     let page = collection
@@ -1175,8 +1098,8 @@ async fn test_mmr_pagination_applies_offset_after_rescoring() {
             None,
             ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -1191,8 +1114,8 @@ async fn test_mmr_pagination_applies_offset_after_rescoring() {
             None,
             ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     assert!(oversized_offset_page.is_empty());

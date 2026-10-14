@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use std::fmt;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap::Flusher;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, UniversalRead};
@@ -67,11 +66,11 @@ type TQRamMulti = QuantizedMultivectorStorage<
 
 // Chunked (appendable) on-disk format, opened read-only. Only Binary and TurboQuant
 // quantization produce this layout; Scalar/PQ are always immutable.
-type BinaryChunkedMulti<S> = QuantizedMultivectorStorage<
+pub(super) type BinaryChunkedMulti<S> = QuantizedMultivectorStorage<
     EncodedVectorsBin<u8, QuantizedChunkedStorageRead<S>>,
     MultivectorOffsetsStorageChunkedRead<S>,
 >;
-type TQChunkedMulti<S> = QuantizedMultivectorStorage<
+pub(super) type TQChunkedMulti<S> = QuantizedMultivectorStorage<
     EncodedVectorsTQ<QuantizedChunkedStorageRead<S>>,
     MultivectorOffsetsStorageChunkedRead<S>,
 >;
@@ -113,28 +112,28 @@ impl<S: UniversalRead> fmt::Debug for ReadOnlyQuantizedVectorStorage<S> {
 }
 
 impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
-            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQRam(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::ScalarRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::PQMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQRamMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQMmapMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => q.is_on_disk(),
-            ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => q.is_on_disk(),
+            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQRam(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQMmap(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::ScalarRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::PQMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQRamMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQMmapMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQChunked(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => q.is_cold(),
+            ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => q.is_cold(),
         }
     }
 
@@ -498,68 +497,43 @@ impl<S: UniversalRead> QuantizedScorerDispatch for ReadOnlyQuantizedVectorStorag
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
         match self {
-            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::PQRam(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::PQMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::TQRam(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::TQMmap(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
+            ReadOnlyQuantizedVectorStorage::ScalarRam(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::ScalarMmap(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::PQRam(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::PQMmap(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::BinaryRam(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::BinaryMmap(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::TQRam(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::TQMmap(q) => internal_raw_scorer(point_id, q),
             ReadOnlyQuantizedVectorStorage::ScalarRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
             ReadOnlyQuantizedVectorStorage::ScalarMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
-            ReadOnlyQuantizedVectorStorage::PQRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
+            ReadOnlyQuantizedVectorStorage::PQRamMulti(q) => internal_raw_multi_scorer(point_id, q),
             ReadOnlyQuantizedVectorStorage::PQMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
             ReadOnlyQuantizedVectorStorage::BinaryRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
             ReadOnlyQuantizedVectorStorage::BinaryMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
-            ReadOnlyQuantizedVectorStorage::TQRamMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
-            }
+            ReadOnlyQuantizedVectorStorage::TQRamMulti(q) => internal_raw_multi_scorer(point_id, q),
             ReadOnlyQuantizedVectorStorage::TQMmapMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
-            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
-            ReadOnlyQuantizedVectorStorage::TQChunked(q) => {
-                internal_raw_scorer(point_id, q, hardware_counter)
-            }
+            ReadOnlyQuantizedVectorStorage::BinaryChunked(q) => internal_raw_scorer(point_id, q),
+            ReadOnlyQuantizedVectorStorage::TQChunked(q) => internal_raw_scorer(point_id, q),
             ReadOnlyQuantizedVectorStorage::BinaryChunkedMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
             ReadOnlyQuantizedVectorStorage::TQChunkedMulti(q) => {
-                internal_raw_multi_scorer(point_id, q, hardware_counter)
+                internal_raw_multi_scorer(point_id, q)
             }
         }
     }

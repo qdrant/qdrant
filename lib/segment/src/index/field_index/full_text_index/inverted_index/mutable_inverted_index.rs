@@ -1,14 +1,15 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 
+use super::bm25::{Bm25Accept, Bm25Query, MutableCursors, score_top_k};
 use super::posting_list::PostingList;
 use super::postings_iterator::{intersect_postings_iterator, merge_postings_iterator};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 #[cfg_attr(test, derive(Clone))]
 pub struct MutableInvertedIndex {
@@ -61,6 +62,30 @@ impl MutableInvertedIndex {
     /// than the config, so a caller cannot measure a length it cannot store.
     pub fn records_doc_len(&self) -> bool {
         self.point_to_doc_len.is_some()
+    }
+
+    /// Whether postings carry term frequencies: an index that scores does,
+    /// and needs the ordered document to count them from.
+    pub fn stores_frequencies(&self) -> bool {
+        self.point_to_doc.is_some() && self.point_to_doc_len.is_some()
+    }
+
+    /// Term frequency of every token in `tokens`, in the same order, counted
+    /// from the stored document. Every token of a stored document is in its
+    /// token set, so an absent document means the frequencies are not wanted
+    /// and membership stands in for them.
+    pub(super) fn term_frequencies(document: Option<&Document>, tokens: &TokenSet) -> Vec<u32> {
+        let mut frequencies = vec![1; tokens.len()];
+        let Some(document) = document else {
+            return frequencies;
+        };
+        frequencies.fill(0);
+        for token in document.tokens() {
+            if let Ok(at) = tokens.tokens().binary_search(token) {
+                frequencies[at] += 1;
+            }
+        }
+        frequencies
     }
 
     /// Record a point's length, replacing any previous value so an overwrite
@@ -159,17 +184,16 @@ impl MutableInvertedIndex {
         point_id: PointOffsetType,
         str_tokens: impl IntoIterator<Item = impl AsRef<str>>,
         doc_len: Option<u32>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let tokens = self.register_tokens(str_tokens);
         self.set_doc_len(point_id, doc_len);
 
         // If positions are enabled, store the ordered document for phrase matching
         if self.point_to_doc.is_some() {
-            self.index_document(point_id, Document::new(tokens.clone()), hw_counter)?;
+            self.index_document(point_id, Document::new(tokens.clone()))?;
         }
 
-        self.index_tokens(point_id, TokenSet::from_iter(tokens), hw_counter)
+        self.index_tokens(point_id, TokenSet::from_iter(tokens))
     }
 }
 
@@ -178,12 +202,7 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self.vocab
     }
 
-    fn index_tokens(
-        &mut self,
-        point_id: PointOffsetType,
-        tokens: TokenSet,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn index_tokens(&mut self, point_id: PointOffsetType, tokens: TokenSet) -> OperationResult<()> {
         // Counted as a transition rather than incremented, so that re-indexing
         // a point cannot count it twice, and so that a document rewritten to
         // nothing stops being one.
@@ -203,18 +222,34 @@ impl InvertedIndex for MutableInvertedIndex {
             self.point_to_tokens.resize_with(new_len, Default::default);
         }
 
-        for token_id in tokens.tokens() {
+        // The ordered document is stored before the token set, so it is there
+        // to count from when the postings carry frequencies.
+        let with_frequencies = self.stores_frequencies();
+        let frequencies = with_frequencies.then(|| {
+            let document = self
+                .point_to_doc
+                .as_ref()
+                .and_then(|docs| docs.get(point_id as usize))
+                .and_then(Option::as_ref);
+            Self::term_frequencies(document, &tokens)
+        });
+
+        for (at, token_id) in tokens.tokens().iter().enumerate() {
             let token_idx_usize = *token_id as usize;
 
             if self.postings.len() <= token_idx_usize {
                 let new_len = token_idx_usize + 1;
-                self.postings.resize_with(new_len, Default::default);
+                self.postings
+                    .resize_with(new_len, || PostingList::new(with_frequencies));
             }
 
+            let tf = frequencies
+                .as_ref()
+                .map_or(1, |frequencies| frequencies[at]);
             self.postings
                 .get_mut(token_idx_usize)
                 .expect("posting must exist")
-                .insert(point_id);
+                .insert(point_id, tf);
         }
         self.point_to_tokens[point_id as usize] = Some(tokens);
 
@@ -225,7 +260,6 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self,
         point_id: PointOffsetType,
         ordered_document: Document,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Some(point_to_doc) = &mut self.point_to_doc else {
             // Phrase matching is not enabled
@@ -284,7 +318,6 @@ impl InvertedIndex for MutableInvertedIndex {
     fn filter(
         &self,
         query: ParsedQuery,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match query {
             ParsedQuery::AllTokens(tokens) => Ok(Box::new(self.filter_has_all(tokens))),
@@ -293,12 +326,45 @@ impl InvertedIndex for MutableInvertedIndex {
         }
     }
 
-    fn get_posting_len(
-        &self,
-        token_id: TokenId,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
+    fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         Ok(self.postings.get(token_id as usize).map(|x| x.len()))
+    }
+
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &Bm25Accept<'_>,
+        limit: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        if !self.stores_frequencies() {
+            return Err(OperationError::service_error(
+                "text index does not score: BM25 needs positions and document lengths",
+            ));
+        }
+        let lengths = self.point_to_doc_len.as_deref().unwrap_or_default();
+        let postings = query
+            .terms()
+            .iter()
+            .map(|term| self.postings.get(term.token_id as usize))
+            .collect();
+        let mut cursors = MutableCursors::new(postings);
+        // Deleted points are removed from these postings, so only the caller's
+        // filter applies.
+        // In RAM: nothing to gain from reading lengths in batches.
+        score_top_k::<_, 1>(
+            query,
+            &mut cursors,
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.get(*point_id as usize).copied();
+                }
+                Ok(())
+            },
+            accept,
+            limit,
+            is_stopped,
+        )
     }
 
     fn for_each_vocab_with_postings_len(
@@ -360,10 +426,29 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count
     }
 
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        mut f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        let lens = self.point_to_doc_len.as_deref();
+        for (index, &point_id) in point_ids.iter().enumerate() {
+            f(
+                index,
+                lens.and_then(|lens| lens.get(point_id as usize).copied()),
+            );
+        }
+        Ok(())
+    }
+
+    /// Free: the running counter is maintained by `set_doc_len` and `remove`.
+    fn total_tokens(&self) -> Option<u64> {
+        self.records_doc_len().then_some(self.total_tokens)
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
-        _: &HardwareCounterCell,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));

@@ -19,13 +19,13 @@ pub struct ReadOnlyImmutableDenseVectorStorage<B: DenseVectorBlob> {
     /// Flags marking deleted vectors.
     deleted: InMemoryBitvecFlags,
     distance: Distance,
-    /// Whether vector data is populated into RAM (drives `is_on_disk`).
+    /// Whether vector data is populated into RAM (drives `is_cold`).
     populate: Populate,
 }
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::generic_consts::Random;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
@@ -62,7 +62,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 
@@ -73,7 +73,7 @@ mod tests {
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             for id in (0..POINT_COUNT).step_by(11) {
@@ -117,7 +117,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let mut rng = StdRng::seed_from_u64(7);
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let vectors: Vec<DenseVector> = (0..POINT_COUNT).map(|_| rand_vec(&mut rng, DIM)).collect();
 
@@ -127,7 +127,7 @@ mod tests {
             let mut staging = new_volatile_dense_vector_storage(DIM, Distance::Dot);
             for (id, vector) in vectors.iter().enumerate() {
                 staging
-                    .insert_vector(id as PointOffsetType, VectorRef::from(vector), &hw)
+                    .insert_vector(id as PointOffsetType, VectorRef::from(vector))
                     .unwrap();
             }
             merge_from_single_source(&mut writer, &staging, POINT_COUNT).unwrap();
@@ -152,7 +152,6 @@ mod tests {
                 &MmapFs,
                 &SortedSlice::new(&deleted_ids).unwrap(),
                 &SortedSlice::new(&[]).unwrap(),
-                &hw,
             )
             .unwrap();
 

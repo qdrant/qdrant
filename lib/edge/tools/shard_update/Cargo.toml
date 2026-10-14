@@ -12,7 +12,7 @@ name = "edge-shard-update"
 path = "src/main.rs"
 
 [dependencies]
-edge = { path = "../.." }
+edge = { path = "../..", features = ["serverless"] }
 common = { path = "../../../common/common" }
 io_bridge_object_store = { path = "../../../common/io_bridge_object_store" }
 

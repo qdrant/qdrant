@@ -23,6 +23,7 @@
 mod change;
 mod index_changes;
 mod log_file;
+mod proxy_changes;
 mod vector_name_changes;
 
 #[cfg(test)]
@@ -32,8 +33,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::is_alive_lock::IsAliveLock;
+use common::reason::reason;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -42,6 +44,7 @@ pub use self::index_changes::ProxyIndexChanges;
 pub use self::log_file::{
     LOG_FILE_PREFIX, list_pending_changes_log_files, pending_changes_log_path,
 };
+pub use self::proxy_changes::ProxyChanges;
 pub use self::vector_name_changes::{IntendedVector, ProxyVectorNameChanges};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -52,23 +55,19 @@ use crate::types::{PayloadKeyType, PointIdType, SegmentConfig, SeqNumberType, Ve
 
 /// Manages the pending changes of a single proxy segment layer.
 ///
-/// Keeps an in-memory buffer per operation type — point deletes, payload index changes and vector
-/// name changes — which the proxy segment serves its reads from, plus a single buffer of all
-/// registered operations that still have to be persisted. [`Self::flusher`] persists that buffer
-/// into an append-only log file in the wrapped segment's directory; hook it into the regular
-/// segment flush.
+/// Keeps an in-memory buffer of all changes — point deletes, payload index changes and vector
+/// name changes, see [`ProxyChanges`] — which the proxy segment serves its reads from, plus a
+/// single buffer of all registered operations that still have to be persisted.
+/// [`Self::flusher`] persists that buffer into an append-only log file in the wrapped segment's
+/// directory; hook it into the regular segment flush.
 ///
 /// The log file deliberately outlives the component: when a proxy segment is unwrapped its
 /// buffered changes are propagated to the wrapped segment in memory, but deleting the log before
 /// the wrapped segment has flushed those changes would not be crash safe.
 #[derive(Debug)]
 pub struct PendingChanges {
-    /// Points which should no longer be used from the wrapped segment.
-    deleted_points: DeletedPoints,
-    /// Pending payload index changes, per field key.
-    changed_indexes: ProxyIndexChanges,
-    /// Pending vector name changes, per vector name.
-    changed_vector_names: ProxyVectorNameChanges,
+    /// All buffered changes: point deletes, payload index changes and vector name changes.
+    changes: ProxyChanges,
 
     /// All registered operations that are not persisted to the log file yet, in registration
     /// order.
@@ -154,7 +153,7 @@ impl PendingChanges {
                 .store(max_version, Ordering::Relaxed);
 
             for change in loaded.changes {
-                changes.reconstruct_change(change);
+                changes.changes.reconstruct_change(change);
             }
         }
 
@@ -164,33 +163,13 @@ impl PendingChanges {
     /// Build an empty instance targeting `path`, with nothing loaded or persisted yet.
     fn empty(path: PathBuf, level: usize) -> Self {
         Self {
-            deleted_points: DeletedPoints::default(),
-            changed_indexes: ProxyIndexChanges::default(),
-            changed_vector_names: ProxyVectorNameChanges::default(),
+            changes: ProxyChanges::default(),
             pending_persist: Default::default(),
             path,
             level,
             expected_file_len: Arc::new(AtomicU64::new(0)),
             persisted_version: Arc::new(AtomicU64::new(0)),
             is_alive_lock: IsAliveLock::new(),
-        }
-    }
-
-    /// Re-insert a change loaded from the log file into the in-memory buffers.
-    fn reconstruct_change(&mut self, change: PendingChange) {
-        match change {
-            PendingChange::DeletePoint { point_id, versions } => {
-                self.deleted_points.insert(point_id, versions);
-            }
-            PendingChange::IndexChange { field_name, change } => {
-                self.changed_indexes.insert(field_name, change);
-            }
-            PendingChange::VectorNameChange {
-                vector_name,
-                intent,
-            } => {
-                self.changed_vector_names.insert_intent(vector_name, intent);
-            }
         }
     }
 
@@ -212,7 +191,7 @@ impl PendingChanges {
         point_id: PointIdType,
         versions: ProxyDeletedPoint,
     ) -> Option<ProxyDeletedPoint> {
-        let previous = self.deleted_points.insert(point_id, versions);
+        let previous = self.changes.deleted_points_mut().insert(point_id, versions);
         self.pending_persist
             .lock()
             .push(PendingChange::DeletePoint { point_id, versions });
@@ -221,7 +200,8 @@ impl PendingChanges {
 
     /// Register a pending payload index change.
     pub fn register_index_change(&mut self, field_name: PayloadKeyType, change: ProxyIndexChange) {
-        self.changed_indexes
+        self.changes
+            .index_changes_mut()
             .insert(field_name.clone(), change.clone());
         self.pending_persist
             .lock()
@@ -240,7 +220,7 @@ impl PendingChanges {
         version: SeqNumberType,
         wrapped_config: &SegmentConfig,
     ) {
-        let intent = self.changed_vector_names.record_create(
+        let intent = self.changes.vector_name_changes_mut().record_create(
             vector_name.clone(),
             config,
             version,
@@ -260,7 +240,8 @@ impl PendingChanges {
         vector_name: VectorNameBuf,
         version: SeqNumberType,
     ) {
-        self.changed_vector_names
+        self.changes
+            .vector_name_changes_mut()
             .record_delete(vector_name.clone(), version);
         self.pending_persist
             .lock()
@@ -270,36 +251,31 @@ impl PendingChanges {
             });
     }
 
+    /// All pending changes: point deletes, payload index changes and vector name changes.
+    pub fn changes(&self) -> &ProxyChanges {
+        &self.changes
+    }
+
     /// Pending point deletes.
     pub fn deleted_points(&self) -> &DeletedPoints {
-        &self.deleted_points
+        self.changes.deleted_points()
     }
 
     /// Pending payload index changes.
     pub fn index_changes(&self) -> &ProxyIndexChanges {
-        &self.changed_indexes
+        self.changes.index_changes()
     }
 
     /// Pending vector name changes.
     pub fn vector_name_changes(&self) -> &ProxyVectorNameChanges {
-        &self.changed_vector_names
+        self.changes.vector_name_changes()
     }
 
-    /// Clear the pending point deletes, after they have been propagated to the wrapped segment.
-    pub fn clear_deleted_points(&mut self) {
-        self.deleted_points.clear();
-    }
-
-    /// Clear the pending payload index changes, after they have been propagated to the wrapped
-    /// segment.
-    pub fn clear_index_changes(&mut self) {
-        self.changed_indexes.clear();
-    }
-
-    /// Clear the pending vector name changes, after they have been propagated to the wrapped
-    /// segment.
-    pub fn clear_vector_name_changes(&mut self) {
-        self.changed_vector_names.clear();
+    /// Clear all pending changes, after they have been propagated to the wrapped segment.
+    ///
+    /// Does not touch the operations still pending persistence, see [`Self::pending_persist`].
+    pub fn clear_changes(&mut self) {
+        self.changes.clear();
     }
 
     /// Highest operation version covered by the log file.
@@ -382,8 +358,7 @@ pub fn apply_change<S>(segment: &mut S, change: &PendingChange) -> OperationResu
 where
     S: NonAppendableSegmentEntry + ?Sized,
 {
-    // Internal operation, no need to measure hardware IO
-    let hw_counter = HardwareCounterCell::disposable();
+    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     match change {
         PendingChange::DeletePoint { point_id, versions } => {
@@ -393,11 +368,11 @@ where
             // newer. This is possible because different proxy segments can share state through a
             // common write segment.
             // See: <https://github.com/qdrant/qdrant/pull/7208>
-            segment.delete_point(versions.operation_version, *point_id, &hw_counter)?;
+            segment.delete_point(versions.operation_version, *point_id)?;
         }
         PendingChange::IndexChange { field_name, change } => match change {
             ProxyIndexChange::Create(schema, version) => {
-                segment.create_field_index(*version, field_name, Some(schema), &hw_counter)?;
+                segment.create_field_index(*version, field_name, Some(schema))?;
             }
             ProxyIndexChange::Delete(version) => {
                 segment.delete_field_index(*version, field_name)?;
@@ -494,6 +469,10 @@ pub fn recover_pending_changes(
     if log_files.is_empty() {
         return Ok(RecoveredPendingChanges::default());
     }
+
+    // The logs are part of the segment state until removed, also when ignored: then they mirror
+    // the files of another writer's segment
+    segment.pending_changes_logs = log_files.clone();
 
     match persisted_proxy_changes {
         PersistedProxyChanges::Replay => {}

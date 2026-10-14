@@ -5,7 +5,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use tempfile::Builder;
 
-use super::{DiskIdTracker, ReadOnlyDiskIdTracker};
+use super::{DiskIdTracker, ReadOnlyDiskIdTracker, VersionsFormat, compact_versions};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
@@ -234,6 +234,7 @@ fn detect_and_load_selects_disk_format() {
         &MmapFs,
         disk_dir.path(),
         None,
+        None,
         Populate::No,
     )
     .unwrap();
@@ -249,6 +250,7 @@ fn detect_and_load_selects_disk_format() {
         &MmapFs,
         imm_dir.path(),
         None,
+        None,
         Populate::No,
     )
     .unwrap();
@@ -259,6 +261,7 @@ fn detect_and_load_selects_disk_format() {
     let loaded = ReadOnlyIdTrackerEnum::<MmapFile>::detect_and_load(
         &MmapFs,
         empty_dir.path(),
+        None,
         None,
         Populate::No,
     )
@@ -424,7 +427,7 @@ fn deletion_and_live_reload_disk_cache() {
     use std::sync::Arc;
 
     use common::universal_io::{
-        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFs,
     };
 
     use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
@@ -556,4 +559,47 @@ fn on_disk_sections_are_aligned() {
         assert!(e2i.num_run_offset >= e2i.uuid_sparse_offset + e2i.uuid_blocks() * 16);
         assert!(e2i.uuid_run_offset >= e2i.num_run_offset + e2i.num_count * NUM_ENTRY_SIZE);
     }
+}
+
+#[test]
+fn compact_versions_roundtrip() {
+    let (versions, mappings) = make_data(9);
+    let immutable = build_immutable(&versions, mappings.clone());
+
+    let dir = Builder::new().prefix("disk").tempdir().unwrap();
+    let mut disk = DiskIdTracker::<MmapFile>::new_with_versions_format(
+        &MmapFs,
+        dir.path(),
+        &versions,
+        mappings,
+        VersionsFormat::Compact,
+    )
+    .unwrap();
+    assert!(!dir.path().join("id_tracker.versions").exists());
+    assert!(
+        disk.files()
+            .contains(&compact_versions::compact_versions_path(dir.path()))
+    );
+
+    let read_only =
+        ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+    assert_read_parity(&immutable, &read_only);
+    assert_batch_parity(&read_only);
+
+    // A live point's version change is persisted on flush, a deletion is not
+    let mut live = disk.point_mappings().iter_internal();
+    let (updated, dropped) = (live.next().unwrap(), live.next().unwrap());
+    drop(live);
+    disk.set_internal_version(updated, 1_000_000).unwrap();
+    disk.drop_internal(dropped).unwrap();
+    disk.versions_flusher()().unwrap();
+    disk.mapping_flusher()().unwrap();
+
+    let reopened = DiskIdTracker::<MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+    let read_only =
+        ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
+    assert_eq!(reopened.internal_version(updated), Some(1_000_000));
+    assert_eq!(read_only.internal_version(updated), Some(1_000_000));
+    assert!(reopened.is_deleted_point(dropped));
+    assert!(read_only.is_deleted_point(dropped));
 }

@@ -46,7 +46,7 @@ impl Group {
 
 /// Make `group_by` field selector work with as `with_payload`.
 fn group_by_to_payload_selector(group_by: &JsonPath) -> WithPayloadInterface {
-    WithPayloadInterface::Fields(vec![group_by.strip_wildcard_suffix()])
+    WithPayloadInterface::Fields(vec![group_by.wildcard_indices()])
 }
 
 /// Merge an extra filter into an optional existing one.

@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
+use super::bm25::{Bm25Accept, Bm25Query, PositionalCursors, score_top_k};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -43,18 +44,21 @@ fn get_all_or_none<'a, V: PostingValue>(
 pub struct ImmutableInvertedIndex {
     pub(super) postings: ImmutablePostings,
     pub(super) vocab: HashMap<String, TokenId>,
-    pub(super) point_to_tokens_count: Vec<usize>,
+    /// Number of distinct tokens per point, i.e. the size of its token set:
+    /// a token that occurs several times in the text counts once.
+    /// Zero for a point without tokens or a removed one.
+    /// Stored as `usize` on disk.
+    pub(super) point_to_tokens_count: Vec<u32>,
 
-    /// Total tokens per point, for BM25 length normalization. `None` when this
-    /// index does not record lengths.
+    /// Number of token occurrences per point, i.e. the length of the tokenized
+    /// text with repetitions, summed over all of the point's values. `None`
+    /// when this index does not record lengths.
     ///
-    /// Parallel to `point_to_tokens_count` and zeroed wherever that vector is,
-    /// so summing it never counts a deleted document. A zero can still be a
-    /// live document whose tokens were all filtered, but only until the index
-    /// is written out: `create` puts every point with no tokens into the "no
-    /// tokens" mask, so after a round trip through disk that document is
-    /// indistinguishable from a deleted one.
+    /// Zeroed wherever `point_to_tokens_count` is.
     pub(super) point_to_doc_len: Option<Vec<u32>>,
+    /// Sum of `point_to_doc_len`, maintained rather than re-derived. Only
+    /// meaningful when that vector exists.
+    pub(super) total_tokens: u64,
     pub(super) points_count: usize,
 }
 
@@ -278,7 +282,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self,
         _idx: PointOffsetType,
         _tokens: super::TokenSet,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Can't add values to immutable text index",
@@ -289,7 +292,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self,
         _idx: PointOffsetType,
         _document: super::Document,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Can't add values to immutable text index",
@@ -306,6 +308,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .as_mut()
             .and_then(|lens| lens.get_mut(idx as usize))
         {
+            self.total_tokens = self.total_tokens.saturating_sub(u64::from(*doc_len));
             *doc_len = 0;
         }
         self.points_count = self.points_count.saturating_sub(1);
@@ -315,7 +318,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match query {
             ParsedQuery::AllTokens(tokens) => Ok(Box::new(self.filter_has_all(tokens))),
@@ -324,11 +326,51 @@ impl InvertedIndex for ImmutableInvertedIndex {
         }
     }
 
-    fn get_posting_len(
+    fn score_bm25(
         &self,
-        token_id: TokenId,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
+        query: &Bm25Query,
+        accept: &Bm25Accept<'_>,
+        limit: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let (ImmutablePostings::WithPositions(postings), Some(lengths)) =
+            (&self.postings, self.point_to_doc_len.as_deref())
+        else {
+            return Err(OperationError::service_error(
+                "text index does not score: BM25 needs positions and document lengths",
+            ));
+        };
+        let views = query
+            .terms()
+            .iter()
+            .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
+            .collect();
+        let mut cursors = PositionalCursors::new(views);
+        // Deleted points stay in these postings and are masked here, as the
+        // filter path does.
+        let visible = |point_id: PointOffsetType| {
+            self.point_to_tokens_count
+                .get(point_id as usize)
+                .is_some_and(|count| *count > 0)
+                && accept.is_visible(point_id)
+        };
+        // In RAM: nothing to gain from reading lengths in batches.
+        score_top_k::<_, 1>(
+            query,
+            &mut cursors,
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.get(*point_id as usize).copied();
+                }
+                Ok(())
+            },
+            &accept.with_visible(&visible),
+            limit,
+            is_stopped,
+        )
+    }
+
+    fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         Ok(self.postings.posting_len(token_id))
     }
 
@@ -366,18 +408,37 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.point_to_tokens_count
             .get(point_id as usize)
-            .copied()
-            .unwrap_or(0)
+            .map_or(0, |&count| count as usize)
     }
 
     fn points_count(&self) -> usize {
         self.points_count
     }
 
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        mut f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        let lens = self.point_to_doc_len.as_deref();
+        for (index, &point_id) in point_ids.iter().enumerate() {
+            f(
+                index,
+                lens.and_then(|lens| lens.get(point_id as usize).copied()),
+            );
+        }
+        Ok(())
+    }
+
+    /// Maintained, not summed: both ways into this index already have the
+    /// number, and `remove` is the only mutation after that.
+    fn total_tokens(&self) -> Option<u64> {
+        self.point_to_doc_len.is_some().then_some(self.total_tokens)
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
-        _: &HardwareCounterCell,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));
@@ -393,9 +454,11 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             point_to_tokens,
             point_to_doc,
             mut point_to_doc_len,
-            // Not carried: deletions are masked on load, so a total written at
-            // build time would be stale. Whoever needs it sums the vector.
-            total_tokens: _,
+            // Carried as-is: the counter is already the sum of the vector being
+            // moved across, and the padding below only adds zeroes. Masking is
+            // what a total read back from disk cannot survive, and that path
+            // recomputes instead.
+            total_tokens,
             points_count,
         } = index;
 
@@ -412,12 +475,13 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             }
         };
 
-        let point_to_tokens_count: Vec<usize> = point_to_tokens
+        // Distinct tokens are distinct `TokenId`s, so the count fits in `u32`.
+        let point_to_tokens_count: Vec<u32> = point_to_tokens
             .iter()
             .map(|tokenset| {
                 tokenset
                     .as_ref()
-                    .map(|tokenset| tokenset.len())
+                    .map(|tokenset| tokenset.len() as u32)
                     .unwrap_or(0)
             })
             .collect();
@@ -442,6 +506,7 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens,
             points_count,
         }
     }
@@ -569,23 +634,30 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
         // variant tracks deletions in a separate in-memory bitmask and leaves
         // `point_to_tokens_count` untouched on disk, so we apply the bitmask
         // here when materializing the count vector.
-        let mut point_to_tokens_count = index
+        let point_to_tokens_count: Vec<u32> = index
             .storage
             .point_to_tokens_count
             .read_whole()?
-            .into_owned();
-        for (idx, count) in point_to_tokens_count.iter_mut().enumerate() {
-            if !index
-                .storage
-                .deleted_points
-                .is_active(idx as PointOffsetType)
-            {
-                *count = 0;
-            }
-        }
+            .iter()
+            .enumerate()
+            .map(|(idx, &count)| {
+                if index
+                    .storage
+                    .deleted_points
+                    .is_active(idx as PointOffsetType)
+                {
+                    count as u32
+                } else {
+                    0
+                }
+            })
+            .collect();
 
         // Document lengths are masked the same way, so that whoever sums them
         // gets the live total rather than one inflated by deleted points.
+        // Summed here rather than later: this walk already has to touch every
+        // element to apply the mask.
+        let mut total_tokens = 0;
         let point_to_doc_len = match &index.storage.point_to_doc_len {
             None => None,
             Some(storage) => {
@@ -599,6 +671,7 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
                     {
                         *doc_len = 0;
                     }
+                    total_tokens += u64::from(*doc_len);
                 }
                 Some(lens)
             }
@@ -609,6 +682,7 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens,
             points_count: index.points_count(),
         })
     }
@@ -622,6 +696,7 @@ impl ImmutableInvertedIndex {
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens: _,
             points_count: _,
         } = self;
 
@@ -632,7 +707,7 @@ impl ImmutableInvertedIndex {
             * (size_of::<String>() + size_of::<TokenId>() + hashmap_entry_overhead);
         // Account for actual heap-allocated string data
         let vocab_heap_bytes: usize = vocab.keys().map(|s| s.capacity()).sum();
-        let pttc_bytes = point_to_tokens_count.capacity() * size_of::<usize>();
+        let pttc_bytes = point_to_tokens_count.capacity() * size_of::<u32>();
         let doc_len_bytes = point_to_doc_len
             .as_ref()
             .map(|lens| lens.capacity() * size_of::<u32>())

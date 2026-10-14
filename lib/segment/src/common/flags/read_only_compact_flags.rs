@@ -208,7 +208,7 @@ mod tests {
 
     #[cfg(not(windows))]
     use common::universal_io::{
-        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFileOps,
+        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, UniversalReadFs,
     };
     use common::universal_io::{MmapFile, MmapFs};
     use tempfile::Builder;

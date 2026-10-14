@@ -3,7 +3,7 @@ const NUM_VECTORS_2: u64 = 500;
 
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::flags::FeatureFlags;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::{NonAppendableSegmentEntry, ReadSegmentEntry, SegmentEntry};
@@ -25,7 +25,7 @@ fn test_rebuild_with_removed_vectors() {
     let mut segment1 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
     let mut segment2 = build_segment_with_two_named_vecs(dir.path(), 4, 6, Distance::Dot).unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     for i in 0..NUM_VECTORS_1 {
         segment1
@@ -36,7 +36,6 @@ fn test_rebuild_with_removed_vectors() {
                     (VECTOR1_NAME.into(), vec![i as f32, 0., 0., 0.]),
                     (VECTOR2_NAME.into(), vec![0., i as f32, 0., 0., 0., 0.]),
                 ]),
-                &hw_counter,
             )
             .unwrap();
     }
@@ -52,7 +51,7 @@ fn test_rebuild_with_removed_vectors() {
         };
 
         segment2
-            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors, &hw_counter)
+            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors)
             .unwrap();
     }
 
@@ -72,7 +71,7 @@ fn test_rebuild_with_removed_vectors() {
         }
         if i % 2 == 0 {
             segment2
-                .delete_point(2, (NUM_VECTORS_1 + i).into(), &hw_counter)
+                .delete_point(2, (NUM_VECTORS_1 + i).into())
                 .unwrap();
         }
     }
@@ -84,7 +83,7 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = segment2.all_vectors(idx.into(), &hw_counter).unwrap();
+        let vec = segment2.all_vectors(idx.into()).unwrap();
         reference.push(vec);
     }
 
@@ -96,11 +95,7 @@ fn test_rebuild_with_removed_vectors() {
     )
     .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
-
-    builder
-        .update(&[&segment1, &segment2], &stopped, &hw_counter)
-        .unwrap();
+    builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     let merged_segment = builder.build_for_test(dir.path());
 
@@ -140,7 +135,7 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = merged_segment.all_vectors(idx.into(), &hw_counter).unwrap();
+        let vec = merged_segment.all_vectors(idx.into()).unwrap();
         merged_reference.push(vec);
     }
 

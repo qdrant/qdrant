@@ -1,7 +1,6 @@
 use std::ops::Bound;
 
 use blobstore::Blob;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::super::Encodable;
@@ -103,7 +102,6 @@ where
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         Ok(self.in_memory_index.check_values_any(idx, check_fn))
     }
@@ -124,7 +122,6 @@ where
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        _hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         Ok(self.in_memory_index.values_range(start_bound, end_bound))
     }

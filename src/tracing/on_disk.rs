@@ -87,6 +87,7 @@ where
             config.buffer_size_bytes.unwrap_or(8192),
             writer,
         )))
+        .with_timer(TimeFormat::from_env())
         .with_span_events(config::SpanEvent::unwrap_or_default_config(
             &config.span_events,
         ))

@@ -3,8 +3,6 @@ pub mod mutable_bool_index;
 pub mod read_only_bool_index;
 mod read_ops;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFile;
 pub use immutable_bool_index::ImmutableBoolIndex;
@@ -52,11 +50,8 @@ impl BoolIndex {
 
     /// Produce a closure that maps a point id to its indexed bool
     /// values as JSON `Value`s. Used by `FieldIndex::value_retriever`.
-    pub fn value_retriever<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> OperationResult<VariableRetrieverFn<'a>> {
-        read_ops::value_retriever(self, hw_counter)
+    pub fn value_retriever<'a>(&'a self) -> OperationResult<VariableRetrieverFn<'a>> {
+        read_ops::value_retriever(self)
     }
 }
 
@@ -104,6 +99,13 @@ impl BoolIndexRead for BoolIndex {
             BoolIndex::Immutable(index) => index.falses_count(),
         }
     }
+
+    fn immutable_files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            BoolIndex::Mutable(_) => Vec::new(),
+            BoolIndex::Immutable(_) => BoolIndexRead::files(self),
+        }
+    }
 }
 
 impl PayloadFieldIndexRead for BoolIndex {
@@ -114,17 +116,15 @@ impl PayloadFieldIndexRead for BoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        read_ops::filter(self, condition, hw_counter)
+        read_ops::filter(self, condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<super::CardinalityEstimation>> {
-        read_ops::estimate_cardinality(self, condition, hw_counter)
+        read_ops::estimate_cardinality(self, condition)
     }
 
     fn for_each_payload_block(
@@ -139,11 +139,10 @@ impl PayloadFieldIndexRead for BoolIndex {
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
         match self {
-            BoolIndex::Mutable(index) => index.condition_checker(condition, hw_acc),
-            BoolIndex::Immutable(index) => index.condition_checker(condition, hw_acc),
+            BoolIndex::Mutable(index) => index.condition_checker(condition),
+            BoolIndex::Immutable(index) => index.condition_checker(condition),
         }
     }
 }
@@ -168,10 +167,7 @@ impl PayloadFieldIndex for BoolIndex {
     }
 
     fn immutable_files(&self) -> Vec<std::path::PathBuf> {
-        match self {
-            BoolIndex::Mutable(index) => index.immutable_files(),
-            BoolIndex::Immutable(index) => index.immutable_files(),
-        }
+        BoolIndexRead::immutable_files(self)
     }
 }
 
@@ -187,7 +183,6 @@ impl FacetIndex for BoolIndex {
     fn for_points_values(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(PointOffsetType, &mut dyn Iterator<Item = FacetValueRef<'_>>),
     ) -> OperationResult<()> {
         for point_id in points {
@@ -206,30 +201,24 @@ impl FacetIndex for BoolIndex {
 
     fn for_each_value_map(
         &self,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(
             FacetValueRef<'_>,
             &mut dyn Iterator<Item = PointOffsetType>,
         ) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        BoolIndexRead::for_each_value_map(self, hw_counter, |value, iter| {
-            f(FacetValueRef::Bool(value), iter)
-        })
+        BoolIndexRead::for_each_value_map(self, |value, iter| f(FacetValueRef::Bool(value), iter))
     }
 
     fn for_values_map(
         &self,
         values: impl Iterator<Item = FacetValue>,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(FacetValue, &mut dyn Iterator<Item = PointOffsetType>) -> OperationResult<()>,
     ) -> OperationResult<()> {
         let bools = values.filter_map(|value| match value {
             FacetValue::Bool(b) => Some(b),
             FacetValue::Keyword(_) | FacetValue::Int(_) | FacetValue::Uuid(_) => None,
         });
-        BoolIndexRead::for_values_map(self, bools, hw_counter, |b, iter| {
-            f(FacetValue::Bool(b), iter)
-        })
+        BoolIndexRead::for_values_map(self, bools, |b, iter| f(FacetValue::Bool(b), iter))
     }
 
     fn for_each_count_per_value(
@@ -253,10 +242,9 @@ impl ValueIndexer for BoolIndex {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            BoolIndex::Mutable(index) => index.add_many(id, values, hw_counter),
+            BoolIndex::Mutable(index) => index.add_many(id, values),
             BoolIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable bool index",
             )),
@@ -286,8 +274,7 @@ impl ValueIndexer for BoolIndex {
 mod tests {
     use std::path::Path;
 
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -375,15 +362,12 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut builder = I::builder(tmp_dir.path());
 
-        let hw_counter = HardwareCounterCell::new();
+        builder.add_point(0, &[&given]).unwrap();
 
-        builder.add_point(0, &[&given], &hw_counter).unwrap();
-
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
         let index = builder.finalize().unwrap();
         let count = index
-            .filter(&match_bool(match_on), &hw_counter)
+            .filter(&match_bool(match_on))
             .unwrap()
             .unwrap()
             .count();
@@ -447,13 +431,11 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut builder = I::builder(tmp_dir.path());
 
-        let hw_counter = HardwareCounterCell::new();
-
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
+                builder.add_point(i as u32, &[&value]).unwrap();
             });
 
         let index = builder.finalize().unwrap();
@@ -462,17 +444,16 @@ mod tests {
 
         let new_index = I::open_at(tmp_dir.path());
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
         let point_offsets = new_index
-            .filter(&match_bool(false), &hw_counter)
+            .filter(&match_bool(false))
             .unwrap()
             .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![1, 2, 3, 5, 6, 10]);
 
         let point_offsets = new_index
-            .filter(&match_bool(true), &hw_counter)
+            .filter(&match_bool(true))
             .unwrap()
             .unwrap()
             .collect_vec();
@@ -496,31 +477,28 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
-        let hw_cell = HardwareCounterCell::new();
-
         let idx = 1000;
-        index.add_point(idx, &[&before], &hw_cell).unwrap();
+        index.add_point(idx, &[&before]).unwrap();
 
-        let hw_acc = HwMeasurementAcc::new();
-        let hw_counter = hw_acc.get_counter_cell();
+        let _scope = ambient::test_guard();
 
         let point_offsets = index
-            .filter(&match_bool(false), &hw_counter)
+            .filter(&match_bool(false))
             .unwrap()
             .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
 
-        index.add_point(idx, &[&after], &hw_cell).unwrap();
+        index.add_point(idx, &[&after]).unwrap();
 
         let point_offsets = index
-            .filter(&match_bool(true), &hw_counter)
+            .filter(&match_bool(true))
             .unwrap()
             .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
         let point_offsets = index
-            .filter(&match_bool(false), &hw_counter)
+            .filter(&match_bool(false))
             .unwrap()
             .unwrap()
             .collect_vec();
@@ -541,13 +519,11 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut builder = I::builder(tmp_dir.path());
 
-        let hw_counter = HardwareCounterCell::new();
-
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
+                builder.add_point(i as u32, &[&value]).unwrap();
             });
 
         let index = builder.finalize().unwrap();
@@ -564,13 +540,11 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
-        let hw_counter = HardwareCounterCell::new();
-
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
+                index.add_point(i as u32, &[&value]).unwrap();
             });
 
         let mut blocks = Vec::new();
@@ -599,26 +573,24 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut builder = I::builder(tmp_dir.path());
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                builder.add_point(i as u32, &[&value], &hw_counter).unwrap();
+                builder.add_point(i as u32, &[&value]).unwrap();
             });
-
-        let hw_counter = HardwareCounterCell::new();
 
         let index = builder.finalize().unwrap();
         let cardinality = index
-            .estimate_cardinality(&match_bool(true), &hw_counter)
+            .estimate_cardinality(&match_bool(true))
             .unwrap()
             .unwrap();
         assert_eq!(cardinality.exp, 6);
 
         let cardinality = index
-            .estimate_cardinality(&match_bool(false), &hw_counter)
+            .estimate_cardinality(&match_bool(false))
             .unwrap()
             .unwrap();
         assert_eq!(cardinality.exp, 6);

@@ -8,8 +8,7 @@ use common::generic_consts::Random;
 use common::mmap::AdviceSetting;
 use common::stored_bitmask::StoredBitmask;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead,
-    UniversalReadFileOps, UniversalReadFs,
+    CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, UniversalRead, UniversalReadFs,
 };
 
 use super::DiskMappingReader;
@@ -38,6 +37,19 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         }
     }
 
+    /// Options for the `i2e` handle: like [`Self::open_options`], but an
+    /// `Auto` populate preloads it whole, as search reads it per result.
+    fn i2e_open_options(populate: Populate) -> OpenOptions {
+        let populate = match populate {
+            Populate::Auto => Populate::PreferBackground,
+            Populate::No
+            | Populate::Blocking
+            | Populate::PreferBackground
+            | Populate::Partial(_) => populate,
+        };
+        Self::open_options(populate)
+    }
+
     /// The `is_uuid` file is read whole at open, so it is populated eagerly,
     /// unlike the lazily-served `i2e`/`e2i` handles.
     fn is_uuid_open_options() -> OpenOptions {
@@ -59,14 +71,16 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         populate: Populate,
     ) -> OperationResult<bool> {
         let i2e_path = i2e_path(segment_path);
-        if !UniversalReadFileOps::exists(fs, &i2e_path)? {
+        if !UniversalReadFs::exists(fs, &i2e_path)? {
             return Ok(false);
         }
 
-        let options = Self::open_options(populate);
-
-        fs.schedule_open(&i2e_path, Some(options), None);
-        fs.schedule_open(&e2i_path(segment_path), Some(options), None);
+        fs.schedule_open(&i2e_path, Some(Self::i2e_open_options(populate)), None);
+        fs.schedule_open(
+            &e2i_path(segment_path),
+            Some(Self::open_options(populate)),
+            None,
+        );
         fs.schedule_open(
             &is_uuid_path(segment_path),
             Some(OpenOptions {
@@ -84,7 +98,8 @@ impl<S: UniversalRead> DiskMappingReader<S> {
     /// Open the reader, loading only headers, the sparse index, and the
     /// `is_uuid` bitmap into RAM; no per-point mapping data is read. A
     /// populating `populate` additionally primes the page cache with the
-    /// mapping files, which otherwise are paged in on demand.
+    /// mapping files, which otherwise are paged in on demand; `Auto` primes
+    /// only `i2e`, the direction search reads.
     ///
     /// Errors if the segment is not in the on-disk format (`i2e` absent). Use
     /// [`try_open`](Self::try_open) to probe without erroring.
@@ -110,10 +125,12 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         segment_path: &Path,
         populate: Populate,
     ) -> OperationResult<Option<Self>> {
-        let options = Self::open_options(populate);
-
         let Some(i2e) = fs
-            .open(i2e_path(segment_path), options, Default::default())
+            .open(
+                i2e_path(segment_path),
+                Self::i2e_open_options(populate),
+                Default::default(),
+            )
             .ok_not_found()?
         else {
             return Ok(None);
@@ -121,7 +138,11 @@ impl<S: UniversalRead> DiskMappingReader<S> {
         let i2e_header_bytes = i2e.read::<_, u8>(ReadRange::new(0, I2E_HEADER_SIZE), Random)?;
         let i2e_header = I2eHeader::parse(i2e_header_bytes.as_ref())?;
 
-        let e2i = fs.open(e2i_path(segment_path), options, Default::default())?;
+        let e2i = fs.open(
+            e2i_path(segment_path),
+            Self::open_options(populate),
+            Default::default(),
+        )?;
         let e2i_header_bytes = e2i.read::<_, u8>(ReadRange::new(0, E2I_HEADER_SIZE), Random)?;
         let e2i_header = E2iHeader::parse(e2i_header_bytes.as_ref())?;
 

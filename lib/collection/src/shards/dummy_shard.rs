@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::DeferredBehavior;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::index::field_index::CardinalityEstimation;
@@ -101,7 +100,6 @@ impl ShardOperation for DummyShard {
         op: OperationWithClockTag,
         _: WaitUntil,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         match &op.operation {
             CollectionUpdateOperations::PointOperation(_) => self.dummy("Update Points"),
@@ -132,7 +130,6 @@ impl ShardOperation for DummyShard {
         _: Arc<ScrollRequestInternal>,
         _: &AdaptiveSearchHandle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy("Scroll")
     }
@@ -146,7 +143,6 @@ impl ShardOperation for DummyShard {
         _: Option<&Filter>,
         _: &AdaptiveSearchHandle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
         _: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy("Scroll by ID")
@@ -161,7 +157,6 @@ impl ShardOperation for DummyShard {
         _: Arc<CoreSearchRequestBatch>,
         _: &AdaptiveSearchHandle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.dummy("search")
     }
@@ -171,7 +166,6 @@ impl ShardOperation for DummyShard {
         _: Arc<CountRequestInternal>,
         _: &AdaptiveSearchHandle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
         _: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         self.dummy("count")
@@ -184,7 +178,6 @@ impl ShardOperation for DummyShard {
         _: &WithVector,
         _: &AdaptiveSearchHandle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
         _: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy("retrieve")
@@ -195,7 +188,6 @@ impl ShardOperation for DummyShard {
         _requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         _timeout: Option<Duration>,
-        _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         self.dummy("query")
     }
@@ -205,7 +197,6 @@ impl ShardOperation for DummyShard {
         _: Arc<FacetParams>,
         _search_runtime_handle: &AdaptiveSearchHandle,
         _: Option<Duration>,
-        _: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         self.dummy("facet")
     }

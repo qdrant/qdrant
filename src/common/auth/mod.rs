@@ -5,7 +5,8 @@ pub use api::HTTP_HEADER_API_KEY;
 use chrono::Utc;
 use collection::operations::routing::RoutingToken;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use itertools::Itertools;
 use segment::types::{WithPayloadInterface, WithVector};
 use shard::scroll::ScrollRequestInternal;
@@ -142,9 +143,7 @@ impl AuthKeys {
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
     ) -> Result<(Access, InferenceToken, AuthType, Option<String>), AuthError> {
-        let Some(key) = get_header(HTTP_HEADER_API_KEY)
-            .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
-        else {
+        let Some(key) = Self::extract_key(&get_header) else {
             return Err(AuthError::Unauthorized(
                 "Must provide an API key or an Authorization bearer token".to_string(),
             ));
@@ -212,6 +211,39 @@ impl AuthKeys {
         ))
     }
 
+    /// Validate a request to the internal (p2p) API.
+    ///
+    /// Only the read-write API keys are accepted here. The internal API carries
+    /// consensus and shard traffic, so a read-only key or a JWT with narrowed
+    /// claims must never be able to reach it: `Raft` and other peer-to-peer
+    /// services do not check per-request `Access`, the key itself is the gate.
+    pub fn validate_internal_request<'a>(
+        &self,
+        get_header: impl Fn(&'a str) -> Option<&'a str>,
+    ) -> Result<(Access, AuthType), AuthError> {
+        let Some(key) = Self::extract_key(get_header) else {
+            return Err(AuthError::Unauthorized(
+                "Must provide an API key or an Authorization bearer token".to_string(),
+            ));
+        };
+
+        if self.can_write(key) {
+            return Ok((
+                Access::full("Read-write access by key on internal API"),
+                AuthType::ApiKey,
+            ));
+        }
+
+        Err(AuthError::Unauthorized(
+            "Internal API requires the read-write API key".to_string(),
+        ))
+    }
+
+    fn extract_key<'a>(get_header: impl Fn(&'a str) -> Option<&'a str>) -> Option<&'a str> {
+        get_header(HTTP_HEADER_API_KEY)
+            .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
+    }
+
     async fn validate_value_exists(
         &self,
         value_exists: &ValueExists,
@@ -236,8 +268,8 @@ impl AuthKeys {
                 None, // no timeout
                 ShardSelectorInternal::All,
                 Auth::new_internal(Access::full("JWT stateful validation")),
-                HwMeasurementAcc::disposable(),
             )
+            .unmeasured(reason("Access checks aren't attributed to the request"))
             .await
             .map_err(|e| {
                 #[expect(clippy::wildcard_enum_match_arm, reason = "error handling")]
@@ -285,6 +317,7 @@ impl AuthKeys {
 mod tests {
     use collection::shards::channel_service::ChannelService;
     use common::budget::ResourceBudget;
+    use storage::rbac::AccessRequirements;
     use tempfile::TempDir;
 
     use super::*;
@@ -343,6 +376,47 @@ mod tests {
         assert!(ro.can_read("r"));
         assert!(!ro.can_read(""));
         assert!(!ro.can_write("r"));
+    }
+
+    #[test]
+    fn internal_api_accepts_only_read_write_keys() {
+        let (toc, _dir) = test_toc();
+        let mut cfg = config(Some("rw"), Some("alt"), Some("ro"));
+        cfg.jwt_rbac = Some(true);
+        let keys = AuthKeys::try_create(&cfg, toc).unwrap();
+
+        let header = |value: &'static str| move |name: &str| (name == "api-key").then_some(value);
+        let bearer =
+            |value: &'static str| move |name: &str| (name == "authorization").then_some(value);
+
+        assert!(keys.validate_internal_request(header("rw")).is_ok());
+        assert!(keys.validate_internal_request(header("alt")).is_ok());
+        assert!(keys.validate_internal_request(bearer("Bearer rw")).is_ok());
+
+        assert!(matches!(
+            keys.validate_internal_request(header("ro")),
+            Err(AuthError::Unauthorized(_)),
+        ));
+        assert!(matches!(
+            keys.validate_internal_request(bearer("Bearer ro")),
+            Err(AuthError::Unauthorized(_)),
+        ));
+        assert!(matches!(
+            keys.validate_internal_request(header("")),
+            Err(AuthError::Unauthorized(_)),
+        ));
+        assert!(matches!(
+            keys.validate_internal_request(|_| None),
+            Err(AuthError::Unauthorized(_)),
+        ));
+
+        let (access, auth_type) = keys.validate_internal_request(header("rw")).unwrap();
+        assert!(
+            access
+                .check_global_access(AccessRequirements::new().manage())
+                .is_ok()
+        );
+        assert!(matches!(auth_type, AuthType::ApiKey));
     }
 
     #[test]

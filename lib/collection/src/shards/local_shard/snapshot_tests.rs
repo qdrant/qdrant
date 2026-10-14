@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::io::Read as _;
 use std::sync::Arc;
 
+use common::ambient::AmbientFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::File;
@@ -184,8 +185,8 @@ fn test_snapshot_includes_segment_manifest() {
 /// flush worker would acknowledge.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
+    use common::ambient::AmbientContext;
     use common::budget::ResourceBudget;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::data_types::vectors::VectorStructInternal;
     use shard::operations::CollectionUpdateOperations;
     use shard::operations::point_ops::{
@@ -232,7 +233,7 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
     // Keep flushing and WAL acknowledging under the test's control
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
 
     // Insert points; WAL indices: fake operation at 0, then one entry per upsert (1..=total)
     let total_points = 10u64;
@@ -246,7 +247,8 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
             PointInsertOperationsInternal::PointsList(vec![point]),
         ));
         shard
-            .update(op.into(), WaitUntil::Visible, None, hw_acc.clone())
+            .update(op.into(), WaitUntil::Visible, None)
+            .measured(AmbientContext::clone(&ctx))
             .await
             .unwrap();
     }
@@ -260,12 +262,8 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
     // A change that lands while the snapshot runs, and is made durable by a flush
     let delete_op_num = total_points + 1;
     shard
-        .update(
-            delete_point_operation(3).into(),
-            WaitUntil::Visible,
-            None,
-            hw_acc.clone(),
-        )
+        .update(delete_point_operation(3).into(), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     let confirmed = shard
@@ -301,8 +299,8 @@ async fn test_wal_snapshot_pin_keeps_changes_made_during_copy_replayable() {
 /// that never acknowledged, and it is held for the entire snapshot.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
+    use common::ambient::AmbientContext;
     use common::budget::ResourceBudget;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::data_types::vectors::VectorStructInternal;
     use shard::files::NEWEST_CLOCKS_PATH;
     use shard::operations::point_ops::{
@@ -351,7 +349,7 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
 
     shard.stop_flush_worker().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    let ctx = AmbientContext::new();
     let upsert = |id: u64, tick: u64| {
         let point = PointStructPersisted {
             id: id.into(),
@@ -365,7 +363,8 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
     };
 
     shard
-        .update(upsert(1, 1), WaitUntil::Visible, None, hw_acc.clone())
+        .update(upsert(1, 1), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
 
@@ -419,7 +418,8 @@ async fn test_wal_ack_pin_at_zero_does_not_suppress_clock_persistence() {
     // Same flush pass, same pending clock change, only the pin released
     drop(pin);
     shard
-        .update(upsert(2, 2), WaitUntil::Visible, None, hw_acc.clone())
+        .update(upsert(2, 2), WaitUntil::Visible, None)
+        .measured(AmbientContext::clone(&ctx))
         .await
         .unwrap();
     flush_pass().await.unwrap();

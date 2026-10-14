@@ -1,5 +1,5 @@
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::UniversalWriteFs;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::disk_id_tracker::update_only::UpdateOnlyDiskIdTracker;
@@ -22,7 +22,7 @@ impl DeleteOnlyIdTrackerEnum {
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()>
     where
-        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs: UniversalWriteFs,
     {
         match self {
             Self::Immutable(id_tracker) => id_tracker.tombstone_points(fs, points),

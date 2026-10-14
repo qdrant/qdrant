@@ -4,17 +4,16 @@
 //! at once, one pass per component rather than one round-trip per point.
 
 use ahash::AHashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::Random;
-use common::types::{DeferredBehavior, PointOffsetType};
+use common::types::PointOffsetType;
 use common::universal_io::UniversalReadFsAsync;
 
 use super::LookupSegment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::StoredPoint;
 use crate::data_types::segment_record::NamedVectorBytesOwned;
-use crate::id_tracker::IdTrackerRead;
 use crate::payload_storage::PayloadStorageRead;
+use crate::segment::update_only::tracker_lookup;
 use crate::types::{Payload, PointIdType, SeqNumberType};
 use crate::vector_storage::VectorStorageRead;
 
@@ -28,11 +27,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         point_ids: impl IntoIterator<Item = PointIdType>,
         callback: impl FnMut(PointIdType, PointOffsetType),
     ) -> OperationResult<()> {
-        self.id_tracker.borrow().resolve_external_ids(
-            point_ids,
-            DeferredBehavior::WithDeferred,
-            callback,
-        )
+        tracker_lookup::locate_points(&self.id_tracker.borrow(), point_ids, callback)
     }
 
     /// Versions of the points occupying `internal_ids`, keyed by internal id —
@@ -44,16 +39,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         &self,
         internal_ids: &[PointOffsetType],
     ) -> OperationResult<AHashMap<PointOffsetType, SeqNumberType>> {
-        let mut versions = AHashMap::with_capacity(internal_ids.len());
-
-        self.id_tracker.borrow().internal_versions_batch(
-            internal_ids.iter().copied(),
-            |internal_id, version| {
-                versions.insert(internal_id, version);
-            },
-        )?;
-
-        Ok(versions)
+        tracker_lookup::point_versions(&self.id_tracker.borrow(), internal_ids)
     }
 
     /// Read the stored form of the points occupying `internal_ids`, returned
@@ -68,7 +54,6 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     pub fn read_stored_points(
         &self,
         internal_ids: &[PointOffsetType],
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<StoredPoint>> {
         let mut stored: Vec<StoredPoint> = internal_ids
             .iter()
@@ -87,7 +72,6 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
                     stored[position].payload = payload;
                     Ok(())
                 },
-                hw_counter,
             )?;
 
         for (vector_name, vector_storage) in &self.vector_data {

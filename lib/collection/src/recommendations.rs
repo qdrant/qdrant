@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use api::rest::RecommendStrategy;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::vectors::{NamedQuery, VectorInternal};
 use segment::types::{
@@ -36,7 +35,6 @@ pub async fn recommend_by<F, Fut>(
     routing_token: Option<RoutingToken>,
     shard_selector: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<ScoredPoint>>
 where
     F: Fn(String) -> Fut,
@@ -54,7 +52,6 @@ where
         read_consistency,
         routing_token,
         timeout,
-        hw_measurement_acc,
     )
     .await?;
     Ok(results.into_iter().next().unwrap())
@@ -135,7 +132,6 @@ pub async fn recommend_batch_by<F, Fut>(
     read_consistency: Option<ReadConsistency>,
     routing_token: Option<RoutingToken>,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<Vec<ScoredPoint>>>
 where
     F: Fn(String) -> Fut,
@@ -176,7 +172,6 @@ where
         read_consistency,
         routing_token,
         timeout,
-        hw_measurement_acc.clone(),
     )
     .await?;
 
@@ -213,7 +208,6 @@ where
                 routing_token,
                 shard_selector,
                 timeout,
-                hw_measurement_acc.clone(),
             ));
 
             Ok(())

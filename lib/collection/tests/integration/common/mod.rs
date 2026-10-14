@@ -79,6 +79,7 @@ pub async fn collection_fixture(
         strict_mode_config: Default::default(),
         uuid: None,
         metadata: None,
+        created_at: None,
     };
 
     let snapshot_path = collection_path.join("snapshots");
@@ -110,6 +111,10 @@ impl ShardTransferConsensus for NoopReshardingConsensus {
 
     fn consensus_commit_term(&self) -> (u64, u64) {
         (0, 0)
+    }
+
+    fn is_leader_established(&self) -> bool {
+        true
     }
 
     fn recovered_switch_to_partial(

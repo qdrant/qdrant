@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
+use common::ambient::trace::Op;
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
@@ -14,7 +15,8 @@ use crate::fs::BlobFs;
 use crate::pipeline::{BlobReadPipeline, read_into_byte_buffer, read_whole_into_byte_buffer};
 use crate::read::AsyncRead;
 use crate::runtime::BridgeRuntime;
-use crate::write::AsyncAppend;
+use crate::stats::RemoteIoStats;
+use crate::write::{AsyncAppend, AsyncWrite};
 
 /// Sync wrapper around a [`AsyncRead`] backend that implements [`UniversalRead`].
 ///
@@ -31,6 +33,7 @@ pub struct BlobFile<A: AsyncRead> {
     /// are writeable; [`BlobFs::open`] feeds `OpenOptions::writeable`
     /// through [`Self::with_writeable`].
     writeable: bool,
+    pub(crate) stats: RemoteIoStats,
 }
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
@@ -39,12 +42,14 @@ impl<A: AsyncRead> std::fmt::Debug for BlobFile<A> {
             runtime,
             path,
             writeable,
+            stats,
             inner: _,
         } = self;
         f.debug_struct("BlobFile")
             .field("runtime", runtime)
             .field("path", path)
             .field("writeable", writeable)
+            .field("stats", stats)
             .finish_non_exhaustive()
     }
 }
@@ -56,12 +61,19 @@ impl<A: AsyncRead> BlobFile<A> {
             runtime,
             path: path.into(),
             writeable: true,
+            stats: RemoteIoStats::default(),
         }
     }
 
     /// Set whether this handle accepts appends.
     pub fn with_writeable(mut self, writeable: bool) -> Self {
         self.writeable = writeable;
+        self
+    }
+
+    /// Report this handle's remote requests into `stats`.
+    pub fn with_stats(mut self, stats: RemoteIoStats) -> Self {
+        self.stats = stats;
         self
     }
 
@@ -140,7 +152,11 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
         let item_size = size_of::<T>() as u64;
-        let len = self.runtime.block_on(self.inner.len(&self.path))?;
+        let len = self.runtime.block_on(
+            self.stats
+                .request(Op::Len, &self.path, 0..0)
+                .wrap(self.inner.len(&self.path)),
+        )?;
         debug_assert_eq!(len % item_size, 0);
 
         if let Some(start_time) = start_time {
@@ -206,9 +222,30 @@ impl<A: AsyncAppend + Clone> BlobFile<A> {
             )));
         }
 
+        let request =
+            self.stats
+                .request(Op::Append, &self.path, offset..offset + data.len() as u64);
         self.runtime
-            .block_on(self.inner.append(&self.path, offset, data, expected_etag))
+            .block_on(request.wrap(self.inner.append(&self.path, offset, data, expected_etag)))
             .map(drop)
+    }
+}
+
+impl<A: AsyncWrite + Clone> BlobFile<A> {
+    /// Replace the whole object with `data` in one atomic put.
+    pub fn save_whole(&self, data: Bytes) -> UioResult<()> {
+        if !self.writeable {
+            return Err(UniversalIoError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "save requires a handle opened with writeable=true",
+            )));
+        }
+
+        let request = self
+            .stats
+            .request(Op::Save, &self.path, 0..data.len() as u64);
+        self.runtime
+            .block_on(request.wrap(self.inner.save(&self.path, data)))
     }
 }
 
@@ -224,9 +261,10 @@ mod tests {
     use std::sync::Arc;
 
     use bytes::Bytes;
+    use common::ambient;
     use common::generic_consts::{Random, Sequential};
     use common::universal_io::{
-        ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs,
+        ListedFile, OpenOptions, ReadRange, UniversalIoError, UniversalReadFs, UniversalReadFsAsync,
     };
     use futures::stream::{BoxStream, StreamExt};
 
@@ -303,6 +341,7 @@ mod tests {
 
     #[test]
     fn blob_fs_opens_readable_file() {
+        let _scope = ambient::test_guard();
         let fs = BlobFs::new(MockSource::new(b"hello world"), BridgeRuntime::global());
         let file = fs
             .open("obj", OpenOptions::new_for_test(), ())
@@ -315,6 +354,7 @@ mod tests {
 
     #[test]
     fn read_returns_bytes_through_runtime() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"hello world"),
             BridgeRuntime::global(),
@@ -328,6 +368,7 @@ mod tests {
 
     #[test]
     fn read_subrange() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"hello world"),
             BridgeRuntime::global(),
@@ -341,6 +382,7 @@ mod tests {
 
     #[test]
     fn len_divides_by_type_size() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"\x01\x00\x02\x00"),
             BridgeRuntime::global(),
@@ -352,6 +394,7 @@ mod tests {
 
     #[test]
     fn read_batch_returns_all_pairs() {
+        let _scope = ambient::test_guard();
         let file = BlobFile::new(
             MockSource::new(b"helloWORLDxyz"),
             BridgeRuntime::global(),
@@ -529,6 +572,7 @@ mod tests {
 
     #[test]
     fn append_creates_missing_object() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -549,6 +593,7 @@ mod tests {
 
     #[test]
     fn empty_append_succeeds_without_request() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -567,6 +612,7 @@ mod tests {
     /// offset from the actual length recovers.
     #[test]
     fn append_conflict_recovery() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let first = mutable_file(&source);
         let second = mutable_file(&source);
@@ -598,6 +644,7 @@ mod tests {
     /// object) rejects it without mutating anything.
     #[test]
     fn append_bytes_passes_the_expected_etag_precondition() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -645,6 +692,7 @@ mod tests {
 
     #[test]
     fn append_flusher_is_a_no_op() {
+        let _scope = ambient::test_guard();
         let source = MutableMockSource::default();
         let file = mutable_file(&source);
 
@@ -655,7 +703,8 @@ mod tests {
 
     #[test]
     fn blob_fs_write_ops_round_trip() {
-        use common::universal_io::UniversalReadFileOps as _;
+        let _scope = ambient::test_guard();
+        use common::universal_io::UniversalReadFs as _;
 
         let source = MutableMockSource::default();
         let fs = BlobFs::new(source.clone(), BridgeRuntime::global());
@@ -670,5 +719,174 @@ mod tests {
 
         fs.remove(path).unwrap();
         assert!(!fs.exists(path).unwrap());
+    }
+
+    /// Every remote request issued through the filesystem and the files it
+    /// opens lands in the shared per-operation statistics, with the payload
+    /// length of successful transfers.
+    #[test]
+    fn remote_requests_are_counted_per_op() {
+        let _scope = ambient::test_guard();
+        use common::ambient::trace::Op;
+        use common::universal_io::{OpenOptions, UniversalReadFs as _};
+
+        let source = MutableMockSource::default();
+        let fs = BlobFs::new(source.clone(), BridgeRuntime::global());
+        let stats = fs.stats();
+        let path = Path::new("obj");
+
+        fs.create(path).unwrap();
+        let file = fs.open(path, OpenOptions::new_for_test(), ()).unwrap();
+        file.append_bytes(0, Bytes::from_static(b"abcdef"), None)
+            .unwrap();
+        assert_eq!(file.read_bytes(1..4, Random, 1).unwrap().as_ref(), b"bcd");
+        assert_eq!(file.read_whole::<u8>().unwrap().len(), 6);
+        assert_eq!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).unwrap(), 6);
+        file.save_whole(Bytes::from_static(b"xy")).unwrap();
+        assert!(fs.exists(path).unwrap());
+        fs.remove(path).unwrap();
+        assert!(file.read_bytes(0..1, Random, 1).is_err());
+        assert!(file.read_whole::<u8>().is_err());
+        assert!(<BlobFile<_> as UniversalRead>::len::<u8>(&file).is_err());
+
+        let snapshot = stats.snapshot();
+        let counts = |op: Op| {
+            let op = snapshot.op(op);
+            (op.started, op.completed, op.not_found, op.errors, op.bytes)
+        };
+        assert_eq!(counts(Op::Create), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::Append), (1, 1, 0, 0, 6));
+        assert_eq!(counts(Op::Read), (2, 1, 1, 0, 3));
+        assert_eq!(counts(Op::ReadFrom), (2, 1, 1, 0, 6));
+        // No `len` probe behind the missing object's `read_from`.
+        assert_eq!(counts(Op::Len), (2, 1, 1, 0, 0));
+        assert_eq!(counts(Op::Save), (1, 1, 0, 0, 2));
+        assert_eq!(counts(Op::Exists), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::Remove), (1, 1, 0, 0, 0));
+        assert_eq!(counts(Op::List), (0, 0, 0, 0, 0));
+        assert_eq!(snapshot.total().started, 11);
+        assert_eq!(snapshot.total().errors, 0);
+        assert_eq!(snapshot.total().abandoned, 0);
+        assert!(
+            snapshot
+                .format_compact()
+                .unwrap()
+                .contains("append: started=1")
+        );
+    }
+
+    #[derive(Clone, Default)]
+    struct MultiMockSource {
+        files: Arc<std::sync::Mutex<std::collections::HashMap<PathBuf, Vec<u8>>>>,
+        head_calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl MultiMockSource {
+        fn insert(&self, path: impl Into<PathBuf>, data: Vec<u8>) {
+            self.files.lock().unwrap().insert(path.into(), data);
+        }
+    }
+
+    impl AsyncRead for MultiMockSource {
+        type Config = ();
+
+        fn open(_config: &()) -> UioResult<Self> {
+            Ok(Self::default())
+        }
+
+        fn list_files(
+            &self,
+            _prefix: &Path,
+        ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static {
+            std::future::ready(Ok(vec![]))
+        }
+
+        fn exists(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
+            let exists = self.files.lock().unwrap().contains_key(path);
+            std::future::ready(Ok(exists))
+        }
+
+        fn read_range(
+            &self,
+            _path: &Path,
+            _range: Range<u64>,
+        ) -> impl Future<Output = UioResult<BoxStream<'static, UioResult<Bytes>>>> + Send + 'static
+        {
+            std::future::ready(Err(UniversalIoError::uninitialized("read_range")))
+        }
+
+        fn read_from(
+            &self,
+            _path: &Path,
+            _from: u64,
+        ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
+            std::future::ready(Err(UniversalIoError::uninitialized("read_from")))
+        }
+
+        fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static {
+            self.head_calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let result = match self.files.lock().unwrap().get(path) {
+                Some(data) => Ok(data.len() as u64),
+                None => Err(UniversalIoError::NotFound { path: path.into() }),
+            };
+            std::future::ready(result)
+        }
+
+        fn kind() -> UniversalKind {
+            UniversalKind::S3
+        }
+    }
+
+    #[tokio::test]
+    async fn test_select_files_async() {
+        let _scope = ambient::test_guard();
+        let source = MultiMockSource::default();
+        source.insert(Path::new("file1.dat"), b"hello".to_vec());
+        source.insert(Path::new("file2.dat"), b"world".to_vec());
+        let fs = BlobFs::new(source.clone(), BridgeRuntime::global());
+        let stats = fs.stats();
+
+        let paths = [
+            Path::new("file1.dat"),
+            Path::new("file2.dat"),
+            Path::new("missing.dat"),
+        ];
+
+        let selected = fs.select_files_async(&paths).await.unwrap();
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].path, Path::new("file1.dat"));
+        assert_eq!(selected[0].size, 5);
+        assert_eq!(selected[1].path, Path::new("file2.dat"));
+        assert_eq!(selected[1].size, 5);
+
+        assert_eq!(
+            source.head_calls.load(std::sync::atomic::Ordering::Relaxed),
+            3
+        );
+
+        let snapshot = stats.snapshot();
+        let len_stats = snapshot.op(Op::Len);
+        assert_eq!(len_stats.started, 3);
+        assert_eq!(len_stats.completed, 2);
+        assert_eq!(len_stats.not_found, 1);
+        assert_eq!(len_stats.errors, 0);
+
+        // Test empty selection
+        let empty = fs.select_files_async::<&Path>(&[]).await.unwrap();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_select_files_sync() {
+        let _scope = ambient::test_guard();
+        let source = MultiMockSource::default();
+        source.insert(Path::new("file1.dat"), b"hello".to_vec());
+        let fs = BlobFs::new(source, BridgeRuntime::global());
+
+        let paths = [Path::new("file1.dat"), Path::new("missing.dat")];
+        let sync_selected = fs.select_files(&paths).unwrap();
+        assert_eq!(sync_selected.len(), 1);
+        assert_eq!(sync_selected[0].path, Path::new("file1.dat"));
     }
 }

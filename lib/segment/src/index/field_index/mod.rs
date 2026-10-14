@@ -92,6 +92,26 @@ impl CardinalityEstimation {
         }
     }
 
+    /// Bound `min`, `exp` and `max` by `population`: a filter selects no more
+    /// points than exist. A payload index can count points the id tracker has
+    /// already dropped: append-only deletion tombstones a point and leaves its
+    /// payload and field indexes in place. Scaled down unbounded, such an `exp`
+    /// would stay above a `max` capped at the population.
+    pub fn bounded_by(self, population: usize) -> Self {
+        let Self {
+            primary_clauses,
+            min,
+            exp,
+            max,
+        } = self;
+        Self {
+            primary_clauses,
+            min: min.min(population),
+            exp: exp.min(population),
+            max: max.min(population),
+        }
+    }
+
     /// Push a primary clause to the estimation
     pub fn with_primary_clause(mut self, clause: PrimaryCondition) -> Self {
         self.primary_clauses.push(clause);

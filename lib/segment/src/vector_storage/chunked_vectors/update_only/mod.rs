@@ -4,11 +4,11 @@ mod tests;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::mmap::AdviceSetting;
 use common::universal_io::{
     OpenOptions, Populate, UniversalAppend, UniversalFlush as _, UniversalRead as _,
-    UniversalReadFs, UniversalWriteFileOps,
+    UniversalReadFs, UniversalWriteFs,
 };
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -45,7 +45,7 @@ where
     T: bytemuck::Pod + Send,
 {
     /// Open a chunked-vectors directory for appending, creating it if missing.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
+    pub fn open<Fs: UniversalWriteFs>(
         fs: &Fs,
         directory: &Path,
         dim: usize,
@@ -57,7 +57,7 @@ where
             fs.create_dir(directory)?;
             fs.atomic_save(&status_path, bytemuck::bytes_of(&Status { len: 0 }))?;
         }
-        let config = ensure_config::<T, _>(fs, directory, dim, false)?;
+        let config = ensure_config::<T, _>(fs, directory, dim)?;
 
         Ok(Self {
             directory: directory.to_owned(),
@@ -77,7 +77,7 @@ where
     }
 
     /// Replace the stored vector count.
-    fn save_len<Fs: UniversalWriteFileOps>(&self, fs: &Fs, len: usize) -> OperationResult<()> {
+    fn save_len<Fs: UniversalWriteFs>(&self, fs: &Fs, len: usize) -> OperationResult<()> {
         fs.atomic_save(
             &status_file(&self.directory),
             bytemuck::bytes_of(&Status { len }),
@@ -90,7 +90,7 @@ where
     /// Ensures every file is at the expected length by truncating or filling with zeroes.
     fn ensure_chunk_lengths<Fs>(&self, fs: &Fs, target_len: usize) -> OperationResult<()>
     where
-        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps,
+        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs,
     {
         let total_bytes = target_len * self.config.dim * size_of::<T>();
         let num_chunks = target_len.div_ceil(self.config.chunk_size_vectors);
@@ -176,12 +176,11 @@ where
         fs: &Fs,
         start_key: VectorOffsetType,
         vectors: I,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         I: IntoIterator<Item = &'a [T]>,
         I::IntoIter: ExactSizeIterator,
-        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps,
+        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs,
     {
         self.ensure_chunk_lengths(fs, start_key)?;
 
@@ -210,7 +209,7 @@ where
             // Flush in case of local backends.
             chunk.flusher()()?;
 
-            hw_counter.vector_io_write_counter().incr_delta(batch_bytes);
+            HwMetric::VectorIoWrite.bump(batch_bytes);
         }
 
         // Persist the watermark only after the data landed
@@ -228,7 +227,7 @@ where
         new: bool,
     ) -> OperationResult<Fs::File>
     where
-        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps,
+        Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs,
     {
         let path = chunk_name(&self.directory, chunk_idx);
         if new {

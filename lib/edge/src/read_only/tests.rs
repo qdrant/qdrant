@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Leader + follower tests: a read-write [`EdgeShard`] (leader) writes to a directory and a
 //! [`ReadOnlyEdgeShard`] (follower) opened over the same directory serves reads, converging on the
 //! leader's flushed state after a [`live_reload`](ReadOnlyEdgeShard::live_reload).
@@ -47,6 +48,8 @@ pub(crate) fn test_config() -> EdgeConfig {
     init_serverless_feature_flags();
     EdgeConfig {
         on_disk_payload: Some(false),
+        payload_memory: None,
+        id_tracker_memory: None,
         vectors: HashMap::from([(
             VECTOR_NAME.to_string(),
             EdgeVectorParams {
@@ -56,6 +59,7 @@ pub(crate) fn test_config() -> EdgeConfig {
                 multivector_config: None,
                 datatype: None,
                 on_disk: None,
+                memory: None,
                 hnsw_config: None,
             },
         )]),
@@ -64,6 +68,7 @@ pub(crate) fn test_config() -> EdgeConfig {
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: None,
         search_pool_core: None,
     }
@@ -101,6 +106,7 @@ pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFil
         LocalSegmentEnumerator::new(path),
         None,
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap()
@@ -207,6 +213,7 @@ fn follower_with_load_profile_serves_reads() {
         LocalSegmentEnumerator::new(dir.path()),
         None,
         Some(scroll_request.load_profile()),
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -377,12 +384,15 @@ fn provided_config_overrides_tunables_at_open() {
     // Tunables only — no vector params. Those must come from the segments.
     let provided = EdgeConfig {
         on_disk_payload: None,
+        payload_memory: None,
+        id_tracker_memory: None,
         vectors: HashMap::new(),
         sparse_vectors: HashMap::new(),
         hnsw_config: None,
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: Some(2),
         search_pool_core: None,
     };
@@ -393,6 +403,7 @@ fn provided_config_overrides_tunables_at_open() {
         LocalSegmentEnumerator::new(dir.path()),
         Some(provided),
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -476,6 +487,7 @@ fn follower_uses_injected_enumerator() {
         },
         None,
         None,
+        Default::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -608,6 +620,7 @@ fn open_rejects_a_cancelled_flag() {
         LocalSegmentEnumerator::new(dir.path()),
         None,
         None,
+        Default::default(),
         &stopped,
     ));
     assert!(stopped.load(Ordering::Relaxed));
@@ -679,6 +692,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
         },
         None,
         None,
+        Default::default(),
         &stopped,
     )
     .unwrap();
@@ -700,4 +714,49 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
     armed.store(false, Ordering::Relaxed);
     follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 30);
+}
+
+/// A segment whose reload failed is reopened in place: it serves the leader's
+/// current state, and later reloads continue from the reopened segment.
+#[test]
+fn failed_reload_reopens_segment() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-reopen")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush().unwrap();
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10);
+
+    upsert(&leader, 11..=20);
+    leader.flush().unwrap();
+    let segments: Vec<_> = {
+        let holder = follower.segments.read();
+        holder
+            .uuids()
+            .into_iter()
+            .filter_map(|uuid| holder.segment_arc(&uuid))
+            .collect()
+    };
+    for segment in segments {
+        let injected = segment::common::operation_error::OperationError::service_error("injected");
+        crate::read_only::load::reopen_after_failed_reload(
+            &mut segment.write(),
+            injected,
+            &MmapFs,
+            None,
+        )
+        .unwrap();
+    }
+    assert_eq!(exact_count(&follower), 20);
+    assert_follower_vectors(&follower, &[1, 20]);
+
+    upsert(&leader, 21..=30);
+    leader.flush().unwrap();
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 30);
+    assert_follower_vectors(&follower, &[30]);
 }

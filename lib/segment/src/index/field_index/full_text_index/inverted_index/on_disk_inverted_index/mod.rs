@@ -1,21 +1,23 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
+use common::ambient::hw::HwMetric;
 use common::bitvec::{BitSlice, DeletedBitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage,
+    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UioResult,
     UniversalRead, UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
+use super::bm25::{Bm25Accept, Bm25Query, ON_DISK_BLOCK, PositionalCursors, score_top_k};
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
@@ -40,7 +42,7 @@ pub mod on_disk_postings_enum;
 mod raw_posting_list;
 pub mod types;
 
-const POSTINGS_FILE: &str = "postings.dat";
+pub(super) const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
@@ -52,8 +54,14 @@ const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 /// file set: on the first start after scoring is enabled every existing segment
 /// would otherwise fault in its postings, its vocabulary and its counts only to
 /// be discarded and rebuilt from payload.
-pub(in super::super) fn has_doc_len_sidecar(path: &Path) -> bool {
-    path.join(POINT_TO_DOC_LEN_FILE).exists()
+///
+/// Asked of the filesystem handle rather than the host path: a read-only
+/// index may sit behind object storage, where the host path holds nothing.
+pub(in super::super) fn has_doc_len_sidecar(
+    fs: &impl UniversalReadFs,
+    path: &Path,
+) -> UioResult<bool> {
+    fs.exists(&path.join(POINT_TO_DOC_LEN_FILE))
 }
 
 /// Mmap-backed immutable full-text inverted index.
@@ -90,6 +98,10 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// `deleted_points` first.
     pub point_to_doc_len: Option<TypedStorage<S, u32>>,
     pub deleted_points: DeletedBitVec,
+    /// Slots in the per-point files, live or not. The point space this index
+    /// covers, so that a point id past it can be told apart from one this index
+    /// holds no tokens for.
+    pub total_points: usize,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -100,6 +112,7 @@ impl<S: UniversalRead> Storage<S> {
             point_to_tokens_count: _,
             point_to_doc_len: _,
             deleted_points,
+            total_points: _,
         } = self;
 
         deleted_points.ram_usage_bytes()
@@ -113,6 +126,7 @@ impl OnDiskInvertedIndex<MmapFile> {
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            total_tokens,
             points_count: _,
         } = inverted_index;
 
@@ -124,9 +138,11 @@ impl OnDiskInvertedIndex<MmapFile> {
         let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
         match postings {
-            ImmutablePostings::Ids(postings) => create_postings_file(postings_path, postings)?,
+            ImmutablePostings::Ids(postings) => {
+                create_postings_file(postings_path, postings, *total_tokens)?
+            }
             ImmutablePostings::WithPositions(postings) => {
-                create_postings_file(postings_path, postings)?
+                create_postings_file(postings_path, postings, *total_tokens)?
             }
         }
 
@@ -149,14 +165,14 @@ impl OnDiskInvertedIndex<MmapFile> {
         )?;
 
         // The actual values go in the slice
-        let point_to_tokens_count_iter = point_to_tokens_count.iter().copied();
+        let point_to_tokens_count_iter = point_to_tokens_count.iter().map(|&count| count as usize);
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
-        // No segment total is written: deletions are applied on open, so it can
-        // only be summed after masking.
         match point_to_doc_len {
-            Some(lens) => MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?,
+            Some(lens) => {
+                let _ = MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?;
+            }
             // Every other file here is rewritten in place, so this is the only
             // one that could survive a rebuild. `open` would then read a
             // previous build's lengths as this build's, at offsets that now
@@ -346,6 +362,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 point_to_tokens_count,
                 point_to_doc_len,
                 deleted_points: deleted,
+                total_points: total_count,
             },
             compact_deleted_mask,
         }))
@@ -767,6 +784,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             point_to_tokens_count,
             point_to_doc_len,
             deleted_points: _,
+            total_points: _,
         } = storage;
         postings.clear_cache()?;
         vocab.clear_ram_cache()?;
@@ -792,7 +810,6 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         &mut self,
         _idx: PointOffsetType,
         _tokens: super::TokenSet,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Can't add values to mmap immutable text index",
@@ -803,7 +820,6 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         &mut self,
         _idx: PointOffsetType,
         _document: Document,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Can't add values to mmap immutable text index",
@@ -817,7 +833,6 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let ids = match query {
             ParsedQuery::AllTokens(tokens) => self.filter_has_all(tokens)?,
@@ -827,11 +842,60 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         Ok(Box::new(ids.into_iter()))
     }
 
-    fn get_posting_len(
+    fn score_bm25(
         &self,
-        token_id: TokenId,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
+        query: &Bm25Query,
+        accept: &Bm25Accept<'_>,
+        limit: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        let OnDiskPostingsEnum::WithPositions(postings) = &self.storage.postings else {
+            return Err(OperationError::service_error(
+                "text index does not score: BM25 needs positions and document lengths",
+            ));
+        };
+        if !self.records_doc_len() {
+            return Err(OperationError::service_error(
+                "text index does not score: BM25 needs positions and document lengths",
+            ));
+        }
+        let terms = query.terms();
+        let token_ids: Vec<TokenId> = terms.iter().map(|term| term.token_id).collect();
+        // A term without a posting list contributes nothing, so only the
+        // existing ones are read, and handed back in the query's term order.
+        postings.with_existing_postings(&token_ids, |views| {
+            let mut by_term = vec![None; terms.len()];
+            for (token_id, view) in views {
+                let term = terms
+                    .iter()
+                    .position(|term| term.token_id == token_id)
+                    .expect("a returned posting list belongs to a requested term");
+                by_term[term] = Some(view);
+            }
+            let mut cursors = PositionalCursors::new(by_term);
+            // Deleted points stay in these postings and are masked here, as
+            // the filter path does.
+            let visible =
+                |point_id: PointOffsetType| self.is_active(point_id) && accept.is_visible(point_id);
+            score_top_k::<_, ON_DISK_BLOCK>(
+                query,
+                &mut cursors,
+                |point_ids, lengths| {
+                    self.doc_len_batch(point_ids, |index, doc_len| {
+                        lengths[index] = doc_len;
+                    })
+                },
+                &accept.with_visible(&visible),
+                limit,
+                is_stopped,
+            )
+        })
+    }
+
+    fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
+        // One header read, and the statistics gather performs one per query
+        // term per segment.
+        HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD);
         self.storage.postings.posting_len(token_id)
     }
 
@@ -883,18 +947,67 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         self.storage.deleted_points.active_count()
     }
 
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        mut f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
+            (0..point_ids.len()).for_each(|index| f(index, None));
+            return Ok(());
+        };
+        let mut reads = Vec::with_capacity(point_ids.len());
+        for (index, &point_id) in point_ids.iter().enumerate() {
+            if point_id as usize >= self.storage.total_points {
+                // Past the point space this index covers. The in-RAM backends
+                // answer the same way, by the length of their vector. Bounding
+                // by `total_points` is enough, since `open` drops a sidecar
+                // shorter than `point_to_tokens_count`; asking the file its
+                // `len()` instead is an fstat on io_uring and a blocking HEAD
+                // request on object storage.
+                f(index, None);
+            } else if !self.storage.deleted_points.is_active(point_id) {
+                // Deleted, or empty when the index was built. The sidecar is
+                // written unmasked and still holds the old length, while the
+                // in-RAM backends hold a zero: answer the zero, so the same
+                // data reads the same way whichever backend a host loads.
+                f(index, Some(0));
+            } else {
+                let byte_offset = u64::from(point_id) * size_of::<u32>() as u64;
+                reads.push((index, ReadRange::one(byte_offset)));
+            }
+        }
+        HwMetric::PayloadIndexIoRead.bump(reads.len() * size_of::<u32>());
+        // A failed read is an error rather than a missing value: `None` means
+        // "no length recorded", which is the distinction the sidecar keeps.
+        storage.read_batch(reads, Random, |index, doc_len: &[u32]| {
+            f(index, doc_len.first().copied());
+            Ok::<_, OperationError>(())
+        })
+    }
+
+    /// The build-time total from the postings header: deletions since the
+    /// build are not subtracted, the same way `posting_len` keeps them.
+    fn total_tokens(&self) -> Option<u64> {
+        self.storage
+            .point_to_doc_len
+            .is_some()
+            .then(|| self.storage.postings.total_tokens())
+            // Zero over live documents is a header written before it carried
+            // the total: report no lengths rather than a wrong average.
+            .filter(|&total| total > 0 || self.points_count() == 0)
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
-        hw_counter: &HardwareCounterCell,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         self.storage
             .vocab
             .for_each_entry_in_iter(tokens, |user_data, token_ids| {
-                hw_counter.payload_index_io_read_counter().incr_delta(
-                    READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
-                );
+                // Avoid check overhead and assume token is always read
+                HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD + size_of::<TokenId>());
 
                 f(user_data, token_ids.map(unwrap_token));
                 Ok(())

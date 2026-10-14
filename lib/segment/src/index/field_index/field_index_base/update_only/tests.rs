@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr as _;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use serde_json::{Value, json};
@@ -49,17 +49,15 @@ fn write(
     schema: &PayloadFieldSchema,
     points: &[(PointOffsetType, Value)],
 ) -> PathBuf {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let storage = kind.storage_dir(dir, &field());
     let index_type = index_type(kind);
 
     let mut writer = Writer::open(&MmapFs, dir, &field(), schema, &index_type).unwrap();
     for (slot, value) in points {
-        writer
-            .add_point(&MmapFs, *slot, &[value], &hw_counter)
-            .unwrap();
+        writer.add_point(&MmapFs, *slot, &[value]).unwrap();
     }
-    writer.flush(&MmapFs, &hw_counter).unwrap();
+    writer.flush(&MmapFs).unwrap();
 
     storage
 }
@@ -151,10 +149,9 @@ fn keyword_index_round_trip() {
         .unwrap()
         .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
     let values = |slot| {
         index
-            .get_values(slot, &hw_counter)
+            .get_values(slot)
             .map(|values| values.map(String::from).collect::<Vec<_>>())
     };
     assert_eq!(values(0), Some(vec!["alpha".to_string()]));
@@ -179,10 +176,9 @@ fn uuid_map_index_round_trip() {
         .unwrap()
         .unwrap();
 
-    let hw_counter = HardwareCounterCell::new();
     assert_eq!(
         index
-            .get_values(0, &hw_counter)
+            .get_values(0)
             .map(|values| values.map(|value| *value).collect::<Vec<_>>()),
         Some(vec![uuid.as_u128()]),
     );
@@ -211,7 +207,7 @@ fn geo_index_round_trip() {
 #[test]
 fn rewriting_a_slot_is_rejected() {
     let dir = TempDir::with_prefix("update_only_index").unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let schema = schema(PayloadSchemaType::Integer);
 
     let mut writer = Writer::open(
@@ -223,14 +219,8 @@ fn rewriting_a_slot_is_rejected() {
     )
     .unwrap();
 
-    writer
-        .add_point(&MmapFs, 1, &[&json!(1)], &hw_counter)
-        .unwrap();
-    assert!(
-        writer
-            .add_point(&MmapFs, 0, &[&json!(0)], &hw_counter)
-            .is_err()
-    );
+    writer.add_point(&MmapFs, 1, &[&json!(1)]).unwrap();
+    assert!(writer.add_point(&MmapFs, 0, &[&json!(0)]).is_err());
 }
 
 /// The boolean index is mask-backed: its writer rewrites both masks whole,

@@ -8,7 +8,7 @@ use common::bitvec::BitSlice;
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::stored_bitslice::StoredBitSlice;
 use common::universal_io::{
-    MmapFile, OpenOptions, Populate, UniversalReadFs, UniversalWrite, UniversalWriteFileOps,
+    MmapFile, OpenOptions, Populate, UniversalReadFs, UniversalWrite, UniversalWriteFs,
 };
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;

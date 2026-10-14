@@ -101,15 +101,16 @@ impl JsonPath {
         new_map
     }
 
-    /// Remove the wildcard suffix from the path, if it exists.
-    /// E.g. `a.b[]` -> `a.b`.
-    pub fn strip_wildcard_suffix(&self) -> Self {
-        match self.rest.split_last() {
-            Some((JsonPathItem::WildcardIndex, rest)) => JsonPath {
-                first_key: self.first_key.clone(),
-                rest: rest.to_vec(),
-            },
-            _ => self.clone(),
+    /// Replace every index with a wildcard index.
+    /// E.g. `a[0].b[1]` -> `a[].b[]`.
+    pub fn wildcard_indices(&self) -> Self {
+        let rest = self.rest.iter().map(|item| match item {
+            JsonPathItem::Index(_) => JsonPathItem::WildcardIndex,
+            JsonPathItem::Key(_) | JsonPathItem::WildcardIndex => item.clone(),
+        });
+        JsonPath {
+            first_key: self.first_key.clone(),
+            rest: rest.collect(),
         }
     }
 
@@ -1009,6 +1010,29 @@ mod tests {
         assert!(!JsonPath::new("a.b.c").check_include_pattern(&JsonPath::new("a.b.d")));
         assert!(JsonPath::new("a.b.c").check_include_pattern(&JsonPath::new("a")));
         assert!(JsonPath::new("a").check_include_pattern(&JsonPath::new("a.d")));
+    }
+
+    #[test]
+    fn test_wildcard_indices_include_pattern() {
+        let map = json(
+            r#"{"arr": [7, {"y": 0}, {"x": [5, 6], "y": 1}, [{"x": 9}]], "m": [[1, 2], [3, 4]], "obj": {"k": 1}}"#,
+        );
+        for path in [
+            "arr",
+            "arr[]",
+            "arr[2].x",
+            "arr[].x",
+            "arr[3][0].x",
+            "m[1][0]",
+            "m[][1]",
+            "obj[0]",
+            "arr.x",
+        ] {
+            let path = JsonPath::new(path);
+            let pattern = path.wildcard_indices();
+            let projected = JsonPath::value_filter(&map, |p, _| pattern.check_include_pattern(p));
+            assert_eq!(path.value_get(&projected), path.value_get(&map), "{path}");
+        }
     }
 
     #[test]

@@ -3,12 +3,13 @@
 //! async impls.
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::ext::aligned_vec::ACow;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync, UniversalWriteFsAsync,
+    ChunkSink, ListedFile, OpenOptions, UioResult, UniversalReadAsync, UniversalReadFsAsync,
+    UniversalWriteFsAsync,
 };
 
 use super::CachedBlobFile;
@@ -37,6 +38,21 @@ where
 
         Ok(CachedBlobFile::new(cache, remote, options.writeable))
     }
+
+    fn list_files_async<'a>(
+        &'a self,
+        prefix_path: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A> {
+        // The remote is the source of truth; mirrors are ephemeral.
+        self.blob_fs.list_files_async(prefix_path)
+    }
+
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, A, P> {
+        self.blob_fs.select_files_async(paths)
+    }
 }
 
 impl<A: AsyncAppend + Clone> UniversalReadAsync for CachedBlobFile<A>
@@ -50,6 +66,18 @@ where
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         self.cache.read_bytes_async(range, access_pattern, align)
+    }
+
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        self.cache.read_from_into_async(from, init)
     }
 }
 

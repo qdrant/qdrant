@@ -1,8 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::LiveReload;
@@ -14,7 +12,7 @@ impl<S: UniversalRead> LiveReload for QuantizedChunkedStorageRead<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         self.data.live_preload(fs)
     }
 
@@ -24,9 +22,21 @@ impl<S: UniversalRead> LiveReload for QuantizedChunkedStorageRead<S> {
         fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.data
-            .live_reload(fs, deleted_points, new_points, hw_counter)
+        self.data.live_reload(fs, deleted_points, new_points)
+    }
+}
+
+impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
+    /// Grow to `new_len` quantized records; see
+    /// [`ReadOnlyChunkedVectors::live_reload_to`].
+    ///
+    /// [`ReadOnlyChunkedVectors::live_reload_to`]: crate::vector_storage::chunked_vectors::read_only::ReadOnlyChunkedVectors::live_reload_to
+    pub fn live_reload_to<Fs: UniversalReadFs<File = S>>(
+        &mut self,
+        fs: &Fs,
+        new_len: usize,
+    ) -> OperationResult<()> {
+        self.data.live_reload_to(fs, new_len)
     }
 }

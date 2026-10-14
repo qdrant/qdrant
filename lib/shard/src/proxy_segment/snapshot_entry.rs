@@ -14,12 +14,13 @@ impl SnapshotEntry for ProxySegment {
         self.wrapped_segment.get().read().segment_id()
     }
 
-    fn take_snapshot(
+    fn take_snapshot_with_pending_changes_logs(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
         manifest: Option<&SegmentManifest>,
+        pending_changes_logs: &[PathBuf],
     ) -> OperationResult<()> {
         log::info!("Taking a snapshot of a proxy segment");
 
@@ -27,7 +28,13 @@ impl SnapshotEntry for ProxySegment {
         self.wrapped_segment
             .get()
             .read()
-            .take_snapshot(temp_path, tar, format, manifest)?;
+            .take_snapshot_with_pending_changes_logs(
+                temp_path,
+                tar,
+                format,
+                manifest,
+                pending_changes_logs,
+            )?;
 
         Ok(())
     }
@@ -48,5 +55,18 @@ impl SnapshotEntry for ProxySegment {
         );
 
         Ok(manifest)
+    }
+
+    fn visible_pending_changes_log_files(&self) -> Vec<PathBuf> {
+        let mut files = self
+            .wrapped_segment
+            .get()
+            .read()
+            .visible_pending_changes_log_files();
+        let log_path = self.pending_changes.log_path();
+        if log_path.is_file() {
+            files.push(log_path.to_path_buf());
+        }
+        files
     }
 }

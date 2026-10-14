@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::universal_io::{CachedReadFs, UniversalReadFsAsync};
 
@@ -18,7 +17,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
     /// reloaded again.
     ///
     /// [`ReadOnlySegment::live_reload`]: crate::segment::read_only::ReadOnlySegment::live_reload
-    pub fn live_reload(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+    pub fn live_reload(&mut self) -> OperationResult<()> {
         let Self {
             fs,
             segment_path: _,
@@ -28,6 +27,12 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
             segment_config: _,
             appendable: _,
         } = self;
+
+        let probe = futures::executor::block_on(id_tracker.borrow().probe_committed(fs.inner()))?;
+        if probe.is_unchanged() {
+            return Ok(());
+        }
+        let max_committed_id = probe.max_committed_id();
 
         // Prepare new LIST snapshot
         fs.cache_file_info()?;
@@ -45,7 +50,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         });
 
         // Live reload: apply updates
-        let delta = id_tracker.borrow_mut().live_reload(fs)?;
+        let delta = id_tracker.borrow_mut().live_reload(fs, max_committed_id)?;
 
         // SAFETY: `LiveReloadResult` keeps both lists sorted ascending.
         let deleted = unsafe { SortedSlice::new_unchecked(&delta.deleted) };
@@ -53,13 +58,14 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
 
         payload_storage
             .borrow_mut()
-            .live_reload(fs, &deleted, &inserted, hw_counter)?;
+            .live_reload(fs, &deleted, &inserted)?;
         for vector_storage in vector_data.values() {
             vector_storage
                 .borrow_mut()
-                .live_reload(fs, &deleted, &inserted, hw_counter)?;
+                .live_reload(fs, &deleted, &inserted)?;
         }
 
+        id_tracker.borrow_mut().publish_staged();
         fs.rotate_cache_file_info();
         Ok(())
     }

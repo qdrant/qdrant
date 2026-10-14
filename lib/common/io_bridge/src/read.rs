@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use bytes::Bytes;
-use common::universal_io::{ListedFile, UioResult, UniversalKind};
+use common::universal_io::{ListedFile, UioResult, UniversalIoError, UniversalKind};
 use futures::stream::BoxStream;
 
 /// Read-capable blob backend (S3, GCS, …). One impl per backend.
@@ -77,26 +77,40 @@ pub trait AsyncRead: Send + Sync + Sized + 'static {
     /// by the backend as an unsatisfiable range (e.g. HTTP 416). Callers that
     /// must tolerate an empty tail should disambiguate with [`len`](Self::len);
     /// see `pipeline::read_from_into_byte_buffer`.
+    /// Fetch the object at `path` starting from byte offset `from`.
+    /// `from == 0` reads the whole object.
     fn read_from(
         &self,
         path: &Path,
         from: u64,
     ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static;
 
-    /// Fetch the whole object at `path`. Convenience for
-    /// [`read_from(path, 0)`](Self::read_from).
-    fn read_whole(
-        &self,
-        path: &Path,
-    ) -> impl Future<Output = UioResult<(u64, OffsetByteStream)>> + Send + 'static {
-        self.read_from(path, 0)
-    }
-
     fn len(&self, path: &Path) -> impl Future<Output = UioResult<u64>> + Send + 'static;
 
     fn is_empty(&self, path: &Path) -> impl Future<Output = UioResult<bool>> + Send + 'static {
         let len = self.len(path);
         async move { Ok(len.await? == 0) }
+    }
+
+    /// Fetch metadata for a single object at `path`, returning `None` if it does not exist.
+    fn file_info(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = UioResult<Option<ListedFile>>> + Send + 'static {
+        let len_fut = self.len(path);
+        let path = path.to_path_buf();
+        async move {
+            match len_fut.await {
+                Ok(size) => Ok(Some(ListedFile {
+                    path,
+                    size,
+                    last_modified: None,
+                    etag: None,
+                })),
+                Err(UniversalIoError::NotFound { .. }) => Ok(None),
+                Err(err) => Err(err),
+            }
+        }
     }
 
     fn kind() -> UniversalKind;

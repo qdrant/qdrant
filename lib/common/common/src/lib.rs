@@ -1,4 +1,5 @@
 pub mod aligned_buf;
+pub mod ambient;
 #[cfg(feature = "testing")]
 pub mod bench_cache;
 pub mod binary_search;
@@ -10,7 +11,6 @@ pub mod bitvec;
 pub mod budget;
 pub mod bytes;
 pub mod condition_checker;
-pub mod counter;
 pub mod cow;
 pub mod cpu;
 pub mod cpu_utilization;
@@ -41,6 +41,7 @@ pub mod process_cpu_usage;
 pub mod progress_tracker;
 pub mod rate_limiting;
 pub mod raw_bytes_serde;
+pub mod reason;
 pub mod save_on_disk;
 pub mod scope_tracker;
 pub mod small_uint;

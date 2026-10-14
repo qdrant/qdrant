@@ -17,32 +17,18 @@ pub fn tar_unpack_file(path: &Path, dst: &Path) -> Result<(), io::Error> {
 ///
 /// Accepts a reader and returns the same reader.
 pub fn tar_unpack_reader<R: io::Read>(reader: R, dst: &Path) -> Result<R, io::Error> {
-    let mut archive = Archive::new(reader);
-    archive.set_overwrite(false);
-
     fs::create_dir_all(dst)?;
     let dst = &fs::canonicalize(dst).unwrap_or(dst.to_path_buf());
 
-    for entry in archive.entries().map_err(|err| {
-        io::Error::new(
-            err.kind(),
-            // Must hide error in release builds to not leak contents of potentially sensitive files
-            #[cfg(not(debug_assertions))]
-            format!("Malformed tar archive, unable to read entries"),
-            #[cfg(debug_assertions)]
-            format!("Malformed tar archive, unable to read entries: {err}"),
-        )
-    })? {
-        let mut entry = entry.map_err(|err| {
-            io::Error::new(
-                err.kind(),
-                // Must hide error in release builds to not leak contents of potentially sensitive files
-                #[cfg(not(debug_assertions))]
-                format!("Malformed tar archive, reached unknown entry"),
-                #[cfg(debug_assertions)]
-                format!("Malformed tar archive, reached unknown entry: {err}"),
-            )
-        })?;
+    let mut archive = Archive::new(reader);
+    archive.set_overwrite(false);
+
+    let entries = archive
+        .entries()
+        .map_err(|err| tar_error("unable to read entries", err))?;
+
+    for entry in entries {
+        let mut entry = entry.map_err(|err| tar_error("reached unknown entry", err))?;
 
         #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
         match entry.header().entry_type() {
@@ -53,8 +39,20 @@ pub fn tar_unpack_reader<R: io::Read>(reader: R, dst: &Path) -> Result<R, io::Er
                 )));
             }
         }
+
         entry.unpack_in(dst)?;
     }
 
     Ok(archive.into_inner())
+}
+
+fn tar_error(message: &str, source: io::Error) -> io::Error {
+    // Hide error in release builds to not leak contents of potentially sensitive files
+    let message = if cfg!(debug_assertions) {
+        format!("Malformed tar archive, {message}: {source}")
+    } else {
+        format!("Malformed tar archive, {message}")
+    };
+
+    io::Error::new(source.kind(), message)
 }

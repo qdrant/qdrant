@@ -38,6 +38,8 @@ impl ShadowMode {
             ShadowMode::Panic => true,
         };
 
+        log::info!("Consensus shadow validation enabled: mode={self:?}");
+
         Some(Mutex::new(ShadowStateMachine::new(panic_on_divergence)))
     }
 }
@@ -58,6 +60,10 @@ impl ShadowStateMachine {
     }
 
     pub fn invalidate(&mut self) {
+        if self.state_machine.is_some() {
+            log::debug!("Consensus shadow state machine invalidated");
+        }
+
         self.state_machine = None;
     }
 
@@ -73,38 +79,57 @@ impl ShadowStateMachine {
 
         let state_machine = self.state_machine.get_or_insert_with(|| {
             let state = read_cluster_state(toc, persistent);
-            ConsensusStateMachine::new(state, toc.node_context())
+            let context = toc.node_context();
+            log::info!(
+                "Consensus shadow state machine initialized: peer_id={}, collections={}, peers={}",
+                context.peer_id,
+                state.collections.len(),
+                state.peer_address_by_id.len(),
+            );
+
+            ConsensusStateMachine::new(state, context)
         });
 
-        state_machine.apply(operation)
+        let outcome = state_machine.apply(operation);
+        log::debug!("Consensus shadow operation {operation:?}: {outcome:?}");
+
+        outcome
     }
 
-    pub fn compare(
+    pub fn compare<T>(
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &StorageResult<bool>,
+        result: &StorageResult<T>,
     ) {
         let Some(report) = self.diff(toc, persistent, operation, outcome, result) else {
             return;
         };
 
         if self.panic_on_divergence {
-            panic!("Consensus state machine diverged from applied state: {report}");
+            panic!(
+                "Consensus state machine diverged from applied state: {report}; \
+                 operation={operation:?}; outcome={outcome:?}; handler_error={:?}",
+                result.as_ref().err(),
+            );
         }
 
-        log::error!("Consensus state machine diverged from applied state: {report}");
+        log::error!(
+            "Consensus state machine diverged from applied state: {report}; \
+             operation={operation:?}; outcome={outcome:?}; handler_error={:?}",
+            result.as_ref().err(),
+        );
     }
 
-    fn diff(
+    fn diff<T>(
         &mut self,
         toc: &impl CollectionContainer,
         persistent: &Persistent,
         operation: &ConsensusOperations,
         outcome: &ApplyOutcome,
-        result: &StorageResult<bool>,
+        result: &StorageResult<T>,
     ) -> Option<String> {
         let Some(state_machine) = &self.state_machine else {
             return None;
@@ -113,6 +138,11 @@ impl ShadowStateMachine {
         // Handler may have persisted only part of operation before returning a service error,
         // while consensus state machine applied it completely. Invalidate instead of comparing.
         if matches!(result, Err(StorageError::ServiceError { .. })) {
+            log::debug!(
+                "Consensus shadow comparison skipped after handler service error: \
+                 operation={operation:?}; error={:?}",
+                result.as_ref().err(),
+            );
             self.invalidate();
             return None;
         }
@@ -125,6 +155,9 @@ impl ShadowStateMachine {
         // If operation does not name a collection, it may have changed any of them,
         // so invalidate the entire consensus state machine.
         if matches!(outcome, ApplyOutcome::NotCovered) {
+            log::debug!(
+                "Consensus shadow comparison skipped for uncovered operation: {operation:?}"
+            );
             if collections.is_empty() {
                 self.invalidate();
             } else {
@@ -160,6 +193,7 @@ impl ShadowStateMachine {
         }
 
         if report.is_empty() {
+            log::debug!("Consensus shadow match");
             return None;
         }
 
@@ -182,6 +216,10 @@ impl ShadowStateMachine {
 
         for collection in collections {
             let state = toc.collection_state(&collection);
+            log::debug!(
+                "Consensus shadow resynchronizing collection {collection:?}: present={}",
+                state.is_some(),
+            );
             state_machine.resync_collection(&collection, state);
         }
     }
@@ -218,8 +256,19 @@ pub fn read_shallow_state(toc: &impl CollectionContainer, persistent: &Persisten
 
 /// Collections an operation might change, including any alias target
 fn target_collections(operation: &ConsensusOperations, state: &ClusterState) -> Vec<CollectionId> {
-    let ConsensusOperations::CollectionMeta(operation) = operation else {
-        return Vec::new();
+    let operation = match operation {
+        ConsensusOperations::RemovePeer(_) => {
+            let mut collections: Vec<_> = state.collections.keys().cloned().collect();
+            collections.sort();
+            return collections;
+        }
+        ConsensusOperations::CollectionMeta(operation) => operation,
+        ConsensusOperations::AddPeer { .. }
+        | ConsensusOperations::UpdatePeerMetadata { .. }
+        | ConsensusOperations::UpdateClusterMetadata { .. }
+        | ConsensusOperations::SetQuotaConfig(_)
+        | ConsensusOperations::RequestSnapshot
+        | ConsensusOperations::ReportSnapshot { .. } => return Vec::new(),
     };
 
     let collection = match operation.as_ref() {

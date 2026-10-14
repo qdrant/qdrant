@@ -1,8 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalReadFs};
 
 use super::ReadOnlyImmutableDenseVectorStorage;
 use crate::common::live_reload::LiveReload;
@@ -15,7 +13,7 @@ impl<B: DenseVectorBlob> LiveReload for ReadOnlyImmutableDenseVectorStorage<B> {
     fn live_preload<Fs: CachedReadFs<File = B::File>>(
         &self,
         _fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         // Reload only applies deletes directly from arguments. No file to check.
         Ok(Vec::new())
     }
@@ -27,7 +25,6 @@ impl<B: DenseVectorBlob> LiveReload for ReadOnlyImmutableDenseVectorStorage<B> {
         _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.deleted.insert_all(deleted_points);
 

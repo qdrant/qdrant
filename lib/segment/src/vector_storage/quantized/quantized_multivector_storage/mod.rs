@@ -1,9 +1,10 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::slice;
 
 use ahash::HashMapExt as _;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
@@ -61,7 +62,6 @@ pub trait MultivectorOffsetsStorage: Sized {
         &mut self,
         id: PointOffsetType,
         offset: MultivectorOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> std::io::Result<()>;
 
     fn flusher(&self) -> Flusher;
@@ -128,8 +128,8 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-        hw_counter: &HardwareCounterCell,
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         debug_assert_eq!(point_ids.len(), scores.len());
@@ -137,11 +137,11 @@ where
         if QuantizedStorage::is_in_ram_or_mmap() {
             // This function is optimized of in-ram access
             // it doesn't do extra mem copies and assume reference access
-            self.score_points_batch_in_mem_like(point_ids, scorer, scores, hw_counter);
+            self.score_points_batch_in_mem_like(point_ids, scorer, scores)
         } else {
             // Optimized for remote access from external storage,
             // does memory copy, but minimizes assessed to external storage
-            self.score_points_batch_uring_like(point_ids, scorer, scores, hw_counter);
+            self.score_points_batch_uring_like(point_ids, scorer, scores)
         }
     }
 
@@ -151,19 +151,30 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-        hw_counter: &HardwareCounterCell,
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => (),
         }
 
+        // `scorer` takes an infallible closure, so a failed read is kept here
+        // and returned once the point it failed on is scored.
+        let failed = Cell::new(None);
         for (index, &point_id) in point_ids.iter().enumerate() {
             scores[index] = scorer(&|query| {
-                self.score_point_max_similarity(query, point_id, hw_counter) // inhibit rustfmt
+                self.score_point_max_similarity(query, point_id)
+                    .unwrap_or_else(|err| {
+                        failed.set(Some(err));
+                        ScoreType::NEG_INFINITY
+                    })
             });
+            if let Some(err) = failed.take() {
+                return Err(err);
+            }
         }
+        Ok(())
     }
 
     #[inline]
@@ -172,23 +183,17 @@ where
         point_ids: &[PointOffsetType],
         scorer: F,
         scores: &mut [ScoreType],
-        hw_counter: &HardwareCounterCell,
-    ) where
+    ) -> OperationResult<()>
+    where
         F: Fn(&DynScore<QuantizedStorage::EncodedQuery>) -> ScoreType,
     {
         match self.multi_vector_config.comparator {
             MultiVectorComparator::MaxSim => (),
         }
 
-        self.for_each_in_multi_batch(
-            point_ids,
-            |index, multi_vector| {
-                scores[index] = scorer(&|query| {
-                    self.score_vector_max_similarity(query, multi_vector, hw_counter)
-                });
-            },
-            hw_counter,
-        );
+        self.for_each_in_multi_batch(point_ids, |index, multi_vector| {
+            scores[index] = scorer(&|query| self.score_vector_max_similarity(query, multi_vector));
+        })
     }
 
     /// Read the quantized sub-vectors for a batch of multi-vector points and hand
@@ -208,8 +213,7 @@ where
         &self,
         point_ids: &[PointOffsetType],
         mut callback: impl FnMut(usize, &[Cow<'_, [u8]>]),
-        hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> OperationResult<()> {
         debug_assert!(point_ids.len() <= u32::MAX as usize);
 
         /// Identifies, for a single sub-vector read, the multi-vector it is part of.
@@ -239,12 +243,10 @@ where
                 }
 
                 sub_vector_offsets.extend(offset.start..offset.start + offset.count);
-            })
-            .expect("multi-vector offsets read");
+            })?;
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(sub_vector_offsets.len() * self.quantized_vector_size());
+        let mul = usize::from(self.quantized_storage.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump(sub_vector_offsets.len() * self.quantized_vector_size() * mul);
 
         // Reads may complete in any order, so we buffer each point's sub-vectors
         // (keyed by `point_index`) and emit the multi-vector once all of them have
@@ -287,9 +289,10 @@ where
                     callback(point_index as _, &multi_vector);
                 }
             },
-        );
+        )?;
 
         debug_assert!(partial_multi_vectors.is_empty());
+        Ok(())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors.
@@ -298,7 +301,6 @@ where
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         multi_vector: &[Cow<'_, [u8]>],
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let mut sum = 0.0;
 
@@ -307,9 +309,7 @@ where
 
             // manual `max_by` for performance
             for vector in multi_vector {
-                let sim = self
-                    .quantized_storage
-                    .score(inner_query, vector, hw_counter);
+                let sim = self.quantized_storage.score(inner_query, vector);
 
                 if max_sim < sim {
                     max_sim = sim;
@@ -329,9 +329,10 @@ where
         &self,
         query: &[QuantizedStorage::EncodedQuery],
         point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
-        let offset = self.offsets.get_offset(point_id);
+    ) -> OperationResult<ScoreType> {
+        let mut offset = MultivectorOffset::default();
+        self.offsets
+            .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
 
         let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
@@ -340,15 +341,15 @@ where
         self.quantized_storage
             .for_each_batch(&offsets, |_, vector| {
                 for (query_idx, query) in query.iter().enumerate() {
-                    let sim = self.quantized_storage.score(query, &vector, hw_counter);
+                    let sim = self.quantized_storage.score(query, &vector);
 
                     if max_sim[query_idx] < sim {
                         max_sim[query_idx] = sim;
                     }
                 }
-            });
+            })?;
 
-        max_sim.into_iter().sum()
+        Ok(max_sim.into_iter().sum())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -356,7 +357,6 @@ where
         &self,
         vector_a_index: PointOffsetType,
         vector_b_index: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
     ) -> ScoreType {
         let offset_a = self.offsets.get_offset(vector_a_index);
         let offset_b = self.offsets.get_offset(vector_b_index);
@@ -365,11 +365,9 @@ where
             let mut max_sim = ScoreType::NEG_INFINITY;
             // manual `max_by` for performance
             for b in 0..offset_b.count {
-                let sim = self.quantized_storage.score_internal(
-                    offset_a.start + a,
-                    offset_b.start + b,
-                    hw_counter,
-                );
+                let sim = self
+                    .quantized_storage
+                    .score_internal(offset_a.start + a, offset_b.start + b);
                 if sim > max_sim {
                     max_sim = sim;
                 }
@@ -406,8 +404,8 @@ where
         QuantizedStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.quantized_storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.quantized_storage.is_cold()
     }
 
     fn encode_query(&self, query: &[VectorElementType]) -> Vec<QuantizedStorage::EncodedQuery> {
@@ -421,33 +419,31 @@ where
             .collect()
     }
 
-    fn for_each_batch(&self, _: &[PointOffsetType], _: impl FnMut(usize, Cow<'_, [u8]>)) {
+    fn for_each_batch(
+        &self,
+        _: &[PointOffsetType],
+        _: impl FnMut(usize, Cow<'_, [u8]>),
+    ) -> std::io::Result<()> {
         unimplemented!("quantized multi-vector storage does not support `for_each_batch`");
     }
 
-    fn score(&self, _: &Self::EncodedQuery, _: &[u8], _: &HardwareCounterCell) -> f32 {
+    fn score(&self, _: &Self::EncodedQuery, _: &[u8]) -> f32 {
         unimplemented!("quantized multi-vector storage does not support `score`");
     }
 
-    fn score_point(
+    fn score_points(
         &self,
         query: &Vec<QuantizedStorage::EncodedQuery>,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
-        match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_point_max_similarity(query, i, hw_counter),
-        }
+        offsets: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> std::io::Result<()> {
+        self.score_points_batch(offsets, |score| score(query), scores)
+            .map_err(std::io::Error::other)
     }
 
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> ScoreType {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> ScoreType {
         match self.multi_vector_config.comparator {
-            MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j, hw_counter),
+            MultiVectorComparator::MaxSim => self.score_internal_max_similarity(i, j),
         }
     }
 
@@ -468,12 +464,7 @@ where
         Some(query)
     }
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
             flattened_vectors: vector,
@@ -503,13 +494,10 @@ where
         };
 
         for (i, inner_vector) in multi_vector.multi_vectors().enumerate() {
-            self.quantized_storage.upsert_vector(
-                offset.start + i as PointOffsetType,
-                inner_vector,
-                hw_counter,
-            )?;
+            self.quantized_storage
+                .upsert_vector(offset.start + i as PointOffsetType, inner_vector)?;
         }
-        self.offsets.upsert_offset(id, offset, hw_counter)?;
+        self.offsets.upsert_offset(id, offset)?;
         Ok(())
     }
 
@@ -551,13 +539,7 @@ where
     }
 
     type SupportsBytes = False;
-    fn score_bytes(
-        &self,
-        enabled: Self::SupportsBytes,
-        _: &Self::EncodedQuery,
-        _: &[u8],
-        _: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &Self::EncodedQuery, _: &[u8]) -> f32 {
         match enabled {}
     }
 }

@@ -44,7 +44,7 @@ pub trait TurboVectorBlob {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    );
+    ) -> OperationResult<()>;
 }
 
 impl<S: UniversalRead> TurboVectorBlob for QuantizedStorage<S> {
@@ -94,7 +94,7 @@ impl<S: UniversalRead> TurboVectorBlob for QuantizedStorage<S> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
-        shared::score_query_batch(self, quantizer, distance, query, ids, scores);
+    ) -> OperationResult<()> {
+        shared::score_query_batch(self, quantizer, distance, query, ids, scores)
     }
 }

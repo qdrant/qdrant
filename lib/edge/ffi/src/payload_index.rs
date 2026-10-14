@@ -199,6 +199,13 @@ pub struct TextIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// If set, record document lengths, so a [`ScoringQuery::Text`] can rank
+    /// points over this field. Implies `phrase_matching`. Changing it rebuilds
+    /// the index. `None`/`null` disables ranking.
+    ///
+    /// [`ScoringQuery::Text`]: crate::ScoringQuery::Text
+    #[uniffi(default = None)]
+    pub scoring: Option<TextScoringParams>,
 }
 
 /// Parameters of a bool payload index.
@@ -250,6 +257,55 @@ pub struct UuidIndexParams {
 }
 
 // ── Full-text options ───────────────────────────────────────────────────────
+
+/// How a text index ranks documents.
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum TextScoringType {
+    /// Okapi BM25. `k` and `b` are set per query.
+    Bm25,
+}
+
+impl From<TextScoringType> for segment_index::TextScoringType {
+    fn from(t: TextScoringType) -> Self {
+        match t {
+            TextScoringType::Bm25 => segment_index::TextScoringType::Bm25,
+        }
+    }
+}
+
+impl From<segment_index::TextScoringType> for TextScoringType {
+    fn from(t: segment_index::TextScoringType) -> Self {
+        match t {
+            segment_index::TextScoringType::Bm25 => TextScoringType::Bm25,
+        }
+    }
+}
+
+/// Ranking over a text index. The index records the length of each document,
+/// which ranking normalizes by.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct TextScoringParams {
+    /// How documents are ranked.
+    pub r#type: TextScoringType,
+}
+
+impl From<TextScoringParams> for segment_index::TextScoringParams {
+    fn from(params: TextScoringParams) -> Self {
+        let TextScoringParams { r#type } = params;
+        Self {
+            r#type: r#type.into(),
+        }
+    }
+}
+
+impl From<segment_index::TextScoringParams> for TextScoringParams {
+    fn from(params: segment_index::TextScoringParams) -> Self {
+        let segment_index::TextScoringParams { r#type } = params;
+        Self {
+            r#type: r#type.into(),
+        }
+    }
+}
 
 /// How a full-text index splits string values into tokens.
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -685,14 +741,26 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     memory,
                     stemmer,
                     enable_hnsw,
+                    scoring,
                 } = config;
+                let min_token_len = token_len("min_token_len", min_token_len)?;
+                let max_token_len = token_len("max_token_len", max_token_len)?;
+                // Same rule the server enforces on its API: an inverted length
+                // window drops every token and the index builds empty.
+                segment_index::validate_text_index_params(&min_token_len, &max_token_len).map_err(
+                    |_| {
+                        EdgeError::invalid_argument(
+                            "text index: 'min_token_len' can't be greater than 'max_token_len'",
+                        )
+                    },
+                )?;
                 Ok(PayloadSchemaParams::Text(segment_index::TextIndexParams {
                     r#type: segment_index::TextIndexType::Text,
                     tokenizer: tokenizer
                         .map(segment_index::TokenizerType::from)
                         .unwrap_or_default(),
-                    min_token_len: token_len("min_token_len", min_token_len)?,
-                    max_token_len: token_len("max_token_len", max_token_len)?,
+                    min_token_len,
+                    max_token_len,
                     lowercase,
                     ascii_folding,
                     phrase_matching,
@@ -701,6 +769,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     memory: memory.map(SegmentMemory::from),
                     stemmer: stemmer.map(segment_index::StemmingAlgorithm::from),
                     enable_hnsw,
+                    scoring: scoring.map(segment_index::TextScoringParams::from),
                 }))
             }
             PayloadIndexParams::Bool { config } => {
@@ -853,6 +922,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     memory: _,
                     stemmer,
                     enable_hnsw,
+                    scoring,
                 } = params;
                 PayloadIndexParams::Text {
                     config: TextIndexParams {
@@ -866,6 +936,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                         memory,
                         stemmer: stemmer.map(Stemmer::from),
                         enable_hnsw,
+                        scoring: scoring.map(TextScoringParams::from),
                     },
                 }
             }

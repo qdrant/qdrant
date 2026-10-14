@@ -4,11 +4,12 @@
 
 use std::path::Path;
 
+use crate::ambient;
 use crate::generic_consts::Random;
 use crate::mmap::AdviceSetting;
 use crate::universal_io::{
     OpenOptions, Populate, ReadRange, UniversalAppend, UniversalFlush as _, UniversalIoError,
-    UniversalRead as _, UniversalReadFs, UniversalWriteFileOps,
+    UniversalRead as _, UniversalWriteFs,
 };
 
 /// [`OpenOptions`] for conformance runs.
@@ -27,10 +28,11 @@ pub fn open_options(writeable: bool) -> OpenOptions {
 /// create files under.
 pub fn run_append_conformance<Fs>(fs: &Fs, dir: &Path)
 where
-    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs: UniversalWriteFs,
     Fs::File: UniversalAppend,
     Fs::OpenExtra: Default,
 {
+    let _scope = ambient::test_guard();
     let path = dir.join("append.dat");
     fs.create(&path, 0).unwrap();
 
@@ -157,7 +159,7 @@ where
     run_open_append_conformance(fs, dir);
 }
 
-/// Exercise [`UniversalWriteFileOps::open_append`] against a backend: the
+/// Exercise [`UniversalWriteFs::open_append`] against a backend: the
 /// filesystem hands out an append handle whose writes the read path observes,
 /// whatever file type either side is.
 ///
@@ -165,9 +167,10 @@ where
 /// whose own [`UniversalReadFs::File`] does not append.
 pub fn run_open_append_conformance<Fs>(fs: &Fs, dir: &Path)
 where
-    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs: UniversalWriteFs,
     Fs::OpenExtra: Default,
 {
+    let _scope = ambient::test_guard();
     let path = dir.join("open_append.dat");
     fs.create(&path, 0).unwrap();
 

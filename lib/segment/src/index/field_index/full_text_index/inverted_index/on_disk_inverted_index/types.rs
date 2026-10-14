@@ -25,7 +25,10 @@ impl ZerocopyPostingValue for Positions {}
 pub struct PostingsHeader {
     /// Number of posting lists. One posting list per term
     pub posting_count: usize,
-    pub _reserved: [u8; 32],
+    /// Sum of document lengths at build time, deletions after it not applied.
+    /// Zero in files built before lengths were recorded.
+    pub total_tokens: u64,
+    pub _reserved: [u8; 24],
 }
 
 /// This data structure should contain all the necessary information to

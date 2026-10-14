@@ -6,8 +6,6 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 
 use blobstore::Blob;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -58,17 +56,15 @@ where
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        self.inner.filter(condition, hw_counter)
+        self.inner.filter(condition)
     }
 
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>> {
-        self.inner.estimate_cardinality(condition, hw_counter)
+        self.inner.estimate_cardinality(condition)
     }
 
     fn for_each_payload_block(
@@ -83,18 +79,15 @@ where
     fn condition_checker<'a>(
         &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>> {
-        self.inner.condition_checker(condition, hw_acc)
+        self.inner.condition_checker(condition)
     }
 
     fn special_check_condition(
         &self,
         condition: &FieldCondition,
         payload_value: &Value,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<bool>> {
-        self.inner
-            .special_check_condition(condition, payload_value, hw_counter)
+        self.inner.special_check_condition(condition, payload_value)
     }
 }

@@ -7,7 +7,6 @@ use std::num::NonZeroUsize;
 use std::path::Path;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(feature = "testing")]
 use common::fs::OneshotFile;
 use common::mmap::Flusher;
@@ -23,30 +22,22 @@ use fs_err::File;
 /// segment) implement only this, instead of faking the read methods on [`EncodedStorage`].
 pub trait EncodedStorageWrite {
     fn is_in_ram_or_mmap() -> bool;
-    fn is_on_disk(&self) -> bool;
+    /// Whether the data was opened cold: left on disk and paged in on demand, so
+    /// reads may hit the disk. False for heap data and for mmaps populated on open.
+    fn is_cold(&self) -> bool;
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()>;
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()>;
 
     /// Persist `vectors` on consecutive ids starting at `start_id`. A storage
     /// whose backend can batch writes overrides this; the default loops over
     /// [`upsert_vector`](Self::upsert_vector).
-    fn upsert_many<'a, I>(
-        &mut self,
-        start_id: PointOffsetType,
-        vectors: I,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()>
+    fn upsert_many<'a, I>(&mut self, start_id: PointOffsetType, vectors: I) -> std::io::Result<()>
     where
         I: IntoIterator<Item = &'a [u8]>,
         I::IntoIter: ExactSizeIterator,
     {
         for (offset, vector) in vectors.into_iter().enumerate() {
-            self.upsert_vector(start_id + offset as PointOffsetType, vector, hw_counter)?;
+            self.upsert_vector(start_id + offset as PointOffsetType, vector)?;
         }
         Ok(())
     }
@@ -69,7 +60,7 @@ pub trait EncodedStorage: EncodedStorageWrite {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    );
+    ) -> std::io::Result<()>;
 
     /// True when the storage serves one contiguous slice faster than the same
     /// vectors read individually, at *any* run length, so run batching should
@@ -124,10 +115,11 @@ pub trait EncodedStorage: EncodedStorageWrite {
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for (index, &offset) in offsets.iter().enumerate() {
             callback(index, 1, self.get_vector_data(offset));
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf>;
@@ -139,10 +131,11 @@ pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
     this: &E,
     offsets: &[u32],
     mut callback: impl FnMut(usize, Cow<'_, [u8]>),
-) {
+) -> std::io::Result<()> {
     for (index, &offset) in offsets.iter().enumerate() {
         callback(index, this.get_vector_data(offset));
     }
+    Ok(())
 }
 
 /// One maximal run of consecutive ids in an offsets list, see
@@ -155,6 +148,16 @@ pub struct ConsecutiveRun {
     pub start: PointOffsetType,
     /// Number of ids in the run.
     pub len: usize,
+}
+
+impl ConsecutiveRun {
+    pub fn unreadable(&self) -> std::io::Error {
+        std::io::Error::other(format!(
+            "quantized vectors {}..{} are not readable",
+            self.start,
+            self.start as usize + self.len,
+        ))
+    }
 }
 
 /// Run detection shared by [`EncodedStorage::for_each_run`] implementations:
@@ -312,12 +315,7 @@ impl TestEncodedStorage {
 
 #[cfg(feature = "testing")]
 impl EncodedStorageWrite for TestEncodedStorage {
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[u8],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
         if vector.len() != self.quantized_vector_size.get() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -342,7 +340,7 @@ impl EncodedStorageWrite for TestEncodedStorage {
         true
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         false
     }
 
@@ -389,20 +387,21 @@ impl EncodedStorage for TestEncodedStorage {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
-        default_for_each_batch(self, offsets, callback);
+    ) -> std::io::Result<()> {
+        default_for_each_batch(self, offsets, callback)
     }
 
     fn for_each_run(
         &self,
         offsets: &[PointOffsetType],
         mut callback: impl FnMut(usize, usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         for run in consecutive_runs(offsets) {
             let begin = run.start as usize * self.quantized_vector_size.get();
             let end = begin + run.len * self.quantized_vector_size.get();
             callback(run.first, run.len, Cow::Borrowed(&self.data[begin..end]));
         }
+        Ok(())
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -570,9 +569,11 @@ mod tests {
         let storage = builder.build().unwrap();
 
         let mut runs = Vec::new();
-        storage.for_each_run(&[2, 3, 4, 8, 9, 1], |first, len, bytes| {
-            runs.push((first, len, bytes.into_owned()));
-        });
+        storage
+            .for_each_run(&[2, 3, 4, 8, 9, 1], |first, len, bytes| {
+                runs.push((first, len, bytes.into_owned()));
+            })
+            .unwrap();
         assert_eq!(
             runs,
             vec![

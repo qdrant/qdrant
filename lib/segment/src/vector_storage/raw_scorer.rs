@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicBool;
 
 use common::bitvec::{BitSlice, BitSliceExt as _};
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -19,7 +18,7 @@ use super::{
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    DenseVector, MultiDenseVectorInternal, QueryVector, VectorInternal,
+    DenseVector, MultiDenseVectorInternal, QueryVector, VectorElementType, VectorInternal,
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -37,10 +36,21 @@ use crate::vector_storage::sparse::volatile_sparse_vector_storage::VolatileSpars
 use crate::vector_storage::{TurboMultiScoring, TurboScoring};
 
 pub trait RawScorer {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()>;
 
     /// Score stored vector with vector under the given index
-    fn score_point(&self, point: PointOffsetType) -> ScoreType;
+    ///
+    /// A batch of one: scorers read stored vectors only in batches, which
+    /// report a failed read instead of panicking on it.
+    fn score_point(&self, point: PointOffsetType) -> OperationResult<ScoreType> {
+        let mut score = [0.0];
+        self.score_points(&[point], &mut score)?;
+        Ok(score[0])
+    }
 
     /// Return distance between stored points selected by IDs
     ///
@@ -60,62 +70,63 @@ pub struct RawScorerImpl<TQueryScorer: QueryScorer> {
 pub fn new_raw_scorer<'a>(
     query: QueryVector,
     vector_storage: &'a VectorStorageEnum,
-    hc: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
-        VectorStorageEnum::DenseVolatile(vs) => raw_scorer_impl(query, vs, hc),
+        VectorStorageEnum::DenseVolatile(vs) => raw_scorer_impl(query, vs),
         #[cfg(test)]
-        VectorStorageEnum::DenseVolatileByte(vs) => raw_scorer_impl(query, vs, hc),
+        VectorStorageEnum::DenseVolatileByte(vs) => raw_scorer_impl(query, vs),
         #[cfg(test)]
-        VectorStorageEnum::DenseVolatileHalf(vs) => raw_scorer_impl(query, vs, hc),
+        VectorStorageEnum::DenseVolatileHalf(vs) => raw_scorer_impl(query, vs),
 
-        VectorStorageEnum::DenseMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseGraphInline(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseGraphInlineByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseGraphInlineHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseMemmap(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseGraphInline(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseGraphInlineByte(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseGraphInlineHalf(vs) => raw_scorer_impl(query, vs.as_ref()),
 
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUring(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseUring(vs) => raw_scorer_impl(query, vs.as_ref()),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseUringByte(vs) => raw_scorer_impl(query, vs.as_ref()),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseUringHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseUringHalf(vs) => raw_scorer_impl(query, vs.as_ref()),
 
-        VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseTurboMemmap(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
-        VectorStorageEnum::DenseTurboGraphInline(vs) => {
-            raw_turbo_scorer_impl(query, vs.as_ref(), hc)
-        }
+        VectorStorageEnum::DenseAppendableMemmap(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseAppendableMemmapByte(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseAppendableMemmapHalf(vs) => raw_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseTurboMemmap(vs) => raw_turbo_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::DenseTurboGraphInline(vs) => raw_turbo_scorer_impl(query, vs.as_ref()),
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseTurboUring(vs) => raw_turbo_scorer_impl(query, vs.as_ref(), hc),
+        VectorStorageEnum::DenseTurboUring(vs) => raw_turbo_scorer_impl(query, vs.as_ref()),
         VectorStorageEnum::DenseTurboAppendableMemmap(vs) => {
-            raw_turbo_scorer_impl(query, vs.as_ref(), hc)
+            raw_turbo_scorer_impl(query, vs.as_ref())
         }
-        VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs, hc),
-        VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
-        VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),
+        VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_volatile(query, vs),
+        VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs),
+        VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs),
         #[cfg(test)]
-        VectorStorageEnum::MultiDenseVolatileByte(vs) => raw_multi_scorer_impl(query, vs, hc),
+        VectorStorageEnum::MultiDenseVolatileByte(vs) => raw_multi_scorer_impl(query, vs),
         #[cfg(test)]
-        VectorStorageEnum::MultiDenseVolatileHalf(vs) => raw_multi_scorer_impl(query, vs, hc),
+        VectorStorageEnum::MultiDenseVolatileHalf(vs) => raw_multi_scorer_impl(query, vs),
         VectorStorageEnum::MultiDenseAppendableMemmap(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), hc)
+            raw_multi_scorer_impl(query, vs.as_ref())
         }
         VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), hc)
+            raw_multi_scorer_impl(query, vs.as_ref())
         }
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), hc)
+            raw_multi_scorer_impl(query, vs.as_ref())
         }
-        VectorStorageEnum::MultiDenseTurbo(vs) => {
-            raw_turbo_multi_scorer_impl(query, vs.as_ref(), hc)
+        VectorStorageEnum::MultiDenseTurbo(vs) => raw_turbo_multi_scorer_impl(query, vs.as_ref()),
+        VectorStorageEnum::EmptyDense(vs) => {
+            if vs.multi_vector_config().is_some() {
+                raw_multi_scorer_impl::<VectorElementType, _>(query, vs)
+            } else {
+                raw_scorer_impl(query, vs)
+            }
         }
-        VectorStorageEnum::EmptyDense(vs) => raw_scorer_impl(query, vs, hc),
-        VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs, hc),
+        VectorStorageEnum::EmptySparse(vs) => raw_sparse_scorer_impl(query, vs),
     }
 }
 
@@ -129,7 +140,6 @@ pub trait RawScorerBuilder {
     fn build_raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>;
 }
 
@@ -137,9 +147,8 @@ impl RawScorerBuilder for VectorStorageEnum {
     fn build_raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        new_raw_scorer(query, self, hardware_counter)
+        new_raw_scorer(query, self)
     }
 }
 
@@ -148,10 +157,9 @@ pub static DEFAULT_STOPPED: AtomicBool = AtomicBool::new(false);
 pub fn raw_sparse_scorer_volatile<'a>(
     query: QueryVector,
     vector_storage: &'a VolatileSparseVectorStorage,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let QueryVector::Nearest(vector) = query else {
-        return raw_sparse_scorer_impl(query, vector_storage, hardware_counter);
+        return raw_sparse_scorer_impl(query, vector_storage);
     };
     let VectorInternal::Sparse(sparse_vector) = vector else {
         return Err(OperationError::service_error(
@@ -159,8 +167,7 @@ pub fn raw_sparse_scorer_volatile<'a>(
         ));
     };
 
-    let query_scorer =
-        SparseMetricQueryScorer::new(sparse_vector, vector_storage, hardware_counter);
+    let query_scorer = SparseMetricQueryScorer::new(sparse_vector, vector_storage);
 
     raw_scorer_from_query_scorer(query_scorer)
 }
@@ -168,7 +175,6 @@ pub fn raw_sparse_scorer_volatile<'a>(
 pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorageRead>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(_vector) => Err(OperationError::service_error(
@@ -179,7 +185,6 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorageRead>(
             let query_scorer = SparseCustomQueryScorer::<_, _>::new(
                 RecoBestScoreQuery::from(reco_query),
                 vector_storage,
-                hardware_counter,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
@@ -188,36 +193,24 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorageRead>(
             let query_scorer = SparseCustomQueryScorer::<_, _>::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
-                hardware_counter,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Discover(discover_query) => {
             let discover_query: DiscoverQuery<SparseVector> = discover_query.transform_into()?;
-            let query_scorer = SparseCustomQueryScorer::<_, _>::new(
-                discover_query,
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer = SparseCustomQueryScorer::<_, _>::new(discover_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<SparseVector> = context_query.transform_into()?;
-            let query_scorer = SparseCustomQueryScorer::<_, _>::new(
-                context_query,
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer = SparseCustomQueryScorer::<_, _>::new(context_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::FeedbackNaive(feedback_query) => {
             let feedback_query: NaiveFeedbackQuery<SparseVector> =
                 feedback_query.transform_into()?;
-            let query_scorer = SparseCustomQueryScorer::<_, _>::new(
-                feedback_query.into_query(),
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                SparseCustomQueryScorer::<_, _>::new(feedback_query.into_query(), vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
     }
@@ -228,7 +221,7 @@ pub fn new_raw_scorer_for_test<'a>(
     vector: QueryVector,
     vector_storage: &'a VectorStorageEnum,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    new_raw_scorer(vector, vector_storage, HardwareCounterCell::new())
+    new_raw_scorer(vector, vector_storage)
 }
 
 pub fn raw_scorer_impl<
@@ -238,7 +231,6 @@ pub fn raw_scorer_impl<
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>>
 where
     CosineMetric: Metric<TElement>,
@@ -247,26 +239,18 @@ where
     ManhattanMetric: Metric<TElement>,
 {
     match vector_storage.distance() {
-        Distance::Cosine => new_scorer_with_metric::<TElement, CosineMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
-        Distance::Euclid => new_scorer_with_metric::<TElement, EuclidMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
-        Distance::Dot => new_scorer_with_metric::<TElement, DotProductMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
-        Distance::Manhattan => new_scorer_with_metric::<TElement, ManhattanMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
+        Distance::Cosine => {
+            new_scorer_with_metric::<TElement, CosineMetric, _>(query, vector_storage)
+        }
+        Distance::Euclid => {
+            new_scorer_with_metric::<TElement, EuclidMetric, _>(query, vector_storage)
+        }
+        Distance::Dot => {
+            new_scorer_with_metric::<TElement, DotProductMetric, _>(query, vector_storage)
+        }
+        Distance::Manhattan => {
+            new_scorer_with_metric::<TElement, ManhattanMetric, _>(query, vector_storage)
+        }
     }
 }
 
@@ -278,15 +262,11 @@ fn new_scorer_with_metric<
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
-    hardware_counter_cell: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MetricQueryScorer::<_, TMetric, _>::new(
-                vector.try_into()?,
-                vector_storage,
-                hardware_counter_cell,
-            );
+            let query_scorer =
+                MetricQueryScorer::<_, TMetric, _>::new(vector.try_into()?, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::RecommendBestScore(reco_query) => {
@@ -294,7 +274,6 @@ fn new_scorer_with_metric<
             let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoBestScoreQuery::from(reco_query),
                 vector_storage,
-                hardware_counter_cell,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
@@ -303,26 +282,19 @@ fn new_scorer_with_metric<
             let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
-                hardware_counter_cell,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Discover(discover_query) => {
             let discover_query: DiscoverQuery<DenseVector> = discover_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
-                discover_query,
-                vector_storage,
-                hardware_counter_cell,
-            );
+            let query_scorer =
+                CustomQueryScorer::<_, TMetric, _, _>::new(discover_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
-                context_query,
-                vector_storage,
-                hardware_counter_cell,
-            );
+            let query_scorer =
+                CustomQueryScorer::<_, TMetric, _, _>::new(context_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::FeedbackNaive(feedback_query) => {
@@ -331,7 +303,6 @@ fn new_scorer_with_metric<
             let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 feedback_query.into_query(),
                 vector_storage,
-                hardware_counter_cell,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
@@ -341,52 +312,38 @@ fn new_scorer_with_metric<
 pub fn raw_turbo_scorer_impl<'a, TStorage: TurboScoring>(
     query: QueryVector,
     vector_storage: &'a TStorage,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
-        QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(TurboQueryScorer::new(
-            vector.try_into()?,
-            vector_storage,
-            hardware_counter,
-        )),
+        QueryVector::Nearest(vector) => {
+            raw_scorer_from_query_scorer(TurboQueryScorer::new(vector.try_into()?, vector_storage))
+        }
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = TurboCustomQueryScorer::new(
-                RecoBestScoreQuery::from(reco_query),
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                TurboCustomQueryScorer::new(RecoBestScoreQuery::from(reco_query), vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::RecommendSumScores(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = TurboCustomQueryScorer::new(
-                RecoSumScoresQuery::from(reco_query),
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                TurboCustomQueryScorer::new(RecoSumScoresQuery::from(reco_query), vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Discover(discover_query) => {
             let discover_query: DiscoverQuery<DenseVector> = discover_query.transform_into()?;
-            let query_scorer =
-                TurboCustomQueryScorer::new(discover_query, vector_storage, hardware_counter);
+            let query_scorer = TurboCustomQueryScorer::new(discover_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-            let query_scorer =
-                TurboCustomQueryScorer::new(context_query, vector_storage, hardware_counter);
+            let query_scorer = TurboCustomQueryScorer::new(context_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::FeedbackNaive(feedback_query) => {
             let feedback_query: NaiveFeedbackQuery<DenseVector> =
                 feedback_query.transform_into()?;
-            let query_scorer = TurboCustomQueryScorer::new(
-                feedback_query.into_query(),
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                TurboCustomQueryScorer::new(feedback_query.into_query(), vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
     }
@@ -395,12 +352,10 @@ pub fn raw_turbo_scorer_impl<'a, TStorage: TurboScoring>(
 pub fn raw_turbo_multi_scorer_impl<'a, TStorage: TurboMultiScoring>(
     query: QueryVector,
     vector_storage: &'a TStorage,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer =
-                TurboMultiQueryScorer::new(&vector.try_into()?, vector_storage, hardware_counter);
+            let query_scorer = TurboMultiQueryScorer::new(&vector.try_into()?, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::RecommendBestScore(reco_query) => {
@@ -408,7 +363,6 @@ pub fn raw_turbo_multi_scorer_impl<'a, TStorage: TurboMultiScoring>(
             let query_scorer = TurboMultiCustomQueryScorer::new(
                 RecoBestScoreQuery::from(reco_query),
                 vector_storage,
-                hardware_counter,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
@@ -417,32 +371,26 @@ pub fn raw_turbo_multi_scorer_impl<'a, TStorage: TurboMultiScoring>(
             let query_scorer = TurboMultiCustomQueryScorer::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
-                hardware_counter,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Discover(discover_query) => {
             let discover_query: DiscoverQuery<MultiDenseVectorInternal> =
                 discover_query.transform_into()?;
-            let query_scorer =
-                TurboMultiCustomQueryScorer::new(discover_query, vector_storage, hardware_counter);
+            let query_scorer = TurboMultiCustomQueryScorer::new(discover_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<MultiDenseVectorInternal> =
                 context_query.transform_into()?;
-            let query_scorer =
-                TurboMultiCustomQueryScorer::new(context_query, vector_storage, hardware_counter);
+            let query_scorer = TurboMultiCustomQueryScorer::new(context_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::FeedbackNaive(feedback_query) => {
             let feedback_query: NaiveFeedbackQuery<MultiDenseVectorInternal> =
                 feedback_query.transform_into()?;
-            let query_scorer = TurboMultiCustomQueryScorer::new(
-                feedback_query.into_query(),
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                TurboMultiCustomQueryScorer::new(feedback_query.into_query(), vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
     }
@@ -461,7 +409,6 @@ pub fn raw_multi_scorer_impl<
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>>
 where
     CosineMetric: Metric<TElement>,
@@ -470,26 +417,18 @@ where
     ManhattanMetric: Metric<TElement>,
 {
     match vector_storage.distance() {
-        Distance::Cosine => new_multi_scorer_with_metric::<_, CosineMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
-        Distance::Euclid => new_multi_scorer_with_metric::<_, EuclidMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
-        Distance::Dot => new_multi_scorer_with_metric::<_, DotProductMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
-        Distance::Manhattan => new_multi_scorer_with_metric::<_, ManhattanMetric, _>(
-            query,
-            vector_storage,
-            hardware_counter,
-        ),
+        Distance::Cosine => {
+            new_multi_scorer_with_metric::<_, CosineMetric, _>(query, vector_storage)
+        }
+        Distance::Euclid => {
+            new_multi_scorer_with_metric::<_, EuclidMetric, _>(query, vector_storage)
+        }
+        Distance::Dot => {
+            new_multi_scorer_with_metric::<_, DotProductMetric, _>(query, vector_storage)
+        }
+        Distance::Manhattan => {
+            new_multi_scorer_with_metric::<_, ManhattanMetric, _>(query, vector_storage)
+        }
     }
 }
 
@@ -501,15 +440,11 @@ fn new_multi_scorer_with_metric<
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
-    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MultiMetricQueryScorer::<_, TMetric, _>::new(
-                &vector.try_into()?,
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                MultiMetricQueryScorer::<_, TMetric, _>::new(&vector.try_into()?, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::RecommendBestScore(reco_query) => {
@@ -517,7 +452,6 @@ fn new_multi_scorer_with_metric<
             let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoBestScoreQuery::from(reco_query),
                 vector_storage,
-                hardware_counter,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
@@ -526,28 +460,21 @@ fn new_multi_scorer_with_metric<
             let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
-                hardware_counter,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Discover(discover_query) => {
             let discover_query: DiscoverQuery<MultiDenseVectorInternal> =
                 discover_query.transform_into()?;
-            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
-                discover_query,
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                MultiCustomQueryScorer::<_, TMetric, _, _>::new(discover_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<MultiDenseVectorInternal> =
                 context_query.transform_into()?;
-            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
-                context_query,
-                vector_storage,
-                hardware_counter,
-            );
+            let query_scorer =
+                MultiCustomQueryScorer::<_, TMetric, _, _>::new(context_query, vector_storage);
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::FeedbackNaive(feedback_query) => {
@@ -556,7 +483,6 @@ fn new_multi_scorer_with_metric<
             let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 feedback_query.into_query(),
                 vector_storage,
-                hardware_counter,
             );
             raw_scorer_from_query_scorer(query_scorer)
         }
@@ -564,13 +490,13 @@ fn new_multi_scorer_with_metric<
 }
 
 impl<TQueryScorer: QueryScorer> RawScorer for RawScorerImpl<TQueryScorer> {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
+    fn score_points(
+        &self,
+        points: &[PointOffsetType],
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
         assert_eq!(points.len(), scores.len());
-        self.query_scorer.score_stored_batch(points, scores);
-    }
-
-    fn score_point(&self, point: PointOffsetType) -> ScoreType {
-        self.query_scorer.score_stored(point)
+        self.query_scorer.score_stored_batch(points, scores)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {

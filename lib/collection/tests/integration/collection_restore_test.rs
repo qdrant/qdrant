@@ -7,7 +7,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
@@ -48,15 +48,10 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
                     payloads: None,
                 }),
             ));
-        let hw_counter = HwMeasurementAcc::new();
+        let ctx = AmbientContext::new();
         collection
-            .update_from_client_simple(
-                insert_points,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter,
-            )
+            .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+            .measured(ctx)
             .await
             .unwrap();
 
@@ -103,15 +98,10 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
                     payloads: serde_json::from_str(r#"[{ "k": "v1" } , { "k": "v2"}]"#).unwrap(),
                 }),
             ));
-        let hw_counter = HwMeasurementAcc::new();
+        let ctx = AmbientContext::new();
         collection
-            .update_from_client_simple(
-                insert_points,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter,
-            )
+            .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+            .measured(ctx)
             .await
             .unwrap();
 
@@ -139,8 +129,8 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
 
@@ -195,15 +185,10 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                     .unwrap(),
                 }),
             ));
-        let hw_counter = HwMeasurementAcc::new();
+        let ctx = AmbientContext::new();
         collection
-            .update_from_client_simple(
-                insert_points,
-                true,
-                None,
-                WriteOrdering::default(),
-                hw_counter,
-            )
+            .update_from_client_simple(insert_points, true, None, WriteOrdering::default())
+            .measured(ctx)
             .await
             .unwrap();
 
@@ -233,8 +218,8 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     assert!(
@@ -273,8 +258,8 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
         )
+        .measured(AmbientContext::new())
         .await
         .unwrap();
     assert!(

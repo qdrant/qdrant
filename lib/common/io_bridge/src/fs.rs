@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
-use common::universal_io::{
-    ListedFile, OpenOptions, UioResult, UniversalReadFileOps, UniversalReadFs,
-};
+use common::ambient::AmbientFutureExt as _;
+use common::ambient::trace::{self, Op};
+use common::universal_io::{ListedFile, OpenOptions, UioResult, UniversalReadFs};
 
+use crate::stats::RemoteIoStats;
 use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 
 /// Filesystem handle for an object-store backend: an [`AsyncRead`] handle plus
@@ -15,20 +16,139 @@ use crate::{AsyncRead, AsyncWrite, BlobFile, BridgeRuntime};
 pub struct BlobFs<A: AsyncRead> {
     inner: A,
     runtime: BridgeRuntime,
+    stats: RemoteIoStats,
 }
 
 impl<A: AsyncRead> std::fmt::Debug for BlobFs<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self { runtime, inner: _ } = self;
+        let Self {
+            runtime,
+            stats,
+            inner: _,
+        } = self;
         f.debug_struct("BlobFs")
             .field("runtime", runtime)
+            .field("stats", stats)
             .finish_non_exhaustive()
     }
 }
 
 impl<A: AsyncRead> BlobFs<A> {
     pub fn new(inner: A, runtime: BridgeRuntime) -> Self {
-        Self { inner, runtime }
+        Self {
+            inner,
+            runtime,
+            stats: RemoteIoStats::default(),
+        }
+    }
+
+    /// Report the remote requests of this filesystem, and of the files it opens, into `stats`.
+    pub fn with_stats(mut self, stats: RemoteIoStats) -> Self {
+        self.stats = stats;
+        self
+    }
+
+    /// Observer of the remote requests issued through this filesystem, its clones, and the
+    /// files it opened.
+    pub fn stats(&self) -> RemoteIoStats {
+        self.stats.clone()
+    }
+
+    /// Like the async reads, the op rides the [`BridgeRuntime`] rather than
+    /// the caller's executor, so the returned future needs no ambient reactor.
+    /// It spawns on first poll.
+    pub(crate) fn spawn<T, F>(
+        &self,
+        op: F,
+    ) -> impl Future<Output = UioResult<T>> + Send + 'static + use<A, T, F>
+    where
+        T: Send + 'static,
+        F: Future<Output = UioResult<T>> + Send + 'static,
+    {
+        let handle = self.runtime.handle().clone();
+        let op = op.in_current_ambient();
+        async move { handle.spawn(op).await? }
+    }
+}
+
+impl<A: AsyncRead + Clone> BlobFs<A> {
+    /// Traced, latency-logged LIST, not yet bound to any executor.
+    pub(crate) fn list_files_traced(
+        &self,
+        prefix_path: &Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
+        let request = self.stats.request(Op::List, prefix_path, 0..0);
+        let inner = self.inner.clone();
+        let prefix_path = prefix_path.to_path_buf();
+        async move {
+            let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+            let start_time = enabled.then(std::time::Instant::now);
+            let result = request.wrap(inner.list_files(&prefix_path)).await;
+            if let Some(start_time) = start_time {
+                log::trace!(
+                    target: crate::LATENCY_LOG_TARGET,
+                    "list_files({}) took {:?} and returned {} files",
+                    prefix_path.display(),
+                    start_time.elapsed(),
+                    result.as_ref().map_or(0, |files| files.len()),
+                );
+            }
+            result
+        }
+    }
+
+    /// Traced, latency-logged SELECT, not yet bound to any executor.
+    /// Issues HEAD queries concurrently across all requested paths.
+    pub(crate) fn select_files_traced(
+        &self,
+        paths: Vec<PathBuf>,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + 'static + use<A> {
+        let inner = self.inner.clone();
+        let stats = self.stats.clone();
+        async move {
+            if paths.is_empty() {
+                return Ok(Vec::new());
+            }
+            let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
+            let start_time = enabled.then(std::time::Instant::now);
+            let num_requested = paths.len();
+            let futures: Vec<_> = paths
+                .into_iter()
+                .map(|path| {
+                    let inner = inner.clone();
+                    let mut observer = stats.request(Op::Len, &path, 0..0);
+                    async move {
+                        observer.start();
+                        let result = inner.file_info(&path).await;
+                        match &result {
+                            Ok(Some(info)) => {
+                                observer.set_end(info.size);
+                                observer.set(trace::Outcome::Ok);
+                            }
+                            Ok(None) => observer.set(trace::Outcome::NotFound),
+                            Err(err) => observer.set_err(err),
+                        }
+                        result
+                    }
+                })
+                .collect();
+            let results = futures::future::try_join_all(futures).await?;
+            let files: Vec<ListedFile> = results.into_iter().flatten().collect();
+            if let Some(start_time) = start_time {
+                log::trace!(
+                    target: crate::LATENCY_LOG_TARGET,
+                    "select_files({num_requested} paths) took {:?} and returned {} files",
+                    start_time.elapsed(),
+                    files.len(),
+                );
+            }
+            Ok(files)
+        }
+    }
+
+    pub fn select_files<P: AsRef<Path>>(&self, paths: &[P]) -> UioResult<Vec<ListedFile>> {
+        let paths: Vec<PathBuf> = paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        self.runtime.block_on(self.select_files_traced(paths))
     }
 }
 
@@ -39,7 +159,8 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         bytes: Vec<u8>,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        self.spawn_write(async move { inner.save(&path, Bytes::from(bytes)).await })
+        let request = self.stats.request(Op::Save, &path, 0..bytes.len() as u64);
+        self.spawn(async move { request.wrap(inner.save(&path, Bytes::from(bytes))).await })
     }
 
     pub fn remove_async(
@@ -47,25 +168,14 @@ impl<A: AsyncWrite + Clone> BlobFs<A> {
         path: PathBuf,
     ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A> {
         let inner = self.inner.clone();
-        self.spawn_write(async move { inner.remove(&path).await })
-    }
-
-    /// Like the async reads, the write rides the [`BridgeRuntime`] rather than
-    /// the caller's executor, so the returned future needs no ambient reactor.
-    /// It spawns on first poll.
-    fn spawn_write<F>(
-        &self,
-        op: F,
-    ) -> impl Future<Output = UioResult<()>> + Send + 'static + use<A, F>
-    where
-        F: Future<Output = UioResult<()>> + Send + 'static,
-    {
-        let handle = self.runtime.handle().clone();
-        async move { handle.spawn(op).await? }
+        let request = self.stats.request(Op::Remove, &path, 0..0);
+        self.spawn(async move { request.wrap(inner.remove(&path)).await })
     }
 }
 
-impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
+impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
+    type File = BlobFile<A>;
+    type OpenExtra = ();
     type ContextConfig = A::Config;
 
     fn from_context(config: Self::ContextConfig) -> UioResult<Self> {
@@ -75,25 +185,17 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
     }
 
     fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
-        let start_time = enabled.then(std::time::Instant::now);
-        let result = self.runtime.block_on(self.inner.list_files(prefix_path));
-        if let Some(start_time) = start_time {
-            log::trace!(
-                target: crate::LATENCY_LOG_TARGET,
-                "list_files({}) took {:?} and returned {} files",
-                prefix_path.display(),
-                start_time.elapsed(),
-                result.as_ref().map_or(0, |files| files.len()),
-            );
-        }
-        result
+        self.runtime.block_on(self.list_files_traced(prefix_path))
     }
 
     fn exists(&self, path: &Path) -> UioResult<bool> {
         let enabled = log::log_enabled!(target: crate::LATENCY_LOG_TARGET, log::Level::Trace);
         let start_time = enabled.then(std::time::Instant::now);
-        let result = self.runtime.block_on(self.inner.exists(path));
+        let result = self.runtime.block_on(
+            self.stats
+                .request(Op::Exists, path, 0..0)
+                .wrap(self.inner.exists(path)),
+        );
         if let Some(start_time) = start_time {
             log::trace!(
                 target: crate::LATENCY_LOG_TARGET,
@@ -104,34 +206,6 @@ impl<A: AsyncRead + Clone> UniversalReadFileOps for BlobFs<A> {
         }
         result
     }
-}
-
-/// Deliberately no [`UniversalWriteFileOps`] impl: the write-capable
-/// universal-IO filesystem for object stores is
-/// [`CachedBlobFs`](crate::CachedBlobFs), which delegates its mutating file
-/// ops to these inherent methods and hands out
-/// [`CachedBlobFile`](crate::CachedBlobFile) append handles.
-///
-/// [`UniversalWriteFileOps`]: common::universal_io::UniversalWriteFileOps
-impl<A: AsyncWrite + Clone> BlobFs<A> {
-    pub fn create(&self, path: &Path) -> UioResult<()> {
-        self.runtime.block_on(self.inner.create(path))
-    }
-
-    pub fn remove(&self, path: &Path) -> UioResult<()> {
-        self.runtime.block_on(self.inner.remove(path))
-    }
-
-    /// A whole-object put, atomic on object stores.
-    pub fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
-        self.runtime
-            .block_on(self.inner.save(path, Bytes::copy_from_slice(bytes)))
-    }
-}
-
-impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
-    type File = BlobFile<A>;
-    type OpenExtra = ();
 
     /// Open a per-object handle. Blob handles have no other open-time knobs:
     /// of [`OpenOptions`], only `writeable` is honored (it gates appends).
@@ -143,7 +217,42 @@ impl<A: AsyncRead + Clone> UniversalReadFs for BlobFs<A> {
     ) -> UioResult<BlobFile<A>> {
         Ok(
             BlobFile::new(self.inner.clone(), self.runtime.clone(), path.as_ref())
-                .with_writeable(options.writeable),
+                .with_writeable(options.writeable)
+                .with_stats(self.stats.clone()),
+        )
+    }
+}
+
+/// Deliberately no [`UniversalWriteFs`] impl: the write-capable
+/// universal-IO filesystem for object stores is
+/// [`CachedBlobFs`](crate::CachedBlobFs), which delegates its mutating file
+/// ops to these inherent methods and hands out
+/// [`CachedBlobFile`](crate::CachedBlobFile) append handles.
+///
+/// [`UniversalWriteFs`]: common::universal_io::UniversalWriteFs
+impl<A: AsyncWrite + Clone> BlobFs<A> {
+    pub fn create(&self, path: &Path) -> UioResult<()> {
+        self.runtime.block_on(
+            self.stats
+                .request(Op::Create, path, 0..0)
+                .wrap(self.inner.create(path)),
+        )
+    }
+
+    pub fn remove(&self, path: &Path) -> UioResult<()> {
+        self.runtime.block_on(
+            self.stats
+                .request(Op::Remove, path, 0..0)
+                .wrap(self.inner.remove(path)),
+        )
+    }
+
+    /// A whole-object put, atomic on object stores.
+    pub fn atomic_save(&self, path: &Path, bytes: &[u8]) -> UioResult<()> {
+        self.runtime.block_on(
+            self.stats
+                .request(Op::Save, path, 0..bytes.len() as u64)
+                .wrap(self.inner.save(path, Bytes::copy_from_slice(bytes))),
         )
     }
 }

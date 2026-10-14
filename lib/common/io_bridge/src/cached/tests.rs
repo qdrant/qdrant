@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use common::ambient;
 use common::universal_io::{
-    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalWriteFileOps as _,
+    DiskCacheConfig, ListedFile, OpenOptions, Populate, UniversalWriteFs as _,
 };
 use futures::stream::{BoxStream, StreamExt as _};
 
@@ -169,6 +170,7 @@ fn open_options() -> OpenOptions {
 /// mirror's `NotFound` from the offset check.
 #[test]
 fn rewrite_append_at_offset_zero_creates_the_missing_object() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::tempdir().unwrap();
     let source = ThresholdMockSource::default();
     let mut file = cached_fs(&source, tmp.path())
@@ -186,10 +188,39 @@ fn rewrite_append_at_offset_zero_creates_the_missing_object() {
     assert_eq!(source.direct_appends.load(Ordering::Relaxed), 0);
 }
 
+/// The statistics see both halves of a rewrite append: the prefix read and
+/// the object rebuild as a save.
+#[test]
+fn rewrite_appends_are_counted_as_remote_requests() {
+    let _scope = ambient::test_guard();
+    use common::ambient::trace::Op;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let source = ThresholdMockSource::default();
+    let fs = cached_fs(&source, tmp.path());
+    let stats = fs.stats();
+    let mut file = fs.open_append("bucket/obj", open_options()).unwrap();
+
+    file.append(0, b"abc".as_slice()).unwrap();
+    let after_create = stats.snapshot();
+    assert_eq!(after_create.op(Op::Save).completed, 1);
+    assert_eq!(after_create.op(Op::Save).bytes, 3);
+    assert_eq!(after_create.op(Op::Append).started, 0);
+
+    file.append(3, b"de".as_slice()).unwrap();
+    let delta = stats.snapshot().delta_since(&after_create);
+    assert_eq!(delta.op(Op::Read).completed, 1);
+    assert_eq!(delta.op(Op::Read).bytes, 3);
+    assert_eq!(delta.op(Op::Save).completed, 1);
+    assert_eq!(delta.op(Op::Save).bytes, 5);
+    assert_eq!(delta.total().abandoned, 0);
+}
+
 /// A non-zero offset against a missing object is an offset conflict —
 /// the object's length is zero, not unknowable.
 #[test]
 fn rewrite_append_at_nonzero_offset_on_a_missing_object_conflicts() {
+    let _scope = ambient::test_guard();
     let tmp = tempfile::tempdir().unwrap();
     let source = ThresholdMockSource::default();
     let mut file = cached_fs(&source, tmp.path())

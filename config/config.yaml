@@ -3,6 +3,7 @@ log_level: INFO
 # Logging configuration
 # Qdrant logs to stdout. You may configure to also write logs to a file on disk.
 # Be aware that this file may grow indefinitely.
+# Log timestamps are in UTC, set the `TZ` environment variable to use a different timezone.
 # logger:
 #   # Logging format, supports `text` and `json`
 #   format: text
@@ -433,7 +434,10 @@ service:
   #
   # jwt_rbac: true
 
-  # Enforce API key / JWT authentication on the internal (p2p) gRPC API.
+  # Enforce API key authentication on the internal (p2p) gRPC API.
+  # Only `api_key` and `alt_api_key` are accepted there; the read-only key
+  # and JWT tokens are rejected, since peers joining consensus and moving
+  # shards must hold the read-write key.
   # The regular api_key is always forwarded on internal requests, but the
   # receiving side only verifies it when this flag is enabled. Keep disabled
   # during a rolling upgrade so older peers (that do not attach a key yet)
@@ -466,6 +470,12 @@ cluster:
 
   # Configuration of the inter-cluster communication
   p2p:
+    # Host or IP address to bind the internal (p2p) gRPC listener to.
+    # Defaults to `service.host` when unset. Set this to an internal
+    # interface to keep the internal port off the interface that serves
+    # the public API.
+    #
+    # host: <internal IP of this node>
     # Port for internal communication between peers
     port: 6335
 
@@ -529,3 +539,10 @@ tls:
 #   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
 #   # Default: false
 #   trust_forwarded_headers: false
+#   # Where to write audit log entries:
+#   #   file            - rolling log files in `dir`
+#   #   stdout / stderr - only the given stream, nothing is written to `dir`
+#   #   file_and_stdout / file_and_stderr - both
+#   # Each entry is a JSON line with `"kind": "audit"`, to tell it apart from regular logs.
+#   # Default: file
+#   output: file

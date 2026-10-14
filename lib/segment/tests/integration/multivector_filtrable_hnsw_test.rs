@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
@@ -52,7 +53,6 @@ fn test_multi_filterable_hnsw(
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
@@ -93,7 +93,7 @@ fn test_multi_filterable_hnsw(
 
     let int_key = "int";
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
     for n in 0..num_points {
@@ -107,10 +107,10 @@ fn test_multi_filterable_hnsw(
 
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
+            .upsert_point(n as SeqNumberType, idx, named_vectors)
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
     assert_eq!(
@@ -124,11 +124,7 @@ fn test_multi_filterable_hnsw(
     let payload_index_ptr = segment.payload_index.clone();
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let hnsw_config = HnswConfig {

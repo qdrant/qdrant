@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use futures::future::Either;
@@ -463,28 +462,15 @@ impl Shard {
     pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         match self {
-            Shard::Local(local_shard) => {
-                local_shard
-                    .estimate_cardinality(filter, hw_measurement_acc)
-                    .await
-            }
-            Shard::Proxy(proxy_shard) => {
-                proxy_shard
-                    .estimate_cardinality(filter, hw_measurement_acc)
-                    .await
-            }
+            Shard::Local(local_shard) => local_shard.estimate_cardinality(filter).await,
+            Shard::Proxy(proxy_shard) => proxy_shard.estimate_cardinality(filter).await,
             Shard::ForwardProxy(forward_proxy_shard) => {
-                forward_proxy_shard
-                    .estimate_cardinality(filter, hw_measurement_acc)
-                    .await
+                forward_proxy_shard.estimate_cardinality(filter).await
             }
             Shard::QueueProxy(queue_proxy_shard) => {
-                queue_proxy_shard
-                    .estimate_cardinality(filter, hw_measurement_acc)
-                    .await
+                queue_proxy_shard.estimate_cardinality(filter).await
             }
             Shard::Dummy(dummy_shard) => dummy_shard.estimate_cardinality(filter),
         }
@@ -493,15 +479,11 @@ impl Shard {
     pub async fn estimate_request_cardinality(
         &self,
         operation: &impl EstimateOperationEffectArea,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
         match operation.estimate_effect_area() {
             OperationEffectArea::Empty => Ok(CardinalityEstimation::exact(0)),
             OperationEffectArea::Points(vec) => Ok(CardinalityEstimation::exact(vec.len())),
-            OperationEffectArea::Filter(filter) => {
-                self.estimate_cardinality(Some(filter), hw_measurement_acc)
-                    .await
-            }
+            OperationEffectArea::Filter(filter) => self.estimate_cardinality(Some(filter)).await,
         }
     }
 

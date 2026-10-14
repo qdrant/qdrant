@@ -130,6 +130,7 @@ async fn _do_recover_from_snapshot(
         &toc.optional_temp_or_storage_temp_path()?,
         toc.snapshots_path(),
         checksum.is_some(),
+        None,
     )
     .await?;
 

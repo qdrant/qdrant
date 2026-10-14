@@ -44,6 +44,7 @@ impl Validate for Query {
             Query::OrderBy(order_by) => order_by.validate(),
             Query::Sample(sample) => sample.validate(),
             Query::RelevanceFeedback(feedback) => feedback.validate(),
+            Query::Text(text) => text.validate(),
         }
     }
 }

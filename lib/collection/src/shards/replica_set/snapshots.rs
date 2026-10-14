@@ -182,7 +182,28 @@ impl ShardReplicaSet {
         let _partial_snapshot_search_lock = match recovery_type {
             RecoveryType::Full => None,
             RecoveryType::Partial => {
-                Some(self.partial_snapshot_meta.take_search_write_lock().await)
+                let search_lock = self.partial_snapshot_meta.take_search_write_lock().await;
+
+                // Staging delay: hold the search lock longer, so tests can observe searches being
+                // rejected during partial snapshot recovery
+                #[cfg(feature = "staging")]
+                {
+                    let delay_secs: f64 =
+                        std::env::var("QDRANT__STAGING__PARTIAL_SNAPSHOT_RECOVERY_DELAY")
+                            .ok()
+                            .and_then(|str| str.parse().ok())
+                            .unwrap_or(0.0);
+
+                    if delay_secs > 0.0 {
+                        log::debug!(
+                            "Staging: Delaying partial snapshot recovery for {delay_secs}s"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+                        log::debug!("Staging: Delay complete, recovering partial snapshot");
+                    }
+                }
+
+                Some(search_lock)
             }
         };
 

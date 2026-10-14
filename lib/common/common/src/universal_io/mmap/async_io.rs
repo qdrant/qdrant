@@ -9,14 +9,15 @@
 
 use std::future::ready;
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{MmapFile, MmapFs};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
+use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
-    OpenOptions, UioResult, UniversalRead, UniversalReadAsync, UniversalReadFs,
-    UniversalReadFsAsync, UniversalWriteFileOps, UniversalWriteFsAsync,
+    ChunkSink, ListedFile, OpenOptions, UioResult, UniversalRead, UniversalReadAsync,
+    UniversalReadFs, UniversalReadFsAsync, UniversalWriteFs, UniversalWriteFsAsync, local_file_ops,
 };
 
 impl UniversalReadFsAsync for MmapFs {
@@ -28,6 +29,20 @@ impl UniversalReadFsAsync for MmapFs {
     ) -> impl Future<Output = UioResult<MmapFile>> + '_ {
         ready(self.open(&path, options, extra))
     }
+
+    fn list_files_async<'a>(
+        &'a self,
+        prefix_path: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a> {
+        ready(self.list_files(prefix_path))
+    }
+
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, P> {
+        ready(local_file_ops::local_select_files(paths))
+    }
 }
 
 impl UniversalReadAsync for MmapFile {
@@ -38,6 +53,17 @@ impl UniversalReadAsync for MmapFile {
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> {
         ready(self.read_bytes(range, access_pattern, align))
+    }
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        read_from_via_read_bytes(self, from, init)
     }
 }
 

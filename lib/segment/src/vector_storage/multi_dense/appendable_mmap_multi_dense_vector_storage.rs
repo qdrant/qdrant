@@ -3,10 +3,11 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs, Populate, UniversalRead, UserData};
 use fs_err as fs;
@@ -29,7 +30,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::turbo::multi_turbo::open_appendable_turbo_multi_vector_storage;
-use crate::vector_storage::turbo::open_appendable_turbo_vector_storage;
+use crate::vector_storage::turbo::{open_appendable_turbo_vector_storage, tq_bits};
 use crate::vector_storage::{
     MultiVectorStorage, MultiVectorStorageRead, VectorOffsetType, VectorStorage, VectorStorageEnum,
     VectorStorageRead,
@@ -138,7 +139,6 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         &mut self,
         key: PointOffsetType,
         multi_vector: TypedMultiDenseVectorRef<T>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.vectors.dim());
 
@@ -165,7 +165,6 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
             offset.offset as VectorOffsetType,
             multi_vector.flattened_vectors,
             multi_vector.vectors_count(),
-            hw_counter,
         )?;
         self.offsets.set(key as VectorOffsetType, offset);
         self.set_deleted(key, false);
@@ -245,7 +244,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
         Some(flattened_to_multi_vector(flattened, self.vectors.dim()))
     }
 
-    fn for_each_in_batch_multi<F>(&self, keys: &[PointOffsetType], mut callback: F)
+    fn for_each_in_batch_multi<F>(
+        &self,
+        keys: &[PointOffsetType],
+        mut callback: F,
+    ) -> OperationResult<()>
     where
         F: FnMut(usize, TypedMultiDenseVectorRef<'_, T>),
     {
@@ -255,13 +258,14 @@ impl<T: PrimitiveVectorElement> MultiVectorStorageRead<T>
             .offsets
             .resolve_rows::<Sequential, _, _>(keys.iter().copied().enumerate());
 
-        self.vectors
-            .for_each_vector::<Sequential, _>(row_offsets.into_iter(), |index, flattened| {
+        self.vectors.for_each_vector::<Sequential, _>(
+            row_offsets.into_iter(),
+            |index, flattened| {
                 let vector = TypedMultiDenseVectorRef::new(flattened.as_ref(), self.vector_dim());
                 callback(index, vector);
                 Ok(())
-            })
-            .expect("read vectors");
+            },
+        )
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = Cow<'_, [T]>> + Clone + Send {
@@ -292,11 +296,11 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.offsets.len() as PointOffsetType;
-        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.offsets.len() as PointOffsetType;
-            self.insert_multi_native(new_id, other_vector.as_ref(), &disposed_hw_counter)?;
+            self.insert_multi_native(new_id, other_vector.as_ref())?;
             self.set_deleted(new_id, other_deleted);
         }
         let end_index = self.offsets.len() as PointOffsetType;
@@ -323,8 +327,8 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.vectors.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {
@@ -339,7 +343,7 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         self.for_each_flat_multi::<P, U>(keys, |user_data, point_offset, flattened| {
             let vector = CowVector::MultiDense(T::into_float_multivector(
                 flattened_to_multi_vector(flattened, self.vectors.dim()),
@@ -347,7 +351,6 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
 
             callback(user_data, point_offset, vector);
         })
-        .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -384,15 +387,10 @@ impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVe
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVectorStorage<T> {
-    fn insert_vector(
-        &mut self,
-        key: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
-        self.insert_multi_native(key, multi_vector.as_ref(), hw_counter)
+        self.insert_multi_native(key, multi_vector.as_ref())
     }
 
     fn flusher(&self) -> Flusher {
@@ -457,10 +455,16 @@ pub fn open_appendable_memmap_vector_storage(
             madvise,
             populate,
         ),
-        VectorStorageDatatype::Turbo4 => {
-            open_appendable_turbo_vector_storage(vector_storage_path, size, distance, populate)
-                .map(|s| VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(s)))
-        }
+        VectorStorageDatatype::Turbo4
+        | VectorStorageDatatype::Turbo8
+        | VectorStorageDatatype::Turbo16 => open_appendable_turbo_vector_storage(
+            vector_storage_path,
+            size,
+            distance,
+            tq_bits(storage_element_type),
+            populate,
+        )
+        .map(|s| VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(s))),
     }
 }
 
@@ -498,10 +502,13 @@ pub fn open_appendable_memmap_multi_vector_storage(
             madvise,
             populate,
         ),
-        VectorStorageDatatype::Turbo4 => open_appendable_turbo_multi_vector_storage(
+        VectorStorageDatatype::Turbo4
+        | VectorStorageDatatype::Turbo8
+        | VectorStorageDatatype::Turbo16 => open_appendable_turbo_multi_vector_storage(
             path,
             dim,
             distance,
+            tq_bits(storage_element_type),
             multi_vector_config,
             populate,
         )
@@ -667,7 +674,7 @@ mod tests {
         .unwrap();
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         // Insert points, delete 10% of it, and flush
         for internal_id in 0..POINT_COUNT {
@@ -681,7 +688,7 @@ mod tests {
             .collect::<Vec<Vec<_>>>();
             let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
             storage
-                .insert_vector(internal_id, VectorRef::from(&multivec), &hw_counter)
+                .insert_vector(internal_id, VectorRef::from(&multivec))
                 .unwrap();
         }
         for internal_id in 0..POINT_COUNT {
@@ -720,7 +727,7 @@ mod tests {
         const DIM: usize = 4;
 
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
 
         let open = || {
             open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
@@ -740,11 +747,9 @@ mod tests {
         {
             let mut storage = open();
             storage
-                .insert_vector(0, VectorRef::from(&p0_small), &hw_counter)
+                .insert_vector(0, VectorRef::from(&p0_small))
                 .unwrap();
-            storage
-                .insert_vector(1, VectorRef::from(&p1), &hw_counter)
-                .unwrap();
+            storage.insert_vector(1, VectorRef::from(&p1)).unwrap();
             storage.flusher()().unwrap();
 
             // Start a flush: it snapshots vectors.len and the (now empty) offsets
@@ -755,7 +760,7 @@ mod tests {
             // the end. This is the dangerous in-window write.
             let p0_grown = multivec(4, 2.0, DIM);
             storage
-                .insert_vector(0, VectorRef::from(&p0_grown), &hw_counter)
+                .insert_vector(0, VectorRef::from(&p0_grown))
                 .unwrap();
 
             // Execute the in-window flush. The relocation must NOT be persisted.
@@ -793,7 +798,7 @@ mod tests {
 
         const DIM: usize = 128;
         let dir = Builder::new().prefix("legacy_pad").tempdir().unwrap();
-        let hw = HardwareCounterCell::disposable();
+        let _scope = ambient::test_guard();
         let padded = multivec(3, 7.0, DIM);
         let per_chunk = CHUNK_SIZE / (DIM * std::mem::size_of::<VectorElementType>());
 
@@ -810,16 +815,14 @@ mod tests {
                 .unwrap();
 
             let filler = multivec(per_chunk - 1, 1.0, DIM);
-            storage
-                .insert_vector(0, VectorRef::from(&filler), &hw)
-                .unwrap();
+            storage.insert_vector(0, VectorRef::from(&filler)).unwrap();
             assert_eq!(storage.vectors.len(), per_chunk - 1);
 
             // Old place(): jump to the next chunk, leaving the tail slot unused.
             let start = per_chunk;
             storage
                 .vectors
-                .insert_many(start as VectorOffsetType, &padded.flattened_vectors, 3, &hw)
+                .insert_many(start as VectorOffsetType, &padded.flattened_vectors, 3)
                 .unwrap();
             storage.offsets.set(
                 1,

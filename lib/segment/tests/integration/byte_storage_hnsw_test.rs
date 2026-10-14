@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
@@ -59,7 +60,6 @@ fn test_byte_storage_hnsw(
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
@@ -126,51 +126,33 @@ fn test_byte_storage_hnsw(
         let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
-        let hw_counter = HardwareCounterCell::new();
+        let _scope = ambient::test_guard();
 
         segment_float
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment_float
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
         segment_byte
-            .upsert_point(
-                n as SeqNumberType,
-                idx,
-                only_default_vector(&vector),
-                &hw_counter,
-            )
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
         segment_byte
-            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
+            .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     segment_float
         .payload_index
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
     segment_byte
         .payload_index
         .borrow_mut()
-        .set_indexed(
-            &JsonPath::new(int_key),
-            PayloadSchemaType::Integer,
-            &hw_counter,
-        )
+        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
         .unwrap();
 
     let hnsw_config = HnswConfig {

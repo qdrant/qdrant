@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::VectorRef;
@@ -64,7 +64,7 @@ fn build_tenant_segment(path: &std::path::Path) -> Segment {
     };
 
     let (mut segment, _) = build_segment(path, &config, None, true).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let mut op_num: SeqNumberType = 0;
     segment
@@ -72,7 +72,6 @@ fn build_tenant_segment(path: &std::path::Path) -> Segment {
             op_num,
             &JsonPath::new("tenant"),
             Some(&PayloadSchemaType::Keyword.into()),
-            &hw_counter,
         )
         .unwrap();
 
@@ -94,16 +93,13 @@ fn build_tenant_segment(path: &std::path::Path) -> Segment {
             None => NamedVectors::default(),
             Some(vector) => NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(vector)),
         };
-        segment
-            .upsert_point(op_num, point_id, vectors, &hw_counter)
-            .unwrap();
+        segment.upsert_point(op_num, point_id, vectors).unwrap();
         segment
             .set_payload(
                 op_num,
                 point_id,
                 &payload_json! { "tenant": *tenant },
                 &None,
-                &hw_counter,
             )
             .unwrap();
     }
@@ -237,14 +233,13 @@ fn sparse_idf_statistics_corpus_strategies() {
         id_tracker_memory: None,
     };
     let (mut segment, _) = build_segment(dir.path(), &config, None, true).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     segment
         .create_field_index(
             0,
             &JsonPath::new("tenant"),
             Some(&PayloadSchemaType::Keyword.into()),
-            &hw_counter,
         )
         .unwrap();
 
@@ -256,7 +251,6 @@ fn sparse_idf_statistics_corpus_strategies() {
                 point_id + 1,
                 point_id.into(),
                 NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vector)),
-                &hw_counter,
             )
             .unwrap();
         segment
@@ -265,7 +259,6 @@ fn sparse_idf_statistics_corpus_strategies() {
                 point_id.into(),
                 &payload_json! { "tenant": tenant_of(point_id) },
                 &None,
-                &hw_counter,
             )
             .unwrap();
     }
