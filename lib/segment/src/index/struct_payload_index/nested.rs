@@ -30,6 +30,8 @@ pub(super) struct NestedBuild<'a> {
     /// Points with at least one element that has a value of the field, see
     /// [`may_be_indexed`].
     indexed_points: usize,
+    /// The point added last, to check that points come in ascending order
+    last_point: Option<PointOffsetType>,
 }
 
 impl<'a> NestedBuild<'a> {
@@ -39,6 +41,7 @@ impl<'a> NestedBuild<'a> {
             relative_path: relative_path(field, array_key)?,
             elements: ElementMapBuilder::default(),
             indexed_points: 0,
+            last_point: None,
         })
     }
 
@@ -49,6 +52,15 @@ impl<'a> NestedBuild<'a> {
         payload: &impl PayloadContainer,
         builders: &mut [FieldIndexBuilder],
     ) -> OperationResult<()> {
+        // Payload storage visits points in ascending order, which an immutable element
+        // map needs to be built
+        debug_assert!(
+            self.last_point.is_none_or(|last_point| last_point < point),
+            "point {point} added after point {:?}",
+            self.last_point,
+        );
+        self.last_point = Some(point);
+
         let elements = nested_elements(payload, self.array_key);
         let offsets = self.elements.add(point, elements.len())?;
         let mut has_values = false;
