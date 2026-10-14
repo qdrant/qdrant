@@ -17,6 +17,10 @@ impl KernelElem for f32 {
 }
 
 /// Exact in `i32`, converted to `f32` once, as the scalar quantization scorer does.
+///
+/// Values must be at most 127, as scalar quantization codes are. Byte kernels multiply one
+/// operand as a signed byte, and the sum stays below `i32::MAX` up to the maximum dimension
+/// of 65,536 (65,536 · 127² ≈ 1.06e9).
 impl KernelElem for u8 {
     fn dot(a: &[u8], b: &[u8]) -> f32 {
         let dot: i32 = a
