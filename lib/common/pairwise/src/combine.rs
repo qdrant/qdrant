@@ -6,8 +6,54 @@
 /// alike by construction.
 ///
 /// Not symmetric in `aux` for every storage, so a pushed pair is combined once per direction.
+/// Kernels call [`Self::score`] for every pair: implementations should be `#[inline(always)]`,
+/// so a loop over a row folds to one formula. A storage that picks between formulas at runtime
+/// implements [`CombineDispatch`] instead, with one `Combine` per formula.
 ///
 /// [`KernelElem::dot`]: crate::KernelElem::dot
 pub trait Combine: Copy + Send + Sync {
     fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32;
+}
+
+/// What operands give the kernels to combine with: one [`Combine`], or a choice between several
+/// made at runtime, such as one per distance. The kernels dispatch once per row of scores, so
+/// their loop over the row compiles once per formula instead of branching per pair, which cost
+/// 4% of an f32 leaf.
+///
+/// Implementations should be `#[inline(always)]` too, so the loops compile into the kernels'
+/// `#[target_feature]` functions.
+pub trait CombineDispatch: Copy + Send + Sync {
+    /// Calls `f` with the formula to score with.
+    fn dispatch<F: CombineFn>(self, f: F) -> F::Output;
+}
+
+/// A single formula is its own choice.
+impl<C: Combine> CombineDispatch for C {
+    #[inline(always)]
+    fn dispatch<F: CombineFn>(self, f: F) -> F::Output {
+        f.call(self)
+    }
+}
+
+/// A function of whichever [`Combine`] a [`CombineDispatch`] chooses.
+pub trait CombineFn {
+    type Output;
+
+    fn call<C: Combine>(self, combine: C) -> Self::Output;
+}
+
+/// The score of one pair, for code that combines a pair at a time.
+pub(crate) struct ScorePair {
+    pub dot: f32,
+    pub aux_a: f32,
+    pub aux_b: f32,
+}
+
+impl CombineFn for ScorePair {
+    type Output = f32;
+
+    #[inline(always)]
+    fn call<C: Combine>(self, combine: C) -> f32 {
+        combine.score(self.dot, self.aux_a, self.aux_b)
+    }
 }
