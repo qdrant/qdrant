@@ -45,6 +45,11 @@ impl<S: UniversalRead> ImmutableFullTextIndex<S> {
         self.inverted_index.total_tokens().is_some()
     }
 
+    /// Lengths, and term frequencies from either positions or the frequency file.
+    pub fn can_score(&self) -> bool {
+        self.inverted_index.can_score()
+    }
+
     /// Not persisted: the id-tracker re-supplies deletions on reload.
     pub fn remove_point(&mut self, id: PointOffsetType) {
         self.inverted_index.remove(id);

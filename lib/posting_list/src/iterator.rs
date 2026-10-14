@@ -105,6 +105,8 @@ impl<V: PostingValue> FusedIterator for PostingIterator<'_, V> {}
 pub struct PostingLenIterator<'a, V: PostingValue> {
     visitor: PostingVisitor<'a, V>,
     current: Option<PostingLen>,
+    /// Index of `current` in the posting list.
+    current_offset: usize,
     offset: usize,
 }
 
@@ -113,6 +115,7 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
         Self {
             visitor,
             current: None,
+            current_offset: 0,
             offset: 0,
         }
     }
@@ -121,6 +124,12 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
     /// [`Self::advance_until_greater_or_equal`], if any.
     pub fn current(&self) -> Option<PostingLen> {
         self.current
+    }
+
+    /// Index of [`Self::current`] in the posting list, so that data kept
+    /// alongside the list in posting order can be looked up for it.
+    pub fn current_offset(&self) -> Option<usize> {
+        self.current.map(|_| self.current_offset)
     }
 
     /// Advances until the current id is greater than or equal to `target_id`,
@@ -150,6 +159,7 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
 
         debug_assert!(offset >= self.offset);
         self.current = self.visitor.value_len_by_offset(offset);
+        self.current_offset = offset;
         self.offset = offset;
         self.current
     }
@@ -160,6 +170,7 @@ impl<V: PostingValue> Iterator for PostingLenIterator<'_, V> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.visitor.value_len_by_offset(self.offset).inspect(|_| {
+            self.current_offset = self.offset;
             self.offset += 1;
         });
         self.current = next;

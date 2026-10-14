@@ -7,12 +7,18 @@ use crate::index::field_index::full_text_index::inverted_index::{Document, Token
 
 pub struct MutableInvertedIndexBuilder {
     index: MutableInvertedIndex,
+    /// Term frequencies of each point's token set, counted at `add` from the
+    /// stream when the postings carry them.
+    frequencies: Vec<Option<Vec<u32>>>,
 }
 
 impl MutableInvertedIndexBuilder {
     pub fn new(phrase_matching: bool, with_doc_len: bool) -> Self {
         let index = MutableInvertedIndex::new(phrase_matching, with_doc_len);
-        Self { index }
+        Self {
+            index,
+            frequencies: Vec::new(),
+        }
     }
 
     /// Add a vector to the inverted index builder. `doc_len` comes from the
@@ -36,15 +42,25 @@ impl MutableInvertedIndexBuilder {
         self.index.set_doc_len(idx, doc_len);
 
         let tokens = self.index.register_tokens(str_tokens);
+        let tokens_set = TokenSet::from_iter(tokens.iter().copied());
+
+        // Counted from the stream, which holds every repeat with or without
+        // positions.
+        if self.index.stores_frequencies() {
+            if self.frequencies.len() <= idx as usize {
+                self.frequencies
+                    .resize_with(idx as usize + 1, Default::default);
+            }
+            self.frequencies[idx as usize] =
+                Some(MutableInvertedIndex::term_frequencies(&tokens, &tokens_set));
+        }
 
         // insert as whole document
         if let Some(point_to_doc) = self.index.point_to_doc.as_mut() {
-            point_to_doc[idx as usize] = Some(Document::new(tokens.clone()));
+            point_to_doc[idx as usize] = Some(Document::new(tokens));
         }
 
-        // insert as tokenset
-        let tokens_set = TokenSet::from_iter(tokens);
-        // Same definition as `index_tokens`: a value that tokenizes to nothing
+        // Same definition as `index_token_set`: a value that tokenizes to nothing
         // is not a document. The builder visits each point once, so no
         // transition tracking is needed here.
         if !tokens_set.is_empty() {
@@ -60,15 +76,7 @@ impl MutableInvertedIndexBuilder {
         let with_frequencies = self.index.stores_frequencies();
         for (idx, tokenset) in self.index.point_to_tokens.iter().enumerate() {
             if let Some(tokenset) = tokenset {
-                let frequencies = with_frequencies.then(|| {
-                    let document = self
-                        .index
-                        .point_to_doc
-                        .as_ref()
-                        .and_then(|docs| docs.get(idx))
-                        .and_then(Option::as_ref);
-                    MutableInvertedIndex::term_frequencies(document, tokenset)
-                });
+                let frequencies = self.frequencies.get(idx).and_then(Option::as_ref);
                 for (at, token_idx) in tokenset.tokens().iter().enumerate() {
                     if self.index.postings.len() <= *token_idx as usize {
                         self.index

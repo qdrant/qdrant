@@ -70,22 +70,16 @@ impl MutableInvertedIndex {
     }
 
     /// Whether postings carry term frequencies: an index that scores does,
-    /// and needs the ordered document to count them from.
+    /// with or without positions.
     pub fn stores_frequencies(&self) -> bool {
-        self.point_to_doc.is_some() && self.point_to_doc_len.is_some()
+        self.point_to_doc_len.is_some()
     }
 
     /// Term frequency of every token in `tokens`, in the same order, counted
-    /// from the stored document. Every token of a stored document is in its
-    /// token set, so an absent document means the frequencies are not wanted
-    /// and membership stands in for them.
-    pub(super) fn term_frequencies(document: Option<&Document>, tokens: &TokenSet) -> Vec<u32> {
-        let mut frequencies = vec![1; tokens.len()];
-        let Some(document) = document else {
-            return frequencies;
-        };
-        frequencies.fill(0);
-        for token in document.tokens() {
+    /// from `sequence`, the document's tokens with their repeats.
+    pub(super) fn term_frequencies(sequence: &[TokenId], tokens: &TokenSet) -> Vec<u32> {
+        let mut frequencies = vec![0; tokens.len()];
+        for token in sequence {
             if let Ok(at) = tokens.tokens().binary_search(token) {
                 frequencies[at] += 1;
             }
@@ -197,21 +191,30 @@ impl MutableInvertedIndex {
         let tokens = self.register_tokens(str_tokens);
         self.set_doc_len(point_id, doc_len);
 
+        let token_set = TokenSet::from_iter(tokens.iter().copied());
+        // Counted from the stream itself, which holds every repeat with or
+        // without positions.
+        let frequencies = self
+            .stores_frequencies()
+            .then(|| Self::term_frequencies(&tokens, &token_set));
+
         // If positions are enabled, store the ordered document for phrase matching
         if self.point_to_doc.is_some() {
-            self.index_document(point_id, Document::new(tokens.clone()))?;
+            self.index_document(point_id, Document::new(tokens))?;
         }
 
-        self.index_tokens(point_id, TokenSet::from_iter(tokens))
-    }
-}
-
-impl InvertedIndex for MutableInvertedIndex {
-    fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId> {
-        &mut self.vocab
+        self.index_token_set(point_id, token_set, frequencies);
+        Ok(())
     }
 
-    fn index_tokens(&mut self, point_id: PointOffsetType, tokens: TokenSet) -> OperationResult<()> {
+    /// Index `tokens` for `point_id`, with the frequency of each when the
+    /// postings carry them.
+    fn index_token_set(
+        &mut self,
+        point_id: PointOffsetType,
+        tokens: TokenSet,
+        frequencies: Option<Vec<u32>>,
+    ) {
         // Counted as a transition rather than incremented, so that re-indexing
         // a point cannot count it twice, and so that a document rewritten to
         // nothing stops being one.
@@ -231,17 +234,7 @@ impl InvertedIndex for MutableInvertedIndex {
             self.point_to_tokens.resize_with(new_len, Default::default);
         }
 
-        // The ordered document is stored before the token set, so it is there
-        // to count from when the postings carry frequencies.
-        let with_frequencies = self.stores_frequencies();
-        let frequencies = with_frequencies.then(|| {
-            let document = self
-                .point_to_doc
-                .as_ref()
-                .and_then(|docs| docs.get(point_id as usize))
-                .and_then(Option::as_ref);
-            Self::term_frequencies(document, &tokens)
-        });
+        let with_frequencies = frequencies.is_some();
 
         for (at, token_id) in tokens.tokens().iter().enumerate() {
             let token_idx_usize = *token_id as usize;
@@ -261,8 +254,12 @@ impl InvertedIndex for MutableInvertedIndex {
                 .insert(point_id, tf);
         }
         self.point_to_tokens[point_id as usize] = Some(tokens);
+    }
+}
 
-        Ok(())
+impl InvertedIndex for MutableInvertedIndex {
+    fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId> {
+        &mut self.vocab
     }
 
     fn index_document(
@@ -311,7 +308,7 @@ impl InvertedIndex for MutableInvertedIndex {
             *doc_len = 0;
         }
 
-        // Symmetric with `index_tokens`: a point that held no tokens was never
+        // Symmetric with `index_token_set`: a point that held no tokens was never
         // counted, so removing it must not decrement.
         if !removed_token_set.is_empty() {
             self.points_count -= 1;

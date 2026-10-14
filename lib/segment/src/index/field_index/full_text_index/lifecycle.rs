@@ -50,24 +50,29 @@ impl FullTextIndex {
 
         let opened = if memory.is_heap() {
             ImmutableFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
-                .map(|index| (index.records_doc_len(), Self::Immutable(index)))
+                .map(|index| (index.can_score(), Self::Immutable(index)))
         } else {
             OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
-                .map(|index| (index.records_doc_len(), Self::OnDisk(index)))
+                .map(|index| (index.can_score(), Self::OnDisk(index)))
         };
-        let Some((records_doc_len, index)) = opened else {
+        let Some((can_score, index)) = opened else {
             return Ok(None);
         };
 
-        // Lengths cannot be recovered from anything else on disk, so report the
+        // Lengths cannot be recovered from anything else on disk, and term
+        // frequencies cannot be recovered from ids-only postings, so report the
         // index absent and let the caller rebuild it from payload. The decision
         // belongs here rather than in `OnDiskInvertedIndex::open`: the read-only
         // stack never builds, and would drop the field instead.
         //
         // Reachable past the probe above when the sidecar exists but `open`
-        // rejected it, so the log says which of the two happened.
-        if scoring && !records_doc_len {
-            log::info!("Text index rejected its document length sidecar, rebuilding from payload");
+        // rejected it, or when scoring has no term frequencies, so the log says
+        // which of the two happened.
+        if scoring && !can_score {
+            log::info!(
+                "Text index rejected its document lengths or has no term frequencies, \
+                 rebuilding from payload"
+            );
             return Ok(None);
         }
 
@@ -170,8 +175,10 @@ impl FullTextIndex {
 
     /// Encode a point's tokens as the document the storage holds.
     ///
-    /// Phrase matching needs them in the order they were written; without it
-    /// only membership matters, so they are stored sorted and deduplicated.
+    /// Phrase matching needs them in the order they were written. Without it,
+    /// an index that scores (records lengths) needs how often each occurs, so
+    /// they are stored sorted with their repeats; otherwise only membership
+    /// matters, and they are stored sorted and deduplicated.
     pub(super) fn serialize_stored_document(
         str_tokens: Vec<Cow<str>>,
         phrase_matching: bool,
@@ -179,6 +186,8 @@ impl FullTextIndex {
     ) -> OperationResult<Vec<u8>> {
         let tokens = if phrase_matching {
             str_tokens
+        } else if doc_len.is_some() {
+            str_tokens.into_iter().sorted().collect()
         } else {
             str_tokens.into_iter().sorted().dedup().collect()
         };

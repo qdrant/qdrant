@@ -331,8 +331,9 @@ pub struct TextIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Enable ranking points by BM25 over this field; `true` for the defaults.
-    /// Implies `phrase_matching: true`, since term frequencies come from the
-    /// positions it stores. Changing it rebuilds the index. Default: disabled.
+    /// Term frequencies come from the positions when `phrase_matching` is on,
+    /// and from their own file otherwise. Changing it rebuilds the index.
+    /// Default: disabled.
     #[serde(
         default,
         deserialize_with = "deserialize_text_scoring",
@@ -557,8 +558,8 @@ impl Drop for TextIndexScoringOverride {
 impl TextIndexParams {
     /// Whether an index built from these params records document lengths.
     ///
-    /// Scoring also needs positions, which only `phrase_matching` stores: see
-    /// [`Self::normalized`], which every text index is built through.
+    /// Term frequencies come from positions with `phrase_matching`, and from
+    /// their own file without it.
     pub fn scoring(&self) -> bool {
         #[cfg(feature = "testing")]
         if let Some(scoring) = TEXT_INDEX_SCORING_OVERRIDE.get() {
@@ -567,15 +568,10 @@ impl TextIndexParams {
         self.scoring.is_some()
     }
 
-    /// Apply what `scoring` implies: `phrase_matching`, for the positions term
-    /// frequencies come from. Every site derives positions from that flag, so
-    /// setting it is the whole of it. Without it a scoring index would hold no
-    /// positions, and term frequencies would not be slow to compute but
-    /// impossible.
-    pub fn normalized(mut self) -> Self {
-        if self.scoring() {
-            self.phrase_matching = Some(true);
-        }
+    /// The params as an index is built from them. Nothing to apply any more:
+    /// `scoring` no longer implies `phrase_matching`, since an index without
+    /// positions keeps its term frequencies in their own file.
+    pub fn normalized(self) -> Self {
         self
     }
 
@@ -993,12 +989,12 @@ mod tests {
         assert!(invalid.is_err());
     }
 
-    /// Term frequencies come from positions, which only `phrase_matching`
-    /// stores, so scoring turns it on.
+    /// Scoring does not turn positions on: without `phrase_matching`, term
+    /// frequencies have their own file.
     #[test]
-    fn scoring_normalizes_phrase_matching_on() {
+    fn scoring_leaves_phrase_matching_as_set() {
         let scoring = text_params(serde_json::json!({ "scoring": true, "phrase_matching": false }));
-        assert_eq!(scoring.normalized().phrase_matching, Some(true));
+        assert_eq!(scoring.normalized().phrase_matching, Some(false));
         let plain = text_params(serde_json::json!({ "phrase_matching": false }));
         assert_eq!(plain.normalized().phrase_matching, Some(false));
         assert_eq!(

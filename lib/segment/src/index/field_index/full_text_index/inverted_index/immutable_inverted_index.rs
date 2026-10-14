@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -12,19 +13,21 @@ use common::universal_io::{Populate, TypedStorage, UniversalRead, UniversalReadF
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
-use super::bm25::{Bm25Accept, Bm25Query, PositionalCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, PositionalCursors, score_top_k};
 use super::doc_len::{decode_doc_len, encode_doc_len};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
 use super::on_disk_inverted_index::{
     OnDiskInvertedIndex, Storage, clear_files_cache, index_files, open_options,
-    open_point_to_tokens_count, open_postings, open_vocab, read_deleted_points, read_doc_len_codes,
+    open_point_to_tokens_count, open_postings, open_term_frequencies, open_vocab,
+    read_deleted_points, read_doc_len_codes,
 };
 use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
 };
+use super::term_frequencies::{self, TermFrequencies};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::inverted_index::postings_iterator::{
@@ -69,9 +72,20 @@ pub struct ImmutableInvertedIndex {
     /// meaningful when that vector exists.
     pub(super) total_tokens: u64,
     pub(super) points_count: usize,
+    /// The bytes of `term_frequencies.dat`: how often each term occurs in each
+    /// document of its posting list. Present when the index scores without
+    /// positions, where the postings carry ids only.
+    pub(super) term_frequencies: Option<Vec<u8>>,
 }
 
 impl ImmutableInvertedIndex {
+    /// Lengths, and term frequencies from either positions or `term_frequencies.dat`.
+    pub fn can_score(&self) -> bool {
+        self.point_to_doc_len.is_some()
+            && (matches!(self.postings, ImmutablePostings::WithPositions(_))
+                || self.term_frequencies.is_some())
+    }
+
     /// Document lengths by point offset, `None` when this index does not
     /// record them.
     #[cfg(test)]
@@ -288,16 +302,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self.vocab
     }
 
-    fn index_tokens(
-        &mut self,
-        _idx: PointOffsetType,
-        _tokens: super::TokenSet,
-    ) -> OperationResult<()> {
-        Err(OperationError::service_error(
-            "Can't add values to immutable text index",
-        ))
-    }
-
     fn index_document(
         &mut self,
         _idx: PointOffsetType,
@@ -345,19 +349,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let (ImmutablePostings::WithPositions(postings), Some(lengths)) =
-            (&self.postings, self.point_to_doc_len.as_deref())
-        else {
+        let Some(lengths) = self.point_to_doc_len.as_deref() else {
             return Err(OperationError::service_error(
-                "text index does not score: BM25 needs positions and document lengths",
+                "text index does not score: BM25 needs term frequencies and document lengths",
             ));
         };
-        let views = query
-            .terms()
-            .iter()
-            .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
-            .collect();
-        let mut cursors = PositionalCursors::new(views);
         // Deleted points stay in these postings and are masked here, as the
         // filter path does.
         let visible = |point_id: PointOffsetType| {
@@ -367,19 +363,53 @@ impl InvertedIndex for ImmutableInvertedIndex {
                 && accept.is_visible(point_id)
         };
         // In RAM: nothing to gain from reading lengths in batches.
-        score_top_k::<_, 1>(
-            query,
-            &mut cursors,
-            |point_ids, out| {
-                for (point_id, doc_len) in point_ids.iter().zip(out) {
-                    *doc_len = lengths.get(*point_id as usize).copied().map(decode_doc_len);
-                }
-                Ok(())
-            },
-            &accept.with_visible(&visible),
-            limit,
-            is_stopped,
-        )
+        let lengths = |point_ids: &[PointOffsetType], out: &mut [Option<u32>]| {
+            for (point_id, doc_len) in point_ids.iter().zip(out) {
+                *doc_len = lengths.get(*point_id as usize).copied().map(decode_doc_len);
+            }
+            Ok(())
+        };
+        match (&self.postings, self.term_frequencies.as_deref()) {
+            (ImmutablePostings::WithPositions(postings), _) => {
+                let views = query
+                    .terms()
+                    .iter()
+                    .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
+                    .collect();
+                score_top_k::<_, 1>(
+                    query,
+                    &mut PositionalCursors::new(views),
+                    lengths,
+                    &accept.with_visible(&visible),
+                    limit,
+                    is_stopped,
+                )
+            }
+            (ImmutablePostings::Ids(postings), Some(frequencies)) => {
+                let frequencies = TermFrequencies::new(frequencies)?;
+                let views = query
+                    .terms()
+                    .iter()
+                    .map(|term| {
+                        let Some(ids) = postings.get(term.token_id as usize) else {
+                            return Ok(None);
+                        };
+                        Ok(Some((ids.view(), frequencies.term(term.token_id)?)))
+                    })
+                    .collect::<OperationResult<_>>()?;
+                score_top_k::<_, 1>(
+                    query,
+                    &mut FrequencyCursors::new(views)?,
+                    lengths,
+                    &accept.with_visible(&visible),
+                    limit,
+                    is_stopped,
+                )
+            }
+            (ImmutablePostings::Ids(_), None) => Err(OperationError::service_error(
+                "text index does not score: BM25 needs term frequencies and document lengths",
+            )),
+        }
     }
 
     fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
@@ -487,6 +517,16 @@ impl ImmutableInvertedIndex {
 
         let (postings, vocab, orig_to_new_token) = optimized_postings_and_vocab(postings, vocab);
 
+        // Without positions, an index that scores keeps its frequencies apart
+        // from the ids-only postings.
+        let term_frequencies = (point_to_doc.is_none() && point_to_doc_len.is_some()).then(|| {
+            term_frequencies::encode(postings.iter().map(|posting| {
+                posting
+                    .frequencies()
+                    .expect("an index recording lengths carries frequencies")
+            }))
+        });
+
         let postings = match point_to_doc {
             None => ImmutablePostings::Ids(create_compressed_postings(postings)),
             Some(point_to_doc) => {
@@ -531,6 +571,7 @@ impl ImmutableInvertedIndex {
             point_to_doc_len: codes,
             total_tokens,
             points_count,
+            term_frequencies,
         };
         (index, point_to_doc_len)
     }
@@ -641,13 +682,19 @@ impl<S: UniversalRead> TryFrom<&OnDiskInvertedIndex<S>> for ImmutableInvertedInd
             vocab,
             point_to_tokens_count,
             point_to_doc_len,
+            term_frequencies,
             deleted_points,
         } = &index.storage;
+        let term_frequencies = term_frequencies
+            .as_ref()
+            .map(|frequencies| frequencies.storage().read_whole().map(Cow::into_owned))
+            .transpose()?;
         Self::from_parts(
             postings,
             vocab,
             point_to_tokens_count,
             point_to_doc_len.clone(),
+            term_frequencies,
             deleted_points,
         )
     }
@@ -674,6 +721,11 @@ impl ImmutableInvertedIndex {
         let point_to_tokens_count = open_point_to_tokens_count(fs, path, options)?;
         let total_count = point_to_tokens_count.len()? as usize;
         let point_to_doc_len = read_doc_len_codes(fs, path, total_count)?;
+        let term_frequencies = open_term_frequencies(fs, path, postings.posting_count())?;
+        let term_frequency_bytes = term_frequencies
+            .as_ref()
+            .map(|frequencies| frequencies.storage().read_whole().map(Cow::into_owned))
+            .transpose()?;
         let (deleted_points, compact_deleted_mask) =
             read_deleted_points(fs, path, options, deleted_points, total_count)?;
 
@@ -682,6 +734,7 @@ impl ImmutableInvertedIndex {
             &vocab,
             &point_to_tokens_count,
             point_to_doc_len,
+            term_frequency_bytes,
             &deleted_points,
         )?;
 
@@ -691,11 +744,17 @@ impl ImmutableInvertedIndex {
             &postings,
             &vocab,
             &point_to_tokens_count,
+            term_frequencies.as_ref(),
         ) {
             log::warn!("Failed to clear cache of on-disk full text index: {err}");
         }
 
-        let files = index_files(path, compact_deleted_mask, index.point_to_doc_len.is_some());
+        let files = index_files(
+            path,
+            compact_deleted_mask,
+            index.point_to_doc_len.is_some(),
+            index.term_frequencies.is_some(),
+        );
         Ok(Some((index, files)))
     }
 
@@ -708,6 +767,7 @@ impl ImmutableInvertedIndex {
         vocab: &UniversalHashMap<str, TokenId, S>,
         point_to_tokens_count: &TypedStorage<S, usize>,
         point_to_doc_len: Option<Vec<u16>>,
+        term_frequencies: Option<Vec<u8>>,
         deleted_points: &DeletedBitVec,
     ) -> OperationResult<Self> {
         let postings = match postings {
@@ -763,6 +823,7 @@ impl ImmutableInvertedIndex {
             point_to_doc_len,
             total_tokens,
             points_count: deleted_points.active_count(),
+            term_frequencies,
         })
     }
 }
@@ -777,6 +838,7 @@ impl ImmutableInvertedIndex {
             point_to_doc_len,
             total_tokens: _,
             points_count: _,
+            term_frequencies,
         } = self;
 
         let postings_bytes = postings.ram_usage_bytes();
@@ -791,6 +853,12 @@ impl ImmutableInvertedIndex {
             .as_ref()
             .map(|lens| lens.capacity() * size_of::<u16>())
             .unwrap_or(0);
-        postings_bytes + vocab_base_bytes + vocab_heap_bytes + pttc_bytes + doc_len_bytes
+        let term_frequencies_bytes = term_frequencies.as_ref().map_or(0, Vec::capacity);
+        postings_bytes
+            + vocab_base_bytes
+            + vocab_heap_bytes
+            + pttc_bytes
+            + doc_len_bytes
+            + term_frequencies_bytes
     }
 }

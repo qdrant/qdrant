@@ -56,6 +56,10 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
         self.inverted_index.records_doc_len()
     }
 
+    pub fn can_score(&self) -> bool {
+        self.inverted_index.can_score()
+    }
+
     pub fn wipe(self) -> OperationResult<()> {
         let path = self.inverted_index.path.clone();
         // drop mmap handles before deleting files
