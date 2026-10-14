@@ -62,7 +62,7 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
                 *df += posting_len;
             }
         }
-        stats.add_segment(index.points_count(), index.total_tokens());
+        stats.add_segment(index.document_count(), index.total_tokens());
         return Ok(());
     };
 
@@ -226,6 +226,9 @@ pub trait FullTextIndexRead {
     }
 
     fn points_count(&self) -> usize;
+    /// `N` for BM25: the documents holding a token, deleted ones included
+    /// until the segment is rebuilt.
+    fn document_count(&self) -> usize;
     fn values_count(&self, point_id: PointOffsetType) -> usize;
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
@@ -245,17 +248,13 @@ pub trait FullTextIndexRead {
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()>;
 
-    /// Total tokens over the points this index still holds. Paired with
-    /// [`Self::points_count`] it gives an average document length, but the
-    /// division belongs to whoever has summed both over every segment, not
-    /// here.
+    /// Total tokens over the documents [`Self::document_count`] counts. Paired
+    /// with it it gives an average document length, but the division belongs
+    /// to whoever has summed both over every segment, not here.
     ///
     /// Both are counted over the documents that carry at least one indexed
-    /// token. A value that tokenizes to nothing is in neither, so that does
-    /// not move the ratio across storage placements. Deletions since the last
-    /// build do: the on-disk index returns its build-time total, which still
-    /// counts them as [`Self::posting_len`] does, while the immutable index
-    /// loaded from the same files subtracts them.
+    /// token, deleted ones included until the next build, as
+    /// [`Self::posting_len`] counts them.
     fn total_tokens(&self) -> Option<u64>;
 
     /// The `limit` best documents for `query` by BM25, highest first, among

@@ -30,9 +30,23 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
 
         let inner = &mut self.inner;
 
-        for &deleted_point in deleted_points {
-            inner.inverted_index.remove(deleted_point);
-        }
+        // A deleted point leaves the index only once its record is gone, so
+        // this index holds what a fresh open would load. Under append-only
+        // deletion the record stays: the writer's index keeps counting the
+        // tombstoned document until the segment is rebuilt, and so does this
+        // one. The id tracker hides it from results.
+        self.storage
+            .view()
+            .read_values::<Sequential, _, OperationError>(
+                deleted_points.iter().map(|&id| ((), id)),
+                |_, point_offset, maybe_value: Option<Vec<u8>>| {
+                    if maybe_value.is_none() {
+                        inner.inverted_index.remove(point_offset);
+                    }
+                    Ok(true)
+                },
+                Some(HwMetric::PayloadIndexIoRead),
+            )?;
 
         self.storage
             .view()

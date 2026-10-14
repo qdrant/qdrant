@@ -47,6 +47,14 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn document_count(&self) -> usize {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.document_count(),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.document_count(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.document_count(),
+        }
+    }
+
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.values_count(point_id),

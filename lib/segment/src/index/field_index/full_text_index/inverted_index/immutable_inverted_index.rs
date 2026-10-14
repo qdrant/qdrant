@@ -68,13 +68,16 @@ pub struct ImmutableInvertedIndex {
     /// Zeroed wherever `point_to_tokens_count` is. Held as the codes of
     /// [`encode_doc_len`], as on disk.
     pub(super) point_to_doc_len: Option<Vec<u16>>,
-    /// Sum of `point_to_doc_len`, maintained rather than re-derived. Only
-    /// meaningful when that vector exists.
+    /// Total tokens of the documents in [`Self::documents`]. Only meaningful
+    /// when `point_to_doc_len` exists.
     pub(super) total_tokens: u64,
     pub(super) points_count: usize,
     /// The bytes of `term_frequencies.dat`: how often each term occurs in each
     /// document of its posting list. Present when the index scores.
     pub(super) term_frequencies: Option<Vec<u8>>,
+    /// Documents the BM25 statistics count: those holding a token when the
+    /// index was built, deleted ones included until the next build.
+    pub(super) documents: usize,
 }
 
 impl ImmutableInvertedIndex {
@@ -319,9 +322,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .as_mut()
             .and_then(|lens| lens.get_mut(idx as usize))
         {
-            self.total_tokens = self
-                .total_tokens
-                .saturating_sub(u64::from(decode_doc_len(*doc_len)));
+            // Hidden from reads, still counted in the statistics: see
+            // `InvertedIndex::document_count`.
             *doc_len = 0;
         }
         self.points_count = self.points_count.saturating_sub(1);
@@ -453,6 +455,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
+    fn document_count(&self) -> usize {
+        self.documents
+    }
+
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
@@ -469,8 +475,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
         Ok(())
     }
 
-    /// Maintained, not summed: both ways into this index already have the
-    /// number, and `remove` is the only mutation after that.
+    /// Set when the index is built or loaded; `remove` leaves it, as it
+    /// leaves `documents`.
     fn total_tokens(&self) -> Option<u64> {
         self.point_to_doc_len.is_some().then_some(self.total_tokens)
     }
@@ -567,6 +573,7 @@ impl ImmutableInvertedIndex {
             total_tokens,
             points_count,
             term_frequencies,
+            documents: points_count,
         };
         (index, point_to_doc_len)
     }
@@ -679,6 +686,7 @@ impl<S: UniversalRead> TryFrom<&OnDiskInvertedIndex<S>> for ImmutableInvertedInd
             point_to_doc_len,
             term_frequencies,
             deleted_points,
+            documents,
         } = &index.storage;
         let term_frequencies = term_frequencies
             .as_ref()
@@ -691,6 +699,7 @@ impl<S: UniversalRead> TryFrom<&OnDiskInvertedIndex<S>> for ImmutableInvertedInd
             point_to_doc_len.clone(),
             term_frequencies,
             deleted_points,
+            *documents,
         )
     }
 }
@@ -721,7 +730,7 @@ impl ImmutableInvertedIndex {
             .as_ref()
             .map(|frequencies| frequencies.storage().read_whole().map(Cow::into_owned))
             .transpose()?;
-        let (deleted_points, compact_deleted_mask) =
+        let (deleted_points, compact_deleted_mask, documents) =
             read_deleted_points(fs, path, options, deleted_points, total_count)?;
 
         let index = Self::from_parts(
@@ -731,6 +740,7 @@ impl ImmutableInvertedIndex {
             point_to_doc_len,
             term_frequency_bytes,
             &deleted_points,
+            documents,
         )?;
 
         if let Err(err) = clear_files_cache(
@@ -764,6 +774,7 @@ impl ImmutableInvertedIndex {
         point_to_doc_len: Option<Vec<u16>>,
         term_frequencies: Option<Vec<u8>>,
         deleted_points: &DeletedBitVec,
+        documents: usize,
     ) -> OperationResult<Self> {
         let postings = match postings {
             OnDiskPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
@@ -796,17 +807,19 @@ impl ImmutableInvertedIndex {
             })
             .collect();
 
-        // Summed here rather than later: this walk already has to touch every
-        // element to apply the mask, and summing after it gives the live total
-        // rather than one inflated by deleted points.
+        // Document lengths are masked the same way, so a deleted point reads
+        // as a zero length. The total is summed before the mask: the
+        // statistics count deleted documents until the next build. Summed
+        // rather than taken from the postings header, which reads zero on
+        // indexes built before it carried the total.
         let mut total_tokens = 0;
         let point_to_doc_len = point_to_doc_len.map(|mut lens| {
             lens.resize(point_to_tokens_count.len(), 0);
             for (idx, doc_len) in lens.iter_mut().enumerate() {
+                total_tokens += u64::from(decode_doc_len(*doc_len));
                 if !deleted_points.is_active(idx as PointOffsetType) {
                     *doc_len = 0;
                 }
-                total_tokens += u64::from(decode_doc_len(*doc_len));
             }
             lens
         });
@@ -819,6 +832,7 @@ impl ImmutableInvertedIndex {
             total_tokens,
             points_count: deleted_points.active_count(),
             term_frequencies,
+            documents,
         })
     }
 }
@@ -834,6 +848,7 @@ impl ImmutableInvertedIndex {
             total_tokens: _,
             points_count: _,
             term_frequencies,
+            documents: _,
         } = self;
 
         let postings_bytes = postings.ram_usage_bytes();
