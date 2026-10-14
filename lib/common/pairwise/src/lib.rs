@@ -20,7 +20,8 @@ pub use crate::top_k::TopK;
 /// The columns of a matrix call.
 #[derive(Clone, Copy, Debug)]
 pub enum Cols<'a> {
-    /// All pairs within the rows, each point without itself. Computes one triangle.
+    /// All pairs within the rows, each point without itself. Computes one triangle. The rows
+    /// must not repeat a point: positions are compared, not ids.
     Rows,
     /// The rows against these points. A point in both scores against itself.
     Other(&'a [PointOffsetType]),
@@ -34,7 +35,19 @@ pub fn top_k<F: MatrixOperands>(
     cols: Cols<'_>,
     out: &mut TopK,
 ) -> Result<(), F::Error> {
+    debug_assert!(
+        !matches!(cols, Cols::Rows) || all_distinct(rows),
+        "`Cols::Rows` needs rows without repeated points",
+    );
     out.reset(rows.len());
-    // Accelerated kernels go here, chosen by `F::Elem` and the CPU's features.
+    // Accelerated kernels go here, chosen by `F::Elem` and the CPU's features. With
+    // `Cols::Rows`, they can exclude a point's pair with itself by position, as the fallback
+    // does: the check above guarantees distinct rows.
     fallback::top_k(operands, rows, cols, out)
+}
+
+fn all_distinct(ids: &[PointOffsetType]) -> bool {
+    let mut sorted = ids.to_vec();
+    sorted.sort_unstable();
+    sorted.windows(2).all(|pair| pair[0] != pair[1])
 }

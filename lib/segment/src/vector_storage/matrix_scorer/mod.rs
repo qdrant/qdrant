@@ -40,6 +40,11 @@ impl<'a> MatrixScorer<'a> {
     /// For each `rows[r]`, the `out.k()` best columns by `score_internal`, best first, ties to
     /// the lower column position. Column positions index the points of `cols`, or `rows` for
     /// [`MatrixCols::Rows`].
+    ///
+    /// With [`MatrixCols::Rows`], `rows` must not repeat a point. Points are kept from scoring
+    /// against themselves by position, so a repeated point is scored against its copy and can
+    /// become its own neighbor. Checked only in debug builds. Deduplicate leaves built by
+    /// merging clusters, since fanout can put a point into several of them.
     pub fn top_k(
         &self,
         rows: &[PointOffsetType],
