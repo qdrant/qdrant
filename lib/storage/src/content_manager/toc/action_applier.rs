@@ -1,4 +1,5 @@
 use collection::events::IndexCreatedEvent;
+use collection::shards::transfer::driver::revert_proxy_shard_to_local;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 
 use super::TableOfContent;
@@ -233,6 +234,20 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::RevertProxyShard {
+                collection,
+                shard_id,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let shard_holder = shard_holder.read().await;
+
+                // Resharding abort can drop the shard before reverting its related transfers
+                revert_proxy_shard_to_local(&shard_holder, *shard_id).await?;
+
+                Ok(())
+            }
+
             Action::RegisterTransfer {
                 collection,
                 transfer,
@@ -311,7 +326,6 @@ impl TableOfContent {
             | Action::RevertHashRing { .. }
             | Action::SetReshardingState { .. }
             | Action::SetReshardingStage { .. }
-            | Action::RevertProxyShard { .. }
             | Action::UnproxifyShard { .. }
             | Action::SpawnTransferDriver { .. }
             | Action::SetPeerMetadata { .. }

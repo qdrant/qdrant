@@ -1,20 +1,31 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::Duration;
 
 use collection::config::ShardingMethod;
 use collection::operations::config_diff::HnswConfigDiff;
+use collection::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
+    WriteOrdering,
+};
 use collection::operations::types::UpdateStatus;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+use collection::shards::channel_service::ChannelService;
+use collection::shards::remote_shard::RemoteShard;
 use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
+use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::types::DeferredBehavior;
+use parking_lot::Mutex;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::json_path::JsonPath;
 use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType, ShardKey};
+use shard::count::CountRequestInternal;
 use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations};
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
@@ -797,6 +808,137 @@ fn remove_replica_action_missing_shard() {
     let error = toc.apply_action(action).unwrap_err();
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
+}
+
+#[test]
+fn revert_proxy_shard_action_forward_replay() {
+    proxy_action_replay(
+        Action::RevertProxyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        false,
+    );
+}
+
+#[test]
+fn revert_proxy_shard_action_queue_replay() {
+    proxy_action_replay(
+        Action::RevertProxyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        true,
+    );
+}
+
+fn proxy_action_replay(action: Action, queue: bool) {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 0,
+        state: ReplicaState::Active,
+    })
+    .unwrap();
+
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let replica_set = handle.block_on(async { holder.read().await.get_shard(0).unwrap().clone() });
+    let remote = RemoteShard::new(
+        0,
+        "test".into(),
+        1,
+        ChannelService::new(6333, false, None, None),
+    );
+    let context = AmbientContext::request("test", toc.get_collection_hw_metrics("test".into()));
+    let point = PointStructPersisted {
+        id: 1.into(),
+        vector: VectorStructPersisted::Single(vec![1.0; 10]),
+        payload: None,
+    };
+    let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(vec![point]),
+    ));
+
+    handle.block_on(async {
+        let upsert = collection
+            .update_from_client_simple(operation, true, None, WriteOrdering::default())
+            .measured(context.clone());
+
+        if queue {
+            let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
+            replica_set
+                .queue_proxify_local(remote, None, progress)
+                .await
+                .unwrap();
+            upsert.await.unwrap();
+        } else {
+            upsert.await.unwrap();
+            replica_set.proxify_local(remote, None, None).await.unwrap();
+        }
+
+        assert!(replica_set.is_proxy().await);
+        assert_eq!(replica_set.is_queue_proxy().await, queue);
+    });
+    let initial_state = toc.collection_state("test").unwrap();
+
+    // Peer 1 has no address. Reverting a queue proxy must discard queued updates
+    // without sending them, while keeping the local points.
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        handle.block_on(async {
+            assert!(!replica_set.is_proxy().await);
+            assert!(replica_set.is_local().await);
+
+            let request = Arc::new(CountRequestInternal {
+                filter: None,
+                exact: true,
+            });
+            let count = replica_set
+                .count_local(request, None, DeferredBehavior::VisibleOnly)
+                .measured(context.clone())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(count.count, 1);
+        });
+        assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    }
+}
+
+#[test]
+fn revert_proxy_shard_action_missing_shard() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::DropShard {
+        collection: "test".into(),
+        shard_id: 0,
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::RevertProxyShard {
+        collection: "test".into(),
+        shard_id: 0,
+    };
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
