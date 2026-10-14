@@ -19,6 +19,7 @@ use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoIndex;
+use crate::index::field_index::nested_index::ElementMap;
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::{NumericIndex, NumericIndexValue};
 use crate::index::payload_config::{FullPayloadIndexType, IndexMutability, PayloadIndexType};
@@ -603,12 +604,17 @@ impl PayloadIndexType {
 /// postings into the fresh build.
 ///
 /// Covers every [`PayloadIndexType`] by construction: the candidate set is derived
-/// by iterating the enum through [`PayloadIndexType::storage_dir`].
+/// by iterating the enum through [`PayloadIndexType::storage_dir`], together with the
+/// element maps of per-element indexes.
 pub(crate) fn wipe_field_dirs(dir: &Path, field: &JsonPath) -> std::io::Result<()> {
     for index_type in <PayloadIndexType as strum::IntoEnumIterator>::iter() {
-        let candidate = index_type.storage_dir(dir, field);
-        if candidate.exists() {
-            fs_err::remove_dir_all(&candidate)?;
+        let index_dir = index_type.storage_dir(dir, field);
+        // A per-element index keeps its element map next to the inner index
+        let element_map_dir = ElementMap::storage_dir(&index_dir);
+        for candidate in [index_dir, element_map_dir] {
+            if candidate.exists() {
+                fs_err::remove_dir_all(&candidate)?;
+            }
         }
     }
     Ok(())

@@ -583,8 +583,25 @@ fn nested_index_matches_flattened_index_on_disk() {
     run(42, Some(Memory::Cold));
 }
 
-/// Per-element indexes of one array share its element map, which goes away with the
-/// last of them.
+/// Directories of the element maps of the per-element indexes of `field`.
+fn element_map_dirs(segment: &Segment, field: &str) -> Vec<std::path::PathBuf> {
+    let field = JsonPath::from_str(field).unwrap();
+    let payload_index = segment.payload_index.borrow();
+    payload_index.field_indexes[&field]
+        .iter()
+        .filter_map(FieldIndex::as_nested)
+        .map(|index| {
+            let index_dir = index
+                .get_full_index_type()
+                .index_type
+                .storage_dir(&segment.segment_path.join("payload_index"), &field);
+            crate::index::field_index::nested_index::ElementMap::storage_dir(&index_dir)
+        })
+        .collect()
+}
+
+/// Every per-element index keeps an element map of its own next to its inner index: the
+/// map goes away with the index, and a lost map rebuilds the field when it is loaded.
 #[test]
 fn element_map_lifecycle() {
     let dir = Builder::new().prefix("nested_index").tempdir().unwrap();
@@ -594,44 +611,36 @@ fn element_map_lifecycle() {
     let mut pair = Pair::new(dir.path());
     pair.upsert(&mut rng, 0..NUM_POINTS);
     pair.create_indexes(None);
+    pair.mutate(&mut rng, NUM_POINTS as usize);
 
-    let segment = &mut pair.nested;
-    let array_key = JsonPath::from_str("offers[]").unwrap();
-    let map_dir = crate::index::field_index::nested_index::ElementMap::storage_dir(
-        &segment.segment_path.join("payload_index"),
-        &array_key,
-    );
-    assert!(map_dir.exists());
-    {
-        let payload_index = segment.payload_index.borrow();
-        let maps: Vec<_> = payload_index
-            .field_indexes
-            .values()
-            .flatten()
-            .filter_map(|index| {
-                if let FieldIndex::Nested(index) = index {
-                    Some(index.element_map().clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        assert!(maps.len() > FIELDS.len());
-        assert!(maps.iter().all(|map| std::sync::Arc::ptr_eq(map, &maps[0])));
-    }
+    // Integers have a lookup and a range index, each with its own map
+    let (price, _) = FIELDS[0];
+    let price_maps = element_map_dirs(&pair.nested, price);
+    assert_eq!(price_maps.len(), 2);
+    assert_ne!(price_maps[0], price_maps[1]);
+    assert!(price_maps.iter().all(|map_dir| map_dir.exists()));
 
-    let mut op_num = pair.op_num;
-    for (i, &(field, _)) in FIELDS.iter().enumerate() {
-        op_num += 1;
-        segment
-            .delete_field_index(op_num, &JsonPath::from_str(field).unwrap())
-            .unwrap();
-        assert_eq!(
-            map_dir.exists(),
-            i + 1 < FIELDS.len(),
-            "after dropping {field}"
-        );
-    }
+    // A lost map rebuilds the field from payload
+    let (shop, _) = FIELDS[1];
+    let shop_maps = element_map_dirs(&pair.nested, shop);
+    pair.nested.flush(true).unwrap();
+    fs_err::remove_dir_all(&shop_maps[0]).unwrap();
+    let Pair {
+        flat,
+        nested,
+        mut op_num,
+    } = pair;
+    let flat = reload(flat);
+    let mut nested = reload(nested);
+    assert!(shop_maps[0].exists());
+    assert_equal(&flat, &nested);
+
+    op_num += 1;
+    nested
+        .delete_field_index(op_num, &JsonPath::from_str(price).unwrap())
+        .unwrap();
+    assert!(price_maps.iter().all(|map_dir| !map_dir.exists()));
+    assert!(shop_maps.iter().all(|map_dir| map_dir.exists()));
 }
 
 /// Words of the per-element text tests, skewed so queries mix common and rare ones.

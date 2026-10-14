@@ -81,9 +81,45 @@ impl FieldIndex {
         }
     }
 
-    /// Whether this is a per-element index, updated through the elements of its array.
+    /// The per-element index, if this is one.
+    pub fn as_nested(&self) -> Option<&NestedFieldIndex> {
+        match self {
+            FieldIndex::Nested(index) => Some(index),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => None,
+        }
+    }
+
+    /// The per-element index, if this is one: it is updated from the whole payload of a
+    /// point, see [`NestedFieldIndex::update_point`].
+    pub fn as_nested_mut(&mut self) -> Option<&mut NestedFieldIndex> {
+        match self {
+            FieldIndex::Nested(index) => Some(index),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => None,
+        }
+    }
+
     pub fn is_nested(&self) -> bool {
-        matches!(self, FieldIndex::Nested(_))
+        self.as_nested().is_some()
     }
 
     pub fn wipe(self) -> OperationResult<()> {
@@ -148,7 +184,7 @@ impl FieldIndex {
             }
             // Values of a point don't say which element they belong to
             FieldIndex::Nested(index) => Err(OperationError::service_error(format!(
-                "per-element index of `{}` must be updated through its elements",
+                "per-element index of `{}` must be updated from the whole payload",
                 index.array_key(),
             ))),
         }

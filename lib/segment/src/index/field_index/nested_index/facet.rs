@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use atomic_refcell::AtomicRef;
 use common::types::PointOffsetType;
 
 use super::ElementMap;
@@ -14,11 +13,11 @@ use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
 /// elements have that value.
 pub struct NestedFacetView<'a> {
     inner: FacetIndexEnum<'a>,
-    element_map: AtomicRef<'a, ElementMap>,
+    element_map: &'a ElementMap,
 }
 
 impl<'a> NestedFacetView<'a> {
-    pub fn new(inner: FacetIndexEnum<'a>, element_map: AtomicRef<'a, ElementMap>) -> Self {
+    pub fn new(inner: FacetIndexEnum<'a>, element_map: &'a ElementMap) -> Self {
         Self { inner, element_map }
     }
 

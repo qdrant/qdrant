@@ -59,7 +59,6 @@ impl PayloadIndex for StructPayloadIndex {
             .iter()
             .map(|i| i.get_full_index_type())
             .collect();
-        self.register_element_map(&field_index);
         self.field_indexes.insert(field.clone(), field_index);
 
         self.config.indices.insert(
@@ -115,8 +114,6 @@ impl PayloadIndex for StructPayloadIndex {
 
         self.save_config()?;
 
-        self.drop_unused_element_maps()?;
-
         Ok(is_removed)
     }
 
@@ -168,15 +165,10 @@ impl PayloadIndex for StructPayloadIndex {
 
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
-            for index in field_index.iter_mut().filter(|index| !index.is_nested()) {
-                if !field_value.is_empty() {
-                    index.add_point(point_id, &field_value)?;
-                } else {
-                    index.remove_point(point_id)?;
-                }
+            for index in field_index {
+                update_index(index, point_id, &field_value, payload)?;
             }
         }
-        self.update_nested_indexes(point_id, payload, |_| true)?;
         Ok(())
     }
 
@@ -199,21 +191,25 @@ impl PayloadIndex for StructPayloadIndex {
         // a `&mut self` write path.
         let updated_payload = self.payload.borrow().get(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
+            let field_affected = field.is_affected_by_value_set(&payload.0, key.as_ref());
+            if !field_affected && !field_index.iter().any(FieldIndex::is_nested) {
                 continue;
             }
             let field_value = updated_payload.get_value(field);
-            for index in field_index.iter_mut().filter(|index| !index.is_nested()) {
-                if !field_value.is_empty() {
-                    index.add_point(point_id, &field_value)?;
-                } else {
-                    index.remove_point(point_id)?;
+            for index in field_index {
+                // Per-element indexes follow the whole array: positions of the elements
+                // change with it
+                let affected = match index.as_nested() {
+                    Some(nested) => nested
+                        .array_key()
+                        .is_affected_by_value_set(&payload.0, key.as_ref()),
+                    None => field_affected,
+                };
+                if affected {
+                    update_index(index, point_id, &field_value, &updated_payload)?;
                 }
             }
         }
-        self.update_nested_indexes(point_id, &updated_payload, |array_key| {
-            array_key.is_affected_by_value_set(&payload.0, key.as_ref())
-        })?;
         Ok(())
     }
 
@@ -229,23 +225,26 @@ impl PayloadIndex for StructPayloadIndex {
         }
         let deleted = self.payload.borrow_mut().delete(point_id, key)?;
 
-        // Elements are re-read from what is left of the array
-        if self
-            .element_maps
-            .keys()
-            .any(|array_key| array_key.is_affected_by_value_remove(key))
-        {
-            let updated_payload = self.payload.borrow().get(point_id)?;
-            self.update_nested_indexes(point_id, &updated_payload, |array_key| {
-                array_key.is_affected_by_value_remove(key)
-            })?;
+        // Per-element indexes re-read the elements from what is left of the array
+        let mut updated_payload = None;
+        for index in self.field_indexes.values_mut().flatten() {
+            let Some(nested) = index.as_nested_mut() else {
+                continue;
+            };
+            if !nested.array_key().is_affected_by_value_remove(key) {
+                continue;
+            }
+            let payload = match &mut updated_payload {
+                Some(payload) => payload,
+                None => updated_payload.insert(self.payload.borrow().get(point_id)?),
+            };
+            nested.update_point(point_id, payload)?;
         }
         Ok(deleted)
     }
 
     fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         self.clear_index_for_point(point_id)?;
-        self.clear_nested_elements(point_id)?;
         self.payload.borrow_mut().clear(point_id)
     }
 
@@ -258,11 +257,6 @@ impl PayloadIndex for StructPayloadIndex {
             for index in field_indexes {
                 field_flushers.push(index.flusher());
             }
-        }
-        // After the field indexes: an element offset that the indexes know but the
-        // map doesn't is never resolved, see `ElementMap`
-        for element_map in self.element_maps.values() {
-            field_flushers.push(element_map.borrow().flusher());
         }
         let payload_flusher = self.payload.borrow().flusher();
 
@@ -293,10 +287,6 @@ impl PayloadIndex for StructPayloadIndex {
             .values()
             .flat_map(|indexes| indexes.iter().flat_map(|index| index.files().into_iter()))
             .collect::<Vec<PathBuf>>();
-        // Element maps change with every point update, none of their files is immutable
-        for element_map in self.element_maps.values() {
-            files.extend(element_map.borrow().files());
-        }
         files.push(self.config_path());
         files
     }
@@ -313,5 +303,23 @@ impl PayloadIndex for StructPayloadIndex {
                 })
             })
             .collect()
+    }
+}
+
+/// Index the field of `point_id` in an index: `field_value` for an index of points, the
+/// elements of the array in `payload` for a per-element index.
+fn update_index(
+    index: &mut FieldIndex,
+    point_id: PointOffsetType,
+    field_value: &[&Value],
+    payload: &impl PayloadContainer,
+) -> OperationResult<()> {
+    if let Some(nested) = index.as_nested_mut() {
+        return nested.update_point(point_id, payload);
+    }
+    if field_value.is_empty() {
+        index.remove_point(point_id)
+    } else {
+        index.add_point(point_id, field_value)
     }
 }

@@ -2,8 +2,8 @@
 //!
 //! A [`NestedFieldIndex`] indexes a field like `offers[].price` with every object of the
 //! `offers` array as its own entry: the wrapped index stores values under element offsets
-//! from the shared [`ElementMap`] of the array instead of under point offsets. That keeps
-//! track of which values belong to the same element.
+//! from its own [`ElementMap`] instead of under point offsets. That keeps track of which
+//! values belong to the same element.
 //!
 //! Towards everything else the wrapper is a regular field index over points: every read
 //! translates element offsets back to the points that own them, so results are the same
@@ -17,16 +17,14 @@ mod tests;
 
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::bitvec::BitVec;
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::{PointOffsetType, ScoredPointOffset};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
-pub use self::element_map::{ElementMap, ElementOffsetType, ElementUpdate, nested_elements};
+pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType, nested_elements};
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
 use super::numeric_index::NumericFieldIndexRead;
@@ -47,10 +45,7 @@ use crate::index::payload_config::FullPayloadIndexType;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, PayloadKeyType};
-
-/// The element map of one nested array, shared by all its per-element indexes.
-pub type SharedElementMap = Arc<AtomicRefCell<ElementMap>>;
+use crate::types::{FieldCondition, PayloadContainer, PayloadKeyType};
 
 /// A field index of the elements of a nested array, read as an index of points.
 ///
@@ -60,7 +55,7 @@ pub struct NestedFieldIndex {
     array_key: JsonPath,
     /// The indexed field inside an element, e.g. `price` for `offers[].price`
     relative_path: JsonPath,
-    element_map: SharedElementMap,
+    element_map: ElementMap,
     /// Index keyed by element offsets
     inner: FieldIndex,
     /// Number of points with at least one value in `inner`
@@ -72,7 +67,7 @@ impl NestedFieldIndex {
     pub fn new(
         field: &JsonPath,
         array_key: JsonPath,
-        element_map: SharedElementMap,
+        element_map: ElementMap,
         inner: FieldIndex,
     ) -> OperationResult<Self> {
         debug_assert!(!matches!(
@@ -93,14 +88,12 @@ impl NestedFieldIndex {
             indexed_points: 0,
         };
 
-        let map = index.element_map.borrow();
         let mut indexed_points = 0;
-        for point in 0..map.points_upper_bound() as PointOffsetType {
-            if index.has_values(map.point_elements(point))? {
+        for point in 0..index.element_map.points_upper_bound() as PointOffsetType {
+            if index.has_values(index.element_map.point_elements(point))? {
                 indexed_points += 1;
             }
         }
-        drop(map);
         index.indexed_points = indexed_points;
 
         Ok(index)
@@ -111,7 +104,7 @@ impl NestedFieldIndex {
         &self.array_key
     }
 
-    pub fn element_map(&self) -> &SharedElementMap {
+    pub fn element_map(&self) -> &ElementMap {
         &self.element_map
     }
 
@@ -129,14 +122,14 @@ impl NestedFieldIndex {
         Ok(false)
     }
 
-    /// Index the `elements` of `point`, after the element map moved it from
-    /// `update.old` to `update.new`.
+    /// Index the elements of the array in the `payload` of `point`.
     pub fn update_point(
         &mut self,
-        update: &ElementUpdate,
-        elements: &[&Map<String, Value>],
+        point: PointOffsetType,
+        payload: &impl PayloadContainer,
     ) -> OperationResult<()> {
-        debug_assert_eq!(update.new.len(), elements.len());
+        let elements = nested_elements(payload, &self.array_key);
+        let update = self.element_map.assign(point, elements.len())?;
         let had_values = self.has_values(update.old.clone())?;
 
         for element in update.old.clone() {
@@ -162,22 +155,21 @@ impl NestedFieldIndex {
         Ok(())
     }
 
-    /// Remove the values of all current elements of `point`.
-    ///
-    /// The element map is not changed: the caller updates it.
+    /// Remove `point` and the values of its elements.
     pub fn remove_point(&mut self, point: PointOffsetType) -> OperationResult<()> {
-        let elements = self.element_map.borrow().point_elements(point);
+        let elements = self.element_map.point_elements(point);
         if self.has_values(elements.clone())? {
             self.indexed_points -= 1;
         }
         for element in elements {
             self.inner.remove_point(element)?;
         }
+        self.element_map.assign(point, 0)?;
         Ok(())
     }
 
     pub fn ram_usage_bytes(&self) -> usize {
-        self.inner.ram_usage_bytes()
+        self.inner.ram_usage_bytes() + self.element_map.ram_usage_bytes()
     }
 
     pub fn is_cold(&self) -> bool {
@@ -185,11 +177,13 @@ impl NestedFieldIndex {
     }
 
     pub fn populate(&self) -> OperationResult<()> {
-        self.inner.populate()
+        self.inner.populate()?;
+        self.element_map.populate()
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.inner.clear_cache()
+        self.inner.clear_cache()?;
+        self.element_map.clear_cache()
     }
 
     pub fn get_full_index_type(&self) -> FullPayloadIndexType {
@@ -200,7 +194,7 @@ impl NestedFieldIndex {
     pub fn numeric_view(&self) -> Option<NestedNumericView<'_>> {
         Some(NestedNumericView::new(
             self.inner.numeric_view()?,
-            self.element_map.borrow(),
+            &self.element_map,
         ))
     }
 
@@ -208,7 +202,7 @@ impl NestedFieldIndex {
     pub fn facet_view(&self) -> Option<NestedFacetView<'_>> {
         Some(NestedFacetView::new(
             self.inner.facet_view()?,
-            self.element_map.borrow(),
+            &self.element_map,
         ))
     }
 
@@ -273,7 +267,7 @@ impl NestedFieldIndex {
 /// Matches a point if any of its elements matches the condition of the inner index.
 struct NestedConditionChecker<'a> {
     inner: ConditionCheckerEnum<'a>,
-    element_map: AtomicRef<'a, ElementMap>,
+    element_map: &'a ElementMap,
 }
 
 impl ConditionChecker for NestedConditionChecker<'_> {
@@ -310,7 +304,7 @@ impl PayloadFieldIndexRead for NestedFieldIndex {
         let Some(elements) = self.inner.filter(condition)? else {
             return Ok(None);
         };
-        let map = self.element_map.borrow();
+        let map = &self.element_map;
         let mut seen = BitVec::repeat(false, map.points_upper_bound());
         Ok(Some(Box::new(elements.filter_map(move |element| {
             let point = map.element_point(element)?;
@@ -325,8 +319,9 @@ impl PayloadFieldIndexRead for NestedFieldIndex {
         let Some(estimation) = self.inner.estimate_cardinality(condition)? else {
             return Ok(None);
         };
-        let map = self.element_map.borrow();
-        Ok(Some(self.to_points_estimation(estimation, &map)))
+        Ok(Some(
+            self.to_points_estimation(estimation, &self.element_map),
+        ))
     }
 
     fn for_each_payload_block(
@@ -356,7 +351,7 @@ impl PayloadFieldIndexRead for NestedFieldIndex {
         Ok(Some(ConditionCheckerEnum::Dyn(Box::new(
             NestedConditionChecker {
                 inner,
-                element_map: self.element_map.borrow(),
+                element_map: &self.element_map,
             },
         ))))
     }
@@ -370,25 +365,40 @@ impl PayloadFieldIndexRead for NestedFieldIndex {
     }
 }
 
-/// The element map is not part of the index: [`StructPayloadIndex`] persists and wipes
-/// it, as it is shared with the other per-element indexes of the array.
-///
-/// [`StructPayloadIndex`]: crate::index::struct_payload_index::StructPayloadIndex
 impl PayloadFieldIndex for NestedFieldIndex {
     fn wipe(self) -> OperationResult<()> {
-        self.inner.wipe()
+        let Self {
+            array_key: _,
+            relative_path: _,
+            element_map,
+            inner,
+            indexed_points: _,
+        } = self;
+        inner.wipe()?;
+        element_map.wipe()
     }
 
     fn flusher(&self) -> Flusher {
-        self.inner.flusher()
+        let inner_flusher = self.inner.flusher();
+        let map_flusher = self.element_map.flusher();
+        Box::new(move || {
+            // Map last: an element offset that the index knows but the map doesn't is
+            // never resolved, see `ElementMap`
+            inner_flusher()?;
+            map_flusher()
+        })
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        self.inner.files()
+        let mut files = self.inner.files();
+        files.extend(self.element_map.files());
+        files
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {
-        self.inner.immutable_files()
+        let mut files = self.inner.immutable_files();
+        files.extend(self.element_map.immutable_files());
+        files
     }
 }
 
@@ -402,7 +412,7 @@ impl FieldIndexRead for NestedFieldIndex {
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize> {
-        let elements = self.element_map.borrow().point_elements(point_id);
+        let elements = self.element_map.point_elements(point_id);
         let mut count = 0;
         for element in elements {
             count += self.inner.values_count(element)?;
@@ -411,7 +421,7 @@ impl FieldIndexRead for NestedFieldIndex {
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        let elements = self.element_map.borrow().point_elements(point_id);
+        let elements = self.element_map.point_elements(point_id);
         Ok(!self.has_values(elements)?)
     }
 
@@ -422,7 +432,7 @@ impl FieldIndexRead for NestedFieldIndex {
         let Some(inner) = self.inner.value_retriever()? else {
             return Ok(None);
         };
-        let map = self.element_map.borrow();
+        let map = &self.element_map;
         let dedup = self.dedups_values();
         Ok(Some(Box::new(move |point_id| {
             let mut values = MultiValue::new();
@@ -452,7 +462,7 @@ impl FieldIndexRead for NestedFieldIndex {
             return Ok(false);
         };
         let corpus_elements = corpus.map(|points| {
-            let map = self.element_map.borrow();
+            let map = &self.element_map;
             points
                 .iter()
                 .flat_map(|&point| map.point_elements(point))
@@ -474,7 +484,7 @@ impl FieldIndexRead for NestedFieldIndex {
         let Some(index) = self.text_index() else {
             return Ok(None);
         };
-        let map = self.element_map.borrow();
+        let map = &self.element_map;
         let element_point = |element| map.element_point(element);
         let visible = |element| {
             map.element_point(element)

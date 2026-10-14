@@ -1,4 +1,3 @@
-use atomic_refcell::AtomicRef;
 use common::types::PointOffsetType;
 use itertools::Either;
 
@@ -11,11 +10,11 @@ use crate::types::RangeInterface;
 /// Order-by view of a per-element numeric index, over points.
 pub struct NestedNumericView<'a> {
     inner: NumericFieldIndex<'a>,
-    element_map: AtomicRef<'a, ElementMap>,
+    element_map: &'a ElementMap,
 }
 
 impl<'a> NestedNumericView<'a> {
-    pub fn new(inner: NumericFieldIndex<'a>, element_map: AtomicRef<'a, ElementMap>) -> Self {
+    pub fn new(inner: NumericFieldIndex<'a>, element_map: &'a ElementMap) -> Self {
         Self { inner, element_map }
     }
 }
