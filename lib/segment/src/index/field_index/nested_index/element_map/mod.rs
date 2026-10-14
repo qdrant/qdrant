@@ -387,6 +387,41 @@ mod tests {
         check(&map);
     }
 
+    /// Stored bit-packed: two bits per point for points with up to three elements, instead
+    /// of the four bytes of the start offset.
+    #[test]
+    fn immutable_map_is_stored_compact() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("map");
+        const POINTS: u32 = 10_000;
+
+        let mut builder = ElementMapBuilder::default();
+        for point in 0..POINTS {
+            builder.add(point, (point % 4) as usize).unwrap();
+        }
+        let map =
+            ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, true).unwrap();
+        let stored: u64 = map
+            .files()
+            .iter()
+            .map(|file| fs_err::metadata(file).unwrap().len())
+            .sum();
+        // The 32-byte header, then per block of 128 starts a width byte and 2 bits per start
+        let blocks = u64::from(POINTS + 1).div_ceil(128);
+        assert_eq!(stored, 32 + blocks * (1 + 128 * 2 / 8));
+
+        let reopened = ElementMap::open(path, IndexMutability::Immutable)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            ranges(&reopened, 0..POINTS + 1),
+            ranges(&map, 0..POINTS + 1)
+        );
+        for element in [0, 7_777, 14_999, 15_000] {
+            assert_eq!(reopened.element_point(element), map.element_point(element));
+        }
+    }
+
     #[test]
     fn immutable_map_requires_point_order() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,17 +1,40 @@
 //! Element map of an immutable index: built once, in point order, so the start offsets
 //! of the points are enough to map both ways.
+//!
+//! The start offsets are stored bit-packed in blocks of [`BitPacker4x::BLOCK_LEN`]: each
+//! block keeps the deltas between consecutive starts, which are the element counts of
+//! the points, with as many bits as its largest count needs.
 
 use std::io::Write as _;
 use std::ops::Range;
 use std::path::PathBuf;
 
+use bitpacking::{BitPacker as _, BitPacker4x};
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+use zerocopy::little_endian::U32;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::{ElementMapBuilder, ElementOffsetType, ElementUpdate};
 use crate::common::operation_error::{OperationError, OperationResult};
 
-const STARTS_FILE: &str = "starts.bin";
+/// Start offsets of the points, see [`pack_starts`].
+const STARTS_FILE: &str = "starts.bitpacked";
+
+const MAGIC: [u8; 8] = *b"QDRANTEM";
+const FORMAT_VERSION: u32 = 1;
+
+/// Header of [`STARTS_FILE`].
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
+struct Header {
+    magic: [u8; 8],
+    version: U32,
+    /// Number of start offsets in the blocks that follow
+    len: U32,
+    /// Written as zeros and ignored when read, for fields added without a new version
+    reserved: [u8; 16],
+}
 
 #[derive(Debug)]
 pub struct ImmutableElementMap {
@@ -44,7 +67,7 @@ impl ImmutableElementMap {
         starts.push(*elements_count);
 
         common::fs::atomic_save(&path.join(STARTS_FILE), |writer| {
-            writer.write_all(bytemuck::cast_slice(&starts))
+            writer.write_all(&pack_starts(&starts))
         })?;
         Ok(Self::new(path, starts))
     }
@@ -54,21 +77,9 @@ impl ImmutableElementMap {
         if !file.exists() {
             return Ok(None);
         }
-        let bytes = fs_err::read(&file)?;
-        if bytes.is_empty() || bytes.len() % size_of::<ElementOffsetType>() != 0 {
-            return Err(OperationError::service_error(format!(
-                "element map {} has an invalid size: {}",
-                file.display(),
-                bytes.len(),
-            )));
-        }
-        let starts: Vec<ElementOffsetType> = bytemuck::pod_collect_to_vec(&bytes);
-        if !starts.is_sorted() {
-            return Err(OperationError::service_error(format!(
-                "element map {} is not sorted",
-                file.display(),
-            )));
-        }
+        let starts = unpack_starts(&fs_err::read(&file)?).ok_or_else(|| {
+            OperationError::service_error(format!("element map {} is invalid", file.display()))
+        })?;
         Ok(Some(Self::new(path, starts)))
     }
 
@@ -162,5 +173,140 @@ impl ImmutableElementMap {
 
     pub fn ram_usage_bytes(&self) -> usize {
         self.starts.capacity() * size_of::<ElementOffsetType>()
+    }
+}
+
+/// Pack the sorted `starts`: a [`Header`], then one block per
+/// [`BitPacker4x::BLOCK_LEN`] values, each a byte with its bit width followed by its
+/// deltas. The last block is padded by repeating the last value.
+fn pack_starts(starts: &[ElementOffsetType]) -> Vec<u8> {
+    let header = Header {
+        magic: MAGIC,
+        version: U32::new(FORMAT_VERSION),
+        len: U32::new(starts.len() as u32),
+        reserved: [0; 16],
+    };
+    let bitpacker = BitPacker4x::new();
+    let mut packed = header.as_bytes().to_vec();
+
+    let mut block = [0; BitPacker4x::BLOCK_LEN];
+    let mut initial = 0;
+    for chunk in starts.chunks(BitPacker4x::BLOCK_LEN) {
+        block[..chunk.len()].copy_from_slice(chunk);
+        let last = chunk.last().copied().unwrap_or(initial);
+        block[chunk.len()..].fill(last);
+
+        let num_bits = bitpacker.num_bits_sorted(initial, &block);
+        packed.push(num_bits);
+        let offset = packed.len();
+        packed.resize(offset + BitPacker4x::compressed_block_size(num_bits), 0);
+        bitpacker.compress_sorted(initial, &block, &mut packed[offset..], num_bits);
+        initial = last;
+    }
+    packed
+}
+
+/// Unpack what [`pack_starts`] packed, `None` if it is malformed.
+fn unpack_starts(packed: &[u8]) -> Option<Vec<ElementOffsetType>> {
+    let (header, mut packed) = Header::ref_from_prefix(packed).ok()?;
+    let Header {
+        magic,
+        version,
+        len,
+        reserved: _,
+    } = header;
+    if *magic != MAGIC || version.get() != FORMAT_VERSION {
+        return None;
+    }
+    let len = len.get() as usize;
+
+    let bitpacker = BitPacker4x::new();
+    let mut starts = Vec::with_capacity(len.next_multiple_of(BitPacker4x::BLOCK_LEN));
+    let mut block = [0; BitPacker4x::BLOCK_LEN];
+    let mut initial = 0;
+    while starts.len() < len {
+        let (&num_bits, rest) = packed.split_first()?;
+        if u32::from(num_bits) > ElementOffsetType::BITS {
+            return None;
+        }
+        let (compressed, rest) =
+            rest.split_at_checked(BitPacker4x::compressed_block_size(num_bits))?;
+        bitpacker.decompress_sorted(initial, compressed, &mut block, num_bits);
+        starts.extend_from_slice(&block);
+        initial = block[BitPacker4x::BLOCK_LEN - 1];
+        packed = rest;
+    }
+    starts.truncate(len);
+
+    (!starts.is_empty() && packed.is_empty() && starts.is_sorted()).then_some(starts)
+}
+
+const _: () = assert!(size_of::<Header>() == 32);
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::StdRng;
+    use rand::{RngExt, SeedableRng};
+
+    use super::*;
+
+    fn starts_of(counts: impl IntoIterator<Item = u32>) -> Vec<ElementOffsetType> {
+        let mut starts = vec![0];
+        for count in counts {
+            starts.push(starts.last().unwrap() + count);
+        }
+        starts
+    }
+
+    #[test]
+    fn pack_roundtrip() {
+        let mut rng = StdRng::seed_from_u64(42);
+        for points in [0, 1, 127, 128, 129, 1000] {
+            let starts = starts_of((0..points).map(|_| rng.random_range(0..10)));
+            assert_eq!(unpack_starts(&pack_starts(&starts)), Some(starts));
+        }
+    }
+
+    /// A point with many elements widens its own block only.
+    #[test]
+    fn large_point_widens_its_block() {
+        let small = starts_of((0..1280).map(|point| point % 4));
+        let mut counts: Vec<u32> = (0..1280).map(|point| point % 4).collect();
+        counts[500] = 1000;
+        let with_large = starts_of(counts);
+
+        let small_size = pack_starts(&small).len();
+        let large_size = pack_starts(&with_large).len();
+        // From 2 to 10 bits for one block of 128 values
+        assert_eq!(large_size - small_size, 128 * 8 / 8);
+        assert_eq!(unpack_starts(&pack_starts(&with_large)), Some(with_large));
+    }
+
+    #[test]
+    fn malformed_input_is_rejected() {
+        let packed = pack_starts(&starts_of(0..300));
+        assert_eq!(unpack_starts(&[]), None);
+        assert_eq!(unpack_starts(&packed[..packed.len() - 1]), None);
+
+        let mut trailing = packed.clone();
+        trailing.push(0);
+        assert_eq!(unpack_starts(&trailing), None);
+
+        let mut too_wide = packed.clone();
+        too_wide[size_of::<Header>()] = 33;
+        assert_eq!(unpack_starts(&too_wide), None);
+
+        let mut other_version = packed.clone();
+        other_version[8] = 2;
+        assert_eq!(unpack_starts(&other_version), None);
+
+        let mut other_magic = packed.clone();
+        other_magic[0] = b'X';
+        assert_eq!(unpack_starts(&other_magic), None);
+
+        // Reserved bytes are left to later fields
+        let mut reserved = packed;
+        reserved[size_of::<Header>() - 1] = 1;
+        assert!(unpack_starts(&reserved).is_some());
     }
 }
