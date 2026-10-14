@@ -28,7 +28,7 @@ pub fn tar_unpack_reader<R: io::Read>(reader: R, dst: &Path) -> Result<R, io::Er
         .map_err(|err| tar_error("unable to read entries", err))?;
 
     for entry in entries {
-        let mut entry = entry.map_err(|err| tar_error("reached unknown entry", err))?;
+        let mut entry = entry.map_err(|err| tar_error("unable to read next entry", err))?;
 
         #[expect(clippy::wildcard_enum_match_arm, reason = "#[non_exhaustive] enum")]
         match entry.header().entry_type() {
@@ -47,12 +47,15 @@ pub fn tar_unpack_reader<R: io::Read>(reader: R, dst: &Path) -> Result<R, io::Er
 }
 
 fn tar_error(message: &str, source: io::Error) -> io::Error {
-    // Hide error in release builds to not leak contents of potentially sensitive files
+    // Hide error in release builds to not leak contents of potentially sensitive files.
+    // Keep the error kind, it tells a malformed archive apart from a failed read, such as a
+    // stalled snapshot download.
+    let kind = source.kind();
     let message = if cfg!(debug_assertions) {
-        format!("Malformed tar archive, {message}: {source}")
+        format!("Failed to read tar archive, {message}: {source}")
     } else {
-        format!("Malformed tar archive, {message}")
+        format!("Failed to read tar archive, {message}: {kind}")
     };
 
-    io::Error::new(source.kind(), message)
+    io::Error::new(kind, message)
 }
