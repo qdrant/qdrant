@@ -648,4 +648,62 @@ mod tests {
         assert!(is_not_null.check(&number));
         assert!(is_not_null.check(&bool));
     }
+
+    #[test]
+    fn test_float_range_precision_matching() {
+        // Test float payload + float range
+        let condition_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 2251799813685247.0,
+                "lte": 2251799813685247.0
+            }
+        }"#;
+        let condition: FieldCondition = serde_json::from_str(condition_json).unwrap();
+
+        let payload_exact: serde_json::Value = serde_json::from_str("2251799813685247.0").unwrap();
+        let payload_adjacent: serde_json::Value =
+            serde_json::from_str("2251799813685246.0").unwrap();
+        let payload_int: serde_json::Value = serde_json::from_str("2251799813685247").unwrap();
+        let payload_int_adjacent: serde_json::Value =
+            serde_json::from_str("2251799813685246").unwrap();
+
+        assert!(
+            condition.check(&payload_exact),
+            "exact float payload must match"
+        );
+        assert!(
+            !condition.check(&payload_adjacent),
+            "adjacent float payload must not match"
+        );
+        assert!(
+            condition.check(&payload_int),
+            "exact int payload must match float range"
+        );
+        assert!(
+            !condition.check(&payload_int_adjacent),
+            "adjacent int payload must not match float range"
+        );
+
+        // Test 9007199254740991 boundary
+        let cond_9007_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 9007199254740991.0,
+                "lte": 9007199254740991.0
+            }
+        }"#;
+        let cond_9007: FieldCondition = serde_json::from_str(cond_9007_json).unwrap();
+        let p_9007_1: serde_json::Value = serde_json::from_str("9007199254740991.0").unwrap();
+        let p_9007_0: serde_json::Value = serde_json::from_str("9007199254740990.0").unwrap();
+
+        assert!(
+            cond_9007.check(&p_9007_1),
+            "9007199254740991.0 must match its own range"
+        );
+        assert!(
+            !cond_9007.check(&p_9007_0),
+            "9007199254740990.0 must NOT match range for 9007199254740991.0"
+        );
+    }
 }

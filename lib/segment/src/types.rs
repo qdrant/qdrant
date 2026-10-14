@@ -5257,6 +5257,112 @@ mod tests {
         assert_eq!(range, restored);
     }
 
+    #[test]
+    fn test_float_precision_reported_cases() {
+        let test_cases: &[(&str, f64)] = &[
+            ("2251799813685247.0", 2251799813685247.0),
+            ("-2251799813685247.0", -2251799813685247.0),
+            ("2251799813685245.0", 2251799813685245.0),
+            ("-2251799813685245.0", -2251799813685245.0),
+            ("4503599627370494.0", 4503599627370494.0),
+            ("-4503599627370494.0", -4503599627370494.0),
+            ("9007199254740991.0", 9007199254740991.0),
+            ("-9007199254740991.0", -9007199254740991.0),
+            ("9007199254740990.0", 9007199254740990.0),
+            ("-9007199254740990.0", -9007199254740990.0),
+            ("2251799813685246.0", 2251799813685246.0),
+            ("-2251799813685246.0", -2251799813685246.0),
+            ("4503599627370495.0", 4503599627370495.0),
+            ("-4503599627370495.0", -4503599627370495.0),
+            ("2.251799813685247e15", 2251799813685247.0),
+            ("9.007199254740991e15", 9007199254740991.0),
+            ("0.1", 0.1),
+            ("1.5", 1.5),
+            ("1e-10", 1e-10),
+        ];
+
+        for &(literal, expected) in test_cases {
+            // Direct f64 deserialization
+            let parsed_f64: f64 = serde_json::from_str(literal).unwrap();
+            assert_eq!(
+                parsed_f64.to_bits(),
+                expected.to_bits(),
+                "f64 mismatch for literal {literal}: got {parsed_f64}, expected {expected}"
+            );
+
+            // serde_json::Value
+            let val: serde_json::Value = serde_json::from_str(literal).unwrap();
+            let val_f64 = val.as_f64().expect("must be float");
+            assert_eq!(
+                val_f64.to_bits(),
+                expected.to_bits(),
+                "serde_json::Value mismatch for literal {literal}"
+            );
+
+            // Payload deserialization and roundtrip
+            let payload_json = format!(r#"{{"val": {literal}}}"#);
+            let payload: Payload = serde_json::from_str(&payload_json).unwrap();
+            let roundtripped = serde_json::to_string(&payload).unwrap();
+            let payload_back: Payload = serde_json::from_str(&roundtripped).unwrap();
+            assert_eq!(payload, payload_back);
+            let stored_f64 = payload.0.get("val").unwrap().as_f64().unwrap();
+            assert_eq!(stored_f64.to_bits(), expected.to_bits());
+
+            // RangeInterface deserialization and roundtrip
+            let range_json = format!(r#"{{"gte": {literal}, "lte": {literal}}}"#);
+            let range: RangeInterface = serde_json::from_str(&range_json).unwrap();
+            let RangeInterface::Float(ref float_range) = range else {
+                panic!("expected Float range");
+            };
+            assert_eq!(float_range.gte.unwrap().0.to_bits(), expected.to_bits());
+            assert_eq!(float_range.lte.unwrap().0.to_bits(), expected.to_bits());
+        }
+    }
+
+    #[test]
+    fn test_float_precision_adjacent_values_distinguishable() {
+        let v1_str = "9007199254740990.0";
+        let v2_str = "9007199254740991.0";
+        let v1: f64 = serde_json::from_str(v1_str).unwrap();
+        let v2: f64 = serde_json::from_str(v2_str).unwrap();
+        assert_ne!(v1.to_bits(), v2.to_bits());
+        assert_eq!(v2 - v1, 1.0);
+
+        let p1: Payload = serde_json::from_str(&format!(r#"{{"val": {v1_str}}}"#)).unwrap();
+        let p2: Payload = serde_json::from_str(&format!(r#"{{"val": {v2_str}}}"#)).unwrap();
+        assert_ne!(p1, p2);
+
+        let r1: RangeInterface =
+            serde_json::from_str(&format!(r#"{{"gte": {v1_str}, "lte": {v1_str}}}"#)).unwrap();
+        let r2: RangeInterface =
+            serde_json::from_str(&format!(r#"{{"gte": {v2_str}, "lte": {v2_str}}}"#)).unwrap();
+        assert_ne!(r1, r2);
+    }
+
+    #[test]
+    fn test_integer_json_remains_exact_and_typed() {
+        // Integer-formatted JSON must deserialize as integers where applicable
+        let int_val: serde_json::Value = serde_json::from_str("2251799813685247").unwrap();
+        assert!(int_val.is_i64() || int_val.is_u64());
+        assert_eq!(int_val.as_u64(), Some(2251799813685247));
+
+        let int_val_large: serde_json::Value = serde_json::from_str("9007199254740991").unwrap();
+        assert_eq!(int_val_large.as_u64(), Some(9007199254740991));
+
+        // Int64 max
+        let i64_max_str = format!("{}", i64::MAX);
+        let int_val_i64_max: serde_json::Value = serde_json::from_str(&i64_max_str).unwrap();
+        assert_eq!(int_val_i64_max.as_i64(), Some(i64::MAX));
+
+        // RangeInterface accepts integers as numbers for Float variant
+        let range: RangeInterface =
+            serde_json::from_str(r#"{"gte": 2251799813685247, "lte": 2251799813685247}"#).unwrap();
+        let RangeInterface::Float(ref float_range) = range else {
+            panic!("expected Float range");
+        };
+        assert_eq!(float_range.gte.unwrap().0, 2251799813685247.0);
+    }
+
     /// Regression test: Non-FieldCondition JSON deserialization uses ConditionUntagged fallback.
     /// Ensures compiler-safe handling of other Condition variants.
     #[test]
