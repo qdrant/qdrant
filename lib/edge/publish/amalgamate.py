@@ -38,6 +38,7 @@ PACKAGES_TO_INCLUDE = [
     "common",
     "edge",
     "blobstore",
+    "pairwise",
     "posting_list",
     "quantization",
     "segment",
