@@ -135,23 +135,18 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         let moves = match moves {
             PointMovesMode::Ignore => None,
             PointMovesMode::Resolve => {
-                let raw = deleted_file.read_all()?.into_owned();
+                let mut effective = deleted_file.read_all()?.into_owned();
                 let mut moves = SlotMoves::open(raw_fs, segment_path)?;
-                let mut effective = raw.clone();
                 let named: Vec<_> = moves
                     .state
                     .moved_out_slots()
-                    .filter(|&slot| raw.get(slot as usize).is_some_and(|bit| *bit))
+                    .filter(|&slot| effective.get(slot as usize).is_some_and(|bit| *bit))
                     .collect();
                 for slot in named {
                     effective.set(slot as usize, false);
                     moves.held.insert(slot, Hold::Move);
                 }
-                Some(Box::new(DiskMoves {
-                    moves,
-                    raw,
-                    effective,
-                }))
+                Some(Box::new(DiskMoves { moves, effective }))
             }
         };
 
