@@ -1,6 +1,6 @@
 use common::types::PointOffsetType;
 
-use crate::combine::Combine;
+use crate::combine::CombineDispatch;
 
 /// Element type of decoded vectors. Each has its own inner product, and later its own
 /// accelerated kernels.
@@ -10,9 +10,11 @@ pub trait KernelElem: Copy + Default + Send + Sync + 'static + sealed::Sealed {
     fn dot(a: &[Self], b: &[Self]) -> f32;
 }
 
+/// Fused multiply-adds in order: the sum every f32 kernel computes, so all of them give bitwise
+/// the same scores. Slow on CPUs without FMA, which are the ones that use it.
 impl KernelElem for f32 {
     fn dot(a: &[f32], b: &[f32]) -> f32 {
-        a.iter().zip(b).map(|(x, y)| x * y).sum()
+        a.iter().zip(b).fold(0.0, |sum, (x, y)| x.mul_add(*y, sum))
     }
 }
 
@@ -45,21 +47,159 @@ impl KernelElem for Bits {
     }
 }
 
-mod sealed {
-    pub trait Sealed {}
+/// The kernels of each element type, behind the public traits.
+pub(crate) mod sealed {
+    use common::types::PointOffsetType;
 
-    impl Sealed for f32 {}
-    impl Sealed for u8 {}
-    impl Sealed for super::Bits {}
+    use super::{Bits, MatrixOperands};
+    use crate::{Cols, TopK};
+
+    pub trait Sealed: Sized {
+        /// # Safety
+        ///
+        /// The CPU must support AVX2 and FMA.
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx2<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error>;
+
+        /// The AVX2 kernel, unless the type has a wider one.
+        ///
+        /// # Safety
+        ///
+        /// The CPU must support AVX-512F, AVX2, and FMA.
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx512<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // SAFETY: AVX2 and FMA, from the caller
+            unsafe { Self::top_k_avx2(operands, rows, cols, out) }
+        }
+
+        /// # Safety
+        ///
+        /// The CPU must support NEON.
+        #[cfg(target_arch = "aarch64")]
+        unsafe fn top_k_neon<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error>;
+    }
+
+    impl Sealed for f32 {
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx2<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // SAFETY: forwarded from the caller
+            unsafe { crate::x86_64::top_k_f32(operands, rows, cols, out) }
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx512<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // SAFETY: forwarded from the caller
+            unsafe { crate::x86_64::top_k_f32_avx512(operands, rows, cols, out) }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        unsafe fn top_k_neon<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // SAFETY: forwarded from the caller
+            unsafe { crate::aarch64::top_k_f32(operands, rows, cols, out) }
+        }
+    }
+
+    impl Sealed for u8 {
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx2<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // SAFETY: forwarded from the caller
+            unsafe { crate::x86_64::top_k_u8(operands, rows, cols, out) }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        unsafe fn top_k_neon<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // Optional before Armv8.4: older cores (Cortex-A72, Graviton 1) take the scalar kernel
+            if !std::arch::is_aarch64_feature_detected!("dotprod") {
+                return crate::fallback::top_k(operands, rows, cols, out);
+            }
+            // SAFETY: NEON from the caller, dot product instructions checked above
+            unsafe { crate::aarch64::top_k_u8(operands, rows, cols, out) }
+        }
+    }
+
+    impl Sealed for Bits {
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx2<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // Counts are summed in u16
+            if operands.depth() * 8 > usize::from(u16::MAX) {
+                return crate::fallback::top_k(operands, rows, cols, out);
+            }
+            // SAFETY: forwarded from the caller
+            unsafe { crate::x86_64::top_k_bits(operands, rows, cols, out) }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        unsafe fn top_k_neon<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // Counts are summed in u16
+            if operands.depth() * 8 > usize::from(u16::MAX) {
+                return crate::fallback::top_k(operands, rows, cols, out);
+            }
+            // SAFETY: forwarded from the caller
+            unsafe { crate::aarch64::top_k_bits(operands, rows, cols, out) }
+        }
+    }
 }
 
 /// How one storage's vectors become kernel operands.
 ///
 /// The score of two stored points `a` and `b` must be
-/// `combine().score(Elem::dot(decoded a, decoded b), aux a, aux b)`.
+/// `score(Elem::dot(decoded a, decoded b), aux a, aux b)` of the [`Combine`] that `combine()`
+/// dispatches to.
+///
+/// [`Combine`]: crate::Combine
 pub trait MatrixOperands: Sync {
     type Elem: KernelElem;
-    type Combine: Combine;
+    type Combine: CombineDispatch;
     type Error;
 
     /// Length of a decoded vector.
@@ -68,7 +208,7 @@ pub trait MatrixOperands: Sync {
     fn combine(&self) -> Self::Combine;
 
     /// Decodes `ids` into `out`, `depth()` elements per id, and writes each vector's value for
-    /// [`Combine`] to `aux`. Takes a batch, so storages can pipeline their reads.
+    /// the combining step to `aux`. Takes a batch, so storages can pipeline their reads.
     fn decode_batch(
         &self,
         ids: &[PointOffsetType],
