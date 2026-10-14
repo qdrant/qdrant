@@ -41,7 +41,7 @@ def test_drop_replica_min_other_active_replicas(tmp_path: pathlib.Path):
     assert "at least 3 are required" in resp.text
     assert len(shard_0_replicas(peer_uris[0])) == 3
 
-    # The refusal does not block consensus: the next operation applies.
+    # Condition met: 2 other active replicas exist.
     resp = drop_replica(peer_uris[0], target, min_other_active_replicas=2)
     assert_http_ok(resp)
     assert target not in shard_0_replicas(peer_uris[0])
