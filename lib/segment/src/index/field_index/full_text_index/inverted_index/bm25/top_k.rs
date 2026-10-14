@@ -33,10 +33,11 @@ pub(super) const HEAP_MIN_ESSENTIAL: usize = 16;
 
 /// Posting entries per document of the segment from which a query is scored
 /// term at a time into a dense array ([`score_dense`]) instead of document at
-/// a time. The dense pass costs about as much per document of the segment as
-/// it saves per posting entry, measured on BEIR corpora of 5k to 523k
-/// documents, so it pays from about one entry per document.
-const DENSE_MIN_POSTINGS_PER_DOC: f32 = 1.0;
+/// a time. The dense pass pays per document of the segment and saves per
+/// posting entry. Swept over 0.25, 0.5 and 1 on BEIR scifact, ArguAna and
+/// FiQA, 0.5 was best overall: 9% fewer cycles per query than 1 on FiQA,
+/// where 0.25 already lost to 0.5. Quora's short queries stay well below it.
+const DENSE_MIN_POSTINGS_PER_DOC: f32 = 0.5;
 
 /// How [`score_top_k_with`] finds its candidates.
 #[derive(Clone, Copy, Debug)]
