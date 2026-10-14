@@ -7,7 +7,7 @@ use collection::operations::config_diff::HnswConfigDiff;
 use collection::operations::types::UpdateStatus;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
 use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
@@ -715,6 +715,88 @@ fn ordinary_transfer() -> ShardTransfer {
         method: Some(ShardTransferMethod::WalDelta),
         filter: None,
     }
+}
+
+#[test]
+fn remove_replica_action_local_replay() {
+    remove_replica_action_replay(0);
+}
+
+#[test]
+fn remove_replica_action_remote_replay() {
+    remove_replica_action_replay(1);
+}
+
+fn remove_replica_action_replay(peer_id: u64) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    for peer_id in [1, 2] {
+        toc.apply_action(Action::SetReplicaState {
+            collection: "test".into(),
+            shard_id: 0,
+            peer_id,
+            state: ReplicaState::Active,
+        })
+        .unwrap();
+    }
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let replica_set = handle.block_on(async { holder.read().await.get_shard(0).unwrap().clone() });
+    let mut expected = toc.collection_state("test").unwrap();
+    expected
+        .shards
+        .get_mut(&0)
+        .unwrap()
+        .replicas
+        .remove(&peer_id);
+    let action = Action::RemoveReplica {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id,
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert_eq!(toc.collection_state("test").unwrap(), expected);
+        assert_eq!(handle.block_on(replica_set.has_local_shard()), peer_id != 0);
+
+        let state_file = fs_err::File::open(
+            storage_dir
+                .path()
+                .join("collections/test/0/replica_state.json"),
+        )
+        .unwrap();
+        let persisted: ReplicaSetState = serde_json::from_reader(state_file).unwrap();
+        assert_eq!(persisted.peers(), &expected.shards[&0].replicas);
+        assert_eq!(persisted.is_local, peer_id != 0);
+    }
+}
+
+#[test]
+fn remove_replica_action_missing_shard() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let action = Action::RemoveReplica {
+        collection: "test".into(),
+        shard_id: 99,
+        peer_id: 0,
+    };
+
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {

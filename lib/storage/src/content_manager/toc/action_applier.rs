@@ -207,6 +207,23 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::RemoveReplica {
+                collection,
+                shard_id,
+                peer_id,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let replica_set = shard_holder.read().await.get_shard(*shard_id).cloned();
+                let replica_set = replica_set.ok_or_else(|| {
+                    StorageError::service_error(format!("Shard {shard_id} does not exist"))
+                })?;
+
+                replica_set.remove_peer(*peer_id).await?;
+
+                Ok(())
+            }
+
             Action::StopTransferDriver { collection, key } => {
                 self.get_collection_unchecked(collection)
                     .await?
@@ -289,7 +306,6 @@ impl TableOfContent {
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::RemoveShardKey { .. }
-            | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }
             | Action::DeleteMigratedPoints { .. }
             | Action::RevertHashRing { .. }
