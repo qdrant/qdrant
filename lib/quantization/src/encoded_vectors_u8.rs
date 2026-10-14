@@ -10,6 +10,7 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use fs_err as fs;
+use pairwise::{Combine, MatrixOperands};
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
@@ -899,6 +900,57 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         }
 
         self.score_point_simple(query, bytes)
+    }
+}
+
+/// Scalar quantized vectors as matrix operands: the u8 codes, with the per-vector offset as
+/// `aux`, combined as in `MetadataInt8::postprocess_internal_score`.
+pub struct ScalarOperands<'a, TStorage: EncodedStorage> {
+    vectors: &'a EncodedVectorsU8<TStorage>,
+    combine: Combine,
+}
+
+impl<'a, TStorage: EncodedStorage> ScalarOperands<'a, TStorage> {
+    /// `None` for L1, which has no matrix form.
+    pub fn new(vectors: &'a EncodedVectorsU8<TStorage>) -> Option<Self> {
+        let Metadata::Int8(meta) = &vectors.metadata;
+        match meta.vector_parameters.distance_type {
+            DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => Some(Self {
+                vectors,
+                combine: Combine::Affine {
+                    mult: meta.multiplier,
+                    shift: meta.get_shift(),
+                },
+            }),
+            DistanceType::L1 => None,
+        }
+    }
+}
+
+impl<TStorage: EncodedStorage + Sync> MatrixOperands for ScalarOperands<'_, TStorage> {
+    type Elem = u8;
+    type Error = std::io::Error;
+
+    fn depth(&self) -> usize {
+        self.vectors.metadata.actual_dim()
+    }
+
+    fn combine(&self) -> Combine {
+        self.combine
+    }
+
+    fn decode_batch(
+        &self,
+        ids: &[PointOffsetType],
+        out: &mut [u8],
+        aux: &mut [f32],
+    ) -> std::io::Result<()> {
+        let depth = self.depth();
+        self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {
+            let (offset, code) = EncodedVectorsU8::<TStorage>::parse_vec_data(&data);
+            out[i * depth..(i + 1) * depth].copy_from_slice(&code[..depth]);
+            aux[i] = offset;
+        })
     }
 }
 

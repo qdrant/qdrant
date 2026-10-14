@@ -114,6 +114,7 @@ charabia = { version = "0.10.0", default-features = false, features = [
 blobstore = { path = "../blobstore" }
 
 common = { path = "../common/common" }
+pairwise = { path = "../common/pairwise" }
 macros = { path = "../macros" }
 posting_list = { path = "../posting_list" }
 quantization = { path = "../quantization" }
