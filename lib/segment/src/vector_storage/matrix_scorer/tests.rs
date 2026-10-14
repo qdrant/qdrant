@@ -176,13 +176,22 @@ fn binary(encoding: BinaryQuantizationEncoding) -> QuantizationConfig {
 }
 
 /// Summation order differs from the SIMD scorers, and Euclid is `2·dot − ‖a‖² − ‖b‖²`.
+///
+/// On aarch64 the f16 scorers sum in f16 (`vfmaq_f16` in `spaces/metric_f16/cpp/neon.c`), so
+/// the reference itself is only about f16-precise there. Replaying that summation over these
+/// fixtures puts it up to 4.2e-3 away from the f32 result.
 #[rstest]
 fn original_vectors(
     #[values(Element::F32, Element::F16, Element::U8)] element: Element,
     #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
 ) {
     let _scope = ambient::test_guard();
-    Fixture::new(element, distance, None).check(Some(1e-4));
+    let tolerance = if matches!(element, Element::F16) && cfg!(target_arch = "aarch64") {
+        1e-2
+    } else {
+        1e-4
+    };
+    Fixture::new(element, distance, None).check(Some(tolerance));
 }
 
 /// Integer inner products in the same order of operations: exact.
