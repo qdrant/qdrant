@@ -485,7 +485,7 @@ pub async fn do_update_collection_cluster(
             // Checked against this peer's state before proposing, so a replica may still die
             // before the drop is applied. Not checked at apply time on purpose: the consensus
             // operation stays a plain drop, which peers on older versions apply the same way.
-            if let Some(min) = drop_replica.min_other_active_replicas {
+            if let Some(min) = drop_replica.min_active {
                 let state = collection.state().await;
                 let other_active = state.shards.get(&drop_replica.shard_id).map_or(0, |shard| {
                     shard

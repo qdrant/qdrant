@@ -1836,13 +1836,13 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 let api::grpc::qdrant::Replica {
                     shard_id,
                     peer_id,
-                    min_other_active_replicas,
+                    min_active,
                 } = op;
                 ClusterOperations::DropReplica(DropReplicaOperation {
                     drop_replica: Replica {
                         shard_id,
                         peer_id,
-                        min_other_active_replicas,
+                        min_active,
                     },
                 })
             }

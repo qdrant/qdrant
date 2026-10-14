@@ -16,16 +16,16 @@ def shard_0_replicas(peer_uri):
     return local + remote
 
 
-def drop_replica(peer_uri, peer_id, min_other_active_replicas=None):
+def drop_replica(peer_uri, peer_id, min_active=None):
     body = {"shard_id": 0, "peer_id": peer_id}
-    if min_other_active_replicas is not None:
-        body["min_other_active_replicas"] = min_other_active_replicas
+    if min_active is not None:
+        body["min_active"] = min_active
     return requests.post(
         f"{peer_uri}/collections/{COLLECTION}/cluster?wait=true", json={"drop_replica": body}
     )
 
 
-def test_drop_replica_min_other_active_replicas(tmp_path: pathlib.Path):
+def test_drop_replica_min_active(tmp_path: pathlib.Path):
     peer_uris, _, _ = start_cluster(tmp_path, 3)
 
     create_collection(peer_uris[0], COLLECTION, shard_number=1, replication_factor=3)
@@ -36,13 +36,13 @@ def test_drop_replica_min_other_active_replicas(tmp_path: pathlib.Path):
     target = replicas[0]
 
     # Condition not met: only 2 other replicas exist. Refused as a user error, state unchanged.
-    resp = drop_replica(peer_uris[0], target, min_other_active_replicas=3)
+    resp = drop_replica(peer_uris[0], target, min_active=3)
     assert resp.status_code == 400, resp.text
     assert "at least 3 are required" in resp.text
     assert len(shard_0_replicas(peer_uris[0])) == 3
 
     # Condition met: 2 other active replicas exist.
-    resp = drop_replica(peer_uris[0], target, min_other_active_replicas=2)
+    resp = drop_replica(peer_uris[0], target, min_active=2)
     assert_http_ok(resp)
     assert target not in shard_0_replicas(peer_uris[0])
 

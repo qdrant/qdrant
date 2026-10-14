@@ -14205,7 +14205,7 @@
             "format": "uint64",
             "minimum": 0
           },
-          "min_other_active_replicas": {
+          "min_active": {
             "description": "Drop the replica only if at least this many *other* replicas of the shard are active when the request is received. If fewer are active, the request is refused. If not set, the replica is dropped unconditionally.",
             "type": "integer",
             "format": "uint32",
