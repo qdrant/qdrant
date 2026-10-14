@@ -289,6 +289,14 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::SetReshardingStage { collection, stage } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder.write().await.set_resharding_stage(*stage)?;
+
+                Ok(())
+            }
+
             Action::DeleteMigratedPoints { collection, key } => {
                 let collection = self.get_collection_unchecked(collection).await?;
                 let shard_holder = collection.shards_holder();
@@ -382,7 +390,6 @@ impl TableOfContent {
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::InitLocalShard { .. }
-            | Action::SetReshardingStage { .. }
             | Action::SpawnTransferDriver { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }

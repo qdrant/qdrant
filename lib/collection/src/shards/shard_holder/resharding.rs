@@ -73,6 +73,16 @@ impl ShardHolder {
         Ok(())
     }
 
+    /// Apply a resolved stage together with its hash ring
+    pub fn set_resharding_stage(&mut self, stage: ReshardingStage) -> CollectionResult<()> {
+        let mut state = self.resharding_state().ok_or_else(|| {
+            CollectionError::service_error("Cannot set resharding stage without resharding state")
+        })?;
+        state.stage = stage;
+
+        self.set_resharding_state(Some(state))
+    }
+
     pub fn check_start_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let ReshardKey {
             uuid: _,
@@ -239,15 +249,7 @@ impl ShardHolder {
             check_stage(ReshardingStage::MigratingPoints),
         )?;
 
-        self.resharding_state.write(|state| {
-            let Some(state) = state else {
-                unreachable!();
-            };
-
-            state.stage = ReshardingStage::ReadHashRingCommitted;
-        })?;
-
-        Ok(())
+        self.set_resharding_stage(ReshardingStage::ReadHashRingCommitted)
     }
 
     pub fn commit_write_hashring(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
@@ -277,18 +279,7 @@ impl ShardHolder {
             check_stage(ReshardingStage::ReadHashRingCommitted),
         )?;
 
-        let ring = get_ring(&mut self.rings, &resharding_key.shard_key)?;
-        ring.commit_resharding();
-
-        self.resharding_state.write(|state| {
-            let Some(state) = state else {
-                unreachable!();
-            };
-
-            state.stage = ReshardingStage::WriteHashRingCommitted;
-        })?;
-
-        Ok(())
+        self.set_resharding_stage(ReshardingStage::WriteHashRingCommitted)
     }
 
     pub fn check_finish_resharding(
@@ -913,6 +904,42 @@ mod tests {
             peer_id: 1,
             shard_id,
             shard_key: None,
+        }
+    }
+
+    #[test]
+    fn set_resharding_stage_save_failure_retry() {
+        let (dir, mut holder) = make_holder();
+        let key = make_reshard_key(1);
+        let state = ReshardState::new(key.uuid, key.direction, key.peer_id, key.shard_id, None);
+        holder.set_resharding_state(Some(state)).unwrap();
+        let path = dir.path().join(super::super::RESHARDING_STATE_FILE);
+        let backup = dir.path().join("resharding-backup");
+
+        for stage in [
+            ReshardingStage::ReadHashRingCommitted,
+            ReshardingStage::WriteHashRingCommitted,
+        ] {
+            let before = holder.resharding_state();
+            let ring = holder.rings[&None].clone();
+            fs_err::rename(&path, &backup).unwrap();
+            fs_err::create_dir(&path).unwrap();
+
+            assert!(holder.set_resharding_stage(stage).is_err());
+            assert_eq!(holder.resharding_state(), before);
+            assert_eq!(holder.rings[&None], ring);
+
+            fs_err::remove_dir(&path).unwrap();
+            fs_err::rename(&backup, &path).unwrap();
+            holder.set_resharding_stage(stage).unwrap();
+
+            assert_eq!(holder.resharding_state().unwrap().stage, stage);
+            let persisted = ShardHolder::new(dir.path(), ShardingMethod::Auto).unwrap();
+            assert_eq!(persisted.resharding_state(), holder.resharding_state());
+            assert_eq!(
+                holder.rings[&None].is_resharding(),
+                stage != ReshardingStage::WriteHashRingCommitted
+            );
         }
     }
 
