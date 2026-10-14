@@ -549,17 +549,10 @@ mod tests {
 
     #[test]
     fn nested_change_is_incompatible() {
-        use crate::json_path::JsonPath;
-
-        let field: JsonPath = "offers[].shop".parse().unwrap();
         let flat = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
-        let nested = |path: &str| {
-            flat.clone()
-                .with_nested(&field, &path.parse().unwrap())
-                .unwrap()
-        };
+        let nested = |path: &str| flat.clone().nested_in(path);
 
-        // Both spellings of the array are the same schema
+        // Both spellings of the array are the same normalized schema
         assert_eq!(
             classify(&nested("offers"), &nested("offers[]")),
             SchemaTransition::Identical,

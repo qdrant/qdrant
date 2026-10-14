@@ -7715,11 +7715,6 @@
               }
             ]
           },
-          "nested": {
-            "description": "Array whose elements are indexed as separate entries, if any",
-            "type": "string",
-            "nullable": true
-          },
           "points": {
             "description": "Number of points indexed with this index",
             "type": "integer",
@@ -7811,6 +7806,11 @@
             "description": "If true, enable prefix matching (`match: { \"prefix\": ... }`) on this field. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -7865,6 +7865,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -7909,6 +7914,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -7947,6 +7957,11 @@
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8052,6 +8067,11 @@
                 "nullable": true
               }
             ]
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`. The field must be inside the array's elements. A condition matches a point when a single element matches it, and BM25 scores every element as its own document. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8273,6 +8293,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8317,6 +8342,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8360,6 +8390,11 @@
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -10540,11 +10575,6 @@
                 "nullable": true
               }
             ]
-          },
-          "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. A full-text condition matches a point when a single element matches it, and BM25 scores every element as its own document.",
-            "type": "string",
-            "nullable": true
           }
         }
       },

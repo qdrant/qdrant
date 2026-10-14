@@ -718,17 +718,14 @@ pub async fn create_field_index(
         field_index_params,
         ordering,
         timeout,
-        nested,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
     let field_schema = convert_field_type(field_type, field_index_params)?;
-    let nested = nested.as_deref().map(json_path_from_proto).transpose()?;
 
     let operation = CreateFieldIndex {
         field_name,
         field_schema,
-        nested,
     };
 
     let timing = Instant::now();
@@ -763,21 +760,10 @@ pub async fn create_field_index_internal(
         field_index_params,
         ordering,
         timeout,
-        nested,
     } = create_field_index_collection;
 
     let field_name = json_path_from_proto(&field_name)?;
     let field_schema = convert_field_type(field_type, field_index_params)?;
-    // Forwarded by a peer that already validated it, see `internal_create_index`
-    let field_schema = match nested.as_deref().map(json_path_from_proto).transpose()? {
-        Some(nested) => Some(
-            field_schema
-                .ok_or_else(|| Status::invalid_argument("`nested` requires a field schema"))?
-                .with_nested(&field_name, &nested)
-                .map_err(Status::invalid_argument)?,
-        ),
-        None => field_schema,
-    };
 
     let timing = Instant::now();
     let result = do_create_index_internal(

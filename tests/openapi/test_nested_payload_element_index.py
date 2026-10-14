@@ -75,15 +75,14 @@ def setup(collection_name):
     # Both spellings of the array are accepted
     response = create_index(
         collection_name,
-        {"field_name": "offers[].price", "field_schema": "integer", "nested": "offers"},
+        {"field_name": "offers[].price", "field_schema": {"type": "integer", "nested": "offers"}},
     )
     assert response.ok, response.text
     response = create_index(
         collection_name,
         {
             "field_name": "offers[].shop",
-            "field_schema": {"type": "keyword", "on_disk": True},
-            "nested": "offers[]",
+            "field_schema": {"type": "keyword", "on_disk": True, "nested": "offers[]"},
         },
     )
     assert response.ok, response.text
@@ -102,17 +101,16 @@ def test_collection_info_shows_nested(collection_name):
     schema = response.json()["result"]["payload_schema"]
 
     assert schema["offers[].price"]["data_type"] == "integer"
-    assert schema["offers[].price"]["nested"] == "offers[]"
+    assert schema["offers[].price"]["params"]["nested"] == "offers[]"
     assert schema["offers[].price"]["points"] == 3
     assert schema["offers[].shop"]["data_type"] == "keyword"
-    assert schema["offers[].shop"]["nested"] == "offers[]"
-    assert "nested" not in schema["offers[].shop"]["params"]
+    assert schema["offers[].shop"]["params"]["nested"] == "offers[]"
 
 
 def test_recreate_with_same_nested_is_noop(collection_name):
     response = create_index(
         collection_name,
-        {"field_name": "offers[].price", "field_schema": "integer", "nested": "offers[]"},
+        {"field_name": "offers[].price", "field_schema": {"type": "integer", "nested": "offers[]"}},
     )
     assert response.ok, response.text
 
@@ -165,7 +163,7 @@ def test_filters_match_flattened_semantics(collection_name):
 def test_text_matches_within_one_element(collection_name):
     response = create_index(
         collection_name,
-        {"field_name": "offers[].title", "field_schema": "text", "nested": "offers"},
+        {"field_name": "offers[].title", "field_schema": {"type": "text", "nested": "offers"}},
     )
     assert response.ok, response.text
 
@@ -211,15 +209,17 @@ def test_order_by(collection_name):
     "body",
     [
         # Field is not inside the elements of the array
-        {"field_name": "price", "field_schema": "integer", "nested": "offers"},
-        {"field_name": "offers[]", "field_schema": "keyword", "nested": "offers"},
+        {"field_name": "price", "field_schema": {"type": "integer", "nested": "offers"}},
+        {"field_name": "offers[]", "field_schema": {"type": "keyword", "nested": "offers"}},
         # Only one array level
-        {"field_name": "offers[].items[].size", "field_schema": "integer", "nested": "offers[].items"},
+        {
+            "field_name": "offers[].items[].size",
+            "field_schema": {"type": "integer", "nested": "offers[].items"},
+        },
         # Not combined with tenant indexes
         {
             "field_name": "offers[].tenant",
-            "field_schema": {"type": "keyword", "is_tenant": True},
-            "nested": "offers",
+            "field_schema": {"type": "keyword", "is_tenant": True, "nested": "offers"},
         },
     ],
 )

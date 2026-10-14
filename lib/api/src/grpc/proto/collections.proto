@@ -715,6 +715,9 @@ message KeywordIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 5;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. Default: disabled.
+  optional string nested = 6;
 }
 
 // Prefix matching options for the keyword index. Has no options yet:
@@ -741,6 +744,9 @@ message IntegerIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 6;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. Default: disabled.
+  optional string nested = 7;
 }
 
 message FloatIndexParams {
@@ -757,6 +763,9 @@ message FloatIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message GeoIndexParams {
@@ -770,6 +779,9 @@ message GeoIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 3;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. Default: disabled.
+  optional string nested = 4;
 }
 
 message StopwordsSet {
@@ -811,6 +823,10 @@ message TextIndexParams {
   // Implies `phrase_matching: true`. Changing it rebuilds the index.
   // Default: disabled.
   optional TextScoringParams scoring = 12;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`.
+  // The field must be inside the array's elements. A condition matches a point when a single element
+  // matches it, and BM25 scores every element as its own document. Default: disabled.
+  optional string nested = 13;
 }
 
 enum TextScoringType {
@@ -850,6 +866,9 @@ message BoolIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 3;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. Default: disabled.
+  optional string nested = 4;
 }
 
 message DatetimeIndexParams {
@@ -866,6 +885,9 @@ message DatetimeIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message UuidIndexParams {
@@ -881,6 +903,9 @@ message UuidIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
+  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
+  // The field must be inside the array's elements. Default: disabled.
+  optional string nested = 5;
 }
 
 message PayloadIndexParams {
@@ -911,8 +936,6 @@ message PayloadSchemaInfo {
   optional PayloadIndexParams params = 2;
   // Number of points indexed within this field
   optional uint64 points = 3;
-  // Array whose elements are indexed as separate entries, if any
-  optional string nested = 4;
 }
 
 message UpdateQueueInfo {

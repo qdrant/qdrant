@@ -48,7 +48,6 @@ impl From<SegmentPayloadIndexInfo> for PayloadIndexInfo {
             data_type,
             params,
             points,
-            nested: _,
         } = info;
         PayloadIndexInfo {
             data_type: PayloadSchemaType::from(data_type),

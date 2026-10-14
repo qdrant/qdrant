@@ -54,13 +54,9 @@ pub struct KeywordIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix: Option<bool>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 
@@ -109,13 +105,9 @@ pub struct IntegerIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 
@@ -206,13 +198,9 @@ pub struct UuidIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 
@@ -252,13 +240,9 @@ pub struct FloatIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 
@@ -294,13 +278,9 @@ pub struct GeoIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 
@@ -388,13 +368,11 @@ pub struct TextIndexParams {
     #[schemars(with = "Option<TextScoringInterface>")]
     pub scoring: Option<TextScoringParams>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].title`. The field must be inside the array's elements. A condition
+    /// matches a point when a single element matches it, and BM25 scores every element
+    /// as its own document. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 
@@ -796,13 +774,9 @@ pub struct BoolIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 
@@ -842,13 +816,9 @@ pub struct DatetimeIndexParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
 
-    /// Path to the array of objects whose elements this index treats as separate entries,
-    /// e.g. `offers` for the field `offers[].price`.
-    ///
-    /// Not part of the public field schema: set through the top-level `nested` parameter
-    /// of the create-index request.
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)]
     pub nested: Option<JsonPath>,
 }
 

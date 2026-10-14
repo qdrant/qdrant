@@ -337,11 +337,6 @@ message CreateFieldIndexCollection {
   optional WriteOrdering ordering = 6;
   // Timeout for the request in seconds
   optional uint64 timeout = 7;
-  // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements.
-  // A full-text condition matches a point when a single element matches it, and BM25
-  // scores every element as its own document.
-  optional string nested = 8;
 }
 
 message DeleteFieldIndexCollection {

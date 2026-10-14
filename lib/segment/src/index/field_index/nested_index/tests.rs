@@ -183,10 +183,7 @@ fn schema(
         schema = PayloadFieldSchema::FieldParams(params);
     }
     if nested {
-        let field = JsonPath::from_str("offers[].x").unwrap();
-        schema = schema
-            .with_nested(&field, &JsonPath::from_str("offers").unwrap())
-            .unwrap();
+        schema = schema.nested_in("offers");
     }
     schema
 }
@@ -678,15 +675,11 @@ fn text_schema(nested: bool) -> PayloadFieldSchema {
             ..Default::default()
         },
     ));
-    if !nested {
-        return schema;
+    if nested {
+        schema.nested_in("offers")
+    } else {
+        schema
     }
-    schema
-        .with_nested(
-            &JsonPath::from_str("offers[].title").unwrap(),
-            &JsonPath::from_str("offers").unwrap(),
-        )
-        .unwrap()
 }
 
 /// Segment with a text index on `offers[].title` and the given titles per point;
@@ -896,4 +889,40 @@ fn nested_text_index_scores_elements() {
         &dir.path().join("reference_4"),
         &mut rng,
     );
+}
+
+#[test]
+fn nested_schema_validation() {
+    let schema: PayloadFieldSchema = serde_json::from_value(json!({
+        "type": "keyword",
+        "nested": "offers",
+    }))
+    .unwrap();
+    let field = |path: &str| JsonPath::from_str(path).unwrap();
+
+    assert!(schema.validate_for_field(&field("offers[].shop")).is_ok());
+    // Not inside the elements of the array
+    assert!(schema.validate_for_field(&field("shop")).is_err());
+    assert!(schema.validate_for_field(&field("offers[]")).is_err());
+    // Stored as the array key
+    assert_eq!(
+        schema.normalized().nested(),
+        Some(&JsonPath::from_str("offers[]").unwrap()),
+    );
+
+    let two_levels: PayloadFieldSchema =
+        serde_json::from_value(json!({"type": "integer", "nested": "offers[].items"})).unwrap();
+    assert!(
+        two_levels
+            .validate_for_field(&field("offers[].items[].size"))
+            .is_err()
+    );
+
+    let tenant: PayloadFieldSchema = serde_json::from_value(json!({
+        "type": "keyword",
+        "is_tenant": true,
+        "nested": "offers",
+    }))
+    .unwrap();
+    assert!(tenant.validate_for_field(&field("offers[].shop")).is_err());
 }
