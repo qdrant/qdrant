@@ -5171,6 +5171,7 @@ name = "pairwise"
 version = "0.0.0"
 dependencies = [
  "common",
+ "rand 0.10.3",
 ]
 
 [[package]]
