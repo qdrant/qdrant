@@ -329,11 +329,11 @@ fn assert_field_indexes_equal(flat: &Segment, nested: &Segment, field: &JsonPath
             .as_nested()
             .map(|nested| nested.element_map());
         match element_map {
-            // Stored at build, then every deleted point with elements is taken off
+            // Opening restores the build-time count without subtracting deletions
             Some(crate::index::field_index::nested_index::ElementMap::Immutable(_)) => {
                 let deleted = nested.id_tracker.borrow().deleted_point_count();
                 assert!(
-                    nested_count <= flat_count && flat_count - nested_count <= deleted,
+                    nested_count >= flat_count && nested_count - flat_count <= deleted,
                     "{field}: indexed points {nested_count} of {flat_field_index:?}, \
                      flattened {flat_count}, deleted {deleted}",
                 );
@@ -596,6 +596,74 @@ fn nested_index_matches_flattened_index() {
 #[test]
 fn nested_index_matches_flattened_index_on_disk() {
     run(42, Some(Memory::Cold));
+}
+
+/// Reopening must not subtract deleted points whose elements had no indexed value.
+/// The build-time count may overestimate, but must still bound the live matches and
+/// allow the remaining indexed points to be deleted without underflowing.
+#[test]
+fn immutable_nested_count_after_deletions_and_reload() {
+    let _scope = ambient::test_guard();
+    for memory in [None, Some(Memory::Cold)] {
+        let dir = Builder::new().prefix("nested_count").tempdir().unwrap();
+        let mut segment =
+            build_simple_segment(&dir.path().join("source"), 2, Distance::Dot).unwrap();
+        let field = JsonPath::from_str("offers[].shop").unwrap();
+        for (id, payload) in [
+            (0u64, json!({"offers": [{}]})),
+            (1, json!({"offers": [{"shop": "a"}]})),
+            (2, json!({"offers": [{"shop": "a"}]})),
+        ] {
+            segment
+                .upsert_point(id + 1, id.into(), only_default_vector(&[1.0, 1.0]))
+                .unwrap();
+            segment
+                .set_full_payload(id + 1, id.into(), &serde_json::from_value(payload).unwrap())
+                .unwrap();
+        }
+        segment
+            .create_field_index(
+                4,
+                &field,
+                Some(&schema(PayloadSchemaType::Keyword, true, memory)),
+            )
+            .unwrap();
+        let mut segment = optimize(&segment, &dir.path().join("optimized"));
+        segment.delete_point(5, 0u64.into()).unwrap();
+        segment.delete_point(6, 2u64.into()).unwrap();
+        let mut segment = reload(segment);
+
+        let condition: FieldCondition = serde_json::from_value(json!({
+            "key": "offers[].shop", "match": {"value": "a"}
+        }))
+        .unwrap();
+        let check = |segment: &Segment, expected_count: usize, expected_matches: usize| {
+            let indexes = segment.payload_index.borrow();
+            let index = indexes.field_indexes[&field]
+                .iter()
+                .find_map(FieldIndex::as_nested)
+                .unwrap();
+            assert!(matches!(
+                index.element_map(),
+                super::ElementMap::Immutable(_)
+            ));
+            assert_eq!(index.count_indexed_points().unwrap(), expected_count);
+            let matches = index.filter(&condition).unwrap().unwrap().count();
+            assert_eq!(matches, expected_matches);
+            let estimation = index.estimate_cardinality(&condition).unwrap().unwrap();
+            assert!(
+                matches <= estimation.max,
+                "{estimation:?}, matches {matches}"
+            );
+        };
+
+        // Both value-bearing points are counted at build; only one is still live.
+        check(&segment, 2, 1);
+        segment.delete_point(7, 1u64.into()).unwrap();
+        check(&segment, 1, 0);
+        // Reopening restores the count but still excludes every deleted point.
+        check(&reload(segment), 2, 0);
+    }
 }
 
 /// Directories of the element maps of the per-element indexes of `field`.

@@ -4,7 +4,6 @@
 //! Every per-element index keeps its own [`ElementMap`] next to the inner index it wraps,
 //! so the two are opened, built and wiped together.
 
-use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -106,8 +105,7 @@ impl StructPayloadIndex {
                     build.indexed_points,
                     self.journaled,
                 )?;
-                // Deleted points got no elements, nothing to take off the count
-                let indexed_points = element_map.indexed_points(BitSlice::empty());
+                let indexed_points = element_map.indexed_points();
                 Ok(FieldIndex::Nested(Box::new(NestedFieldIndex::new(
                     field,
                     build.array_key.clone(),
@@ -145,7 +143,7 @@ impl StructPayloadIndex {
         };
         let deleted_points = id_tracker.deleted_point_bitslice();
         let deleted_elements = element_map.deleted_elements(deleted_points);
-        let indexed_points = element_map.indexed_points(deleted_points);
+        let indexed_points = element_map.indexed_points();
         let Some(inner) = selector.new_index_with_type(
             field,
             payload_schema,

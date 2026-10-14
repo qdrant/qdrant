@@ -138,8 +138,8 @@ impl ElementMap {
 
     /// Create the map assigned by `builder` at `path`, replacing whatever is there.
     ///
-    /// An immutable map stores `indexed_points`, the number of points with a value in the
-    /// index, so that opening it doesn't need to read the index, see
+    /// An immutable map stores `indexed_points`, an upper bound on points with indexed
+    /// values, so that opening it doesn't need to read the index, see
     /// [`Self::indexed_points`].
     pub fn create(
         path: PathBuf,
@@ -219,12 +219,12 @@ impl ElementMap {
         max.max(1)
     }
 
-    /// Number of points with a value in the index, if the map keeps it: an immutable map
-    /// stores it at build, approximate after deletions. `None` for a mutable map.
-    pub fn indexed_points(&self, deleted_points: &BitSlice) -> Option<usize> {
+    /// Build-time upper bound on indexed points for an immutable map, without
+    /// subtracting subsequent deletions. `None` for a mutable map.
+    pub fn indexed_points(&self) -> Option<usize> {
         match self {
             ElementMap::Mutable(_) => None,
-            ElementMap::Immutable(map) => Some(map.indexed_points(deleted_points)),
+            ElementMap::Immutable(map) => Some(map.indexed_points()),
         }
     }
 

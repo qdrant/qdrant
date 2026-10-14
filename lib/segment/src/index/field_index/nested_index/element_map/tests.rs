@@ -173,8 +173,7 @@ fn immutable_map_is_stored_compact() {
     }
 }
 
-/// An immutable map keeps the indexed points of its build, minus deleted points with
-/// elements. A mutable map doesn't keep them.
+/// An immutable map keeps the indexed points of its build. A mutable map doesn't keep them.
 #[test]
 fn immutable_map_keeps_indexed_points() {
     let dir = tempfile::tempdir().unwrap();
@@ -191,10 +190,7 @@ fn immutable_map_keeps_indexed_points() {
     let map = ElementMap::open(path, IndexMutability::Immutable)
         .unwrap()
         .unwrap();
-    assert_eq!(map.indexed_points(BitSlice::empty()), Some(3));
-    // Point 1 has no elements, points 2 and 3 have
-    let deleted = BitVec::from_iter([false, true, true, true]);
-    assert_eq!(map.indexed_points(&deleted), Some(1));
+    assert_eq!(map.indexed_points(), Some(3));
 
     let mutable = ElementMap::create(
         dir.path().join("mutable"),
@@ -204,7 +200,7 @@ fn immutable_map_keeps_indexed_points() {
         true,
     )
     .unwrap();
-    assert_eq!(mutable.indexed_points(BitSlice::empty()), None);
+    assert_eq!(mutable.indexed_points(), None);
 }
 
 #[test]

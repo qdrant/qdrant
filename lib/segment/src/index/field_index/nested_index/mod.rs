@@ -59,14 +59,15 @@ pub struct NestedFieldIndex {
     element_map: ElementMap,
     /// Index keyed by element offsets
     inner: FieldIndex,
-    /// Number of points with at least one value in `inner`
+    /// Number of points with at least one value in `inner`. For immutable indexes,
+    /// an upper bound: opening restores the build-time count, ignoring prior deletions.
     indexed_points: usize,
 }
 
 impl NestedFieldIndex {
     /// Wrap `inner`, an index of `field` keyed by the element offsets of `element_map`.
     ///
-    /// `indexed_points` is the number of points with a value in `inner`, if known.
+    /// `indexed_points` is an upper bound on points with a value in `inner`, if available.
     /// Otherwise it is counted from `inner`, which reads all of it.
     pub fn new(
         field: &JsonPath,

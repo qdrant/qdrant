@@ -32,7 +32,7 @@ struct Header {
     version: U32,
     /// Number of start offsets in the blocks that follow
     len: U32,
-    /// Number of points with a value in the index when it was built
+    /// Build-time upper bound on the number of points with indexed values
     indexed_points: U32,
     /// Written as zeros and ignored when read, for fields added without a new version
     reserved: [u8; 12],
@@ -43,7 +43,7 @@ pub struct ImmutableElementMap {
     /// Start offset of the elements of each point, followed by the number of elements:
     /// point `p` owns `starts[p]..starts[p + 1]`. Never empty.
     starts: Vec<ElementOffsetType>,
-    /// Number of points with a value in the index when it was built
+    /// Build-time upper bound on the number of points with indexed values
     built_indexed_points: usize,
     max_elements_per_point: usize,
     path: PathBuf,
@@ -51,7 +51,7 @@ pub struct ImmutableElementMap {
 
 impl ImmutableElementMap {
     /// Requires `builder` to have assigned the points in ascending order. `indexed_points`
-    /// is the number of points with a value in the index, stored so that opening the map
+    /// bounds the number of points with indexed values, stored so that opening the map
     /// doesn't need to read the index.
     pub fn create(
         path: PathBuf,
@@ -107,18 +107,12 @@ impl ImmutableElementMap {
         }
     }
 
-    /// Number of points with a value in the index, given the `deleted_points`.
+    /// Build-time upper bound on the number of points with indexed values.
     ///
-    /// Approximate: every deleted point with elements is taken off the count stored at
-    /// build, also one whose elements had no value. Points deleted before the build have
-    /// no elements and were never counted.
-    pub fn indexed_points(&self, deleted_points: &BitSlice) -> usize {
-        let deleted_with_elements = deleted_points
-            .iter_ones()
-            .filter(|&point| !self.point_elements(point as PointOffsetType).is_empty())
-            .count();
+    /// Deletions are not subtracted: a point can have elements without any indexed
+    /// values, so subtracting every deleted point with elements could undercount.
+    pub fn indexed_points(&self) -> usize {
         self.built_indexed_points
-            .saturating_sub(deleted_with_elements)
     }
 
     pub fn point_elements(&self, point: PointOffsetType) -> Range<ElementOffsetType> {
