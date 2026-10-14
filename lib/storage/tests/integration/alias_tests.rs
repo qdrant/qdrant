@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use collection::config::ShardingMethod;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
@@ -30,7 +31,7 @@ use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::{Builder, TempDir};
 use tokio::runtime::Handle;
 
-const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
+pub(super) const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
 
 #[test]
 fn test_alias_operation() {
@@ -165,7 +166,7 @@ fn update_aliases_action_persists_mapping() {
     assert_eq!(aliases.get("new_alias"), None);
 }
 
-fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
+pub(super) fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     let config = StorageConfig {
@@ -236,7 +237,29 @@ fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
     (storage_dir, handle, Dispatcher::new(toc))
 }
 
-fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {
+pub(super) fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {
+    create_collection_with_sharding(handle, dispatcher, collection_name, None);
+}
+
+pub(super) fn create_custom_collection(
+    handle: &Handle,
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+) {
+    create_collection_with_sharding(
+        handle,
+        dispatcher,
+        collection_name,
+        Some(ShardingMethod::Custom),
+    );
+}
+
+fn create_collection_with_sharding(
+    handle: &Handle,
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    sharding_method: Option<ShardingMethod>,
+) {
     handle
         .block_on(
             dispatcher.submit_collection_meta_op(
@@ -251,14 +274,18 @@ fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: 
                             hnsw_config: None,
                             wal_config: None,
                             optimizers_config: None,
-                            shard_number: Some(1),
+                            shard_number: if sharding_method.is_some() {
+                                None
+                            } else {
+                                Some(1)
+                            },
                             on_disk_payload: None,
                             payload: None,
                             id_tracker: None,
                             replication_factor: None,
                             write_consistency_factor: None,
                             quantization_config: None,
-                            sharding_method: None,
+                            sharding_method,
                             strict_mode_config: None,
                             uuid: None,
                             metadata: None,
