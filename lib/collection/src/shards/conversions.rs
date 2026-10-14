@@ -512,8 +512,13 @@ pub fn internal_create_index(
     wait_timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CreateFieldIndexCollectionInternal {
+    let CreateIndex {
+        field_name,
+        field_schema,
+    } = create_index;
+
     // gRPC carries `nested` next to the params, not inside them
-    let (field_schema, nested) = match create_index.field_schema {
+    let (field_schema, nested) = match field_schema {
         Some(field_schema) => {
             let (field_schema, nested) = field_schema.split_nested();
             (Some(field_schema), nested)
@@ -541,7 +546,7 @@ pub fn internal_create_index(
         create_field_index_collection: Some(CreateFieldIndexCollection {
             collection_name,
             wait: Some(wait.needs_callback()),
-            field_name: create_index.field_name.to_string(),
+            field_name: field_name.to_string(),
             field_type,
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),

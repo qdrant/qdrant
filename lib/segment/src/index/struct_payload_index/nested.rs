@@ -69,11 +69,16 @@ impl StructPayloadIndex {
         indexes
             .into_iter()
             .map(|inner| {
-                let index_type = inner.get_full_index_type();
-                let index_dir = index_type.index_type.storage_dir(&self.path, field);
+                let FullPayloadIndexType {
+                    index_type,
+                    mutability,
+                    // The map is stored the same way for every storage of the index
+                    storage_type: _,
+                } = inner.get_full_index_type();
+                let index_dir = index_type.storage_dir(&self.path, field);
                 let element_map = ElementMap::create(
                     ElementMap::storage_dir(&index_dir),
-                    index_type.mutability,
+                    mutability,
                     &build.elements,
                     self.journaled,
                 )?;
@@ -100,9 +105,14 @@ impl StructPayloadIndex {
         create_if_missing: bool,
         id_tracker: &IdTrackerEnum,
     ) -> OperationResult<Option<FieldIndex>> {
-        let index_dir = index_type.index_type.storage_dir(&self.path, field);
-        let Some(element_map) =
-            ElementMap::open(ElementMap::storage_dir(&index_dir), index_type.mutability)?
+        let FullPayloadIndexType {
+            index_type: inner_type,
+            mutability,
+            // The map is stored the same way for every storage of the index
+            storage_type: _,
+        } = index_type;
+        let index_dir = inner_type.storage_dir(&self.path, field);
+        let Some(element_map) = ElementMap::open(ElementMap::storage_dir(&index_dir), *mutability)?
         else {
             return Ok(None);
         };

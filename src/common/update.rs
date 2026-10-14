@@ -917,7 +917,13 @@ pub async fn do_create_index(
     // here, before the operation is proposed at all.
     shard::quota::global().check_update()?;
 
-    let Some(field_schema) = operation.field_schema else {
+    let CreateFieldIndex {
+        field_name,
+        field_schema,
+        nested,
+    } = operation;
+
+    let Some(field_schema) = field_schema else {
         return Err(StorageError::bad_request(
             "Can't auto-detect field type, please specify `field_schema` in the request",
         ));
@@ -925,12 +931,7 @@ pub async fn do_create_index(
 
     let toc = dispatcher.toc(&auth, &pass).clone();
 
-    let field_schema = with_nested(
-        &toc,
-        &operation.field_name,
-        field_schema,
-        operation.nested.as_ref(),
-    )?;
+    let field_schema = with_nested(&toc, &field_name, field_schema, nested.as_ref())?;
 
     // Once, before the schema is proposed and applied: every node, and the
     // direct index operation below, must see the same params.
@@ -938,7 +939,7 @@ pub async fn do_create_index(
 
     let consensus_op = CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
         collection_name: collection_name.clone(),
-        field_name: operation.field_name.clone(),
+        field_name: field_name.clone(),
         field_schema: field_schema.clone(),
     });
 
@@ -950,7 +951,7 @@ pub async fn do_create_index(
     do_create_index_internal(
         toc,
         collection_name,
-        operation.field_name,
+        field_name,
         Some(field_schema),
         internal_params,
         params,
