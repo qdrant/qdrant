@@ -6,14 +6,26 @@
 //! inner product and those values into the score of `score_internal`. [`top_k`] then returns
 //! the best columns of each row, without materializing the score matrix.
 
+#[cfg(target_arch = "aarch64")]
+mod aarch64;
+mod blocked;
 mod combine;
 mod fallback;
+mod kernel;
 mod operands;
+mod scratch;
+#[cfg(test)]
+mod tests;
 mod top_k;
+#[cfg(target_arch = "x86_64")]
+mod x86_64;
 
 use common::types::PointOffsetType;
 
-pub use crate::combine::Combine;
+pub use crate::combine::{Combine, CombineDispatch, CombineFn};
+#[doc(hidden)]
+pub use crate::kernel::Kernel;
+use crate::operands::sealed::Sealed as _;
 pub use crate::operands::{Bits, KernelElem, MatrixOperands};
 pub use crate::top_k::TopK;
 
@@ -35,15 +47,45 @@ pub fn top_k<F: MatrixOperands>(
     cols: Cols<'_>,
     out: &mut TopK,
 ) -> Result<(), F::Error> {
+    top_k_with(Kernel::best(), operands, rows, cols, out)
+}
+
+/// [`top_k`] with a chosen kernel, for tests and benchmarks.
+///
+/// # Panics
+///
+/// If the CPU doesn't support `kernel`.
+#[doc(hidden)]
+pub fn top_k_with<F: MatrixOperands>(
+    kernel: Kernel,
+    operands: &F,
+    rows: &[PointOffsetType],
+    cols: Cols<'_>,
+    out: &mut TopK,
+) -> Result<(), F::Error> {
+    assert!(
+        kernel.is_supported(),
+        "{kernel:?} isn't supported by this CPU"
+    );
     debug_assert!(
         !matches!(cols, Cols::Rows) || all_distinct(rows),
         "`Cols::Rows` needs rows without repeated points",
     );
     out.reset(rows.len());
-    // Accelerated kernels go here, chosen by `F::Elem` and the CPU's features. With
-    // `Cols::Rows`, they can exclude a point's pair with itself by position, as the fallback
-    // does: the check above guarantees distinct rows.
-    fallback::top_k(operands, rows, cols, out)
+    // With `Cols::Rows`, kernels exclude a point's pair with itself by position: the check
+    // above guarantees distinct rows.
+    match kernel {
+        Kernel::Fallback => fallback::top_k(operands, rows, cols, out),
+        // SAFETY: the CPU supports the kernel, checked above
+        #[cfg(target_arch = "x86_64")]
+        Kernel::Avx2 => unsafe { F::Elem::top_k_avx2(operands, rows, cols, out) },
+        // SAFETY: as above
+        #[cfg(target_arch = "x86_64")]
+        Kernel::Avx512 => unsafe { F::Elem::top_k_avx512(operands, rows, cols, out) },
+        // SAFETY: as above
+        #[cfg(target_arch = "aarch64")]
+        Kernel::Neon => unsafe { F::Elem::top_k_neon(operands, rows, cols, out) },
+    }
 }
 
 fn all_distinct(ids: &[PointOffsetType]) -> bool {
