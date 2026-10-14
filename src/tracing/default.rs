@@ -45,7 +45,7 @@ where
     S: tracing::Subscriber + for<'span> registry::LookupSpan<'span>,
 {
     let layer = fmt::Layer::default()
-        .with_timer(Timer::from_env())
+        .with_timer(TimeFormat::from_env())
         .with_span_events(config::SpanEvent::unwrap_or_default_config(
             &config.span_events,
         ))

@@ -115,12 +115,12 @@ fn filter(user_filters: &str) -> filter::EnvFilter {
 /// Timestamps are in UTC by default. If the `TZ` environment variable is set, they follow that
 /// timezone instead.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-enum Timer {
+enum TimeFormat {
     Utc,
     Local,
 }
 
-impl Timer {
+impl TimeFormat {
     fn from_env() -> Self {
         if env::var_os("TZ").is_some() {
             Self::Local
@@ -130,7 +130,7 @@ impl Timer {
     }
 }
 
-impl FormatTime for Timer {
+impl FormatTime for TimeFormat {
     fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
         let now = match self {
             Self::Utc => chrono::Utc::now().fixed_offset(),

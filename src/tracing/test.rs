@@ -132,7 +132,7 @@ fn deseriailze_config_with_explicit_nulls() {
 
 #[test]
 fn utc_timer_matches_default_timer_format() {
-    let utc = format_time(&Timer::Utc);
+    let utc = format_time(&TimeFormat::Utc);
     let default = format_time(&tracing_subscriber::fmt::time::SystemTime);
 
     // e.g. `2026-10-13T02:04:27.604091Z`
