@@ -46,6 +46,58 @@ use super::alias_tests::{
     FULL_ACCESS, create_collection, create_custom_collection, new_dispatcher,
 };
 
+#[cfg(feature = "staging")]
+#[test]
+fn test_slow_down_action_replay() {
+    use storage::content_manager::collection_meta_ops::TestSlowDown;
+
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let delay = Duration::from_millis(20);
+
+    for peer_id in [None, Some(toc.this_peer_id)] {
+        let operation = TestSlowDown {
+            peer_id,
+            duration_ms: delay.as_millis() as u64,
+        };
+        let action = Action::TestSlowDown(operation);
+
+        for _ in 0..2 {
+            let start = std::time::Instant::now();
+            toc.apply_action(action.clone()).unwrap();
+
+            assert!(start.elapsed() >= delay);
+        }
+    }
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn test_slow_down_action_other_peer() {
+    use storage::content_manager::collection_meta_ops::TestSlowDown;
+
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass).clone();
+    let operation = TestSlowDown {
+        peer_id: Some(toc.this_peer_id + 1),
+        // An incorrectly targeted sleep cannot finish within the receive timeout
+        duration_ms: u64::MAX,
+    };
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let task = std::thread::spawn(move || {
+        let action = Action::TestSlowDown(operation);
+        for _ in 0..2 {
+            toc.apply_action(action.clone()).unwrap();
+        }
+        sender.send(()).unwrap();
+    });
+
+    receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+    task.join().unwrap();
+}
+
 #[test]
 fn set_payload_index_action_replay() {
     let (_storage_dir, handle, dispatcher) = new_dispatcher();

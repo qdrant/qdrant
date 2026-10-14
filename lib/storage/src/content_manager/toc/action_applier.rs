@@ -398,9 +398,15 @@ impl TableOfContent {
             ))),
 
             #[cfg(feature = "staging")]
-            Action::TestSlowDown(_) | Action::TestTransientError(_) => Err(
-                StorageError::service_error(format!("Action applier does not support {action:?}")),
-            ),
+            Action::TestSlowDown(operation) => {
+                operation.execute(self.this_peer_id).await;
+                Ok(())
+            }
+
+            #[cfg(feature = "staging")]
+            Action::TestTransientError(_) => Err(StorageError::service_error(format!(
+                "Action applier does not support {action:?}"
+            ))),
         }
     }
 }

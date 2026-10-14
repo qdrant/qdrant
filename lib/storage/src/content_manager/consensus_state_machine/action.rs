@@ -212,7 +212,7 @@ pub enum Action {
         config: QuotaConfig,
     },
 
-    /// TODO: this action has to sleep when implemented for `TableOfContent`
+    /// Introduce the requested delay on the selected peers
     #[cfg(feature = "staging")]
     TestSlowDown(TestSlowDown),
 
