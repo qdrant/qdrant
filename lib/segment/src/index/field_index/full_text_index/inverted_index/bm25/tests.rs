@@ -12,6 +12,7 @@ use rstest::rstest;
 
 use super::super::InvertedIndex;
 use super::super::immutable_inverted_index::ImmutableInvertedIndex;
+use super::super::immutable_postings_enum::ImmutablePostings;
 use super::super::mutable_inverted_index::MutableInvertedIndex;
 use super::super::mutable_inverted_index_builder::MutableInvertedIndexBuilder;
 use super::super::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -31,9 +32,20 @@ fn word(rng: &mut StdRng) -> String {
 }
 
 fn fixture(seed: u64, documents: u32, deleted: &[PointOffsetType]) -> MutableInvertedIndex {
+    fixture_with(true, seed, documents, deleted)
+}
+
+/// The same corpus for the same seed, with or without positions: token ids
+/// are registered in the same order either way.
+fn fixture_with(
+    positions: bool,
+    seed: u64,
+    documents: u32,
+    deleted: &[PointOffsetType],
+) -> MutableInvertedIndex {
     let mut rng = StdRng::seed_from_u64(seed);
     let _scope = ambient::test_guard();
-    let mut index = MutableInvertedIndex::new(true, true);
+    let mut index = MutableInvertedIndex::new(positions, true);
     for idx in 0..documents {
         let len = rng.random_range(3..=60);
         let tokens: Vec<String> = (0..len).map(|_| word(&mut rng)).collect();
@@ -136,10 +148,25 @@ fn on_disk(
     mutable: &MutableInvertedIndex,
     deleted: &BitVec,
 ) -> OnDiskInvertedIndex<MmapFile> {
+    on_disk_with(true, dir, mutable, deleted)
+}
+
+fn on_disk_with(
+    positions: bool,
+    dir: &std::path::Path,
+    mutable: &MutableInvertedIndex,
+    deleted: &BitVec,
+) -> OnDiskInvertedIndex<MmapFile> {
     OnDiskInvertedIndex::create(dir.to_path_buf(), mutable.clone()).unwrap();
-    OnDiskInvertedIndex::<MmapFile>::open(&MmapFs, dir.to_path_buf(), Populate::No, true, deleted)
-        .unwrap()
-        .unwrap()
+    OnDiskInvertedIndex::<MmapFile>::open(
+        &MmapFs,
+        dir.to_path_buf(),
+        Populate::No,
+        positions,
+        deleted,
+    )
+    .unwrap()
+    .unwrap()
 }
 
 fn run<I: InvertedIndex>(
@@ -440,34 +467,105 @@ fn missing_average_length_degrades_to_b_zero() {
     );
 }
 
-#[test]
-fn positions_are_required() {
+/// An index that scores without positions ranks exactly as one with them:
+/// every shape, frequencies from `term_frequencies.dat` on the immutable and
+/// on-disk ones, deletions before and after the conversion, and a term
+/// repeated far past a block's width in one document.
+#[rstest]
+fn counts_only_shapes_match_the_positional_reference(#[values(1, 10, 1000)] limit: usize) {
+    let deleted_before = [4, 5, 6, 100, 250];
+    let deleted_after = [7, 8, 300];
+    let repeated: Vec<String> = vec!["w1".to_string(); 300];
+
+    let mut positional = fixture_with(true, 11, 400, &deleted_before);
+    let mut mutable = fixture_with(false, 11, 400, &deleted_before);
     let _scope = ambient::test_guard();
-    let is_stopped = AtomicBool::new(false);
-    let mut without_positions = MutableInvertedIndex::new(false, true);
-    without_positions
-        .index_str_tokens(0, ["alpha", "beta"], Some(2))
-        .unwrap();
-    let query = Bm25Query::new(
-        [Bm25Term {
-            token_id: 0,
-            idf: 1.0,
-        }],
-        Bm25Params::default(),
-        None,
+    for index in [&mut positional, &mut mutable] {
+        index.index_str_tokens(400, &repeated, Some(300)).unwrap();
+    }
+    assert!(mutable.point_to_doc.is_none(), "no positions kept");
+
+    let mut immutable = ImmutableInvertedIndex::from(mutable.clone());
+    assert!(matches!(immutable.postings, ImmutablePostings::Ids(_)));
+    assert!(immutable.term_frequencies.is_some());
+    let dir = tempfile::tempdir().unwrap();
+    let mut after_mask = BitVec::repeat(false, 401);
+    for &idx in &deleted_after {
+        after_mask.set(idx as usize, true);
+    }
+    let on_disk = on_disk_with(false, dir.path(), &mutable, &after_mask);
+    let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
+    for &idx in &deleted_after {
+        positional.remove(idx);
+        mutable.remove(idx);
+        immutable.remove(idx);
+    }
+
+    let mut queries = queries();
+    queries.push(vec!["w1"]);
+    queries.push(vec!["w1", "w2"]);
+    for terms in queries {
+        let query = query(&positional, &terms, Bm25Params::default());
+        let expected = reference(&positional, &query, |_| true);
+
+        eprintln!("{terms:?} limit {limit}");
+        assert_top_k(&run(&mutable, &query, |_| true, limit), &expected, limit);
+        assert_top_k(&run(&immutable, &query, |_| true, limit), &expected, limit);
+        assert_top_k(&run(&on_disk, &query, |_| true, limit), &expected, limit);
+        assert_top_k(&run(&from_disk, &query, |_| true, limit), &expected, limit);
+    }
+}
+
+/// Term frequencies from another build, holding a list for a different
+/// number of terms than the postings, or a file cut short, are not trusted:
+/// the index still opens, without them, and reports that it cannot score.
+#[test]
+fn term_frequencies_of_another_build_are_ignored() {
+    let _scope = ambient::test_guard();
+    let mutable = fixture_with(false, 11, 400, &[]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let other = ImmutableInvertedIndex::from(fixture_with(false, 12, 3, &[]));
+    assert_ne!(immutable.vocab.len(), other.vocab.len());
+
+    let dir = tempfile::tempdir().unwrap();
+    let deleted = BitVec::new();
+    let opened = on_disk_with(false, dir.path(), &mutable, &deleted);
+    assert!(opened.can_score());
+    drop(opened);
+
+    fs_err::write(
+        dir.path().join("term_frequencies.dat"),
+        other.term_frequencies.as_ref().unwrap(),
     )
     .unwrap();
+    let reopened = OnDiskInvertedIndex::<MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        false,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(reopened.records_doc_len());
     assert!(
-        without_positions
-            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
-            .is_err()
+        !reopened.can_score(),
+        "frequencies of another build are not used"
     );
-    let immutable = ImmutableInvertedIndex::from(without_positions);
-    assert!(
-        immutable
-            .score_bm25(&query, &Bm25Accept::new(&|_| true, None), 10, &is_stopped)
-            .is_err()
-    );
+    drop(reopened);
+
+    let own = immutable.term_frequencies.as_ref().unwrap();
+    fs_err::write(dir.path().join("term_frequencies.dat"), &own[..10]).unwrap();
+    let reopened = OnDiskInvertedIndex::<MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        false,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(!reopened.can_score(), "a truncated file is not used");
 }
 
 #[test]

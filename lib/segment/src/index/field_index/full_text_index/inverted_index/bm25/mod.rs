@@ -11,6 +11,7 @@
 //! average document length are gathered across the shard before any segment
 //! scores, so the same document scores the same wherever it lives.
 
+mod frequency_cursors;
 mod mutable_cursors;
 mod positional_cursors;
 #[cfg(test)]
@@ -19,6 +20,7 @@ mod top_k;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::{PointOffsetType, ScoreType};
+pub use frequency_cursors::FrequencyCursors;
 pub use mutable_cursors::MutableCursors;
 pub use positional_cursors::PositionalCursors;
 pub use top_k::{ON_DISK_BLOCK, score_top_k};
