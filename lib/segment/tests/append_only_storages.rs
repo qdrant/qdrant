@@ -22,8 +22,8 @@ use segment::payload_json;
 use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
-use segment::vector_storage::VectorStorage as _;
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+use segment::vector_storage::{VectorStorage as _, VectorStorageRead as _};
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 use uuid::Uuid;
@@ -146,8 +146,9 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     assert!(!segment.has_point(5.into(), DeferredBehavior::WithDeferred));
 }
 
-/// The sparse vector storage created under the flag is append-only, deleting
-/// where nothing was stored is a no-op, and deleting a stored vector fails.
+/// The sparse vector storage created under the flag is append-only. Deletes are
+/// soft (deleted bitflag only): Logstore cannot reclaim a stored value, matching
+/// dense appendable storages and the clone-and-mutate write path.
 #[test]
 fn sparse_storage_is_append_only() {
     let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
@@ -168,8 +169,90 @@ fn sparse_storage_is_append_only() {
     // Nothing was ever stored at key 5.
     storage.delete_vector(5).unwrap();
 
-    // Key 0 holds a vector; an append-only storage cannot remove it.
-    assert!(storage.delete_vector(0).is_err());
+    // Soft-delete a stored vector: bitflag only, no Logstore `delete_value`.
+    assert!(storage.delete_vector(0).unwrap());
+    assert!(storage.is_deleted_vector(0));
+}
+
+/// Deleting a named sparse vector on an append-only segment goes through
+/// clone-and-mutate, which writes `None` at the fresh offset (insert placeholder
+/// + soft-delete). That path must not hit Logstore's hard `delete_value`.
+#[test]
+fn append_only_segment_deletes_sparse_vector() {
+    use std::collections::HashMap;
+
+    use segment::data_types::named_vectors::NamedVectors;
+    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+    use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+    use segment::segment_constructor::build_segment;
+    use segment::types::{
+        Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType, VectorDataConfig,
+        VectorStorageType,
+    };
+
+    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    init_feature_flags(flags);
+
+    let dir = Builder::new()
+        .prefix("append_only_sparse_delete")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: DIM,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::default(),
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::from([(
+            "sparse".to_owned(),
+            SparseVectorDataConfig {
+                index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None, None),
+                storage_type: SparseVectorStorageType::default(),
+                modifier: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+
+    let (mut segment, _token) = build_segment(dir.path(), &config, None, true).unwrap();
+    assert!(segment.append_only_mutations);
+
+    let dense = vec![1.0; DIM];
+    let sparse = SparseVector::new(vec![1, 3], vec![1.0, 2.0]).unwrap();
+    let mut vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&dense));
+    vectors.insert_ref("sparse", VectorRef::Sparse(&sparse));
+    segment.upsert_point(1, 1.into(), vectors).unwrap();
+
+    assert!(segment.vector("sparse", 1.into()).unwrap().is_some());
+    assert!(segment.delete_vector(2, 1.into(), "sparse").unwrap());
+    assert!(segment.vector("sparse", 1.into()).unwrap().is_none());
+    assert!(
+        segment
+            .vector(DEFAULT_VECTOR_NAME, 1.into())
+            .unwrap()
+            .is_some()
+    );
+
+    // A follow-up mutation clones again and re-writes `None` for the missing
+    // sparse slot at yet another fresh offset.
+    segment
+        .set_full_payload(3, 1.into(), &payload_json! { "after": "sparse-delete" })
+        .unwrap();
+    assert!(segment.vector("sparse", 1.into()).unwrap().is_none());
+    assert_eq!(
+        segment.payload(1.into()).unwrap(),
+        payload_json! { "after": "sparse-delete" }
+    );
 }
 
 /// Tracker files under `dir` with the given name, at any depth.
