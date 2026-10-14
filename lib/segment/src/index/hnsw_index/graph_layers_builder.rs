@@ -432,13 +432,18 @@ impl GraphLayersBuilder {
 
     /// Map a uniform `[0, 1)` sample to a geometric level.
     ///
+    /// With `level_factor = 1 / ln(m)`, `floor` gives `P(level >= l) = m^-l`,
+    /// the distribution from the HNSW paper: 1 in `m` points reaches level 1.
+    /// Rounding instead would give `m^-(l - 0.5)`, putting 4x as many points on
+    /// level 1 at `m = 16` and growing the upper layers with no search benefit.
+    ///
     /// `Uniform::new(0.0, 1.0)` is half-open, so `sample` can be exactly `0.0`.
-    /// `ln(0.0)` is `-inf`, and `(-(-inf) * factor).round() as usize` saturates
+    /// `ln(0.0)` is `-inf`, and `(-(-inf) * factor).floor() as usize` saturates
     /// to `usize::MAX`, which then makes `set_levels` allocate unboundedly.
     /// Clamp to the smallest positive `f64` so the level stays bounded.
     fn level_from_sample(sample: f64, level_factor: f64) -> usize {
         let sample = sample.max(f64::MIN_POSITIVE);
-        (-sample.ln() * level_factor).round() as usize
+        (-sample.ln() * level_factor).floor() as usize
     }
 
     pub(crate) fn get_point_level(&self, point_id: PointOffsetType) -> usize {
@@ -677,6 +682,52 @@ mod tests {
         );
         // A normal mid-range sample still yields a small level.
         assert!(GraphLayersBuilder::level_from_sample(0.5, level_factor) < 1024);
+    }
+
+    #[test]
+    fn level_from_sample_level_boundaries() {
+        // A point reaches level `l` exactly when `sample <= m^-l`.
+        let m = M as f64;
+        let level_factor = 1.0 / m.ln();
+        let level = |sample: f64| GraphLayersBuilder::level_from_sample(sample, level_factor);
+
+        assert_eq!(level(0.99), 0);
+        assert_eq!(level(1.1 / m), 0);
+        assert_eq!(level(0.9 / m), 1);
+        assert_eq!(level(1.1 / (m * m)), 1);
+        assert_eq!(level(0.9 / (m * m)), 2);
+        // Rounding would put this sample on level 1 (`-ln(0.2) / ln(8) = 0.77`).
+        assert_eq!(level(0.2), 0);
+    }
+
+    #[test]
+    fn get_random_layer_follows_geometric_distribution() {
+        let level_factor = 1.0 / (M as f64).ln();
+        let distribution = Uniform::new(0.0, 1.0).unwrap();
+        let mut rng = SmallRng::seed_from_u64(42);
+        let samples: u32 = 1_000_000;
+
+        let mut at_or_above = [0usize; 4];
+        for _ in 0..samples {
+            let sample: f64 = rng.sample(distribution);
+            let level = GraphLayersBuilder::level_from_sample(sample, level_factor);
+            for (l, count) in at_or_above.iter_mut().enumerate() {
+                if level >= l {
+                    *count += 1;
+                }
+            }
+        }
+
+        // `P(level >= l) = M^-l`
+        for (l, &count) in at_or_above.iter().enumerate().skip(1) {
+            let expected = f64::from(samples) * (M as f64).powi(-i32::try_from(l).unwrap());
+            let observed = count as f64;
+            let tolerance = 5.0 * expected.sqrt() + 1.0;
+            assert!(
+                (observed - expected).abs() <= tolerance,
+                "level >= {l}: observed {observed}, expected {expected:.0} +- {tolerance:.0}",
+            );
+        }
     }
 
     #[cfg(not(windows))]
