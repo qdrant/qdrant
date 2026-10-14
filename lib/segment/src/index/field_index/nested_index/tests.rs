@@ -26,6 +26,7 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerRead as _;
 use crate::index::field_index::{FieldIndex, FieldIndexRead as _, PayloadFieldIndexRead as _};
+use crate::index::payload_config::PayloadIndexType;
 use crate::json_path::JsonPath;
 use crate::segment::Segment;
 use crate::segment_constructor::load_segment;
@@ -319,8 +320,8 @@ fn assert_field_indexes_equal(flat: &Segment, nested: &Segment, field: &JsonPath
 
     for (flat_field_index, nested_field_index) in flat_indexes.iter().zip(nested_indexes) {
         assert_eq!(
-            matches!(nested_field_index, FieldIndex::NullIndex(_)),
-            matches!(flat_field_index, FieldIndex::NullIndex(_)),
+            nested_field_index.get_full_index_type().index_type == PayloadIndexType::NullIndex,
+            flat_field_index.get_full_index_type().index_type == PayloadIndexType::NullIndex,
         );
         assert_eq!(
             flat_field_index.count_indexed_points().unwrap(),

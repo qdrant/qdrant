@@ -70,10 +70,7 @@ impl NestedFieldIndex {
         element_map: ElementMap,
         inner: FieldIndex,
     ) -> OperationResult<Self> {
-        debug_assert!(!matches!(
-            inner,
-            FieldIndex::Nested(_) | FieldIndex::NullIndex(_)
-        ));
+        debug_assert!(stores_values(&inner));
         let relative_path = field.strip_prefix(&array_key).ok_or_else(|| {
             OperationError::service_error(format!(
                 "field `{field}` is not inside the elements of `{array_key}`",
@@ -225,13 +222,20 @@ impl NestedFieldIndex {
 
     /// Whether the flattened index of the field would keep each value once per point.
     fn dedups_values(&self) -> bool {
-        matches!(
-            self.inner,
+        match &self.inner {
             FieldIndex::IntMapIndex(_)
-                | FieldIndex::KeywordIndex(_)
-                | FieldIndex::UuidMapIndex(_)
-                | FieldIndex::BoolIndex(_)
-        )
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::BoolIndex(_) => true,
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => false,
+        }
     }
 
     /// Convert an estimation over elements into one over points.
@@ -261,6 +265,24 @@ impl NestedFieldIndex {
             exp: exp.clamp(min, max),
             max,
         }
+    }
+}
+
+/// Whether `index` holds values of the field, so it can be keyed by elements: neither
+/// the null index, which stays an index of points, nor an already wrapped index.
+fn stores_values(index: &FieldIndex) -> bool {
+    match index {
+        FieldIndex::IntIndex(_)
+        | FieldIndex::DatetimeIndex(_)
+        | FieldIndex::IntMapIndex(_)
+        | FieldIndex::KeywordIndex(_)
+        | FieldIndex::FloatIndex(_)
+        | FieldIndex::GeoIndex(_)
+        | FieldIndex::FullTextIndex(_)
+        | FieldIndex::BoolIndex(_)
+        | FieldIndex::UuidIndex(_)
+        | FieldIndex::UuidMapIndex(_) => true,
+        FieldIndex::NullIndex(_) | FieldIndex::Nested(_) => false,
     }
 }
 

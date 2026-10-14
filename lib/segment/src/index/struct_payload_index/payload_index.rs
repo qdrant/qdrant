@@ -122,6 +122,13 @@ impl PayloadIndex for StructPayloadIndex {
         field: PayloadKeyTypeRef,
         new_payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<bool> {
+        // `on_disk` flipped on a non-appendable (mmap) segment: the existing files can be
+        // reloaded in the new mode. Per-element indexes are rebuilt with their element maps.
+        let reload_on_disk_flip = match self.storage_type {
+            StorageType::NonAppendable => new_payload_schema.nested().is_none(),
+            StorageType::Appendable => false,
+        };
+
         let Some(current_schema) = self.config.indices.get_mut(field) else {
             return Ok(false);
         };
@@ -137,16 +144,9 @@ impl PayloadIndex for StructPayloadIndex {
                 self.save_config()?;
                 Ok(false)
             }
-            // `on_disk` flipped on a non-appendable (mmap) segment: keep the
-            // existing files and reload the index in the new mode during
+            // Keep the existing files and reload the index in the new mode during
             // `build_index` instead of dropping and rebuilding from payload.
-            // Per-element indexes are always rebuilt, over their element map.
-            SchemaTransition::Compatible(_)
-                if matches!(self.storage_type, StorageType::NonAppendable)
-                    && new_payload_schema.nested().is_none() =>
-            {
-                Ok(false)
-            }
+            SchemaTransition::Compatible(_) if reload_on_disk_flip => Ok(false),
             // Appendable Gridstore (its `on_disk` change goes through the normal
             // drop-and-rebuild path) or any incompatible change: drop so
             // `build_index` rebuilds.
