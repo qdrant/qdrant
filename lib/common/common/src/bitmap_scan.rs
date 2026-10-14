@@ -242,4 +242,78 @@ mod tests {
         // deferred to the second call; every fully-live word fills one chunk.
         assert_eq!(chunk_sizes, vec![42, 64, 64, 44]);
     }
+
+    /// A pseudo-random bitmap of `len` bits with about `percent` of them set.
+    fn random_bitmap(len: usize, percent: u64, seed: u64) -> BitVec {
+        let mut state = seed | 1;
+        (0..len)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state % 100 < percent
+            })
+            .collect()
+    }
+
+    /// The bit by bit reference for [`newly_set`].
+    fn newly_set_per_bit(fresh: &BitSlice, baseline: &BitSlice) -> Vec<PointOffsetType> {
+        fresh
+            .iter_ones()
+            .filter(|&id| !baseline.get(id).is_some_and(|bit| *bit))
+            .map(|id| id as PointOffsetType)
+            .collect()
+    }
+
+    /// `newly_set` must match the bit by bit diff for any lengths, densities, partial last words,
+    /// and baselines shorter or longer than the fresh bitmap.
+    #[test]
+    fn newly_set_matches_per_bit_diff() {
+        for (fresh_len, baseline_len) in [
+            (0, 0),
+            (1, 0),
+            (64, 64),
+            (130, 130),
+            (130, 64),
+            (64, 130),
+            (1000, 999),
+            (4096, 5000),
+        ] {
+            for percent in [0, 1, 50, 99, 100] {
+                let baseline = random_bitmap(baseline_len, percent, 7);
+                // Mostly the baseline, plus some bits
+                let mut fresh = random_bitmap(fresh_len, 5, 11);
+                for (id, bit) in baseline.iter().by_vals().take(fresh_len).enumerate() {
+                    if bit {
+                        fresh.set(id, true);
+                    }
+                }
+                assert_eq!(
+                    newly_set(&fresh, &baseline).collect::<Vec<_>>(),
+                    newly_set_per_bit(&fresh, &baseline),
+                    "fresh {fresh_len} bits, baseline {baseline_len} bits, {percent}% set",
+                );
+            }
+        }
+    }
+
+    /// Bitmaps that do not start on a word boundary give the same diff as aligned ones.
+    #[test]
+    fn newly_set_reads_unaligned_bitmaps() {
+        let fresh = random_bitmap(1000, 30, 3);
+        let baseline = random_bitmap(1000, 30, 5);
+        for offset in [1, 13, 63, 64, 65] {
+            let (fresh, baseline) = (&fresh[offset..], &baseline[offset..]);
+            assert_eq!(
+                newly_set(fresh, baseline).collect::<Vec<_>>(),
+                newly_set_per_bit(fresh, baseline),
+                "offset {offset}",
+            );
+        }
+        // One aligned, one not
+        assert_eq!(
+            newly_set(&fresh[..500], &baseline[1..501]).collect::<Vec<_>>(),
+            newly_set_per_bit(&fresh[..500], &baseline[1..501]),
+        );
+    }
 }
