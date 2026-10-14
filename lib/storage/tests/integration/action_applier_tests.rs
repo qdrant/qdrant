@@ -492,6 +492,98 @@ fn remove_shard_from_key_mapping_action_replay() {
 }
 
 #[test]
+fn remove_shard_key_action_replay() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_custom_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.get_channel_service()
+        .id_to_address
+        .write()
+        .insert(0, "http://localhost:6335".parse().unwrap());
+
+    for (key, placement) in [("tenant", vec![vec![0], vec![0]]), ("other", vec![vec![0]])] {
+        CollectionContainer::perform_collection_meta_op(
+            toc.as_ref(),
+            CollectionMetaOperations::CreateShardKey(CreateShardKey {
+                collection_name: "test".into(),
+                shard_key: key.into(),
+                placement,
+                initial_state: Some(ReplicaState::Active),
+            }),
+        )
+        .unwrap();
+    }
+
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let before = toc.collection_state("test").unwrap();
+    let mut expected_mapping = before.shards_key_mapping.clone();
+    let removed_ids = expected_mapping.remove(&ShardKey::from("tenant")).unwrap();
+    let action = Action::RemoveShardKey {
+        collection: "test".into(),
+        shard_key: "tenant".into(),
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        let state = toc.collection_state("test").unwrap();
+        assert_eq!(state.shards_key_mapping, expected_mapping);
+        assert_eq!(state.shards, before.shards);
+        handle.block_on(async {
+            let holder = holder.read().await;
+            assert!(
+                removed_ids
+                    .iter()
+                    .all(|id| !holder.get_shard_id_to_key_mapping().contains_key(id))
+            );
+            let other_id = *expected_mapping[&ShardKey::from("other")]
+                .iter()
+                .next()
+                .unwrap();
+            assert!(holder.hash_ring_router(other_id).is_some());
+        });
+
+        let persisted = ShardHolder::new(
+            &storage_dir.path().join("collections/test"),
+            ShardingMethod::Custom,
+        )
+        .unwrap();
+        assert_eq!(persisted.get_shard_key_to_ids_mapping(), expected_mapping);
+        for id in &removed_ids {
+            assert!(
+                storage_dir
+                    .path()
+                    .join(format!("collections/test/{id}/replica_state.json"))
+                    .is_file()
+            );
+        }
+    }
+
+    for id in removed_ids {
+        toc.apply_action(Action::DropShard {
+            collection: "test".into(),
+            shard_id: id,
+        })
+        .unwrap();
+        assert!(
+            !storage_dir
+                .path()
+                .join(format!("collections/test/{id}"))
+                .exists()
+        );
+    }
+    assert_eq!(toc.collection_state("test").unwrap().shards.len(), 1);
+}
+
+#[test]
 fn missing_collection_is_service_error() {
     let (_storage_dir, _handle, dispatcher) = new_dispatcher();
     let pass = new_unchecked_verification_pass();

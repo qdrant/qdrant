@@ -140,6 +140,20 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::RemoveShardKey {
+                collection,
+                shard_key,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder
+                    .write()
+                    .await
+                    .remove_shard_key_mapping(shard_key)?;
+
+                Ok(())
+            }
+
             Action::RemoveShardFromKeyMapping {
                 collection,
                 shard_id,
@@ -336,7 +350,6 @@ impl TableOfContent {
             | Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
-            | Action::RemoveShardKey { .. }
             | Action::InitLocalShard { .. }
             | Action::DeleteMigratedPoints { .. }
             | Action::RevertHashRing { .. }
