@@ -172,8 +172,15 @@ impl MmapSparseVectorStorage {
                 HwMetric::VectorIoWrite,
             )?;
         } else if (key as usize) < self.next_point_offset {
-            // delete vector
-            self.storage.delete_value(key)?;
+            // Soft-delete is already recorded on the deleted bitflag by
+            // `delete_vector`. Hard-delete reclaims Gridstore space; Logstore
+            // forbids it, and the bitflag alone is enough for append-only
+            // correctness (same contract as dense appendable storages).
+            // Skipping the call matters for clone-and-mutate: writing `None`
+            // at a fresh offset inserts a placeholder then soft-deletes it.
+            if !self.storage.is_append_only() {
+                self.storage.delete_value(key)?;
+            }
         }
         // else: nothing was ever stored at this key, nothing to delete
 
