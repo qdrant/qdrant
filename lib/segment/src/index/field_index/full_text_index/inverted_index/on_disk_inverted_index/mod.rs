@@ -903,10 +903,19 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     }
 
     fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
-        // One header read, and the statistics gather performs one per query
-        // term per segment.
         HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD);
         self.storage.postings.posting_len(token_id)
+    }
+
+    fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()> {
+        // One header read per term, issued together: the statistics gather asks
+        // for every query term of a segment at once.
+        HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD * token_ids.len());
+        self.storage.postings.posting_lens(token_ids, f)
     }
 
     fn for_each_vocab_with_postings_len(

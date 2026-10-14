@@ -56,11 +56,9 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
     )?;
 
     let Some(corpus) = corpus else {
-        for (df, token_id) in counts {
-            check_process_stopped(is_stopped)?;
-            if let Some(posting_len) = index.posting_len(token_id as TokenId)? {
-                *df += posting_len;
-            }
+        let posting_lens = read_posting_lens(index, &counts)?;
+        for ((df, _), posting_len) in counts.into_iter().zip(posting_lens) {
+            *df += posting_len.unwrap_or(0);
         }
         stats.add_segment(index.points_count(), index.total_tokens());
         return Ok(());
@@ -93,10 +91,11 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
 
     // Built for the first term that is walked.
     let mut in_corpus: Option<BitVec> = None;
-    for (df, token_id) in counts {
+    let posting_lens = read_posting_lens(index, &counts)?;
+    for ((df, token_id), posting_len) in counts.into_iter().zip(posting_lens) {
         check_process_stopped(is_stopped)?;
         let token_id = token_id as TokenId;
-        let Some(posting_len) = index.posting_len(token_id)? else {
+        let Some(posting_len) = posting_len else {
             continue;
         };
         let term = TokenSet::from_iter([token_id]);
@@ -126,6 +125,21 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
 
     stats.add_segment(documents.len(), total_tokens);
     Ok(())
+}
+
+/// The posting length of each resolved query term, in the order of `counts`,
+/// read in one batch.
+fn read_posting_lens<T: FullTextIndexRead>(
+    index: &T,
+    counts: &[(&mut usize, usize)],
+) -> OperationResult<Vec<Option<usize>>> {
+    let token_ids: Vec<TokenId> = counts
+        .iter()
+        .map(|(_, token_id)| *token_id as TokenId)
+        .collect();
+    let mut lens = vec![None; token_ids.len()];
+    index.posting_lens(&token_ids, |at, len| lens[at] = len)?;
+    Ok(lens)
 }
 
 /// Whether `term` survives this index's tokenizer unchanged, which is what
@@ -271,14 +285,22 @@ pub trait FullTextIndexRead {
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>>;
 
-    /// Documents in this segment containing `token_id`: `df(t)` before it is
+    /// Documents in this segment containing each of `token_ids`, as
+    /// `f(index, len)` with `index` into `token_ids`: `df(t)` before it is
     /// summed across segments. `None` when the token is not in the vocabulary.
     ///
     /// Counts what the posting list holds. The mutable index removes deleted
     /// points from its postings; the immutable and on-disk ones keep them until
     /// the segment is rebuilt. So `df` can exceed `N`, and the same data can
     /// report a different `df` before and after an optimization.
-    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>>;
+    ///
+    /// Batched only, on purpose, like [`Self::doc_len_batch`]: on a remote
+    /// disk a header read per term is a round trip per term.
+    fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()>;
 
     fn for_each_token_id<'a, U: UserData>(
         &self,

@@ -221,6 +221,20 @@ pub trait InvertedIndex {
 
     fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>>;
 
+    /// [`Self::get_posting_len`] of each of `token_ids`, as `f(index, len)`
+    /// with `index` into `token_ids`. Batched so that an on-disk index reads
+    /// every header together: a round trip per term on a remote disk otherwise.
+    fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        mut f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()> {
+        for (index, &token_id) in token_ids.iter().enumerate() {
+            f(index, self.get_posting_len(token_id)?);
+        }
+        Ok(())
+    }
+
     /// The `limit` best documents for `query` by BM25, highest first, among
     /// those `accept` allows. Term frequencies come from positions, so an
     /// index built without them cannot score and reports an error.
@@ -963,6 +977,48 @@ mod tests {
         .expect("the index still opens");
         assert!(opened.points_count() > 0);
         assert_eq!(opened.total_tokens(), None);
+    }
+
+    /// `posting_lens` answers what `get_posting_len` does, token by token, on
+    /// every backend: in order, out of order, repeated and past the vocabulary.
+    #[rstest]
+    fn posting_lens_agree_with_posting_len(#[values(false, true)] phrase_matching: bool) {
+        fn check(index: &impl InvertedIndex, vocab_len: usize) {
+            let mut token_ids: Vec<TokenId> = (0..vocab_len as TokenId + 3).rev().collect();
+            token_ids.extend([0, 0, vocab_len as TokenId / 2]);
+            let mut batched = vec![None; token_ids.len()];
+            index
+                .posting_lens(&token_ids, |at, len| batched[at] = len)
+                .unwrap();
+            let one_by_one: Vec<Option<usize>> = token_ids
+                .iter()
+                .map(|&token_id| index.get_posting_len(token_id).unwrap())
+                .collect();
+            assert_eq!(batched, one_by_one);
+            assert!(
+                batched.iter().any(Option::is_some),
+                "the fixture indexed nothing"
+            );
+        }
+
+        let _scope = ambient::test_guard();
+        let mutable = mutable_inverted_index(200, 20, phrase_matching);
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path().into(),
+            Populate::No,
+            phrase_matching,
+            &BitVec::new(),
+        )
+        .unwrap()
+        .unwrap();
+
+        check(&mutable, mutable.vocab.len());
+        check(&immutable, immutable.vocab.len());
+        check(&mmap, immutable.vocab.len());
     }
 
     /// Every backend answers `doc_len_batch` with the same number for every point,

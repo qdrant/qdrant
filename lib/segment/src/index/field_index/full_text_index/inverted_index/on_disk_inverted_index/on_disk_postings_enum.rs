@@ -41,6 +41,17 @@ impl<S: UniversalRead> OnDiskPostingsEnum<S> {
         }
     }
 
+    pub fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()> {
+        match self {
+            OnDiskPostingsEnum::Ids(postings) => postings.posting_lens(token_ids, f),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.posting_lens(token_ids, f),
+        }
+    }
+
     #[cfg(test)]
     pub fn iter_ids<'a>(
         &'a self,

@@ -67,11 +67,15 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
-    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
+    fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()> {
         match self {
-            ReadOnlyFullTextIndex::Appendable(index) => index.posting_len(token_id),
-            ReadOnlyFullTextIndex::OnDisk(index) => index.posting_len(token_id),
-            ReadOnlyFullTextIndex::Immutable(index) => index.posting_len(token_id),
+            ReadOnlyFullTextIndex::Appendable(index) => index.posting_lens(token_ids, f),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.posting_lens(token_ids, f),
+            ReadOnlyFullTextIndex::Immutable(index) => index.posting_lens(token_ids, f),
         }
     }
 

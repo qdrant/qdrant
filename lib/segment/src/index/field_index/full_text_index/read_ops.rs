@@ -68,11 +68,15 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
-    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
+    fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.posting_len(token_id),
-            Self::Immutable(index) => index.posting_len(token_id),
-            Self::OnDisk(index) => index.posting_len(token_id),
+            Self::Mutable(index) => index.posting_lens(token_ids, f),
+            Self::Immutable(index) => index.posting_lens(token_ids, f),
+            Self::OnDisk(index) => index.posting_lens(token_ids, f),
         }
     }
 

@@ -187,6 +187,31 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         Ok(self.get_header(token_id)?.map(|h| h.posting_len()))
     }
 
+    /// [`Self::posting_len`] of each of `token_ids`, as `f(index, len)` with
+    /// `index` into `token_ids`: every header in one batched read.
+    pub fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        mut f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()> {
+        let HeadersBatch { headers, .. } = self.headers_iter(token_ids)?;
+        let mut lens = vec![None; token_ids.len()];
+        for entry in headers {
+            let (token_id, header) = entry?;
+            for (len, _) in lens
+                .iter_mut()
+                .zip(token_ids)
+                .filter(|(_, id)| **id == token_id)
+            {
+                *len = Some(header.posting_len());
+            }
+        }
+        lens.into_iter()
+            .enumerate()
+            .for_each(|(index, len)| f(index, len));
+        Ok(())
+    }
+
     /// Read the posting lists for the given `headers` and hand the resulting
     /// views to `callback`. The posting reads are pipelined.
     fn with_posting_views<T>(

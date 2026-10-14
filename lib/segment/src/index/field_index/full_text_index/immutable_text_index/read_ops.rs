@@ -42,8 +42,12 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
         self.inverted_index.doc_len_batch(point_ids, f)
     }
 
-    fn posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
-        self.inverted_index.get_posting_len(token_id)
+    fn posting_lens(
+        &self,
+        token_ids: &[TokenId],
+        f: impl FnMut(usize, Option<usize>),
+    ) -> OperationResult<()> {
+        self.inverted_index.posting_lens(token_ids, f)
     }
 
     fn score_bm25(
