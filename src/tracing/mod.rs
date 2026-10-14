@@ -6,9 +6,13 @@ pub mod on_disk;
 #[cfg(test)]
 mod test;
 
+use std::env;
 use std::fmt::Write as _;
 use std::str::FromStr as _;
 
+use chrono::{DateTime, Datelike as _, FixedOffset, Timelike as _};
+use tracing_subscriber::fmt::format::Writer;
+use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, reload};
 
@@ -105,6 +109,66 @@ fn filter(user_filters: &str) -> filter::EnvFilter {
     filter::EnvFilter::builder()
         .with_regex(false)
         .parse_lossy(filter)
+}
+
+/// Log timestamp formatter
+///
+/// Timestamps are in UTC by default. If the `TZ` environment variable is set, they follow that
+/// timezone instead.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum TimeFormat {
+    Utc,
+    Local,
+}
+
+impl TimeFormat {
+    fn from_env() -> Self {
+        if env::var_os("TZ").is_some() {
+            Self::Local
+        } else {
+            Self::Utc
+        }
+    }
+}
+
+impl FormatTime for TimeFormat {
+    fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
+        let now = match self {
+            Self::Utc => chrono::Utc::now().fixed_offset(),
+            Self::Local => chrono::Local::now().fixed_offset(),
+        };
+
+        write_rfc3339(w, now)
+    }
+}
+
+/// Write an RFC 3339 timestamp with microsecond precision, without allocating
+///
+/// Matches the default `tracing_subscriber` timer, e.g. `2026-10-13T02:04:27.604091Z`
+/// With a non-UTC offset the offset is included, e.g. `2026-10-13T10:04:27.604091+08:00`
+fn write_rfc3339(w: &mut impl std::fmt::Write, time: DateTime<FixedOffset>) -> std::fmt::Result {
+    let local = time.naive_local();
+    write!(
+        w,
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}",
+        local.year(),
+        local.month(),
+        local.day(),
+        local.hour(),
+        local.minute(),
+        local.second(),
+        local.nanosecond() / 1_000,
+    )?;
+
+    let offset = time.offset().local_minus_utc();
+    if offset == 0 {
+        return w.write_char('Z');
+    }
+
+    let sign = if offset < 0 { '-' } else { '+' };
+    let offset_minutes = offset.unsigned_abs() / 60;
+    let (hours, minutes) = (offset_minutes / 60, offset_minutes % 60);
+    write!(w, "{sign}{hours:02}:{minutes:02}")
 }
 
 #[rustfmt::skip] // `rustfmt` formats this into unreadable single line
