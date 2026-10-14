@@ -248,6 +248,22 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::UnproxifyShard {
+                collection,
+                shard_id,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let replica_set = shard_holder.read().await.get_shard(*shard_id).cloned();
+                let replica_set = replica_set.ok_or_else(|| {
+                    StorageError::service_error(format!("Shard {shard_id} does not exist"))
+                })?;
+
+                replica_set.un_proxify_local().await?;
+
+                Ok(())
+            }
+
             Action::RegisterTransfer {
                 collection,
                 transfer,
@@ -326,7 +342,6 @@ impl TableOfContent {
             | Action::RevertHashRing { .. }
             | Action::SetReshardingState { .. }
             | Action::SetReshardingStage { .. }
-            | Action::UnproxifyShard { .. }
             | Action::SpawnTransferDriver { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }

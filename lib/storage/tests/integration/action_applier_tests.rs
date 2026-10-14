@@ -891,11 +891,18 @@ fn proxy_action_replay(action: Action, queue: bool) {
         assert_eq!(replica_set.is_queue_proxy().await, queue);
     });
     let initial_state = toc.collection_state("test").unwrap();
+    let sends_queued_updates = queue && matches!(action, Action::UnproxifyShard { .. });
 
-    // Peer 1 has no address. Reverting a queue proxy must discard queued updates
-    // without sending them, while keeping the local points.
-    for _ in 0..2 {
-        toc.apply_action(action.clone()).unwrap();
+    // Peer 1 has no address. Reverting a queue proxy discards pending remote updates;
+    // unproxifying attempts to send them and fails. Both keep the local points.
+    for attempt in 0..2 {
+        let result = toc.apply_action(action.clone());
+        if attempt == 0 && sends_queued_updates {
+            let error = result.unwrap_err();
+            assert!(matches!(error, StorageError::ServiceError { .. }));
+        } else {
+            result.unwrap();
+        }
 
         handle.block_on(async {
             assert!(!replica_set.is_proxy().await);
@@ -938,6 +945,69 @@ fn revert_proxy_shard_action_missing_shard() {
     toc.apply_action(action.clone()).unwrap();
     toc.apply_action(action).unwrap();
 
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+#[test]
+fn unproxify_shard_action_forward_replay() {
+    proxy_action_replay(
+        Action::UnproxifyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        false,
+    );
+}
+
+#[test]
+fn unproxify_shard_action_queue_send_failure() {
+    proxy_action_replay(
+        Action::UnproxifyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        true,
+    );
+}
+
+#[test]
+fn unproxify_shard_action_missing_shard() {
+    unproxify_shard_action_missing_local(true);
+}
+
+#[test]
+fn unproxify_shard_action_without_local_replica() {
+    unproxify_shard_action_missing_local(false);
+}
+
+fn unproxify_shard_action_missing_local(drop_shard: bool) {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let setup = if drop_shard {
+        Action::DropShard {
+            collection: "test".into(),
+            shard_id: 0,
+        }
+    } else {
+        Action::RemoveReplica {
+            collection: "test".into(),
+            shard_id: 0,
+            peer_id: 0,
+        }
+    };
+    toc.apply_action(setup).unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::UnproxifyShard {
+        collection: "test".into(),
+        shard_id: 0,
+    };
+
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
     assert_eq!(toc.collection_state("test").unwrap(), initial_state);
 }
 
