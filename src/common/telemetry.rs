@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use ahash::HashSet;
 use api::grpc;
+use collection::operations::types::CollectionError;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::telemetry::CollectionTelemetry;
 use common::types::{DetailsLevel, TelemetryDetail};
@@ -117,17 +118,23 @@ impl TelemetryCollector {
             let access_collection = access.clone();
 
             let handle = runtime_handle.spawn_blocking(move || {
-                // Re-enter the async runtime in this blocking thread
+                // Re-enter the async runtime in this blocking thread.
+                // Aborting a running blocking task has no effect, so the timeout must apply
+                // inside `block_on`. Otherwise a collect stuck on a lock keeps this thread forever.
                 tokio::runtime::Handle::current().block_on(async move {
-                    CollectionsTelemetry::collect(
+                    let collect = CollectionsTelemetry::collect(
                         detail,
                         &access_collection,
                         only_collections,
                         &toc,
                         timeout,
                         &is_stopped,
-                    )
-                    .await
+                    );
+                    tokio::time::timeout(timeout, collect)
+                        .await
+                        .unwrap_or_else(|_: Elapsed| {
+                            Err(CollectionError::timeout(timeout, "collections telemetry"))
+                        })
                 })
             });
             AbortOnDropHandle::new(handle)
