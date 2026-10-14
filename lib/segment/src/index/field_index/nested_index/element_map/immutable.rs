@@ -32,8 +32,10 @@ struct Header {
     version: U32,
     /// Number of start offsets in the blocks that follow
     len: U32,
+    /// Number of points with a value in the index when it was built
+    indexed_points: U32,
     /// Written as zeros and ignored when read, for fields added without a new version
-    reserved: [u8; 16],
+    reserved: [u8; 12],
 }
 
 #[derive(Debug)]
@@ -41,13 +43,21 @@ pub struct ImmutableElementMap {
     /// Start offset of the elements of each point, followed by the number of elements:
     /// point `p` owns `starts[p]..starts[p + 1]`. Never empty.
     starts: Vec<ElementOffsetType>,
+    /// Number of points with a value in the index when it was built
+    built_indexed_points: usize,
     max_elements_per_point: usize,
     path: PathBuf,
 }
 
 impl ImmutableElementMap {
-    /// Requires `builder` to have assigned the points in ascending order.
-    pub fn create(path: PathBuf, builder: &ElementMapBuilder) -> OperationResult<Self> {
+    /// Requires `builder` to have assigned the points in ascending order. `indexed_points`
+    /// is the number of points with a value in the index, stored so that opening the map
+    /// doesn't need to read the index.
+    pub fn create(
+        path: PathBuf,
+        builder: &ElementMapBuilder,
+        indexed_points: usize,
+    ) -> OperationResult<Self> {
         let ElementMapBuilder {
             ranges,
             elements_count,
@@ -67,9 +77,9 @@ impl ImmutableElementMap {
         starts.push(*elements_count);
 
         common::fs::atomic_save(&path.join(STARTS_FILE), |writer| {
-            writer.write_all(&pack_starts(&starts))
+            writer.write_all(&pack_starts(&starts, indexed_points))
         })?;
-        Ok(Self::new(path, starts))
+        Ok(Self::new(path, starts, indexed_points))
     }
 
     pub fn open(path: PathBuf) -> OperationResult<Option<Self>> {
@@ -77,13 +87,13 @@ impl ImmutableElementMap {
         if !file.exists() {
             return Ok(None);
         }
-        let starts = unpack_starts(&fs_err::read(&file)?).ok_or_else(|| {
+        let (starts, indexed_points) = unpack_starts(&fs_err::read(&file)?).ok_or_else(|| {
             OperationError::service_error(format!("element map {} is invalid", file.display()))
         })?;
-        Ok(Some(Self::new(path, starts)))
+        Ok(Some(Self::new(path, starts, indexed_points)))
     }
 
-    fn new(path: PathBuf, starts: Vec<ElementOffsetType>) -> Self {
+    fn new(path: PathBuf, starts: Vec<ElementOffsetType>, built_indexed_points: usize) -> Self {
         let max_elements_per_point = starts
             .windows(2)
             .map(|window| (window[1] - window[0]) as usize)
@@ -91,9 +101,24 @@ impl ImmutableElementMap {
             .unwrap_or(0);
         Self {
             starts,
+            built_indexed_points,
             max_elements_per_point,
             path,
         }
+    }
+
+    /// Number of points with a value in the index, given the `deleted_points`.
+    ///
+    /// Approximate: every deleted point with elements is taken off the count stored at
+    /// build, also one whose elements had no value. Points deleted before the build have
+    /// no elements and were never counted.
+    pub fn indexed_points(&self, deleted_points: &BitSlice) -> usize {
+        let deleted_with_elements = deleted_points
+            .iter_ones()
+            .filter(|&point| !self.point_elements(point as PointOffsetType).is_empty())
+            .count();
+        self.built_indexed_points
+            .saturating_sub(deleted_with_elements)
     }
 
     pub fn point_elements(&self, point: PointOffsetType) -> Range<ElementOffsetType> {
@@ -179,12 +204,13 @@ impl ImmutableElementMap {
 /// Pack the sorted `starts`: a [`Header`], then one block per
 /// [`BitPacker4x::BLOCK_LEN`] values, each a byte with its bit width followed by its
 /// deltas. The last block is padded by repeating the last value.
-fn pack_starts(starts: &[ElementOffsetType]) -> Vec<u8> {
+fn pack_starts(starts: &[ElementOffsetType], indexed_points: usize) -> Vec<u8> {
     let header = Header {
         magic: MAGIC,
         version: U32::new(FORMAT_VERSION),
         len: U32::new(starts.len() as u32),
-        reserved: [0; 16],
+        indexed_points: U32::new(indexed_points as u32),
+        reserved: [0; 12],
     };
     let bitpacker = BitPacker4x::new();
     let mut packed = header.as_bytes().to_vec();
@@ -206,15 +232,17 @@ fn pack_starts(starts: &[ElementOffsetType]) -> Vec<u8> {
     packed
 }
 
-/// Unpack what [`pack_starts`] packed, `None` if it is malformed.
-fn unpack_starts(packed: &[u8]) -> Option<Vec<ElementOffsetType>> {
+/// Unpack the starts and the indexed points [`pack_starts`] packed, `None` if malformed.
+fn unpack_starts(packed: &[u8]) -> Option<(Vec<ElementOffsetType>, usize)> {
     let (header, mut packed) = Header::ref_from_prefix(packed).ok()?;
     let Header {
         magic,
         version,
         len,
+        indexed_points,
         reserved: _,
     } = header;
+    let indexed_points = indexed_points.get() as usize;
     if *magic != MAGIC || version.get() != FORMAT_VERSION {
         return None;
     }
@@ -238,7 +266,8 @@ fn unpack_starts(packed: &[u8]) -> Option<Vec<ElementOffsetType>> {
     }
     starts.truncate(len);
 
-    (!starts.is_empty() && packed.is_empty() && starts.is_sorted()).then_some(starts)
+    (!starts.is_empty() && packed.is_empty() && starts.is_sorted())
+        .then_some((starts, indexed_points))
 }
 
 const _: () = assert!(size_of::<Header>() == 32);
@@ -263,7 +292,10 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
         for points in [0, 1, 127, 128, 129, 1000] {
             let starts = starts_of((0..points).map(|_| rng.random_range(0..10)));
-            assert_eq!(unpack_starts(&pack_starts(&starts)), Some(starts));
+            assert_eq!(
+                unpack_starts(&pack_starts(&starts, points as usize)),
+                Some((starts, points as usize)),
+            );
         }
     }
 
@@ -275,16 +307,19 @@ mod tests {
         counts[500] = 1000;
         let with_large = starts_of(counts);
 
-        let small_size = pack_starts(&small).len();
-        let large_size = pack_starts(&with_large).len();
+        let small_size = pack_starts(&small, 0).len();
+        let large_size = pack_starts(&with_large, 0).len();
         // From 2 to 10 bits for one block of 128 values
         assert_eq!(large_size - small_size, 128 * 8 / 8);
-        assert_eq!(unpack_starts(&pack_starts(&with_large)), Some(with_large));
+        assert_eq!(
+            unpack_starts(&pack_starts(&with_large, 1280)),
+            Some((with_large, 1280)),
+        );
     }
 
     #[test]
     fn malformed_input_is_rejected() {
-        let packed = pack_starts(&starts_of(0..300));
+        let packed = pack_starts(&starts_of(0..300), 300);
         assert_eq!(unpack_starts(&[]), None);
         assert_eq!(unpack_starts(&packed[..packed.len() - 1]), None);
 

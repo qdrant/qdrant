@@ -65,11 +65,15 @@ pub struct NestedFieldIndex {
 
 impl NestedFieldIndex {
     /// Wrap `inner`, an index of `field` keyed by the element offsets of `element_map`.
+    ///
+    /// `indexed_points` is the number of points with a value in `inner`, if known.
+    /// Otherwise it is counted from `inner`, which reads all of it.
     pub fn new(
         field: &JsonPath,
         array_key: JsonPath,
         element_map: ElementMap,
         inner: FieldIndex,
+        indexed_points: Option<usize>,
     ) -> OperationResult<Self> {
         debug_assert!(stores_values(&inner));
         let relative_path = field.strip_prefix(&array_key).ok_or_else(|| {
@@ -86,13 +90,18 @@ impl NestedFieldIndex {
             indexed_points: 0,
         };
 
-        let mut indexed_points = 0;
-        for point in 0..index.element_map.points_upper_bound() as PointOffsetType {
-            if index.has_values(index.element_map.point_elements(point))? {
-                indexed_points += 1;
+        index.indexed_points = match indexed_points {
+            Some(indexed_points) => indexed_points,
+            None => {
+                let mut indexed_points = 0;
+                for point in 0..index.element_map.points_upper_bound() as PointOffsetType {
+                    if index.has_values(index.element_map.point_elements(point))? {
+                        indexed_points += 1;
+                    }
+                }
+                indexed_points
             }
-        }
-        index.indexed_points = indexed_points;
+        };
 
         Ok(index)
     }

@@ -4,7 +4,9 @@
 //! Every per-element index keeps its own [`ElementMap`] next to the inner index it wraps,
 //! so the two are opened, built and wiped together.
 
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
+use serde_json::Value;
 
 use super::StructPayloadIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -25,6 +27,9 @@ pub(super) struct NestedBuild<'a> {
     /// The indexed field inside an element, e.g. `price` for `offers[].price`
     relative_path: JsonPath,
     elements: ElementMapBuilder,
+    /// Points with at least one element that has a value of the field, see
+    /// [`may_be_indexed`].
+    indexed_points: usize,
 }
 
 impl<'a> NestedBuild<'a> {
@@ -33,6 +38,7 @@ impl<'a> NestedBuild<'a> {
             array_key,
             relative_path: relative_path(field, array_key)?,
             elements: ElementMapBuilder::default(),
+            indexed_points: 0,
         })
     }
 
@@ -45,11 +51,16 @@ impl<'a> NestedBuild<'a> {
     ) -> OperationResult<()> {
         let elements = nested_elements(payload, self.array_key);
         let offsets = self.elements.add(point, elements.len())?;
+        let mut has_values = false;
         for (element, object) in offsets.zip(elements) {
             let values = self.relative_path.value_get(object);
+            has_values |= values.iter().any(|value| may_be_indexed(value));
             for builder in builders.iter_mut() {
                 builder.add_point(element, &values)?;
             }
+        }
+        if has_values {
+            self.indexed_points += 1;
         }
         Ok(())
     }
@@ -80,13 +91,17 @@ impl StructPayloadIndex {
                     ElementMap::storage_dir(&index_dir),
                     mutability,
                     &build.elements,
+                    build.indexed_points,
                     self.journaled,
                 )?;
+                // Deleted points got no elements, nothing to take off the count
+                let indexed_points = element_map.indexed_points(BitSlice::empty());
                 Ok(FieldIndex::Nested(Box::new(NestedFieldIndex::new(
                     field,
                     build.array_key.clone(),
                     element_map,
                     inner,
+                    indexed_points,
                 )?)))
             })
             .collect()
@@ -116,7 +131,9 @@ impl StructPayloadIndex {
         else {
             return Ok(None);
         };
-        let deleted_elements = element_map.deleted_elements(id_tracker.deleted_point_bitslice());
+        let deleted_points = id_tracker.deleted_point_bitslice();
+        let deleted_elements = element_map.deleted_elements(deleted_points);
+        let indexed_points = element_map.indexed_points(deleted_points);
         let Some(inner) = selector.new_index_with_type(
             field,
             payload_schema,
@@ -133,7 +150,28 @@ impl StructPayloadIndex {
             array_key.clone(),
             element_map,
             inner,
+            indexed_points,
         )?))))
+    }
+}
+
+/// Whether an index may store anything for `value`: an array holds a value if one of its
+/// items is not null or an array, like [`ValueIndexer::get_values`] reads it.
+///
+/// Doesn't check the type, so a value the index doesn't accept, like a string for an
+/// integer index, counts too.
+///
+/// [`ValueIndexer::get_values`]: crate::index::field_index::ValueIndexer::get_values
+fn may_be_indexed(value: &Value) -> bool {
+    let is_item = |value: &Value| match value {
+        Value::Null | Value::Array(_) => false,
+        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => true,
+    };
+    match value {
+        Value::Array(items) => items.iter().any(is_item),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            is_item(value)
+        }
     }
 }
 

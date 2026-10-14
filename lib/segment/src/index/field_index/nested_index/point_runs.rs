@@ -181,6 +181,7 @@ mod tests {
             dir.path().join("map"),
             IndexMutability::Immutable,
             &builder,
+            0,
             true,
         )
         .unwrap();

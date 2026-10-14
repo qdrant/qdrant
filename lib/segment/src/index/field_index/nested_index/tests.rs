@@ -323,11 +323,28 @@ fn assert_field_indexes_equal(flat: &Segment, nested: &Segment, field: &JsonPath
             nested_field_index.get_full_index_type().index_type == PayloadIndexType::NullIndex,
             flat_field_index.get_full_index_type().index_type == PayloadIndexType::NullIndex,
         );
-        assert_eq!(
-            flat_field_index.count_indexed_points().unwrap(),
-            nested_field_index.count_indexed_points().unwrap(),
-            "{field}: indexed points of {flat_field_index:?}",
-        );
+        let flat_count = flat_field_index.count_indexed_points().unwrap();
+        let nested_count = nested_field_index.count_indexed_points().unwrap();
+        let element_map = nested_field_index
+            .as_nested()
+            .map(|nested| nested.element_map());
+        match element_map {
+            // Stored at build, then every deleted point with elements is taken off
+            Some(crate::index::field_index::nested_index::ElementMap::Immutable(_)) => {
+                let deleted = nested.id_tracker.borrow().deleted_point_count();
+                assert!(
+                    nested_count <= flat_count && flat_count - nested_count <= deleted,
+                    "{field}: indexed points {nested_count} of {flat_field_index:?}, \
+                     flattened {flat_count}, deleted {deleted}",
+                );
+            }
+            Some(crate::index::field_index::nested_index::ElementMap::Mutable(_)) | None => {
+                assert_eq!(
+                    flat_count, nested_count,
+                    "{field}: indexed points of {flat_field_index:?}",
+                );
+            }
+        }
 
         let non_empty = |index: &FieldIndex, segment: &Segment| {
             external_ids(

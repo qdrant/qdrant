@@ -118,10 +118,15 @@ impl ElementMap {
     }
 
     /// Create the map assigned by `builder` at `path`, replacing whatever is there.
+    ///
+    /// An immutable map stores `indexed_points`, the number of points with a value in the
+    /// index, so that opening it doesn't need to read the index, see
+    /// [`Self::indexed_points`].
     pub fn create(
         path: PathBuf,
         mutability: IndexMutability,
         builder: &ElementMapBuilder,
+        indexed_points: usize,
         journaled: bool,
     ) -> OperationResult<Self> {
         if path.exists() {
@@ -133,7 +138,9 @@ impl ElementMap {
                 path, builder, journaled,
             )?)),
             IndexMutability::Immutable => Ok(ElementMap::Immutable(ImmutableElementMap::create(
-                path, builder,
+                path,
+                builder,
+                indexed_points,
             )?)),
         }
     }
@@ -191,6 +198,15 @@ impl ElementMap {
             ElementMap::Immutable(map) => map.max_elements_per_point(),
         };
         max.max(1)
+    }
+
+    /// Number of points with a value in the index, if the map keeps it: an immutable map
+    /// stores it at build, approximate after deletions. `None` for a mutable map.
+    pub fn indexed_points(&self, deleted_points: &BitSlice) -> Option<usize> {
+        match self {
+            ElementMap::Mutable(_) => None,
+            ElementMap::Immutable(map) => Some(map.indexed_points(deleted_points)),
+        }
     }
 
     /// Give `point` `count` elements.
@@ -299,7 +315,7 @@ mod tests {
         assert_eq!(builder.add(0, 2).unwrap(), 0..2);
         assert_eq!(builder.add(1, 3).unwrap(), 2..5);
         let mut map =
-            ElementMap::create(path.clone(), IndexMutability::Mutable, &builder, true).unwrap();
+            ElementMap::create(path.clone(), IndexMutability::Mutable, &builder, 0, true).unwrap();
         assert_eq!(map.assign(2, 0).unwrap().new, 0..0);
 
         // Same count keeps the range
@@ -351,7 +367,8 @@ mod tests {
         builder.add(3, 3).unwrap();
         builder.add(6, 1).unwrap();
         let mut map =
-            ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, true).unwrap();
+            ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, 0, true)
+                .unwrap();
 
         let check = |map: &ElementMap| {
             assert_eq!(
@@ -399,8 +416,8 @@ mod tests {
         for point in 0..POINTS {
             builder.add(point, (point % 4) as usize).unwrap();
         }
-        let map =
-            ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, true).unwrap();
+        let map = ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, 0, true)
+            .unwrap();
         let stored: u64 = map
             .files()
             .iter()
@@ -422,6 +439,40 @@ mod tests {
         }
     }
 
+    /// An immutable map keeps the indexed points of its build, minus deleted points with
+    /// elements. A mutable map doesn't keep them.
+    #[test]
+    fn immutable_map_keeps_indexed_points() {
+        let dir = tempfile::tempdir().unwrap();
+        let _scope = ambient::test_guard();
+        let mut builder = ElementMapBuilder::default();
+        builder.add(0, 2).unwrap();
+        builder.add(2, 1).unwrap();
+        builder.add(3, 3).unwrap();
+
+        let path = dir.path().join("immutable");
+        let map = ElementMap::create(path.clone(), IndexMutability::Immutable, &builder, 3, true)
+            .unwrap();
+        drop(map);
+        let map = ElementMap::open(path, IndexMutability::Immutable)
+            .unwrap()
+            .unwrap();
+        assert_eq!(map.indexed_points(BitSlice::empty()), Some(3));
+        // Point 1 has no elements, points 2 and 3 have
+        let deleted = BitVec::from_iter([false, true, true, true]);
+        assert_eq!(map.indexed_points(&deleted), Some(1));
+
+        let mutable = ElementMap::create(
+            dir.path().join("mutable"),
+            IndexMutability::Mutable,
+            &builder,
+            3,
+            true,
+        )
+        .unwrap();
+        assert_eq!(mutable.indexed_points(BitSlice::empty()), None);
+    }
+
     #[test]
     fn immutable_map_requires_point_order() {
         let dir = tempfile::tempdir().unwrap();
@@ -433,6 +484,7 @@ mod tests {
                 dir.path().join("map"),
                 IndexMutability::Immutable,
                 &builder,
+                0,
                 true
             )
             .is_err()
