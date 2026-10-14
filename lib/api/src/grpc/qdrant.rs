@@ -1612,8 +1612,9 @@ pub struct TextIndexParams {
     #[prost(message, optional, tag = "12")]
     pub scoring: ::core::option::Option<TextScoringParams>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].title`.
-    /// The field must be inside the array's elements. A condition matches a point when a single element
-    /// matches it, and BM25 scores every element as its own document. Default: disabled.
+    /// The field must be inside the array's elements. Every query on the field, not only nested filters,
+    /// treats each element as its own document: a condition matches a point when a single element
+    /// matches it, and BM25 scores elements separately. Default: disabled.
     #[prost(string, optional, tag = "13")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }

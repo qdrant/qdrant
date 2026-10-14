@@ -369,9 +369,10 @@ pub struct TextIndexParams {
     pub scoring: Option<TextScoringParams>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].title`. The field must be inside the array's elements. A condition
-    /// matches a point when a single element matches it, and BM25 scores every element
-    /// as its own document. Default: disabled.
+    /// `offers[].title`. The field must be inside the array's elements. Every query on the
+    /// field, not only nested filters, treats each element as its own document: a
+    /// condition matches a point when a single element matches it, and BM25 scores
+    /// elements separately. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
