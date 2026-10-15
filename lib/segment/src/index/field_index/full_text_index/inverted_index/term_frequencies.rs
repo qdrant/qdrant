@@ -331,6 +331,15 @@ impl<'a> TermFrequencyList<'a> {
         let (packed, remainder) = data
             .split_at_checked(packed_len)
             .ok_or_else(|| corrupted("truncated blocks"))?;
+        // The remainder has its width, at most 32 bits, and the bits of every
+        // entry: what `decode_remainder` relies on to read it.
+        let count = len - blocks * BLOCK_LEN;
+        let well_formed = remainder.split_first().is_some_and(|(&width, bits)| {
+            width <= 32 && count * usize::from(width) <= bits.len() * 8
+        });
+        if !well_formed {
+            return Err(corrupted("malformed remainder"));
+        }
         Ok(TermFrequencyList {
             len,
             block_offsets,
@@ -508,6 +517,28 @@ mod tests {
             bytes[at..at + size_of::<U32>()].copy_from_slice(&corrupt.to_le_bytes());
             let file = TermFrequencies::new(&bytes).unwrap();
             assert!(file.term(0).is_err(), "offset {corrupt}");
+        }
+    }
+
+    /// A remainder width that is too wide, or that needs more bits than
+    /// follow it, is an error, not a panic or a wrong score on the scoring
+    /// path.
+    #[test]
+    fn malformed_remainder_is_an_error() {
+        // Five entries of 2, stored as ones: a remainder of width 1 in one byte.
+        let bytes = encode([vec![2; 5]].iter().map(Vec::as_slice));
+        let file = TermFrequencies::new(&bytes).unwrap();
+        assert!(file.term(0).unwrap().is_some());
+
+        // The remainder's width, past the file and term headers and the one
+        // block offset.
+        let at = size_of::<TermFrequenciesHeader>() + size_of::<TermHeader>() + size_of::<U32>();
+        assert_eq!(bytes[at], 1);
+        for corrupt in [33, 2] {
+            let mut bytes = bytes.clone();
+            bytes[at] = corrupt;
+            let file = TermFrequencies::new(&bytes).unwrap();
+            assert!(file.term(0).is_err(), "width {corrupt}");
         }
     }
 
