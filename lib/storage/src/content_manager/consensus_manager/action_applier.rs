@@ -39,9 +39,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 persistent.save()
             }
 
-            Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(
-                "Consensus action is not implemented: {action:?}",
-            ))),
+            Action::SetQuotaConfig { config } => self.toc.set_quota_config(config),
 
             Action::CreateCollection { .. }
             | Action::DropCollection { .. }
