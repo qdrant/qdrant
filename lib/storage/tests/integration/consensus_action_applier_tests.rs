@@ -11,6 +11,7 @@ use storage::content_manager::consensus_manager::ConsensusManager;
 use storage::content_manager::consensus_state_machine::Action;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+use storage::quota::{QUOTA_CONFIG_FILE, QuotaConfig, QuotaManager};
 use tempfile::TempDir;
 
 use super::alias_tests::{FULL_ACCESS, create_collection, new_dispatcher};
@@ -304,6 +305,97 @@ fn set_cluster_metadata_key_action_save_failure_retry() {
             !value.is_null()
         );
     }
+}
+
+#[test]
+fn set_quota_config_action_replay() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let manager = consensus_manager(&storage_dir, toc.clone());
+    let config = QuotaConfig {
+        enabled: true,
+        max_resident_memory_percent: Some(80),
+        max_disk_usage_percent: Some(90),
+        release_margin_percent: Some(7),
+    };
+
+    for config in [config, QuotaConfig::default()] {
+        for _ in 0..2 {
+            manager
+                .apply_action(Action::SetQuotaConfig { config })
+                .unwrap();
+
+            assert_eq!(toc.quota_config(), config);
+            let reloaded =
+                QuotaManager::load_or_init(storage_dir.path(), QuotaConfig::default()).unwrap();
+            assert_eq!(reloaded.config(), config);
+        }
+    }
+}
+
+#[test]
+fn set_quota_config_action_save_failure_retry() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let manager = consensus_manager(&storage_dir, toc.clone());
+    let initial = QuotaConfig {
+        enabled: true,
+        max_disk_usage_percent: Some(90),
+        ..Default::default()
+    };
+    manager
+        .apply_action(Action::SetQuotaConfig { config: initial })
+        .unwrap();
+    let updated = QuotaConfig {
+        max_disk_usage_percent: Some(95),
+        ..initial
+    };
+
+    // Matching values must still reach set_config, which clears recorded quota verdicts
+    for config in [initial, updated] {
+        let before = toc.quota_config();
+        let path = storage_dir.path().join(QUOTA_CONFIG_FILE);
+        let backup = path.with_extension("backup");
+        fs_err::rename(&path, &backup).unwrap();
+        fs_err::create_dir(&path).unwrap();
+        let action = Action::SetQuotaConfig { config };
+
+        let error = manager.apply_action(action.clone()).unwrap_err();
+
+        assert!(matches!(error, StorageError::ServiceError { .. }));
+        assert_eq!(toc.quota_config(), before);
+        fs_err::remove_dir(&path).unwrap();
+        fs_err::rename(backup, path).unwrap();
+
+        manager.apply_action(action).unwrap();
+
+        assert_eq!(toc.quota_config(), config);
+        let reloaded =
+            QuotaManager::load_or_init(storage_dir.path(), QuotaConfig::default()).unwrap();
+        assert_eq!(reloaded.config(), config);
+    }
+}
+
+#[test]
+fn set_quota_config_action_invalid_config() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let manager = consensus_manager(&storage_dir, toc.clone());
+    let before = toc.quota_config();
+    let invalid = QuotaConfig {
+        max_disk_usage_percent: Some(0),
+        ..Default::default()
+    };
+
+    let error = manager
+        .apply_action(Action::SetQuotaConfig { config: invalid })
+        .unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert_eq!(toc.quota_config(), before);
 }
 
 #[test]
