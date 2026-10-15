@@ -6,6 +6,7 @@ use common::universal_io::UserData;
 use itertools::Either;
 
 use super::bm25::{Bm25Accept, Bm25Query, MutableCursors, score_top_k};
+use super::doc_len::round_doc_len;
 use super::posting_list::PostingList;
 use super::postings_iterator::{intersect_postings_iterator, merge_postings_iterator};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
@@ -91,7 +92,8 @@ impl MutableInvertedIndex {
     /// Record a point's length, replacing any previous value so an overwrite
     /// does not double-count in `total_tokens`. The only writer, so that every
     /// path agrees on what a record without a length means: `None` zeroes the
-    /// slot rather than leaving a stale value behind.
+    /// slot rather than leaving a stale value behind. Rounded here, as every
+    /// other backend stores it, so the total sums what the slots hold.
     pub(super) fn set_doc_len(&mut self, point_id: PointOffsetType, doc_len: Option<u32>) {
         let Some(point_to_doc_len) = self.point_to_doc_len.as_mut() else {
             return;
@@ -100,7 +102,7 @@ impl MutableInvertedIndex {
         if point_to_doc_len.len() < needed {
             point_to_doc_len.resize(needed, 0);
         }
-        let doc_len = doc_len.unwrap_or(0);
+        let doc_len = round_doc_len(doc_len.unwrap_or(0));
         let slot = &mut point_to_doc_len[point_id as usize];
         self.total_tokens = self.total_tokens.saturating_sub(u64::from(*slot)) + u64::from(doc_len);
         *slot = doc_len;

@@ -1,4 +1,5 @@
 pub mod bm25;
+mod doc_len;
 pub(super) mod immutable_inverted_index;
 pub mod immutable_postings_enum;
 pub(super) mod mutable_inverted_index;
@@ -449,6 +450,7 @@ mod tests {
     use rand::seq::SliceRandom;
     use rstest::rstest;
 
+    use super::doc_len::{decode_doc_len, round_doc_len};
     use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
@@ -546,7 +548,8 @@ mod tests {
 
         // Deleted points included: `remove` zeroes them on both sides.
         assert_eq!(
-            immutable.point_to_doc_len, mutable.point_to_doc_len,
+            immutable.point_to_doc_len(),
+            mutable.point_to_doc_len,
             "document lengths lost converting to the immutable index",
         );
         assert!(immutable.vocab.len() < mutable.vocab.len());
@@ -798,8 +801,11 @@ mod tests {
 
         // The on-disk total is the build-time one, like `posting_len`. The
         // loaded copy sums the masked lengths.
-        let build_total: u64 = lens_at_build.iter().copied().map(u64::from).sum();
-        let live_total = build_total - u64::from(lens_at_build[victim]);
+        let build_total: u64 = lens_at_build
+            .iter()
+            .map(|&code| u64::from(decode_doc_len(code)))
+            .sum();
+        let live_total = build_total - u64::from(decode_doc_len(lens_at_build[victim]));
         let _scope = ambient::test_guard();
         assert_eq!(
             mmap.total_tokens(),
@@ -875,7 +881,7 @@ mod tests {
             .write(true)
             .open(&sidecar)
             .unwrap()
-            .set_len(full + size_of::<u32>() as u64)
+            .set_len(full + size_of::<u16>() as u64)
             .unwrap();
 
         let empty_deleted = BitVec::new();
@@ -910,7 +916,7 @@ mod tests {
             .write(true)
             .open(&sidecar)
             .unwrap()
-            .set_len(full - size_of::<u32>() as u64)
+            .set_len(full - size_of::<u16>() as u64)
             .unwrap();
 
         let empty_deleted = BitVec::new();
@@ -1012,7 +1018,7 @@ mod tests {
             .count();
         assert_eq!(
             mmap_acc.hw_data()[HwMetric::PayloadIndexIoRead],
-            read_count * size_of::<u32>(),
+            read_count * size_of::<u16>(),
         );
 
         assert!(live_total > 0, "the fixture indexed nothing");
@@ -1068,6 +1074,71 @@ mod tests {
         assert_eq!(mutable.total_tokens(), None);
         assert_eq!(immutable.total_tokens(), None);
         assert_eq!(mmap.total_tokens(), None);
+    }
+
+    /// Lengths past the exact range of the stored code are rounded the same
+    /// way on every backend, and every total sums the rounded lengths, so a
+    /// removal subtracts exactly what was added.
+    #[rstest]
+    fn long_documents_round_the_same_on_every_backend(
+        #[values(false, true)] phrase_matching: bool,
+    ) {
+        let _scope = ambient::test_guard();
+        let lens = [5, 8_191, 8_193, 100_003, 3_000_017, u32::MAX];
+        let mut mutable = MutableInvertedIndex::new(phrase_matching, true);
+        for (idx, &len) in (0..).zip(&lens) {
+            let tokens: Vec<String> = (0..3).map(|_| generate_word()).collect();
+            mutable.index_str_tokens(idx, &tokens, Some(len)).unwrap();
+        }
+        // Indexed then removed: must leave nothing behind in the total.
+        let removed = lens.len() as PointOffsetType;
+        mutable
+            .index_str_tokens(removed, &[generate_word()], Some(77_777))
+            .unwrap();
+        mutable.remove(removed);
+
+        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+        let mmap_dir = tempfile::tempdir().unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let empty_deleted = BitVec::new();
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path().into(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
+        let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+
+        let point_ids: Vec<PointOffsetType> = (0..lens.len() as PointOffsetType).collect();
+        let expected: Vec<Option<u32>> = lens.iter().map(|&len| Some(round_doc_len(len))).collect();
+        assert_eq!(expected[..2], [Some(5), Some(8_191)], "exact range");
+        assert_ne!(expected[2], Some(8_193), "rounded past the exact range");
+        let expected_total: u64 = expected.iter().map(|len| u64::from(len.unwrap())).sum();
+
+        for (backend, lengths, total) in [
+            (
+                "mutable",
+                doc_lens(&mutable, &point_ids),
+                mutable.total_tokens(),
+            ),
+            (
+                "immutable",
+                doc_lens(&immutable, &point_ids),
+                immutable.total_tokens(),
+            ),
+            ("mmap", doc_lens(&mmap, &point_ids), mmap.total_tokens()),
+            (
+                "immutable from mmap",
+                doc_lens(&imm_mmap, &point_ids),
+                imm_mmap.total_tokens(),
+            ),
+        ] {
+            assert_eq!(lengths, expected, "{backend}");
+            assert_eq!(total, Some(expected_total), "{backend}");
+        }
     }
 
     #[rstest]
