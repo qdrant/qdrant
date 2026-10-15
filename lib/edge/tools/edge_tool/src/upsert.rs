@@ -1,7 +1,8 @@
-use std::collections::HashMap;
-
 use anyhow::{Context, Result};
-use edge::{EdgeShard, PointId, PointInsertOperations, PointOperations, UpdateOperation};
+use edge::{
+    EdgeShard, PointId, PointInsertOperations, PointOperations, PointStructPersisted,
+    UpdateOperation,
+};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 
@@ -15,22 +16,8 @@ pub fn run(args: UpsertArgs) -> Result<()> {
     let info = shard.info().context("failed to read collection info")?;
     let start_id = args.start_id.unwrap_or(info.points_count as u64);
 
-    let config = shard.config();
-    let dense: HashMap<String, usize> = config
-        .vectors
-        .iter()
-        .map(|(name, params)| (name.clone(), params.size))
-        .collect();
-    let sparse = config.sparse_vectors.keys().cloned();
-    let schema = Schema::new(dense, sparse, &info.payload_schema);
-    drop(config);
-
-    if schema.dense.is_empty() && schema.sparse.is_empty() {
-        anyhow::bail!(
-            "collection at {} has no vectors configured",
-            args.path.display()
-        );
-    }
+    let schema = Schema::of_shard(&shard, &info)
+        .with_context(|| format!("cannot upsert into {}", args.path.display()))?;
     log::info!(
         "upserting {} point(s) (ids {start_id}..{}), {} dense vector(s), {} sparse vector(s), \
          {} payload field(s)",
@@ -56,11 +43,7 @@ pub fn run(args: UpsertArgs) -> Result<()> {
             })
             .collect::<Vec<_>>();
 
-        shard
-            .update(UpdateOperation::PointOperation(
-                PointOperations::UpsertPoints(PointInsertOperations::PointsList(points)),
-            ))
-            .context("failed to upsert points")?;
+        upsert_points(&shard, points)?;
 
         written += batch;
         if written < args.num {
@@ -77,5 +60,15 @@ pub fn run(args: UpsertArgs) -> Result<()> {
             .context("failed to read collection info")?
             .points_count,
     );
+    Ok(())
+}
+
+/// Write `points` in one update operation.
+pub fn upsert_points(shard: &EdgeShard, points: Vec<PointStructPersisted>) -> Result<()> {
+    shard
+        .update(UpdateOperation::PointOperation(
+            PointOperations::UpsertPoints(PointInsertOperations::PointsList(points)),
+        ))
+        .context("failed to upsert points")?;
     Ok(())
 }

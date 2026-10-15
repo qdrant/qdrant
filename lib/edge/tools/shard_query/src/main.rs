@@ -9,6 +9,8 @@
 //! * `search` — nearest-neighbour search for a query vector, optionally filtered.
 //! * `search-sparse` — nearest-neighbour search for a sparse query vector,
 //!   optionally filtered.
+//! * `text`: BM25 search over the text index of a payload field, optionally
+//!   filtered.
 //! * `count` — count points matching an optional filter.
 //! * `facet` — count points per unique value of a payload key.
 //!
