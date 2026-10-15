@@ -327,28 +327,39 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
-        let mut remove_shard_ids = Vec::new();
-
+    /// Remove the key's routing and persisted mapping, leaving shards for separate cleanup
+    pub fn remove_shard_key_mapping(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
         self.key_mapping.write_optional(|key_mapping| {
-            if key_mapping.contains_key(shard_key) {
-                let mut new_key_mapping = key_mapping.clone();
-                if let Some(shard_ids) = new_key_mapping.remove(shard_key) {
-                    for shard_id in shard_ids {
-                        remove_shard_ids.push(shard_id);
-                    }
-                }
-                Some(new_key_mapping)
-            } else {
-                None
+            if !key_mapping.contains_key(shard_key) {
+                return None;
             }
+
+            let mut key_mapping = key_mapping.clone();
+            key_mapping.remove(shard_key);
+            Some(key_mapping)
         })?;
 
-        self.rings.remove(&shard_key.clone().into());
+        self.rings.remove(&Some(shard_key.clone()));
+        self.shard_id_to_key_mapping
+            .retain(|_, key| key != shard_key);
+
+        Ok(())
+    }
+
+    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
+        let remove_shard_ids = self
+            .key_mapping
+            .read()
+            .get(shard_key)
+            .cloned()
+            .unwrap_or_default();
+
+        self.remove_shard_key_mapping(shard_key)?;
+
         for shard_id in remove_shard_ids {
             self.drop_and_remove_shard(shard_id).await?;
-            self.shard_id_to_key_mapping.remove(&shard_id);
         }
+
         Ok(())
     }
 
@@ -1899,6 +1910,68 @@ mod transfer_registration_tests {
         assert_eq!(replay.method, Some(ShardTransferMethod::Snapshot));
         assert_eq!(replay.sync, transfer.sync);
         assert_eq!(holder.shard_transfers.read().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod shard_key_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn remove_shard_key_mapping_save_failure_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut holder = ShardHolder::new(dir.path(), ShardingMethod::Custom).unwrap();
+        let key = ShardKey::from("tenant");
+        let mut mapping = ShardKeyMapping::default();
+        mapping.insert(key.clone(), HashSet::from([1, 2]));
+        holder.set_shard_key_mappings(mapping.clone()).unwrap();
+        holder
+            .rings
+            .insert(Some(key.clone()), HashRingRouter::single());
+
+        // A directory at the destination makes the atomic rename fail
+        let path = dir.path().join(SHARD_KEY_MAPPING_FILE);
+        let backup = dir.path().join("mapping-backup");
+        fs::rename(&path, &backup).unwrap();
+        fs::create_dir(&path).unwrap();
+
+        assert!(holder.remove_shard_key_mapping(&key).is_err());
+        assert_eq!(holder.get_shard_key_to_ids_mapping(), mapping);
+        assert_eq!(
+            holder.get_shard_id_to_key_mapping(),
+            &mapping.shard_id_to_shard_key()
+        );
+        assert!(holder.rings.contains_key(&Some(key.clone())));
+
+        fs::remove_dir(&path).unwrap();
+        fs::rename(&backup, &path).unwrap();
+        holder.remove_shard_key_mapping(&key).unwrap();
+
+        assert!(holder.get_shard_key_to_ids_mapping().is_empty());
+        assert!(holder.get_shard_id_to_key_mapping().is_empty());
+        assert!(holder.rings.is_empty());
+        let persisted = ShardHolder::new(dir.path(), ShardingMethod::Custom).unwrap();
+        assert!(persisted.get_shard_key_to_ids_mapping().is_empty());
+    }
+
+    #[test]
+    fn remove_shard_key_mapping_empty_and_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut holder = ShardHolder::new(dir.path(), ShardingMethod::Custom).unwrap();
+        let key = ShardKey::from("tenant");
+        let mut mapping = ShardKeyMapping::default();
+        mapping.insert(key.clone(), HashSet::new());
+        holder.set_shard_key_mappings(mapping).unwrap();
+        holder
+            .rings
+            .insert(Some(key.clone()), HashRingRouter::single());
+
+        for _ in 0..2 {
+            holder.remove_shard_key_mapping(&key).unwrap();
+
+            assert!(holder.get_shard_key_to_ids_mapping().is_empty());
+            assert!(holder.rings.is_empty());
+        }
     }
 }
 
