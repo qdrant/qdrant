@@ -292,4 +292,53 @@ mod tests {
         let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
     }
+
+    #[test]
+    fn test_get_slow_requests_datetime_range() {
+        let mut log = SlowRequestsLog::new(2);
+        let request = DummyLoggable;
+        let t0 = Utc::now();
+        let t = |secs| t0 + chrono::Duration::seconds(secs);
+
+        log.log_request("col1", Duration::from_secs(2), t(1), &request, None);
+        log.log_request("col2", Duration::from_secs(3), t(2), &request, None);
+        // Too fast to be logged, but still a newer request in the col1 group
+        log.log_request("col1", Duration::from_secs(1), t(3), &request, None);
+        // Slower, replaces the logged col1 request
+        log.log_request("col1", Duration::from_secs(5), t(4), &request, None);
+        // Arrives out of order, an older request in the col1 group
+        log.log_request("col1", Duration::from_secs(1), t(0), &request, None);
+
+        let entries = log.get_log_entries(10, None);
+        assert_eq!(entries.len(), 2);
+        let col1 = entries
+            .iter()
+            .find(|e| e.collection_name == "col1")
+            .unwrap();
+        assert_eq!(col1.datetime, t(4));
+        assert_eq!(col1.datetime_first, t(0));
+        assert_eq!(col1.datetime_last, t(4));
+        let col2 = entries
+            .iter()
+            .find(|e| e.collection_name == "col2")
+            .unwrap();
+        assert_eq!(col2.datetime, t(2));
+        assert_eq!(col2.datetime_first, t(2));
+        assert_eq!(col2.datetime_last, t(2));
+
+        // Evicting col2 forgets its range, logging it again starts a new one
+        let evicted = log.log_request("col3", Duration::from_secs(10), t(5), &request, None);
+        assert_eq!(evicted.unwrap().collection_name, "col2");
+        assert_eq!(log.datetime_ranges.len(), 2);
+        log.log_request("col2", Duration::from_secs(20), t(6), &request, None);
+        assert_eq!(log.datetime_ranges.len(), 2);
+
+        let entries = log.get_log_entries(10, None);
+        let col2 = entries
+            .iter()
+            .find(|e| e.collection_name == "col2")
+            .unwrap();
+        assert_eq!(col2.datetime_first, t(6));
+        assert_eq!(col2.datetime_last, t(6));
+    }
 }
