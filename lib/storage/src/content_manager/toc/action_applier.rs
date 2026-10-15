@@ -1,4 +1,10 @@
+use std::sync::Arc;
+
+use collection::collection::Collection;
+use collection::collection_state;
 use collection::events::IndexCreatedEvent;
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::driver::revert_proxy_shard_to_local;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 
@@ -24,6 +30,10 @@ impl TableOfContent {
 
     async fn apply_action(&self, action: &Action) -> StorageResult<()> {
         match action {
+            Action::CreateCollection { collection, state } => {
+                self.create_collection_action(collection, state).await
+            }
+
             Action::DropCollection { collection } => {
                 self.delete_collection(collection).await?;
                 Ok(())
@@ -478,7 +488,6 @@ impl TableOfContent {
 
             Action::AddPeer { .. }
             | Action::RemovePeer { .. }
-            | Action::CreateCollection { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
@@ -495,5 +504,79 @@ impl TableOfContent {
             #[cfg(feature = "staging")]
             Action::TestTransientError(operation) => operation.execute(self.this_peer_id),
         }
+    }
+
+    async fn create_collection_action(
+        &self,
+        name: &str,
+        state: &collection_state::State,
+    ) -> StorageResult<()> {
+        let guard = self.collection_create_lock.lock().await;
+        let existing = self.collections.read().await.get(name).cloned();
+
+        let collection = if let Some(collection) = existing {
+            if collection.uuid().await != state.config.uuid {
+                return Err(StorageError::service_error(format!(
+                    "Collection {name} already exists with a different UUID",
+                )));
+            }
+
+            collection
+        } else {
+            let path = self.create_collection_path(name).await?;
+            let snapshots_path = self.snapshots_path_for_collection(name);
+            let distribution = CollectionShardDistribution::from_shards_info(state.shards.clone());
+            let collection = Collection::new(
+                name.to_string(),
+                self.this_peer_id,
+                &path,
+                &snapshots_path,
+                &state.config,
+                self.storage_config
+                    .to_shared_storage_config(self.is_distributed())
+                    .into(),
+                distribution,
+                None,
+                self.channel_service.clone(),
+                Self::change_peer_from_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    name.to_string(),
+                    ReplicaState::Dead,
+                ),
+                Self::request_shard_transfer_callback(
+                    self.consensus_proposal_sender.clone(),
+                    name.to_string(),
+                ),
+                Self::abort_shard_transfer_callback(
+                    self.consensus_proposal_sender.clone(),
+                    name.to_string(),
+                ),
+                Some(self.adaptive_search_handle.clone()),
+                Some(self.update_runtime.handle().clone()),
+                self.optimizer_resource_budget.clone(),
+                self.storage_config.optimizers_overwrite.clone(),
+            )
+            .await?;
+            collection.print_warnings().await;
+            let collection = Arc::new(collection);
+            self.collections
+                .write()
+                .await
+                .insert(name.to_string(), collection.clone());
+            self.telemetry.init_snapshot_telemetry(name);
+            collection
+        };
+
+        let local_shards = collection.get_local_shards().await;
+        drop(guard);
+
+        // Creation is durable before initialization is proposed. Replay must send the
+        // proposals again without rebuilding shards that may already contain points.
+        for shard_id in local_shards {
+            self.on_peer_created(name.to_string(), self.this_peer_id, shard_id)
+                .await?;
+        }
+
+        Ok(())
     }
 }

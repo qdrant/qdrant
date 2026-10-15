@@ -3,7 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
-use collection::config::ShardingMethod;
+use collection::collection_state::{self, ShardInfo};
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::hash_ring::HashRingRouter;
 use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::config_diff::HnswConfigDiff;
@@ -49,7 +50,7 @@ use tokio::runtime::Handle;
 
 use super::alias_tests::{
     FULL_ACCESS, create_collection, create_custom_collection, new_dispatcher,
-    new_dispatcher_with_proposals,
+    new_dispatcher_with_proposals, open_dispatcher,
 };
 
 #[cfg(feature = "staging")]
@@ -76,6 +77,186 @@ fn test_slow_down_action_replay() {
             assert!(start.elapsed() >= delay);
         }
     }
+}
+
+#[test]
+fn create_collection_action_replay() {
+    let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
+    create_collection(&handle, &dispatcher, "other");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let other_state = toc.collection_state("other").unwrap();
+    let state = create_collection_action_state(&other_state);
+    let action = Action::CreateCollection {
+        collection: "test".into(),
+        state: Box::new(state.clone()),
+    };
+    proposals.try_iter().for_each(drop);
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert_eq!(toc.collection_state("test").unwrap(), state);
+        assert_eq!(toc.collection_state("other").unwrap(), other_state);
+        let persisted =
+            CollectionConfigInternal::load(&storage_dir.path().join("collections/test")).unwrap();
+        assert_eq!(persisted, state.config);
+        let proposal = proposals.try_recv().unwrap();
+        assert_eq!(
+            proposal,
+            ConsensusOperations::initialize_replica("test".into(), 0, 0)
+        );
+        assert!(proposals.try_iter().next().is_none());
+    }
+
+    // Creation must not rebuild a shard that has already received writes
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 0,
+        state: ReplicaState::Active,
+    })
+    .unwrap();
+    let segments = local_segments(&handle, &dispatcher);
+    let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
+            id: 1.into(),
+            vector: VectorStructPersisted::Single(vec![1.0; 10]),
+            payload: None,
+        }]),
+    ));
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let context = AmbientContext::request("test", toc.get_collection_hw_metrics("test".into()));
+    handle.block_on(async {
+        let collection = toc.get_collection(&collection_pass).await.unwrap();
+        let holder = collection.shards_holder();
+        let holder = holder.read().await;
+        holder
+            .get_shard(0)
+            .unwrap()
+            .update_local(operation.into(), WaitUntil::Visible, None, false)
+            .measured(context)
+            .await
+            .unwrap();
+    });
+
+    toc.apply_action(action.clone()).unwrap();
+
+    assert_eq!(
+        segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.get().read().available_point_count())
+            .sum::<usize>(),
+        1
+    );
+    drop(segments);
+    stop_collections(&handle, &dispatcher);
+    drop(dispatcher);
+    drop(handle);
+    let (_storage_dir, handle, dispatcher, proposals) = open_dispatcher(storage_dir);
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    toc.apply_action(action).unwrap();
+
+    let segments = local_segments(&handle, &dispatcher);
+    assert_eq!(
+        segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.get().read().available_point_count())
+            .sum::<usize>(),
+        1
+    );
+    assert_eq!(
+        proposals.try_recv().unwrap(),
+        ConsensusOperations::initialize_replica("test".into(), 0, 0)
+    );
+}
+
+#[test]
+fn create_collection_action_incomplete_directory_retry() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "other");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let state = create_collection_action_state(&toc.collection_state("other").unwrap());
+    let path = storage_dir.path().join("collections/test");
+    fs_err::create_dir_all(path.join("0")).unwrap();
+    fs_err::write(path.join("0/unfinished"), "partial collection build").unwrap();
+    let blocker = storage_dir.path().join(".deleted");
+    fs_err::write(&blocker, "block removal of incomplete collection").unwrap();
+    let action = Action::CreateCollection {
+        collection: "test".into(),
+        state: Box::new(state.clone()),
+    };
+
+    let error = toc.apply_action(action.clone()).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(toc.collection_state("test").is_none());
+    fs_err::remove_file(blocker).unwrap();
+
+    toc.apply_action(action).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), state);
+    assert!(!path.join("0/unfinished").exists());
+}
+
+#[test]
+fn create_collection_action_different_uuid() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let initial_state = toc.collection_state("test").unwrap();
+    let mut state = initial_state.clone();
+    state.config.uuid = Some(uuid::Uuid::from_u128(42));
+
+    let error = toc
+        .apply_action(Action::CreateCollection {
+            collection: "test".into(),
+            state: Box::new(state),
+        })
+        .unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+fn create_collection_action_state(template: &collection_state::State) -> collection_state::State {
+    let mut state = template.clone();
+    state.config.uuid = Some(uuid::Uuid::from_u128(42));
+    let metadata = serde_json::from_value(serde_json::json!({"owner": "action"})).unwrap();
+    state.config.metadata = Some(metadata);
+    state.config.params.shard_number = NonZeroU32::new(2).unwrap();
+    state.config.hnsw_config.m = 7;
+    state.config.optimizer_config.default_segment_number = 1;
+    state.shards = [
+        (
+            0,
+            ShardInfo {
+                replicas: [
+                    (0, ReplicaState::Initializing),
+                    (1, ReplicaState::Initializing),
+                ]
+                .into(),
+            },
+        ),
+        (
+            1,
+            ShardInfo {
+                replicas: [(2, ReplicaState::Initializing)].into(),
+            },
+        ),
+    ]
+    .into();
+    state
 }
 
 #[test]
@@ -2255,6 +2436,23 @@ fn unproxify_shard_action_missing_local(drop_shard: bool) {
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
     assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+fn stop_collections(handle: &Handle, dispatcher: &Dispatcher) {
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    for name in toc.collection_names() {
+        let collection_pass = FULL_ACCESS
+            .check_collection_access(&name, AccessRequirements::new(), "test")
+            .unwrap();
+        handle.block_on(async {
+            toc.get_collection(&collection_pass)
+                .await
+                .unwrap()
+                .stop_gracefully()
+                .await;
+        });
+    }
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {

@@ -179,7 +179,17 @@ pub(super) fn new_dispatcher_with_proposals() -> (
     std::sync::mpsc::Receiver<ConsensusOperations>,
 ) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
+    open_dispatcher(storage_dir)
+}
 
+pub(super) fn open_dispatcher(
+    storage_dir: TempDir,
+) -> (
+    TempDir,
+    Handle,
+    Dispatcher,
+    std::sync::mpsc::Receiver<ConsensusOperations>,
+) {
     let config = StorageConfig {
         storage_path: storage_dir.path().to_path_buf(),
         snapshots_path: storage_dir.path().join("snapshots"),
