@@ -79,13 +79,13 @@ pub struct MutableElementMap {
 
 impl MutableElementMap {
     fn storage_options() -> blobstore::config::StorageConfig {
-        // Always mutable: point updates rewrite their elements in place
-        CreateOptions {
+        // Append-only segments give updated points fresh offsets and keep deleted
+        // points' elements, so their mappings can use Logstore like the inner index.
+        crate::common::blobstore_config::storage_config(CreateOptions {
             page_size_bytes: BLOCK_SIZE * DEFAULT_REGION_SIZE_BLOCKS * 32,
             block_size_bytes: BLOCK_SIZE,
             compression: blobstore::config::Compression::None,
-        }
-        .into_config(false)
+        })
     }
 
     /// Create the map assigned by `builder` in the empty directory `path`.
