@@ -138,6 +138,60 @@ fn change_aliases_reject_mid_list() {
 }
 
 #[test]
+fn change_aliases_reject_rename_to_existing_collection() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+
+    create_collection(&handle, &dispatcher, "test_col_1");
+    create_collection(&handle, &dispatcher, "test_col_2");
+
+    change_aliases(
+        &handle,
+        &dispatcher,
+        vec![
+            CreateAlias {
+                collection_name: "test_col_1".to_string(),
+                alias_name: "test_alias".to_string(),
+            }
+            .into(),
+        ],
+    )
+    .unwrap();
+
+    // Renaming alias to an existing collection name should be rejected
+    let error = change_aliases(
+        &handle,
+        &dispatcher,
+        vec![
+            RenameAlias {
+                old_alias_name: "test_alias".to_string(),
+                new_alias_name: "test_col_2".to_string(),
+            }
+            .into(),
+        ],
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(error, StorageError::AlreadyExists { .. }),
+        "renaming an alias to an existing collection should be rejected as already exists, got {error:?}"
+    );
+
+    // Renaming alias to a valid non-colliding name should succeed
+    change_aliases(
+        &handle,
+        &dispatcher,
+        vec![
+            RenameAlias {
+                old_alias_name: "test_alias".to_string(),
+                new_alias_name: "test_alias_renamed".to_string(),
+            }
+            .into(),
+        ],
+    )
+    .unwrap();
+}
+
+#[test]
 fn update_aliases_action_persists_mapping() {
     let (storage_dir, handle, dispatcher) = new_dispatcher();
     create_collection(&handle, &dispatcher, "test");

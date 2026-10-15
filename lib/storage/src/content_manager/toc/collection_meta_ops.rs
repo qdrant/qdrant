@@ -841,6 +841,12 @@ pub(crate) fn apply_alias_actions(
                         new_alias_name,
                     },
             }) => {
+                if collection_exists(new_alias_name) {
+                    return Err(StorageError::already_exists(format!(
+                        "Collection `{new_alias_name}` already exists"
+                    )));
+                }
+
                 if !aliases.rename(old_alias_name, new_alias_name.clone()) {
                     return Err(StorageError::not_found(format!(
                         "Alias {old_alias_name} does not exist"
@@ -851,4 +857,59 @@ pub(crate) fn apply_alias_actions(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_alias_actions_rename_to_existing_collection() {
+        let mut aliases = AliasMapping::default();
+        aliases.insert("alias_1".to_string(), "collection_1".to_string());
+
+        let actions = vec![AliasOperations::RenameAlias(RenameAliasOperation {
+            rename_alias: RenameAlias {
+                old_alias_name: "alias_1".to_string(),
+                new_alias_name: "collection_2".to_string(),
+            },
+        })];
+
+        let err = apply_alias_actions(&mut aliases, &actions, |name| {
+            name == "collection_1" || name == "collection_2"
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            StorageError::AlreadyExists { ref description } if description == "Collection `collection_2` already exists"
+        ));
+        // Ensure aliases mapping was not modified
+        assert_eq!(
+            aliases.get("alias_1").map(|s| s.as_str()),
+            Some("collection_1")
+        );
+        assert_eq!(aliases.get("collection_2"), None);
+    }
+
+    #[test]
+    fn test_apply_alias_actions_rename_success() {
+        let mut aliases = AliasMapping::default();
+        aliases.insert("alias_1".to_string(), "collection_1".to_string());
+
+        let actions = vec![AliasOperations::RenameAlias(RenameAliasOperation {
+            rename_alias: RenameAlias {
+                old_alias_name: "alias_1".to_string(),
+                new_alias_name: "alias_2".to_string(),
+            },
+        })];
+
+        apply_alias_actions(&mut aliases, &actions, |name| name == "collection_1").unwrap();
+
+        assert_eq!(aliases.get("alias_1"), None);
+        assert_eq!(
+            aliases.get("alias_2").map(|s| s.as_str()),
+            Some("collection_1")
+        );
+    }
 }
