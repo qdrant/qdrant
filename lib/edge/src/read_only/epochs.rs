@@ -115,29 +115,28 @@ mod tests {
     #[test]
     fn reads_of_the_new_epoch_do_not_block_the_wait() {
         let epochs = Arc::new(ReadEpochs::default());
-        let not_stopped = AtomicBool::new(false);
 
         let old_read = epochs.enter();
-        let releaser = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(50));
-            drop(old_read);
-        });
-        let late_reader = {
+        let waiter = {
             let epochs = epochs.clone();
             std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_millis(10));
-                let read = epochs.enter();
-                std::thread::sleep(Duration::from_secs(2));
-                drop(read);
+                let started = Instant::now();
+                let drained =
+                    epochs.advance_and_wait(Duration::from_secs(1), &AtomicBool::new(false));
+                (drained, started.elapsed())
             })
         };
 
-        let started = Instant::now();
-        assert!(epochs.advance_and_wait(Duration::from_secs(1), &not_stopped));
-        assert!(started.elapsed() < Duration::from_secs(1));
+        // A read that starts after the epoch ended joins the new one
+        std::thread::sleep(Duration::from_millis(10));
+        let late_read = epochs.enter();
+        std::thread::sleep(Duration::from_millis(40));
+        drop(old_read);
 
-        releaser.join().unwrap();
-        late_reader.join().unwrap();
+        let (drained, waited) = waiter.join().unwrap();
+        assert!(drained);
+        assert!(waited < Duration::from_secs(1));
+        drop(late_read);
     }
 
     #[test]
