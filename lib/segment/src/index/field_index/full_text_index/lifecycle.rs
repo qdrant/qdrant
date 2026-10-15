@@ -22,6 +22,26 @@ use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, Value
 use crate::index::payload_config::IndexMutability;
 use crate::types::Memory;
 
+/// A point's tokens, as [`FullTextIndex::tokenize_document`] produces them.
+pub(super) struct DocumentTokens<'a> {
+    pub tokens: Vec<Cow<'a, str>>,
+    /// How many of `tokens` are sentinels that were inserted, rather than found in the text.
+    sentinels: usize,
+}
+
+impl DocumentTokens<'_> {
+    /// Number of tokens in the document, for BM25 length normalization.
+    ///
+    /// Discounts the inserted sentinels by count rather than by value:
+    /// `tokenize_doc` does not strip the sentinel from user text the way
+    /// `tokenize_query` does, so a payload containing it has those tokens
+    /// indexed, and they must be counted. This also keeps the length the same
+    /// with phrase matching on or off.
+    pub fn length(&self) -> u32 {
+        self.tokens.len().saturating_sub(self.sentinels) as u32
+    }
+}
+
 impl FullTextIndex {
     pub fn new_mmap(
         path: PathBuf,
@@ -122,52 +142,42 @@ impl FullTextIndex {
     /// from, in document order.
     ///
     /// With phrase matching on, a sentinel separates the values of an array, so
-    /// that no phrase matches across two of them.
+    /// that no phrase matches across two of them. Another one goes before each
+    /// detached token (see [`Tokenizer::tokenize_doc_detached`]), so that it is
+    /// next to no other token, and only matches a phrase of itself alone.
     ///
-    /// A stream made only of those boundaries is returned empty, so that an
+    /// A stream made only of those sentinels is returned empty, so that an
     /// array whose values all tokenize to nothing is not a document, the same
     /// as a single value that tokenizes to nothing.
     pub(super) fn tokenize_document<'a>(
         tokenizer: &'a Tokenizer,
         phrase_matching: bool,
         values: &'a [String],
-    ) -> Vec<Cow<'a, str>> {
+    ) -> DocumentTokens<'a> {
         let insert_boundaries = phrase_matching && values.len() > 1;
 
-        let mut str_tokens: Vec<Cow<str>> =
-            Vec::with_capacity((values.len() * 2).saturating_sub(1));
+        let mut tokens: Vec<Cow<str>> = Vec::with_capacity((values.len() * 2).saturating_sub(1));
+        let mut sentinels = 0;
         for (i, value) in values.iter().enumerate() {
             if insert_boundaries && i > 0 {
-                str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+                tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+                sentinels += 1;
             }
-            tokenizer.tokenize_doc(value, |token| {
-                str_tokens.push(token);
+            tokenizer.tokenize_doc_detached(value, |token, detached| {
+                if phrase_matching && detached {
+                    tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+                    sentinels += 1;
+                }
+                tokens.push(token);
             });
         }
 
-        if Self::document_length(&str_tokens, phrase_matching, values) == 0 {
-            str_tokens.clear();
+        let mut document = DocumentTokens { tokens, sentinels };
+        if document.length() == 0 {
+            document.tokens.clear();
+            document.sentinels = 0;
         }
-
-        str_tokens
-    }
-
-    /// Number of tokens in a document, for BM25 length normalization.
-    ///
-    /// Discounts the boundaries [`Self::tokenize_document`] inserted by count
-    /// rather than by value: `tokenize_doc` does not strip the sentinel from
-    /// user text the way `tokenize_query` does, so a payload containing it has
-    /// those tokens indexed, and they must be counted.
-    pub(super) fn document_length(
-        str_tokens: &[Cow<str>],
-        phrase_matching: bool,
-        values: &[String],
-    ) -> u32 {
-        let boundaries = match phrase_matching && values.len() > 1 {
-            true => values.len() - 1,
-            false => 0,
-        };
-        str_tokens.len().saturating_sub(boundaries) as u32
+        document
     }
 
     /// Encode a point's tokens as the document the storage holds.

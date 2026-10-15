@@ -726,3 +726,104 @@ fn text_statistics_gather_over_a_corpus() {
     assert_eq!(stats.df["alpha"], 1);
     assert_eq!(stats.df["the"], 0);
 }
+
+/// Joined identifiers of the code tokenizer must not change which phrases match: phrases match
+/// exactly where their subwords are contiguous, and a joined identifier only matches alone.
+#[test]
+fn test_code_tokenizer_phrases() {
+    use super::full_text_index_read::PayloadMatchQueryType;
+
+    let _scope = ambient::test_guard();
+
+    let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+    let config = TextIndexParams {
+        tokenizer: TokenizerType::Code,
+        phrase_matching: Some(true),
+        ..Default::default()
+    };
+
+    let mut mutable_index =
+        FullTextIndex::builder_gridstore(temp_dir.path().to_path_buf(), config.clone(), false)
+            .make_empty()
+            .unwrap();
+    let empty_deleted = BitVec::new();
+    let mut mmap_builder = FullTextIndex::builder_mmap(
+        temp_dir.path().to_path_buf(),
+        config,
+        Memory::Cold,
+        &empty_deleted,
+        true,
+    );
+    mmap_builder.init().unwrap();
+
+    let documents = [
+        "let user = self.getUserName(id); return user",
+        "fooBar x bazQux",
+        "let map = HashMap::new(); map.insert(key)",
+    ];
+    for (point_id, text) in documents.iter().enumerate() {
+        let values = vec![text.to_string()];
+        mutable_index
+            .add_many(point_id as PointOffsetType, values.clone())
+            .unwrap();
+        mmap_builder
+            .add_many(point_id as PointOffsetType, values)
+            .unwrap();
+    }
+    let mmap_index = mmap_builder.finalize().unwrap();
+
+    // (phrase, points it is in)
+    let phrases: &[(&str, &[PointOffsetType])] = &[
+        // Identifiers in any spelling, followed by more text
+        ("getUserName(id)", &[0]),
+        ("self.getUserName", &[0]),
+        ("get_user_name id", &[0]),
+        ("get user name", &[0]),
+        ("user name id return", &[0]),
+        ("HashMap::new", &[2]),
+        ("hash map new", &[2]),
+        ("map insert key", &[2]),
+        // A joined identifier alone
+        ("getusername", &[0]),
+        ("hashmap", &[2]),
+        ("foobar", &[1]),
+        // Not in the text: joined identifiers next to each other, or to the last subword
+        ("foobar bazqux", &[]),
+        ("qux foobar", &[]),
+        ("user getusername", &[]),
+        ("key hashmap", &[]),
+        ("hashmap new", &[]),
+    ];
+
+    for index in [mutable_index, mmap_index] {
+        for &(phrase, expected) in phrases {
+            let Some(query) = index.parse_phrase_query(phrase).unwrap() else {
+                assert!(expected.is_empty(), "{phrase:?} has unknown tokens");
+                continue;
+            };
+            let found: Vec<_> = index.filter_query(query.clone()).unwrap().collect();
+            assert_eq!(found, expected, "filter {phrase:?}");
+
+            for (point_id, text) in documents.iter().enumerate() {
+                let point_id = point_id as PointOffsetType;
+                let expect = expected.contains(&point_id);
+                assert_eq!(
+                    index.check_match(&query, point_id).unwrap(),
+                    expect,
+                    "check {phrase:?} in {point_id}",
+                );
+                assert_eq!(
+                    index
+                        .check_payload_match(
+                            &serde_json::json!(text),
+                            phrase,
+                            PayloadMatchQueryType::Phrase,
+                        )
+                        .unwrap(),
+                    expect,
+                    "payload {phrase:?} in {point_id}",
+                );
+            }
+        }
+    }
+}

@@ -17,15 +17,21 @@ use super::TokensProcessor;
 /// - a run that starts with a digit is a number literal and is kept whole, without its `_`
 ///   separators (`1_000_000` -> `1000000`, `0xFF`, `3e10`).
 ///
-/// Documents index the subwords in text order, so phrase queries over subwords work, followed by
-/// every multi-part identifier joined into one token (`getUserName` -> `getusername`). Queries are
-/// split into subwords only. Together, a query for `getUserName`, `get_user_name`, `GetUserName`
-/// or `user name` finds all four spellings, and a query for `getusername` or `hashmap` finds the
-/// joined identifier.
+/// Documents index the subwords in text order, followed by every multi-part identifier joined into
+/// one token (`getUserName` -> `getusername`). Queries are split into subwords only. Together, a
+/// query for `getUserName`, `get_user_name`, `GetUserName` or `user name` finds all four
+/// spellings, and a query for `getusername` or `hashmap` finds the joined identifier.
+///
+/// Joined identifiers are detached from the document's token sequence: phrase queries are made
+/// of subwords, and the index keeps a joined identifier apart from all other tokens, so it only
+/// matches a phrase of itself alone. Phrases match exactly where they would without joined
+/// identifiers.
 pub struct CodeTokenizer;
 
 impl CodeTokenizer {
-    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(
+    /// Calls `callback` with each token, and whether it is a detached joined identifier. Those
+    /// come after all subwords.
+    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>, bool)>(
         text: &'a str,
         tokens_processor: &TokensProcessor,
         mut callback: C,
@@ -34,7 +40,9 @@ impl CodeTokenizer {
         let mut joined = Vec::new();
 
         for_each_word(text, |word, is_ascii| {
-            let parts = split_word(word, is_ascii, &processor, &mut callback);
+            let parts = split_word(word, is_ascii, &processor, &mut |token| {
+                callback(token, false)
+            });
             if parts > 1
                 && let Some(token) = processor.joined(word, is_ascii)
             {
@@ -42,9 +50,9 @@ impl CodeTokenizer {
             }
         });
 
-        // Joined identifiers go after the subwords, so they don't break up the subword sequence
-        // that phrase queries match against.
-        joined.into_iter().for_each(callback);
+        for token in joined {
+            callback(token, true);
+        }
     }
 
     pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(
@@ -300,7 +308,7 @@ mod tests {
 
     fn doc(text: &str) -> Vec<String> {
         let mut tokens = Vec::new();
-        CodeTokenizer::tokenize_doc(text, &lowercase(), |t| tokens.push(t.into_owned()));
+        CodeTokenizer::tokenize_doc(text, &lowercase(), |t, _| tokens.push(t.into_owned()));
         tokens
     }
 
@@ -430,23 +438,10 @@ mod tests {
             assert!(!general.is_ascii_lowercase_only());
 
             let mut fast_tokens = Vec::new();
-            CodeTokenizer::tokenize_doc(text, &fast, |t| fast_tokens.push(t));
+            CodeTokenizer::tokenize_doc(text, &fast, |t, _| fast_tokens.push(t));
             let mut general_tokens = Vec::new();
-            CodeTokenizer::tokenize_doc(text, &general, |t| general_tokens.push(t));
+            CodeTokenizer::tokenize_doc(text, &general, |t, _| general_tokens.push(t));
             assert_eq!(fast_tokens, general_tokens, "lowercase: {lowercase}");
-        }
-    }
-
-    #[test]
-    fn test_phrase_order() {
-        // The query's subwords are contiguous in the document
-        let doc_tokens = doc("let m = HashMap::new(); m.getUserName()");
-        for phrase in ["HashMap::new", "hash map new", "m.getUserName", "user name"] {
-            let q = query(phrase);
-            assert!(
-                doc_tokens.windows(q.len()).any(|w| w == q),
-                "{phrase:?}: {q:?} not in {doc_tokens:?}",
-            );
         }
     }
 }
