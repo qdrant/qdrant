@@ -544,7 +544,7 @@ impl GraphLayersBuilder {
     }
 
     /// Links of a point on a level, including links to points that are not marked ready.
-    pub fn links(
+    pub(crate) fn links(
         &self,
         point_id: PointOffsetType,
         level: usize,

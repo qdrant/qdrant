@@ -18,7 +18,7 @@ use crate::types::{Filter, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType
 /// ranges can start from the old graph like keyword blocks do. Match blocks of an integer field
 /// with `lookup` are left out: a value is the same block in both segments, and a value that
 /// reached the threshold only since the old build has no old block, so they come from the new
-/// index. Returns `None`, to compute new blocks, if the field is not numeric in both indexes, if
+/// index. Returns `None`, to compute new blocks, if the field is not numeric, if its schema or
 /// the threshold changed, if the old index had no range blocks for it, or if a range grew to more
 /// than twice its old size.
 pub(super) fn old_range_blocks(
@@ -28,17 +28,18 @@ pub(super) fn old_range_blocks(
     payload_index: &StructPayloadIndex,
     config: &HnswGraphConfig,
 ) -> OperationResult<Option<Vec<PayloadBlockCondition>>> {
-    let kind = schema.kind();
     if !matches!(
-        kind,
+        schema.kind(),
         PayloadSchemaType::Integer | PayloadSchemaType::Float | PayloadSchemaType::Datetime
     ) || old_index.index.config.full_scan_threshold != config.full_scan_threshold
     {
         return Ok(None);
     }
     let old_payload_index = old_index.index.payload_index.borrow();
-    let old_kind = old_payload_index.with_view(|v| v.indexed_fields().get(field).map(|s| s.kind()));
-    if old_kind != Some(kind) {
+    // The same kind is not enough: an integer field indexed without `range` now has no range
+    // blocks, whatever the old index had.
+    let old_schema = old_payload_index.with_view(|v| v.indexed_fields().remove(field));
+    if old_schema.as_ref() != Some(schema) {
         return Ok(None);
     }
     let mut blocks = Vec::new();
