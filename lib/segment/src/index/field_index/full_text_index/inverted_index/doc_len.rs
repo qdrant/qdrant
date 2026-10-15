@@ -6,7 +6,7 @@
 //! e >= 1:  value = (0x1000 | f) << (e - 1)        4096 ..= 134,201,344
 //! ```
 //!
-//! Exact to 8,191 tokens, rounded down by less than 2^-12 above, saturating at
+//! Exact to 8,192 tokens, rounded down by less than 2^-12 above, saturating at
 //! 2^27. BM25 reads `|d|` only as `|d| / avgdl`, so the relative error is the
 //! one that matters. Codes order like their values, and 0 stays 0.
 //!
@@ -48,7 +48,7 @@ pub fn round_doc_len(len: u32) -> u32 {
 mod tests {
     use super::*;
 
-    const EXACT_UP_TO: u32 = 8_191;
+    const EXACT_UP_TO: u32 = 8_192;
     const MAX_LEN: u32 = 134_201_344;
 
     #[test]
@@ -66,13 +66,11 @@ mod tests {
     }
 
     #[test]
-    fn exact_up_to_8191() {
+    fn exact_up_to_8192() {
         for len in 0..=EXACT_UP_TO {
             assert_eq!(round_doc_len(len), len);
         }
-        // 8,192 is a power of two, so it still has a code of its own.
-        assert_eq!(round_doc_len(EXACT_UP_TO + 1), EXACT_UP_TO + 1);
-        assert_eq!(round_doc_len(EXACT_UP_TO + 2), EXACT_UP_TO + 1);
+        assert_eq!(round_doc_len(EXACT_UP_TO + 1), EXACT_UP_TO);
     }
 
     #[test]
