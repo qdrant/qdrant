@@ -37,8 +37,8 @@ edge-tool create [OPTIONS] <PATH>
   `product-x4`, `product-x8`, `product-x16`, `product-x32`, `product-x64`, `turbo1`, `turbo1.5`,
   `turbo2`, `turbo4`.
 - `--payload-index NAME:TYPE` — create a payload index. `TYPE` is one of `keyword`, `integer`,
-  `float`, `text`, `geo`. Comma-separated and/or repeatable, e.g. `--payload-index
-  city:keyword,age:integer`.
+  `float`, `text`, `bm25` (a text index scored with BM25, queryable with `edge-shard-query text`),
+  `geo`. Comma-separated and/or repeatable, e.g. `--payload-index city:keyword,age:integer`.
 - `--indexing-threshold-kb <N>` — indexing threshold in KB: segments larger than this get an HNSW
   index built for them by `optimize` (omit to use the built-in default).
 - `--on-disk-payload` — store payload on disk (mmap) instead of RAM.
@@ -66,6 +66,21 @@ structs and again as that record.
 
 The batches are not one transaction. A failure partway through leaves the batches before it
 applied — re-run to continue, since `--start-id` defaults to the collection's current point count.
+
+### `load-beir`: load a BEIR corpus
+
+```sh
+edge-tool create --dense 8 --payload-index text:bm25 <PATH>
+edge-tool load-beir --corpus scifact/corpus.jsonl <PATH>
+```
+
+Loads a BEIR `corpus.jsonl` (one `{"_id", "title", "text"}` object per line), one point per
+document, so BM25 runs on real text. The title and text go to `--field` (default `text`), joined by
+a newline; the BEIR `_id` goes to `doc_id`, to check results against the qrels. Vectors and the
+other indexed payload fields are generated as `upsert` generates them. Point ids follow corpus order
+from `--start-id` (default `0`), so a re-run overwrites the same points; blank lines are skipped. A
+`--field` overlapping `doc_id` or another indexed path is refused. `--limit` loads only the first N
+documents; `--batch-size` and `--seed` work as for `upsert`.
 
 ### `optimize` — run the shard optimizers
 

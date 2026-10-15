@@ -5,11 +5,13 @@
 //! ```sh
 //! cargo run -p edge-tool -- create --dense 1024 --sparse --quantization turbo4 ./collection
 //! cargo run -p edge-tool -- upsert -n 1000 ./collection
+//! cargo run -p edge-tool -- load-beir --corpus scifact/corpus.jsonl ./collection
 //! cargo run -p edge-tool -- optimize ./collection
 //! cargo run -p edge-tool -- upload --bucket my-bucket ./collection my_collection/0
 //! ```
 
 mod args;
+mod beir;
 mod create;
 mod optimize;
 mod points;
@@ -41,6 +43,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Create(args) => create::run(args),
         Command::Upsert(args) => upsert::run(args),
+        Command::LoadBeir(args) => beir::run(args),
         Command::Optimize(args) => optimize::run(args),
         Command::Upload(args) => upload::run(args),
     }
