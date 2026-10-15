@@ -78,6 +78,86 @@ fn test_slow_down_action_replay() {
     }
 }
 
+#[test]
+fn drop_collection_action_replay() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+    create_collection(&handle, &dispatcher, "other");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::UpdateAliases {
+        set: [("alias".into(), "test".into())].into(),
+        remove: Default::default(),
+    })
+    .unwrap();
+    let other_state = toc.collection_state("other").unwrap();
+    let action = Action::DropCollection {
+        collection: "test".into(),
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert!(toc.collection_state("test").is_none());
+        assert!(!storage_dir.path().join("collections/test").exists());
+        assert!(toc.alias_mapping().get("alias").is_none());
+        assert_eq!(toc.collection_state("other").unwrap(), other_state);
+    }
+}
+
+#[test]
+fn drop_collection_action_does_not_resolve_aliases() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::UpdateAliases {
+        set: [("alias".into(), "test".into())].into(),
+        remove: Default::default(),
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let aliases = toc.alias_mapping();
+
+    toc.apply_action(Action::DropCollection {
+        collection: "alias".into(),
+    })
+    .unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    assert_eq!(toc.alias_mapping(), aliases);
+}
+
+#[test]
+fn drop_collection_action_delete_failure_retry() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let deleted_path = storage_dir.path().join(".deleted");
+    fs_err::write(&deleted_path, "block collection deletion").unwrap();
+    let action = Action::DropCollection {
+        collection: "test".into(),
+    };
+
+    let error = toc.apply_action(action.clone()).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(toc.collection_state("test").is_none());
+    assert!(storage_dir.path().join("collections/test").exists());
+    fs_err::remove_file(deleted_path).unwrap();
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert!(toc.collection_state("test").is_none());
+        assert!(!storage_dir.path().join("collections/test").exists());
+    }
+}
+
 #[cfg(feature = "staging")]
 #[test]
 fn test_slow_down_action_other_peer() {

@@ -24,6 +24,11 @@ impl TableOfContent {
 
     async fn apply_action(&self, action: &Action) -> StorageResult<()> {
         match action {
+            Action::DropCollection { collection } => {
+                self.delete_collection(collection).await?;
+                Ok(())
+            }
+
             Action::UpdateCollectionConfig { collection, diff } => {
                 let collection = self.get_collection_unchecked(collection).await?;
 
@@ -474,7 +479,6 @@ impl TableOfContent {
             Action::AddPeer { .. }
             | Action::RemovePeer { .. }
             | Action::CreateCollection { .. }
-            | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
