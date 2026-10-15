@@ -453,7 +453,9 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             }
             .map(Self::GeoIndex),
             PayloadIndexType::FullTextIndex => {
-                let config = TextIndexParams::try_from(payload_schema)?;
+                // Normalized like the writer's `IndexSelector` builds it: a schema
+                // persisted unnormalized must still open the positions it wrote.
+                let config = TextIndexParams::try_from(payload_schema)?.normalized();
                 match mode {
                     ReadMode::Appendable => ReadOnlyFullTextIndex::open_appendable(
                         fs,

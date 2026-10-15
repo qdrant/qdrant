@@ -118,7 +118,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
                 Self::GeoIndex(UpdateOnlyValueIndex::open(fs, dir, UpdateOnlyGeoKind)?)
             }
             PayloadIndexType::FullTextIndex => {
-                let config = TextIndexParams::try_from(schema)?;
+                // Normalized like the writer's `IndexSelector` builds it, so the
+                // documents appended here have the shape every reader expects.
+                let config = TextIndexParams::try_from(schema)?.normalized();
                 Self::FullTextIndex(UpdateOnlyValueIndex::open(
                     fs,
                     dir,

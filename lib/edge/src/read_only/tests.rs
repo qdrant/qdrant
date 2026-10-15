@@ -97,6 +97,27 @@ pub(crate) fn delete(shard: &EdgeShard, ids: impl IntoIterator<Item = u64>) {
     shard.update(PointOperation(DeletePoints { ids })).unwrap();
 }
 
+/// Drop `phrase_matching` from every text index schema the segments under `shard_dir` persist,
+/// leaving the index data as built: the layout of a shard written before edge normalized the
+/// schemas it applies, which readers must still open as the writer built it.
+pub(crate) fn strip_persisted_phrase_matching(shard_dir: &std::path::Path) {
+    for segment in fs_err::read_dir(shard_dir.join(SEGMENTS_PATH)).unwrap() {
+        let config_path = segment.unwrap().path().join("payload_index/config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_str(&fs_err::read_to_string(&config_path).unwrap()).unwrap();
+        for schema in config["indexed_fields"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+        {
+            if let Some(schema) = schema.as_object_mut() {
+                schema.remove("phrase_matching");
+            }
+        }
+        fs_err::write(&config_path, config.to_string()).unwrap();
+    }
+}
+
 /// Open a follower that discovers segments by scanning the directory (no manifest required) — used
 /// by the read/live_reload tests, whose leaders don't write a manifest.
 pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFile> {

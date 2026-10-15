@@ -17,6 +17,10 @@ pub fn create_field_index(
             field_name: field_name.to_owned(),
         });
     };
+    // Segments persist the schema as given, and every reader of it derives the
+    // index shape from it: normalize here, as the collection does, for callers
+    // that apply operations without one (edge, WAL replay of edge shards).
+    let field_schema = &field_schema.clone().normalized();
 
     segments.apply_segments_with_id(|segment_id, write_segment| {
         write_segment.with_upgraded(|segment| {
