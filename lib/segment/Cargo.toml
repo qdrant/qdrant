@@ -79,7 +79,6 @@ num-derive = "0.5.1"
 num-cmp = "0.1.0"
 once_cell = "1.21"
 rand = { workspace = true }
-bitpacking = { workspace = true }
 bitvec = { workspace = true }
 fs_extra = { workspace = true }
 tinyvec = { workspace = true }

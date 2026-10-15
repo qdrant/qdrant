@@ -144,8 +144,7 @@ fn immutable_map_resolves_both_ways() {
     check(&map);
 }
 
-/// Stored bit-packed: two bits per point for points with up to three elements, instead
-/// of the four bytes of the start offset.
+/// Repeated element counts compress well, and every mapping survives reopening.
 #[test]
 fn immutable_map_is_stored_compact() {
     let dir = tempfile::tempdir().unwrap();
@@ -163,9 +162,11 @@ fn immutable_map_is_stored_compact() {
         .iter()
         .map(|file| fs_err::metadata(file).unwrap().len())
         .sum();
-    // The 32-byte header, then per block of 128 starts a width byte and 2 bits per start
-    let blocks = u64::from(POINTS + 1).div_ceil(128);
-    assert_eq!(stored, 32 + blocks * (1 + 128 * 2 / 8));
+    let raw_size = u64::from(POINTS + 1) * size_of::<ElementOffsetType>() as u64;
+    assert!(
+        stored < raw_size / 10,
+        "stored {stored} bytes for {raw_size} raw bytes"
+    );
 
     let reopened = ElementMap::open(path, IndexMutability::Immutable)
         .unwrap()

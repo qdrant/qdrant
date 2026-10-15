@@ -1,15 +1,13 @@
 //! Element map of an immutable index: built once, in point order, so the start offsets
 //! of the points are enough to map both ways.
 //!
-//! The start offsets are stored bit-packed in blocks of [`BitPacker4x::BLOCK_LEN`]: each
-//! block keeps the deltas between consecutive starts, which are the element counts of
-//! the points, with as many bits as its largest count needs.
+//! The start offsets are delta-encoded into element counts, byte-shuffled, and
+//! compressed with Zstd. Opening decompresses the whole mapping into RAM.
 
-use std::io::Write as _;
+use std::io::{BufWriter, Write as _};
 use std::ops::Range;
 use std::path::PathBuf;
 
-use bitpacking::{BitPacker as _, BitPacker4x};
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
@@ -19,10 +17,11 @@ use super::{ElementMapBuilder, ElementOffsetType, ElementUpdate};
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Start offsets of the points, see [`pack_starts`].
-const STARTS_FILE: &str = "starts.bitpacked";
+const STARTS_FILE: &str = "starts.zstd";
 
 const MAGIC: [u8; 8] = *b"QDRANTEM";
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
+const PLANES_COUNT: usize = size_of::<ElementOffsetType>();
 
 /// Header of [`STARTS_FILE`].
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
@@ -30,7 +29,7 @@ const FORMAT_VERSION: u32 = 1;
 struct Header {
     magic: [u8; 8],
     version: U32,
-    /// Number of start offsets in the blocks that follow
+    /// Number of start offsets in the compressed data that follows
     len: U32,
     /// Build-time upper bound on the number of points with indexed values
     indexed_points: U32,
@@ -77,7 +76,7 @@ impl ImmutableElementMap {
         starts.push(*elements_count);
 
         common::fs::atomic_save(&path.join(STARTS_FILE), |writer| {
-            writer.write_all(&pack_starts(&starts, indexed_points))
+            writer.write_all(&pack_starts(&starts, indexed_points)?)
         })?;
         Ok(Self::new(path, starts, indexed_points))
     }
@@ -201,10 +200,9 @@ impl ImmutableElementMap {
     }
 }
 
-/// Pack the sorted `starts`: a [`Header`], then one block per
-/// [`BitPacker4x::BLOCK_LEN`] values, each a byte with its bit width followed by its
-/// deltas. The last block is padded by repeating the last value.
-fn pack_starts(starts: &[ElementOffsetType], indexed_points: usize) -> Vec<u8> {
+/// A [`Header`], followed by Zstd-compressed deltas in byte planes: all first
+/// bytes, then all second bytes, and so on. Deltas are unsigned element counts.
+fn pack_starts(starts: &[ElementOffsetType], indexed_points: usize) -> std::io::Result<Vec<u8>> {
     let header = Header {
         magic: MAGIC,
         version: U32::new(FORMAT_VERSION),
@@ -212,29 +210,24 @@ fn pack_starts(starts: &[ElementOffsetType], indexed_points: usize) -> Vec<u8> {
         indexed_points: U32::new(indexed_points as u32),
         reserved: [0; 12],
     };
-    let bitpacker = BitPacker4x::new();
-    let mut packed = header.as_bytes().to_vec();
-
-    let mut block = [0; BitPacker4x::BLOCK_LEN];
-    let mut initial = 0;
-    for chunk in starts.chunks(BitPacker4x::BLOCK_LEN) {
-        block[..chunk.len()].copy_from_slice(chunk);
-        let last = chunk.last().copied().unwrap_or(initial);
-        block[chunk.len()..].fill(last);
-
-        let num_bits = bitpacker.num_bits_sorted(initial, &block);
-        packed.push(num_bits);
-        let offset = packed.len();
-        packed.resize(offset + BitPacker4x::compressed_block_size(num_bits), 0);
-        bitpacker.compress_sorted(initial, &block, &mut packed[offset..], num_bits);
-        initial = last;
+    let mut encoder =
+        zstd::Encoder::new(header.as_bytes().to_vec(), zstd::DEFAULT_COMPRESSION_LEVEL)?;
+    encoder.include_checksum(true)?;
+    let mut writer = BufWriter::new(encoder);
+    for byte in 0..PLANES_COUNT {
+        let mut previous = 0;
+        for &start in starts {
+            let delta = start - previous;
+            previous = start;
+            writer.write_all(&delta.to_le_bytes()[byte..=byte])?;
+        }
     }
-    packed
+    writer.into_inner()?.finish()
 }
 
 /// Unpack the starts and the indexed points [`pack_starts`] packed, `None` if malformed.
 fn unpack_starts(packed: &[u8]) -> Option<(Vec<ElementOffsetType>, usize)> {
-    let (header, mut packed) = Header::ref_from_prefix(packed).ok()?;
+    let (header, packed) = Header::ref_from_prefix(packed).ok()?;
     let Header {
         magic,
         version,
@@ -247,27 +240,24 @@ fn unpack_starts(packed: &[u8]) -> Option<(Vec<ElementOffsetType>, usize)> {
         return None;
     }
     let len = len.get() as usize;
-
-    let bitpacker = BitPacker4x::new();
-    let mut starts = Vec::with_capacity(len.next_multiple_of(BitPacker4x::BLOCK_LEN));
-    let mut block = [0; BitPacker4x::BLOCK_LEN];
-    let mut initial = 0;
-    while starts.len() < len {
-        let (&num_bits, rest) = packed.split_first()?;
-        if u32::from(num_bits) > ElementOffsetType::BITS {
-            return None;
-        }
-        let (compressed, rest) =
-            rest.split_at_checked(BitPacker4x::compressed_block_size(num_bits))?;
-        bitpacker.decompress_sorted(initial, compressed, &mut block, num_bits);
-        starts.extend_from_slice(&block);
-        initial = block[BitPacker4x::BLOCK_LEN - 1];
-        packed = rest;
+    if len == 0 {
+        return None;
     }
-    starts.truncate(len);
+    // Bound decompression by the declared size and reject incomplete byte planes.
+    let size = len.checked_mul(PLANES_COUNT)?;
+    let planes = zstd::bulk::decompress(packed, size).ok()?;
+    if planes.len() != size {
+        return None;
+    }
 
-    (!starts.is_empty() && packed.is_empty() && starts.is_sorted())
-        .then_some((starts, indexed_points))
+    let mut starts = Vec::with_capacity(len);
+    let mut previous: ElementOffsetType = 0;
+    for index in 0..len {
+        let bytes = std::array::from_fn(|byte| planes[byte * len + index]);
+        previous = previous.checked_add(ElementOffsetType::from_le_bytes(bytes))?;
+        starts.push(previous);
+    }
+    (starts[0] == 0).then_some((starts, indexed_points))
 }
 
 const _: () = assert!(size_of::<Header>() == 32);
@@ -293,33 +283,28 @@ mod tests {
         for points in [0, 1, 127, 128, 129, 1000] {
             let starts = starts_of((0..points).map(|_| rng.random_range(0..10)));
             assert_eq!(
-                unpack_starts(&pack_starts(&starts, points as usize)),
+                unpack_starts(&pack_starts(&starts, points as usize).unwrap()),
                 Some((starts, points as usize)),
             );
         }
     }
 
-    /// A point with many elements widens its own block only.
     #[test]
-    fn large_point_widens_its_block() {
-        let small = starts_of((0..1280).map(|point| point % 4));
+    fn pack_roundtrip_large_counts() {
         let mut counts: Vec<u32> = (0..1280).map(|point| point % 4).collect();
-        counts[500] = 1000;
-        let with_large = starts_of(counts);
-
-        let small_size = pack_starts(&small, 0).len();
-        let large_size = pack_starts(&with_large, 0).len();
-        // From 2 to 10 bits for one block of 128 values
-        assert_eq!(large_size - small_size, 128 * 8 / 8);
-        assert_eq!(
-            unpack_starts(&pack_starts(&with_large, 1280)),
-            Some((with_large, 1280)),
-        );
+        counts[500] = 1_000_000;
+        for counts in [counts, vec![0, 0, 0], vec![0, 1, u32::MAX - 1]] {
+            let starts = starts_of(counts);
+            assert_eq!(
+                unpack_starts(&pack_starts(&starts, 0).unwrap()),
+                Some((starts, 0)),
+            );
+        }
     }
 
     #[test]
     fn malformed_input_is_rejected() {
-        let packed = pack_starts(&starts_of(0..300), 300);
+        let packed = pack_starts(&starts_of(0..300), 300).unwrap();
         assert_eq!(unpack_starts(&[]), None);
         assert_eq!(unpack_starts(&packed[..packed.len() - 1]), None);
 
@@ -327,12 +312,28 @@ mod tests {
         trailing.push(0);
         assert_eq!(unpack_starts(&trailing), None);
 
-        let mut too_wide = packed.clone();
-        too_wide[size_of::<Header>()] = 33;
-        assert_eq!(unpack_starts(&too_wide), None);
+        let mut corrupt_checksum = packed.clone();
+        *corrupt_checksum.last_mut().unwrap() ^= 1;
+        assert_eq!(unpack_starts(&corrupt_checksum), None);
+
+        for len in [0u32, 300, 302] {
+            let mut wrong_len = packed.clone();
+            wrong_len[12..16].copy_from_slice(&len.to_le_bytes());
+            assert_eq!(unpack_starts(&wrong_len), None);
+        }
+
+        assert_eq!(unpack_starts(&pack_starts(&[1, 2], 0).unwrap()), None);
+
+        // A valid compressed frame can still contain deltas that overflow offsets.
+        let mut overflowing = pack_starts(&[0, u32::MAX, u32::MAX], 0).unwrap();
+        let mut planes = zstd::decode_all(&overflowing[size_of::<Header>()..]).unwrap();
+        planes[2] = 1;
+        overflowing.truncate(size_of::<Header>());
+        overflowing.extend(zstd::encode_all(planes.as_slice(), 0).unwrap());
+        assert_eq!(unpack_starts(&overflowing), None);
 
         let mut other_version = packed.clone();
-        other_version[8] = 2;
+        other_version[8] = 1;
         assert_eq!(unpack_starts(&other_version), None);
 
         let mut other_magic = packed.clone();
