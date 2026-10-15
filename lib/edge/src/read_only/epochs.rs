@@ -146,6 +146,21 @@ mod tests {
         drop(late_read);
     }
 
+    /// A read that outlives a timed-out wait is still waited for by the next one, even though the
+    /// epoch that next wait ends has no reads.
+    #[test]
+    fn a_timed_out_wait_leaves_its_reads_to_the_next() {
+        let epochs = ReadEpochs::default();
+        let not_stopped = AtomicBool::new(false);
+
+        let old_read = epochs.enter();
+        assert!(!epochs.advance_and_wait(Duration::from_millis(20), &not_stopped));
+        assert!(!epochs.advance_and_wait(Duration::from_millis(20), &not_stopped));
+
+        drop(old_read);
+        assert!(epochs.advance_and_wait(Duration::from_millis(20), &not_stopped));
+    }
+
     #[test]
     fn a_stopped_wait_gives_up() {
         let epochs = ReadEpochs::default();
