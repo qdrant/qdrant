@@ -25,6 +25,7 @@ pub use top_k::{ON_DISK_BLOCK, score_top_k};
 
 use super::TokenId;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::nested_index::ElementOffsetType;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 
 /// Saturation and length normalization. Request-time parameters: they are not
@@ -50,7 +51,7 @@ pub struct Bm25Accept<'a> {
     filter: Option<&'a OptimizedFilter<'a>>,
     /// The point that owns a scored document, when the index scores the elements
     /// of a nested array instead of points. `filter` is checked on that point.
-    element_point: Option<&'a dyn Fn(PointOffsetType) -> Option<PointOffsetType>>,
+    element_point: Option<&'a dyn Fn(ElementOffsetType) -> Option<PointOffsetType>>,
 }
 
 impl<'a> Bm25Accept<'a> {
@@ -70,8 +71,8 @@ impl<'a> Bm25Accept<'a> {
     /// no point owns, and `visible` is the mask over elements.
     pub fn for_elements<'b>(
         &'b self,
-        visible: &'b dyn Fn(PointOffsetType) -> bool,
-        element_point: &'b dyn Fn(PointOffsetType) -> Option<PointOffsetType>,
+        visible: &'b dyn Fn(ElementOffsetType) -> bool,
+        element_point: &'b dyn Fn(ElementOffsetType) -> Option<PointOffsetType>,
     ) -> Bm25Accept<'b> {
         debug_assert!(self.element_point.is_none());
         Bm25Accept {

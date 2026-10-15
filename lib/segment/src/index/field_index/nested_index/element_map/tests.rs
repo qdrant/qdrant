@@ -2,13 +2,13 @@ use common::ambient;
 
 use super::*;
 
-fn elements(map: &ElementMap, points: Range<PointOffsetType>) -> Vec<Vec<u32>> {
+fn elements(map: &ElementMap, points: Range<PointOffsetType>) -> Vec<Vec<ElementOffsetType>> {
     points
         .map(|point| map.point_elements(point).collect())
         .collect()
 }
 
-fn owners(map: &ElementMap, elements: Range<ElementOffsetType>) -> Vec<Option<u32>> {
+fn owners(map: &ElementMap, elements: Range<ElementOffsetType>) -> Vec<Option<PointOffsetType>> {
     elements.map(|element| map.element_point(element)).collect()
 }
 
@@ -28,7 +28,10 @@ fn mutable_assign_keeps_and_reuses_offsets() {
     assert_eq!(builder.add(1, 3).unwrap(), 2..5);
     let mut map =
         ElementMap::create(path.clone(), IndexMutability::Mutable, &builder, 0, true).unwrap();
-    assert_eq!(map.assign(2, 0).unwrap().new, Vec::<u32>::new());
+    assert_eq!(
+        map.assign(2, 0).unwrap().new,
+        Vec::<ElementOffsetType>::new()
+    );
 
     // Same count keeps the elements
     assert_eq!(
@@ -127,7 +130,10 @@ fn immutable_map_resolves_both_ways() {
 
     // Elements can be kept or dropped, but not changed in number
     assert_eq!(map.assign(3, 3).unwrap().new, vec![2, 3, 4]);
-    assert_eq!(map.assign(3, 0).unwrap().new, Vec::<u32>::new());
+    assert_eq!(
+        map.assign(3, 0).unwrap().new,
+        Vec::<ElementOffsetType>::new()
+    );
     assert!(map.assign(3, 2).is_err());
     check(&map);
 

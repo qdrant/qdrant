@@ -499,7 +499,7 @@ impl FieldIndexRead for NestedFieldIndex {
             points
                 .iter()
                 .flat_map(|&point| map.point_elements(point))
-                .collect::<Vec<_>>()
+                .collect::<Vec<ElementOffsetType>>()
         });
         fill_text_statistics(index, stats, corpus_elements.as_deref(), is_stopped)?;
         Ok(true)
@@ -518,8 +518,8 @@ impl FieldIndexRead for NestedFieldIndex {
             return Ok(None);
         };
         let map = &self.element_map;
-        let element_point = |element| map.element_point(element);
-        let visible = |element| {
+        let element_point = |element: ElementOffsetType| map.element_point(element);
+        let visible = |element: ElementOffsetType| {
             map.element_point(element)
                 .is_some_and(|point| accept.is_visible(point))
         };

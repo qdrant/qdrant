@@ -32,7 +32,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::IndexMutability;
 
 /// Offset of an element of a nested array, the ID per-element indexes store values under.
-pub type ElementOffsetType = PointOffsetType;
+pub type ElementOffsetType = u32;
 
 /// Marks an element offset that no point owns.
 const NO_POINT: PointOffsetType = PointOffsetType::MAX;
