@@ -812,7 +812,8 @@ message TextIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 11;
   // Enable ranking points by BM25 over this field.
-  // Implies `phrase_matching: true`. Changing it rebuilds the index.
+  // Term frequencies come from the positions when `phrase_matching` is on,
+  // and from their own file otherwise. Changing it rebuilds the index.
   // Default: disabled.
   optional TextScoringParams scoring = 12;
 }
