@@ -8058,7 +8058,7 @@
             "nullable": true
           },
           "scoring": {
-            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Implies `phrase_matching: true`, since term frequencies come from the positions it stores. Changing it rebuilds the index. Default: disabled.",
+            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Term frequencies come from the positions when `phrase_matching` is on, and from their own file otherwise. Changing it rebuilds the index. Default: disabled.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TextScoringInterface"
