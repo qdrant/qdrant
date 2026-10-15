@@ -193,8 +193,31 @@ fn nested_indexes_use_append_only_storage(#[case] build_before_points: bool) {
             .unwrap();
         segment.set_full_payload(2, id.into(), &payload).unwrap();
     }
+    // Serverless deletes leave payload behind. A later build must only assign
+    // element offsets and index values for the live points.
+    segment
+        .upsert_point(2, 99.into(), only_default_vector(&[1.0; DIM]))
+        .unwrap();
+    segment
+        .set_full_payload(
+            2,
+            99.into(),
+            &payload_json! { "offers": [{"shop": "deleted", "price": 99}] },
+        )
+        .unwrap();
+    segment.delete_point(2, 99.into()).unwrap();
     if !build_before_points {
         create_indexes(&mut segment, 3);
+        let condition: FieldCondition = serde_json::from_value(json!({
+            "key": "offers[].price", "match": {"value": 99},
+        }))
+        .unwrap();
+        let payload_index = segment.payload_index.borrow();
+        for index in &payload_index.field_indexes[&condition.key] {
+            if let Some(mut points) = index.filter(&condition).unwrap() {
+                assert_eq!(points.next(), None);
+            }
+        }
     }
     segment.flush(true).unwrap();
 

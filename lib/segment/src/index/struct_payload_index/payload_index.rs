@@ -164,9 +164,9 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow_mut().overwrite(point_id, payload)?;
 
         for (field, field_index) in &mut self.field_indexes {
-            let field_value = payload.get_value(field);
             for index in field_index {
-                update_index(index, point_id, &field_value, payload)?;
+                let values = payload.get_value(index.input_path(field));
+                update_index(index, point_id, &values)?;
             }
         }
         Ok(())
@@ -191,22 +191,11 @@ impl PayloadIndex for StructPayloadIndex {
         // a `&mut self` write path.
         let updated_payload = self.payload.borrow().get(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            let field_affected = field.is_affected_by_value_set(&payload.0, key.as_ref());
-            if !field_affected && !field_index.iter().any(FieldIndex::is_nested) {
-                continue;
-            }
-            let field_value = updated_payload.get_value(field);
             for index in field_index {
-                // Per-element indexes follow the whole array: positions of the elements
-                // change with it
-                let affected = match index.as_nested() {
-                    Some(nested) => nested
-                        .array_key()
-                        .is_affected_by_value_set(&payload.0, key.as_ref()),
-                    None => field_affected,
-                };
-                if affected {
-                    update_index(index, point_id, &field_value, &updated_payload)?;
+                let input_path = index.input_path(field);
+                if input_path.is_affected_by_value_set(&payload.0, key.as_ref()) {
+                    let values = updated_payload.get_value(input_path);
+                    update_index(index, point_id, &values)?;
                 }
             }
         }
@@ -218,27 +207,22 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Vec<Value>> {
-        if let Some(indexes) = self.field_indexes.get_mut(key) {
-            for index in indexes.iter_mut().filter(|index| !index.is_nested()) {
-                index.remove_point(point_id)?;
-            }
-        }
         let deleted = self.payload.borrow_mut().delete(point_id, key)?;
 
-        // Per-element indexes re-read the elements from what is left of the array
         let mut updated_payload = None;
-        for index in self.field_indexes.values_mut().flatten() {
-            let Some(nested) = index.as_nested_mut() else {
-                continue;
-            };
-            if !nested.array_key().is_affected_by_value_remove(key) {
-                continue;
+        for (field, indexes) in &mut self.field_indexes {
+            for index in indexes {
+                let input_path = index.input_path(field);
+                if !input_path.is_affected_by_value_remove(key) {
+                    continue;
+                }
+                let payload = match &mut updated_payload {
+                    Some(payload) => payload,
+                    None => updated_payload.insert(self.payload.borrow().get(point_id)?),
+                };
+                let values = payload.get_value(input_path);
+                update_index(index, point_id, &values)?;
             }
-            let payload = match &mut updated_payload {
-                Some(payload) => payload,
-                None => updated_payload.insert(self.payload.borrow().get(point_id)?),
-            };
-            nested.update_point(point_id, payload)?;
         }
         Ok(deleted)
     }
@@ -306,17 +290,12 @@ impl PayloadIndex for StructPayloadIndex {
     }
 }
 
-/// Index the field of `point_id` in an index: `field_value` for an index of points, the
-/// elements of the array in `payload` for a per-element index.
+/// Replace the indexed values of `point_id`, or remove it when its input is missing.
 fn update_index(
     index: &mut FieldIndex,
     point_id: PointOffsetType,
     field_value: &[&Value],
-    payload: &impl PayloadContainer,
 ) -> OperationResult<()> {
-    if let Some(nested) = index.as_nested_mut() {
-        return nested.update_point(point_id, payload);
-    }
     if field_value.is_empty() {
         index.remove_point(point_id)
     } else {

@@ -7,7 +7,7 @@ use serde_json::Value;
 use super::payload_field_index::PayloadFieldIndex;
 use super::value_indexer::ValueIndexer;
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::bool_index::{BoolIndex, BoolIndexRead};
 use crate::index::field_index::full_text_index::FullTextIndex;
 use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
@@ -19,6 +19,7 @@ use crate::index::field_index::numeric_index::{NumericIndex, NumericIndexRead};
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
 };
+use crate::json_path::JsonPath;
 use crate::types::{
     DateTimePayloadType, FloatPayloadType, IntPayloadType, UuidIntType, UuidPayloadType,
 };
@@ -99,11 +100,11 @@ impl FieldIndex {
         }
     }
 
-    /// The per-element index, if this is one: it is updated from the whole payload of a
-    /// point, see [`NestedFieldIndex::update_point`].
-    pub fn as_nested_mut(&mut self) -> Option<&mut NestedFieldIndex> {
+    /// Payload path to extract for [`Self::add_point`] and watch for changes.
+    /// `field` is the registered field; a nested index consumes its array's elements.
+    pub fn input_path<'a>(&'a self, field: &'a JsonPath) -> &'a JsonPath {
         match self {
-            FieldIndex::Nested(index) => Some(index),
+            FieldIndex::Nested(index) => index.array_key(),
             FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::IntMapIndex(_)
@@ -114,7 +115,7 @@ impl FieldIndex {
             | FieldIndex::BoolIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::UuidMapIndex(_)
-            | FieldIndex::NullIndex(_) => None,
+            | FieldIndex::NullIndex(_) => field,
         }
     }
 
@@ -151,6 +152,7 @@ impl FieldIndex {
         self.get_payload_field_index().immutable_files()
     }
 
+    /// Index values extracted at [`Self::input_path`].
     pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index.add_point(id, payload),
@@ -182,11 +184,7 @@ impl FieldIndex {
             FieldIndex::NullIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            // Values of a point don't say which element they belong to
-            FieldIndex::Nested(index) => Err(OperationError::service_error(format!(
-                "per-element index of `{}` must be updated from the whole payload",
-                index.array_key(),
-            ))),
+            FieldIndex::Nested(index) => index.add_point(id, payload),
         }
     }
 

@@ -9,6 +9,7 @@
 //! translates element offsets back to the points that own them, so results are the same
 //! as those of the flattened index of the field.
 
+mod builder;
 mod element_map;
 mod element_points;
 mod facet;
@@ -25,7 +26,9 @@ use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, defau
 use common::types::{PointOffsetType, ScoredPointOffset};
 use serde_json::Value;
 
-pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType, nested_elements};
+pub use self::builder::NestedFieldIndexBuilder;
+use self::element_map::nested_elements;
+pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType};
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
 use super::numeric_index::NumericFieldIndexRead;
@@ -46,7 +49,7 @@ use crate::index::payload_config::FullPayloadIndexType;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, PayloadContainer, PayloadKeyType};
+use crate::types::{FieldCondition, PayloadKeyType};
 
 /// A field index of the elements of a nested array, read as an index of points.
 ///
@@ -133,13 +136,9 @@ impl NestedFieldIndex {
         Ok(false)
     }
 
-    /// Index the elements of the array in the `payload` of `point`.
-    pub fn update_point(
-        &mut self,
-        point: PointOffsetType,
-        payload: &impl PayloadContainer,
-    ) -> OperationResult<()> {
-        let elements = nested_elements(payload, &self.array_key);
+    /// Index the elements extracted at [`Self::array_key`] for `point`.
+    pub fn add_point(&mut self, point: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+        let elements = nested_elements(values);
         let update = self.element_map.assign(point, elements.len())?;
         let had_values = self.has_values(update.old.iter().copied())?;
 

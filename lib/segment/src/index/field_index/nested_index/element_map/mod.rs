@@ -30,8 +30,6 @@ use self::mutable::MutableElementMap;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::IndexMutability;
-use crate::json_path::JsonPath;
-use crate::types::PayloadContainer;
 
 /// Offset of an element of a nested array, the ID per-element indexes store values under.
 pub type ElementOffsetType = PointOffsetType;
@@ -39,18 +37,14 @@ pub type ElementOffsetType = PointOffsetType;
 /// Marks an element offset that no point owns.
 const NO_POINT: PointOffsetType = PointOffsetType::MAX;
 
-/// The objects of the `array_key` array in `payload`, in the order of their positions.
+/// Objects among the values extracted at the array key, in their original order.
 ///
 /// Matches how the `Nested` filter condition enumerates elements: values that are not
 /// objects are skipped.
-pub fn nested_elements<'a>(
-    payload: &'a impl PayloadContainer,
-    array_key: &JsonPath,
-) -> Vec<&'a Map<String, Value>> {
-    payload
-        .get_value(array_key)
-        .into_iter()
-        .filter_map(Value::as_object)
+pub(super) fn nested_elements<'a>(values: &[&'a Value]) -> Vec<&'a Map<String, Value>> {
+    values
+        .iter()
+        .filter_map(|value| value.as_object())
         .collect()
 }
 

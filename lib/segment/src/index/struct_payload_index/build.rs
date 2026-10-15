@@ -1,8 +1,6 @@
-use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 
 use super::StructPayloadIndex;
-use super::nested::NestedBuild;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::BuildIndexResult;
@@ -23,12 +21,6 @@ impl StructPayloadIndex {
         // would leak stale postings into the fresh build.
         wipe_field_dirs(&self.path, field)?;
 
-        // Per-element indexes get their element offsets during the pass below
-        let mut nested = payload_schema
-            .nested()
-            .map(|array_key| NestedBuild::new(field, array_key))
-            .transpose()?;
-
         // Note: durability of the state this build reads (id tracker, payload storage)
         // is the caller's responsibility. Component flushers must not be invoked here:
         // flusher executions are serialized end-to-end with their capture by the shard
@@ -39,22 +31,17 @@ impl StructPayloadIndex {
         let payload_storage = self.payload.borrow();
         let id_tracker_borrow = self.id_tracker.borrow();
         let selector = self.selector(payload_schema);
-        // Deleted points get no elements, so no element is deleted
-        let no_deleted_elements = BitVec::new();
-        let deleted = match nested {
-            Some(_) => &no_deleted_elements,
-            None => id_tracker_borrow.deleted_point_bitslice(),
-        };
+        let deleted = id_tracker_borrow.deleted_point_bitslice();
         let mut builders = selector.index_builder(field, payload_schema, deleted)?;
 
         // Special null index complements every index. Seed it with the segment's total
         // point count so `iter_falses()` returns points that are missing from payload
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
-        let total_point_count = self.id_tracker.borrow().total_point_count();
-        let mut null_builder = selector.null_builder(field, total_point_count)?;
+        let total_point_count = id_tracker_borrow.total_point_count();
+        builders.push(selector.null_builder(field, total_point_count)?);
 
-        for index in builders.iter_mut().chain([&mut null_builder]) {
+        for index in &mut builders {
             index.init()?;
             if !self.journaled {
                 index.disable_journal();
@@ -62,32 +49,20 @@ impl StructPayloadIndex {
         }
 
         payload_storage.iter(|point_id, point_payload| {
-            let field_value = &point_payload.get_value(field);
-            null_builder.add_point(point_id, field_value)?;
-
-            if let Some(nested) = &mut nested {
-                if !id_tracker_borrow.is_deleted_point(point_id) {
-                    nested.add_point(point_id, point_payload, &mut builders)?;
-                }
-            } else {
-                for builder in builders.iter_mut() {
-                    builder.add_point(point_id, field_value)?;
-                }
+            if id_tracker_borrow.is_deleted_point(point_id) {
+                return Ok(true);
+            }
+            for builder in &mut builders {
+                let values = point_payload.get_value(builder.input_path(field));
+                builder.add_point(point_id, &values)?;
             }
             Ok(true)
         })?;
 
-        let mut indexes = builders
+        builders
             .into_iter()
             .map(|builder| builder.finalize())
-            .collect::<OperationResult<Vec<_>>>()?;
-
-        if let Some(nested) = &nested {
-            indexes = self.finish_nested_build(field, nested, indexes)?;
-        }
-
-        indexes.push(null_builder.finalize()?);
-        Ok(indexes)
+            .collect()
     }
 
     /// Build a field index by reusing its already-persisted files, loaded in

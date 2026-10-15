@@ -19,7 +19,7 @@ use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoIndex;
-use crate::index::field_index::nested_index::ElementMap;
+use crate::index::field_index::nested_index::{ElementMap, NestedFieldIndexBuilder};
 use crate::index::field_index::null_index::MutableNullIndex;
 use crate::index::field_index::numeric_index::{NumericIndex, NumericIndexValue};
 use crate::index::payload_config::{FullPayloadIndexType, IndexMutability, PayloadIndexType};
@@ -205,13 +205,20 @@ impl IndexSelector<'_> {
         Ok(indexes)
     }
 
-    /// Selects index builder based on field type.
+    /// Selects builders for the live points of a field, consuming their declared input paths.
     pub fn index_builder(
         &self,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
         deleted_points: &BitSlice,
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
+        // Nested builders assign offsets only to live points' elements, so none of
+        // the inner index's offsets are deleted during construction.
+        let deleted_points = if payload_schema.nested().is_some() {
+            BitSlice::empty()
+        } else {
+            deleted_points
+        };
         let builders = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(params) => {
                 vec![self.map_builder(
@@ -292,7 +299,19 @@ impl IndexSelector<'_> {
             }
         };
 
-        Ok(builders)
+        if let Some(array_key) = payload_schema.nested() {
+            let (IndexSelector::Appendable { dir } | IndexSelector::NonAppendable { dir, .. }) =
+                self;
+            builders
+                .into_iter()
+                .map(|inner| {
+                    NestedFieldIndexBuilder::new(dir, field, array_key, inner)
+                        .map(|builder| FieldIndexBuilder::Nested(Box::new(builder)))
+                })
+                .collect()
+        } else {
+            Ok(builders)
+        }
     }
 
     /// `prefix_index` enables the sorted key dictionary for prefix matching;

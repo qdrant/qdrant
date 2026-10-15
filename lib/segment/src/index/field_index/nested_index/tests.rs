@@ -25,6 +25,7 @@ use crate::entry::entry_point::{
     StorageSegmentEntry as _,
 };
 use crate::id_tracker::IdTrackerRead as _;
+use crate::index::field_index::null_index::NullIndexRead as _;
 use crate::index::field_index::{FieldIndex, FieldIndexRead as _, PayloadFieldIndexRead as _};
 use crate::index::payload_config::PayloadIndexType;
 use crate::json_path::JsonPath;
@@ -724,6 +725,125 @@ fn element_map_lifecycle() {
         .unwrap();
     assert!(price_maps.iter().all(|map_dir| !map_dir.exists()));
     assert!(shop_maps.iter().all(|map_dir| map_dir.exists()));
+}
+
+/// The nested wrapper consumes array elements, while ordinary and null indexes
+/// consume the indexed field. All must refresh when their input paths change.
+#[rstest::rstest]
+fn indexes_follow_input_paths(
+    #[values(false, true)] nested: bool,
+    #[values(false, true)] build_before_points: bool,
+) {
+    let dir = Builder::new().prefix("index_input_path").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    let field = JsonPath::from_str("offers[].price").unwrap();
+    let schema = schema(PayloadSchemaType::Integer, nested, None);
+    if build_before_points {
+        segment
+            .create_field_index(1, &field, Some(&schema))
+            .unwrap();
+    }
+    segment
+        .upsert_point(2, 1.into(), only_default_vector(&[1.0, 1.0]))
+        .unwrap();
+    segment
+        .set_full_payload(
+            2,
+            1.into(),
+            &crate::payload_json! {
+                "offers": [{"price": 10}, {}, null, 7, {"price": null}, {"price": 20}],
+            },
+        )
+        .unwrap();
+    if !build_before_points {
+        segment
+            .create_field_index(3, &field, Some(&schema))
+            .unwrap();
+    }
+
+    let check = |segment: &Segment, elements: usize, prices: &[i64], is_null: bool| {
+        let point = segment.get_internal_id(1.into()).unwrap();
+        let payload_index = segment.payload_index.borrow();
+        let indexes = &payload_index.field_indexes[&field];
+        for index in indexes {
+            if let Some(nested) = index.as_nested() {
+                assert_eq!(nested.element_map().point_elements(point).count(), elements);
+            }
+            if let FieldIndex::NullIndex(index) = index {
+                assert_eq!(
+                    index.values_is_empty(point).unwrap(),
+                    prices.is_empty() && !is_null
+                );
+                assert_eq!(index.values_is_null(point).unwrap(), is_null);
+            }
+        }
+        for price in [10, 20] {
+            let condition: FieldCondition = serde_json::from_value(json!({
+                "key": field, "match": {"value": price},
+            }))
+            .unwrap();
+            let expected = if prices.contains(&price) {
+                vec![point]
+            } else {
+                vec![]
+            };
+            let mut checked = false;
+            for index in indexes {
+                if let Some(points) = index.filter(&condition).unwrap() {
+                    assert_eq!(points.collect::<Vec<_>>(), expected, "{condition:?}");
+                    checked = true;
+                }
+            }
+            assert!(checked);
+        }
+    };
+    check(&segment, 4, &[10, 20], true);
+
+    segment
+        .delete_payload(4, 1.into(), &"offers[0].price".parse().unwrap())
+        .unwrap();
+    check(&segment, 4, &[20], true);
+
+    // A previously non-object element becomes an object without the indexed
+    // field. It still needs an element offset to preserve array positions.
+    segment
+        .set_payload(
+            5,
+            1.into(),
+            &crate::payload_json! { "shop": "a" },
+            &Some("offers[2]".parse().unwrap()),
+        )
+        .unwrap();
+    check(&segment, 5, &[20], true);
+    segment
+        .delete_payload(6, 1.into(), &"offers[4].price".parse().unwrap())
+        .unwrap();
+    check(&segment, 5, &[20], false);
+    segment = reload(segment);
+    check(&segment, 5, &[20], false);
+
+    segment
+        .delete_payload(7, 1.into(), &"offers[]".parse().unwrap())
+        .unwrap();
+    check(&segment, 0, &[], false);
+    segment
+        .set_payload(8, 1.into(), &crate::payload_json! { "offers": [{}] }, &None)
+        .unwrap();
+    check(&segment, 1, &[], false);
+    segment
+        .set_payload(
+            9,
+            1.into(),
+            &crate::payload_json! { "price": 10 },
+            &Some("offers[0]".parse().unwrap()),
+        )
+        .unwrap();
+    check(&segment, 1, &[10], false);
+    segment
+        .delete_payload(10, 1.into(), &"offers".parse().unwrap())
+        .unwrap();
+    check(&segment, 0, &[], false);
 }
 
 /// Words of the per-element text tests, skewed so queries mix common and rare ones.
