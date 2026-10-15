@@ -318,6 +318,8 @@ pub enum TokenizerType {
     Word,
     /// Unicode-aware segmentation for languages without word separators.
     Multilingual,
+    /// Split source code identifiers into subwords (camelCase, snake_case, acronyms).
+    Code,
 }
 
 impl From<TokenizerType> for segment_index::TokenizerType {
@@ -327,6 +329,7 @@ impl From<TokenizerType> for segment_index::TokenizerType {
             TokenizerType::Whitespace => segment_index::TokenizerType::Whitespace,
             TokenizerType::Word => segment_index::TokenizerType::Word,
             TokenizerType::Multilingual => segment_index::TokenizerType::Multilingual,
+            TokenizerType::Code => segment_index::TokenizerType::Code,
         }
     }
 }
@@ -338,6 +341,7 @@ impl From<segment_index::TokenizerType> for TokenizerType {
             segment_index::TokenizerType::Whitespace => TokenizerType::Whitespace,
             segment_index::TokenizerType::Word => TokenizerType::Word,
             segment_index::TokenizerType::Multilingual => TokenizerType::Multilingual,
+            segment_index::TokenizerType::Code => TokenizerType::Code,
         }
     }
 }

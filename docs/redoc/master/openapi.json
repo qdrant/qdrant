@@ -8062,7 +8062,8 @@
           "prefix",
           "whitespace",
           "word",
-          "multilingual"
+          "multilingual",
+          "code"
         ]
       },
       "StopwordsInterface": {

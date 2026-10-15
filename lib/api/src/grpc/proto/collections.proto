@@ -702,6 +702,7 @@ enum TokenizerType {
   Whitespace = 2;
   Word = 3;
   Multilingual = 4;
+  Code = 5;
 }
 
 message KeywordIndexParams {

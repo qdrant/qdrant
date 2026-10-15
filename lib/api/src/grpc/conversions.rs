@@ -195,6 +195,7 @@ impl From<segment::data_types::index::TokenizerType> for TokenizerType {
             segment::data_types::index::TokenizerType::Whitespace => TokenizerType::Whitespace,
             segment::data_types::index::TokenizerType::Multilingual => TokenizerType::Multilingual,
             segment::data_types::index::TokenizerType::Word => TokenizerType::Word,
+            segment::data_types::index::TokenizerType::Code => TokenizerType::Code,
         }
     }
 }
@@ -563,6 +564,7 @@ impl TryFrom<TokenizerType> for segment::data_types::index::TokenizerType {
             }
             TokenizerType::Whitespace => Ok(segment::data_types::index::TokenizerType::Whitespace),
             TokenizerType::Word => Ok(segment::data_types::index::TokenizerType::Word),
+            TokenizerType::Code => Ok(segment::data_types::index::TokenizerType::Code),
         }
     }
 }

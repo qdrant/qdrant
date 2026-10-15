@@ -4,11 +4,13 @@
 
 use std::borrow::Cow;
 mod ascii_folding;
+mod code;
 mod japanese;
 mod multilingual;
 mod stemmer;
 pub mod tokens_processor;
 
+use code::CodeTokenizer;
 use multilingual::MultilingualTokenizer;
 pub use stemmer::Stemmer;
 pub use tokens_processor::TokensProcessor;
@@ -226,6 +228,10 @@ impl Tokenizer {
             TokenizerType::Prefix => match kind {
                 TokenizerTextKind::Document => PrefixTokenizer::tokenize(text, tp, callback),
                 TokenizerTextKind::Query => PrefixTokenizer::tokenize_query(text, tp, callback),
+            },
+            TokenizerType::Code => match kind {
+                TokenizerTextKind::Document => CodeTokenizer::tokenize_doc(text, tp, callback),
+                TokenizerTextKind::Query => CodeTokenizer::tokenize_query(text, tp, callback),
             },
         }
     }
