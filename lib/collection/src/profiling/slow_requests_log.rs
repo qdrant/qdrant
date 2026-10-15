@@ -16,7 +16,12 @@ pub struct LogEntry {
     collection_name: String,
     #[serde(serialize_with = "duration_as_seconds")]
     duration: Duration,
+    /// Time of the slowest request in this group
     datetime: DateTime<Utc>,
+    /// Time of the oldest request in this group
+    datetime_first: DateTime<Utc>,
+    /// Time of the newest request in this group
+    datetime_last: DateTime<Utc>,
     request_name: &'static str,
     approx_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,6 +47,8 @@ impl LogEntry {
             collection_name,
             duration,
             datetime,
+            datetime_first: datetime,
+            datetime_last: datetime,
             request_name,
             approx_count: 1,
             cpu_usage_ratio,
@@ -52,6 +59,11 @@ impl LogEntry {
 
     pub fn upd_counter(&mut self, count: usize) {
         self.approx_count = count;
+    }
+
+    pub fn upd_datetime_range(&mut self, first: DateTime<Utc>, last: DateTime<Utc>) {
+        self.datetime_first = first;
+        self.datetime_last = last;
     }
 }
 
@@ -87,6 +99,8 @@ impl Ord for LogEntry {
 pub struct SlowRequestsLog {
     log_priority_queue: AHashMap<&'static str, FixedLengthPriorityQueue<LogEntry>>,
     counters: CountMinSketch64<u64>,
+    /// Oldest and newest request time of each group in the log, by content hash
+    datetime_ranges: AHashMap<u64, (DateTime<Utc>, DateTime<Utc>)>,
     max_entries: usize,
 }
 
@@ -95,6 +109,7 @@ impl SlowRequestsLog {
         SlowRequestsLog {
             log_priority_queue: Default::default(),
             counters: CountMinSketch64::new(1024, 0.95, 0.1).unwrap(), // 95% probability, 10% tolerance
+            datetime_ranges: Default::default(),
             max_entries,
         }
     }
@@ -121,7 +136,13 @@ impl SlowRequestsLog {
             }
         } else {
             // just insert
-            queue.push(entry)
+            self.datetime_ranges
+                .insert(entry.content_hash, (entry.datetime, entry.datetime));
+            let evicted = queue.push(entry);
+            if let Some(evicted) = &evicted {
+                self.datetime_ranges.remove(&evicted.content_hash);
+            }
+            evicted
         }
     }
 
@@ -152,6 +173,12 @@ impl SlowRequestsLog {
         let content_hash = Self::content_hash(request.request_hash(), collection_name);
 
         self.inc_counter(content_hash);
+
+        // Track oldest and newest request, also if this one is too fast to replace the logged one
+        if let Some((first, last)) = self.datetime_ranges.get_mut(&content_hash) {
+            *first = (*first).min(datetime);
+            *last = (*last).max(datetime);
+        }
 
         let queue = self
             .log_priority_queue
@@ -210,6 +237,9 @@ impl SlowRequestsLog {
             .map(|mut entry| {
                 let approx_count = self.counters.estimate(&entry.content_hash);
                 entry.upd_counter(approx_count as usize);
+                if let Some(&(first, last)) = self.datetime_ranges.get(&entry.content_hash) {
+                    entry.upd_datetime_range(first, last);
+                }
                 entry
             })
             .collect()
