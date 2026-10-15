@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::lock_api::ArcRwLockReadGuard;
-use parking_lot::{RawRwLock, RwLock};
+use parking_lot::{Mutex, RawRwLock, RwLock};
 
 /// How often a wait for older reads checks whether its caller was stopped.
 const STOP_CHECK_INTERVAL: Duration = Duration::from_millis(50);
@@ -23,6 +23,9 @@ pub(crate) struct ReadEpochs {
     /// The epoch new reads join. Reads take this lock shared; only starting a new epoch takes it
     /// exclusively, so no read can join an epoch once it has ended.
     current: RwLock<Epoch>,
+    /// Ended epochs with reads a wait did not see finish before it timed out. Later waits wait
+    /// for them too: a read that outlives one wait may still miss a point masked after it.
+    pending: Mutex<Vec<Epoch>>,
 }
 
 /// Held by a read for its whole lifetime, see [`ReadEpochs::enter`].
@@ -39,14 +42,18 @@ impl ReadEpochs {
         }
     }
 
-    /// Start a new epoch, and wait until every read of the previous one has finished. Returns
-    /// `false` if `timeout` passed first, or the caller was stopped.
+    /// Start a new epoch, and wait until every read of the previous ones has finished, including
+    /// the reads earlier waits gave up on. Returns `false` if `timeout` passed first, or the caller
+    /// was stopped.
     pub(crate) fn advance_and_wait(&self, timeout: Duration, is_stopped: &AtomicBool) -> bool {
         let previous = std::mem::take(&mut *self.current.write());
+        let mut pending = self.pending.lock();
+        pending.push(previous);
         let deadline = Instant::now() + timeout;
         loop {
             let until = deadline.min(Instant::now() + STOP_CHECK_INTERVAL);
-            if previous.wait_drained_until(until) {
+            pending.retain(|epoch| !epoch.wait_drained_until(until));
+            if pending.is_empty() {
                 return true;
             }
             if Instant::now() >= deadline || is_stopped.load(Ordering::Relaxed) {
