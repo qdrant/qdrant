@@ -30,7 +30,7 @@ If you use Qdrant or Metric Learning in your projects, we'd love to hear your st
 
 For those familiar with Rust - check out our [contribution guide](../CONTRIBUTING.md).
 If you have problems with code or architecture understanding - reach us at any time.
-Feeling confident and want to contribute more? - Come to [work with us](https://qdrant.join.com/)!
+Feeling confident and want to contribute more? - Come to [work with us](https://jobs.ashbyhq.com/qdrant.tech)!
 
 ## Core Milestones
 
