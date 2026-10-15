@@ -1,12 +1,14 @@
 use std::io::Write as _;
 
 use common::universal_io::{MmapFile, MmapFs};
+use roaring::RoaringBitmap;
 use tempfile::Builder;
 use uuid::Uuid;
 
 use super::format::{decode_entries, decode_entry, encode_entry};
 use super::{
-    MoveEntry, MoveKind, PointMovesView, PointMovesWriter, point_moves_path, read_point_moves_tail,
+    MoveEntry, MoveKind, PointMoves, PointMovesView, PointMovesWriter, SlotRef, point_moves_path,
+    read_point_moves_tail,
 };
 
 fn segment(id: u128) -> Uuid {
@@ -212,4 +214,62 @@ fn tail_read_follows_the_offset() {
 
     // A tail read from anywhere else is ignored
     assert_eq!(view.consume(0, &tail), []);
+}
+
+/// Moved-out records name local slots and their targets; moved-in records fold into the
+/// per-source index once their local slot settles.
+#[test]
+fn move_state_settles_and_supersedes() {
+    let mut moves = PointMoves::default();
+    moves.ingest([
+        moved_out(2, &[(1, 10), (2, 11)]),
+        moved_in(3, &[(20, 5), (21, 6)]),
+    ]);
+
+    assert!(moves.names(1) && moves.names(2) && !moves.names(3));
+    assert!(moves.settled_moved_in().is_empty());
+
+    moves.settle(|slot| slot == 20);
+    let settled = moves.settled_moved_in();
+    assert_eq!(settled.len(), 1);
+    assert!(settled[&segment(3)].contains(5) && !settled[&segment(3)].contains(6));
+
+    let target = segment(2);
+    let settled_target = |slot_ref: SlotRef| {
+        slot_ref
+            == SlotRef {
+                segment: target,
+                slot: 10,
+            }
+    };
+    assert!(moves.is_superseded(1, &settled_target, None));
+    assert!(!moves.is_superseded(2, &settled_target, None));
+
+    let masked = RoaringBitmap::from_iter([2u32]);
+    assert!(moves.is_superseded(2, &settled_target, Some(&masked)));
+
+    moves.forget([1]);
+    assert!(!moves.names(1));
+}
+
+/// A slot two moved-out records name, after an interrupted move and a later rewrite, keeps the
+/// target of the last record only.
+#[test]
+fn moved_out_keeps_the_last_target() {
+    let mut moves = PointMoves::default();
+    moves.ingest([moved_out(2, &[(1, 10)])]);
+    moves.ingest([moved_out(4, &[(1, 40)])]);
+
+    let first = SlotRef {
+        segment: segment(2),
+        slot: 10,
+    };
+    let last = SlotRef {
+        segment: segment(4),
+        slot: 40,
+    };
+    assert!(moves.names(1));
+    assert_eq!(moves.moved_out_targets().collect::<Vec<_>>(), [last]);
+    assert!(!moves.is_superseded(1, &|target| target == first, None));
+    assert!(moves.is_superseded(1, &|target| target == last, None));
 }
