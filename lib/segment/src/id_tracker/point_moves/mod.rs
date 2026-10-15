@@ -27,6 +27,7 @@ use std::path::{Path, PathBuf};
 use ahash::AHashMap;
 use common::types::PointOffsetType;
 use uuid::Uuid;
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 pub use self::view::PointMovesView;
 #[cfg(test)]
@@ -50,23 +51,15 @@ pub struct SlotRef {
 }
 
 /// Which side of a move a record describes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, TryFromBytes, IntoBytes, KnownLayout, Immutable, Unaligned,
+)]
 #[repr(u8)]
 pub enum MoveKind {
     /// The local slot holds a point whose previous copy sits at the peer slot.
     MovedIn = 1,
     /// The point on the local slot has its new copy at the peer slot.
     MovedOut = 2,
-}
-
-impl MoveKind {
-    const fn from_byte(byte: u8) -> Option<Self> {
-        match byte {
-            x if x == Self::MovedIn as u8 => Some(Self::MovedIn),
-            x if x == Self::MovedOut as u8 => Some(Self::MovedOut),
-            _ => None,
-        }
-    }
 }
 
 /// One entry of a move log: the pairs one batch shares between this segment and one peer.
