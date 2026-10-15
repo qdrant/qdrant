@@ -19,8 +19,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         match action {
             Action::AddPeer { peer_id, uri } => self.add_peer(peer_id, uri),
 
-            Action::RemovePeer { .. }
-            | Action::SetPeerMetadata { .. }
+            Action::RemovePeer { peer_id } => {
+                // Earlier collection actions own replica and transfer cleanup
+                self.toc.remove_peer_channels(peer_id)?;
+
+                let persistent = self.persistent.write();
+                persistent.peer_metadata_by_id.write().remove(&peer_id);
+                persistent.save()
+            }
+
+            Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(
                 "Consensus action is not implemented: {action:?}",

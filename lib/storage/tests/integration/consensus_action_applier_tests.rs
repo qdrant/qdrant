@@ -1,6 +1,8 @@
 use std::sync::{Arc, mpsc};
 
+use collection::operations::types::PeerMetadata;
 use collection::operations::verification::new_unchecked_verification_pass;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
@@ -70,6 +72,119 @@ fn add_peer_action_save_failure_retry() {
 
     let reloaded = Persistent::load_or_init(storage_dir.path(), true, false, None).unwrap();
     assert!(reloaded.peer_address_by_id().contains_key(&1));
+}
+
+#[test]
+fn remove_peer_action_replay() {
+    for peer_id in [0, 1] {
+        let (storage_dir, handle, dispatcher) = new_dispatcher();
+        create_collection(&handle, &dispatcher, "test");
+        let pass = new_unchecked_verification_pass();
+        let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+        let manager = consensus_manager(&storage_dir, toc.clone());
+        for id in 0..3 {
+            manager
+                .add_peer(
+                    id,
+                    format!("http://127.0.0.1:{}", 6335 + id).parse().unwrap(),
+                )
+                .unwrap();
+            manager
+                .persistent
+                .write()
+                .update_peer_metadata(id, PeerMetadata::current())
+                .unwrap();
+        }
+        toc.apply_action(Action::SetReplicaState {
+            collection: "test".into(),
+            shard_id: 0,
+            peer_id: 1,
+            state: ReplicaState::Active,
+        })
+        .unwrap();
+        let collection = toc.collection_state("test").unwrap();
+        let mut expected_addresses = manager.persistent.read().peer_address_by_id();
+        let mut expected_metadata = manager.persistent.read().peer_metadata_by_id();
+        if peer_id == 0 {
+            expected_addresses.clear();
+        } else {
+            expected_addresses.remove(&peer_id);
+        }
+        expected_metadata.remove(&peer_id);
+        let mut expected_loaded_metadata = expected_metadata.clone();
+        expected_loaded_metadata.retain(|id, _| expected_addresses.contains_key(id));
+
+        for _ in 0..2 {
+            manager
+                .apply_action(Action::RemovePeer { peer_id })
+                .unwrap();
+
+            assert_eq!(toc.collection_state("test").unwrap(), collection);
+            assert_eq!(
+                *toc.get_channel_service().id_to_address.read(),
+                expected_addresses
+            );
+            assert_eq!(
+                *toc.get_channel_service().id_to_metadata.read(),
+                expected_metadata
+            );
+            let path = manager.persistent.read().path.clone();
+            let persisted: Persistent =
+                serde_json::from_slice(&fs_err::read(path).unwrap()).unwrap();
+            assert_eq!(persisted.peer_metadata_by_id(), expected_metadata);
+
+            // Startup removes metadata for addresses forgotten during self-removal
+            let reloaded = Persistent::load_or_init(storage_dir.path(), true, false, None).unwrap();
+            assert_eq!(reloaded.peer_address_by_id(), expected_addresses);
+            assert_eq!(reloaded.peer_metadata_by_id(), expected_loaded_metadata);
+        }
+    }
+}
+
+#[test]
+fn remove_peer_action_save_failure_retry() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let manager = consensus_manager(&storage_dir, dispatcher.toc(&FULL_ACCESS, &pass).clone());
+    manager
+        .add_peer(1, "http://127.0.0.1:6335".parse().unwrap())
+        .unwrap();
+    manager
+        .persistent
+        .write()
+        .update_peer_metadata(1, PeerMetadata::current())
+        .unwrap();
+    let path = manager.persistent.read().path.clone();
+    let backup = path.with_extension("backup");
+    fs_err::rename(&path, &backup).unwrap();
+    fs_err::create_dir(&path).unwrap();
+    let action = Action::RemovePeer { peer_id: 1 };
+
+    let error = manager.apply_action(action.clone()).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(
+        !manager
+            .persistent
+            .read()
+            .peer_address_by_id()
+            .contains_key(&1)
+    );
+    assert!(
+        !manager
+            .persistent
+            .read()
+            .peer_metadata_by_id()
+            .contains_key(&1)
+    );
+    fs_err::remove_dir(&path).unwrap();
+    fs_err::rename(backup, path).unwrap();
+
+    manager.apply_action(action).unwrap();
+
+    let reloaded = Persistent::load_or_init(storage_dir.path(), true, false, None).unwrap();
+    assert!(!reloaded.peer_address_by_id().contains_key(&1));
+    assert!(!reloaded.peer_metadata_by_id().contains_key(&1));
 }
 
 #[test]
