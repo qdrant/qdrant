@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use common::ambient;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
@@ -42,7 +42,7 @@ pub(crate) fn load_segments_parallel<S>(
     segments: impl IntoIterator<Item = (Uuid, PathBuf)>,
     load_profile: Option<&LoadProfile>,
     is_stopped: &AtomicBool,
-) -> OperationResult<Vec<(Uuid, ReadOnlySegment<S>)>>
+) -> OperationResult<LoadedSegments<S>>
 where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
@@ -75,7 +75,7 @@ where
                                 uuid,
                                 None,
                                 load_profile,
-                                PointMovesMode::Ignore,
+                                PointMovesMode::for_follower(),
                                 is_stopped,
                             )
                         })
@@ -88,6 +88,8 @@ where
     })?;
     check_process_stopped(is_stopped)?;
 
+    // Segments that failed to load for another reason than being gone or incomplete
+    let failed = AtomicUsize::new(0);
     // Listing and staging completion order must not change the returned segment order.
     let mut staged_opens = staged_opens.into_inner();
     staged_opens.sort_unstable_by_key(|(index, _, _)| *index);
@@ -97,6 +99,9 @@ where
             Ok(segment) => staged.push((uuid, segment)),
             Err(err @ OperationError::Cancelled { .. }) => return Err(err),
             Err(err) => {
+                if !err.is_not_found() {
+                    failed.fetch_add(1, Ordering::Relaxed);
+                }
                 log::log!(
                     skip_level(&err),
                     "read-only open: skipping unloadable segment {uuid}: {err}"
@@ -119,6 +124,9 @@ where
                     Ok(segment) => Some(Ok((uuid, segment))),
                     Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
                     Err(err) => {
+                        if !err.is_not_found() {
+                            failed.fetch_add(1, Ordering::Relaxed);
+                        }
                         log::log!(
                             skip_level(&err),
                             "read-only open: skipping unloadable segment {uuid}: {err}"
@@ -130,7 +138,19 @@ where
         })
     })?;
     check_process_stopped(is_stopped)?;
-    Ok(loaded)
+    Ok(LoadedSegments {
+        segments: loaded,
+        failed: failed.into_inner(),
+    })
+}
+
+/// The segments [`load_segments_parallel`] opened.
+pub(crate) struct LoadedSegments<S: UniversalReadExt + 'static> {
+    /// Loaded segments, in input order.
+    pub(crate) segments: Vec<(Uuid, ReadOnlySegment<S>)>,
+    /// How many failed for another reason than being gone or incomplete, which the manifest's
+    /// churn explains. A superseded segment is kept while its replacement may be among them.
+    pub(crate) failed: usize,
 }
 
 /// The level at which a segment that failed to open is reported.
@@ -275,7 +295,16 @@ where
 {
     let uuid = segment.uuid;
     log::warn!("live_reload of segment {uuid} failed, reopening it: {reload_err}");
-    match ReadOnlySegment::open(fs, &segment.segment_path, uuid, None, load_profile) {
+    // In the follower's point moves mode, like the first open: when it resolves moves, the deletes
+    // of moves must stay held in the reopened segment too
+    match ReadOnlySegment::open_with_moves(
+        fs,
+        &segment.segment_path,
+        uuid,
+        None,
+        load_profile,
+        PointMovesMode::for_follower(),
+    ) {
         Ok(reopened) => {
             *segment = reopened;
             Ok(())

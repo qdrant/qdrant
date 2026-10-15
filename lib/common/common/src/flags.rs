@@ -97,6 +97,11 @@ pub struct FeatureFlags {
     /// writing: a reader that does not resolve moves never opens the logs.
     pub record_point_moves: bool,
 
+    /// In the serverless read-only follower, read the move logs and resolve point moves across
+    /// segments: an old copy is masked once its new copy is visible, and the tombstone of a move
+    /// is held until then. Without records from the writer this behaves as before.
+    pub resolve_point_moves: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
@@ -125,6 +130,7 @@ impl Default for FeatureFlags {
             persist_proxy_segments: false,
             combined_vector_storage: true,
             record_point_moves: false,
+            resolve_point_moves: false,
             serverless_compatible: false,
         }
     }
@@ -163,8 +169,9 @@ impl FeatureFlags {
             transfer_raw_payloads: false,
             persist_proxy_segments: true,
             combined_vector_storage: true,
-            // Deliberately not enabled by `all`: only the serverless writer uses it.
+            // Deliberately not enabled by `all`: only the serverless writer and follower use them.
             record_point_moves: false,
+            resolve_point_moves: false,
             serverless_compatible: false,
         }
     }
