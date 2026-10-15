@@ -12,7 +12,7 @@ use log::debug;
 use rand::Rng;
 use rayon::ThreadPool;
 
-use super::old_index::{OldIndexCandidate, payload_hnsw_m};
+use super::old_index::{OldIndexCandidate, payload_hnsw_m, payload_links_reusable};
 use super::telemetry::HNSWSearchesTelemetry;
 use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs, derive_config};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -200,11 +200,9 @@ impl HNSWIndex {
             )?;
         }
 
-        // Payload blocks can start from the old graph only if its payload links have the
-        // same size.
         let payload_seed = old_index
             .as_ref()
-            .filter(|old_index| old_index.payload_m() == payload_m);
+            .filter(|old_index| payload_links_reusable(&config, &old_index.index.config));
 
         if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
             #[cfg(feature = "gpu")]
