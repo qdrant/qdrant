@@ -11,42 +11,81 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use parking_lot::Mutex;
+use parking_lot::lock_api::ArcRwLockReadGuard;
+use parking_lot::{RawRwLock, RwLock};
+
+/// How often a wait for older reads checks whether its caller was stopped.
+const STOP_CHECK_INTERVAL: Duration = Duration::from_millis(50);
 
 /// The current read epoch of a follower, see the [module docs](self).
 #[derive(Debug, Default)]
 pub(crate) struct ReadEpochs {
-    /// Cloned by every read for its lifetime: the strong count of an epoch's token is the number of
-    /// its reads still running, plus one.
-    current: Mutex<Arc<()>>,
+    /// The epoch new reads join. Reads take this lock shared; only starting a new epoch takes it
+    /// exclusively, so no read can join an epoch once it has ended.
+    current: RwLock<Epoch>,
 }
 
 /// Held by a read for its whole lifetime, see [`ReadEpochs::enter`].
 #[derive(Debug)]
 pub struct ReadEpochGuard {
-    _token: Arc<()>,
+    _read: EpochRead,
 }
 
 impl ReadEpochs {
     /// Join the current epoch, for a read about to snapshot the segments.
     pub(crate) fn enter(&self) -> ReadEpochGuard {
         ReadEpochGuard {
-            _token: self.current.lock().clone(),
+            _read: self.current.read().enter(),
         }
     }
 
     /// Start a new epoch, and wait until every read of the previous one has finished. Returns
     /// `false` if `timeout` passed first, or the caller was stopped.
     pub(crate) fn advance_and_wait(&self, timeout: Duration, is_stopped: &AtomicBool) -> bool {
-        let previous = std::mem::replace(&mut *self.current.lock(), Arc::new(()));
+        let previous = std::mem::take(&mut *self.current.write());
         let deadline = Instant::now() + timeout;
-        while Arc::strong_count(&previous) > 1 {
+        loop {
+            let until = deadline.min(Instant::now() + STOP_CHECK_INTERVAL);
+            if previous.wait_drained_until(until) {
+                return true;
+            }
             if Instant::now() >= deadline || is_stopped.load(Ordering::Relaxed) {
                 return false;
             }
-            std::thread::sleep(Duration::from_millis(1));
         }
-        true
+    }
+}
+
+/// One read epoch, and the reads that belong to it.
+///
+/// This uses a [`RwLock`] that guards no data, only for its bookkeeping of readers:
+///
+/// - every read of the epoch holds a shared lock on it for its whole lifetime, see
+///   [`Self::enter`];
+/// - waiting for those reads to finish is acquiring the lock exclusively, see
+///   [`Self::wait_drained_until`]. An exclusive lock is only granted once no shared lock is left,
+///   and the waiting thread is parked until then, so the wait needs neither polling nor sleeping.
+///
+/// The exclusive lock is released right away: it never excludes anyone, it only signals that the
+/// reads have finished. Reads only join the current epoch, see [`ReadEpochs::current`], so no read
+/// can take a shared lock on an epoch while or after it is waited for.
+#[derive(Debug, Default)]
+struct Epoch(Arc<RwLock<()>>);
+
+/// A read's membership of an [`Epoch`]: a shared lock on it, held until dropped.
+type EpochRead = ArcRwLockReadGuard<RawRwLock, ()>;
+
+impl Epoch {
+    /// Join the epoch until the returned guard is dropped.
+    fn enter(&self) -> EpochRead {
+        self.0.read_arc()
+    }
+
+    /// Wait until every read of the epoch has finished, or `deadline` passes. Returns whether they
+    /// all finished.
+    fn wait_drained_until(&self, deadline: Instant) -> bool {
+        // Granted once no read holds a shared lock. Dropped at once: it only signals that.
+        self.0.try_write_until(deadline).is_some()
     }
 }
 
