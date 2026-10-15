@@ -10,14 +10,17 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::Condition::Field;
 use crate::types::{Filter, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType};
 
-/// Payload blocks of a numeric `field` with the ranges the old index used, and their
+/// Range blocks of a numeric `field` with the ranges the old index used, and their
 /// cardinalities in the new segment.
 ///
-/// Numeric blocks are histogram ranges, so they move when points are added or removed, and a
+/// Range blocks are histogram ranges, so they move when points are added or removed, and a
 /// block that straddles two old ones has few old links between its points. Blocks with the old
-/// ranges can start from the old graph like keyword blocks do. Returns `None`, to compute new
-/// blocks, if the field is not numeric in both indexes, if the threshold changed, if the old
-/// index had no blocks for it, or if a range grew to more than twice its old size.
+/// ranges can start from the old graph like keyword blocks do. Match blocks of an integer field
+/// with `lookup` are left out: a value is the same block in both segments, and a value that
+/// reached the threshold only since the old build has no old block, so they come from the new
+/// index. Returns `None`, to compute new blocks, if the field is not numeric in both indexes, if
+/// the threshold changed, if the old index had no range blocks for it, or if a range grew to more
+/// than twice its old size.
 pub(super) fn old_range_blocks(
     old_index: &OldIndex<'_>,
     field: &PayloadKeyType,
@@ -41,7 +44,9 @@ pub(super) fn old_range_blocks(
     let mut blocks = Vec::new();
     old_payload_index.with_view(|v| {
         v.for_each_payload_block(field, config.full_scan_threshold, &mut |block| {
-            blocks.push(block);
+            if block.condition.range.is_some() {
+                blocks.push(block);
+            }
             Ok(())
         })
     })?;

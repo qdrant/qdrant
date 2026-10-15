@@ -298,6 +298,16 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                     "healing {field} with the {} block ranges of the old index",
                     blocks.len()
                 );
+                // Match blocks come from the new index, so a value that reached the threshold
+                // since the old build gets one too. The new index yields them before its ranges.
+                payload_index.with_view(|v| {
+                    v.for_each_payload_block(&field, config.full_scan_threshold, &mut |block| {
+                        if block.condition.range.is_some() {
+                            return Ok(());
+                        }
+                        process_block(block)
+                    })
+                })?;
                 blocks.into_iter().try_for_each(&mut process_block)?;
             }
             None => payload_index.with_view(|v| {
