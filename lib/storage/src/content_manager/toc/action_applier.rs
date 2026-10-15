@@ -3,6 +3,7 @@ use collection::shards::transfer::driver::revert_proxy_shard_to_local;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 
 use super::TableOfContent;
+use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::{
     Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
 };
@@ -266,6 +267,65 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::SpawnTransferDriver {
+                collection,
+                transfer,
+            } => {
+                let collection_id = collection.clone();
+                let collection = self.get_collection_unchecked(collection).await?;
+                let proposal_sender = self.get_consensus_proposal_sender()?.clone();
+                let consensus = self.toc_dispatcher.lock().clone().ok_or_else(|| {
+                    StorageError::service_error(
+                        "Can't spawn transfer driver without a consensus dispatcher",
+                    )
+                })?;
+
+                if transfer.method.is_none() {
+                    return Err(StorageError::service_error(
+                        "Can't spawn transfer driver without a transfer method",
+                    ));
+                }
+
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let transfer = transfer.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation =
+                            ConsensusOperations::finish_transfer(collection_id, transfer);
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        }
+                    }
+                };
+                let on_error = {
+                    let transfer = transfer.clone();
+                    async move {
+                        let operation = ConsensusOperations::abort_transfer(
+                            collection_id,
+                            transfer,
+                            "transmission failed",
+                        );
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        }
+                    }
+                };
+
+                collection
+                    .send_shard(
+                        transfer.clone(),
+                        Box::new(consensus),
+                        temp_dir,
+                        on_finish,
+                        on_error,
+                    )
+                    .await;
+
+                Ok(())
+            }
+
             Action::StopTransferDriver { collection, key } => {
                 self.get_collection_unchecked(collection)
                     .await?
@@ -416,7 +476,6 @@ impl TableOfContent {
             | Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
-            | Action::SpawnTransferDriver { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(

@@ -34,16 +34,22 @@ use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::collection_meta_ops::{CollectionMetaOperations, CreateShardKey};
+use storage::content_manager::consensus::operation_sender::OperationSender;
+use storage::content_manager::consensus::persistent::Persistent;
+use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
+use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::consensus_state_machine::{
     Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
 };
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::runtime::Handle;
 
 use super::alias_tests::{
     FULL_ACCESS, create_collection, create_custom_collection, new_dispatcher,
+    new_dispatcher_with_proposals,
 };
 
 #[cfg(feature = "staging")]
@@ -1657,6 +1663,166 @@ fn init_local_shard_action_missing_shard() {
         assert!(matches!(error, StorageError::ServiceError { .. }));
         assert_eq!(toc.collection_state("test").unwrap(), initial_state);
     }
+}
+
+#[test]
+fn spawn_transfer_driver_action_replay() {
+    let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
+    create_collection(&handle, &dispatcher, "test");
+    let _consensus = setup_transfer_consensus(&dispatcher, storage_dir.path());
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    let mut unrelated = transfer.clone();
+    unrelated.to = 2;
+    for transfer in [&transfer, &unrelated] {
+        toc.apply_action(Action::RegisterTransfer {
+            collection: "test".into(),
+            transfer: transfer.clone(),
+        })
+        .unwrap();
+    }
+    let initial_state = toc.collection_state("test").unwrap();
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    proposals.try_iter().for_each(drop);
+
+    toc.apply_action(Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: unrelated.clone(),
+    })
+    .unwrap();
+    let action = Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    };
+
+    // Drivers wait for a leader, so replay must cancel and await a running task
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+    }
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    for transfer in [&transfer, &unrelated] {
+        let result = handle.block_on(collection.stop_shard_transfer(&transfer.key()));
+        assert!(result.is_some(), "driver was not spawned for {transfer:?}");
+        assert!(
+            handle
+                .block_on(collection.stop_shard_transfer(&transfer.key()))
+                .is_none()
+        );
+    }
+    assert!(proposals.try_iter().next().is_none());
+
+    // A restarted consensus thread can replay after all node-local tasks were lost
+    toc.apply_action(action).unwrap();
+    assert!(
+        handle
+            .block_on(collection.stop_shard_transfer(&transfer.key()))
+            .is_some()
+    );
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+#[test]
+fn spawn_transfer_driver_action_reports_failure() {
+    let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
+    create_collection(&handle, &dispatcher, "test");
+    let consensus = setup_transfer_consensus(&dispatcher, storage_dir.path());
+    consensus.is_leader_established.make_ready();
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    toc.apply_action(Action::RegisterTransfer {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    proposals.try_iter().for_each(drop);
+
+    // The destination has no address, so every driver attempt fails without networking
+    toc.apply_action(Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    })
+    .unwrap();
+
+    let proposal = proposals.recv_timeout(Duration::from_secs(10)).unwrap();
+    let expected =
+        ConsensusOperations::abort_transfer("test".into(), transfer.clone(), "transmission failed");
+    assert_eq!(proposal, expected);
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    toc.apply_action(Action::StopTransferDriver {
+        collection: "test".into(),
+        key: transfer.key(),
+    })
+    .unwrap();
+}
+
+#[test]
+fn spawn_transfer_driver_action_missing_dispatcher() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let action = Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: ordinary_transfer(),
+    };
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(error.to_string().contains("without a consensus dispatcher"));
+}
+
+#[test]
+fn spawn_transfer_driver_action_missing_method() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+    let _consensus = setup_transfer_consensus(&dispatcher, storage_dir.path());
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let mut transfer = ordinary_transfer();
+    transfer.method = None;
+    let action = Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer,
+    };
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(error.to_string().contains("without a transfer method"));
+}
+
+fn setup_transfer_consensus(
+    dispatcher: &Dispatcher,
+    storage_path: &std::path::Path,
+) -> ConsensusStateRef {
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let mut persistent = Persistent::load_or_init(storage_path, true, false, None).unwrap();
+    persistent.this_peer_id = toc.this_peer_id;
+    let (sender, _receiver) = std::sync::mpsc::channel();
+    let consensus = ConsensusManager::new(
+        persistent,
+        toc.clone(),
+        OperationSender::new(sender),
+        storage_path,
+    )
+    .unwrap();
+    let consensus = ConsensusStateRef::from(consensus);
+    toc.with_toc_dispatcher(TocDispatcher::new(Arc::downgrade(toc), consensus.clone()));
+
+    consensus
 }
 
 #[test]

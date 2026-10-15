@@ -284,7 +284,8 @@ impl Collection {
         Ok(do_transfer)
     }
 
-    async fn send_shard<OF, OE>(
+    /// Replace any existing driver for this transfer and start sending the shard
+    pub async fn send_shard<OF, OE>(
         &self,
         transfer: ShardTransfer,
         consensus: Box<dyn ShardTransferConsensus>,
@@ -296,9 +297,9 @@ impl Collection {
         OE: Future<Output = ()> + Send + 'static,
     {
         let mut active_transfer_tasks = self.transfer_tasks.lock().await;
-        let task_result = active_transfer_tasks.stop_task(&transfer.key()).await;
+        // Consensus replay can reach this action with the previous driver still running
+        active_transfer_tasks.stop_task(&transfer.key()).await;
 
-        debug_assert!(task_result.is_none(), "Transfer task already exists");
         debug_assert!(
             transfer.method.is_some(),
             "When sending shard, a transfer method must have been selected",
