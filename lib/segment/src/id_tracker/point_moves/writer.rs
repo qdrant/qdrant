@@ -49,16 +49,11 @@ impl PointMovesWriter {
         fs: &Fs,
         entries: &[MoveEntry],
     ) -> OperationResult<()> {
-        let buffers: Vec<Vec<u8>> = entries
-            .iter()
-            .filter(|entry| !entry.pairs.is_empty())
-            .map(|entry| {
-                let mut buffer = Vec::new();
-                encode_entry(entry, &mut buffer);
-                buffer
-            })
-            .collect();
-        if buffers.is_empty() {
+        let mut buffer = Vec::new();
+        for entry in entries.iter().filter(|entry| !entry.pairs.is_empty()) {
+            encode_entry(entry, &mut buffer);
+        }
+        if buffer.is_empty() {
             return Ok(());
         }
 
@@ -85,7 +80,7 @@ impl PointMovesWriter {
             }
         };
 
-        if let Err(err) = file.append_batch(end, buffers.iter().map(Vec::as_slice)) {
+        if let Err(err) = file.append(end, &buffer) {
             // Either another writer appended, or an earlier append of this writer landed without
             // being acknowledged. A fresh writer finds the real end again.
             if err.is_append_offset_conflict() {
@@ -95,8 +90,7 @@ impl PointMovesWriter {
         }
         (file.flusher())()?;
 
-        let appended: usize = buffers.iter().map(Vec::len).sum();
-        self.end = Some(end + appended as u64);
+        self.end = Some(end + buffer.len() as u64);
         Ok(())
     }
 }
