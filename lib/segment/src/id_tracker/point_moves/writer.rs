@@ -6,7 +6,7 @@ use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
     IsNotFound as _, OkNotFound as _, OpenOptions, Populate, UniversalAppend, UniversalAppendFs,
-    UniversalFlush as _, UniversalKind, UniversalRead,
+    UniversalFlush as _, UniversalRead,
 };
 
 use super::format::{decode_entries, encode_entry};
@@ -105,29 +105,14 @@ impl PointMovesWriter {
 fn find_end<F: UniversalAppend>(file: &F) -> OperationResult<(u64, u64)> {
     // `NotFound` means a lazy backend has not materialized the object yet, so it is empty
     let file_len = file.len::<u8>().ok_not_found()?.unwrap_or(0);
-    if file_len == 0 || appends_are_atomic(<F as UniversalRead>::kind()) {
+    // Where appends land whole or not at all, the size always ends on an entry boundary
+    if file_len == 0 || <F as UniversalRead>::kind().appends_atomically() {
         return Ok((file_len, file_len));
     }
 
     let bytes = file.read_bytes(0..file_len, Sequential, align_of::<u8>())?;
     let (_, end) = decode_entries(&bytes);
     Ok((end as u64, file_len))
-}
-
-/// Whether an append on this backend lands whole or not at all, so a file's size always ends on an
-/// entry boundary. Unknown backends are scanned, which is always correct.
-fn appends_are_atomic(kind: UniversalKind) -> bool {
-    match kind {
-        UniversalKind::S3
-        | UniversalKind::Gcs
-        | UniversalKind::Azure
-        | UniversalKind::CachedBlob => true,
-        UniversalKind::Mmap
-        | UniversalKind::IoUring
-        | UniversalKind::DiskCache
-        | UniversalKind::SimpleDiskCache
-        | UniversalKind::UioGrpc => false,
-    }
 }
 
 fn open_options() -> OpenOptions {
