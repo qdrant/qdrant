@@ -1,21 +1,40 @@
+use std::collections::HashSet;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::Duration;
 
+use collection::config::ShardingMethod;
 use collection::operations::config_diff::HnswConfigDiff;
+use collection::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
+    WriteOrdering,
+};
+use collection::operations::types::UpdateStatus;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
-use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::channel_service::ChannelService;
+use collection::shards::remote_shard::RemoteShard;
+use collection::shards::replica_set::replica_set_state::{ReplicaSetState, ReplicaState};
+use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
+use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
+use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::types::DeferredBehavior;
+use parking_lot::Mutex;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
 use segment::json_path::JsonPath;
 use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType, ShardKey};
+use shard::count::CountRequestInternal;
 use shard::operations::{CreateVectorName, DeleteVectorName, VectorNameOperations};
 use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::collection_meta_ops::{CollectionMetaOperations, CreateShardKey};
-use storage::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
+use storage::content_manager::consensus_state_machine::{
+    Action, CollectionConfigDiff, TransferOutcome,
+};
+use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::runtime::Handle;
@@ -470,6 +489,526 @@ fn remove_shard_from_key_mapping_action_replay() {
     let state = toc.collection_state("test").unwrap();
     assert!(state.shards_key_mapping[&"tenant".into()].is_empty());
     assert!(state.shards.contains_key(&shard_id));
+}
+
+#[test]
+fn missing_collection_is_service_error() {
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    let error = toc
+        .apply_action(Action::DropPayloadIndex {
+            collection: "missing".into(),
+            field_name: "city".parse().unwrap(),
+        })
+        .unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+}
+
+#[test]
+fn register_transfer_action_replay() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let initial_state = toc.collection_state("test").unwrap();
+    let transfer = ordinary_transfer();
+    let mut resharding_transfer = transfer.clone();
+    resharding_transfer.to_shard_id = Some(1);
+    resharding_transfer.sync = true;
+    resharding_transfer.method = Some(ShardTransferMethod::ReshardingStreamRecords);
+    resharding_transfer.filter = Some(segment::types::Filter::default());
+    let transfers = HashSet::from([transfer, resharding_transfer]);
+
+    for transfer in &transfers {
+        let action = Action::RegisterTransfer {
+            collection: "test".into(),
+            transfer: transfer.clone(),
+        };
+        toc.apply_action(action.clone()).unwrap();
+        toc.apply_action(action).unwrap();
+    }
+
+    let state = toc.collection_state("test").unwrap();
+    assert_eq!(state.transfers, transfers);
+    assert_eq!(state.shards, initial_state.shards);
+
+    let holder = ShardHolder::new(
+        &storage_dir.path().join("collections/test"),
+        ShardingMethod::Auto,
+    )
+    .unwrap();
+    let persisted = holder.get_transfers(|_| true).into_iter().collect();
+    assert_eq!(transfers, persisted);
+}
+
+#[test]
+fn set_transfer_method_action_replay() {
+    for sync in [false, true] {
+        let (storage_dir, handle, dispatcher) = new_dispatcher();
+        create_collection(&handle, &dispatcher, "test");
+
+        let pass = new_unchecked_verification_pass();
+        let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+        let mut transfer = ordinary_transfer();
+        transfer.sync = sync;
+        let mut unrelated = ordinary_transfer();
+        unrelated.to = 2;
+        for transfer in [&transfer, &unrelated] {
+            toc.apply_action(Action::RegisterTransfer {
+                collection: "test".into(),
+                transfer: transfer.clone(),
+            })
+            .unwrap();
+        }
+
+        let action = Action::SetTransferMethod {
+            collection: "test".into(),
+            key: transfer.key(),
+            method: ShardTransferMethod::Snapshot,
+        };
+        toc.apply_action(action.clone()).unwrap();
+        toc.apply_action(action).unwrap();
+
+        transfer.method = Some(ShardTransferMethod::Snapshot);
+        let expected = HashSet::from([transfer, unrelated]);
+        let state = toc.collection_state("test").unwrap();
+        assert_eq!(state.transfers, expected);
+
+        let holder = ShardHolder::new(
+            &storage_dir.path().join("collections/test"),
+            ShardingMethod::Auto,
+        )
+        .unwrap();
+        let persisted = holder.get_transfers(|_| true).into_iter().collect();
+        assert_eq!(expected, persisted);
+    }
+}
+
+#[test]
+fn set_transfer_method_action_missing_transfer() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    let action = Action::SetTransferMethod {
+        collection: "test".into(),
+        key: transfer.key(),
+        method: ShardTransferMethod::Snapshot,
+    };
+
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(toc.collection_state("test").unwrap().transfers.is_empty());
+}
+
+#[test]
+fn unregister_transfer_action_finish_replay() {
+    unregister_transfer_action_replay(TransferOutcome::Finish);
+}
+
+#[test]
+fn unregister_transfer_action_abort_replay() {
+    unregister_transfer_action_replay(TransferOutcome::Abort);
+}
+
+fn unregister_transfer_action_replay(outcome: TransferOutcome) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    let mut unrelated = ordinary_transfer();
+    unrelated.to = 2;
+    for transfer in [&transfer, &unrelated] {
+        toc.apply_action(Action::RegisterTransfer {
+            collection: "test".into(),
+            transfer: transfer.clone(),
+        })
+        .unwrap();
+    }
+    let initial_shards = toc.collection_state("test").unwrap().shards;
+    let expected = HashSet::from([unrelated]);
+    let action = Action::UnregisterTransfer {
+        collection: "test".into(),
+        key: transfer.key(),
+        outcome,
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        let state = toc.collection_state("test").unwrap();
+        assert_eq!(state.transfers, expected);
+        assert_eq!(state.shards, initial_shards);
+
+        let holder = ShardHolder::new(
+            &storage_dir.path().join("collections/test"),
+            ShardingMethod::Auto,
+        )
+        .unwrap();
+        let persisted = holder.get_transfers(|_| true).into_iter().collect();
+        assert_eq!(expected, persisted);
+    }
+}
+
+#[test]
+fn stop_transfer_driver_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    toc.apply_action(Action::RegisterTransfer {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::StopTransferDriver {
+        collection: "test".into(),
+        key: transfer.key(),
+    };
+
+    // A restarted node has the transfer record but no driver task
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+#[test]
+fn invalidate_clean_local_shards_action_replay() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let result = handle
+        .block_on(collection.cleanup_local_shard(0, true, Some(Duration::from_secs(5))))
+        .unwrap();
+    assert_eq!(result.status, UpdateStatus::Completed);
+    assert!(collection.clean_local_shards_statuses().contains_key(&0));
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::InvalidateCleanLocalShards {
+        collection: "test".into(),
+        shard_ids: vec![0, 99],
+    };
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    assert!(collection.clean_local_shards_statuses().is_empty());
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+fn ordinary_transfer() -> ShardTransfer {
+    ShardTransfer {
+        shard_id: 0,
+        to_shard_id: None,
+        from: 0,
+        to: 1,
+        sync: false,
+        method: Some(ShardTransferMethod::WalDelta),
+        filter: None,
+    }
+}
+
+#[test]
+fn remove_replica_action_local_replay() {
+    remove_replica_action_replay(0);
+}
+
+#[test]
+fn remove_replica_action_remote_replay() {
+    remove_replica_action_replay(1);
+}
+
+fn remove_replica_action_replay(peer_id: u64) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    for peer_id in [1, 2] {
+        toc.apply_action(Action::SetReplicaState {
+            collection: "test".into(),
+            shard_id: 0,
+            peer_id,
+            state: ReplicaState::Active,
+        })
+        .unwrap();
+    }
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let replica_set = handle.block_on(async { holder.read().await.get_shard(0).unwrap().clone() });
+    let mut expected = toc.collection_state("test").unwrap();
+    expected
+        .shards
+        .get_mut(&0)
+        .unwrap()
+        .replicas
+        .remove(&peer_id);
+    let action = Action::RemoveReplica {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id,
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert_eq!(toc.collection_state("test").unwrap(), expected);
+        assert_eq!(handle.block_on(replica_set.has_local_shard()), peer_id != 0);
+
+        let state_file = fs_err::File::open(
+            storage_dir
+                .path()
+                .join("collections/test/0/replica_state.json"),
+        )
+        .unwrap();
+        let persisted: ReplicaSetState = serde_json::from_reader(state_file).unwrap();
+        assert_eq!(persisted.peers(), &expected.shards[&0].replicas);
+        assert_eq!(persisted.is_local, peer_id != 0);
+    }
+}
+
+#[test]
+fn remove_replica_action_missing_shard() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let action = Action::RemoveReplica {
+        collection: "test".into(),
+        shard_id: 99,
+        peer_id: 0,
+    };
+
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+}
+
+#[test]
+fn revert_proxy_shard_action_forward_replay() {
+    proxy_action_replay(
+        Action::RevertProxyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        false,
+    );
+}
+
+#[test]
+fn revert_proxy_shard_action_queue_replay() {
+    proxy_action_replay(
+        Action::RevertProxyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        true,
+    );
+}
+
+fn proxy_action_replay(action: Action, queue: bool) {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 0,
+        state: ReplicaState::Active,
+    })
+    .unwrap();
+
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let replica_set = handle.block_on(async { holder.read().await.get_shard(0).unwrap().clone() });
+    let remote = RemoteShard::new(
+        0,
+        "test".into(),
+        1,
+        ChannelService::new(6333, false, None, None),
+    );
+    let context = AmbientContext::request("test", toc.get_collection_hw_metrics("test".into()));
+    let point = PointStructPersisted {
+        id: 1.into(),
+        vector: VectorStructPersisted::Single(vec![1.0; 10]),
+        payload: None,
+    };
+    let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(vec![point]),
+    ));
+
+    handle.block_on(async {
+        let upsert = collection
+            .update_from_client_simple(operation, true, None, WriteOrdering::default())
+            .measured(context.clone());
+
+        if queue {
+            let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
+            replica_set
+                .queue_proxify_local(remote, None, progress)
+                .await
+                .unwrap();
+            upsert.await.unwrap();
+        } else {
+            upsert.await.unwrap();
+            replica_set.proxify_local(remote, None, None).await.unwrap();
+        }
+
+        assert!(replica_set.is_proxy().await);
+        assert_eq!(replica_set.is_queue_proxy().await, queue);
+    });
+    let initial_state = toc.collection_state("test").unwrap();
+    let sends_queued_updates = queue && matches!(action, Action::UnproxifyShard { .. });
+
+    // Peer 1 has no address. Reverting a queue proxy discards pending remote updates;
+    // unproxifying attempts to send them and fails. Both keep the local points.
+    for attempt in 0..2 {
+        let result = toc.apply_action(action.clone());
+        if attempt == 0 && sends_queued_updates {
+            let error = result.unwrap_err();
+            assert!(matches!(error, StorageError::ServiceError { .. }));
+        } else {
+            result.unwrap();
+        }
+
+        handle.block_on(async {
+            assert!(!replica_set.is_proxy().await);
+            assert!(replica_set.is_local().await);
+
+            let request = Arc::new(CountRequestInternal {
+                filter: None,
+                exact: true,
+            });
+            let count = replica_set
+                .count_local(request, None, DeferredBehavior::VisibleOnly)
+                .measured(context.clone())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(count.count, 1);
+        });
+        assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    }
+}
+
+#[test]
+fn revert_proxy_shard_action_missing_shard() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::DropShard {
+        collection: "test".into(),
+        shard_id: 0,
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::RevertProxyShard {
+        collection: "test".into(),
+        shard_id: 0,
+    };
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+#[test]
+fn unproxify_shard_action_forward_replay() {
+    proxy_action_replay(
+        Action::UnproxifyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        false,
+    );
+}
+
+#[test]
+fn unproxify_shard_action_queue_send_failure() {
+    proxy_action_replay(
+        Action::UnproxifyShard {
+            collection: "test".into(),
+            shard_id: 0,
+        },
+        true,
+    );
+}
+
+#[test]
+fn unproxify_shard_action_missing_shard() {
+    unproxify_shard_action_missing_local(true);
+}
+
+#[test]
+fn unproxify_shard_action_without_local_replica() {
+    unproxify_shard_action_missing_local(false);
+}
+
+fn unproxify_shard_action_missing_local(drop_shard: bool) {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let setup = if drop_shard {
+        Action::DropShard {
+            collection: "test".into(),
+            shard_id: 0,
+        }
+    } else {
+        Action::RemoveReplica {
+            collection: "test".into(),
+            shard_id: 0,
+            peer_id: 0,
+        }
+    };
+    toc.apply_action(setup).unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::UnproxifyShard {
+        collection: "test".into(),
+        shard_id: 0,
+    };
+
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {
