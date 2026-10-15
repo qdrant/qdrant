@@ -35,7 +35,7 @@ use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::collection_meta_ops::{CollectionMetaOperations, CreateShardKey};
 use storage::content_manager::consensus_state_machine::{
-    Action, CollectionConfigDiff, TransferOutcome,
+    Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
 };
 use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
@@ -1499,6 +1499,163 @@ fn unregister_transfer_action_replay(outcome: TransferOutcome) {
         .unwrap();
         let persisted = holder.get_transfers(|_| true).into_iter().collect();
         assert_eq!(expected, persisted);
+    }
+}
+
+#[test]
+fn init_local_shard_action_ensure_exists_replay() {
+    init_local_shard_action_replay(LocalShardInitMode::EnsureExists);
+}
+
+#[test]
+fn init_local_shard_action_reset_to_empty_replay() {
+    init_local_shard_action_replay(LocalShardInitMode::ResetToEmpty);
+}
+
+fn init_local_shard_action_replay(mode: LocalShardInitMode) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let replica_set = handle.block_on(async { holder.read().await.get_shard(0).unwrap().clone() });
+    let field_name: JsonPath = "city".parse().unwrap();
+    let field_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    toc.apply_action(Action::SetPayloadIndex {
+        collection: "test".into(),
+        field_name: field_name.clone(),
+        field_schema: field_schema.clone(),
+    })
+    .unwrap();
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 1,
+        state: ReplicaState::Dead,
+    })
+    .unwrap();
+    handle.block_on(replica_set.remove_local()).unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::InitLocalShard {
+        collection: "test".into(),
+        shard_id: 0,
+        mode,
+    };
+
+    toc.apply_action(action.clone()).unwrap();
+
+    assert!(handle.block_on(replica_set.has_local_shard()));
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 0,
+        state: ReplicaState::Active,
+    })
+    .unwrap();
+    let expected_state = toc.collection_state("test").unwrap();
+    let context = AmbientContext::request("test", toc.get_collection_hw_metrics("test".into()));
+
+    if mode == LocalShardInitMode::EnsureExists {
+        // A transfer may already have copied indexes before consensus replays Start
+        toc.apply_action(Action::SetPayloadIndex {
+            collection: "test".into(),
+            field_name: field_name.clone(),
+            field_schema: field_schema.clone(),
+        })
+        .unwrap();
+        let segments = local_segments(&handle, &dispatcher);
+        wait_for_local_segments(&handle, &segments, |holder| {
+            holder.iter().all(|(_, segment)| {
+                segment.get().read().get_indexed_fields().get(&field_name) == Some(&field_schema)
+            })
+        });
+    }
+
+    for _ in 0..2 {
+        let point = PointStructPersisted {
+            id: 1.into(),
+            vector: VectorStructPersisted::Single(vec![1.0; 10]),
+            payload: None,
+        };
+        let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        handle
+            .block_on(
+                collection
+                    .update_from_client_simple(operation, true, None, WriteOrdering::default())
+                    .measured(context.clone()),
+            )
+            .unwrap();
+
+        toc.apply_action(action.clone()).unwrap();
+
+        let request = Arc::new(CountRequestInternal {
+            filter: None,
+            exact: true,
+        });
+        let count = handle
+            .block_on(
+                replica_set
+                    .count_local(request, None, DeferredBehavior::VisibleOnly)
+                    .measured(context.clone()),
+            )
+            .unwrap()
+            .unwrap();
+        let expected_count = usize::from(mode == LocalShardInitMode::EnsureExists);
+        assert_eq!(count.count, expected_count);
+        assert_eq!(toc.collection_state("test").unwrap(), expected_state);
+        let state_file = fs_err::File::open(
+            storage_dir
+                .path()
+                .join("collections/test/0/replica_state.json"),
+        )
+        .unwrap();
+        let persisted: ReplicaSetState = serde_json::from_reader(state_file).unwrap();
+        assert_eq!(persisted.peers(), &expected_state.shards[&0].replicas);
+        let segments = local_segments(&handle, &dispatcher);
+        let expected_schema = match mode {
+            LocalShardInitMode::EnsureExists => Some(&field_schema),
+            LocalShardInitMode::ResetToEmpty => None,
+        };
+        wait_for_local_segments(&handle, &segments, |holder| {
+            holder.iter().all(|(_, segment)| {
+                segment.get().read().get_indexed_fields().get(&field_name) == expected_schema
+            })
+        });
+    }
+}
+
+#[test]
+fn init_local_shard_action_missing_shard() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let initial_state = toc.collection_state("test").unwrap();
+
+    for mode in [
+        LocalShardInitMode::EnsureExists,
+        LocalShardInitMode::ResetToEmpty,
+    ] {
+        let action = Action::InitLocalShard {
+            collection: "test".into(),
+            shard_id: 99,
+            mode,
+        };
+        let error = toc.apply_action(action).unwrap_err();
+
+        assert!(matches!(error, StorageError::ServiceError { .. }));
+        assert_eq!(toc.collection_state("test").unwrap(), initial_state);
     }
 }
 

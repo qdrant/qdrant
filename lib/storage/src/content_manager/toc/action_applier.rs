@@ -4,7 +4,7 @@ use common::ambient::{AmbientContext, AmbientFutureExt};
 
 use super::TableOfContent;
 use crate::content_manager::consensus_state_machine::{
-    Action, CollectionConfigDiff, TransferOutcome,
+    Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
 };
 use crate::content_manager::errors::{StorageError, StorageResult};
 
@@ -239,6 +239,33 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::InitLocalShard {
+                collection,
+                shard_id,
+                mode,
+            } => {
+                let collection_path = self.get_collection_path(collection);
+                let collection = self.get_collection_unchecked(collection).await?;
+
+                match mode {
+                    LocalShardInitMode::EnsureExists => {
+                        collection.ensure_local_shard(*shard_id).await?;
+                    }
+
+                    LocalShardInitMode::ResetToEmpty => {
+                        let shard_holder = collection.shards_holder();
+                        let shard_holder = shard_holder.read().await;
+                        let replica_set = shard_holder.get_shard(*shard_id).ok_or_else(|| {
+                            StorageError::service_error(format!("Shard {shard_id} does not exist"))
+                        })?;
+
+                        replica_set.init_empty_local_shard(&collection_path).await?;
+                    }
+                }
+
+                Ok(())
+            }
+
             Action::StopTransferDriver { collection, key } => {
                 self.get_collection_unchecked(collection)
                     .await?
@@ -389,7 +416,6 @@ impl TableOfContent {
             | Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
-            | Action::InitLocalShard { .. }
             | Action::SpawnTransferDriver { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
