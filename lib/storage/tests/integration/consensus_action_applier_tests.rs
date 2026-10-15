@@ -3,6 +3,7 @@ use std::sync::{Arc, mpsc};
 use collection::operations::types::PeerMetadata;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
+use serde_json::json;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
@@ -244,6 +245,65 @@ fn set_peer_metadata_action_save_failure_retry() {
     let reloaded = retry_after_failed_save(&storage_dir, &manager, action);
 
     assert_eq!(reloaded.peer_metadata_by_id()[&1], metadata);
+}
+
+#[test]
+fn set_cluster_metadata_key_action_replay() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let manager = consensus_manager(&storage_dir, dispatcher.toc(&FULL_ACCESS, &pass).clone());
+    manager
+        .persistent
+        .write()
+        .update_cluster_metadata_key("other".into(), json!({"preserved": true}));
+
+    for value in [json!({"nested": [1, null, "value"]}), json!(null)] {
+        let action = Action::SetClusterMetadataKey {
+            key: "target".into(),
+            value: value.clone(),
+        };
+
+        for _ in 0..2 {
+            manager.apply_action(action.clone()).unwrap();
+
+            let reloaded = Persistent::load_or_init(storage_dir.path(), true, false, None).unwrap();
+            assert_eq!(
+                reloaded.cluster_metadata,
+                manager.persistent.read().cluster_metadata
+            );
+            assert_eq!(reloaded.get_cluster_metadata_key("target"), value);
+            assert_eq!(
+                reloaded.cluster_metadata.contains_key("target"),
+                !value.is_null()
+            );
+            assert_eq!(
+                reloaded.get_cluster_metadata_key("other"),
+                json!({"preserved": true})
+            );
+        }
+    }
+}
+
+#[test]
+fn set_cluster_metadata_key_action_save_failure_retry() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let manager = consensus_manager(&storage_dir, dispatcher.toc(&FULL_ACCESS, &pass).clone());
+
+    for value in [json!({"owner": "updated"}), json!(null)] {
+        let action = Action::SetClusterMetadataKey {
+            key: "target".into(),
+            value: value.clone(),
+        };
+
+        let reloaded = retry_after_failed_save(&storage_dir, &manager, action);
+
+        assert_eq!(reloaded.get_cluster_metadata_key("target"), value);
+        assert_eq!(
+            reloaded.cluster_metadata.contains_key("target"),
+            !value.is_null()
+        );
+    }
 }
 
 #[test]
