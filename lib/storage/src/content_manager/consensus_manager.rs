@@ -44,6 +44,8 @@ use crate::types::{
     PeerInfo, PeerMetadataById, RaftInfo,
 };
 
+mod action_applier;
+
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
 
