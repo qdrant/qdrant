@@ -1833,16 +1833,12 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 })
             }
             ClusterOperationsPb::DropReplica(op) => {
-                let api::grpc::qdrant::Replica {
-                    shard_id,
-                    peer_id,
-                    min_active,
-                } = op;
+                let api::grpc::qdrant::Replica { shard_id, peer_id } = op;
                 ClusterOperations::DropReplica(DropReplicaOperation {
                     drop_replica: Replica {
                         shard_id,
                         peer_id,
-                        min_active,
+                        min_active: None,
                     },
                 })
             }

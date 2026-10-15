@@ -314,6 +314,7 @@ pub struct Replica {
     /// when the request is received. If fewer are active, the request is refused.
     /// If not set, the replica is dropped unconditionally.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)] // hide for internal use
     pub min_active: Option<u32>,
 }
 
