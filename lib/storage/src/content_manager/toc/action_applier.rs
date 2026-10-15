@@ -1,17 +1,28 @@
 use collection::events::IndexCreatedEvent;
+use collection::shards::transfer::driver::revert_proxy_shard_to_local;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 
 use super::TableOfContent;
-use crate::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
+use crate::content_manager::consensus_state_machine::{
+    Action, CollectionConfigDiff, TransferOutcome,
+};
 use crate::content_manager::errors::{StorageError, StorageResult};
 
 impl TableOfContent {
     pub(super) fn apply_action_sync(&self, action: Action) -> StorageResult<()> {
-        self.general_runtime.block_on(self.apply_action(action))
+        self.general_runtime
+            .block_on(self.apply_action(&action))
+            .map_err(|error| {
+                if let StorageError::ServiceError { .. } = error {
+                    error
+                } else {
+                    StorageError::service_error(format!("Failed to apply {action:?}: {error}"))
+                }
+            })
     }
 
-    async fn apply_action(&self, action: Action) -> StorageResult<()> {
-        match &action {
+    async fn apply_action(&self, action: &Action) -> StorageResult<()> {
+        match action {
             Action::UpdateCollectionConfig { collection, diff } => {
                 let collection = self.get_collection_unchecked(collection).await?;
 
@@ -185,6 +196,125 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::InvalidateCleanLocalShards {
+                collection,
+                shard_ids,
+            } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .invalidate_clean_local_shards(shard_ids.iter().copied())
+                    .await;
+
+                Ok(())
+            }
+
+            Action::RemoveReplica {
+                collection,
+                shard_id,
+                peer_id,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let replica_set = shard_holder.read().await.get_shard(*shard_id).cloned();
+                let replica_set = replica_set.ok_or_else(|| {
+                    StorageError::service_error(format!("Shard {shard_id} does not exist"))
+                })?;
+
+                replica_set.remove_peer(*peer_id).await?;
+
+                Ok(())
+            }
+
+            Action::StopTransferDriver { collection, key } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .stop_shard_transfer(key)
+                    .await;
+
+                Ok(())
+            }
+
+            Action::RevertProxyShard {
+                collection,
+                shard_id,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let shard_holder = shard_holder.read().await;
+
+                // Resharding abort can drop the shard before reverting its related transfers
+                revert_proxy_shard_to_local(&shard_holder, *shard_id).await?;
+
+                Ok(())
+            }
+
+            Action::UnproxifyShard {
+                collection,
+                shard_id,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let replica_set = shard_holder.read().await.get_shard(*shard_id).cloned();
+                let replica_set = replica_set.ok_or_else(|| {
+                    StorageError::service_error(format!("Shard {shard_id} does not exist"))
+                })?;
+
+                replica_set.un_proxify_local().await?;
+
+                Ok(())
+            }
+
+            Action::RegisterTransfer {
+                collection,
+                transfer,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                shard_holder
+                    .read()
+                    .await
+                    .register_start_shard_transfer(transfer.clone())?;
+
+                Ok(())
+            }
+
+            Action::SetTransferMethod {
+                collection,
+                key,
+                method,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let transfer = shard_holder
+                    .read()
+                    .await
+                    .register_restart_transfer(key, *method)?;
+
+                // Planning accepted an existing transfer, so a missing record is an apply failure
+                transfer.ok_or_else(|| {
+                    StorageError::service_error(format!("Transfer {key:?} does not exist"))
+                })?;
+
+                Ok(())
+            }
+
+            Action::UnregisterTransfer {
+                collection,
+                key,
+                outcome,
+            } => {
+                let collection = self.get_collection_unchecked(collection).await?;
+                let shard_holder = collection.shards_holder();
+                let shard_holder = shard_holder.read().await;
+
+                match outcome {
+                    TransferOutcome::Finish => shard_holder.register_finish_transfer(key)?,
+                    TransferOutcome::Abort => shard_holder.register_abort_transfer(key)?,
+                };
+
+                Ok(())
+            }
+
             Action::UpdateAliases { set, remove } => {
                 // Keep searches from observing a mapping while it is being replaced.
                 let _collections = self.collections.write().await;
@@ -206,21 +336,13 @@ impl TableOfContent {
             | Action::CreateCollection { .. }
             | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
-            | Action::InvalidateCleanLocalShards { .. }
             | Action::RemoveShardKey { .. }
-            | Action::RemoveReplica { .. }
             | Action::InitLocalShard { .. }
-            | Action::RegisterTransfer { .. }
-            | Action::SetTransferMethod { .. }
             | Action::DeleteMigratedPoints { .. }
             | Action::RevertHashRing { .. }
             | Action::SetReshardingState { .. }
             | Action::SetReshardingStage { .. }
-            | Action::StopTransferDriver { .. }
-            | Action::RevertProxyShard { .. }
-            | Action::UnproxifyShard { .. }
             | Action::SpawnTransferDriver { .. }
-            | Action::UnregisterTransfer { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(

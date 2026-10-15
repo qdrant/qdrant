@@ -18,7 +18,9 @@ use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
 use crate::shards::transfer;
-use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTaskProgress};
+use crate::shards::transfer::transfer_tasks_pool::{
+    TaskResult, TransferTaskItem, TransferTaskProgress,
+};
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
@@ -30,6 +32,11 @@ pub(super) struct AbortShardTransferScope {
 }
 
 impl Collection {
+    /// Stop and await the node-local transfer task without changing its persisted record
+    pub async fn stop_shard_transfer(&self, key: &ShardTransferKey) -> Option<TaskResult> {
+        self.transfer_tasks.lock().await.stop_task(key).await
+    }
+
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
         self.shards_holder.read().await.get_transfers(|transfer| {
             transfer.from == current_peer_id || transfer.to == current_peer_id
@@ -896,5 +903,118 @@ impl Collection {
             .is_some_and(|limit| outgoing >= limit);
 
         incoming_shard_transfer_limit_reached || outgoing_shard_transfer_limit_reached
+    }
+}
+
+#[cfg(test)]
+mod stop_shard_transfer_tests {
+    use tokio::sync::oneshot;
+
+    use super::*;
+    use crate::common::stoppable_task_async::spawn_async_cancellable;
+    use crate::shards::channel_service::ChannelService;
+    use crate::shards::collection_shard_distribution::CollectionShardDistribution;
+    use crate::tests::fixtures::create_collection_config;
+
+    #[tokio::test]
+    async fn stop_shard_transfer_replay() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = create_collection_config();
+        let collection = Collection::new(
+            "test".into(),
+            0,
+            dir.path(),
+            &dir.path().join("snapshots"),
+            &config,
+            Arc::new(Default::default()),
+            CollectionShardDistribution {
+                shards: Default::default(),
+            },
+            None,
+            ChannelService::default(),
+            Arc::new(|_, _, _| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_, _| {}),
+            None,
+            None,
+            Default::default(),
+            None,
+        )
+        .await
+        .unwrap();
+        let transfer = ShardTransfer {
+            shard_id: 0,
+            to_shard_id: None,
+            from: 0,
+            to: 1,
+            sync: false,
+            method: Some(ShardTransferMethod::WalDelta),
+            filter: None,
+        };
+        let mut unrelated = transfer.clone();
+        unrelated.to = 2;
+        let holder = collection.shards_holder();
+        for transfer in [&transfer, &unrelated] {
+            holder
+                .read()
+                .await
+                .register_start_shard_transfer(transfer.clone())
+                .unwrap();
+        }
+        let initial_state = collection.state().await;
+        let (task, mut stopped) = cancellable_transfer_task();
+        let (unrelated_task, mut unrelated_stopped) = cancellable_transfer_task();
+        {
+            let mut tasks = collection.transfer_tasks.lock().await;
+            tasks.add_task(&transfer, task);
+            tasks.add_task(&unrelated, unrelated_task);
+        }
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            collection.stop_shard_transfer(&transfer.key()),
+        )
+        .await
+        .expect("stopping a transfer must finish");
+
+        assert!(matches!(result, Some(TaskResult::Failed)));
+        assert_eq!(stopped.try_recv(), Ok(()));
+        assert!(matches!(
+            unrelated_stopped.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty),
+        ));
+        assert!(
+            collection
+                .stop_shard_transfer(&transfer.key())
+                .await
+                .is_none()
+        );
+        assert_eq!(collection.state().await, initial_state);
+        {
+            let tasks = collection.transfer_tasks.lock().await;
+            assert!(tasks.get_task_status(&transfer.key()).is_none());
+            assert!(matches!(
+                tasks.get_task_status(&unrelated.key()).unwrap().result,
+                TaskResult::Running,
+            ));
+        }
+
+        collection.stop_shard_transfer(&unrelated.key()).await;
+    }
+
+    fn cancellable_transfer_task() -> (TransferTaskItem, oneshot::Receiver<()>) {
+        let (stopped, receiver) = oneshot::channel();
+        let task = spawn_async_cancellable(|cancel| async move {
+            cancel.cancelled().await;
+            stopped.send(()).unwrap();
+            false
+        });
+        let item = TransferTaskItem {
+            task,
+            started_at: chrono::Utc::now(),
+            progress: Arc::new(Mutex::new(TransferTaskProgress::new())),
+        };
+
+        (item, receiver)
     }
 }
