@@ -1115,6 +1115,98 @@ mod store {
             );
         }
     }
+
+    /// Documents appended under a scoring text index keep their word order and
+    /// repeats, so a follower scores them like a leader that wrote them itself.
+    /// Both on the schema edge persists normalized, and on the unnormalized one
+    /// a shard written before persists.
+    #[test]
+    fn appended_documents_score_like_the_leader() {
+        use segment::data_types::index::{TextIndexParams, TextScoringParams};
+        use segment::index::field_index::full_text_index::Bm25Params;
+        use segment::types::{PayloadFieldSchema, PayloadSchemaParams, ScoredPoint};
+        use shard::operations::CollectionUpdateOperations::FieldIndexOperation;
+        use shard::operations::{CreateIndex, FieldIndexOperations};
+        use shard::query::text::TextScoringQuery;
+
+        use crate::QueryRequest;
+        use crate::read_only::tests::strip_persisted_phrase_matching;
+
+        // Repeated words and both orders of the query terms: a document stored
+        // sorted and deduplicated scores differently.
+        let documents = || {
+            [
+                "alpha alpha alpha gamma",
+                "gamma alpha",
+                "alpha gamma gamma",
+            ]
+            .into_iter()
+            .zip(11..)
+            .map(|(text, id)| PointStructPersisted {
+                payload: Some(payload_json! { "body": text }),
+                ..point(id)
+            })
+            .collect::<Vec<_>>()
+        };
+        let leader_with_index = |dir: &Path| {
+            let leader = EdgeShard::new(dir, test_config()).unwrap();
+            let field_schema =
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
+                    scoring: Some(TextScoringParams::default()),
+                    ..TextIndexParams::default()
+                }));
+            leader
+                .update(FieldIndexOperation(FieldIndexOperations::CreateIndex(
+                    CreateIndex {
+                        field_name: "body".parse().unwrap(),
+                        field_schema: Some(field_schema),
+                    },
+                )))
+                .unwrap();
+            upsert(&leader, 1..=10);
+            leader
+        };
+        let scores = |shard: &dyn Fn(QueryRequest) -> Vec<ScoredPoint>| {
+            shard(QueryRequest {
+                query: Some(ScoringQuery::Text(TextScoringQuery {
+                    field: "body".parse().unwrap(),
+                    text: "alpha gamma".to_string(),
+                    params: Bm25Params::default(),
+                })),
+                ..QueryRequest::new(10)
+            })
+            .into_iter()
+            .map(|point| (point.id, point.score))
+            .collect::<Vec<_>>()
+        };
+
+        let reference_dir = tempfile::tempdir().unwrap();
+        let reference = leader_with_index(reference_dir.path());
+        reference
+            .update(PointOperation(UpsertPoints(PointsList(documents()))))
+            .unwrap();
+        let expected = scores(&|request| reference.query(request).unwrap());
+        assert_eq!(expected.len(), 3);
+
+        for legacy in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let leader = leader_with_index(dir.path());
+            leader.flush().unwrap();
+            drop(leader);
+            recreate_payload_storages_append_only(dir.path());
+            if legacy {
+                strip_persisted_phrase_matching(dir.path());
+            }
+
+            let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+            let (_writer, outcome) = writer.apply_batch(store_batch(100, documents())).unwrap();
+            assert_eq!(outcome.stored, 3);
+
+            let follower = open_follower(dir.path());
+            let actual = scores(&|request| follower.query(request).unwrap());
+            assert_eq!(actual, expected, "legacy schema: {legacy}");
+        }
+    }
 }
 
 /// A claimed target opens non-writable; a created appendable takes the writes.

@@ -404,4 +404,82 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("rescore"), "{err}");
     }
+
+    /// A read-only follower scores like the writer, on the appendable shape and
+    /// on the immutable one the indexing optimizer builds. Both on the schema
+    /// edge now persists normalized, and on the unnormalized one a shard written
+    /// before persists, which the follower must still open with the positions
+    /// the writer built.
+    #[cfg(feature = "serverless")]
+    #[test]
+    fn follower_scores_like_the_writer() {
+        use crate::read_only::tests::{
+            init_serverless_feature_flags, open_follower, strip_persisted_phrase_matching,
+        };
+        use crate::read_view::ReadViewProvider as _;
+        use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShardRead};
+
+        init_serverless_feature_flags();
+        let dir = tempfile::tempdir().unwrap();
+        // Lowered indexing threshold makes the optimizer build an immutable segment.
+        let config = EdgeConfig {
+            optimizers: Some(EdgeOptimizersConfig {
+                indexing_threshold: Some(1),
+                ..EdgeOptimizersConfig::default()
+            }),
+            ..test_config()
+        };
+        let shard = EdgeShard::new(dir.path(), config).unwrap();
+        create_index(&shard, scored_text_index());
+        upsert(&shard, (0..POINTS).map(point_with_text).collect());
+        // Points without text, so the vectors outgrow the indexing threshold.
+        upsert(&shard, (1000..1300).map(point).collect());
+
+        let field = FIELD.parse().unwrap();
+        let persisted = shard.info().unwrap().payload_schema.remove(&field).unwrap();
+        let Some(PayloadSchemaParams::Text(params)) = persisted.params else {
+            panic!("expected text index params, got {persisted:?}");
+        };
+        assert_eq!(
+            params.phrase_matching,
+            Some(true),
+            "schema persisted unnormalized"
+        );
+
+        fn scores(shard: &impl EdgeShardRead) -> Vec<(u64, ScoreType)> {
+            shard
+                .query(query_request(
+                    text_query("alpha gamma", Bm25Params::default()),
+                    POINTS as usize,
+                ))
+                .unwrap()
+                .iter()
+                .map(|point| (id_of(point), point.score))
+                .collect()
+        }
+        let assert_follower_scores_like = |shard: &EdgeShard| {
+            shard.flush().unwrap();
+            let expected = scores(shard);
+            assert!(!expected.is_empty());
+            assert_eq!(scores(&open_follower(dir.path())), expected);
+            strip_persisted_phrase_matching(dir.path());
+            assert_eq!(
+                scores(&open_follower(dir.path())),
+                expected,
+                "legacy schema"
+            );
+        };
+
+        assert_follower_scores_like(&shard);
+
+        assert!(shard.optimize().unwrap(), "expected an optimization to run");
+        assert!(
+            shard
+                .read_segments()
+                .iter()
+                .any(|segment| !segment.get().read().is_appendable()),
+            "expected an immutable segment",
+        );
+        assert_follower_scores_like(&shard);
+    }
 }
