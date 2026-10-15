@@ -127,12 +127,21 @@ where
     })
 }
 
-/// Decide, for every segment of `trackers`, what to delete now. Segments with nothing to delete are
-/// left out.
+/// What one resolution over the trackers of a pass decided.
+pub(super) struct Resolution {
+    /// Per segment, what to delete now. Segments with nothing to delete are left out.
+    pub(super) deletes: HashMap<Uuid, MoveResolution>,
+    /// Per source segment, the slots that settled moved-in records name and the source deleted for
+    /// good: an earlier pass applied their masks, and the records can be forgotten.
+    pub(super) retired: HashMap<Uuid, RoaringBitmap>,
+}
+
+/// Decide, for every segment of `trackers`, what to delete now, and which settled moved-in records
+/// have done their work.
 pub(super) fn resolve_moves<S: UniversalRead>(
     trackers: &Trackers<S>,
     unheld: &UnheldTargets<'_>,
-) -> HashMap<Uuid, MoveResolution> {
+) -> Resolution {
     let borrowed: HashMap<Uuid, AtomicRef<'_, ReadOnlyIdTrackerEnum<S>>> = trackers
         .iter()
         .map(|(uuid, tracker)| (*uuid, tracker.borrow()))
@@ -143,15 +152,32 @@ pub(super) fn resolve_moves<S: UniversalRead>(
         None => unheld.settled(target.segment),
     };
 
-    // Per source segment, the slots that settled moved-in records of any segment name
+    // Per source segment in `trackers`, the slots that settled moved-in records of any segment
+    // name. The records naming a source the follower does not hold wait for it to load.
     let mut masks: HashMap<Uuid, RoaringBitmap> = HashMap::new();
     for tracker in borrowed.values() {
         for (source, slots) in tracker.settled_moved_in().into_iter().flatten() {
-            *masks.entry(*source).or_default() |= slots;
+            if borrowed.contains_key(source) {
+                *masks.entry(*source).or_default() |= slots;
+            }
         }
     }
 
-    borrowed
+    // A slot its source deleted for good needs no mask anymore
+    let mut retired = HashMap::new();
+    for (source, slots) in &mut masks {
+        let tracker = &borrowed[source];
+        let deleted: RoaringBitmap = slots
+            .iter()
+            .filter(|&slot| tracker.is_retired(slot))
+            .collect();
+        if !deleted.is_empty() {
+            *slots -= &deleted;
+            retired.insert(*source, deleted);
+        }
+    }
+
+    let deletes = borrowed
         .iter()
         .filter(|(_, tracker)| tracker.resolves_point_moves())
         .map(|(uuid, tracker)| {
@@ -161,5 +187,7 @@ pub(super) fn resolve_moves<S: UniversalRead>(
             )
         })
         .filter(|(_, resolution)| !resolution.is_empty())
-        .collect()
+        .collect();
+
+    Resolution { deletes, retired }
 }
