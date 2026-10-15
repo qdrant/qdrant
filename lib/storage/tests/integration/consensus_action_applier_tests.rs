@@ -188,6 +188,65 @@ fn remove_peer_action_save_failure_retry() {
 }
 
 #[test]
+fn set_peer_metadata_action_replay() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let manager = consensus_manager(&storage_dir, toc.clone());
+    let old_metadata = PeerMetadata::new("1.0.0".parse().unwrap());
+    for peer_id in [1, 2] {
+        manager
+            .add_peer(
+                peer_id,
+                format!("http://127.0.0.1:{}", 6335 + peer_id)
+                    .parse()
+                    .unwrap(),
+            )
+            .unwrap();
+        manager
+            .persistent
+            .write()
+            .update_peer_metadata(peer_id, old_metadata.clone())
+            .unwrap();
+    }
+    let addresses = manager.persistent.read().peer_address_by_id();
+    let metadata = PeerMetadata::new("1.2.3".parse().unwrap());
+    let action = Action::SetPeerMetadata {
+        peer_id: 1,
+        metadata: metadata.clone(),
+    };
+    let expected = [(1, metadata), (2, old_metadata)].into();
+
+    for _ in 0..2 {
+        manager.apply_action(action.clone()).unwrap();
+
+        assert_eq!(*toc.get_channel_service().id_to_metadata.read(), expected);
+        assert_eq!(*toc.get_channel_service().id_to_address.read(), addresses);
+        let reloaded = Persistent::load_or_init(storage_dir.path(), true, false, None).unwrap();
+        assert_eq!(reloaded.peer_metadata_by_id(), expected);
+    }
+}
+
+#[test]
+fn set_peer_metadata_action_save_failure_retry() {
+    let (storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let manager = consensus_manager(&storage_dir, dispatcher.toc(&FULL_ACCESS, &pass).clone());
+    manager
+        .add_peer(1, "http://127.0.0.1:6335".parse().unwrap())
+        .unwrap();
+    let metadata = PeerMetadata::current();
+    let action = Action::SetPeerMetadata {
+        peer_id: 1,
+        metadata: metadata.clone(),
+    };
+
+    let reloaded = retry_after_failed_save(&storage_dir, &manager, action);
+
+    assert_eq!(reloaded.peer_metadata_by_id()[&1], metadata);
+}
+
+#[test]
 fn collection_action_delegation() {
     let (storage_dir, handle, dispatcher) = new_dispatcher();
     create_collection(&handle, &dispatcher, "test");
@@ -211,6 +270,28 @@ fn collection_action_delegation() {
         })
         .unwrap_err();
     assert!(matches!(error, StorageError::ServiceError { .. }));
+}
+
+fn retry_after_failed_save(
+    storage_dir: &TempDir,
+    manager: &ConsensusManager<TableOfContent>,
+    action: Action,
+) -> Persistent {
+    let path = manager.persistent.read().path.clone();
+    let backup = path.with_extension("backup");
+    fs_err::rename(&path, &backup).unwrap();
+    fs_err::create_dir(&path).unwrap();
+
+    let error = manager.apply_action(action.clone()).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    fs_err::remove_dir(&path).unwrap();
+    fs_err::rename(backup, path).unwrap();
+
+    // The failed save already changed memory. Replay must still write that state to disk.
+    manager.apply_action(action).unwrap();
+
+    Persistent::load_or_init(storage_dir.path(), true, false, None).unwrap()
 }
 
 fn consensus_manager(

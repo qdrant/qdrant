@@ -28,11 +28,16 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 persistent.save()
             }
 
-            Action::SetPeerMetadata { .. }
-            | Action::SetClusterMetadataKey { .. }
-            | Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(
-                "Consensus action is not implemented: {action:?}",
-            ))),
+            Action::SetPeerMetadata { peer_id, metadata } => self
+                .persistent
+                .write()
+                .update_peer_metadata(peer_id, metadata),
+
+            Action::SetClusterMetadataKey { .. } | Action::SetQuotaConfig { .. } => {
+                Err(StorageError::service_error(format!(
+                    "Consensus action is not implemented: {action:?}",
+                )))
+            }
 
             Action::CreateCollection { .. }
             | Action::DropCollection { .. }
