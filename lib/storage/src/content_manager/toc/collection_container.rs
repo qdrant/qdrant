@@ -74,6 +74,32 @@ impl CollectionContainer for TableOfContent {
         self.general_runtime.block_on(self.peer_has_shards(peer_id))
     }
 
+    fn remove_peer_channels(&self, peer_id: PeerId) -> Result<(), StorageError> {
+        // Remove addresses before dropping pools, or new requests can look them up and
+        // recreate a pool after cleanup. Keep the removed URIs until their pools are dropped.
+        // Requests that already copied a URI can still recreate its pool.
+        let addresses = {
+            let mut peers = self.channel_service.id_to_address.write();
+            if peer_id == self.this_peer_id {
+                // A detached node must stop new requests from resolving other peers' addresses
+                peers
+                    .drain()
+                    .map(|(_, address)| address)
+                    .collect::<Vec<_>>()
+            } else {
+                peers.remove(&peer_id).into_iter().collect()
+            }
+        };
+
+        self.general_runtime.block_on(async {
+            for address in addresses {
+                self.channel_service.channel_pool.drop_pool(&address).await;
+            }
+        });
+
+        Ok(())
+    }
+
     fn quota_config(&self) -> QuotaConfig {
         self.quota_manager().config()
     }
