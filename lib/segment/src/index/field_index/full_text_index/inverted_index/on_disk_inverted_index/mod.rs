@@ -105,7 +105,7 @@ pub struct Storage<S: UniversalRead = MmapFile> {
 
 /// The document lengths of an on-disk index, held in RAM.
 ///
-/// The sidecar keeps exact lengths, bit-packed, and is never read in place: a
+/// The sidecar keeps exact lengths, compressed, and is never read in place: a
 /// query reads the lengths of candidates spread over the whole point space, so
 /// [`OnDiskInvertedIndex::open`] decodes it once into the codes of
 /// [`encode_doc_len`](super::doc_len::encode_doc_len), 2 bytes a point.
@@ -353,7 +353,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // come from a partially copied or stale file set, and is not trusted to
         // locate lengths: a short one would have to be padded with zeroes that
         // read like real lengths, and a long one would be silently truncated.
-        // Nor is one in another format, such as the unpacked `u32` array of
+        // Nor is one in another format, such as the raw `u32` array of
         // earlier builds. Treated as absent, with a warning, the way
         // `SortedBlockIndex::open` treats a stale block index.
         let point_to_doc_len = match point_to_doc_len {

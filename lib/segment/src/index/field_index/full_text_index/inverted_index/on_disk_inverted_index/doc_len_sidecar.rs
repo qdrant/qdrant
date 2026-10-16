@@ -1,76 +1,98 @@
-//! The document length sidecar: exact lengths, bit-packed in blocks of 128.
+//! The document length sidecar: exact lengths, byte-shuffled, zstd-compressed.
 //!
-//! ```text
-//! offset 0
-//! ┌──────────────────────────────────────────────┐
-//! │ DocLenHeader                                 │  16 B
-//! │   magic: b"qdln", version: u32, count: u64   │
-//! ├──────────────────────────────────────────────┤
-//! │ block 0: num_bits: u8                        │  1 B
-//! │          lengths 0..128, BitPacker4x         │  16 * num_bits B
-//! ├──────────────────────────────────────────────┤
-//! │ block 1 …                                    │
-//! ├──────────────────────────────────────────────┤
-//! │ last block, zero-padded to 128 lengths       │
-//! └──────────────────────────────────────────────┘
-//! ```
+//! A fixed 64-byte [Header], followed by the lengths as its `compression` says:
+//!
+//! | Field         | Type       | Description                                          |
+//! | ------------- | ---------- | ---------------------------------------------------- |
+//! | `magic`       | `[u8; 8]`  | `QDRANTDL`.                                          |
+//! | `version`     | `u32`      | Format version, 1.                                   |
+//! | `compression` | `u32`      | How the lengths follow, see [`Compression`].         |
+//! | `count`       | `u64`      | Number of lengths, one per point, live or not.       |
+//! | `reserved`    | `[u8; 40]` | Zero when written, ignored when read.                |
+//!
+//! [`Compression::ShuffledZstd`], the only one so far: `count` exact `u32`
+//! lengths, byte-shuffled, as one zstd frame with its checksum.
+//!
+//! Room to change: a new compression gets a new id and leaves the rest of the
+//! format alone, and data a reader may ignore goes in `reserved` without a
+//! version bump. Anything an old reader would misread bumps `version`. A reader
+//! rejects a version or compression it does not know, and the index is then
+//! rebuilt from payload.
+//!
+//! Byte-shuffling: the first bytes of all lengths, then all second bytes, and
+//! so on, so the mostly-zero high bytes compress to almost nothing and zstd's
+//! entropy coder sees the low bytes on their own. The same layout as the disk
+//! id tracker's compact versions file, without the delta: neighbouring
+//! documents' lengths are not correlated, so a delta only adds a bit.
 //!
 //! The file keeps every length exactly, so the code held in RAM is chosen when
-//! the file is read and can change without a rebuild. Each block is as wide as
-//! its longest document, so one book-length document widens only its own block:
-//! typical corpora take 8 to 14 bits a point, under the 16 of the codes.
-//!
-//! Nothing reads it in place. [`read_codes`] decodes it once, sequentially, into
-//! the codes an index holds.
+//! the file is read and can change without a rebuild. Nothing reads it in
+//! place: [`read_codes`] decodes it once into the codes an index holds.
 
-use std::io::Write;
+use std::io::Write as _;
 use std::path::Path;
 
-use bitpacking::BitPacker;
 use common::fs::atomic_save;
 use zerocopy::little_endian::{U32, U64};
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::super::doc_len::encode_doc_len;
 use crate::common::operation_error::OperationResult;
 
-type BitPackerImpl = bitpacking::BitPacker4x;
+const MAGIC: [u8; 8] = *b"QDRANTDL";
+const FORMAT_VERSION: u32 = 1;
+const PLANES_COUNT: usize = size_of::<u32>();
 
-const BLOCK_LEN: usize = BitPackerImpl::BLOCK_LEN;
-
-const MAGIC: [u8; 4] = *b"qdln";
-const VERSION: u32 = 1;
-
-#[derive(Debug, Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned)]
-#[repr(C)]
-struct DocLenHeader {
-    magic: [u8; 4],
-    version: U32,
-    /// Points covered, live or not: one length per slot of the index.
-    count: U64,
+/// How the lengths after the header are stored. Ids are never reused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+enum Compression {
+    /// Exact `u32` lengths, byte-shuffled, in one zstd frame with a checksum.
+    ShuffledZstd = 1,
 }
+
+impl Compression {
+    fn from_id(id: u32) -> Option<Self> {
+        match id {
+            1 => Some(Self::ShuffledZstd),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
+struct Header {
+    magic: [u8; 8],
+    version: U32,
+    compression: U32,
+    count: U64,
+    reserved: [u8; 40],
+}
+
+const _: () = assert!(size_of::<Header>() == 64);
 
 /// Write the exact `lens`, one per point, to `path`.
 pub(super) fn write(path: &Path, lens: &[u32]) -> OperationResult<()> {
     atomic_save(path, |writer| -> OperationResult<()> {
-        let header = DocLenHeader {
+        let header = Header {
             magic: MAGIC,
-            version: U32::new(VERSION),
+            version: U32::new(FORMAT_VERSION),
+            compression: U32::new(Compression::ShuffledZstd as u32),
             count: U64::new(lens.len() as u64),
+            reserved: [0; 40],
         };
         writer.write_all(header.as_bytes())?;
 
-        let packer = BitPackerImpl::new();
-        let mut block = [0u32; BLOCK_LEN];
-        let mut packed = [0u8; BLOCK_LEN * size_of::<u32>()];
-        for chunk in lens.chunks(BLOCK_LEN) {
-            block[..chunk.len()].copy_from_slice(chunk);
-            block[chunk.len()..].fill(0);
-            let num_bits = packer.num_bits(&block);
-            let size = packer.compress(&block, &mut packed, num_bits);
-            writer.write_all(&[num_bits])?;
-            writer.write_all(&packed[..size])?;
+        let mut encoder = zstd::Encoder::new(writer, zstd::DEFAULT_COMPRESSION_LEVEL)?;
+        encoder.include_checksum(true)?;
+        let mut plane = Vec::with_capacity(lens.len());
+        for byte in 0..PLANES_COUNT {
+            plane.clear();
+            plane.extend(lens.iter().map(|len| len.to_le_bytes()[byte]));
+            encoder.write_all(&plane)?;
         }
+        encoder.finish()?;
         Ok(())
     })
 }
@@ -78,35 +100,41 @@ pub(super) fn write(path: &Path, lens: &[u32]) -> OperationResult<()> {
 /// Decode a sidecar into the codes of [`encode_doc_len`], one per point.
 ///
 /// `Err` carries why the bytes are not a sidecar this index can use: another
-/// format, another version, another point count, or a truncated or padded
-/// file. The caller treats every one of them as a missing sidecar.
+/// format, another version, another point count, or a truncated, padded or
+/// corrupted file. The caller treats every one of them as a missing sidecar.
 pub(super) fn read_codes(bytes: &[u8], count: usize) -> Result<Vec<u16>, String> {
-    let mut codes = Vec::with_capacity(count);
-    decode(bytes, count, |lens| {
-        codes.extend(lens.iter().copied().map(encode_doc_len));
-    })?;
-    Ok(codes)
+    let planes = read_planes(bytes, count)?;
+    Ok((0..count)
+        .map(|index| encode_doc_len(length_at(&planes, count, index)))
+        .collect())
 }
 
 /// Decode a sidecar into the exact lengths it holds.
 #[cfg(test)]
 pub(in super::super) fn read_exact(bytes: &[u8], count: usize) -> Result<Vec<u32>, String> {
-    let mut lens = Vec::with_capacity(count);
-    decode(bytes, count, |block| lens.extend_from_slice(block))?;
-    Ok(lens)
+    let planes = read_planes(bytes, count)?;
+    Ok((0..count)
+        .map(|index| length_at(&planes, count, index))
+        .collect())
 }
 
-/// Hand `f` the exact lengths of every block, in point order, without the
-/// padding of the last one.
-fn decode(bytes: &[u8], count: usize, mut f: impl FnMut(&[u32])) -> Result<(), String> {
-    let (header, mut rest) = DocLenHeader::read_from_prefix(bytes)
+fn length_at(planes: &[u8], count: usize, index: usize) -> u32 {
+    u32::from_le_bytes(std::array::from_fn(|byte| planes[byte * count + index]))
+}
+
+/// Check the header and decompress the planes of exactly `count` lengths.
+fn read_planes(bytes: &[u8], count: usize) -> Result<Vec<u8>, String> {
+    let (header, payload) = Header::ref_from_prefix(bytes)
         .map_err(|_| format!("{} bytes is shorter than the header", bytes.len()))?;
     if header.magic != MAGIC {
-        return Err("not a packed document length file".to_string());
+        return Err("not a document length file".to_string());
     }
-    if header.version.get() != VERSION {
-        return Err(format!("unknown version {}", header.version.get()));
+    if header.version.get() != FORMAT_VERSION {
+        return Err(format!("unsupported version {}", header.version.get()));
     }
+    let Some(compression) = Compression::from_id(header.compression.get()) else {
+        return Err(format!("unknown compression {}", header.compression.get()));
+    };
     if header.count.get() != count as u64 {
         return Err(format!(
             "it covers {} points while the index has {count}",
@@ -114,30 +142,21 @@ fn decode(bytes: &[u8], count: usize, mut f: impl FnMut(&[u32])) -> Result<(), S
         ));
     }
 
-    let packer = BitPackerImpl::new();
-    let mut block = [0u32; BLOCK_LEN];
-    let mut remaining = count;
-    while remaining > 0 {
-        let Some((&num_bits, tail)) = rest.split_first() else {
-            return Err(format!("truncated, {remaining} lengths missing"));
-        };
-        if u32::from(num_bits) > u32::BITS {
-            return Err(format!("a block claims {num_bits} bits a length"));
+    match compression {
+        Compression::ShuffledZstd => {
+            // Decompressed into exactly the room `count` lengths need, so a
+            // frame holding more fails before it can allocate for them.
+            let expected = count * PLANES_COUNT;
+            let raw = zstd::bulk::decompress(payload, expected).map_err(|err| err.to_string())?;
+            if raw.len() != expected {
+                return Err(format!(
+                    "{} bytes of lengths where {count} points need {expected}",
+                    raw.len(),
+                ));
+            }
+            Ok(raw)
         }
-        let size = BitPackerImpl::compressed_block_size(num_bits);
-        let Some((packed, tail)) = tail.split_at_checked(size) else {
-            return Err(format!("truncated, {remaining} lengths missing"));
-        };
-        packer.decompress(packed, &mut block, num_bits);
-        let take = remaining.min(BLOCK_LEN);
-        f(&block[..take]);
-        remaining -= take;
-        rest = tail;
     }
-    if !rest.is_empty() {
-        return Err(format!("{} bytes past the last block", rest.len()));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -175,11 +194,11 @@ mod tests {
     }
 
     /// The point of the format: smaller than the codes for ordinary corpora,
-    /// and a few long documents widen only their own blocks.
+    /// and a few book-length documents do not change that.
     #[test]
-    fn packs_below_the_codes() {
+    fn compresses_below_the_codes() {
         let mut rng = StdRng::seed_from_u64(7);
-        let count = 100 * BLOCK_LEN;
+        let count = 12_800;
         let mut lens: Vec<u32> = (0..count).map(|_| rng.random_range(20..400)).collect();
         let typical = round_trip(&lens).len();
         assert!(
@@ -206,24 +225,38 @@ mod tests {
         assert!(read_codes(&bytes, 299).is_err());
         assert!(read_codes(&bytes, 301).is_err());
         // Truncated anywhere, header included.
-        for len in [0, 8, size_of::<DocLenHeader>(), bytes.len() - 1] {
+        for len in [0, 8, size_of::<Header>(), bytes.len() - 1] {
             assert!(read_codes(&bytes[..len], 300).is_err(), "{len} bytes");
         }
         // Padded.
         let mut padded = bytes.clone();
         padded.push(0);
         assert!(read_codes(&padded, 300).is_err());
-        // Another version.
+        // Another version, another compression.
         let mut versioned = bytes.clone();
-        versioned[4] = 2;
+        versioned[std::mem::offset_of!(Header, version)] = 2;
         assert!(read_codes(&versioned, 300).is_err());
-        // A raw `u32` array of the same lengths, as the unpacked sidecar was.
+        let mut recompressed = bytes.clone();
+        recompressed[std::mem::offset_of!(Header, compression)] = 2;
+        assert!(read_codes(&recompressed, 300).is_err());
+        // A header count that disagrees with the frame: 300 is 0x12C, so this
+        // claims 299, and the frame still holds 300 lengths.
+        let mut recounted = bytes.clone();
+        recounted[std::mem::offset_of!(Header, count)] = 0x2B;
+        assert!(read_codes(&recounted, 300).is_err());
+        assert!(read_codes(&recounted, 299).is_err());
+        // Reserved bytes are for later additions an old reader may ignore.
+        let mut reserved = bytes.clone();
+        reserved[std::mem::offset_of!(Header, reserved)] = 0xFF;
+        assert_eq!(read_exact(&reserved, 300).unwrap(), lens);
+        // A raw `u32` array of the same lengths, as the sidecar of earlier builds was.
         let raw: Vec<u8> = lens.iter().flat_map(|len| len.to_le_bytes()).collect();
         assert!(read_codes(&raw, 300).is_err());
         assert!(read_codes(&raw, raw.len() / size_of::<u16>()).is_err());
-        // A block wider than a length.
-        let mut wide = bytes;
-        wide[size_of::<DocLenHeader>()] = 33;
-        assert!(read_codes(&wide, 300).is_err());
+        // A flipped bit in the compressed data, caught by the checksum.
+        let mut corrupted = bytes;
+        let last = corrupted.len() - 5;
+        corrupted[last] ^= 1;
+        assert!(read_codes(&corrupted, 300).is_err());
     }
 }
