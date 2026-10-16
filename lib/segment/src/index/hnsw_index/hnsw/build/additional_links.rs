@@ -17,8 +17,9 @@ use rayon::ThreadPool;
 use self::block::build_block;
 use self::old_blocks::old_range_blocks;
 use self::seeds::BlockSeeds;
+use super::context::GraphBuildContext;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::PayloadBlockCondition;
 use crate::index::hnsw_index::HnswM;
@@ -32,7 +33,6 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, PayloadFieldSchema, PayloadKeyType};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 /// Fields that get additional HNSW links, each paired with its progress subtask under the
@@ -89,21 +89,25 @@ fn in_build_order(
     allow(unused_variables, clippy::needless_pass_by_ref_mut)
 )]
 pub(super) fn build_additional_links<R: Rng + ?Sized>(
-    id_tracker: &IdTrackerEnum,
-    vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    ctx: GraphBuildContext,
     payload_index: &StructPayloadIndex,
     gpu_insert_context: &mut Option<GpuInsertContext>,
     graph_layers_builder: &mut GraphLayersBuilder,
     config: &HnswGraphConfig,
-    payload_m: HnswM,
     indexed_fields: Vec<(ProgressTracker, JsonPath)>,
     old_index: Option<&OldIndex<'_>>,
     progress_additional_links: ProgressTracker,
     pool: &ThreadPool,
     rng: &mut R,
-    stopped: &AtomicBool,
 ) -> OperationResult<()> {
+    let GraphBuildContext {
+        id_tracker,
+        vector_storage,
+        quantized_vectors,
+        block_params,
+        stopped,
+        ..
+    } = ctx;
     let total_vector_count = vector_storage.total_vector_count();
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
@@ -149,8 +153,8 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         None
     };
 
-    let mut seeds =
-        old_index.map(|old_index| BlockSeeds::new(old_index, payload_m, total_vector_count));
+    let mut seeds = old_index
+        .map(|old_index| BlockSeeds::new(old_index, block_params.hnsw_m, total_vector_count));
     let mut seeded_points = 0;
     let mut block_points = 0;
 
@@ -161,9 +165,9 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     let gpu_block_reference = gpu_insert_context.is_some().then(|| {
         GraphLayersBuilder::new_with_params(
             total_vector_count,
-            payload_m,
-            config.ef_construct,
-            1,
+            block_params.hnsw_m,
+            block_params.ef_construct,
+            block_params.entry_points_num,
             HNSW_USE_HEURISTIC,
             false,
         )
@@ -256,16 +260,11 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
 
             block_points += points_to_index.len();
             seeded_points += build_block(
-                id_tracker,
-                vector_storage,
-                quantized_vectors,
+                ctx,
                 pool,
-                stopped,
                 graph_layers_builder,
                 &points_to_index,
                 seeds.as_mut(),
-                payload_m,
-                config.ef_construct,
                 &counter,
             )?;
             Ok(())
