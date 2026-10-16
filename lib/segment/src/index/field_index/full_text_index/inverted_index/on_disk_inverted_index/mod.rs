@@ -235,10 +235,14 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         );
 
         // Scheduled unconditionally: the scheduler records a missing path as a
-        // ready not-found rather than erroring.
+        // ready not-found rather than erroring. Populated whatever the
+        // placement, as in `open`.
         fs.schedule_open(
             &path.join(POINT_TO_DOC_LEN_FILE),
-            Some(Self::open_options(populate, AdviceSetting::Global)),
+            Some(Self::open_options(
+                Populate::PreferBackground,
+                AdviceSetting::Global,
+            )),
             None,
         );
 
@@ -302,10 +306,14 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
 
         // Absent unless this index records lengths. What that means is the
         // caller's call, not this one's: see `FullTextIndex::new_mmap`.
+        //
+        // Populated whatever the placement: 4 bytes a point, and a query reads
+        // the lengths of candidates spread over the whole file, so a cold one
+        // would fault it in a page at a time.
         let point_to_doc_len = fs
             .open(
                 &point_to_doc_len_path,
-                Self::open_options(populate, AdviceSetting::Global),
+                Self::open_options(Populate::PreferBackground, AdviceSetting::Global),
                 Default::default(),
             )
             .ok_not_found()?
