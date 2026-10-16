@@ -199,7 +199,7 @@ pub(super) struct BlockContext<'a> {
     /// One flag per block point.
     pub(super) deleted: &'a BitVec,
     pub(super) vector_storage: &'a VectorStorageEnum,
-    pub(super) quantized_vectors: &'a Option<QuantizedVectors>,
+    pub(super) quantized_vectors: Option<&'a QuantizedVectors>,
 }
 
 impl<'a> BlockContext<'a> {
@@ -209,7 +209,7 @@ impl<'a> BlockContext<'a> {
             point_id,
             self.points,
             self.vector_storage,
-            self.quantized_vectors.as_ref(),
+            self.quantized_vectors,
             self.deleted,
         )
     }
