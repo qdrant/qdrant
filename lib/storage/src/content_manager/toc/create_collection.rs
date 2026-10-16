@@ -292,7 +292,7 @@ impl TableOfContent {
         Ok(true)
     }
 
-    async fn on_peer_created(
+    pub(super) async fn on_peer_created(
         &self,
         collection_name: String,
         peer_id: PeerId,

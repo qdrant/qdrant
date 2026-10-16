@@ -32,6 +32,40 @@ pub(super) struct AbortShardTransferScope {
 }
 
 impl Collection {
+    /// Build a missing receiver shard without clearing data from an earlier transfer attempt
+    pub async fn ensure_local_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
+        let shard_holder = self.shards_holder.read().await;
+        let replica_set = shard_holder.get_shard(shard_id).ok_or_else(|| {
+            CollectionError::service_error(format!("Shard {shard_id} does not exist"))
+        })?;
+
+        if replica_set.has_local_shard().await {
+            return Ok(());
+        }
+
+        let effective_optimizers_config = self.effective_optimizers_config().await?;
+        let shard = LocalShard::build(
+            shard_id,
+            self.name().to_string(),
+            &replica_set.shard_path,
+            self.collection_config.clone(),
+            self.shared_storage_config.clone(),
+            self.payload_index_schema.clone(),
+            self.update_runtime.clone(),
+            self.search_runtime.clone(),
+            self.optimizer_resource_budget.clone(),
+            effective_optimizers_config,
+        )
+        .await?;
+
+        // The following SetReplicaState action owns the transfer's replica-state change
+        if let Some(old_shard) = replica_set.set_local(shard, None).await? {
+            old_shard.stop_gracefully().await;
+        }
+
+        Ok(())
+    }
+
     /// Stop and await the node-local transfer task without changing its persisted record
     pub async fn stop_shard_transfer(&self, key: &ShardTransferKey) -> Option<TaskResult> {
         self.transfer_tasks.lock().await.stop_task(key).await
@@ -250,7 +284,8 @@ impl Collection {
         Ok(do_transfer)
     }
 
-    async fn send_shard<OF, OE>(
+    /// Replace any existing driver for this transfer and start sending the shard
+    pub async fn send_shard<OF, OE>(
         &self,
         transfer: ShardTransfer,
         consensus: Box<dyn ShardTransferConsensus>,
@@ -262,9 +297,9 @@ impl Collection {
         OE: Future<Output = ()> + Send + 'static,
     {
         let mut active_transfer_tasks = self.transfer_tasks.lock().await;
-        let task_result = active_transfer_tasks.stop_task(&transfer.key()).await;
+        // Consensus replay can reach this action with the previous driver still running
+        active_transfer_tasks.stop_task(&transfer.key()).await;
 
-        debug_assert!(task_result.is_none(), "Transfer task already exists");
         debug_assert!(
             transfer.method.is_some(),
             "When sending shard, a transfer method must have been selected",

@@ -1,10 +1,17 @@
+use std::sync::Arc;
+
+use collection::collection::Collection;
+use collection::collection_state;
 use collection::events::IndexCreatedEvent;
+use collection::shards::collection_shard_distribution::CollectionShardDistribution;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::driver::revert_proxy_shard_to_local;
 use common::ambient::{AmbientContext, AmbientFutureExt};
 
 use super::TableOfContent;
+use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::{
-    Action, CollectionConfigDiff, TransferOutcome,
+    Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
 };
 use crate::content_manager::errors::{StorageError, StorageResult};
 
@@ -23,6 +30,15 @@ impl TableOfContent {
 
     async fn apply_action(&self, action: &Action) -> StorageResult<()> {
         match action {
+            Action::CreateCollection { collection, state } => {
+                self.create_collection_action(collection, state).await
+            }
+
+            Action::DropCollection { collection } => {
+                self.delete_collection(collection).await?;
+                Ok(())
+            }
+
             Action::UpdateCollectionConfig { collection, diff } => {
                 let collection = self.get_collection_unchecked(collection).await?;
 
@@ -239,6 +255,92 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::InitLocalShard {
+                collection,
+                shard_id,
+                mode,
+            } => {
+                let collection_path = self.get_collection_path(collection);
+                let collection = self.get_collection_unchecked(collection).await?;
+
+                match mode {
+                    LocalShardInitMode::EnsureExists => {
+                        collection.ensure_local_shard(*shard_id).await?;
+                    }
+
+                    LocalShardInitMode::ResetToEmpty => {
+                        let shard_holder = collection.shards_holder();
+                        let shard_holder = shard_holder.read().await;
+                        let replica_set = shard_holder.get_shard(*shard_id).ok_or_else(|| {
+                            StorageError::service_error(format!("Shard {shard_id} does not exist"))
+                        })?;
+
+                        replica_set.init_empty_local_shard(&collection_path).await?;
+                    }
+                }
+
+                Ok(())
+            }
+
+            Action::SpawnTransferDriver {
+                collection,
+                transfer,
+            } => {
+                let collection_id = collection.clone();
+                let collection = self.get_collection_unchecked(collection).await?;
+                let proposal_sender = self.get_consensus_proposal_sender()?.clone();
+                let consensus = self.toc_dispatcher.lock().clone().ok_or_else(|| {
+                    StorageError::service_error(
+                        "Can't spawn transfer driver without a consensus dispatcher",
+                    )
+                })?;
+
+                if transfer.method.is_none() {
+                    return Err(StorageError::service_error(
+                        "Can't spawn transfer driver without a transfer method",
+                    ));
+                }
+
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let transfer = transfer.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation =
+                            ConsensusOperations::finish_transfer(collection_id, transfer);
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        }
+                    }
+                };
+                let on_error = {
+                    let transfer = transfer.clone();
+                    async move {
+                        let operation = ConsensusOperations::abort_transfer(
+                            collection_id,
+                            transfer,
+                            "transmission failed",
+                        );
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report transfer progress to consensus: {error}");
+                        }
+                    }
+                };
+
+                collection
+                    .send_shard(
+                        transfer.clone(),
+                        Box::new(consensus),
+                        temp_dir,
+                        on_finish,
+                        on_error,
+                    )
+                    .await;
+
+                Ok(())
+            }
+
             Action::StopTransferDriver { collection, key } => {
                 self.get_collection_unchecked(collection)
                     .await?
@@ -386,11 +488,7 @@ impl TableOfContent {
 
             Action::AddPeer { .. }
             | Action::RemovePeer { .. }
-            | Action::CreateCollection { .. }
-            | Action::DropCollection { .. }
             | Action::CreateAndRegisterShards { .. }
-            | Action::InitLocalShard { .. }
-            | Action::SpawnTransferDriver { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(
@@ -398,9 +496,87 @@ impl TableOfContent {
             ))),
 
             #[cfg(feature = "staging")]
-            Action::TestSlowDown(_) | Action::TestTransientError(_) => Err(
-                StorageError::service_error(format!("Action applier does not support {action:?}")),
-            ),
+            Action::TestSlowDown(operation) => {
+                operation.execute(self.this_peer_id).await;
+                Ok(())
+            }
+
+            #[cfg(feature = "staging")]
+            Action::TestTransientError(operation) => operation.execute(self.this_peer_id),
         }
+    }
+
+    async fn create_collection_action(
+        &self,
+        name: &str,
+        state: &collection_state::State,
+    ) -> StorageResult<()> {
+        let guard = self.collection_create_lock.lock().await;
+        let existing = self.collections.read().await.get(name).cloned();
+
+        let collection = if let Some(collection) = existing {
+            if collection.uuid().await != state.config.uuid {
+                return Err(StorageError::service_error(format!(
+                    "Collection {name} already exists with a different UUID",
+                )));
+            }
+
+            collection
+        } else {
+            let path = self.create_collection_path(name).await?;
+            let snapshots_path = self.snapshots_path_for_collection(name);
+            let distribution = CollectionShardDistribution::from_shards_info(state.shards.clone());
+            let collection = Collection::new(
+                name.to_string(),
+                self.this_peer_id,
+                &path,
+                &snapshots_path,
+                &state.config,
+                self.storage_config
+                    .to_shared_storage_config(self.is_distributed())
+                    .into(),
+                distribution,
+                None,
+                self.channel_service.clone(),
+                Self::change_peer_from_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    name.to_string(),
+                    ReplicaState::Dead,
+                ),
+                Self::request_shard_transfer_callback(
+                    self.consensus_proposal_sender.clone(),
+                    name.to_string(),
+                ),
+                Self::abort_shard_transfer_callback(
+                    self.consensus_proposal_sender.clone(),
+                    name.to_string(),
+                ),
+                Some(self.adaptive_search_handle.clone()),
+                Some(self.update_runtime.handle().clone()),
+                self.optimizer_resource_budget.clone(),
+                self.storage_config.optimizers_overwrite.clone(),
+            )
+            .await?;
+            collection.print_warnings().await;
+            let collection = Arc::new(collection);
+            self.collections
+                .write()
+                .await
+                .insert(name.to_string(), collection.clone());
+            self.telemetry.init_snapshot_telemetry(name);
+            collection
+        };
+
+        let local_shards = collection.get_local_shards().await;
+        drop(guard);
+
+        // Creation is durable before initialization is proposed. Replay must send the
+        // proposals again without rebuilding shards that may already contain points.
+        for shard_id in local_shards {
+            self.on_peer_created(name.to_string(), self.this_peer_id, shard_id)
+                .await?;
+        }
+
+        Ok(())
     }
 }
