@@ -95,7 +95,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     payload_index: &StructPayloadIndex,
-    gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
+    gpu_insert_context: &mut Option<GpuInsertContext>,
     graph_layers_builder: &mut GraphLayersBuilder,
     config: &HnswGraphConfig,
     payload_m: HnswM,
