@@ -9,7 +9,7 @@
 
 use common::types::PointOffsetType;
 
-use crate::combine::{Combine, CombineDispatch, CombineFn};
+use crate::combine::{Aux, Combine, CombineDispatch, CombineFn};
 use crate::operands::{KernelElem, MatrixOperands};
 use crate::scratch::{AlignedBuf, Plain};
 use crate::top_k::Lists;
@@ -23,6 +23,16 @@ pub(crate) const GROUP: usize = 96;
 pub(crate) trait Micro {
     type E: KernelElem + Plain;
     type Acc: Accumulator;
+    /// What the tile reads: `E` itself, or for a tile that unpacks its panels, the values
+    /// [`Self::unpack`] writes.
+    type Operand: Plain;
+
+    /// Values per element and vector that [`Self::unpack`] writes, or 0 for a tile that reads
+    /// the packed panels themselves, whose `Operand` is then `E`.
+    ///
+    /// Unpacking widens the values of a row block's panels once per depth slice, and of a
+    /// column panel once per row block, so the register tile only loads and multiplies.
+    const UNPACK: usize = 0;
 
     /// Rows of a tile.
     const MR: usize;
@@ -43,20 +53,43 @@ pub(crate) trait Micro {
     /// threads), both cost from 4x off the best value on.
     const NC: usize;
 
-    /// `c[MR][NR] = (accumulate ? c : 0) + a · bᵀ` over `kc` depth elements (a multiple of
-    /// `KU`), for the panels `a` (`[kc / KU][MR][KU]`) and `b` (`[kc / KU][NR][KU]`), both
-    /// 32-byte aligned. Row `r` of `c` starts at `c + r * ldc`.
+    /// Writes the `kc · UNPACK` values per lane of a panel of `kc` elements, of `MR` lanes if
+    /// `rows`, else `NR`, to `dst`, 32-byte aligned.
     ///
     /// # Safety
     ///
     /// The pointers must be valid for these sizes, and the CPU must support the kernel.
+    #[inline(always)]
+    unsafe fn unpack(
+        kc: usize,
+        panel: *const Self::E,
+        rows: bool,
+        dst: *mut Self::Operand,
+        param: <Self::E as KernelElem>::Param<'_>,
+    ) {
+        let _ = (kc, panel, rows, dst, param);
+        unreachable!("only tiles with `UNPACK > 0` unpack");
+    }
+
+    /// `c[MR][NR] = (accumulate ? c : 0) + a · bᵀ` over `kc` depth elements (a multiple of
+    /// `KU`) from element `k0` on, for the panels `a` (`[kc / KU][MR][KU]`) and `b`
+    /// (`[kc / KU][NR][KU]`), both 32-byte aligned, or what [`Self::unpack`] made of them.
+    /// Row `r` of `c` starts at `c + r * ldc`.
+    ///
+    /// # Safety
+    ///
+    /// The pointers must be valid for these sizes, `param` for depth `k0..k0 + kc`, and the
+    /// CPU must support the kernel.
+    #[allow(clippy::too_many_arguments)]
     unsafe fn tile(
         kc: usize,
-        a: *const Self::E,
-        b: *const Self::E,
+        a: *const Self::Operand,
+        b: *const Self::Operand,
         c: *mut Self::Acc,
         ldc: usize,
         accumulate: bool,
+        param: <Self::E as KernelElem>::Param<'_>,
+        k0: usize,
     );
 
     /// `dst[j * ds + i] = src[i * ss + j]` for 8 x 8 cells of 4 bytes.
@@ -154,6 +187,11 @@ impl Panels {
         self.kc.min(self.depth - s * self.kc)
     }
 
+    /// First depth element of slice `s`.
+    fn slice_start(&self, s: usize) -> usize {
+        s * self.kc
+    }
+
     fn offset(&self, s: usize, panel: usize) -> usize {
         s * self.kc * self.panels * self.w + panel * self.slice_depth(s) * self.w
     }
@@ -167,7 +205,7 @@ fn pack<M: Micro, F: MatrixOperands<Elem = M::E>>(
     ids: &[PointOffsetType],
     layout: &Panels,
     out: &mut [M::E],
-    aux: &mut [f32],
+    aux: &mut [Aux],
     decoded: &mut AlignedBuf,
 ) -> Result<(), F::Error> {
     const { assert!(GROUP.is_multiple_of(M::MR) && GROUP.is_multiple_of(M::NR)) };
@@ -238,6 +276,30 @@ fn put_group<M: Micro>(
                     }
                 }
                 g = fast;
+            } else if lanes == w {
+                // The other cells inside the vectors, one vector at a time: contiguous reads,
+                // without the padding checks
+                let inside = slice_cells.min((depth / ku).saturating_sub(first_cell));
+                for lane in 0..w {
+                    let src = &decoded[(p0 + lane) * depth + first_cell * ku..][..inside * ku];
+                    match ku {
+                        1 => {
+                            for (g, &value) in src.iter().enumerate() {
+                                dst[g * w + lane] = value;
+                            }
+                        }
+                        // Not `copy_from_slice`, which calls `memcpy` for a few elements
+                        _ => {
+                            for (g, cell) in src.chunks_exact(ku).enumerate() {
+                                let dst = &mut dst[(g * w + lane) * ku..][..ku];
+                                for (d, &value) in dst.iter_mut().zip(cell) {
+                                    *d = value;
+                                }
+                            }
+                        }
+                    }
+                }
+                g = inside;
             }
             for g in g..slice_cells {
                 for lane in 0..w {
@@ -281,11 +343,14 @@ pub(crate) fn top_k<M: Micro, F: MatrixOperands<Elem = M::E>>(
     if m == 0 || n == 0 {
         return Ok(());
     }
+    // The packed panels are read as `Operand` unless the tile unpacks them
+    const { assert!(M::UNPACK > 0 || size_of::<M::Operand>() == size_of::<M::E>()) };
     let depth = operands.depth();
     let combine = operands.combine();
+    let param = operands.param();
     let (lists, s) = out.parts();
-    s.row_aux.resize(m, 0.0);
-    s.col_aux.resize(n, 0.0);
+    s.row_aux.resize(m, Aux::default());
+    s.col_aux.resize(n, Aux::default());
     let ldc = padded_stride(M::NC, size_of::<M::Acc>());
     let block = s.out.get::<M::Acc>(M::MC * ldc);
     // All rows once, instead of again for every column block, which made small blocks slow
@@ -314,21 +379,59 @@ pub(crate) fn top_k<M: Micro, F: MatrixOperands<Elem = M::E>>(
             let p1 = j1.div_ceil(M::NR);
             for slice in 0..b_layout.slices() {
                 let kc = b_layout.slice_depth(slice);
-                for p in p0..p1 {
+                let k0 = b_layout.slice_start(slice);
+                // Values per panel and lane after unpacking
+                let lane = kc * M::UNPACK;
+                let rows_unpacked = s
+                    .unpacked_rows
+                    .get::<M::Operand>((rp1 - rp0) * M::MR * lane);
+                if M::UNPACK > 0 {
                     for rp in rp0..rp1 {
-                        // SAFETY: both panels are within their packed buffers, and the tile
-                        // within `block`: rows `(rp - rp0) * MR..+MR <= MC`, columns
-                        // `p * NR - j0..+NR <= NC <= ldc`. The caller checked the CPU.
+                        // SAFETY: the panel within the packed rows, `MR` lanes of values within
+                        // the buffer. The caller checked the CPU.
+                        unsafe {
+                            M::unpack(
+                                kc,
+                                a.as_ptr().add(a_layout.offset(slice, rp)),
+                                true,
+                                rows_unpacked.as_mut_ptr().add((rp - rp0) * M::MR * lane),
+                                param,
+                            );
+                        }
+                    }
+                }
+                for p in p0..p1 {
+                    let b = b[b_layout.offset(slice, p - j0 / M::NR)..].as_ptr();
+                    let cols_unpacked = s.unpacked_cols.get::<M::Operand>(M::NR * lane);
+                    let b = if M::UNPACK > 0 {
+                        // SAFETY: as for the rows
+                        unsafe { M::unpack(kc, b, false, cols_unpacked.as_mut_ptr(), param) };
+                        cols_unpacked.as_ptr()
+                    } else {
+                        // The tile reads `E`, see `UNPACK`
+                        b.cast()
+                    };
+                    for rp in rp0..rp1 {
+                        let a = if M::UNPACK > 0 {
+                            rows_unpacked[(rp - rp0) * M::MR * lane..].as_ptr()
+                        } else {
+                            a[a_layout.offset(slice, rp)..].as_ptr().cast()
+                        };
+                        // SAFETY: both panels are within their packed or unpacked buffers,
+                        // and the tile within `block`: rows `(rp - rp0) * MR..+MR <= MC`,
+                        // columns `p * NR - j0..+NR <= NC <= ldc`. The caller checked the CPU.
                         unsafe {
                             M::tile(
                                 kc,
-                                a.as_ptr().add(a_layout.offset(slice, rp)),
-                                b.as_ptr().add(b_layout.offset(slice, p - j0 / M::NR)),
+                                a,
+                                b,
                                 block
                                     .as_mut_ptr()
                                     .add((rp - rp0) * M::MR * ldc + p * M::NR - j0),
                                 ldc,
                                 slice > 0,
+                                param,
+                                k0,
                             );
                         }
                     }
@@ -342,7 +445,7 @@ pub(crate) fn top_k<M: Micro, F: MatrixOperands<Elem = M::E>>(
                     combine,
                     triangle,
                     r,
-                    s.row_aux[r],
+                    &s.row_aux[r],
                     c0,
                     dots,
                     &s.col_aux[c0..j1],
@@ -365,10 +468,10 @@ pub(crate) fn emit<A: Accumulator, D: CombineDispatch>(
     combine: D,
     triangle: bool,
     r: usize,
-    row_aux: f32,
+    row_aux: &Aux,
     c0: usize,
     dots: &[A],
-    col_aux: &[f32],
+    col_aux: &[Aux],
     scores: &mut Vec<f32>,
     scores_t: &mut Vec<f32>,
 ) {
@@ -400,8 +503,8 @@ pub(crate) fn emit<A: Accumulator, D: CombineDispatch>(
 /// the kernels around it don't grow with the formulas.
 struct CombineRow<'a, const TRANSPOSED: bool, A> {
     dots: &'a [A],
-    fixed: f32,
-    aux: &'a [f32],
+    fixed: &'a Aux,
+    aux: &'a [Aux],
     out: &'a mut [f32],
 }
 
@@ -417,7 +520,7 @@ impl<const TRANSPOSED: bool, A: Accumulator> CombineFn for CombineRow<'_, TRANSP
             out,
         } = self;
         let n = dots.len();
-        for ((out, &dot), &aux) in out[..n].iter_mut().zip(dots).zip(&aux[..n]) {
+        for ((out, &dot), aux) in out[..n].iter_mut().zip(dots).zip(&aux[..n]) {
             *out = if TRANSPOSED {
                 combine.score(dot.to_f32(), aux, fixed)
             } else {

@@ -21,6 +21,7 @@ use crate::encoded_vectors::{
 };
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
+use crate::turboquant::matrix::{CODES_IN_F32, StorageSource, TurboMatrixOperands};
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
 use crate::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
@@ -382,6 +383,33 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
 
     pub fn get_quantized_vector(&self, i: PointOffsetType) -> Cow<'_, [u8]> {
         self.encoded_vectors.get_vector_data(i)
+    }
+
+    /// The vectors as matrix operands, scoring as [`EncodedVectors::score_internal`]. `None`
+    /// for L1, which has no matrix form.
+    pub fn matrix_operands(&self) -> Option<TurboMatrixOperands<'_, StorageSource<'_, TStorage>>>
+    where
+        TStorage: Sync,
+    {
+        self.matrix_operands_with(CODES_IN_F32)
+    }
+
+    /// [`Self::matrix_operands`], with the Normal 2, 4, and 8 bits decoded to f32 if
+    /// `codes_in_f32`, see [`TurboMatrixOperands::new_with`].
+    #[doc(hidden)]
+    pub fn matrix_operands_with(
+        &self,
+        codes_in_f32: bool,
+    ) -> Option<TurboMatrixOperands<'_, StorageSource<'_, TStorage>>>
+    where
+        TStorage: Sync,
+    {
+        TurboMatrixOperands::new_with(
+            &self.quantizer,
+            StorageSource(&self.encoded_vectors),
+            self.metadata.vector_parameters.invert,
+            codes_in_f32,
+        )
     }
 
     pub fn layout(&self) -> Layout {
