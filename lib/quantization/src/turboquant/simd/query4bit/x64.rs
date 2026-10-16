@@ -3,7 +3,7 @@
 //! The codebook is stored as unsigned u8 ∈ [0, 255] (`CODEBOOK_U8`); the
 //! kernels XOR it with 0x80 to recover the signed form in-register.
 
-use super::{CODEBOOK_SCALE, CODEBOOK_U8};
+use super::{CODEBOOK_U8, centroid_dot};
 
 #[target_feature(enable = "sse2")]
 unsafe fn hsum_i32_sse(v: core::arch::x86_64::__m128i) -> i32 {
@@ -78,7 +78,7 @@ pub unsafe fn score_4bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_full * 8;
         let sum = i64::from(hsum_i32_sse(acc))
             + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        sum as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(sum as f32)
     }
 }
 
@@ -143,7 +143,7 @@ pub unsafe fn score_4bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_iters * 16;
         let sum = i64::from(hsum_i32_sse(_mm_add_epi32(acc_lo, acc_hi)))
             + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        sum as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(sum as f32)
     }
 }
 
@@ -216,7 +216,7 @@ pub unsafe fn score_4bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_iters * 16;
         let sum = i64::from(hsum_i32_sse(acc_128))
             + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        sum as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(sum as f32)
     }
 }
 

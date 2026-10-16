@@ -7,6 +7,7 @@
 use std::arch::aarch64::*;
 
 use crate::blocked::Micro;
+use crate::operands::F32_SLICE;
 
 /// 8 x 12 f32 FMA tile.
 pub(super) struct F32Tile;
@@ -14,17 +15,27 @@ pub(super) struct F32Tile;
 impl Micro for F32Tile {
     type E = f32;
     type Acc = f32;
+    type Operand = f32;
     const MR: usize = 8;
     const NR: usize = 12;
     const KU: usize = 1;
     /// Panels of 8 KB and 12 KB, in L1
-    const KC: usize = 256;
+    const KC: usize = F32_SLICE;
     const MC: usize = 48;
     /// The multiple of 12 nearest the x86 tiles' 128, unmeasured
     const NC: usize = 132;
 
     #[inline(always)]
-    unsafe fn tile(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: usize, acc: bool) {
+    unsafe fn tile(
+        kc: usize,
+        a: *const Self::Operand,
+        b: *const Self::Operand,
+        c: *mut f32,
+        ldc: usize,
+        acc: bool,
+        (): (),
+        _: usize,
+    ) {
         // SAFETY: forwarded from the caller, the same contract
         unsafe { tile_f32(kc, a, b, c, ldc, acc) }
     }
@@ -44,6 +55,7 @@ pub(super) struct U8Tile;
 impl Micro for U8Tile {
     type E = u8;
     type Acc = i32;
+    type Operand = u8;
     const MR: usize = 8;
     const NR: usize = 12;
     const KU: usize = 4;
@@ -54,7 +66,16 @@ impl Micro for U8Tile {
     const NC: usize = 132;
 
     #[inline(always)]
-    unsafe fn tile(kc: usize, a: *const u8, b: *const u8, c: *mut i32, ldc: usize, acc: bool) {
+    unsafe fn tile(
+        kc: usize,
+        a: *const Self::Operand,
+        b: *const Self::Operand,
+        c: *mut i32,
+        ldc: usize,
+        acc: bool,
+        (): (),
+        _: usize,
+    ) {
         // SAFETY: forwarded from the caller, the same contract
         unsafe { tile_u8(kc, a, b, c, ldc, acc) }
     }
@@ -92,8 +113,10 @@ fn dot_lane(acc: uint32x4_t, b: uint8x16_t, a: uint8x16_t, lane: usize) -> uint3
     }
 }
 
-/// See [`Micro::tile`]. The accumulators start from `c` instead of adding it at the end, so
-/// each score is one chain of fused multiply-adds in depth order, whatever the slice size.
+/// See [`Micro::tile`]. The accumulators start from zero and `c` is added at the end, so each
+/// slice is a chain of fused multiply-adds in depth order, as [`KernelElem::dot`] restarts it.
+///
+/// [`KernelElem::dot`]: crate::KernelElem::dot
 #[target_feature(enable = "neon")]
 #[inline]
 unsafe fn tile_f32(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: usize, acc: bool) {
@@ -104,13 +127,6 @@ unsafe fn tile_f32(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: us
     // of the `MR` rows of `c`: all within the panels and the tile, from the caller.
     unsafe {
         let mut sums = [[vdupq_n_f32(0.0); V]; MR];
-        if acc {
-            for (r, sums) in sums.iter_mut().enumerate() {
-                for (v, sum) in sums.iter_mut().enumerate() {
-                    *sum = vld1q_f32(c.add(r * ldc + 4 * v));
-                }
-            }
-        }
         let (mut a, mut b) = (a, b);
         for _ in 0..kc {
             let bv: [_; V] = std::array::from_fn(|v| vld1q_f32(b.add(4 * v)));
@@ -125,14 +141,22 @@ unsafe fn tile_f32(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: us
         }
         for (r, sums) in sums.iter().enumerate() {
             for (v, &sum) in sums.iter().enumerate() {
-                vst1q_f32(c.add(r * ldc + 4 * v), sum);
+                let c = c.add(r * ldc + 4 * v);
+                vst1q_f32(
+                    c,
+                    if acc {
+                        vaddq_f32(vld1q_f32(c), sum)
+                    } else {
+                        sum
+                    },
+                );
             }
         }
     }
 }
 
-/// See [`Micro::tile`]. Starts from `c` as the f32 tile does, in `u32` lanes: the sums are
-/// exact and below `i32::MAX`, so the bits are the same in both types.
+/// See [`Micro::tile`]. Starts from `c`, in `u32` lanes: the sums are exact and below
+/// `i32::MAX`, so the bits are the same in both types.
 #[target_feature(enable = "neon,dotprod")]
 #[inline]
 unsafe fn tile_u8(kc: usize, a: *const u8, b: *const u8, c: *mut i32, ldc: usize, acc: bool) {

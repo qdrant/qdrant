@@ -5,6 +5,7 @@ use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::UserData;
 use quantization::turboquant::EncodedQueryTQ;
+use quantization::turboquant::quantization::TurboQuantizer;
 
 use super::ReadOnlyImmutableTurboVectorStorage;
 use crate::common::operation_error::OperationResult;
@@ -164,5 +165,8 @@ impl<B: TurboVectorBlob> TurboScoring for ReadOnlyImmutableTurboVectorStorage<B>
 
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_vector_data(key)
+    }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
     }
 }
