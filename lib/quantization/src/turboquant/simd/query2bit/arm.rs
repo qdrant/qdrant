@@ -19,7 +19,7 @@
 //!
 //! Same pipeline as 4-bit from that point on (i8 × i8 → i16 + `vpadalq_s16`).
 
-use super::{CODEBOOK_I8, CODEBOOK_SCALE};
+use super::{CODEBOOK_I8, centroid_dot};
 
 /// `PAIR_TABLE_EVEN[nibble]` = `CODEBOOK_I8[nibble & 0b11]`.
 const PAIR_TABLE_EVEN: [i8; 16] = {
@@ -108,7 +108,7 @@ pub unsafe fn score_2bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_full * 4;
         let acc_i64 = i64::from(vaddvq_s32(acc))
             + super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 
@@ -170,7 +170,7 @@ pub unsafe fn score_2bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
         let acc = vaddq_s32(vaddq_s32(acc_0, acc_1), acc_tail);
         let acc_i64 = i64::from(vaddvq_s32(acc))
             + super::score_2bit_internal_integer(&a[offset..], &b[offset..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 

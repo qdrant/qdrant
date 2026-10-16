@@ -2,13 +2,14 @@
 //!
 //! The crate knows nothing about storages or their scores: the kernels compute inner products.
 //! A storage describes its vectors through [`MatrixOperands`]: how to decode them into a
-//! kernel element type, which value per vector they carry, and its [`Combine`], which turns an
+//! kernel element type, which values per vector they carry, and its [`Combine`], which turns an
 //! inner product and those values into the score of `score_internal`. [`top_k`] then returns
 //! the best columns of each row, without materializing the score matrix.
 
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
 mod blocked;
+mod codes;
 mod combine;
 mod fallback;
 mod kernel;
@@ -22,7 +23,8 @@ mod x86_64;
 
 use common::types::PointOffsetType;
 
-pub use crate::combine::{Combine, CombineDispatch, CombineFn};
+pub use crate::codes::{Codebook, Codes2, Codes4, Codes8};
+pub use crate::combine::{Aux, Combine, CombineDispatch, CombineFn};
 #[doc(hidden)]
 pub use crate::kernel::Kernel;
 use crate::operands::sealed::Sealed as _;

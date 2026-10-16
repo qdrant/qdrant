@@ -1,5 +1,6 @@
 use common::types::PointOffsetType;
-use pairwise::{Combine, CombineDispatch, CombineFn, MatrixOperands};
+use half::slice::HalfFloatSliceExt as _;
+use pairwise::{Aux, Combine, CombineDispatch, CombineFn, MatrixOperands};
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -37,7 +38,7 @@ struct Plain;
 
 impl Combine for Plain {
     #[inline(always)]
-    fn score(self, dot: f32, _: f32, _: f32) -> f32 {
+    fn score(self, dot: f32, _: &Aux, _: &Aux) -> f32 {
         dot
     }
 }
@@ -48,8 +49,8 @@ struct Euclid;
 
 impl Combine for Euclid {
     #[inline(always)]
-    fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32 {
-        2.0 * dot - aux_a - aux_b
+    fn score(self, dot: f32, aux_a: &Aux, aux_b: &Aux) -> f32 {
+        2.0 * dot - aux_a[0] - aux_b[0]
     }
 }
 
@@ -59,8 +60,8 @@ struct Cos;
 
 impl Combine for Cos {
     #[inline(always)]
-    fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32 {
-        dot * aux_a * aux_b
+    fn score(self, dot: f32, aux_a: &Aux, aux_b: &Aux) -> f32 {
+        dot * aux_a[0] * aux_b[0]
     }
 }
 
@@ -69,23 +70,26 @@ pub(super) trait MatrixElement: PrimitiveVectorElement {
     /// How Cosine scores vectors of this type.
     const COSINE: DenseCombine;
 
-    fn to_f32(self) -> f32;
+    /// `src` into `out`, of the same length.
+    fn decode(src: &[Self], out: &mut [f32]);
 }
 
 /// Float vectors are stored normalized, so Cosine is their dot product.
 impl MatrixElement for VectorElementType {
     const COSINE: DenseCombine = DenseCombine::Plain;
 
-    fn to_f32(self) -> f32 {
-        self
+    fn decode(src: &[Self], out: &mut [f32]) {
+        out.copy_from_slice(src);
     }
 }
 
 impl MatrixElement for VectorElementTypeHalf {
     const COSINE: DenseCombine = DenseCombine::Plain;
 
-    fn to_f32(self) -> f32 {
-        VectorElementTypeHalf::to_f32(self)
+    /// The slice conversion uses F16C several values at a time; `f16::to_f32` checks for it
+    /// per value unless the build enables it, which cost a leaf about 20%.
+    fn decode(src: &[Self], out: &mut [f32]) {
+        src.convert_to_f32_slice(out);
     }
 }
 
@@ -93,8 +97,10 @@ impl MatrixElement for VectorElementTypeHalf {
 impl MatrixElement for VectorElementTypeByte {
     const COSINE: DenseCombine = DenseCombine::Cos;
 
-    fn to_f32(self) -> f32 {
-        f32::from(self)
+    fn decode(src: &[Self], out: &mut [f32]) {
+        for (o, &x) in out.iter_mut().zip(src) {
+            *o = f32::from(x);
+        }
     }
 }
 
@@ -139,19 +145,19 @@ where
         self.combine
     }
 
+    fn param(&self) {}
+
     fn decode_batch(
         &self,
         ids: &[PointOffsetType],
         out: &mut [f32],
-        aux: &mut [f32],
+        aux: &mut [Aux],
     ) -> Result<(), OperationError> {
         let depth = self.depth();
         self.storage.for_each_in_dense_batch(ids, |i, vector| {
             let decoded = &mut out[i * depth..(i + 1) * depth];
-            for (o, &x) in decoded.iter_mut().zip(vector) {
-                *o = x.to_f32();
-            }
-            aux[i] = match self.combine {
+            T::decode(vector, decoded);
+            let value = match self.combine {
                 DenseCombine::Euclid => squared_norm(decoded),
                 DenseCombine::Cos => match squared_norm(decoded) {
                     // A zero vector scores 0, as in `cosine_similarity_bytes`
@@ -160,6 +166,7 @@ where
                 },
                 DenseCombine::Plain => 0.0,
             };
+            aux[i] = [value, 0.0, 0.0];
         })
     }
 }

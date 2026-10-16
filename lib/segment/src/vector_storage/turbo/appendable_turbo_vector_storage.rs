@@ -339,6 +339,9 @@ impl TurboScoring for AppendableMmapTurboVectorStorage {
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         Self::get_quantized_vector(self, key)
     }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
+    }
 }
 
 impl DenseTQVectorStorageRead for AppendableMmapTurboVectorStorage {
