@@ -138,10 +138,11 @@ pub struct ClusterConfig {
 
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct P2pConfig {
-    /// Host or IP address to bind the internal (p2p) gRPC listener to.
-    /// Defaults to `service.host` when not set. Set this to an internal
-    /// interface to keep the internal port off the interface that serves
-    /// the public API.
+    /// IP address to bind the internal (p2p) gRPC listener to. Must be an IP
+    /// literal, not a hostname. Defaults to `service.host` when not set. Set
+    /// this to an internal IP to keep the internal port off the interface that
+    /// serves the public API. When set, the node's peer URI (`--uri`) must
+    /// point to the same address.
     #[validate(length(min = 1))]
     #[serde(default)]
     pub host: Option<String>,
