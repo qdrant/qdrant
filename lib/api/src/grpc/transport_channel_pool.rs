@@ -282,7 +282,7 @@ impl TransportChannelPool {
                         channel.report_success();
                         return Ok(body);
                     },
-                    Err(err) => RequestFailure::RequestError(err)
+                    Err(err) => RequestFailure::RequestError(normalize_timeout_status(err)),
                 }
             }
             res = self.check_connectability(uri) => {
@@ -446,5 +446,41 @@ impl TransportChannelPool {
     /// Default time to wait for a request to complete.
     pub fn request_timeout(&self) -> Duration {
         self.grpc_timeout
+    }
+}
+
+/// If a request timed out via tonic's client-side timeout interceptor, tonic produces
+/// `Status { code: Code::Cancelled, message: "Timeout expired" }`.
+/// Normalize this to `Code::DeadlineExceeded` so callers know the deadline expired
+/// and do not needlessly retry with backoff.
+pub fn normalize_timeout_status(status: Status) -> Status {
+    if status.code() == Code::Cancelled && status.message() == "Timeout expired" {
+        Status::deadline_exceeded(status.message())
+    } else {
+        status
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_timeout_status() {
+        let timeout_status = Status::cancelled("Timeout expired");
+        let normalized = normalize_timeout_status(timeout_status);
+        assert_eq!(normalized.code(), Code::DeadlineExceeded);
+        assert_eq!(normalized.message(), "Timeout expired");
+
+        // Negative control: genuine cancellation must remain Cancelled
+        let client_cancel = Status::cancelled("cancelled by client");
+        let unchanged = normalize_timeout_status(client_cancel);
+        assert_eq!(unchanged.code(), Code::Cancelled);
+        assert_eq!(unchanged.message(), "cancelled by client");
+
+        // Negative control: unavailable status must remain unchanged
+        let unavail = Status::unavailable("peer dead");
+        let unchanged = normalize_timeout_status(unavail);
+        assert_eq!(unchanged.code(), Code::Unavailable);
     }
 }
