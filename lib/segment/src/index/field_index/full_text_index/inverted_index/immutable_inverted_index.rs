@@ -9,6 +9,7 @@ use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
 use super::bm25::{Bm25Accept, Bm25Query, PositionalCursors, score_top_k};
+use super::doc_len::{decode_doc_len, encode_doc_len};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::OnDiskInvertedIndex;
@@ -54,8 +55,9 @@ pub struct ImmutableInvertedIndex {
     /// text with repetitions, summed over all of the point's values. `None`
     /// when this index does not record lengths.
     ///
-    /// Zeroed wherever `point_to_tokens_count` is.
-    pub(super) point_to_doc_len: Option<Vec<u32>>,
+    /// Zeroed wherever `point_to_tokens_count` is. Held as the codes of
+    /// [`encode_doc_len`], as on disk.
+    pub(super) point_to_doc_len: Option<Vec<u16>>,
     /// Sum of `point_to_doc_len`, maintained rather than re-derived. Only
     /// meaningful when that vector exists.
     pub(super) total_tokens: u64,
@@ -66,8 +68,9 @@ impl ImmutableInvertedIndex {
     /// Document lengths by point offset, `None` when this index does not
     /// record them.
     #[cfg(test)]
-    pub(crate) fn point_to_doc_len(&self) -> Option<&[u32]> {
-        self.point_to_doc_len.as_deref()
+    pub(crate) fn point_to_doc_len(&self) -> Option<Vec<u32>> {
+        let lens = self.point_to_doc_len.as_ref()?;
+        Some(lens.iter().copied().map(decode_doc_len).collect())
     }
 
     /// Iterate over point ids whose documents contain all given tokens
@@ -308,7 +311,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .as_mut()
             .and_then(|lens| lens.get_mut(idx as usize))
         {
-            self.total_tokens = self.total_tokens.saturating_sub(u64::from(*doc_len));
+            self.total_tokens = self
+                .total_tokens
+                .saturating_sub(u64::from(decode_doc_len(*doc_len)));
             *doc_len = 0;
         }
         self.points_count = self.points_count.saturating_sub(1);
@@ -360,7 +365,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             &mut cursors,
             |point_ids, out| {
                 for (point_id, doc_len) in point_ids.iter().zip(out) {
-                    *doc_len = lengths.get(*point_id as usize).copied();
+                    *doc_len = lengths.get(*point_id as usize).copied().map(decode_doc_len);
                 }
                 Ok(())
             },
@@ -424,7 +429,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
         for (index, &point_id) in point_ids.iter().enumerate() {
             f(
                 index,
-                lens.and_then(|lens| lens.get(point_id as usize).copied()),
+                lens.and_then(|lens| lens.get(point_id as usize).copied())
+                    .map(decode_doc_len),
             );
         }
         Ok(())
@@ -455,9 +461,10 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             point_to_doc,
             mut point_to_doc_len,
             // Carried as-is: the counter is already the sum of the vector being
-            // moved across, and the padding below only adds zeroes. Masking is
-            // what a total read back from disk cannot survive, and that path
-            // recomputes instead.
+            // moved across, which `set_doc_len` rounds as it is encoded here,
+            // and the padding below only adds zeroes. Masking is what a total
+            // read back from disk cannot survive, and that path recomputes
+            // instead.
             total_tokens,
             points_count,
         } = index;
@@ -494,12 +501,11 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
         if let Some(lens) = point_to_doc_len.as_mut() {
             debug_assert_eq!(lens.len(), point_to_tokens_count.len());
             lens.resize(point_to_tokens_count.len(), 0);
-            // The vector comes from the mutable index, where it grew by
-            // doubling, so it can hold up to twice the bytes it needs for the
-            // lifetime of this index. `resize` above never gives any of that
-            // back either, since it only changes the length.
-            lens.shrink_to_fit();
         }
+        // Collected into a new vector of the exact length, so none of the
+        // capacity the mutable one grew by doubling outlives the conversion.
+        let point_to_doc_len =
+            point_to_doc_len.map(|lens| lens.into_iter().map(encode_doc_len).collect::<Vec<_>>());
 
         ImmutableInvertedIndex {
             postings,
@@ -671,7 +677,7 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
                     {
                         *doc_len = 0;
                     }
-                    total_tokens += u64::from(*doc_len);
+                    total_tokens += u64::from(decode_doc_len(*doc_len));
                 }
                 Some(lens)
             }
@@ -710,7 +716,7 @@ impl ImmutableInvertedIndex {
         let pttc_bytes = point_to_tokens_count.capacity() * size_of::<u32>();
         let doc_len_bytes = point_to_doc_len
             .as_ref()
-            .map(|lens| lens.capacity() * size_of::<u32>())
+            .map(|lens| lens.capacity() * size_of::<u16>())
             .unwrap_or(0);
         postings_bytes + vocab_base_bytes + vocab_heap_bytes + pttc_bytes + doc_len_bytes
     }

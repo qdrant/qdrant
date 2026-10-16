@@ -18,6 +18,7 @@ use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
 use super::bm25::{Bm25Accept, Bm25Query, ON_DISK_BLOCK, PositionalCursors, score_top_k};
+use super::doc_len::decode_doc_len;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
@@ -90,13 +91,14 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     pub postings: OnDiskPostingsEnum<S>,
     pub vocab: UniversalHashMap<str, TokenId, S>,
     pub point_to_tokens_count: TypedStorage<S, usize>,
-    /// Total tokens per point, for BM25 length normalization. `None` when the
+    /// Total tokens per point, for BM25 length normalization, as the codes of
+    /// [`encode_doc_len`](super::doc_len::encode_doc_len). `None` when the
     /// index does not record lengths.
     ///
     /// Written once at build time and never masked, like
     /// `point_to_tokens_count`, so anything summing these must filter through
     /// `deleted_points` first.
-    pub point_to_doc_len: Option<TypedStorage<S, u32>>,
+    pub point_to_doc_len: Option<TypedStorage<S, u16>>,
     pub deleted_points: DeletedBitVec,
     /// Slots in the per-point files, live or not. The point space this index
     /// covers, so that a point id past it can be told apart from one this index
@@ -307,7 +309,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // Absent unless this index records lengths. What that means is the
         // caller's call, not this one's: see `FullTextIndex::new_mmap`.
         //
-        // Populated whatever the placement: 4 bytes a point, and a query reads
+        // Populated whatever the placement: 2 bytes a point, and a query reads
         // the lengths of candidates spread over the whole file, so a cold one
         // would fault it in a page at a time.
         let point_to_doc_len = fs
@@ -317,7 +319,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 Default::default(),
             )
             .ok_not_found()?
-            .map(TypedStorage::<S, u32>::new);
+            .map(TypedStorage::<S, u16>::new);
 
         // `deleted` length must match `point_to_tokens_count.len()` because it
         // only tracks the index's contents. The id-tracker's deleted mask can
@@ -981,15 +983,15 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                 // data reads the same way whichever backend a host loads.
                 f(index, Some(0));
             } else {
-                let byte_offset = u64::from(point_id) * size_of::<u32>() as u64;
+                let byte_offset = u64::from(point_id) * size_of::<u16>() as u64;
                 reads.push((index, ReadRange::one(byte_offset)));
             }
         }
-        HwMetric::PayloadIndexIoRead.bump(reads.len() * size_of::<u32>());
+        HwMetric::PayloadIndexIoRead.bump(reads.len() * size_of::<u16>());
         // A failed read is an error rather than a missing value: `None` means
         // "no length recorded", which is the distinction the sidecar keeps.
-        storage.read_batch(reads, Random, |index, doc_len: &[u32]| {
-            f(index, doc_len.first().copied());
+        storage.read_batch(reads, Random, |index, doc_len: &[u16]| {
+            f(index, doc_len.first().copied().map(decode_doc_len));
             Ok::<_, OperationError>(())
         })
     }
