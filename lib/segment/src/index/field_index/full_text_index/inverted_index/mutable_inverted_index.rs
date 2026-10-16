@@ -55,6 +55,17 @@ impl MutableInvertedIndex {
         }
     }
 
+    /// How often `token` occurs in point `idx`, from the postings.
+    #[cfg(test)]
+    pub(crate) fn term_frequency(&self, token: &str, idx: PointOffsetType) -> Option<u32> {
+        let posting = self.postings.get(*self.vocab.get(token)? as usize)?;
+        if !posting.contains(idx) {
+            return None;
+        }
+        let at = posting.ids().rank(idx) as usize - 1;
+        Some(posting.frequencies()?[at])
+    }
+
     fn get_tokens(&self, idx: PointOffsetType) -> Option<&TokenSet> {
         self.point_to_tokens.get(idx as usize)?.as_ref()
     }
@@ -347,7 +358,7 @@ impl InvertedIndex for MutableInvertedIndex {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         if !self.stores_frequencies() {
             return Err(OperationError::service_error(
-                "text index does not score: BM25 needs positions and document lengths",
+                "text index does not score: BM25 needs term frequencies and document lengths",
             ));
         }
         let lengths = self.point_to_doc_len.as_deref().unwrap_or_default();
