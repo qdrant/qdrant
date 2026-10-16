@@ -785,7 +785,7 @@ fn dense_matches_document_at_a_time(
     let mutable = fixture(41, 500, &[1, 10, 100]);
     let immutable = ImmutableInvertedIndex::from(mutable.clone());
     let dir = tempfile::tempdir().unwrap();
-    let on_disk = on_disk(dir.path(), &immutable, &BitVec::repeat(false, 500));
+    let on_disk = on_disk(dir.path(), &mutable, &BitVec::repeat(false, 500));
     let lengths = mutable.point_to_doc_len.as_deref().unwrap();
     let ImmutablePostings::WithPositions(postings) = &immutable.postings else {
         panic!("the fixture stores positions");
