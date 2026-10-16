@@ -260,6 +260,330 @@ fn create_collection_action_state(template: &collection_state::State) -> collect
 }
 
 #[test]
+fn create_and_register_shards_action_custom_replay() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_resharding_collection(&handle, &dispatcher, true, ReshardingDirection::Up);
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let field_name: JsonPath = "city".parse().unwrap();
+    let field_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    toc.apply_action(Action::SetPayloadIndex {
+        collection: "test".into(),
+        field_name: field_name.clone(),
+        field_schema: field_schema.clone(),
+    })
+    .unwrap();
+    let before = toc.collection_state("test").unwrap();
+    let shards = vec![
+        (4, vec![0, 1], ReplicaState::Initializing),
+        (5, vec![0], ReplicaState::Dead),
+        (6, vec![2], ReplicaState::Initializing),
+    ];
+    let action = Action::CreateAndRegisterShards {
+        collection: "test".into(),
+        shard_key: Some("new".into()),
+        shards: shards.clone(),
+    };
+    let mut expected = before;
+    for (id, peers, state) in &shards {
+        let info = ShardInfo {
+            replicas: peers.iter().map(|&peer| (peer, *state)).collect(),
+        };
+        expected.shards.insert(*id, info);
+    }
+    expected
+        .shards_key_mapping
+        .entry("new".into())
+        .or_default()
+        .extend([4, 5, 6]);
+
+    toc.apply_action(action.clone()).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), expected);
+    assert_shard_indexes(&handle, &dispatcher, &[4, 5], &field_name, &field_schema);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let replicas: Vec<_> = handle.block_on(async {
+        holder
+            .read()
+            .await
+            .get_shards()
+            .map(|(id, shard)| (id, shard.clone()))
+            .collect()
+    });
+
+    toc.apply_action(action).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), expected);
+    handle.block_on(async {
+        let holder = holder.read().await;
+        for (id, replica) in &replicas {
+            assert!(Arc::ptr_eq(replica, holder.get_shard(*id).unwrap()));
+        }
+    });
+    let persisted = ShardHolder::new(
+        &storage_dir.path().join("collections/test"),
+        ShardingMethod::Custom,
+    )
+    .unwrap();
+    assert_eq!(
+        persisted.get_shard_key_to_ids_mapping(),
+        expected.shards_key_mapping
+    );
+}
+
+#[test]
+fn create_and_register_shards_action_build_failure_reload() {
+    for cut in 1..=3 {
+        let (storage_dir, handle, dispatcher) = new_dispatcher();
+        create_custom_collection(&handle, &dispatcher, "test");
+
+        let pass = new_unchecked_verification_pass();
+        let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+        let field_name: JsonPath = "city".parse().unwrap();
+        let field_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        toc.apply_action(Action::SetPayloadIndex {
+            collection: "test".into(),
+            field_name: field_name.clone(),
+            field_schema: field_schema.clone(),
+        })
+        .unwrap();
+        let before = toc.collection_state("test").unwrap();
+        let path = storage_dir.path().join("collections/test");
+        let mapping_path = path.join("shard_key_mapping.json");
+        let backup = path.join("mapping.backup");
+        let blocker = if cut < 3 {
+            let blocker = path.join((cut + 1).to_string());
+            fs_err::write(&blocker, "block the next shard build").unwrap();
+            blocker
+        } else {
+            fs_err::rename(&mapping_path, &backup).unwrap();
+            fs_err::create_dir(&mapping_path).unwrap();
+            mapping_path.clone()
+        };
+        let action = Action::CreateAndRegisterShards {
+            collection: "test".into(),
+            shard_key: Some("tenant".into()),
+            shards: (1..=3)
+                .map(|id| (id, vec![0], ReplicaState::Initializing))
+                .collect(),
+        };
+
+        let error = toc.apply_action(action.clone()).unwrap_err();
+
+        assert!(matches!(error, StorageError::ServiceError { .. }));
+        assert_eq!(toc.collection_state("test").unwrap(), before);
+        for id in 1..=cut {
+            assert!(path.join(format!("{id}/shard_config.json")).is_file());
+        }
+        if cut < 3 {
+            fs_err::remove_file(blocker).unwrap();
+        } else {
+            fs_err::remove_dir(blocker).unwrap();
+            fs_err::rename(backup, mapping_path).unwrap();
+        }
+        stop_collections(&handle, &dispatcher);
+        drop(dispatcher);
+        drop(handle);
+        let (_storage_dir, handle, dispatcher, _proposals) = open_dispatcher(storage_dir);
+        let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+        assert_eq!(toc.collection_state("test").unwrap(), before);
+
+        toc.apply_action(action.clone()).unwrap();
+        toc.apply_action(action).unwrap();
+
+        let state = toc.collection_state("test").unwrap();
+        assert_eq!(state.shards.len(), 3);
+        assert_eq!(state.shards_key_mapping[&"tenant".into()], [1, 2, 3].into());
+        assert_shard_indexes(&handle, &dispatcher, &[1, 2, 3], &field_name, &field_schema);
+        stop_collections(&handle, &dispatcher);
+    }
+}
+
+#[test]
+fn create_and_register_shards_action_auto_resharding_reload() {
+    create_and_register_shards_action_resharding_reload(false);
+}
+
+#[test]
+fn create_and_register_shards_action_custom_resharding_reload() {
+    create_and_register_shards_action_resharding_reload(true);
+}
+
+fn create_and_register_shards_action_resharding_reload(custom: bool) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    let mut resharding =
+        create_resharding_collection(&handle, &dispatcher, custom, ReshardingDirection::Up);
+    resharding.shard_id = if custom { 4 } else { 2 };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let field_name: JsonPath = "city".parse().unwrap();
+    let field_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    toc.apply_action(Action::SetPayloadIndex {
+        collection: "test".into(),
+        field_name: field_name.clone(),
+        field_schema: field_schema.clone(),
+    })
+    .unwrap();
+    let before = toc.collection_state("test").unwrap();
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    handle.block_on(async {
+        let collection = toc.get_collection(&collection_pass).await.unwrap();
+        // Reproduce a crash after the last build but before registration. Neither the
+        // custom mapping nor the auto shard count makes this directory loadable yet.
+        let replica = collection
+            .create_replica_set(
+                resharding.shard_id,
+                resharding.shard_key.clone(),
+                &[0],
+                Some(ReplicaState::Resharding),
+            )
+            .await
+            .unwrap();
+        replica.stop_gracefully().await;
+    });
+    stop_collections(&handle, &dispatcher);
+    drop(dispatcher);
+    drop(handle);
+    let (storage_dir, handle, dispatcher, _proposals) = open_dispatcher(storage_dir);
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    assert_eq!(toc.collection_state("test").unwrap(), before);
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let old_id = if custom { 1 } else { 0 };
+    let old_ring = handle.block_on(async {
+        holder
+            .read()
+            .await
+            .hash_ring_router(old_id)
+            .unwrap()
+            .clone()
+    });
+    let action = Action::CreateAndRegisterShards {
+        collection: "test".into(),
+        shard_key: resharding.shard_key.clone(),
+        shards: vec![(resharding.shard_id, vec![0], ReplicaState::Resharding)],
+    };
+
+    toc.apply_action(action.clone()).unwrap();
+
+    assert_shard_indexes(
+        &handle,
+        &dispatcher,
+        &[resharding.shard_id],
+        &field_name,
+        &field_schema,
+    );
+    assert_eq!(
+        handle.block_on(async {
+            holder
+                .read()
+                .await
+                .hash_ring_router(old_id)
+                .unwrap()
+                .clone()
+        }),
+        old_ring
+    );
+    let path = storage_dir
+        .path()
+        .join("collections/test/resharding_state.json");
+    fs_err::write(&path, "null").unwrap();
+    let backup = path.with_extension("backup");
+    fs_err::rename(&path, &backup).unwrap();
+    fs_err::create_dir(&path).unwrap();
+    let state_action = Action::SetReshardingState {
+        collection: "test".into(),
+        state: Some(resharding.clone()),
+    };
+
+    let error = toc.apply_action(state_action.clone()).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert_eq!(
+        handle.block_on(async {
+            holder
+                .read()
+                .await
+                .hash_ring_router(old_id)
+                .unwrap()
+                .clone()
+        }),
+        old_ring
+    );
+    fs_err::remove_dir(&path).unwrap();
+    fs_err::rename(&backup, &path).unwrap();
+    toc.apply_action(action).unwrap();
+    toc.apply_action(state_action).unwrap();
+    if !custom {
+        toc.apply_action(Action::SetShardNumber {
+            collection: "test".into(),
+            shard_number: NonZeroU32::new(3).unwrap(),
+        })
+        .unwrap();
+    }
+    let expected = toc.collection_state("test").unwrap();
+    drop(holder);
+    drop(collection);
+    stop_collections(&handle, &dispatcher);
+    drop(dispatcher);
+    drop(handle);
+    let (_storage_dir, handle, dispatcher, _proposals) = open_dispatcher(storage_dir);
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    assert_eq!(toc.collection_state("test").unwrap(), expected);
+    assert_shard_indexes(
+        &handle,
+        &dispatcher,
+        &[resharding.shard_id],
+        &field_name,
+        &field_schema,
+    );
+    stop_collections(&handle, &dispatcher);
+}
+
+fn assert_shard_indexes(
+    handle: &Handle,
+    dispatcher: &Dispatcher,
+    ids: &[u32],
+    field: &JsonPath,
+    schema: &PayloadFieldSchema,
+) {
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    handle.block_on(async {
+        let collection = toc.get_collection(&collection_pass).await.unwrap();
+        let holder = collection.shards_holder();
+        let holder = holder.read().await;
+        for &id in ids {
+            let replica = holder.get_shard(id).unwrap();
+            let segments = replica.local_segments_for_test().await.unwrap();
+            let segments = segments.read();
+            assert!(!segments.is_empty());
+            for (_, segment) in segments.iter() {
+                assert_eq!(
+                    segment.get().read().get_indexed_fields().get(field),
+                    Some(schema),
+                    "missing index on shard {id}"
+                );
+            }
+        }
+    });
+}
+
+#[test]
 fn drop_collection_action_replay() {
     let (storage_dir, handle, dispatcher) = new_dispatcher();
     create_collection(&handle, &dispatcher, "test");
