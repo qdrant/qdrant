@@ -13,7 +13,7 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use fs_err as fs;
-use pairwise::{Bits, Combine, MatrixOperands};
+use pairwise::{Aux, Bits, Combine, MatrixOperands};
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
@@ -1084,11 +1084,13 @@ where
         self.combine
     }
 
+    fn param(&self) {}
+
     fn decode_batch(
         &self,
         ids: &[PointOffsetType],
         out: &mut [Bits],
-        _aux: &mut [f32],
+        _aux: &mut [Aux],
     ) -> std::io::Result<()> {
         let depth = self.depth;
         self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {

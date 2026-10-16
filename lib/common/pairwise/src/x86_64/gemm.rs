@@ -3,6 +3,7 @@
 use std::arch::x86_64::*;
 
 use crate::blocked::Micro;
+use crate::operands::F32_SLICE;
 
 /// 6 x 16 f32 FMA tile: 12 accumulators; per depth step 2 loads, 6 broadcasts, 12 FMAs.
 pub(super) struct F32Tile;
@@ -10,16 +11,26 @@ pub(super) struct F32Tile;
 impl Micro for F32Tile {
     type E = f32;
     type Acc = f32;
+    type Operand = f32;
     const MR: usize = 6;
     const NR: usize = 16;
     const KU: usize = 1;
-    const KC: usize = 256;
+    const KC: usize = F32_SLICE;
     const MC: usize = 48;
     /// Best at 6 and 12 threads at dim 1536: 512 columns lost 4% to 13%, 32 columns 4% to 22%.
     const NC: usize = 128;
 
     #[inline(always)]
-    unsafe fn tile(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: usize, acc: bool) {
+    unsafe fn tile(
+        kc: usize,
+        a: *const Self::Operand,
+        b: *const Self::Operand,
+        c: *mut f32,
+        ldc: usize,
+        acc: bool,
+        (): (),
+        _: usize,
+    ) {
         unsafe { tile_f32(kc, a, b, c, ldc, acc) }
     }
 
@@ -40,6 +51,7 @@ pub(super) struct U8Tile;
 impl Micro for U8Tile {
     type E = u8;
     type Acc = i32;
+    type Operand = u8;
     const MR: usize = 4;
     const NR: usize = 16;
     const KU: usize = 4;
@@ -50,7 +62,16 @@ impl Micro for U8Tile {
     const NC: usize = 128;
 
     #[inline(always)]
-    unsafe fn tile(kc: usize, a: *const u8, b: *const u8, c: *mut i32, ldc: usize, acc: bool) {
+    unsafe fn tile(
+        kc: usize,
+        a: *const Self::Operand,
+        b: *const Self::Operand,
+        c: *mut i32,
+        ldc: usize,
+        acc: bool,
+        (): (),
+        _: usize,
+    ) {
         unsafe { tile_u8(kc, a, b, c, ldc, acc) }
     }
 
@@ -65,8 +86,10 @@ impl Micro for U8Tile {
     }
 }
 
-/// See [`Micro::tile`]. The accumulators start from `c` instead of adding it at the end, so
-/// each score is one chain of fused multiply-adds in depth order, whatever the slice size.
+/// See [`Micro::tile`]. The accumulators start from zero and `c` is added at the end, so each
+/// slice is a chain of fused multiply-adds in depth order, as [`KernelElem::dot`] restarts it.
+///
+/// [`KernelElem::dot`]: crate::KernelElem::dot
 #[target_feature(enable = "avx2,fma")]
 #[inline]
 unsafe fn tile_f32(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: usize, acc: bool) {
@@ -74,12 +97,6 @@ unsafe fn tile_f32(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: us
     const NR: usize = F32Tile::NR;
     unsafe {
         let mut sums = [[_mm256_setzero_ps(); 2]; MR];
-        if acc {
-            for (r, sums) in sums.iter_mut().enumerate() {
-                sums[0] = _mm256_loadu_ps(c.add(r * ldc));
-                sums[1] = _mm256_loadu_ps(c.add(r * ldc + 8));
-            }
-        }
         let (mut a, mut b) = (a, b);
         for _ in 0..kc {
             let b0 = _mm256_load_ps(b);
@@ -93,8 +110,17 @@ unsafe fn tile_f32(kc: usize, a: *const f32, b: *const f32, c: *mut f32, ldc: us
             b = b.add(NR);
         }
         for (r, sums) in sums.iter().enumerate() {
-            _mm256_storeu_ps(c.add(r * ldc), sums[0]);
-            _mm256_storeu_ps(c.add(r * ldc + 8), sums[1]);
+            for (h, &sum) in sums.iter().enumerate() {
+                let c = c.add(r * ldc + 8 * h);
+                _mm256_storeu_ps(
+                    c,
+                    if acc {
+                        _mm256_add_ps(_mm256_loadu_ps(c), sum)
+                    } else {
+                        sum
+                    },
+                );
+            }
         }
     }
 }

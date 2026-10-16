@@ -9,6 +9,7 @@
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
 mod blocked;
+mod codes;
 mod combine;
 mod fallback;
 mod kernel;
@@ -22,7 +23,8 @@ mod x86_64;
 
 use common::types::PointOffsetType;
 
-pub use crate::combine::Combine;
+pub use crate::codes::{Codebook, Codes2, Codes4, Codes8};
+pub use crate::combine::{Aux, Combine, TurboDot};
 #[doc(hidden)]
 pub use crate::kernel::Kernel;
 use crate::operands::sealed::Sealed as _;
