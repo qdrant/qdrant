@@ -10,6 +10,7 @@ use log::debug;
 use super::HNSWIndex;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::VectorIndexEnum;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_links::GraphLinksResidency;
@@ -71,15 +72,16 @@ impl<'a> OldIndexCandidate<'a> {
             .as_ref()
             .map(|qv| &qv.config().quantization_config);
 
-        let no_main_graph = config.m == 0;
         let configuration_mismatch = config.m != old_index.config.m
             || config.m0 != old_index.config.m0
             || config.ef_construct != old_index.config.ef_construct
             || new_quantization_config != old_quantization_config;
+        // Without a main graph, only payload links can be reused.
+        let nothing_to_reuse = config.m == 0 && !payload_links_reusable(config, &old_index.config);
         // If old graph has vectors, reusing it will cause a lot of random reads,
         // making it slower than building from scratch.
         let old_graph_is_with_vectors = old_index.graph.has_inline_vectors();
-        if no_main_graph || configuration_mismatch || old_graph_is_with_vectors {
+        if configuration_mismatch || nothing_to_reuse || old_graph_is_with_vectors {
             return None;
         }
         drop(old_quantized_vectors_ref);
@@ -109,6 +111,8 @@ impl<'a> OldIndexCandidate<'a> {
 
         // Rough check whether the point is included in the old graph.
         // If it's included, it almost certainly has at least one outgoing link at level 0.
+        // Without a main graph, points outside every payload block have none: they are left out
+        // of the mapping and inserted as new points.
         let old_graph_has_point = |id: PointOffsetType| !old_graph.links.links_empty(id, 0);
 
         // Build old_to_new mapping.
@@ -246,4 +250,19 @@ impl OldIndex<'_> {
             None => self.index.graph.as_direct().expect("opened in `evaluate`"),
         }
     }
+}
+
+/// `m` of the payload links of a graph built with `config`.
+pub(super) fn payload_hnsw_m(config: &HnswGraphConfig) -> HnswM {
+    HnswM::new(
+        config.payload_m.unwrap_or(config.m),
+        config.payload_m0.unwrap_or(config.m0),
+    )
+}
+
+/// Whether payload blocks of a graph built with `config` can start from the payload links of a
+/// graph built with `old`: there must be some, and of the same size.
+pub(super) fn payload_links_reusable(config: &HnswGraphConfig, old: &HnswGraphConfig) -> bool {
+    let payload_m = payload_hnsw_m(config);
+    payload_m.m > 0 && payload_m == payload_hnsw_m(old)
 }

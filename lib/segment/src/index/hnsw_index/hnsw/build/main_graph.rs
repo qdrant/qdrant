@@ -29,7 +29,7 @@ pub(super) fn build_main_graph_on_cpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
-    old_index: Option<OldIndex<'_>>,
+    old_index: Option<&OldIndex<'_>>,
     graph_layers_builder: &GraphLayersBuilder,
     ef_construct: usize,
     progress_migrate: ProgressTracker,
