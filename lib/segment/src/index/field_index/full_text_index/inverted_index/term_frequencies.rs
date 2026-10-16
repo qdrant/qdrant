@@ -40,7 +40,6 @@ use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Entries per block: one posting list chunk.
 pub const BLOCK_LEN: usize = posting_list::CHUNK_LEN;
-const _: () = assert!(BLOCK_LEN == BitPacker4x::BLOCK_LEN);
 
 /// Bytes a full block takes per bit of width.
 const BLOCK_BYTES_PER_BIT: usize = BLOCK_LEN / u8::BITS as usize;
@@ -403,6 +402,12 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use super::*;
+
+    /// A block is packed and decoded as one `BitPacker4x` block.
+    #[test]
+    fn block_len_matches_the_bit_packer() {
+        assert_eq!(BLOCK_LEN, BitPacker4x::BLOCK_LEN);
+    }
 
     fn decode_all(list: &TermFrequencyList) -> Vec<u32> {
         let mut out = Vec::with_capacity(list.len());
