@@ -12,8 +12,8 @@ use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<S: UniversalRead> ImmutableFullTextIndex<S> {
     /// Open and load the immutable full text index from on-disk storage.
-    pub fn load_from_on_disk(index: OnDiskFullTextIndex<S>) -> OperationResult<Self> {
-        let inverted_index = ImmutableInvertedIndex::try_from(&index.inverted_index)?;
+    pub fn load_from_on_disk(mut index: OnDiskFullTextIndex<S>) -> OperationResult<Self> {
+        let inverted_index = ImmutableInvertedIndex::load_from_on_disk(&mut index.inverted_index)?;
 
         // Index is now loaded into memory, clear cache of backing on-disk storage
         if let Err(err) = index.inverted_index.clear_cache() {
