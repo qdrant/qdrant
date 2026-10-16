@@ -78,7 +78,9 @@ Loads a BEIR `corpus.jsonl` (one `{"_id", "title", "text"}` object per line), on
 document, so BM25 runs on real text. The title and text go to `--field` (default `text`), joined by
 a newline; the BEIR `_id` goes to `doc_id`, to check results against the qrels. Vectors and the
 other indexed payload fields are generated as `upsert` generates them. Point ids follow corpus order
-from `--start-id` (default `0`), so a re-run overwrites the same points; blank lines are skipped. A
+from `--start-id` (default `0`), so a re-run overwrites the same points; one loading fewer documents
+leaves the earlier ones past its end, so recreate the collection to reload a smaller or different
+corpus. Blank lines are skipped. A
 `--field` overlapping `doc_id` or another indexed path is refused. `--limit` loads only the first N
 documents; `--batch-size` and `--seed` work as for `upsert`.
 
