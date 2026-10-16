@@ -1,4 +1,3 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 #[cfg(debug_assertions)]
 use common::generic_consts::Random;
 use common::types::{PointOffsetType, ScoreType};
@@ -29,7 +28,6 @@ impl<'storage> LazyMatrix<'storage> {
     pub fn new(
         vectors: Vec<VectorInternal>,
         storage: &'storage VectorStorageEnum,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> OperationResult<Self> {
         #[cfg(debug_assertions)]
         {
@@ -46,23 +44,23 @@ impl<'storage> LazyMatrix<'storage> {
             .into_iter()
             .map(|vector| {
                 let query = QueryVector::Nearest(vector);
-                new_raw_scorer(query, storage, hw_measurement_acc.get_counter_cell())
+                new_raw_scorer(query, storage)
             })
             .collect::<OperationResult<Vec<_>>>()?;
 
         Ok(Self { scorers, matrix })
     }
 
-    pub fn get_similarity(&mut self, i: usize, j: usize) -> ScoreType {
+    pub fn get_similarity(&mut self, i: usize, j: usize) -> OperationResult<ScoreType> {
         if let Some(similarity) = self.matrix[i][j] {
-            return similarity;
+            return Ok(similarity);
         }
-        let similarity = self.compute_similarity(i, j);
+        let similarity = self.compute_similarity(i, j)?;
         self.matrix[i][j] = Some(similarity);
-        similarity
+        Ok(similarity)
     }
 
-    fn compute_similarity(&self, i: usize, j: usize) -> ScoreType {
+    fn compute_similarity(&self, i: usize, j: usize) -> OperationResult<ScoreType> {
         self.scorers[i].score_point(j as PointOffsetType)
     }
 }

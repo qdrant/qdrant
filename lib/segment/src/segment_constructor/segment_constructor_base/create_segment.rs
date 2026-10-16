@@ -176,6 +176,7 @@ pub(super) fn create_segment(
         payload_storage,
         segment_config: config.clone(),
         error_status: None,
+        pending_changes_logs: Default::default(),
     })
 }
 

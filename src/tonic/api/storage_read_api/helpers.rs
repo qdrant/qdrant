@@ -4,7 +4,7 @@ use std::sync::Arc;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::shard::ShardId;
 use common::universal_io::{
-    ReadRange, UioResult, UniversalIoError, UniversalRead, UniversalReadFileOps,
+    ReadRange, UioResult, UniversalIoError, UniversalRead, UniversalReadFs,
 };
 use storage::content_manager::toc::COLLECTIONS_DIR;
 use storage::dispatcher::Dispatcher;
@@ -15,7 +15,7 @@ use crate::tonic::api::storage_read_api::StorageReadService;
 
 impl<S: UniversalRead + Send + Sync + 'static> StorageReadService<S>
 where
-    <S::Fs as UniversalReadFileOps>::ContextConfig: Default,
+    <S::Fs as UniversalReadFs>::ContextConfig: Default,
 {
     pub fn new(dispatcher: Arc<Dispatcher>) -> Result<Self, UniversalIoError> {
         let fs = S::Fs::from_context(Default::default())?;

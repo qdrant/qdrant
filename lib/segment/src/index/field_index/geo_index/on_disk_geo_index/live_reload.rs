@@ -1,8 +1,6 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::sorted_slice::SortedSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{CachedReadFs, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, PreloadFuture, UniversalRead, UniversalReadFs};
 
 use super::OnDiskGeoIndex;
 use crate::common::operation_error::OperationResult;
@@ -14,7 +12,7 @@ impl<S: UniversalRead> LiveReload for OnDiskGeoIndex<S> {
     fn live_preload<Fs: CachedReadFs<File = S>>(
         &self,
         _fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         Ok(Vec::new())
     }
 
@@ -23,7 +21,6 @@ impl<S: UniversalRead> LiveReload for OnDiskGeoIndex<S> {
         _fs: &Fs,
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // No on-disk state changes on reload: this index is immutable, so only
         // the in-memory deletion bitvec is patched. `fs` / `new_points` are

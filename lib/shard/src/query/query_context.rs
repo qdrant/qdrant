@@ -2,29 +2,26 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::iterator_ext::IteratorExt;
+use common::ambient;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::query_context::QueryContext;
 use segment::types::VectorName;
 
 use crate::common::stopping_guard::StoppingGuard;
+use crate::locked_segment::LockedSegment;
 use crate::search::CoreSearchRequest;
-use crate::segment_holder::locked::LockedSegmentHolder;
 
 pub fn init_query_context(
     batch_request: &[CoreSearchRequest],
     // How many KBs segment should have to be considered requiring indexing for search
     search_optimized_threshold_kb: usize,
     is_stopped_guard: &StoppingGuard,
-    hw_measurement_acc: HwMeasurementAcc,
     check_idf_required: impl Fn(&VectorName) -> bool,
 ) -> OperationResult<QueryContext> {
     init_query_context_with_stopping_flag(
         batch_request,
         search_optimized_threshold_kb,
         is_stopped_guard.get_is_stopped(),
-        hw_measurement_acc,
         check_idf_required,
     )
 }
@@ -34,10 +31,9 @@ pub fn init_query_context_with_stopping_flag(
     batch_request: &[CoreSearchRequest],
     search_optimized_threshold_kb: usize,
     is_stopped: Arc<AtomicBool>,
-    hw_measurement_acc: HwMeasurementAcc,
     check_idf_required: impl Fn(&VectorName) -> bool,
 ) -> OperationResult<QueryContext> {
-    let mut query_context = QueryContext::new(search_optimized_threshold_kb, hw_measurement_acc)
+    let mut query_context = QueryContext::new(search_optimized_threshold_kb, ambient::current())
         .with_is_stopped(is_stopped.clone());
 
     for search_request in batch_request {
@@ -72,36 +68,21 @@ pub fn init_query_context_with_stopping_flag(
     Ok(query_context)
 }
 
-pub fn fill_query_context(
-    mut query_context: QueryContext,
-    segments: LockedSegmentHolder,
+/// Add one segment's statistics to `query_context`. To fill segments in
+/// parallel, give each one a clone of the unfilled context and fold them back
+/// with [`QueryContext::merge_statistics`].
+pub fn fill_segment_query_context(
+    query_context: &mut QueryContext,
+    segment: &LockedSegment,
     timeout: Duration,
     is_stopped: &AtomicBool,
-) -> OperationResult<Option<QueryContext>> {
-    let start = std::time::Instant::now();
-
-    let segments: Vec<_> = {
-        let Some(holder_guard) = segments.try_read_for(timeout) else {
-            return Err(OperationError::timeout(timeout, "fill query context"));
-        };
-        holder_guard
-            .non_appendable_then_appendable_segments()
-            .collect()
+) -> OperationResult<()> {
+    check_process_stopped(is_stopped)?;
+    let segment = segment.get();
+    let Some(segment_guard) = segment.try_read_for(timeout) else {
+        return Err(OperationError::timeout(timeout, "fill query context"));
     };
-
-    if segments.is_empty() {
-        return Ok(None);
-    }
-
-    for locked_segment in segments.into_iter().stop_if(is_stopped) {
-        let segment = locked_segment.get();
-        let timeout = timeout.saturating_sub(start.elapsed());
-        let Some(segment_guard) = segment.try_read_for(timeout) else {
-            return Err(OperationError::timeout(timeout, "fill query context"));
-        };
-        segment_guard.fill_query_context(&mut query_context)?;
-    }
-    Ok(Some(query_context))
+    segment_guard.fill_query_context(query_context)
 }
 
 #[cfg(test)]
@@ -140,38 +121,21 @@ mod tests {
         batch: &[CoreSearchRequest],
         check_idf_required: impl Fn(&segment::types::VectorName) -> bool,
     ) -> OperationResult<QueryContext> {
-        init_query_context(
-            batch,
-            0,
-            &StoppingGuard::new(),
-            HwMeasurementAcc::new(),
-            check_idf_required,
-        )
+        ambient::test(|| init_query_context(batch, 0, &StoppingGuard::new(), check_idf_required))
     }
 
     #[test]
     fn caller_owned_cancellation_reaches_segment_query_context() {
         let stopped = Arc::new(AtomicBool::new(false));
-        let context = init_query_context_with_stopping_flag(
-            &[],
-            0,
-            stopped.clone(),
-            HwMeasurementAcc::new(),
-            |_| false,
-        )
-        .unwrap();
+        let _scope = ambient::test_guard();
+        let context =
+            init_query_context_with_stopping_flag(&[], 0, stopped.clone(), |_| false).unwrap();
         assert!(Arc::ptr_eq(&context.is_stopped_handle(), &stopped));
         assert!(!context.get_segment_query_context().is_stopped());
         stopped.store(true, std::sync::atomic::Ordering::Relaxed);
         assert!(context.get_segment_query_context().is_stopped());
         assert!(matches!(
-            init_query_context_with_stopping_flag(
-                &[],
-                0,
-                stopped.clone(),
-                HwMeasurementAcc::new(),
-                |_| false,
-            ),
+            init_query_context_with_stopping_flag(&[], 0, stopped.clone(), |_| false),
             Err(OperationError::Cancelled { .. })
         ));
     }

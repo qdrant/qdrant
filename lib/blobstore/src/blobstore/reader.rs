@@ -1,12 +1,10 @@
 use std::path::PathBuf;
-use std::pin::Pin;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs, UserData, read_json_via,
+    CachedReadFs, OkNotFound, Populate, PreloadFuture, UniversalRead, UniversalReadFs, UserData,
+    read_json_via,
 };
 use strum::IntoEnumIterator;
 
@@ -18,6 +16,7 @@ use crate::blob::Blob;
 use crate::config::{Mode, StorageConfig};
 use crate::error::BlobstoreError;
 use crate::tracker::PointOffset;
+use crate::tracker::tracker_enum::TrackerEnum;
 
 pub(super) const CONFIG_FILENAME: &str = "config.json";
 
@@ -31,7 +30,7 @@ pub(super) const CONFIG_FILENAME: &str = "config.json";
 #[derive(Debug)]
 pub enum BlobstoreReader<V, S: UniversalRead> {
     Gridstore(GridstoreReader<V, S>),
-    Logstore(LogstoreReader<V, S>),
+    Logstore(LogstoreReader<V, S, TrackerEnum<S>>),
 }
 
 impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
@@ -55,7 +54,8 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
                     GridstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
                 }
                 Mode::AppendOnly => {
-                    LogstoreReader::<V, S>::preopen(fs, &base_path, populate).ok_not_found()?;
+                    LogstoreReader::<V, S, TrackerEnum<S>>::preopen(fs, &base_path, populate)
+                        .ok_not_found()?;
                 }
             }
         }
@@ -114,18 +114,14 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match self {
             Self::Gridstore(reader) => reader.max_point_offset(),
-            Self::Logstore(reader) => Ok(reader.max_point_offset()),
+            Self::Logstore(reader) => reader.max_point_offset(),
         }
     }
 
-    pub fn get_value<P: AccessPattern>(
-        &self,
-        point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> Result<Option<V>> {
+    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
         match self {
-            Self::Gridstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
-            Self::Logstore(reader) => reader.get_value::<P>(point_offset, hw_counter),
+            Self::Gridstore(reader) => reader.get_value::<P>(point_offset),
+            Self::Logstore(reader) => reader.get_value::<P>(point_offset),
         }
     }
 
@@ -136,11 +132,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Vec<u8>>> {
         match self {
-            Self::Gridstore(reader) => reader.get_value_bytes::<P>(point_offset, hw_counter),
-            Self::Logstore(reader) => reader.get_value_bytes::<P>(point_offset, hw_counter),
+            Self::Gridstore(reader) => reader.get_value_bytes::<P>(point_offset),
+            Self::Logstore(reader) => reader.get_value_bytes::<P>(point_offset),
         }
     }
 
@@ -148,19 +143,14 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     /// Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
-    pub fn iter<F, E>(
-        &self,
-        max_id: PointOffset,
-        callback: F,
-        hw_counter: HwMetricRefCounter,
-    ) -> Result<(), E>
+    pub fn iter<F, E>(&self, max_id: PointOffset, callback: F, hw_metric: HwMetric) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
         match self {
-            Self::Gridstore(reader) => reader.iter(max_id, callback, hw_counter),
-            Self::Logstore(reader) => reader.iter(max_id, callback, hw_counter),
+            Self::Gridstore(reader) => reader.iter(max_id, callback, hw_metric),
+            Self::Logstore(reader) => reader.iter(max_id, callback, hw_metric),
         }
     }
 
@@ -168,7 +158,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -177,10 +167,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     {
         match self {
             Self::Gridstore(reader) => {
-                reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                reader.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
             Self::Logstore(reader) => {
-                reader.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                reader.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
         }
     }
@@ -191,7 +181,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -200,10 +190,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     {
         match self {
             Self::Gridstore(reader) => {
-                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
             }
             Self::Logstore(reader) => {
-                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                reader.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
             }
         }
     }
@@ -218,10 +208,7 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
-    pub fn live_preload<Fs: CachedReadFs<File = S>>(
-        &self,
-        fs: &Fs,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+    pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<Vec<PreloadFuture>> {
         match self {
             Self::Gridstore(reader) => reader.live_preload(fs),
             Self::Logstore(reader) => reader.live_preload(fs),
@@ -246,10 +233,10 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
 
 impl<V, S: UniversalRead> BlobstoreReader<V, S> {
     /// Returns `true` if BlobstoreReader is on disk, i.e. not populated on start/reload
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
-            Self::Gridstore(reader) => reader.is_on_disk(),
-            Self::Logstore(reader) => reader.is_on_disk(),
+            Self::Gridstore(reader) => reader.is_cold(),
+            Self::Logstore(reader) => reader.is_cold(),
         }
     }
 

@@ -1,7 +1,6 @@
 use std::fmt::Formatter;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -105,45 +104,36 @@ impl FieldIndex {
         self.get_payload_field_index().immutable_files()
     }
 
-    pub fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
-            }
+            FieldIndex::IntIndex(payload_field_index) => payload_field_index.add_point(id, payload),
             FieldIndex::DatetimeIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::IntMapIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::KeywordIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::FloatIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
-            FieldIndex::GeoIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
-            }
+            FieldIndex::GeoIndex(payload_field_index) => payload_field_index.add_point(id, payload),
             FieldIndex::BoolIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::FullTextIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::UuidIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::UuidMapIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::NullIndex(payload_field_index) => {
-                payload_field_index.add_point(id, payload, hw_counter)
+                payload_field_index.add_point(id, payload)
             }
         }
     }
@@ -181,19 +171,19 @@ impl FieldIndex {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
-            FieldIndex::IntIndex(index) => index.is_on_disk(),
-            FieldIndex::DatetimeIndex(index) => index.is_on_disk(),
-            FieldIndex::IntMapIndex(index) => index.is_on_disk(),
-            FieldIndex::KeywordIndex(index) => index.is_on_disk(),
-            FieldIndex::FloatIndex(index) => index.is_on_disk(),
-            FieldIndex::GeoIndex(index) => index.is_on_disk(),
-            FieldIndex::BoolIndex(index) => index.is_on_disk(),
-            FieldIndex::FullTextIndex(index) => index.is_on_disk(),
-            FieldIndex::UuidIndex(index) => index.is_on_disk(),
-            FieldIndex::UuidMapIndex(index) => index.is_on_disk(),
-            FieldIndex::NullIndex(index) => index.is_on_disk(),
+            FieldIndex::IntIndex(index) => index.is_cold(),
+            FieldIndex::DatetimeIndex(index) => index.is_cold(),
+            FieldIndex::IntMapIndex(index) => index.is_cold(),
+            FieldIndex::KeywordIndex(index) => index.is_cold(),
+            FieldIndex::FloatIndex(index) => index.is_cold(),
+            FieldIndex::GeoIndex(index) => index.is_cold(),
+            FieldIndex::BoolIndex(index) => index.is_cold(),
+            FieldIndex::FullTextIndex(index) => index.is_cold(),
+            FieldIndex::UuidIndex(index) => index.is_cold(),
+            FieldIndex::UuidMapIndex(index) => index.is_cold(),
+            FieldIndex::NullIndex(index) => index.is_cold(),
         }
     }
 

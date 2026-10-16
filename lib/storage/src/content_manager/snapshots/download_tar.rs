@@ -5,6 +5,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use cancel::CancellationToken;
+use collection::shards::shard_holder::recovery_guard::RecoveryProgressHandle;
 use common::tar_unpack::tar_unpack_reader;
 use futures::TryStreamExt;
 use sha2::{Digest, Sha256};
@@ -17,6 +18,10 @@ use crate::StorageError;
 
 /// Timeout for stream reads - if no data is received within this duration, the download fails.
 const STREAM_READ_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Read buffer between the HTTP body and the tar unpacker, so the unpacker
+/// doesn't block on the async runtime for every small read.
+const STREAM_READ_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 
 /// An async reader wrapper that times out if no data is received within a specified duration.
 ///
@@ -146,6 +151,7 @@ impl<R: Read> Read for HashingReader<R> {
 /// * `url` - The URL to download the tar file from
 /// * `target_dir` - The directory to extract the tar contents into
 /// * `compute_checksum` - If true, compute and return the SHA-256 hash of the downloaded data
+/// * `recovery_progress` - If set, count the downloaded bytes into this recovery progress
 ///
 /// # Returns
 ///
@@ -156,6 +162,7 @@ pub async fn download_and_unpack_tar(
     url: &Url,
     target_dir: &Path,
     compute_checksum: bool,
+    recovery_progress: Option<RecoveryProgressHandle>,
 ) -> Result<Option<String>, StorageError> {
     log::debug!(
         "Streaming tar download from {url} to {}",
@@ -172,7 +179,14 @@ pub async fn download_and_unpack_tar(
     }
 
     // Convert the response body stream into an AsyncRead with timeout
-    let stream = response.bytes_stream().map_err(std::io::Error::other);
+    let stream = response
+        .bytes_stream()
+        .inspect_ok(move |bytes| {
+            if let Some(recovery_progress) = &recovery_progress {
+                recovery_progress.lock().add_bytes(bytes.len());
+            }
+        })
+        .map_err(std::io::Error::other);
     let stream_reader = StreamReader::new(stream);
     // Wrap with timeout to detect stalled downloads
     let async_reader = TimeoutReader::new(stream_reader, STREAM_READ_TIMEOUT);
@@ -185,6 +199,7 @@ pub async fn download_and_unpack_tar(
         // SyncIoBridge converts an AsyncRead into a sync Read
         // It must be used within a tokio runtime context (spawn_blocking provides this)
         let sync_reader = tokio_util::io::SyncIoBridge::new(async_reader);
+        let sync_reader = std::io::BufReader::with_capacity(STREAM_READ_BUFFER_SIZE, sync_reader);
 
         // Wrap the reader with cancellation support
         let cancellable_reader = CancellableReader::new(sync_reader, cancel);
@@ -224,6 +239,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
+    use collection::shards::transfer::RecoveryStage;
     use futures::StreamExt;
 
     use super::*;
@@ -240,7 +256,7 @@ mod tests {
         let client = reqwest::Client::new();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let hash = download_and_unpack_tar(&client, &url, temp_dir.path(), true)
+        let hash = download_and_unpack_tar(&client, &url, temp_dir.path(), true, None)
             .await
             .unwrap();
 
@@ -259,6 +275,45 @@ mod tests {
             .collect();
 
         assert!(entries.contains(&"wal".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_download_and_unpack_tar_reports_transfer_in_comment() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("GET", "/test-shard.snapshot")
+            .with_body(include_bytes!("./test-shard.snapshot"))
+            .create();
+        let url = Url::parse(&format!("{}/test-shard.snapshot", server.url())).unwrap();
+
+        let client = reqwest::Client::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let recovery_progress = RecoveryProgressHandle::default();
+        recovery_progress
+            .lock()
+            .set_stage(RecoveryStage::Downloading);
+
+        download_and_unpack_tar(
+            &client,
+            &url,
+            temp_dir.path(),
+            true,
+            Some(recovery_progress.clone()),
+        )
+        .await
+        .unwrap();
+
+        // Comment must include the bytes transferred and the transfer rate, both human formatted
+        let comment = recovery_progress.lock().format_comment().unwrap();
+        let (stage, transfer) = comment.split_once(" | ").unwrap();
+        assert!(stage.starts_with("downloading ("), "{comment}");
+        let (bytes, rate) = transfer.split_once(", ").unwrap();
+        // The snapshot is 10240 bytes
+        assert_eq!(bytes, "10.00 KiB transferred", "{comment}");
+        let (value, unit) = rate.strip_suffix("/s").unwrap().split_once(' ').unwrap();
+        assert!(value.parse::<f64>().unwrap() > 0.0, "{comment}");
+        assert!(["B", "KiB", "MiB", "GiB"].contains(&unit), "{comment}");
     }
 
     #[tokio::test]

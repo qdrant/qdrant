@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::stored_bitmask::MutableStoredBitmask;
 use common::types::PointOffsetType;
-use common::universal_io::{Populate, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{Populate, UniversalWriteFs};
 
 use super::compact_stored_flags::{COMPACT_FLAGS_FILE, open_or_create_compact_mask};
 use super::mode::FlagsMode;
@@ -37,10 +37,7 @@ impl UpdateOnlyStoredFlags {
     /// marker that they exist at all.
     ///
     /// Errors when the directory holds flags of the dynamic mode.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
-        fs: &Fs,
-        directory: &Path,
-    ) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, directory: &Path) -> OperationResult<Self> {
         if FlagsMode::detect(fs, directory)? == Some(FlagsMode::Dynamic) {
             return Err(OperationError::service_error(format!(
                 "flags in {} are in the dynamic mode, which the update-only writer does not \
@@ -70,15 +67,9 @@ impl UpdateOnlyStoredFlags {
 
     /// Persist the mask in one atomic whole-file write, or write nothing when
     /// it has not effectively changed since it was opened or last flushed.
-    pub fn flush<Fs: UniversalWriteFileOps>(
-        &mut self,
-        fs: &Fs,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn flush<Fs: UniversalWriteFs>(&mut self, fs: &Fs) -> OperationResult<()> {
         let bytes_written = self.mask.save(fs, &self.path)?;
-        hw_counter
-            .payload_index_io_write_counter()
-            .incr_delta(bytes_written);
+        HwMetric::PayloadIndexIoWrite.bump(bytes_written);
         Ok(())
     }
 }
@@ -92,7 +83,7 @@ impl UpdateOnlyStoredFlags {
 #[cfg_predicate]
 #[cfg(test)]
 mod tests_mod {
-    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::ambient;
     use common::universal_io::Populate;
     #[cfg_predicate]
     use common::universal_io::{Fs, S};
@@ -108,9 +99,7 @@ mod tests_mod {
     }
 
     fn flush(flags: &mut UpdateOnlyStoredFlags) {
-        flags
-            .flush(&Fs::default(), &HardwareCounterCell::new())
-            .unwrap();
+        ambient::test(|| flags.flush(&Fs::default())).unwrap();
     }
 
     /// Reader for what the writer left behind, through the type the writable

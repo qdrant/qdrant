@@ -129,6 +129,27 @@ pub fn validate_integer_index_params(
     Ok(())
 }
 
+/// Reject a full-text index whose token-length window cannot match any token.
+///
+/// Indexing drops every token shorter than `min_token_len` or longer than
+/// `max_token_len`. When the minimum is greater than the maximum, that filter
+/// rejects every token and the index builds empty. Equal bounds are valid:
+/// tokens of that exact length are kept. Either bound may be unset.
+pub fn validate_text_index_params<T: PartialOrd>(
+    min_token_len: &Option<T>,
+    max_token_len: &Option<T>,
+) -> Result<(), ValidationErrors> {
+    if let (Some(min_len), Some(max_len)) = (min_token_len, max_token_len)
+        && min_len > max_len
+    {
+        let mut errors = ValidationErrors::new();
+        let error = ValidationError::new("min_token_len can't be greater than max_token_len");
+        errors.add("min_token_len", error);
+        return Err(errors);
+    }
+    Ok(())
+}
+
 // UUID
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -308,6 +329,78 @@ pub struct TextIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Enable ranking points by BM25 over this field; `true` for the defaults.
+    /// Implies `phrase_matching: true`, since term frequencies come from the
+    /// positions it stores. Changing it rebuilds the index. Default: disabled.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_text_scoring",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schemars(with = "Option<TextScoringInterface>")]
+    pub scoring: Option<TextScoringParams>,
+}
+
+/// How a text index ranks documents.
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TextScoringType {
+    #[default]
+    Bm25,
+}
+
+/// Parameters of ranking over a text index. The index records the length of
+/// each document, which BM25 normalizes by. `k1` and `b` are set per query.
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+pub struct TextScoringParams {
+    pub r#type: TextScoringType,
+}
+
+/// BM25 scoring for a text index: `true` for the default parameters, `false`
+/// to disable it, or the parameters themselves.
+// Only the request accepts this form: it is normalized into
+// `Option<TextScoringParams>` as it is read, so the stored schema holds one shape.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[serde(expecting = "Expected a boolean, or an object with a type")]
+enum TextScoringInterface {
+    Enabled(bool),
+    Params(TextScoringParams),
+}
+
+fn deserialize_text_scoring<'de, D>(deserializer: D) -> Result<Option<TextScoringParams>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(
+        match Option::<TextScoringInterface>::deserialize(deserializer)? {
+            None | Some(TextScoringInterface::Enabled(false)) => None,
+            Some(TextScoringInterface::Enabled(true)) => Some(TextScoringParams::default()),
+            Some(TextScoringInterface::Params(params)) => Some(params),
+        },
+    )
+}
+
+impl Validate for TextIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let TextIndexParams {
+            r#type: _,
+            tokenizer: _,
+            min_token_len,
+            max_token_len,
+            lowercase: _,
+            ascii_folding: _,
+            phrase_matching: _,
+            stopwords: _,
+            on_disk: _,
+            memory: _,
+            stemmer: _,
+            enable_hnsw: _,
+            scoring: _,
+        } = &self;
+        validate_text_index_params(min_token_len, max_token_len)
+    }
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -440,24 +533,63 @@ pub enum StopwordsInterface {
     Set(StopwordsSet),
 }
 
-/// Whether text indexes record per-document lengths, which BM25 needs for
-/// length normalization.
-///
-/// Stands in for a `scoring` field on [`TextIndexParams`] until ranked queries
-/// exist. Not persisted, so `classify()` cannot see it change: it has to be
-/// replaced by the real field rather than flipped.
-const TEXT_INDEX_SCORING: bool = false;
+#[cfg(feature = "testing")]
+thread_local! {
+    /// See [`TextIndexParams::override_scoring`].
+    static TEXT_INDEX_SCORING_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Restores the previous [`TextIndexParams::scoring`] override when dropped.
+#[cfg(feature = "testing")]
+#[must_use = "the override lasts only as long as the guard lives"]
+pub struct TextIndexScoringOverride {
+    previous: Option<bool>,
+}
+
+#[cfg(feature = "testing")]
+impl Drop for TextIndexScoringOverride {
+    fn drop(&mut self) {
+        TEXT_INDEX_SCORING_OVERRIDE.set(self.previous);
+    }
+}
 
 impl TextIndexParams {
     /// Whether an index built from these params records document lengths.
     ///
-    /// When the `scoring` field lands it must also normalize `phrase_matching`
-    /// to `true`, since tf comes from the positions that flag stores. Every
-    /// site derives positions from `phrase_matching`, so normalizing the field
-    /// is the whole change; without it a scoring index can be built with no
-    /// positions, and tf is then not slow to compute but impossible.
+    /// Scoring also needs positions, which only `phrase_matching` stores: see
+    /// [`Self::normalized`], which every text index is built through.
     pub fn scoring(&self) -> bool {
-        TEXT_INDEX_SCORING
+        #[cfg(feature = "testing")]
+        if let Some(scoring) = TEXT_INDEX_SCORING_OVERRIDE.get() {
+            return scoring;
+        }
+        self.scoring.is_some()
+    }
+
+    /// Apply what `scoring` implies: `phrase_matching`, for the positions term
+    /// frequencies come from. Every site derives positions from that flag, so
+    /// setting it is the whole of it. Without it a scoring index would hold no
+    /// positions, and term frequencies would not be slow to compute but
+    /// impossible.
+    pub fn normalized(mut self) -> Self {
+        if self.scoring() {
+            self.phrase_matching = Some(true);
+        }
+        self
+    }
+
+    /// Make [`Self::scoring`] answer `scoring` on this thread until the guard
+    /// is dropped, so a test can build a recording index through the same
+    /// constructors production uses while the const stays `false`.
+    ///
+    /// Thread-local on purpose: tests in one binary run concurrently, and an
+    /// index build runs on the thread that asked for it.
+    #[cfg(feature = "testing")]
+    pub fn override_scoring(scoring: bool) -> TextIndexScoringOverride {
+        TextIndexScoringOverride {
+            previous: TEXT_INDEX_SCORING_OVERRIDE.replace(Some(scoring)),
+        }
     }
 }
 
@@ -813,5 +945,67 @@ mod tests {
             StopwordsInterface::new_set(&[Language::English, Language::French], &["AAA"]);
 
         assert_eq!(stopwords_multiple, expected_set);
+    }
+
+    /// Text index params from the fields of `json`, as a request states them.
+    fn text_params(json: serde_json::Value) -> TextIndexParams {
+        let mut fields = json.as_object().unwrap().clone();
+        fields.insert("type".to_owned(), "text".into());
+        serde_json::from_value(fields.into()).unwrap()
+    }
+
+    /// `scoring` reads in its short form or its canonical one, and is always
+    /// written canonical, so the stored schema holds one shape.
+    #[test]
+    fn scoring_short_form_normalizes_as_it_is_read() {
+        let bm25 = Some(TextScoringParams {
+            r#type: TextScoringType::Bm25,
+        });
+        assert_eq!(text_params(serde_json::json!({})).scoring, None);
+        assert_eq!(
+            text_params(serde_json::json!({ "scoring": null })).scoring,
+            None
+        );
+        assert_eq!(
+            text_params(serde_json::json!({ "scoring": false })).scoring,
+            None
+        );
+        assert_eq!(
+            text_params(serde_json::json!({ "scoring": true })).scoring,
+            bm25
+        );
+        assert_eq!(
+            text_params(serde_json::json!({ "scoring": { "type": "bm25" } })).scoring,
+            bm25,
+        );
+
+        let written =
+            serde_json::to_value(text_params(serde_json::json!({ "scoring": true }))).unwrap();
+        assert_eq!(written["scoring"], serde_json::json!({ "type": "bm25" }));
+        let unset = serde_json::to_value(text_params(serde_json::json!({}))).unwrap();
+        assert!(
+            unset.get("scoring").is_none(),
+            "absent scoring is not written"
+        );
+
+        let invalid: Result<TextIndexParams, _> =
+            serde_json::from_value(serde_json::json!({ "type": "text", "scoring": "bm25" }));
+        assert!(invalid.is_err());
+    }
+
+    /// Term frequencies come from positions, which only `phrase_matching`
+    /// stores, so scoring turns it on.
+    #[test]
+    fn scoring_normalizes_phrase_matching_on() {
+        let scoring = text_params(serde_json::json!({ "scoring": true, "phrase_matching": false }));
+        assert_eq!(scoring.normalized().phrase_matching, Some(true));
+        let plain = text_params(serde_json::json!({ "phrase_matching": false }));
+        assert_eq!(plain.normalized().phrase_matching, Some(false));
+        assert_eq!(
+            text_params(serde_json::json!({}))
+                .normalized()
+                .phrase_matching,
+            None
+        );
     }
 }

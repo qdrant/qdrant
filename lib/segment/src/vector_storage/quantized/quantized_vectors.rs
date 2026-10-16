@@ -12,11 +12,10 @@ mod turbo;
 
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFile, MmapFs};
 use quantization::encoded_vectors_u8::ScalarQuantizationMethod;
-use quantization::turboquant::TQBits;
+use quantization::turboquant::{TQBits, TQMode};
 
 /// Local-file backend ([`MmapFile`]) shared by every persisted (mmap / chunked) quantized
 /// storage variant. Paired with the [`READ_FS`] value handle.
@@ -65,16 +64,13 @@ impl QuantizedVectors {
     pub fn raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         build_quantized_raw_scorer(
             &self.storage_impl,
             &self.config.quantization_config,
             &self.distance,
             self.datatype,
-            self.storage_impl.is_on_disk(),
             query,
-            hardware_counter,
         )
     }
 
@@ -83,10 +79,8 @@ impl QuantizedVectors {
     pub fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.storage_impl
-            .raw_internal_scorer(point_id, hardware_counter)
+        self.storage_impl.raw_internal_scorer(point_id)
     }
 
     pub(in crate::vector_storage::quantized) fn get_config_path(path: &Path) -> PathBuf {
@@ -126,9 +120,9 @@ impl QuantizedVectors {
     /// layout is identical for all placements, so flipping back later works without rebuild.
     pub(in crate::vector_storage::quantized) fn memory_placement(
         requested: Option<Memory>,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> Memory {
-        let follow_storage = if on_disk_vector_storage {
+        let follow_storage = if cold_vector_storage {
             Memory::Cold
         } else {
             Memory::Pinned
@@ -138,9 +132,9 @@ impl QuantizedVectors {
 
     pub(in crate::vector_storage::quantized) fn is_ram(
         requested: Option<Memory>,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
     ) -> bool {
-        Self::memory_placement(requested, on_disk_vector_storage) == Memory::Pinned
+        Self::memory_placement(requested, cold_vector_storage) == Memory::Pinned
     }
 
     pub(in crate::vector_storage::quantized) fn convert_binary_encoding(
@@ -192,13 +186,24 @@ impl QuantizedVectors {
             TurboQuantBitSize::Bits1_5 => TQBits::Bits1_5,
             TurboQuantBitSize::Bits2 => TQBits::Bits2,
             TurboQuantBitSize::Bits4 => TQBits::Bits4,
+            TurboQuantBitSize::Bits8 => TQBits::Bits8,
+        }
+    }
+
+    /// TurboQuant mode for a quantization config's bit width: TQ+ wherever it is
+    /// supported. `Bits8` has no TQ+ (its per-vector grid scale replaces the
+    /// per-coordinate fit), so it uses Normal mode.
+    pub(in crate::vector_storage::quantized) fn tq_mode(bits: TQBits) -> TQMode {
+        match bits {
+            TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 | TQBits::Bits4 => TQMode::Plus,
+            TQBits::Bits8 | TQBits::Bits16 => TQMode::Normal,
         }
     }
 
     pub(in crate::vector_storage::quantized) fn tq_bits_default_rescoring(bits: TQBits) -> bool {
         match bits {
             TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits2 => true,
-            TQBits::Bits4 => false,
+            TQBits::Bits4 | TQBits::Bits8 | TQBits::Bits16 => false,
         }
     }
 
@@ -285,7 +290,7 @@ impl QuantizedVectors {
                 quantization::encoded_vectors_tq::get_quantized_vector_size(
                     vector_parameters,
                     bits,
-                    quantization::turboquant::TQMode::Plus,
+                    Self::tq_mode(bits),
                 )
             }
         }
@@ -305,20 +310,15 @@ impl QuantizedVectorsRead for QuantizedVectors {
         self.default_rescoring()
     }
 
-    fn raw_scorer<'a>(
-        &'a self,
-        query: QueryVector,
-        hardware_counter: HardwareCounterCell,
-    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-        self.raw_scorer(query, hardware_counter)
+    fn raw_scorer<'a>(&'a self, query: QueryVector) -> OperationResult<Box<dyn RawScorer + 'a>> {
+        self.raw_scorer(query)
     }
 
     fn raw_internal_scorer<'a>(
         &'a self,
         point_id: PointOffsetType,
-        hardware_counter: HardwareCounterCell,
     ) -> Result<Box<dyn RawScorer + 'a>, InternalScorerUnsupported> {
-        self.raw_internal_scorer(point_id, hardware_counter)
+        self.raw_internal_scorer(point_id)
     }
 }
 
@@ -326,7 +326,7 @@ impl QuantizedVectorsRead for QuantizedVectors {
 /// re-quantizing (vectors stay rotated, the secondary TurboQuant reuses the same
 /// `Unpadded` rotation to rotate queries) rather than rotating the vectors back.
 ///
-/// True only for a Turbo4 source re-quantized with TurboQuant, excluding:
+/// True only for a TurboQuant source re-quantized with TurboQuant, excluding:
 /// - Manhattan — the Hadamard rotation does not preserve L1;
 /// - `Bits1_5` targets — they encode extra precision by rotating into the x1.5
 ///   padding, so they require a `Padded` rotation and can't reuse the source's
@@ -339,8 +339,12 @@ pub fn should_keep_source_rotated(
     let QuantizationConfig::Turbo(turbo) = quantization_config else {
         return false;
     };
-    source_datatype == VectorStorageDatatype::Turbo4
-        && turbo.turbo.bits.unwrap_or_default() != TurboQuantBitSize::Bits1_5
+    matches!(
+        source_datatype,
+        VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16
+    ) && turbo.turbo.bits.unwrap_or_default() != TurboQuantBitSize::Bits1_5
         && distance != Distance::Manhattan
 }
 

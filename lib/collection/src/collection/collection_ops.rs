@@ -1,7 +1,9 @@
 use std::cmp;
+use std::num::NonZeroU32;
 use std::sync::{Arc, LazyLock};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use futures::{TryStreamExt as _, future};
 use segment::types::{Payload, QuantizationConfig, StrictModeConfig};
@@ -10,6 +12,7 @@ use shard::count::CountRequestInternal;
 use shard::operations::optimization::{OptimizationsRequestOptions, OptimizationsResponse};
 
 use super::Collection;
+use super::shard_transfer::AbortShardTransferScope;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -28,6 +31,19 @@ pub static ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION: LazyLock<Version> =
     LazyLock::new(|| Version::parse("1.16.3-dev").expect("valid version string"));
 
 impl Collection {
+    /// Persist the shard count used to load auto shards after restart
+    pub async fn set_shard_number(&self, shard_number: NonZeroU32) -> CollectionResult<()> {
+        let mut config = self.collection_config.write().await;
+        if config.params.shard_number != shard_number {
+            let mut new_config = config.clone();
+            new_config.params.shard_number = shard_number;
+            new_config.save(&self.path)?;
+            *config = new_config;
+        }
+
+        Ok(())
+    }
+
     /// Updates collection params:
     /// Saves new params on disk
     ///
@@ -294,8 +310,13 @@ impl Collection {
 
         for (replica_set, peer_id, transfers) in to_remove {
             for transfer in transfers {
-                self.abort_shard_transfer_and_resharding(transfer.key())
-                    .await?;
+                self.abort_shard_transfer_and_resharding_scoped(
+                    transfer.key(),
+                    AbortShardTransferScope {
+                        skip_replica: Some((replica_set.shard_id, peer_id)),
+                    },
+                )
+                .await?;
             }
 
             replica_set.remove_peer(peer_id).await?;
@@ -329,6 +350,17 @@ impl Collection {
     /// recreation has already been applied and persisted by the time we get here, so there is no
     /// caller left to propagate them to. Failures are also surfaced as optimizer errors per shard
     /// (see `LocalShard::on_optimizer_config_update`).
+    /// Whether any local shard of this collection has an optimizer error recorded.
+    pub async fn has_optimizer_errors(&self) -> bool {
+        let shard_holder = self.shards_holder.read().await;
+        for replica_set in shard_holder.all_shards() {
+            if replica_set.has_local_optimizer_errors().await {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn recreate_optimizers_background(&self) {
         // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
         // into a queued re-run handled by the task that is already running.
@@ -445,6 +477,7 @@ impl Collection {
                 config: _,
                 payload_schema,
                 update_queue,
+                created_at: _,
             } = response;
             info.status = cmp::max(info.status, status);
             info.optimizer_status = cmp::max(info.optimizer_status, optimizer_status);
@@ -480,6 +513,9 @@ impl Collection {
             }
         }
 
+        // Shard responses from remote peers don't carry it, take it from the local config
+        info.created_at = self.collection_config.read().await.created_at;
+
         Ok(info)
     }
 
@@ -506,14 +542,11 @@ impl Collection {
 
                 // Cluster info is explicitly excluded from hardware measurements
                 // So that we can monitor hardware usage without interference
-                let hw_acc = HwMeasurementAcc::disposable();
                 let count_result = replica_set
-                    .count_local(
-                        count_request.clone(),
-                        None,
-                        hw_acc,
-                        DeferredBehavior::VisibleOnly,
-                    )
+                    .count_local(count_request.clone(), None, DeferredBehavior::VisibleOnly)
+                    .unmeasured(reason(
+                        "Cluster info is excluded from hardware measurements",
+                    ))
                     .await
                     .unwrap_or_default();
 

@@ -1,14 +1,16 @@
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::UserData;
 use itertools::Either;
 
+use super::bm25::{Bm25Accept, Bm25Query, MutableCursors, score_top_k};
+use super::doc_len::round_doc_len;
 use super::posting_list::PostingList;
 use super::postings_iterator::{intersect_postings_iterator, merge_postings_iterator};
 use super::{Document, InvertedIndex, ParsedQuery, TokenId, TokenSet};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 #[cfg_attr(test, derive(Clone))]
 pub struct MutableInvertedIndex {
@@ -23,11 +25,19 @@ pub struct MutableInvertedIndex {
 
     /// Per-point token counts, including repetitions, used as document lengths in BM25.
     /// `None` when length recording is disabled.
+    ///
+    /// Exact, since the on-disk sidecar built from this index keeps them
+    /// exactly. Everything that reads them, the total included, sees
+    /// [`round_doc_len`] of them, as every other backend holds them.
     pub point_to_doc_len: Option<Vec<u32>>,
 
-    /// Total token count across live points.
+    /// Total token count across live points, of rounded lengths.
     /// Divide by `points_count` to get the average document length for BM25.
     pub total_tokens: u64,
+    /// Points this index counts as documents: those with at least one indexed
+    /// token. A value that tokenizes to nothing is indexed, and matches
+    /// nothing, but is not a document, which is also how the on-disk build
+    /// treats it (it lands in the "no tokens" mask).
     pub(super) points_count: usize,
 }
 
@@ -59,10 +69,35 @@ impl MutableInvertedIndex {
         self.point_to_doc_len.is_some()
     }
 
+    /// Whether postings carry term frequencies: an index that scores does,
+    /// and needs the ordered document to count them from.
+    pub fn stores_frequencies(&self) -> bool {
+        self.point_to_doc.is_some() && self.point_to_doc_len.is_some()
+    }
+
+    /// Term frequency of every token in `tokens`, in the same order, counted
+    /// from the stored document. Every token of a stored document is in its
+    /// token set, so an absent document means the frequencies are not wanted
+    /// and membership stands in for them.
+    pub(super) fn term_frequencies(document: Option<&Document>, tokens: &TokenSet) -> Vec<u32> {
+        let mut frequencies = vec![1; tokens.len()];
+        let Some(document) = document else {
+            return frequencies;
+        };
+        frequencies.fill(0);
+        for token in document.tokens() {
+            if let Ok(at) = tokens.tokens().binary_search(token) {
+                frequencies[at] += 1;
+            }
+        }
+        frequencies
+    }
+
     /// Record a point's length, replacing any previous value so an overwrite
     /// does not double-count in `total_tokens`. The only writer, so that every
     /// path agrees on what a record without a length means: `None` zeroes the
-    /// slot rather than leaving a stale value behind.
+    /// slot rather than leaving a stale value behind. Stored exactly, counted
+    /// rounded, so the total sums what every reader of the slots sees.
     pub(super) fn set_doc_len(&mut self, point_id: PointOffsetType, doc_len: Option<u32>) {
         let Some(point_to_doc_len) = self.point_to_doc_len.as_mut() else {
             return;
@@ -73,7 +108,10 @@ impl MutableInvertedIndex {
         }
         let doc_len = doc_len.unwrap_or(0);
         let slot = &mut point_to_doc_len[point_id as usize];
-        self.total_tokens = self.total_tokens.saturating_sub(u64::from(*slot)) + u64::from(doc_len);
+        self.total_tokens = self
+            .total_tokens
+            .saturating_sub(u64::from(round_doc_len(*slot)))
+            + u64::from(round_doc_len(doc_len));
         *slot = doc_len;
     }
 
@@ -155,17 +193,16 @@ impl MutableInvertedIndex {
         point_id: PointOffsetType,
         str_tokens: impl IntoIterator<Item = impl AsRef<str>>,
         doc_len: Option<u32>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let tokens = self.register_tokens(str_tokens);
         self.set_doc_len(point_id, doc_len);
 
         // If positions are enabled, store the ordered document for phrase matching
         if self.point_to_doc.is_some() {
-            self.index_document(point_id, Document::new(tokens.clone()), hw_counter)?;
+            self.index_document(point_id, Document::new(tokens.clone()))?;
         }
 
-        self.index_tokens(point_id, TokenSet::from_iter(tokens), hw_counter)
+        self.index_tokens(point_id, TokenSet::from_iter(tokens))
     }
 }
 
@@ -174,31 +211,54 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self.vocab
     }
 
-    fn index_tokens(
-        &mut self,
-        point_id: PointOffsetType,
-        tokens: TokenSet,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        self.points_count += 1;
+    fn index_tokens(&mut self, point_id: PointOffsetType, tokens: TokenSet) -> OperationResult<()> {
+        // Counted as a transition rather than incremented, so that re-indexing
+        // a point cannot count it twice, and so that a document rewritten to
+        // nothing stops being one.
+        let was_document = self
+            .point_to_tokens
+            .get(point_id as usize)
+            .and_then(Option::as_ref)
+            .is_some_and(|tokens| !tokens.is_empty());
+        match (was_document, tokens.is_empty()) {
+            (false, false) => self.points_count += 1,
+            (true, true) => self.points_count -= 1,
+            _ => {}
+        }
 
         if self.point_to_tokens.len() <= point_id as usize {
             let new_len = point_id as usize + 1;
             self.point_to_tokens.resize_with(new_len, Default::default);
         }
 
-        for token_id in tokens.tokens() {
+        // The ordered document is stored before the token set, so it is there
+        // to count from when the postings carry frequencies.
+        let with_frequencies = self.stores_frequencies();
+        let frequencies = with_frequencies.then(|| {
+            let document = self
+                .point_to_doc
+                .as_ref()
+                .and_then(|docs| docs.get(point_id as usize))
+                .and_then(Option::as_ref);
+            Self::term_frequencies(document, &tokens)
+        });
+
+        for (at, token_id) in tokens.tokens().iter().enumerate() {
             let token_idx_usize = *token_id as usize;
 
             if self.postings.len() <= token_idx_usize {
                 let new_len = token_idx_usize + 1;
-                self.postings.resize_with(new_len, Default::default);
+                self.postings
+                    .resize_with(new_len, || PostingList::new(with_frequencies));
             }
 
+            let tf = frequencies
+                .as_ref()
+                .map_or(1, |frequencies| frequencies[at]);
             self.postings
                 .get_mut(token_idx_usize)
                 .expect("posting must exist")
-                .insert(point_id);
+                .insert(point_id, tf);
         }
         self.point_to_tokens[point_id as usize] = Some(tokens);
 
@@ -209,7 +269,6 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self,
         point_id: PointOffsetType,
         ordered_document: Document,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let Some(point_to_doc) = &mut self.point_to_doc else {
             // Phrase matching is not enabled
@@ -246,11 +305,17 @@ impl InvertedIndex for MutableInvertedIndex {
             .as_mut()
             .and_then(|lens| lens.get_mut(point_id as usize))
         {
-            self.total_tokens = self.total_tokens.saturating_sub(u64::from(*doc_len));
+            self.total_tokens = self
+                .total_tokens
+                .saturating_sub(u64::from(round_doc_len(*doc_len)));
             *doc_len = 0;
         }
 
-        self.points_count -= 1;
+        // Symmetric with `index_tokens`: a point that held no tokens was never
+        // counted, so removing it must not decrement.
+        if !removed_token_set.is_empty() {
+            self.points_count -= 1;
+        }
 
         for removed_token in removed_token_set.tokens() {
             // unwrap safety: posting list exists and contains the point idx
@@ -264,7 +329,6 @@ impl InvertedIndex for MutableInvertedIndex {
     fn filter(
         &self,
         query: ParsedQuery,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         match query {
             ParsedQuery::AllTokens(tokens) => Ok(Box::new(self.filter_has_all(tokens))),
@@ -273,12 +337,45 @@ impl InvertedIndex for MutableInvertedIndex {
         }
     }
 
-    fn get_posting_len(
-        &self,
-        token_id: TokenId,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Option<usize>> {
+    fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         Ok(self.postings.get(token_id as usize).map(|x| x.len()))
+    }
+
+    fn score_bm25(
+        &self,
+        query: &Bm25Query,
+        accept: &Bm25Accept<'_>,
+        limit: usize,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
+        if !self.stores_frequencies() {
+            return Err(OperationError::service_error(
+                "text index does not score: BM25 needs positions and document lengths",
+            ));
+        }
+        let lengths = self.point_to_doc_len.as_deref().unwrap_or_default();
+        let postings = query
+            .terms()
+            .iter()
+            .map(|term| self.postings.get(term.token_id as usize))
+            .collect();
+        let mut cursors = MutableCursors::new(postings);
+        // Deleted points are removed from these postings, so only the caller's
+        // filter applies.
+        // In RAM: nothing to gain from reading lengths in batches.
+        score_top_k::<_, 1>(
+            query,
+            &mut cursors,
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.get(*point_id as usize).copied().map(round_doc_len);
+                }
+                Ok(())
+            },
+            accept,
+            limit,
+            is_stopped,
+        )
     }
 
     fn for_each_vocab_with_postings_len(
@@ -340,10 +437,30 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count
     }
 
+    fn doc_len_batch(
+        &self,
+        point_ids: &[PointOffsetType],
+        mut f: impl FnMut(usize, Option<u32>),
+    ) -> OperationResult<()> {
+        let lens = self.point_to_doc_len.as_deref();
+        for (index, &point_id) in point_ids.iter().enumerate() {
+            f(
+                index,
+                lens.and_then(|lens| lens.get(point_id as usize).copied())
+                    .map(round_doc_len),
+            );
+        }
+        Ok(())
+    }
+
+    /// Free: the running counter is maintained by `set_doc_len` and `remove`.
+    fn total_tokens(&self) -> Option<u64> {
+        self.records_doc_len().then_some(self.total_tokens)
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         tokens: impl Iterator<Item = (U, &'a str)>,
-        _: &HardwareCounterCell,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
         tokens.for_each(|(user_data, token)| f(user_data, self.vocab.get(token).copied()));

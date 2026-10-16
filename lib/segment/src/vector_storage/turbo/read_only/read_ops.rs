@@ -26,11 +26,11 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedTurboVectorStorage<S
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Turbo4
+        shared::storage_datatype(&self.quantizer)
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.storage.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.storage.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {
@@ -49,13 +49,14 @@ impl<S: UniversalRead> VectorStorageRead for ReadOnlyChunkedTurboVectorStorage<S
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let (user_data, point_offsets): (Vec<U>, Vec<PointOffsetType>) = keys.into_iter().unzip();
 
         self.storage.for_each_batch(&point_offsets, |idx, bytes| {
             let vector = shared::dequantize_vector(&self.quantizer, self.dim, &bytes);
             callback(user_data[idx], point_offsets[idx], vector);
-        });
+        })?;
+        Ok(())
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {
@@ -103,7 +104,7 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyChunkedTurboVectorSt
         mut f: F,
     ) -> OperationResult<()> {
         self.storage
-            .for_each_batch(keys, |idx, bytes| f(idx, &bytes));
+            .for_each_batch(keys, |idx, bytes| f(idx, &bytes))?;
         Ok(())
     }
 
@@ -116,7 +117,7 @@ impl<S: UniversalRead> DenseTQVectorStorageRead for ReadOnlyChunkedTurboVectorSt
 
         self.storage.for_each_batch(&point_offsets, |idx, bytes| {
             callback(user_data[idx], point_offsets[idx], bytes.to_vec());
-        });
+        })?;
         Ok(())
     }
 
@@ -148,7 +149,7 @@ impl<S: UniversalRead> TurboScoring for ReadOnlyChunkedTurboVectorStorage<S> {
         query: &EncodedQueryTQ,
         ids: &[PointOffsetType],
         scores: &mut [ScoreType],
-    ) {
+    ) -> OperationResult<()> {
         shared::score_query_batch(
             &self.storage,
             &self.quantizer,

@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 use common::typelevel::True;
@@ -16,7 +16,9 @@ use crate::EncodingError;
 use crate::encoded_storage::{
     EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, validate_storage_vector_size,
 };
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{
+    EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
+};
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
@@ -99,6 +101,28 @@ pub struct ErrorCorrectionMetadata {
     pub scale: Vec<f32>,
 }
 
+/// Encodes vectors the way the storage whose metadata is persisted at a given path
+/// does, for a writer that stores the encoded rows itself.
+pub struct EncoderTQ {
+    quantizer: TurboQuantizer,
+    encoding_buffer: Vec<f64>,
+}
+
+impl EncoderTQ {
+    pub fn load<Fs: UniversalReadFs>(fs: &Fs, meta_path: &Path) -> UioResult<Self> {
+        let metadata: Metadata = read_json_via(fs, meta_path)?;
+        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
+        Ok(Self {
+            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
+            quantizer,
+        })
+    }
+
+    pub fn encode(&mut self, vector: &[f32]) -> Vec<u8> {
+        self.quantizer.quantize(vector, &mut self.encoding_buffer)
+    }
+}
+
 impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
@@ -110,11 +134,16 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
 
     /// Encode vector data
     ///
+    /// Every vector of `data` is encoded, but the TQ+ error correction is fitted only on the
+    /// vectors whose flag in `keep` is set.
+    ///
     /// # Arguments
     /// * `data` - iterator over original vector data
+    /// * `keep` - one flag per vector of `data`, set for the vectors to fit the TQ+ error
+    ///   correction on; clear it for vectors that are not real (e.g. the placeholders of deleted
+    ///   vectors)
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
-    /// * `count` - number of vectors in `data` iterator
     /// * `bits` - bits for quantization
     /// * `mode` - quantization mode
     /// * `rotation` - rotation applied to vectors and queries ([`TQRotation::Padded`]
@@ -127,9 +156,9 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + 'a,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage>,
         vector_parameters: &VectorParameters,
-        count: usize,
         bits: TQBits,
         mode: TQMode,
         rotation: TQRotation,
@@ -145,7 +174,7 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         // (`input_already_rotated`), the encode pass skips rotating them again.
         let rotate_input = !input_already_rotated;
 
-        // TQ+: first pass over `data` to fit per-coordinate shift/scale that
+        // TQ+: first pass over `calibration_data` to fit per-coordinate shift/scale that
         // pulls the rotated, length-rescaled coordinates onto the Lloyd-Max
         // N(0, 1) codebook before quantization.
         //
@@ -155,6 +184,11 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         // quantile at `Phi(c_outer)` equals `c_outer`, so shift/scale collapse
         // to `(0, 1)`. For anisotropic data the quantile-anchored fit avoids
         // the bias of mean/stddev under heavy-tailed or skewed coords.
+        if mode == TQMode::Plus && bits.grid_max().is_some() {
+            return Err(EncodingError::ArgumentsError(format!(
+                "TQ+ mode is not supported for {bits:?} TurboQuant"
+            )));
+        }
         let error_correction = match mode {
             TQMode::Normal => None,
             TQMode::Plus => {
@@ -193,11 +227,12 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
                 // no reservoir, no intermediate `Vec<Vec<f32>>`, only a
                 // small fixed-size batch scratch (~192 KB at padded_dim=1536).
                 let pre_quantizer_ref = &pre_quantizer;
+                let (calibration_data, calibration_count) = calibration_vectors(data.clone(), keep);
                 let intervals = find_quantile_interval_per_coordinate_with_preprocess(
-                    data.clone(),
+                    calibration_data,
                     vector_parameters.dim,
                     padded_dim,
-                    count,
+                    calibration_count,
                     quantile_param,
                     num_threads,
                     bits.sample_size(),
@@ -305,31 +340,6 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
         })
     }
 
-    /// Resume appending to a previously-persisted storage: reads the fitted metadata (quantizer,
-    /// rotation) a writer needs to keep encoding consistently, but — unlike [`Self::load`] —
-    /// never reads a vector back from `encoded_vectors` to validate it. A pure appender doesn't
-    /// need that guarantee: every vector it will ever write is sized from this same metadata, so
-    /// the invariant `load`'s check protects (every stored vector has the size the scoring hot
-    /// path assumes) holds by construction, not by verification. Intended for storage backends
-    /// that can only append and cannot serve that read at all (see `EncodedStorage` implementers
-    /// that are write-only).
-    pub fn reopen_for_write<Fs: UniversalReadFs>(
-        fs: &Fs,
-        encoded_vectors: TStorage,
-        meta_path: &Path,
-    ) -> UioResult<Self> {
-        let metadata: Metadata = read_json_via(fs, meta_path)?;
-        let quantizer = new_turbo_quantizer_from_metadata(&metadata)?;
-
-        Ok(Self {
-            encoded_vectors,
-            metadata,
-            metadata_path: Some(meta_path.to_path_buf()),
-            encoding_buffer: vec![0.0f64; quantizer.padded_dim],
-            quantizer,
-        })
-    }
-
     fn encode_vector(
         vector_data: &[f32],
         turbo_quantizer: &TurboQuantizer,
@@ -340,32 +350,6 @@ impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
 
     pub fn get_metadata(&self) -> &Metadata {
         &self.metadata
-    }
-
-    /// Encode and persist `vectors` on consecutive ids from `start_id`, handing the storage the
-    /// whole run as one batch. Inherent rather than on the [`EncodedVectors`] trait, so a
-    /// write-only [`EncodedStorageWrite`] storage can call it.
-    pub fn append_many<'a>(
-        &mut self,
-        start_id: PointOffsetType,
-        vectors: impl IntoIterator<Item = &'a [f32]>,
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
-        // Encoded whole rather than streamed: the storage borrows the encoded rows.
-        let quantizer = &self.quantizer;
-        let encoding_buffer = &mut self.encoding_buffer;
-        let encoded: Vec<_> = vectors
-            .into_iter()
-            .map(|vector| Self::encode_vector(vector, quantizer, encoding_buffer))
-            .collect();
-        self.encoded_vectors
-            .upsert_many(start_id, encoded.iter().map(Vec::as_slice), hw_counter)
-    }
-
-    /// See [`Self::append_many`]: an inherent counterpart of the [`EncodedVectors`] trait's
-    /// `flusher`, so a write-only [`EncodedStorageWrite`] storage can call it too.
-    pub fn flusher(&self) -> Flusher {
-        self.encoded_vectors.flusher()
     }
 }
 
@@ -426,8 +410,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         TStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.encoded_vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.encoded_vectors.is_cold()
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryTQ {
@@ -438,27 +422,12 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        self.score_bytes(True, query, encoded_vector, hw_counter)
-    }
-
-    fn score_point(
-        &self,
-        query: &EncodedQueryTQ,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        let encoded_vector = self.encoded_vectors.get_vector_data(i);
-        self.score_bytes(True, query, &encoded_vector, hw_counter)
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
+        self.score_bytes(True, query, encoded_vector)
     }
 
     fn score_points(
@@ -466,20 +435,16 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         query: &EncodedQueryTQ,
         offsets: &[PointOffsetType],
         scores: &mut [f32],
-        hw_counter: &HardwareCounterCell,
-    ) {
+    ) -> std::io::Result<()> {
         debug_assert_eq!(offsets.len(), scores.len());
 
         if !TStorage::prefers_run_scoring(offsets) {
-            self.for_each_batch(offsets, |i, vector| {
-                scores[i] = self.score_bytes(True, query, &vector, hw_counter);
+            return self.for_each_batch(offsets, |i, vector| {
+                scores[i] = self.score_bytes(True, query, &vector);
             });
-            return;
         }
 
-        hw_counter
-            .cpu_counter()
-            .incr_delta(offsets.len() * self.quantized_vector_size());
+        HwMetric::Cpu.bump(offsets.len() * self.quantized_vector_size());
 
         let stride = self.quantized_vector_size();
         self.encoded_vectors
@@ -490,26 +455,23 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
                     stride,
                     &mut scores[first..first + count],
                 );
-            });
+            })?;
 
         if self.metadata.vector_parameters.invert {
             for score in scores {
                 *score = -*score;
             }
         }
+        Ok(())
     }
 
     /// Score two points inside endoded data by their indexes
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         let v1 = self.encoded_vectors.get_vector_data(i);
         let v2 = self.encoded_vectors.get_vector_data(j);
 
-        hw_counter.vector_io_read().incr_delta(v1.len() + v2.len());
+        let mul = usize::from(self.encoded_vectors.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((v1.len() + v2.len()) * mul);
 
         let score = self.quantizer.score_symmetric(&v1, &v2);
         if self.metadata.vector_parameters.invert {
@@ -551,19 +513,11 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         None
     }
 
-    fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: &[f32],
-        hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
         let encoded_vector =
             Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
-        self.encoded_vectors.upsert_vector(
-            id,
-            bytemuck::cast_slice(encoded_vector.as_slice()),
-            hw_counter,
-        )
+        self.encoded_vectors
+            .upsert_vector(id, bytemuck::cast_slice(encoded_vector.as_slice()))
     }
 
     fn vectors_count(&self) -> usize {
@@ -591,14 +545,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
     }
 
     type SupportsBytes = True;
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter.cpu_counter().incr_delta(bytes.len());
+    fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
+        HwMetric::Cpu.bump(bytes.len());
         let score = self.quantizer.score_precomputed(query, bytes);
         if self.metadata.vector_parameters.invert {
             -score

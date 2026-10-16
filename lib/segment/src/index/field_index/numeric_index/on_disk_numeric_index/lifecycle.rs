@@ -3,14 +3,13 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, DeletedBitVec};
 use common::fs::{atomic_save_json, clear_disk_cache};
-use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
+use common::mmap::{AdviceSetting, MmapSlice};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkNotFound, OpenOptions, Populate, SortedBlockIndex, TypedStorage, UniversalRead,
     UniversalReadFs, read_json_via,
 };
 use fs_err as fs;
-use memmap2::MmapMut;
 use serde::{Deserialize, Serialize};
 
 use super::super::Encodable;
@@ -24,7 +23,7 @@ use crate::index::field_index::deleted_mask::{
     bitor_deleted_mask, deleted_mask_file, preopen_deleted_mask, save_deleted_mask,
 };
 use crate::index::field_index::histogram::Histogram;
-use crate::index::field_index::numeric_point::{Numericable, Point};
+use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::{OnDiskPointToValues, StoredValue};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,16 +68,7 @@ where
         )?;
 
         {
-            let pairs_file = create_and_ensure_length(
-                &pairs_path,
-                in_memory_index.map.len() * size_of::<Point<T>>(),
-            )?;
-            let pairs_mmap = unsafe { MmapMut::map_mut(&pairs_file)? };
-            let mut pairs = unsafe { MmapSlice::<Point<T>>::try_from(pairs_mmap)? };
-            for (src, dst) in in_memory_index.map.iter().zip(pairs.iter_mut()) {
-                *dst = *src;
-            }
-
+            let pairs = MmapSlice::create(&pairs_path, in_memory_index.map.into_iter())?;
             SortedBlockIndex::write(&path.join(PAIRS_BLOCK_INDEX_PATH), &pairs)?;
         }
 
@@ -207,6 +197,7 @@ where
             histogram,
             max_values_per_point: config.max_values_per_point,
             compact_deleted_mask,
+            cold: !populate.to_bool::<S>(),
         }))
     }
 }
@@ -286,6 +277,7 @@ where
             histogram: _,
             max_values_per_point: _,
             compact_deleted_mask,
+            cold: _,
         } = self;
         let Storage {
             deleted: _,
@@ -313,6 +305,7 @@ where
             histogram,
             max_values_per_point: _,
             compact_deleted_mask: _,
+            cold: _,
         } = self;
 
         histogram.ram_usage_bytes() + storage.ram_usage_bytes()

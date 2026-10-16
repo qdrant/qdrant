@@ -6,8 +6,8 @@ use std::path::Path;
 
 use qdrant_edge::external::serde_json::json;
 use qdrant_edge::{
-    DEFAULT_VECTOR_NAME, Distance, EdgeConfig, EdgeShard, EdgeVectorParams, PointInsertOperations,
-    PointOperations, PointStruct, UpdateOperation,
+    DEFAULT_VECTOR_NAME, Distance, EdgeConfig, EdgeShard, EdgeVectorParams, Memory,
+    PointInsertOperations, PointOperations, PointStruct, UpdateOperation,
 };
 
 pub const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data");
@@ -23,11 +23,16 @@ pub fn load_new_shard() -> Result<EdgeShard, Box<dyn Error>> {
 
     fs_err::create_dir_all(TMP_DIR)?;
 
+    // `memory` controls how each component is held in RAM; data is always persisted on disk.
+    // `Cold` pages data in on demand, `Cached` preloads it into the page cache, `Pinned` keeps
+    // it on the heap.
     let config = EdgeConfig::builder()
-        .on_disk_payload(false)
+        .payload_memory(Memory::Cached)
         .vector(
             DEFAULT_VECTOR_NAME,
-            EdgeVectorParams::builder(4, Distance::Dot).build(),
+            EdgeVectorParams::builder(4, Distance::Dot)
+                .memory(Memory::Cached)
+                .build(),
         )
         .build();
 

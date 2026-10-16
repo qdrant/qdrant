@@ -10,7 +10,7 @@ use super::dynamic_stored_flags::DynamicStoredFlags;
 use super::mode::FlagsMode;
 use super::storage::FlagsStorage;
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 /// A buffered, growable, and persistent bitslice with a separate in-memory bitvec.
 ///
@@ -56,6 +56,22 @@ where
                 Ok(Self::from_compact(compact_flags))
             }
         }
+    }
+
+    pub fn create_from_bitslice(
+        fs: S::Fs,
+        directory: &Path,
+        mode: FlagsMode,
+        bitslice: &BitSlice,
+    ) -> OperationResult<Self> {
+        let mut flags = Self::open_or_create(fs, directory, mode, Populate::No)?;
+        for index in bitslice.iter_ones() {
+            let index = PointOffsetType::try_from(index).map_err(|_| {
+                OperationError::service_error(format!("Point offset {index} is out of u32 range"))
+            })?;
+            flags.set(index, true);
+        }
+        Ok(flags)
     }
 
     pub fn new(fs: S::Fs, dynamic_flags: DynamicStoredFlags<S>) -> OperationResult<Self> {

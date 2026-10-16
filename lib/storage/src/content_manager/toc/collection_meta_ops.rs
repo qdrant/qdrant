@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::LazyLock;
 
 use collection::collection::AbortReshardingScope;
 use collection::collection_state;
@@ -9,7 +8,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::fs::safe_delete_in_tmp;
 
 use super::{COLLECTION_DELETE_SPIN_INTERVAL, COLLECTION_DELETE_WAIT_TIMEOUT, TableOfContent};
@@ -21,9 +20,6 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::consensus_state_machine::apply_collection_config_diffs;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-
-static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
-    LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
 impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
@@ -166,10 +162,19 @@ impl TableOfContent {
         // `ClusterState::plan_update_collection` checks an operation with the same call, so both
         // reject the same ones. Once the state machine drives consensus, this call is the only
         // thing checking a diff on this path, and it goes with the code below it.
-        apply_collection_config_diffs(
-            &mut collection.config().await,
-            &operation.update_collection,
-        )?;
+        let config_before = collection.config().await;
+        let mut config_after = config_before.clone();
+        apply_collection_config_diffs(&mut config_after, &operation.update_collection)?;
+
+        // Recreating optimizers cancels in-flight optimizations, so only do it when the update
+        // changes what optimizers are built from. Clients that re-send the same config on every
+        // run would otherwise keep cancelling optimizations, and every cancelled optimization
+        // under writes leaves an extra segment behind.
+        //
+        // Recreating also clears optimizer errors, and re-sending an unchanged config is how
+        // users restart failed optimizers, so keep doing it while an error is recorded.
+        let recreate_optimizers = config_before.is_core_config_updated(&config_after)
+            || collection.has_optimizer_errors().await;
 
         let UpdateCollection {
             vectors,
@@ -181,33 +186,25 @@ impl TableOfContent {
             strict_mode_config: strict_mode,
             metadata,
         } = operation.update_collection;
-        let mut recreate_optimizers = false;
-
         if let Some(diff) = optimizers_config {
             collection.update_optimizer_params_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = params {
             collection.update_params_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = hnsw_config {
             collection.update_hnsw_config_from_diff(diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = vectors {
             collection.update_vectors_from_diff(&diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = quantization_config {
             collection
                 .update_quantization_config_from_diff(diff)
                 .await?;
-            recreate_optimizers = true;
         }
         if let Some(diff) = sparse_vectors {
             collection.update_sparse_vectors_from_other(&diff).await?;
-            recreate_optimizers = true;
         }
         if let Some(changes) = replica_changes {
             collection.handle_replica_changes(changes).await?;
@@ -740,17 +737,17 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         // We measure hardware on collection level here to not touch consensus for measurements but still
         // measure hw for payload index creation on all nodes.
-        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+        let collection_ctx = AmbientContext::request(
+            &operation.collection_name,
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
-        self.get_collection_unchecked(&operation.collection_name)
-            .await?
-            .create_payload_index(
-                operation.field_name.clone(),
-                operation.field_schema,
-                collection_hw_acc,
-            )
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+        collection
+            .create_payload_index(operation.field_name.clone(), operation.field_schema)
+            .measured(collection_ctx)
             .await?;
 
         // We can solve issues related to this missing index
@@ -771,13 +768,17 @@ impl TableOfContent {
     }
 
     async fn create_named_vector(&self, operation: CreateNamedVector) -> Result<(), StorageError> {
-        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+        let collection_ctx = AmbientContext::request(
+            &operation.collection_name,
             self.get_collection_hw_metrics(operation.collection_name.clone()),
         );
 
-        self.get_collection_unchecked(&operation.collection_name)
-            .await?
-            .create_named_vector(operation.vector_name, operation.config, collection_hw_acc)
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
+        collection
+            .create_named_vector(operation.vector_name, operation.config)
+            .measured(collection_ctx)
             .await?;
 
         Ok(())
@@ -808,13 +809,12 @@ pub(crate) fn apply_alias_actions(
 ) -> Result<(), StorageError> {
     for action in actions {
         match action {
-            AliasOperations::CreateAlias(CreateAliasOperation {
-                create_alias:
-                    CreateAlias {
-                        collection_name,
-                        alias_name,
-                    },
-            }) => {
+            AliasOperations::CreateAlias(CreateAliasOperation { create_alias }) => {
+                let CreateAlias {
+                    collection_name,
+                    alias_name,
+                } = create_alias;
+
                 // `collection_name` must name a collection, not an alias
                 if !collection_exists(collection_name) {
                     return Err(StorageError::not_found(format!(
@@ -831,20 +831,25 @@ pub(crate) fn apply_alias_actions(
                 aliases.insert(alias_name.clone(), collection_name.clone());
             }
 
-            AliasOperations::DeleteAlias(DeleteAliasOperation {
-                delete_alias: DeleteAlias { alias_name },
-            }) => {
+            AliasOperations::DeleteAlias(DeleteAliasOperation { delete_alias }) => {
+                let DeleteAlias { alias_name } = delete_alias;
+
                 // Deleting an alias that does not exist is a no-op, not an error
                 aliases.remove(alias_name);
             }
 
-            AliasOperations::RenameAlias(RenameAliasOperation {
-                rename_alias:
-                    RenameAlias {
-                        old_alias_name,
-                        new_alias_name,
-                    },
-            }) => {
+            AliasOperations::RenameAlias(RenameAliasOperation { rename_alias }) => {
+                let RenameAlias {
+                    old_alias_name,
+                    new_alias_name,
+                } = rename_alias;
+
+                if collection_exists(new_alias_name) {
+                    return Err(StorageError::already_exists(format!(
+                        "Collection `{new_alias_name}` already exists"
+                    )));
+                }
+
                 if !aliases.rename(old_alias_name, new_alias_name.clone()) {
                     return Err(StorageError::not_found(format!(
                         "Alias {old_alias_name} does not exist"

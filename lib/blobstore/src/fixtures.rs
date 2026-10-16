@@ -9,7 +9,8 @@ use crate::config::{
     Compression, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, GridstoreConfig,
     LogstoreConfig, Mode, StorageConfig,
 };
-use crate::{Blob, Blobstore};
+use crate::error::BlobstoreError;
+use crate::{Blob, Blobstore, Result};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Payload(pub Map<String, serde_json::Value>);
@@ -25,8 +26,10 @@ impl Blob for Payload {
         serde_json::to_vec(self).unwrap()
     }
 
-    fn from_bytes(data: &[u8]) -> Self {
-        serde_json::from_slice(data).unwrap()
+    fn from_bytes(data: &[u8]) -> Result<Self> {
+        serde_json::from_slice(data).map_err(|err| {
+            BlobstoreError::decode_error(format!("Failed to deserialize payload: {err}"))
+        })
     }
 }
 
@@ -159,7 +162,7 @@ mod tests {
         );
         let bytes = payload.to_bytes();
 
-        let deserialized = Payload::from_bytes(&bytes);
+        let deserialized = Payload::from_bytes(&bytes).unwrap();
         assert_eq!(payload, deserialized);
     }
 }

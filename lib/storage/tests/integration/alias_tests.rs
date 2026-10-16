@@ -2,9 +2,11 @@
 // handled here for backward compatibility with the new `memory` parameter
 #![allow(deprecated)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use collection::config::ShardingMethod;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
@@ -13,12 +15,15 @@ use common::budget::ResourceBudget;
 use common::load_concurrency::LoadConcurrencyConfig;
 use common::mmap;
 use segment::types::Distance;
+use storage::content_manager::CollectionContainer;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
     CreateCollection, CreateCollectionOperation, DeleteAlias, RenameAlias,
 };
 use storage::content_manager::consensus::operation_sender::OperationSender;
+use storage::content_manager::consensus_ops::ConsensusOperations;
+use storage::content_manager::consensus_state_machine::Action;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::{ALIASES_PATH, TableOfContent};
 use storage::dispatcher::Dispatcher;
@@ -27,7 +32,7 @@ use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::{Builder, TempDir};
 use tokio::runtime::Handle;
 
-const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
+pub(super) const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
 
 #[test]
 fn test_alias_operation() {
@@ -134,9 +139,57 @@ fn change_aliases_reject_mid_list() {
     assert_eq!(aliases.get("new_alias"), None);
 }
 
-fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
-    let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
+#[test]
+fn update_aliases_action_persists_mapping() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
 
+    let action = Action::UpdateAliases {
+        set: BTreeMap::from([("new_alias".to_string(), "test".to_string())]),
+        remove: BTreeSet::new(),
+    };
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    toc.apply_action(action.clone()).unwrap();
+    toc.apply_action(action).unwrap();
+
+    let aliases = AliasPersistence::open(&storage_dir.path().join(ALIASES_PATH)).unwrap();
+    assert_eq!(aliases.get("new_alias").as_deref(), Some("test"));
+
+    let action = Action::UpdateAliases {
+        set: BTreeMap::new(),
+        remove: BTreeSet::from(["new_alias".to_string()]),
+    };
+    toc.apply_action(action).unwrap();
+
+    let aliases = AliasPersistence::open(&storage_dir.path().join(ALIASES_PATH)).unwrap();
+    assert_eq!(aliases.get("new_alias"), None);
+}
+
+pub(super) fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
+    let (storage_dir, handle, dispatcher, _proposals) = new_dispatcher_with_proposals();
+    (storage_dir, handle, dispatcher)
+}
+
+pub(super) fn new_dispatcher_with_proposals() -> (
+    TempDir,
+    Handle,
+    Dispatcher,
+    std::sync::mpsc::Receiver<ConsensusOperations>,
+) {
+    let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
+    open_dispatcher(storage_dir)
+}
+
+pub(super) fn open_dispatcher(
+    storage_dir: TempDir,
+) -> (
+    TempDir,
+    Handle,
+    Dispatcher,
+    std::sync::mpsc::Receiver<ConsensusOperations>,
+) {
     let config = StorageConfig {
         storage_path: storage_dir.path().to_path_buf(),
         snapshots_path: storage_dir.path().join("snapshots"),
@@ -187,7 +240,7 @@ fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
         quotas: Default::default(),
     };
 
-    let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
+    let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
     let propose_operation_sender = OperationSender::new(propose_sender);
 
     let toc = Arc::new(
@@ -202,10 +255,32 @@ fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
     );
     let handle = toc.general_runtime_handle().clone();
 
-    (storage_dir, handle, Dispatcher::new(toc))
+    (storage_dir, handle, Dispatcher::new(toc), propose_receiver)
 }
 
-fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {
+pub(super) fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {
+    create_collection_with_sharding(handle, dispatcher, collection_name, None);
+}
+
+pub(super) fn create_custom_collection(
+    handle: &Handle,
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+) {
+    create_collection_with_sharding(
+        handle,
+        dispatcher,
+        collection_name,
+        Some(ShardingMethod::Custom),
+    );
+}
+
+fn create_collection_with_sharding(
+    handle: &Handle,
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    sharding_method: Option<ShardingMethod>,
+) {
     handle
         .block_on(
             dispatcher.submit_collection_meta_op(
@@ -220,17 +295,22 @@ fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: 
                             hnsw_config: None,
                             wal_config: None,
                             optimizers_config: None,
-                            shard_number: Some(1),
+                            shard_number: if sharding_method.is_some() {
+                                None
+                            } else {
+                                Some(1)
+                            },
                             on_disk_payload: None,
                             payload: None,
                             id_tracker: None,
                             replication_factor: None,
                             write_consistency_factor: None,
                             quantization_config: None,
-                            sharding_method: None,
+                            sharding_method,
                             strict_mode_config: None,
                             uuid: None,
                             metadata: None,
+                            created_at: None,
                         },
                     )
                     .unwrap(),

@@ -11,8 +11,8 @@ use crate::index::field_index::full_text_index::tokenizers::{Tokenizer, Tokenize
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
     GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
-    MatchPrefix, MatchText, MatchTextAny, MatchValue, Range, RangeInterface, ValueVariants,
-    ValuesCount,
+    MatchPrefix, MatchSubstring, MatchText, MatchTextAny, MatchValue, Range, RangeInterface,
+    ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -258,6 +258,14 @@ impl ValueChecker for Match {
             },
             Match::Prefix(MatchPrefix { prefix }) => match payload {
                 Value::String(stored) => stored.starts_with(prefix),
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_) => false,
+            },
+            Match::Substring(MatchSubstring { substring }) => match payload {
+                Value::String(stored) => stored.contains(substring.as_str()),
                 Value::Null
                 | Value::Bool(_)
                 | Value::Number(_)

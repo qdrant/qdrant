@@ -1,13 +1,12 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
 use ahash::{HashMap, HashSet};
 use common::generic_consts::AccessPattern;
 use common::mmap::{Advice, AdviceSetting};
 use common::universal_io::{
-    CachedReadFs, IsNotFound, OpenOptions, Populate, ReadPipeline, ReadRange, UniversalAppend,
-    UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFileOps, UserData,
+    CachedReadFs, IsNotFound, OpenOptions, Populate, PreloadFuture, ReadPipeline, ReadRange,
+    UniversalAppend, UniversalIoError, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
 };
 
 use crate::Result;
@@ -271,7 +270,7 @@ impl<S: UniversalRead> AppendOnlyPages<S> {
         &self,
         fs: &Fs,
         populate: Populate,
-    ) -> Result<Vec<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>> {
+    ) -> Result<Vec<PreloadFuture>> {
         let page_list: HashMap<_, _> = fs
             .list_files(&self.dir.join(PAGE_FILE_NAME_PREFIX))?
             .into_iter()
@@ -307,7 +306,7 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
     /// The directory must exist already.
     pub(super) fn new<Fs>(fs: &Fs, dir: &Path) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let page = AppendOnlyPage::new(fs, page_file_name(dir, 0))?;
         Ok(Self {
@@ -332,7 +331,7 @@ impl<S: UniversalAppend> AppendOnlyPages<S> {
         page_capacity_bytes: u64,
     ) -> Result<(PageId, BlockOffset)>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         let last = self
             .pages
@@ -503,10 +502,7 @@ impl<S: UniversalRead> AppendOnlyPage<S> {
             })
     }
 
-    fn live_preload<Fs: CachedReadFs<File = S>>(
-        &self,
-        fs: &Fs,
-    ) -> Result<Pin<Box<dyn Future<Output = ()> + Send + 'static>>> {
+    fn live_preload<Fs: CachedReadFs<File = S>>(&self, fs: &Fs) -> Result<PreloadFuture> {
         Ok(Box::pin(
             self.file.live_preload(|path| fs.cached_file_info(path))?,
         ))
@@ -534,7 +530,7 @@ impl<S: UniversalAppend> AppendOnlyPage<S> {
     /// The directory must exist already.
     fn new<Fs>(fs: &Fs, path: PathBuf) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         fs.create(&path, 0)?;
         let file = fs.open(

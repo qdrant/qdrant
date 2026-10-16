@@ -8,13 +8,11 @@ mod tests;
 
 use std::path::PathBuf;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{
-    MmapFile, Populate, UniversalAppend, UniversalReadFileOps, UniversalWrite,
-    UniversalWriteFileOps, UserData,
+    MmapFile, Populate, UniversalAppend, UniversalReadFs, UniversalWrite, UniversalWriteFs,
+    UserData,
 };
 use gridstore::Gridstore;
 pub use logstore::Logstore;
@@ -146,14 +144,14 @@ where
         &mut self,
         point_offset: PointOffset,
         value: &V,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
         match &mut self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.put_value(&self.fs, point_offset, value, hw_counter)
+                storage.put_value(&self.fs, point_offset, value, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.put_value(&self.fs, point_offset, value, hw_counter)
+                storage.put_value(&self.fs, point_offset, value, hw_metric)
             }
         }
     }
@@ -172,14 +170,14 @@ where
         &mut self,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
         match &mut self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_counter)
+                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_counter)
+                storage.put_value_bytes(&self.fs, point_offset, value_bytes, hw_metric)
             }
         }
     }
@@ -207,6 +205,34 @@ where
         }
     }
 
+    /// Switch to a layout for a storage that is complete and only read from now on, such as one
+    /// of a segment the optimizer built. The next flush persists the new layout; until then the
+    /// storage on disk cannot be opened, so this suits a storage being built.
+    ///
+    /// In the append-only mode the value mappings are stored compacted: opening reads them into
+    /// RAM whole, so a lookup no longer costs a read. The storage stays writable, but every flush
+    /// then rewrites the whole mapping file. The mutable mode is left as is.
+    pub fn make_immutable(&self) -> Result<()> {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => Ok(()),
+            BlobstoreInner::Logstore(storage) => storage.make_immutable(&self.fs),
+        }
+    }
+
+    /// Don't journal the value mappings on flush.
+    ///
+    /// In the mutable mode a flush first journals its mapping writes, so a mapping write a crash
+    /// tears is repaired when opening. Only disable this for a new storage that is thrown away on
+    /// a crash, and is durably flushed before it is used. Such as one of a segment being built.
+    ///
+    /// The append-only mode has no journal, appends cannot tear existing mappings.
+    pub fn disable_journal(&mut self) {
+        match &mut self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.disable_journal(),
+            BlobstoreInner::Logstore(_) => {}
+        }
+    }
+
     /// Wipe the storage, drop all pages and delete the base directory.
     ///
     /// Takes ownership because this function leaves Blobstore in an inconsistent state which does
@@ -219,6 +245,15 @@ where
         }
     }
 
+    /// Heap RAM held beyond the page cache of [`Self::files`]: the value mappings, when they are
+    /// held compacted, see [`Self::make_immutable`].
+    pub fn ram_usage_bytes(&self) -> usize {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => 0,
+            BlobstoreInner::Logstore(storage) => storage.ram_usage_bytes(),
+        }
+    }
+
     /// Return the storage size in bytes.
     pub fn get_storage_size_bytes(&self) -> Result<usize> {
         match &self.inner {
@@ -227,14 +262,10 @@ where
         }
     }
 
-    pub fn get_value<P: AccessPattern>(
-        &self,
-        point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> Result<Option<V>> {
+    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
-            BlobstoreInner::Logstore(storage) => storage.get_value::<P>(point_offset, hw_counter),
+            BlobstoreInner::Gridstore(storage) => storage.get_value::<P>(point_offset),
+            BlobstoreInner::Logstore(storage) => storage.get_value::<P>(point_offset),
         }
     }
 
@@ -246,15 +277,10 @@ where
     pub fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Vec<u8>>> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => {
-                storage.get_value_bytes::<P>(point_offset, hw_counter)
-            }
-            BlobstoreInner::Logstore(storage) => {
-                storage.get_value_bytes::<P>(point_offset, hw_counter)
-            }
+            BlobstoreInner::Gridstore(storage) => storage.get_value_bytes::<P>(point_offset),
+            BlobstoreInner::Logstore(storage) => storage.get_value_bytes::<P>(point_offset),
         }
     }
 
@@ -265,7 +291,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -274,10 +300,10 @@ where
     {
         match &self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
         }
     }
@@ -290,7 +316,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -299,10 +325,10 @@ where
     {
         match &self.inner {
             BlobstoreInner::Gridstore(storage) => {
-                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
             }
             BlobstoreInner::Logstore(storage) => {
-                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                storage.read_values_bytes::<P, U, E>(point_offsets, callback, hw_metric)
             }
         }
     }
@@ -325,14 +351,14 @@ where
     /// Iterate over all values and execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
-    pub fn iter<F, E>(&self, callback: F, hw_counter: HwMetricRefCounter) -> Result<(), E>
+    pub fn iter<F, E>(&self, callback: F, hw_metric: HwMetric) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
     {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.iter(callback, hw_counter),
-            BlobstoreInner::Logstore(storage) => storage.iter(callback, hw_counter),
+            BlobstoreInner::Gridstore(storage) => storage.iter(callback, hw_metric),
+            BlobstoreInner::Logstore(storage) => storage.iter(callback, hw_metric),
         }
     }
 }

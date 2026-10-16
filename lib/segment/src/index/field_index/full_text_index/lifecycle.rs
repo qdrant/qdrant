@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 
 use common::bitvec::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 use itertools::Itertools as _;
@@ -11,6 +10,7 @@ use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
 use super::inverted_index::ARRAY_BOUNDARY_SENTINEL;
+use super::inverted_index::on_disk_inverted_index::has_doc_len_sidecar;
 use super::mutable_text_index::MutableFullTextIndex;
 use super::on_disk_text_index::{FullTextMmapIndexBuilder, OnDiskFullTextIndex};
 use super::tokenizers::Tokenizer;
@@ -35,19 +35,42 @@ impl FullTextIndex {
         let memory = memory.clamp_to_low_memory();
 
         let populate = Populate::from(memory.populate_on_open());
-        let Some(on_disk_index) =
+        let scoring = config.scoring();
+
+        // Checked before the open, not after: opening populates the whole file
+        // set, and on the first start after scoring is enabled every existing
+        // segment would fault in its postings only to be discarded here.
+        if scoring && !has_doc_len_sidecar(&MmapFs, &path)? {
+            log::info!(
+                "Text index at {path} records no document lengths, rebuilding it from payload",
+                path = path.display(),
+            );
+            return Ok(None);
+        }
+
+        let opened = if memory.is_heap() {
+            ImmutableFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
+                .map(|index| (index.records_doc_len(), Self::Immutable(index)))
+        } else {
             OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
-        else {
+                .map(|index| (index.records_doc_len(), Self::OnDisk(index)))
+        };
+        let Some((records_doc_len, index)) = opened else {
             return Ok(None);
         };
 
-        let index = if memory.is_heap() {
-            // Load into RAM, use mmap as backing storage
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
-        } else {
-            // Use on-disk directly
-            Self::OnDisk(on_disk_index)
-        };
+        // Lengths cannot be recovered from anything else on disk, so report the
+        // index absent and let the caller rebuild it from payload. The decision
+        // belongs here rather than in `OnDiskInvertedIndex::open`: the read-only
+        // stack never builds, and would drop the field instead.
+        //
+        // Reachable past the probe above when the sidecar exists but `open`
+        // rejected it, so the log says which of the two happened.
+        if scoring && !records_doc_len {
+            log::info!("Text index rejected its document length sidecar, rebuilding from payload");
+            return Ok(None);
+        }
+
         Ok(Some(index))
     }
 
@@ -78,17 +101,19 @@ impl FullTextIndex {
     pub fn builder_mmap(
         path: PathBuf,
         config: TextIndexParams,
-        is_on_disk: bool,
+        memory: Memory,
         deleted_points: &BitSlice,
+        scoring: bool,
     ) -> FullTextMmapIndexBuilder {
-        FullTextMmapIndexBuilder::new(path, config, is_on_disk, deleted_points)
+        FullTextMmapIndexBuilder::new(path, config, memory, deleted_points, scoring)
     }
 
     pub fn builder_gridstore(
         dir: PathBuf,
         config: TextIndexParams,
+        scoring: bool,
     ) -> FullTextGridstoreIndexBuilder {
-        FullTextGridstoreIndexBuilder::new(dir, config)
+        FullTextGridstoreIndexBuilder::new(dir, config, scoring)
     }
 
     /// Tokenize a point's text values into the token stream the index is built
@@ -96,6 +121,10 @@ impl FullTextIndex {
     ///
     /// With phrase matching on, a sentinel separates the values of an array, so
     /// that no phrase matches across two of them.
+    ///
+    /// A stream made only of those boundaries is returned empty, so that an
+    /// array whose values all tokenize to nothing is not a document, the same
+    /// as a single value that tokenizes to nothing.
     pub(super) fn tokenize_document<'a>(
         tokenizer: &'a Tokenizer,
         phrase_matching: bool,
@@ -112,6 +141,10 @@ impl FullTextIndex {
             tokenizer.tokenize_doc(value, |token| {
                 str_tokens.push(token);
             });
+        }
+
+        if Self::document_length(&str_tokens, phrase_matching, values) == 0 {
+            str_tokens.clear();
         }
 
         str_tokens
@@ -195,7 +228,8 @@ impl FullTextIndex {
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.clear_cache(),
-            Self::Immutable(index) => index.clear_cache(),
+            // Nothing to drop: no file is open, and the load cleared their cache.
+            Self::Immutable(_) => Ok(()),
             Self::OnDisk(index) => index.clear_cache(),
         }
     }
@@ -220,14 +254,9 @@ impl FullTextIndex {
 impl ValueIndexer for FullTextIndex {
     type ValueType = String;
 
-    fn add_many(
-        &mut self,
-        idx: PointOffsetType,
-        values: Vec<String>,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.add_many(idx, values, hw_counter),
+            Self::Mutable(index) => index.add_many(idx, values),
             Self::Immutable(_) => Err(OperationError::service_error(
                 "Cannot add values to immutable text index",
             )),
@@ -278,11 +307,20 @@ impl PayloadFieldIndex for FullTextIndex {
 }
 
 impl FullTextGridstoreIndexBuilder {
-    pub fn new(dir: PathBuf, config: TextIndexParams) -> Self {
+    pub fn new(dir: PathBuf, config: TextIndexParams, scoring: bool) -> Self {
         Self {
             dir,
             config,
+            scoring,
             index: None,
+        }
+    }
+
+    /// Don't journal the value mappings of the built index, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal). Call after `init`.
+    pub(crate) fn disable_journal(&mut self) {
+        if let Some(FullTextIndex::Mutable(index)) = &mut self.index {
+            index.storage.disable_journal();
         }
     }
 }
@@ -298,11 +336,10 @@ impl ValueIndexer for FullTextGridstoreIndexBuilder {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let values: Vec<Value> = values.into_iter().map(Value::String).collect();
         let values: Vec<&Value> = values.iter().collect();
-        FieldIndexBuilderTrait::add_point(self, id, &values, hw_counter)
+        FieldIndexBuilderTrait::add_point(self, id, &values)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -323,30 +360,28 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
             self.index.is_none(),
             "index must be initialized exactly once",
         );
-        self.index.replace(
-            FullTextIndex::new_gridstore(self.dir.clone(), self.config.clone(), true)?.ok_or_else(
-                || {
-                    OperationError::service_error(
-                        "Failed to create and open mutable full text index on gridstore",
-                    )
-                },
-            )?,
-        );
+        let index = MutableFullTextIndex::open_gridstore(
+            self.dir.clone(),
+            self.config.clone(),
+            true,
+            self.scoring,
+        )?
+        .ok_or_else(|| {
+            OperationError::service_error(
+                "Failed to create and open mutable full text index on gridstore",
+            )
+        })?;
+        self.index.replace(FullTextIndex::Mutable(index));
         Ok(())
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "FullTextIndexGridstoreBuilder: index must be initialized before adding points",
             ));
         };
-        index.add_point(id, payload, hw_counter)
+        index.add_point(id, payload)
     }
 
     fn finalize(mut self) -> OperationResult<Self::FieldIndexType> {

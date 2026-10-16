@@ -19,7 +19,7 @@ use crate::universal_io::{ReadBytesItem, ReadRange, UioResult, UniversalIoError,
 /// [`UniversalReadFs::open`](super::UniversalReadFs::open).
 ///
 /// This trait deliberately does *not* extend
-/// [`UniversalReadFileOps`](super::UniversalReadFileOps): a file handle is
+/// [`UniversalReadFs`](super::UniversalReadFs): a file handle is
 /// not a filesystem, and not every filesystem-level backend produces
 /// `UniversalRead` handles (e.g. a metadata-only listing service). The
 /// link to the producing filesystem is exposed via the [`Self::Fs`]
@@ -74,7 +74,11 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     /// readers of an already-live mirror — no length change, no cache
     /// invalidation.
     ///
-    /// The returned future signals when the preload is complete.
+    /// The returned future resolves once the staged fetch is complete, to
+    /// the fetch's error if it failed. A failed fetch is not retried by
+    /// [`live_reload`](Self::live_reload): it fails the same way, so a caller
+    /// that sees the error skips that reload, and the next `live_preload`
+    /// stages the fetch again.
     ///
     /// Defaults to a no-op: local backends' `reopen` is a stat plus a remap,
     /// so there is nothing worth pre-staging. Only [`DiskCache`] overrides it.
@@ -84,10 +88,10 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
     fn live_preload<F: FnOnce(&Path) -> Option<FileInfo>>(
         &self,
         get_file_info: F,
-    ) -> UioResult<impl Future<Output = ()> + Send + 'static> {
+    ) -> UioResult<impl Future<Output = UioResult<()>> + Send + 'static> {
         let _ = get_file_info;
 
-        Ok(async {}.boxed())
+        Ok(async { Ok(()) }.boxed())
     }
 
     /// Prefer [`read_batch`] if you need high performance.

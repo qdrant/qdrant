@@ -9,14 +9,78 @@
 //! `test_resharding_replay.py`); here we cover what a single process can drive
 //! deterministically.
 
+use std::num::NonZeroU32;
+
+use collection::config::{COLLECTION_CONFIG_FILE, CollectionConfigInternal};
 use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::types::CollectionError;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardKey;
+use collection::shards::shard_config::ShardConfig;
 use tempfile::Builder;
 use uuid::Uuid;
 
 use crate::common::{NoopReshardingConsensus, simple_collection_fixture};
+
+#[tokio::test]
+async fn set_shard_number_retry_after_save_failure() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(dir.path(), 1).await;
+    let config_path = dir.path().join(COLLECTION_CONFIG_FILE);
+    let saved_config_path = dir.path().join("saved_config.json");
+    let shard_number = NonZeroU32::new(2).unwrap();
+
+    // A directory at the config path makes the atomic replacement fail
+    fs_err::rename(&config_path, &saved_config_path).unwrap();
+    fs_err::create_dir(&config_path).unwrap();
+
+    let result = collection.set_shard_number(shard_number).await;
+
+    assert!(matches!(result, Err(CollectionError::ServiceError { .. })));
+    assert_eq!(collection.config().await.params.shard_number.get(), 1);
+
+    fs_err::remove_dir(&config_path).unwrap();
+    fs_err::rename(&saved_config_path, &config_path).unwrap();
+
+    collection.set_shard_number(shard_number).await.unwrap();
+
+    let persisted = CollectionConfigInternal::load(dir.path()).unwrap();
+    assert_eq!(persisted.params.shard_number, shard_number);
+    assert_eq!(collection.config().await.params.shard_number, shard_number);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn drop_shard_retry_after_cleanup_failure() {
+    let dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let collection = simple_collection_fixture(dir.path(), 1).await;
+    let shard_path = dir.path().join("0");
+    let saved_shard_path = dir.path().join("saved_shard");
+    let shard_holder = collection.shards_holder();
+    let mut shard_holder = shard_holder.write().await;
+
+    shard_holder.get_shard(0).unwrap().stop_gracefully().await;
+
+    // A file at the shard path makes filesystem cleanup fail on every platform
+    fs_err::rename(&shard_path, &saved_shard_path).unwrap();
+    fs_err::write(&shard_path, []).unwrap();
+
+    let result = shard_holder.drop_and_remove_shard(0).await;
+
+    assert!(result.is_err());
+    assert!(shard_holder.get_shard(0).is_some());
+
+    fs_err::remove_file(&shard_path).unwrap();
+    fs_err::rename(&saved_shard_path, &shard_path).unwrap();
+    // Cleanup may already have removed the shard config before failing
+    fs_err::remove_file(ShardConfig::get_config_path(&shard_path)).unwrap();
+
+    shard_holder.drop_and_remove_shard(0).await.unwrap();
+
+    assert!(shard_holder.get_shard(0).is_none());
+    assert!(!shard_path.exists());
+
+    shard_holder.drop_and_remove_shard(0).await.unwrap();
+}
 
 /// [audit-B] Setting a resharding-*up* replica `Dead` aborts the resharding
 /// first (dropping the shard) and then converges: the shard is gone, the

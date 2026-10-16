@@ -5,6 +5,10 @@ pub mod load_validation;
 #[cfg(test)]
 pub mod metrics;
 #[cfg(test)]
+pub mod scoring;
+#[cfg(test)]
+pub mod standalone_encoders;
+#[cfg(test)]
 pub mod stop_condition;
 #[cfg(test)]
 pub mod test_avx2;
@@ -24,3 +28,5 @@ pub mod test_simple;
 pub mod test_sse;
 #[cfg(test)]
 pub mod test_tq;
+#[cfg(test)]
+pub mod test_vnni;

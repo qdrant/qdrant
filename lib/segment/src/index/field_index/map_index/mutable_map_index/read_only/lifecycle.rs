@@ -2,13 +2,16 @@ use std::path::PathBuf;
 
 use blobstore::error::BlobstoreError;
 use blobstore::{Blob, BlobstoreReader};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw::HwMetric;
+use common::reason::reason;
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
 use super::super::MapIndexKey;
 use super::super::in_memory::InMemoryMapIndex;
 use super::ReadOnlyAppendableMapIndex;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<N: MapIndexKey + ?Sized, S: UniversalRead> ReadOnlyAppendableMapIndex<N, S>
 where
@@ -41,10 +44,14 @@ where
     /// the `create_if_missing == false` branch of the writable counterpart —
     /// the read path never creates.
     ///
+    /// Values at or past `max_point_offset` are skipped, as the id tracker may
+    /// not yet cover them.
+    ///
     /// [1]: super::super::MutableMapIndex::open_gridstore
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
+        max_point_offset: PointOffsetType,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) = BlobstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(
             fs,
@@ -61,19 +68,32 @@ where
         // the gridstore carries no prefix marker, and this open path has no
         // schema access. Prefix conditions fall back to slower checks.
         let mut in_memory_index = InMemoryMapIndex::<N>::empty(false);
-        let hw_counter = HardwareCounterCell::disposable();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage.iter::<_, BlobstoreError>(
-            storage.max_point_offset()?,
+            storage.max_point_offset()?.min(max_point_offset),
             |idx, values: Vec<_>| {
                 in_memory_index.add_many_to_map(idx, values);
                 Ok(true)
             },
-            hw_counter.ref_payload_index_io_write_counter(),
+            HwMetric::PayloadIndexIoWrite,
         )?;
 
         Ok(Some(Self {
             in_memory_index,
             storage,
         }))
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.storage.files()
+    }
+
+    /// Clear gridstore disk cache. Does not affect the in-memory index.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.clear_cache().map_err(|err| {
+            OperationError::service_error(format!(
+                "Failed to clear read-only appendable map index gridstore cache: {err}"
+            ))
+        })
     }
 }

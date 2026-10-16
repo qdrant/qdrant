@@ -48,7 +48,7 @@ mod qdrant_edge {
     use super::config::sparse_vector_data::{PyEdgeSparseVectorParams, PyModifier};
     #[pymodule_export]
     use super::config::vector_data::{
-        PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMultiVectorComparator,
+        PyDistance, PyEdgeVectorParams, PyHnswIndexConfig, PyMemory, PyMultiVectorComparator,
         PyMultiVectorConfig, PyPlainIndexConfig, PyVectorStorageDatatype,
     };
     #[pymodule_export]
@@ -59,8 +59,8 @@ mod qdrant_edge {
     use super::facet::{PyFacetHit, PyFacetRequest, PyFacetResponse};
     #[pymodule_export]
     use super::query::{
-        PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryBatchRequest, PyQueryRequest,
-        PySample,
+        PyBm25Params, PyDirection, PyFusion, PyMmr, PyOrderBy, PyPrefetch, PyQueryBatchRequest,
+        PyQueryRequest, PySample, PyTextQuery,
     };
     #[pymodule_export]
     use super::scroll::PyScrollRequest;
@@ -73,9 +73,9 @@ mod qdrant_edge {
     use super::types::filter::{
         PyFieldCondition, PyFilter, PyGeoBoundingBox, PyGeoPoint, PyGeoPolygon, PyGeoRadius,
         PyHasIdCondition, PyHasVectorCondition, PyIsEmptyCondition, PyIsNullCondition, PyMatchAny,
-        PyMatchExcept, PyMatchPhrase, PyMatchPrefix, PyMatchText, PyMatchTextAny, PyMatchValue,
-        PyMinShould, PyNestedCondition, PyRangeDateTime, PyRangeFloat, PySliceCondition,
-        PyValuesCount,
+        PyMatchExcept, PyMatchPhrase, PyMatchPrefix, PyMatchSubstring, PyMatchText, PyMatchTextAny,
+        PyMatchValue, PyMinShould, PyNestedCondition, PyRangeDateTime, PyRangeFloat,
+        PySliceCondition, PyValuesCount,
     };
     #[pymodule_export]
     use super::types::formula::{PyDecayKind, PyExpressionInterface, PyFormula};
@@ -84,7 +84,8 @@ mod qdrant_edge {
         PyBoolIndexParams, PyDatetimeIndexParams, PyDisabledStemmer, PyFloatIndexParams,
         PyGeoIndexParams, PyIntegerIndexParams, PyKeywordIndexParams, PyLanguage,
         PyPayloadSchemaType, PySnowballLanguage, PySnowballParams, PyStopwordsSet,
-        PyTextIndexParams, PyTokenizerType, PyUuidIndexParams,
+        PyTextIndexParams, PyTextScoringParams, PyTextScoringType, PyTokenizerType,
+        PyUuidIndexParams,
     };
     #[pymodule_export]
     use super::types::query::{
@@ -114,7 +115,7 @@ impl PyEdgeShard {
     }
 
     /// Create a new edge shard at `path` with the given configuration.
-    /// Fails if the path already contains segment data.
+    /// Creates `path` if it does not exist. Fails if the path already contains segment data.
     #[staticmethod]
     pub fn create(path: PathBuf, config: PyEdgeConfig) -> Result<Self> {
         let shard = edge::EdgeShard::new(&path, config.0)?;

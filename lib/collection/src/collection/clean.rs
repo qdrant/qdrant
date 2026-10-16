@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use cancel::{CancellationToken, DropGuard};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use common::types::DeferredBehavior;
 use parking_lot::RwLock;
 use segment::types::ExtendedPointId;
@@ -290,13 +291,8 @@ async fn drain_update_queue(
         PointOperations::DeletePoints { ids: vec![] },
     ));
     shard
-        .update_local(
-            barrier,
-            WaitUntil::Visible,
-            None,
-            HwMeasurementAcc::disposable(),
-            false,
-        )
+        .update_local(barrier, WaitUntil::Visible, None, false)
+        .unmeasured(reason("Internal operation"))
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
@@ -357,9 +353,9 @@ async fn clean_task(
                 None,
                 None,
                 None,
-                HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
                 DeferredBehavior::WithDeferred, // Include also deferred points in the cleanup task.
             )
+            .unmeasured(reason("Internal operation"))
             .await
         {
             Ok(batch) => batch.into_iter().map(|entry| entry.id).collect::<Vec<_>>(),
@@ -399,13 +395,8 @@ async fn clean_task(
             CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints { ids }),
         );
         if let Err(err) = shard
-            .update_local(
-                delete_operation,
-                WaitUntil::from(last_batch),
-                None,
-                HwMeasurementAcc::disposable(),
-                false,
-            )
+            .update_local(delete_operation, WaitUntil::from(last_batch), None, false)
+            .unmeasured(reason("Internal operation"))
             .await
         {
             return Err(CollectionError::service_error(format!(
@@ -466,7 +457,7 @@ impl Collection {
     ///
     /// This function is cancel safe. If cancelled, we may not actually await on all tasks to
     /// finish but they will always still abort in the background.
-    pub(super) async fn invalidate_clean_local_shards(
+    pub async fn invalidate_clean_local_shards(
         &self,
         shard_ids: impl IntoIterator<Item = ShardId>,
     ) {
@@ -506,5 +497,62 @@ impl From<ShardCleanStatus> for ShardCleanStatusTelemetry {
             }
             ShardCleanStatus::Cancelled => ShardCleanStatusTelemetry::Cancelled,
         }
+    }
+}
+
+#[cfg(test)]
+mod invalidation_tests {
+    use tokio::sync::oneshot;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn invalidate_clean_local_shards_replay() {
+        let tasks = ShardCleanTasks::default();
+        let (first, mut first_stopped) = pending_clean_task();
+        let (unrelated, mut unrelated_stopped) = pending_clean_task();
+        let (third, mut third_stopped) = pending_clean_task();
+        {
+            let mut entries = tasks.tasks.write();
+            entries.insert(1, first);
+            entries.insert(2, unrelated);
+            entries.insert(3, third);
+        }
+
+        tokio::time::timeout(Duration::from_secs(5), tasks.invalidate([1, 1, 3, 99]))
+            .await
+            .expect("invalidating clean tasks must finish");
+        tasks.invalidate([1, 3, 99]).await;
+
+        assert_eq!(first_stopped.try_recv(), Ok(()));
+        assert_eq!(third_stopped.try_recv(), Ok(()));
+        assert!(matches!(
+            unrelated_stopped.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty),
+        ));
+        let statuses = tasks.statuses();
+        assert_eq!(statuses.len(), 1);
+        assert!(matches!(statuses[&2], ShardCleanStatus::Started));
+
+        tasks.invalidate([2]).await;
+    }
+
+    fn pending_clean_task() -> (ShardCleanTask, oneshot::Receiver<()>) {
+        let (sender, status) = tokio::sync::watch::channel(ShardCleanStatus::Started);
+        let (stopped, receiver) = oneshot::channel();
+        let cancel = CancellationToken::new();
+        let task_cancel = cancel.clone();
+        let handle = tokio::spawn(async move {
+            task_cancel.cancelled().await;
+            let _ = sender.send(ShardCleanStatus::Cancelled);
+            stopped.send(()).unwrap();
+        });
+        let task = ShardCleanTask {
+            handle,
+            status,
+            cancel: cancel.drop_guard(),
+        };
+
+        (task, receiver)
     }
 }

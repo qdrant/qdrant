@@ -3,7 +3,6 @@ use point_scorer::{FilteredBytesScorer, FilteredScorer};
 
 use crate::vector_storage::query_scorer::QueryScorerBytes;
 
-pub mod build_condition_checker;
 mod config;
 mod entry_points;
 mod graph;
@@ -32,7 +31,7 @@ pub struct GraphWithVectorsScorers<'a> {
 }
 
 /// Maximum number of links per level.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HnswM {
     /// M for all levels except level 0.
     pub m: usize,

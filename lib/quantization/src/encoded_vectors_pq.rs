@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::fs::atomic_save_json;
 use common::mmap::Flusher;
 use common::typelevel::True;
@@ -21,7 +21,9 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_storage_vector_size};
-use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
+use crate::encoded_vectors::{
+    EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
+};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 
@@ -57,8 +59,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
     /// Encode vector data using product quantization.
     ///
+    /// Every vector of `data` is encoded, but the centroids are fitted only on the vectors whose
+    /// flag in `keep` is set.
+    ///
     /// # Arguments
     /// * `data` - iterator over original vector data
+    /// * `keep` - one flag per vector of `data`, set for the vectors to fit the centroids on;
+    ///   clear it for vectors that are not real (e.g. the placeholders of deleted vectors)
     /// * `storage_builder` - encoding result storage builder
     /// * `vector_parameters` - parameters of original vector data (dimension, distance, etc)
     /// * `chunk_size` - Max size of f32 chunk that replaced by centroid index (in original vector dimension)
@@ -67,9 +74,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode<'a>(
         data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone + Send,
+        keep: impl Iterator<Item = bool> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<Storage = TStorage> + Send,
         vector_parameters: &VectorParameters,
-        count: usize,
         chunk_size: usize,
         max_kmeans_threads: usize,
         meta_path: Option<&Path>,
@@ -81,11 +88,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         let vector_division = Self::get_vector_division(vector_parameters.dim, chunk_size);
 
         // then, find flattened centroid positions
+        let (calibration_data, calibration_count) = calibration_vectors(data.clone(), keep);
         let centroids = Self::find_centroids(
-            data.clone(),
+            calibration_data,
             &vector_division,
             vector_parameters,
-            count,
+            calibration_count,
             CENTROIDS_COUNT,
             max_kmeans_threads,
             stopped,
@@ -340,7 +348,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     /// * `max_kmeans_threads` - Max allowed threads for kmeans process
     /// * `stopped` - Atomic bool that indicates if encoding should be stopped
     fn find_centroids<'a>(
-        data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
+        data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
         vector_division: &[Range<usize>],
         vector_parameters: &VectorParameters,
         count: usize,
@@ -370,21 +378,15 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
         selected_vectors.sort_unstable();
 
+        // One pass over `data` for the whole sample. Taking each chunk's subset
+        // straight from `data` walked it again for every chunk, up to the last
+        // sampled vector: 384 passes over the storage for a 1536-d collection at
+        // x16 compression, to gather the same vectors each time.
+        let sample = gather_sample(data, &selected_vectors, vector_parameters.dim);
+
         // find centroids for each chunk
         for range in vector_division.iter() {
-            // take data subset using indexes from
-            let mut data_subset = Vec::with_capacity(sample_size * range.len());
-            let mut selected_index: usize = 0;
-            for (vector_index, vector_data) in data.clone().enumerate() {
-                let vector_data = vector_data.as_ref();
-                if vector_index == selected_vectors[selected_index] {
-                    data_subset.extend_from_slice(&vector_data[range.clone()]);
-                    selected_index += 1;
-                    if selected_index == sample_size {
-                        break;
-                    }
-                }
-            }
+            let data_subset = chunk_subset(&sample, vector_parameters.dim, range.clone());
 
             let centroids = kmeans(
                 &data_subset,
@@ -511,8 +513,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         TStorage::is_in_ram_or_mmap()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.encoded_vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.encoded_vectors.is_cold()
     }
 
     fn encode_query(&self, query: &[f32]) -> EncodedQueryPQ {
@@ -543,55 +545,33 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         &self,
         offsets: &[PointOffsetType],
         callback: impl FnMut(usize, Cow<'_, [u8]>),
-    ) {
+    ) -> std::io::Result<()> {
         self.encoded_vectors.for_each_batch(offsets, callback)
     }
 
-    fn score(
-        &self,
-        query: &Self::EncodedQuery,
-        encoded_vector: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        self.score_bytes(True, query, encoded_vector, hw_counter)
-    }
-
-    fn score_point(
-        &self,
-        query: &EncodedQueryPQ,
-        i: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        let centroids = self.encoded_vectors.get_vector_data(i);
-
-        self.score_bytes(True, query, &centroids, hw_counter)
+    fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
+        self.score_bytes(True, query, encoded_vector)
     }
 
     /// Score two points inside endoded data by their indexes
     /// To find score, this method decode both encoded vectors.
     /// Decocing in PQ is a replacing centroid index by centroid position
-    fn score_internal(
-        &self,
-        i: PointOffsetType,
-        j: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
+    fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
         let centroids_i = self.encoded_vectors.get_vector_data(i);
         let centroids_j = self.encoded_vectors.get_vector_data(j);
 
-        hw_counter
-            .vector_io_read()
-            .incr_delta(self.metadata.vector_division.len() * 2);
+        let mul = usize::from(self.encoded_vectors.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((self.metadata.vector_division.len() * 2) * mul);
 
-        hw_counter.cpu_counter().incr_delta(
+        HwMetric::Cpu.bump(
             centroids_i.as_ref().len()
-            // Chunk size
-                * self
-                    .metadata
-                    .vector_division
-                    .first()
-                    .map(|i| i.len())
-                    .unwrap_or(1),
+        // Chunk size
+            * self
+                .metadata
+                .vector_division
+                .first()
+                .map(|i| i.len())
+                .unwrap_or(1),
         );
 
         let distance: f32 = centroids_i
@@ -625,12 +605,7 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
         None
     }
 
-    fn upsert_vector(
-        &mut self,
-        _id: PointOffsetType,
-        _vector: &[f32],
-        _hw_counter: &HardwareCounterCell,
-    ) -> std::io::Result<()> {
+    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[f32]) -> std::io::Result<()> {
         debug_assert!(false, "PQ does not support upsert_vector",);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
@@ -681,16 +656,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
     }
 
     type SupportsBytes = True;
-    fn score_bytes(
-        &self,
-        _: Self::SupportsBytes,
-        query: &Self::EncodedQuery,
-        bytes: &[u8],
-        hw_counter: &HardwareCounterCell,
-    ) -> f32 {
-        hw_counter
-            .cpu_counter()
-            .incr_delta(self.metadata.vector_division.len());
+    fn score_bytes(&self, _: Self::SupportsBytes, query: &Self::EncodedQuery, bytes: &[u8]) -> f32 {
+        HwMetric::Cpu.bump(self.metadata.vector_division.len());
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.1") {
@@ -708,4 +675,72 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
 pub fn get_quantized_vector_size(vector_parameters: &VectorParameters, chunk_size: usize) -> usize {
     (0..vector_parameters.dim).step_by(chunk_size).count()
+}
+
+/// The vectors at `selected` (ascending indexes into `data`), concatenated.
+fn gather_sample<'a>(
+    data: impl Iterator<Item = impl AsRef<[f32]> + 'a>,
+    selected: &[usize],
+    dim: usize,
+) -> Vec<f32> {
+    let mut sample = Vec::with_capacity(selected.len() * dim);
+    let mut selected = selected.iter().peekable();
+    if selected.peek().is_none() {
+        return sample;
+    }
+    for (vector_index, vector_data) in data.enumerate() {
+        if selected.next_if_eq(&&vector_index).is_some() {
+            sample.extend_from_slice(vector_data.as_ref());
+            if selected.peek().is_none() {
+                break;
+            }
+        }
+    }
+    sample
+}
+
+/// One chunk's components of every vector in `sample`, concatenated.
+fn chunk_subset(sample: &[f32], dim: usize, range: Range<usize>) -> Vec<f32> {
+    let mut subset = Vec::with_capacity(sample.len() / dim * range.len());
+    for vector in sample.chunks_exact(dim) {
+        subset.extend_from_slice(&vector[range.clone()]);
+    }
+    subset
+}
+
+#[cfg(test)]
+mod sample_tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    /// The subsets are what the per-chunk walk produced: the sampled vectors'
+    /// components for that chunk, in sample order.
+    #[test]
+    fn test_chunk_subsets_match_the_per_chunk_walk() {
+        let dim = 12;
+        let data: Vec<Vec<f32>> = (0..50)
+            .map(|i| (0..dim).map(|j| (i * dim + j) as f32).collect())
+            .collect();
+        let selected = [1, 4, 5, 17, 49];
+        let sample = gather_sample(data.iter(), &selected, dim);
+        for range in [0..4, 4..8, 8..12, 3..7] {
+            let want: Vec<f32> = selected
+                .iter()
+                .flat_map(|&i| data[i][range.clone()].iter().copied())
+                .collect();
+            assert_eq!(chunk_subset(&sample, dim, range.clone()), want, "{range:?}");
+        }
+    }
+
+    /// `data` is walked once, and no further than the last sampled vector.
+    #[test]
+    fn test_gather_sample_reads_data_once() {
+        let reads = Cell::new(0);
+        let data: Vec<Vec<f32>> = (0..100).map(|i| vec![i as f32; 4]).collect();
+        let counted = data.iter().inspect(|_| reads.set(reads.get() + 1));
+        let sample = gather_sample(counted, &[3, 40, 60], 4);
+        assert_eq!(sample.len(), 12);
+        assert_eq!(reads.get(), 61);
+    }
 }

@@ -1,4 +1,5 @@
 use collection::collection::vector_name_schema;
+use collection::collection_state::ShardInfo;
 
 use super::*;
 
@@ -6,6 +7,15 @@ impl ClusterState {
     /// Apply one action. Cannot fail.
     pub fn apply_action(&mut self, action: &Action) {
         match action {
+            Action::AddPeer { peer_id, uri } => {
+                self.peer_address_by_id.insert(*peer_id, uri.clone());
+            }
+
+            Action::RemovePeer { peer_id } => {
+                self.peer_address_by_id.remove(peer_id);
+                self.peer_metadata_by_id.remove(peer_id);
+            }
+
             Action::CreateCollection { collection, state } => {
                 self.collections
                     .insert(collection.clone(), (**state).clone());
@@ -89,6 +99,214 @@ impl ClusterState {
                 };
 
                 state.payload_index_schema.schema.remove(field_name);
+            }
+
+            Action::CreateAndRegisterShards {
+                collection,
+                shard_key,
+                shards,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                for &(shard_id, ref peers, init_state) in shards {
+                    let replicas = peers.iter().map(|&peer_id| (peer_id, init_state)).collect();
+                    state.shards.insert(shard_id, ShardInfo { replicas });
+                }
+
+                if let Some(shard_key) = shard_key {
+                    state
+                        .shards_key_mapping
+                        .entry(shard_key.clone())
+                        .or_default()
+                        .extend(shards.iter().map(|&(shard_id, _, _)| shard_id));
+                }
+            }
+
+            // Stops node-local tasks and does not change consensus state
+            Action::InvalidateCleanLocalShards { .. } => {}
+
+            Action::RemoveShardKey {
+                collection,
+                shard_key,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard_ids) = state.shards_key_mapping.remove(shard_key) else {
+                    return;
+                };
+
+                // The mapping is removed before the shard directories are deleted. If the node
+                // crashes between those steps, Qdrant ignores the leftover directories during
+                // startup because their shards are no longer in the mapping.
+                //
+                // Remove the shards from modeled state here to match the state after restart.
+                // Replaying the operation then has nothing left to do.
+                for shard_id in shard_ids {
+                    state.shards.remove(&shard_id);
+                }
+            }
+
+            Action::DropShard {
+                collection,
+                shard_id,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.shards.remove(shard_id);
+            }
+
+            Action::SetShardNumber {
+                collection,
+                shard_number,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.config.params.shard_number = *shard_number;
+            }
+
+            Action::RemoveShardFromKeyMapping {
+                collection,
+                shard_id,
+                shard_key,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard_ids) = state.shards_key_mapping.get_mut(shard_key) else {
+                    return;
+                };
+
+                shard_ids.remove(shard_id);
+            }
+
+            Action::SetReplicaState {
+                collection,
+                shard_id,
+                peer_id,
+                state: replica_state,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard) = state.shards.get_mut(shard_id) else {
+                    return;
+                };
+
+                shard.replicas.insert(*peer_id, *replica_state);
+            }
+
+            Action::RemoveReplica {
+                collection,
+                shard_id,
+                peer_id,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(shard) = state.shards.get_mut(shard_id) else {
+                    return;
+                };
+
+                shard.replicas.remove(peer_id);
+            }
+
+            // Builds or resets a node-local shard without changing consensus state
+            Action::InitLocalShard { .. } => {}
+
+            Action::RegisterTransfer {
+                collection,
+                transfer,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.transfers.insert(transfer.clone());
+            }
+
+            Action::SetTransferMethod {
+                collection,
+                key,
+                method,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let transfer = state
+                    .transfers
+                    .iter()
+                    .find(|transfer| key.check(transfer))
+                    .cloned();
+
+                let Some(mut transfer) = transfer else {
+                    return;
+                };
+
+                state.transfers.remove(&transfer);
+
+                // Transfer restart should only be used for *ordinary* transfers.
+                // Ordinary transfers must never specify `to_shard_id` and `filter`.
+
+                transfer.method = Some(*method);
+                transfer.to_shard_id = None;
+                transfer.filter = None;
+
+                state.transfers.insert(transfer);
+            }
+
+            // These actions only affect data or node-local runtime state
+            Action::DeleteMigratedPoints { .. }
+            | Action::RevertHashRing { .. }
+            | Action::StopTransferDriver { .. }
+            | Action::RevertProxyShard { .. }
+            | Action::UnproxifyShard { .. }
+            | Action::SpawnTransferDriver { .. } => {}
+
+            Action::SetReshardingState {
+                collection,
+                state: resharding,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.resharding = resharding.clone();
+            }
+
+            Action::SetReshardingStage { collection, stage } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                let Some(resharding) = &mut state.resharding else {
+                    return;
+                };
+
+                resharding.stage = *stage;
+            }
+
+            Action::UnregisterTransfer {
+                collection,
+                key,
+                outcome: _,
+            } => {
+                let Some(state) = self.collection_mut(collection) else {
+                    return;
+                };
+
+                state.transfers.retain(|transfer| !key.check(transfer));
             }
 
             Action::UpdateAliases { set, remove } => {

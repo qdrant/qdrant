@@ -243,6 +243,7 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
             Match::Text(_match_text) => vec![FieldIndexType::Text],
             Match::Phrase(_match_text) => vec![FieldIndexType::TextPhrase],
             Match::Prefix(_match_prefix) => vec![FieldIndexType::KeywordPrefix],
+            Match::Substring(_match_substring) => vec![FieldIndexType::KeywordPrefix],
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
             Match::TextAny(_match_text_any) => vec![FieldIndexType::Text],
@@ -730,6 +731,56 @@ mod tests {
 
         let unindexed: Vec<_> = extractor.unindexed_schema().keys().cloned().collect();
         assert_eq!(unindexed, vec![JsonPath::new("popularity")]);
+    }
+
+    /// The schema named in the strict-mode rejection is what the user has to
+    /// create, so pin how it renders.
+    #[test]
+    fn substring_on_plain_keyword_index_reports_prefix_schema() {
+        let payload_schema = HashMap::from([(
+            JsonPath::new("url"),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+        )]);
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("url"),
+            segment::types::Match::new_substring("qdrant"),
+        )));
+
+        let mut extractor = Extractor::new(&payload_schema);
+        extractor.update_from_filter_once(None, &filter);
+
+        let reported = extractor
+            .unindexed_schema()
+            .get(&JsonPath::new("url"))
+            .unwrap();
+        assert_eq!(
+            reported
+                .iter()
+                .map(|schema| schema.to_string())
+                .collect_vec(),
+            vec!["keyword (with prefix: true)"],
+        );
+    }
+
+    #[test]
+    fn substring_requires_keyword_prefix_index() {
+        let condition = FieldCondition::new_match(
+            segment::json_path::JsonPath::new("url"),
+            segment::types::Match::new_substring("qdrant"),
+        );
+        assert_eq!(
+            infer_index_from_field_condition(&condition),
+            vec![FieldIndexType::KeywordPrefix],
+        );
+        // A keyword index without the `prefix` option has no key dictionary
+        // to scan, so it cannot serve the condition and does not satisfy
+        // strict mode. The same holds for a text index, which holds tokens
+        // rather than raw values. Without strict mode the condition still
+        // runs through the payload fallback.
+        let keyword = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        assert!(!schema_capabilities(&keyword).contains(&FieldIndexType::KeywordPrefix));
+        let text = PayloadFieldSchema::FieldType(PayloadSchemaType::Text);
+        assert!(!schema_capabilities(&text).contains(&FieldIndexType::KeywordPrefix));
     }
 
     #[test]

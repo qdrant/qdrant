@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
@@ -40,6 +39,7 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
             unfiltered_hnsw: OperationDurationStatistics::default(),
             filtered_small_cardinality: OperationDurationStatistics::default(),
             filtered_large_cardinality: OperationDurationStatistics::default(),
+            filtered_acorn: OperationDurationStatistics::default(),
             filtered_exact: OperationDurationStatistics::default(),
             filtered_sparse: Default::default(),
             unfiltered_exact: OperationDurationStatistics::default(),
@@ -62,7 +62,6 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
         _idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         _is_stopped: &std::sync::atomic::AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         // Plain (dense) index doesn't track IDF and contributes no df counts.
         Ok(match corpus {

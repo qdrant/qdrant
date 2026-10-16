@@ -13,9 +13,8 @@ use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::str::FromStr;
 
 use blobstore::Blob;
+use common::ambient::hw::HwMetric;
 use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Either;
 use ordered_float::OrderedFloat;
@@ -104,11 +103,7 @@ where
 }
 
 /// Estimate the number of points carrying exactly `value`.
-pub(super) fn estimate_points<T, I>(
-    index: &I,
-    value: &T,
-    hw_counter: &HardwareCounterCell,
-) -> OperationResult<usize>
+pub(super) fn estimate_points<T, I>(index: &I, value: &T) -> OperationResult<usize>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
     I: NumericIndexRead<T>,
@@ -116,12 +111,11 @@ where
     let start = Bound::Included(Point::new(*value, PointOffsetType::MIN));
     let end = Bound::Included(Point::new(*value, PointOffsetType::MAX));
 
-    hw_counter
-        .payload_index_io_read_counter()
-        // We have to do 2 times binary search in mmap and immutable storage.
-        .incr_delta(2 * ((index.total_unique_values_count()? as f32).log2().ceil() as usize));
+    // We have to do 2 times binary search in mmap and immutable storage.
+    HwMetric::PayloadIndexIoRead
+        .bump(2 * ((index.total_unique_values_count()? as f32).log2().ceil() as usize));
 
-    let range_size = index.values_range_size(start, end, hw_counter)?;
+    let range_size = index.values_range_size(start, end)?;
     if range_size == 0 {
         return Ok(0);
     }
@@ -137,7 +131,6 @@ where
 pub(super) fn filter<'a, T, I>(
     index: &'a I,
     condition: &FieldCondition,
-    hw_counter: &'a HardwareCounterCell,
 ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
@@ -153,7 +146,7 @@ where
             let value = T::from_u128(uuid.as_u128());
             let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
             let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
-            return Ok(Some(Box::new(index.values_range(start, end, hw_counter)?)));
+            return Ok(Some(Box::new(index.values_range(start, end)?)));
         }
     }
 
@@ -175,18 +168,13 @@ where
         return Ok(Some(Box::new(std::iter::empty())));
     }
 
-    Ok(Some(Box::new(index.values_range(
-        start_bound,
-        end_bound,
-        hw_counter,
-    )?)))
+    Ok(Some(Box::new(index.values_range(start_bound, end_bound)?)))
 }
 
 /// Cardinality estimation for a `match`/`range` field condition.
 pub(super) fn estimate_cardinality<T, I>(
     index: &I,
     condition: &FieldCondition,
-    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<Option<CardinalityEstimation>>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
@@ -200,7 +188,7 @@ where
         if let Ok(uuid) = Uuid::from_str(keyword) {
             let key = T::from_u128(uuid.as_u128());
 
-            let estimated_count = estimate_points(index, &key, hw_counter)?;
+            let estimated_count = estimate_points(index, &key)?;
             return Ok(Some(
                 CardinalityEstimation::exact(estimated_count)
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
@@ -307,7 +295,6 @@ where
 pub(super) fn condition_checker<'a, T, I>(
     index: &'a I,
     condition: &FieldCondition,
-    hw_acc: HwMeasurementAcc,
 ) -> Option<RangeConditionChecker<'a, I, T>>
 where
     T: Encodable + Numericable + StoredValue + Send + Sync + Default,
@@ -341,17 +328,12 @@ where
         }
     };
 
-    Some(RangeConditionChecker {
-        index,
-        typed_range,
-        hw_counter: hw_acc.get_counter_cell(),
-    })
+    Some(RangeConditionChecker { index, typed_range })
 }
 
 pub struct RangeConditionChecker<'a, I, T> {
     index: &'a I,
     typed_range: Range<T>,
-    hw_counter: HardwareCounterCell,
 }
 
 impl<I, T> ConditionChecker for RangeConditionChecker<'_, I, T>
@@ -362,11 +344,8 @@ where
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.index.check_values_any(
-            point_id,
-            |value| self.typed_range.check_range(*value),
-            &self.hw_counter,
-        )
+        self.index
+            .check_values_any(point_id, |value| self.typed_range.check_range(*value))
     }
 
     fn check_batched<K: CheckItem>(
@@ -378,7 +357,6 @@ where
         let p = Partitioner::new(ids);
         self.index.for_each_matching_value(
             p.iter().map(|item| (item, item.point_id())),
-            &self.hw_counter,
             |value| self.typed_range.check_range(*value),
             |item, matched| p.write(item, matched == select.is_match()),
         )?;

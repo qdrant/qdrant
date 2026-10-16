@@ -68,11 +68,8 @@ impl ConfigMismatchOptimizer {
     fn has_config_mismatch(&self, segment: &dyn ReadSegmentEntry) -> bool {
         let segment_config = segment.config();
 
-        if self
-            .segment_optimizer_config
-            .payload_storage_type
-            .is_on_disk()
-            != segment_config.payload_storage_type.is_on_disk()
+        if self.segment_optimizer_config.payload_storage_type.is_cold()
+            != segment_config.payload_storage_type.is_cold()
         {
             return true; // Optimize segment due to payload storage mismatch
         }
@@ -111,7 +108,7 @@ impl ConfigMismatchOptimizer {
 
                     if let Some(required_memory) = self.requested_vectors_memory(vector_name)
                         && let Some(memory) = vector_data.storage_type.memory()
-                        && required_memory.is_on_disk() != memory.is_on_disk()
+                        && required_memory.is_cold() != memory.is_cold()
                     {
                         return true;
                     }

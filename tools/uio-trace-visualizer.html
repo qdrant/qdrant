@@ -1,0 +1,1438 @@
+<!doctype html>
+<!--
+
+Visualizer for traces written by the `ambient::trace` module.
+See `lib/edge/tools/shard_query/SKILL.md` for an example on how to obtain this trace.
+
+Requests are grouped into lanes by the file tree of their paths; click a tree node
+(or a lane header) to expand or collapse it, shift+click to do so for its whole subtree.
+Files that report `sections` split into one child per section.
+Click a tree node's swatch to give it a random colour (again to clear), right-click the node to pick one;
+requests take the colour of their nearest coloured node. Click a request to reveal it in the tree.
+Filter by path (substring or glob: `*` within a path segment, `**` across them) to grey
+out the rest, and by operation to hide it. Phases, marks and CPU usage show only when the trace has them.
+
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>uio trace</title>
+<style>
+:root {
+  color-scheme: dark;
+  --surface: #1a1a19;
+  --plane: #0d0d0d;
+  --ink: #ffffff;
+  --ink2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --bad: #d03b3b;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--plane); color: var(--ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex; flex-direction: column;
+}
+header {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  padding: 5px 10px; border-bottom: 1px solid var(--axis);
+}
+header #note {
+  flex: 1; min-width: 0; color: var(--bad);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+header label { color: var(--ink2); white-space: nowrap; }
+header .off { display: none; }
+#ops { display: flex; gap: 8px; }
+#filter {
+  width: 26ch; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--axis); border-radius: 4px; padding: 2px 6px; font: inherit;
+}
+button {
+  background: var(--surface); color: var(--ink2);
+  border: 1px solid var(--axis); border-radius: 4px; padding: 2px 8px; cursor: pointer;
+}
+button:disabled { color: var(--muted); cursor: default; }
+#file { display: none; }
+#wrap { position: relative; flex: 1; min-height: 0; display: flex; background: var(--surface); }
+#tree {
+  width: 280px; flex: none; overflow: auto; border-right: 1px solid var(--axis);
+  padding: 4px 0; font-size: 12px; user-select: none;
+}
+#tree .row {
+  display: flex; align-items: center; gap: 5px; padding: 1px 8px 1px 0;
+  cursor: default; white-space: nowrap;
+}
+#tree .row.branch { cursor: pointer; }
+#tree .row:hover { background: #ffffff10; }
+#tree .row.dim { opacity: 0.4; }
+#tree .row.on { background: #ffffff24; }
+#tree .tw { width: 10px; flex: none; color: var(--muted); text-align: center; }
+#tree .sw { width: 9px; height: 9px; flex: none; border-radius: 2px; cursor: pointer; }
+#tree .sw.none { box-shadow: inset 0 0 0 1px var(--muted); }
+#pal {
+  position: fixed; display: none; z-index: 4; grid-template-columns: repeat(6, 16px); gap: 4px;
+  padding: 6px; background: var(--surface); border: 1px solid var(--axis); border-radius: 5px;
+}
+#pal i { width: 16px; height: 16px; border-radius: 3px; cursor: pointer; }
+#pal i.none { box-shadow: inset 0 0 0 1px var(--muted); }
+#tree .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ink2); }
+#tree .ct { color: var(--muted); font-variant-numeric: tabular-nums; }
+#stage { position: relative; flex: 1; min-width: 0; }
+canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#tip {
+  position: absolute; display: none; pointer-events: none; max-width: 460px;
+  background: #000000e8; border: 1px solid var(--axis); border-radius: 5px;
+  padding: 6px 8px; font-size: 12px; line-height: 1.45; white-space: pre-wrap;
+  word-break: break-all; z-index: 2;
+}
+#tip b { color: var(--ink); }
+#tip .k { color: var(--muted); }
+#tip .err { color: #e66767; }
+#tip .map { position: relative; height: 8px; margin: 3px 0; }
+#tip .map i { position: absolute; top: 0; bottom: 0; }
+#toast {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2;
+  background: #000000e8; border: 1px solid var(--axis); border-radius: 5px; padding: 8px 14px;
+  pointer-events: none; opacity: 0; transition: opacity 0.2s;
+}
+#toast.on { opacity: 1; }
+#drop {
+  position: absolute; inset: 0; z-index: 3; background: var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; color: var(--ink2); text-align: center;
+}
+#drop.gone { display: none; }
+#drop b { color: var(--ink); font-size: 15px; }
+#drop code { color: var(--muted); font-size: 12px; }
+#hint { margin-top: 44px; }
+#help {
+  max-width: 80ch; color: var(--muted); text-align: left;
+  white-space: pre-wrap; line-height: 1.6;
+}
+body.over #drop { outline: 2px dashed var(--ink2); outline-offset: -14px; }
+</style>
+</head>
+<body>
+<header>
+  <span id="note"></span>
+  <input type="search" id="filter" placeholder="filter paths (/)" title="Substring or glob: `*` within a path segment, `**` across them.">
+  <span id="ops"></span>
+  <label id="marksLabel" title="Show text marks left by `uio_trace::mark!()`."><input type="checkbox" id="marks" checked> <u>m</u>arks</label>
+  <button id="reflow" title="Hide lanes without visible requests.&#10;(when zooming in)">re<u>f</u>low</button>
+  <button id="url"><u>o</u>pen URL</button>
+  <button id="upload"><u>u</u>pload file</button>
+  <input type="file" id="file" accept=".jsonl,.json,.ndjson,application/json">
+</header>
+<div id="wrap">
+  <div id="tree"></div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="tip"></div>
+    <div id="toast">ctrl+wheel or pinch to zoom</div>
+  </div>
+  <div id="drop">
+    <b>What is it?</b>
+    <div id="help"></div>
+    <b id="hint">drop a trace here</b>
+  </div>
+</div>
+<div id="pal"></div>
+<script>
+"use strict";
+
+// Canvas cannot read CSS variables; resolve the palette once.
+const CSS = getComputedStyle(document.documentElement);
+const [AXIS, BAD, GRID, INK, INK2, MUTED, SURFACE] =
+  ["axis", "bad", "grid", "ink", "ink2", "muted", "surface"]
+    .map(name => CSS.getPropertyValue("--" + name).trim());
+
+const SHADES = 8;  // tints per lane, so a dense lane reads as texture, not a flat wall
+const CONC_BIN = 250;  // µs
+const BW_BIN = 1000;  // µs
+const AUTO_LANES = 12;  // the initial expansion stops before exceeding this many lanes
+const LANE_FONT = "11px system-ui, sans-serif";
+const REQ_W = 4.5;  // px per request bar
+const REQ_GAP = 2;  // px between neighbouring bars, unless the lane is crowded
+const HIT_R = 10;  // px, how far from a request bar its tooltip still shows
+const MAP_W = 300;  // px, the file map in the request tooltip
+const BAD_DARK = darken(BAD);
+const PAL = 18;  // colours in the right-click palette
+const UNCOLORED = INK2;  // requests without a coloured node on their path
+const DIMMED = mix(MUTED, SURFACE, 0.6);  // requests the path filter does not match
+
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const tip = document.getElementById("tip");
+const stage = document.getElementById("stage");
+const treeBox = document.getElementById("tree");
+const note = document.getElementById("note");
+const marksBox = document.getElementById("marks");
+const filterBox = document.getElementById("filter");
+const opsBox = document.getElementById("ops");
+const toastBox = document.getElementById("toast");
+const reflowButton = document.getElementById("reflow");
+const palBox = document.getElementById("pal");
+
+const HEAD = 26;
+const W_RULER = 68, W_MARK = 26, W_SIDE = 96, W_HIDDEN = 32, GAP = 10;
+const view = {t0: 0, tpp: 1};
+let D = null;
+let L = null;
+let mouse = null;
+let hover = null;
+let select = null;  // time the drag started at
+let dirty = false;
+let refit = true;
+let toastTimer = 0;
+let hidden = new Set();  // lanes folded into one column by "reflow"
+let unseen = [];  // lanes without requests in view, as of the last draw
+let pressed = null;  // request under the pointer when the button went down
+let picked = null;  // tree node of the last clicked request
+let painting = null;  // tree node the palette is open for
+
+// ---------- trace ----------
+
+function build(text, name) {
+  const layouts = new Map();
+  const phases = [];
+  const marks = [];
+  const all = [];
+  const cpu = [];
+  let dropped = 0, bad = 0;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let ev;
+    try { ev = JSON.parse(line); } catch (err) { bad++; continue; }
+    if (ev.kind === "sections") {
+      layouts.set(ev.path, ev.sections);
+    } else if (ev.kind === "cpu") {
+      cpu.push({at: ev.at_ns / 1000, cpu: ev.cpu_ns / 1000});
+    } else if (ev.kind === "dropped") {
+      dropped += ev.count;
+    } else if (ev.kind === "phase") {
+      phases.push({id: ev.id, name: ev.name, s: ev.start_ns / 1000, e: ev.end_ns / 1000, depth: 0});
+    } else if (ev.kind === "mark") {
+      marks.push({at: ev.at_ns / 1000, text: ev.text});
+    } else if (ev.kind === "request") {
+      all.push({
+        // Requests are not numbered in the trace; the file order names them.
+        id: all.length, parent: ev.parent, s: ev.start_ns / 1000, e: ev.end_ns / 1000,
+        op: ev.op, path: ev.path, off: Number(ev.offset), len: Number(ev.length), outcome: ev.outcome,
+      });
+    }
+  }
+  if (!all.length && !phases.length) throw new Error("no spans in " + name);
+
+  for (const req of all) req.spans = sections(layouts, req);
+  // Built before sorting by start time: tree order is the order of first appearance in the file.
+  const tree = buildTree(all, layouts);
+  const ops = [...new Set(all.map(req => req.op))];
+
+  phases.sort((a, b) => a.s - b.s || b.e - a.e);
+  marks.sort((a, b) => a.at - b.at);
+  all.sort((a, b) => a.s - b.s);
+  nest(phases);
+
+  let tMax = 1;
+  for (const req of all) {
+    // Disjoint bits of one avalanching hash, so the shade does not correlate
+    // with the jitter that spreads the bars across the lane.
+    const h = hash32(req.id);
+    req.jit = (h >>> 8) / (1 << 24);
+    req.shade = h % SHADES;
+    tMax = Math.max(tMax, req.e);
+  }
+  for (const phase of phases) tMax = Math.max(tMax, phase.e);
+  for (const mark of marks) tMax = Math.max(tMax, mark.at);
+
+  ctx.font = LANE_FONT;
+  const phaseW = phases.length ? phases.reduce(
+    (w, phase) => Math.max(w, 18 + phase.depth * 11 + ctx.measureText(phase.name).width),
+    ctx.measureText("phases").width + 8) : 0;
+
+  return {
+    name, all, phases, marks, dropped, bad, phaseW, tree, ops,
+    opsOn: new Set(ops),
+    t_max: tMax,
+    files: files(layouts, all),
+    gap: tMax * 0.005,
+    cpu: cpuSeries(cpu, tMax),
+  };
+}
+
+// Phases carry no parent, so nesting is by containment.
+function nest(phases) {
+  const stack = [];
+  for (const phase of phases) {
+    while (stack.length && stack[stack.length - 1] < phase.e) stack.pop();
+    phase.depth = stack.length;
+    stack.push(phase.e);
+  }
+}
+
+// Bytes of `req` landing in each section of the file's reported byte layout, largest
+// first. The disk cache rounds reads out to whole blocks, so a read of one section
+// routinely starts inside the previous one; the largest overlap names the read.
+function sections(layouts, req) {
+  const layout = layouts.get(req.path);
+  if (!layout) return null;
+  const end = req.off + Math.max(req.len, 1);
+  const out = [];
+  for (let i = 0; i < layout.length; i++) {
+    const next = i + 1 < layout.length ? layout[i + 1][1] : Infinity;
+    const bytes = Math.min(end, next) - Math.max(req.off, layout[i][1]);
+    if (bytes > 0) out.push([layout[i][0], bytes]);
+  }
+  return out.sort((a, b) => b[1] - a[1]);
+}
+
+const pathKey = path => "/" + path.split("/").filter(Boolean).join("/");
+const leafKey = req => pathKey(req.path) + (req.spans?.length ? "#" + req.spans[0][0] : "");
+
+/**
+ * The path tree of all requests, one node per path segment, plus one per section under a
+ * file with a reported layout. Children keep the order of their first request in the file;
+ * sections keep the layout's order. A chain of single children without requests of their
+ * own collapses into one node.
+ */
+function buildTree(reqs, layouts) {
+  const node = (name, key, sep, parent) => ({
+    name, key, sep, parent, kids: new Map(), children: [], own: 0, open: false,
+    color: null, count: 0, hits: 0, bytes: 0, ownVisible: 0,
+  });
+  const child = (parent, name, key, sep) => {
+    let found = parent.kids.get(name);
+    if (!found) {
+      found = node(name, key, sep, parent);
+      parent.kids.set(name, found);
+      parent.children.push(found);
+    }
+    return found;
+  };
+  const root = node("", "", "", null);
+  for (const req of reqs) {
+    let at = root;
+    let key = "";
+    for (const part of req.path.split("/").filter(Boolean)) {
+      key += "/" + part;
+      at = child(at, part, key, "/");
+    }
+    if (req.spans?.length) at = child(at, req.spans[0][0], key + "#" + req.spans[0][0], "#");
+    at.own++;
+  }
+  const layoutOf = new Map([...layouts].map(([path, layout]) => [pathKey(path), layout]));
+  // Merged-away keys keep pointing at the node that absorbed them.
+  const byKey = new Map();
+  const settle = n => {
+    byKey.set(n.key, n);
+    while (n.children.length === 1 && !n.own) {
+      const only = n.children[0];
+      n.name = n.name ? n.name + only.sep + only.name : only.name;
+      n.key = only.key;
+      n.own = only.own;
+      n.children = only.children;
+      for (const c of n.children) c.parent = n;
+      byKey.set(n.key, n);
+    }
+    const layout = layoutOf.get(n.key);
+    if (layout && n.children.every(c => c.sep === "#")) {
+      const order = new Map(layout.map(([name], i) => [name, i]));
+      n.children.sort((a, b) => order.get(a.name) - order.get(b.name));
+    }
+    n.children.forEach(settle);
+  };
+  settle(root);
+  for (const req of reqs) {
+    req.chain = [];
+    for (let n = byKey.get(leafKey(req)); n; n = n.parent) req.chain.push(n);
+    req.chain.reverse();
+  }
+  return {root, byKey};
+}
+
+/**
+ * Per path, the strips of the file map: `[section name | null, start, end]`.
+ * The file size is not traced, so the map ends where the furthest read does.
+ */
+function files(layouts, reqs) {
+  const sizes = new Map();
+  for (const req of reqs) sizes.set(req.path, Math.max(sizes.get(req.path) || 0, req.off + req.len));
+  const out = new Map();
+  for (const [path, size] of sizes) {
+    const layout = layouts.get(path) || [[null, 0]];
+    const strips = layout.map(([name, start], i) => {
+      const end = i + 1 < layout.length ? layout[i + 1][1] : size;
+      return [name, Math.min(start, size), Math.min(end, size)];
+    });
+    out.set(path, {size, strips});
+  }
+  return out;
+}
+
+/**
+ * Requests of the checked operations, their lanes, and the series derived from those
+ * matching the path filter. Requests off the path filter stay in their lanes, greyed out.
+ */
+function refilter() {
+  const re = globRe(filterBox.value);
+  D.reqs = D.all.filter(req => D.opsOn.has(req.op));
+  for (const n of D.tree.byKey.values()) { n.count = 0; n.hits = 0; n.bytes = 0; n.ownVisible = 0; }
+  let maxdur = 1;
+  for (const req of D.reqs) {
+    req.match = !re || re.test(req.path);
+    for (const n of req.chain) {
+      n.count++;
+      if (req.match) { n.hits++; n.bytes += req.len; }
+    }
+    req.chain[req.chain.length - 1].ownVisible++;
+    maxdur = Math.max(maxdur, req.e - req.s);
+  }
+  D.hits = re ? D.reqs.filter(req => req.match) : D.reqs;
+  D.maxdur = maxdur;
+  D.S = Float64Array.from(D.reqs, r => r.s);
+  D.hitS = Float64Array.from(D.hits, r => r.s);
+  D.in_flight = D.hits.reduce((sum, r) => sum + r.e - r.s, 0);
+  D.total_bytes = D.hits.reduce((sum, r) => sum + r.len, 0);
+  const conc = concurrency(D.hits, D.t_max);
+  const bw = throughput(D.hits, D.t_max);
+  D.conc = {bin: CONC_BIN, v: conc, max: peak(conc)};
+  D.bw = {bin: BW_BIN, v: bw, max: peak(bw), sum: prefixSum(bw)};
+  relane();
+}
+
+/** Glob with `*` inside a segment and `**` across them; plain text matches as a substring. */
+function globRe(pattern) {
+  pattern = pattern.trim();
+  if (!pattern) return null;
+  const source = pattern.split(/(\*\*|\*|\?)/).map(token =>
+    token === "**" ? ".*" : token === "*" ? "[^/]*" : token === "?" ? "[^/]" :
+      token.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("");
+  return new RegExp(source, "i");
+}
+
+/** Lanes, left to right: every collapsed node or leaf with visible requests. */
+function relane() {
+  const lanes = [];
+  const walk = n => {
+    if (!n.count) return;
+    if (n.open && n.children.length) {
+      // A node's own requests, e.g. a listing of a directory whose files are also read.
+      if (n.ownVisible) lanes.push({node: n, self: true});
+      n.children.forEach(walk);
+    } else {
+      lanes.push({node: n, self: false});
+    }
+  };
+  walk(D.tree.root);
+  const index = new Map(lanes.map((lane, i) => [lane.node.key + (lane.self ? "\0" : ""), i]));
+  for (const req of D.reqs) {
+    const last = req.chain.length - 1;
+    const at = req.chain.findIndex(n => !n.open || !n.children.length);
+    req.k = at >= 0 ? index.get(req.chain[at].key) : index.get(req.chain[last].key + "\0");
+  }
+  const counts = lanes.map(() => 0), bytes = lanes.map(() => 0);
+  for (const req of D.reqs) { counts[req.k]++; bytes[req.k] += req.len; }
+  D.lanes = lanes;
+  D.counts = counts;
+  D.bytes = bytes;
+  D.placedFor = null;
+  hidden = new Set();
+  renderTree();
+  redraw();
+}
+
+/** Opens the busiest node while the lanes stay within `AUTO_LANES`. */
+function autoOpen() {
+  const lanes = n => !n.count ? 0 :
+    n.open && n.children.length ? (n.ownVisible ? 1 : 0) + n.children.reduce((s, c) => s + lanes(c), 0) : 1;
+  for (;;) {
+    let best = null;
+    const find = n => {
+      if (!n.children.length || !n.count) return;
+      if (!n.open) { if (!best || n.count > best.count) best = n; return; }
+      n.children.forEach(find);
+    };
+    find(D.tree.root);
+    if (!best) return;
+    const before = lanes(D.tree.root);
+    best.open = true;
+    if (lanes(D.tree.root) > AUTO_LANES && before > 1) { best.open = false; return; }
+  }
+}
+
+/** The colour of `n`, or of its nearest coloured ancestor. */
+function colorOf(n) {
+  while (n && !n.color) n = n.parent;
+  return n?.color || null;
+}
+
+/** Each request takes the colour of the deepest coloured node on its path. */
+function recolor() {
+  for (const req of D.all) {
+    let color = null;
+    for (const n of req.chain) color = n.color || color;
+    req.color = color || UNCOLORED;
+  }
+}
+
+function paint(n, color) {
+  n.color = color;
+  recolor();
+  renderTree();
+  redraw();
+}
+
+function openPalette(n, x, y) {
+  painting = n;
+  palBox.innerHTML = Array.from({length: PAL}, (_, i) =>
+    "<i style='background:" + palette(i) + "' data-color='" + palette(i) + "'></i>").join("") +
+    "<i class=none title='no colour' data-color=''></i>";
+  palBox.style.display = "grid";
+  palBox.style.left = Math.min(x, innerWidth - palBox.offsetWidth - 4) + "px";
+  palBox.style.top = Math.min(y, innerHeight - palBox.offsetHeight - 4) + "px";
+}
+
+function closePalette() {
+  painting = null;
+  palBox.style.display = "none";
+}
+
+/** Opens every node on the path of `req`, so that its own lane shows, and marks it in the tree. */
+function reveal(req) {
+  for (const n of req.chain) if (n.children.length) n.open = true;
+  picked = req.chain[req.chain.length - 1];
+  relane();
+  [...treeBox.children].find(row => row.dataset.key === picked.key)?.scrollIntoView({block: "nearest"});
+}
+
+function toggle(n, deep) {
+  if (!n.children.length) return;
+  const open = !n.open;
+  const set = m => { m.open = open; if (deep) m.children.forEach(set); };
+  set(n);
+  relane();
+}
+
+function renderTree() {
+  const rows = [];
+  const walk = (n, depth) => {
+    const branch = n.children.length > 0;
+    rows.push("<div class='row" + (branch ? " branch" : "") + (n.hits ? "" : " dim") + (n === picked ? " on" : "") +
+      "' data-key='" + esc(n.key) + "' title='" + esc(n.key.slice(1) || "/") + "' style='padding-left:" +
+      (4 + depth * 12) + "px'><span class=tw>" + (branch ? (n.open ? "▾" : "▸") : "") +
+      "</span><i class='sw" + (n.color ? "' style='background:" + n.color : " none") +
+      "' title='click: random colour or none, right-click the row: pick one'></i><span class=nm>" + esc(n.name || "/") +
+      "</span><span class=ct>" + fmtInt(n.hits) + " · " + fmtBytes(n.bytes) + "</span></div>");
+    if (n.open) for (const c of n.children) walk(c, depth + 1);
+  };
+  walk(D.tree.root, 0);
+  treeBox.innerHTML = rows.join("");
+}
+
+function renderOps() {
+  const counts = new Map();
+  for (const req of D.all) counts.set(req.op, (counts.get(req.op) || 0) + 1);
+  opsBox.innerHTML = D.ops.map(op =>
+    "<label title='" + fmtInt(counts.get(op)) + " requests'><input type=checkbox data-op='" + esc(op) +
+    "'" + (D.opsOn.has(op) ? " checked" : "") + "> " + esc(op) + "</label>").join("");
+}
+
+/** Cores busy per bin of the trace's own sampling interval; `null` without usable samples. */
+function cpuSeries(samples, tMax) {
+  if (samples.length < 2 || samples[samples.length - 1].cpu === samples[0].cpu) return null;
+  const steps = samples.slice(1).map((sample, i) => sample.at - samples[i].at).sort((a, b) => a - b);
+  const bin = Math.max(1, steps[steps.length >> 1]);
+  const v = new Array(Math.floor(tMax / bin) + 1).fill(0);
+  for (let i = 1; i < samples.length; i++) {
+    const [previous, sample] = [samples[i - 1], samples[i]];
+    const busy = (sample.cpu - previous.cpu) / Math.max(sample.at - previous.at, 1);
+    const last = Math.min(Math.floor(sample.at / bin), v.length - 1);
+    for (let b = Math.floor(previous.at / bin); b <= last; b++) v[b] = Math.max(v[b], busy);
+  }
+  // The samples count process CPU time from its start, not from the trace start.
+  const cpu0 = samples[0].cpu;
+  return {
+    bin, v, max: peak(v),
+    total: samples[samples.length - 1].cpu - cpu0,
+    at: Float64Array.from(samples, c => c.at),
+    used: Float64Array.from(samples, c => c.cpu - cpu0),
+  };
+}
+
+/** Peak in-flight request count per `CONC_BIN` bucket. */
+function concurrency(reqs, tMax) {
+  const out = new Array(Math.floor(tMax / CONC_BIN) + 1).fill(0);
+  const events = [];
+  for (const req of reqs) events.push([req.s, 1], [req.e, -1]);
+  events.sort((a, b) => a[0] - b[0]);
+  let held = 0, previous = 0;
+  for (const [time, delta] of events) {
+    if (held > 0) {
+      for (let b = Math.floor(previous / CONC_BIN); b <= Math.floor(time / CONC_BIN); b++) {
+        out[b] = Math.max(out[b], held);
+      }
+    }
+    held += delta;
+    previous = time;
+  }
+  return out;
+}
+
+/** Bytes per `BW_BIN` bucket, each request spread over its lifetime. */
+function throughput(reqs, tMax) {
+  const out = new Array(Math.floor(tMax / BW_BIN) + 1).fill(0);
+  for (const req of reqs) {
+    if (!req.len) continue;
+    const rate = req.len / Math.max(req.e - req.s, 1);
+    const last = Math.min(Math.floor(req.e / BW_BIN), out.length - 1);
+    for (let b = Math.floor(req.s / BW_BIN); b <= last; b++) {
+      const overlap = Math.min(req.e, (b + 1) * BW_BIN) - Math.max(req.s, b * BW_BIN);
+      out[b] += rate * Math.max(overlap, 0);
+    }
+  }
+  return out.map(Math.round);
+}
+
+const peak = values => values.reduce((a, b) => Math.max(a, b), 0);
+
+function prefixSum(values) {
+  let sum = 0;
+  return values.map(v => sum += v);
+}
+
+function hash32(x) {
+  x = Math.imul(x ^ (x >>> 16), 2246822507);
+  x = Math.imul(x ^ (x >>> 13), 3266489909);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+/** The `i`-th categorical colour: golden-angle hue steps and three lightness levels. */
+function palette(i) {
+  const h = (210 + i * 137.508) % 360, s = 0.62, l = [0.6, 0.72, 0.5][i % 3];
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const c = l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * c).toString(16).padStart(2, "0");
+  };
+  return "#" + f(0) + f(8) + f(4);
+}
+
+const shadeCache = new Map();
+
+/**
+ * Tints of one colour, mixed towards white.
+ *
+ * Only ever lighter than the base, so contrast against the dark surface can only improve.
+ */
+function shades(color) {
+  let out = shadeCache.get(color);
+  if (!out) {
+    out = Array.from({length: SHADES}, (_, i) => mix(color, "#ffffff", 0.22 * i / (SHADES - 1)));
+    shadeCache.set(color, out);
+  }
+  return out;
+}
+
+/** One colour, darkened: the bar under the cursor. */
+function darken(color) {
+  return mix(color, "#000000", 0.55);
+}
+
+function mix(from, to, weight) {
+  const target = rgb(to);
+  return "#" + rgb(from)
+    .map((c, i) => Math.round(c + (target[i] - c) * weight).toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function rgb(hex) {
+  return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+}
+
+function rgba(hex, alpha) {
+  return "rgba(" + rgb(hex).join(",") + "," + alpha + ")";
+}
+
+// ---------- layout ----------
+
+/** The side columns present in this trace, left to right. */
+const series = () => D.cpu ? ["conc", "bw", "cpu"] : ["conc", "bw"];
+
+function layout() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const o = {w: w, h: h, top: HEAD, ph: Math.max(1, h - HEAD)};
+  o.phaseX = W_RULER;
+  o.markX = o.phaseX + D.phaseW;
+  o.reqX = o.markX + (D.marks.length ? W_MARK : 0);
+  const side = series();
+  o.reqW = Math.max(80, w - o.reqX - (side.length + 1) * GAP - side.length * W_SIDE);
+  o.side = {};
+  side.forEach((key, i) => { o.side[key] = o.reqX + o.reqW + GAP + i * (W_SIDE + GAP); });
+
+  // Every lane first takes the width of its own label, then shares out what is
+  // left by log of its count, so one huge lane cannot swamp the rest and a
+  // one-request lane still names itself.
+  const avail = o.reqW - 8 - (hidden.size ? W_HIDDEN : 0);
+  ctx.font = LANE_FONT;
+  const floor = D.lanes.map((lane, i) => hidden.has(i) ? 0 : ctx.measureText(laneName(lane)).width + 6);
+  const spare = Math.max(0, avail - floor.reduce((a, b) => a + b, 0));
+  const weight = D.counts.map((c, i) => hidden.has(i) ? 0 : Math.log2(c + 1));
+  const sum = weight.reduce((a, b) => a + b, 0) || 1;
+  let lw = floor.map((f, i) => f + spare * weight[i] / sum);
+  const total = lw.reduce((a, b) => a + b, 0) || 1;
+  if (total > avail) lw = lw.map(v => v * avail / total);  // too many lanes to label
+  o.laneX = [];
+  let lx = o.reqX + 4;
+  for (const width of lw) { o.laneX.push(lx); lx += width; }
+  // The hidden lanes share one column after the rest.
+  o.hiddenX = lx;
+  for (const k of hidden) { o.laneX[k] = lx; lw[k] = W_HIDDEN; }
+  o.laneW = lw;
+  const room = lw.map(width => Math.max(1, Math.round(width - REQ_W - 2)));
+  const placedFor = room + "|" + [...hidden];
+  if (D.placedFor !== placedFor) {
+    D.placedFor = placedFor;
+    place(room);
+  }
+  return o;
+}
+
+// A request prefers its random spot in the lane, but moves to the nearest spot clear
+// of the requests alongside it (or just before it); only a crowded lane lets bars overlap.
+function place(room) {
+  const active = new Map();
+  for (const req of D.reqs) {
+    const column = hidden.has(req.k) ? -1 : req.k;
+    const lane = (active.get(column) || []).filter(other => other.e + D.gap > req.s);
+    active.set(column, lane);
+    // Up to twice as thin when the bars do not fit side by side.
+    const crowd = (lane.length + 1) * (REQ_W + REQ_GAP) / room[req.k];
+    req.w = REQ_W / Math.min(2, Math.max(1, crowd));
+    req.x = req.jit * room[req.k];
+    lane.push(req);
+    if (lane.length * (req.w + REQ_GAP) > room[req.k]) continue;  // crowded, and quadratic below
+    const blocked = lane.slice(0, -1)
+      .map(other => [other.x - req.w - REQ_GAP, other.x + other.w + REQ_GAP]);
+    blocked.sort((a, b) => a[0] - b[0]).push([room[req.k], Infinity]);
+    const want = req.x;
+    let from = 0, dist = Infinity;
+    for (const [a, b] of blocked) {
+      const to = Math.min(a, room[req.k]);
+      const x = Math.min(Math.max(want, from), to);
+      if (from <= to && Math.abs(x - want) < dist) { dist = Math.abs(x - want); req.x = x; }
+      from = Math.max(from, b);
+    }
+  }
+}
+
+const yOf = t => L.top + (t - view.t0) / view.tpp;
+const tOf = y => view.t0 + (y - L.top) * view.tpp;
+const viewEnd = () => view.t0 + L.ph * view.tpp;
+const reqX = req => L.laneX[req.k] + req.x;
+
+const fitTpp = () => D.t_max / L.ph;
+const clampY = y => Math.min(Math.max(y, L.top), L.h);
+
+function fit() {
+  refit = true;
+  redraw();
+}
+
+// The trace fills the pane at most once: no zooming past the whole span, and no
+// panning past either end of it.
+function clampView() {
+  view.tpp = Math.min(Math.max(view.tpp, 0.02), fitTpp());
+  view.t0 = Math.min(Math.max(view.t0, 0), Math.max(0, D.t_max - L.ph * view.tpp));
+}
+
+// ---------- drawing ----------
+
+function redraw() {
+  if (dirty || !D) return;
+  dirty = true;
+  requestAnimationFrame(() => { dirty = false; draw(); });
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  L = layout();
+  if (refit) {  // stays on until the user zooms in, so resizes re-fit
+    view.tpp = fitTpp();
+    view.t0 = 0;
+  }
+  clampView();
+  ctx.clearRect(0, 0, w, h);
+  ctx.textBaseline = "middle";
+
+  drawRuler();
+  drawPhases();
+  drawRequests();
+  drawMarks();
+  for (const key of series()) drawSeries(D[key], L.side[key]);
+  drawSelection();
+  drawHeader();
+  drawCrosshair();
+}
+
+function drawHeader() {
+  ctx.fillStyle = SURFACE;
+  ctx.fillRect(0, 0, L.w, HEAD);
+  ctx.strokeStyle = AXIS;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, HEAD - 0.5); ctx.lineTo(L.w, HEAD - 0.5); ctx.stroke();
+  ctx.fillStyle = MUTED;
+  ctx.font = LANE_FONT;
+  ctx.textAlign = "right";
+  ctx.fillText("ms", W_RULER - 6, HEAD / 2);
+  ctx.textAlign = "left";
+  if (D.phases.length) ctx.fillText("phases", L.phaseX + 4, HEAD / 2);
+  for (let i = 0; i < D.lanes.length; i++) {
+    if (hidden.has(i)) continue;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.laneX[i], 0, L.laneW[i] - 4, HEAD);
+    ctx.clip();
+    ctx.fillStyle = colorOf(D.lanes[i].node) || INK2;
+    ctx.fillText(laneName(D.lanes[i]), L.laneX[i] + 2, HEAD / 2);
+    ctx.restore();
+  }
+  ctx.fillStyle = MUTED;
+  if (hidden.size) ctx.fillText("+" + hidden.size, L.hiddenX + 2, HEAD / 2);
+  ctx.fillText("conc ≤" + D.conc.max, L.side.conc, HEAD / 2);
+  ctx.fillText("MB/s ≤" + (D.bw.max / D.bw.bin).toFixed(0), L.side.bw, HEAD / 2);
+  if (D.cpu) ctx.fillText("CPU ≤" + D.cpu.max.toFixed(1), L.side.cpu, HEAD / 2);
+}
+
+const laneName = lane => (lane.node.name || "/") + (lane.self ? " ·" : "");
+
+function niceStep(target) {
+  const magnitude = 10 ** Math.floor(Math.log10(target));
+  return magnitude * [1, 2, 5, 10].find(m => m * magnitude >= target);
+}
+
+function drawRuler() {
+  const step = niceStep(56 * view.tpp);
+  const begin = Math.floor(view.t0 / step) * step;
+  ctx.font = LANE_FONT;
+  ctx.lineWidth = 1;
+  for (let t = begin; t <= viewEnd(); t += step) {
+    const y = Math.round(yOf(t)) + 0.5;
+    if (y < L.top) continue;
+    ctx.strokeStyle = GRID;
+    ctx.beginPath(); ctx.moveTo(W_RULER, y); ctx.lineTo(L.w, y); ctx.stroke();
+    ctx.strokeStyle = AXIS;
+    ctx.beginPath(); ctx.moveTo(W_RULER - 6, y); ctx.lineTo(W_RULER, y); ctx.stroke();
+    ctx.fillStyle = MUTED;
+    ctx.textAlign = "right";
+    ctx.fillText(fmtMs(t), W_RULER - 8, y);
+  }
+  ctx.textAlign = "left";
+}
+
+function drawPhases() {
+  if (!D.phases.length) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(L.phaseX, L.top, D.phaseW, L.ph);
+  ctx.clip();
+  ctx.font = LANE_FONT;
+  const taken = [];
+  for (const phase of D.phases) {
+    const y0 = yOf(phase.s), y1 = yOf(phase.e);
+    if (y1 < L.top || y0 > L.h) continue;
+    const x = L.phaseX + 5 + phase.depth * 11;
+    const alpha = Math.max(0.35, 0.95 - 0.13 * phase.depth);
+    ctx.fillStyle = rgba(INK2, alpha);
+    ctx.fillRect(x, Math.max(y0, L.top), 2, Math.max(1, y1 - Math.max(y0, L.top)));
+    if (y0 >= L.top) ctx.fillRect(x - 3, y0, 8, 2);
+    ctx.fillRect(x - 3, y1 - 2, 8, 2);
+    // Nested phases start at nearly the same time; push labels apart.
+    let ly = Math.min(Math.max(y0 + 9, L.top + 9), Math.max(y1 - 3, L.top + 9));
+    while (taken.some(v => Math.abs(v - ly) < 12)) ly += 12;
+    if (ly < L.h) {
+      taken.push(ly);
+      ctx.fillText(phase.name, x + 7, ly);
+    }
+  }
+  ctx.restore();
+}
+
+function drawRequests() {
+  const t0 = view.t0, tpp = view.tpp, vend = viewEnd();
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(L.reqX, L.top, L.reqW, L.ph);
+  ctx.clip();
+  // One pixel short, so that back-to-back requests stay apart; errors one pixel wider.
+  const bar = req => {
+    const pad = req.outcome === "err" ? 1 : 0;
+    ctx.fillRect(reqX(req) - pad, L.top + (req.s - t0) / tpp, req.w + 2 * pad,
+      Math.max(1.5 + pad, (req.e - req.s) / tpp - 1));
+  };
+  const bad = [], lit = [];
+  const seen = D.lanes.map(() => false);
+  // Greyed-out requests first, so that the matching ones stay on top.
+  ctx.fillStyle = DIMMED;
+  for (let i = lowerBound(D.S, t0 - D.maxdur); i < D.reqs.length; i++) {
+    const req = D.reqs[i];
+    if (req.s > vend) break;
+    if (req.e < t0) continue;
+    seen[req.k] = true;
+    if (req === hover) continue;
+    if (!req.match) bar(req);
+    else if (req.outcome === "err") bad.push(req);
+    else lit.push(req);
+  }
+  let last = "";
+  for (const req of lit) {
+    const color = shades(req.color)[req.shade];
+    if (color !== last) { ctx.fillStyle = color; last = color; }
+    bar(req);
+  }
+  ctx.fillStyle = BAD;
+  bad.forEach(bar);
+  if (hover) {
+    ctx.fillStyle = hover.outcome === "err" ? BAD_DARK : darken(hover.match ? hover.color : DIMMED);
+    bar(hover);
+  }
+  ctx.restore();
+  if (hidden.size) {
+    ctx.strokeStyle = GRID;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L.hiddenX - 0.5, L.top); ctx.lineTo(L.hiddenX - 0.5, L.h); ctx.stroke();
+  }
+
+  // An empty view has nothing to reflow to.
+  unseen = seen.includes(true) ? D.lanes.map((_, k) => k).filter(k => !seen[k]) : [];
+  reflowButton.disabled = !hidden.size && !unseen.length;
+}
+
+function drawMarks() {
+  if (!D.marks.length) return;
+  const vend = viewEnd();
+  ctx.font = LANE_FONT;
+  ctx.lineWidth = 1;
+  const visible = [];
+  for (const mark of D.marks) {
+    if (mark.at < view.t0 || mark.at > vend) continue;
+    const y = Math.round(yOf(mark.at)) + 0.5;
+    if (y < L.top) continue;
+    if (marksBox.checked) {
+      ctx.strokeStyle = rgba(MUTED, 0.28);
+      ctx.beginPath(); ctx.moveTo(L.markX, y); ctx.lineTo(L.w, y); ctx.stroke();
+    }
+    ctx.strokeStyle = INK2;
+    ctx.beginPath(); ctx.moveTo(L.markX + 2, y); ctx.lineTo(L.markX + W_MARK - 4, y); ctx.stroke();
+    visible.push({mark: mark, y: y});
+  }
+  if (!marksBox.checked) return;
+  // Marks crowd together zoomed out; the earlier one keeps the slot.
+  const taken = [];
+  for (const v of visible) {
+    if (taken.some(y => Math.abs(y - v.y) < 12)) continue;
+    taken.push(v.y);
+    const label = v.mark.text.length > 64 ? v.mark.text.slice(0, 63) + "…" : v.mark.text;
+    ctx.fillStyle = INK2;
+    ctx.fillText(label, L.reqX + 4, v.y);
+  }
+}
+
+function drawSeries(s, x0) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, L.top, W_SIDE, L.ph);
+  ctx.clip();
+  ctx.strokeStyle = GRID;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0 + 0.5, L.top); ctx.lineTo(x0 + 0.5, L.h); ctx.stroke();
+
+  const max = s.max || 1;
+  const i0 = Math.max(0, Math.floor(view.t0 / s.bin));
+  const i1 = Math.min(s.v.length - 1, Math.ceil(viewEnd() / s.bin));
+  if (i1 >= i0) {
+    ctx.beginPath();
+    ctx.moveTo(x0, yOf(i0 * s.bin));
+    for (let i = i0; i <= i1; i++) {
+      const x = x0 + (s.v[i] / max) * (W_SIDE - 2);
+      ctx.lineTo(x, yOf(i * s.bin));
+      ctx.lineTo(x, yOf((i + 1) * s.bin));
+    }
+    ctx.lineTo(x0, yOf((i1 + 1) * s.bin));
+    ctx.closePath();
+    ctx.fillStyle = rgba(INK2, 0.22);
+    ctx.fill();
+    ctx.strokeStyle = INK2;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSelection() {
+  if (!selecting()) return;
+  const [a, b] = selection();
+  const y0 = Math.max(yOf(a), L.top), y1 = yOf(b);
+  ctx.fillStyle = rgba(INK, 0.08);
+  ctx.fillRect(W_RULER, y0, L.w - W_RULER, y1 - y0);
+  ctx.strokeStyle = rgba(INK, 0.5);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const y of [y0, y1]) { ctx.moveTo(W_RULER, Math.round(y) + 0.5); ctx.lineTo(L.w, Math.round(y) + 0.5); }
+  ctx.stroke();
+}
+
+function drawCrosshair() {
+  if (!mouse || mouse.y < L.top) return;
+  const y = Math.round(mouse.y) + 0.5;
+  ctx.strokeStyle = rgba(INK, 0.22);
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(W_RULER, y); ctx.lineTo(L.w, y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = LANE_FONT;
+  ctx.fillStyle = SURFACE;
+  ctx.fillRect(0, y - 7, W_RULER - 6, 14);
+  ctx.fillStyle = INK;
+  ctx.textAlign = "right";
+  ctx.fillText(fmtMs(tOf(mouse.y)), W_RULER - 8, y);
+  ctx.textAlign = "left";
+}
+
+// ---------- hit testing ----------
+
+function lowerBound(arr, t) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < t) lo = mid + 1; else hi = mid;
+  }
+  return lo;
+}
+
+function hitReq(mx, my) {
+  if (my < L.top || mx < L.reqX || mx >= L.reqX + L.reqW) return null;
+  const t = tOf(my), tol = HIT_R * view.tpp;
+  let best = null, bestDist = HIT_R;
+  for (let i = lowerBound(D.S, t - D.maxdur - tol); i < D.reqs.length; i++) {
+    const req = D.reqs[i];
+    if (req.s > t + tol) break;
+    if (req.e + tol < t) continue;
+    const x = reqX(req), y0 = yOf(req.s), y1 = Math.max(yOf(req.e), y0 + 1.5);
+    const dist = Math.hypot(Math.max(x - mx, 0, mx - x - req.w), Math.max(y0 - my, 0, my - y1));
+    if (dist < bestDist) { bestDist = dist; best = req; }
+  }
+  return best;
+}
+
+const inSide = (key, mx) => L.side[key] !== undefined && mx >= L.side[key] && mx < L.side[key] + W_SIDE;
+
+function hitLane(mx) {
+  return L.laneX.findIndex((x, i) => !hidden.has(i) && mx >= x && mx < x + L.laneW[i]);
+}
+
+function hit(mx, my) {
+  if (my < L.top) return headTip(mx);
+  const t = tOf(my);
+  if (D.marks.length && mx >= L.markX && mx < L.reqX) {
+    let best = null, bestDy = 5;
+    for (const mark of D.marks) {
+      const dy = Math.abs(yOf(mark.at) - my);
+      if (dy < bestDy) { bestDy = dy; best = mark; }
+    }
+    if (best) {
+      return "<b>" + esc(best.text) + "</b>\n<span class=k>t</span> " +
+        fmtMs(best.at) + " ms";
+    }
+  }
+  if (mx >= L.phaseX && mx < L.markX) {
+    let best = null;
+    for (const phase of D.phases) {
+      if (t < phase.s || t > phase.e) continue;
+      if (!best || phase.depth > best.depth) best = phase;
+    }
+    if (best) {
+      return "<b>phase " + esc(best.name) + "</b>\n" + times(best);
+    }
+  }
+  const at = "<span class=k>t</span> " + fmtMs(t) + " ms\n<span class=k>so far</span> ";
+  if (inSide("conc", mx)) {
+    return "<b>concurrency " + binAt(D.conc, t) + "</b>\n" + at +
+      fmtInt(lowerBound(D.hitS, t)) + " requests";
+  }
+  if (inSide("bw", mx)) {
+    const v = binAt(D.bw, t);
+    return "<b>" + (v / D.bw.bin).toFixed(1) + " MB/s</b>\n" + at +
+      fmtBytes(D.bw.sum[Math.min(Math.floor(t / D.bw.bin), D.bw.sum.length - 1)]) +
+      "\n<span class=k>bin</span> " + (v / 1e3).toFixed(1) + " kB / " + (D.bw.bin / 1e3) + " ms";
+  }
+  if (inSide("cpu", mx)) {
+    return "<b>" + binAt(D.cpu, t).toFixed(2) + " cores busy</b>\n" + at +
+      fmtTotalMs(D.cpu.used[lowerBound(D.cpu.at, t) - 1] ?? 0);
+  }
+  return null;
+}
+
+function headTip(mx) {
+  if (hidden.size && mx >= L.hiddenX && mx < L.hiddenX + W_HIDDEN) {
+    return 'press "reflow" again to expand';
+  }
+  const lane = hitLane(mx);
+  if (lane >= 0) {
+    const {node, self} = D.lanes[lane];
+    const action = self ? "\nclick to collapse" : node.children.length ? "\nclick to expand" : "";
+    return "<b>" + esc(node.key.slice(1) || "/") + (self ? "</b> (own requests)" : "</b>") + "\n" +
+      fmtInt(D.counts[lane]) + " requests, " + fmtBytes(D.bytes[lane]) + action;
+  }
+  const summary = (title, average, total) =>
+    title + "\n<span class=k>average</span> " + average + "\n<span class=k>total</span> " + total;
+  if (inSide("conc", mx)) {
+    return summary("<b>concurrency</b>: number of simultaneous requests",
+      (D.in_flight / D.t_max).toFixed(2),
+      fmtInt(D.hits.length) + " requests, " + fmtTotalMs(D.in_flight) + " in flight");
+  }
+  if (inSide("bw", mx)) {
+    return summary("<b>bandwidth</b>", (D.total_bytes / D.t_max).toFixed(1) + " MB/s",
+      fmtBytes(D.total_bytes));
+  }
+  if (inSide("cpu", mx)) {
+    return summary("<b>cpu utilization</b>", (D.cpu.total / D.t_max).toFixed(2) + " cores",
+      fmtTotalMs(D.cpu.total));
+  }
+  return null;
+}
+
+// Reflowing again to the same lanes would do nothing, so it toggles back.
+const reflowShowsAll = () =>
+  hidden.size > 0 && hidden.size === unseen.length && unseen.every(k => hidden.has(k));
+
+const binAt = (s, t) => s.v[Math.floor(t / s.bin)] ?? 0;
+
+const selecting = () => select !== null && mouse && Math.abs(yOf(select) - clampY(mouse.y)) >= 3;
+
+function selection() {
+  const t = tOf(clampY(mouse.y));
+  return select < t ? [select, t] : [t, select];
+}
+
+function selectionTip() {
+  const [a, b] = selection();
+  return "<b>" + fmtMs(b - a) + " ms</b>\n<span class=k>from</span> " + fmtMs(a) +
+    " ms  <span class=k>to</span> " + fmtMs(b) + " ms";
+}
+
+function reqTip(req) {
+  const section = req.spans?.length ? " <span class=k>#</span>" + esc(req.spans[0][0]) : "";
+  return "<b>#" + req.id + " " + esc(req.op) + "</b>" + section + "\n" + times(req) +
+    "<span class=k>range</span> " + fmtInt(req.off) + "<span class=k>…</span>" +
+    fmtInt(req.off + req.len) + "  <span class=k>size</span> " + fmtBytes(req.len) + "\n" + fileMap(req) + spanTip(req) +
+    (req.outcome === "ok" ? "" : "<span class=k>outcome</span> <b class=err>" + esc(req.outcome) + "</b>\n") +
+    "<span class=k>" + esc(req.path) + "</span>";
+}
+
+/** The file as a bar: sections dimmed, the requested range in full colour. */
+function fileMap(req) {
+  if (!req.len) return "";
+  const file = D.files.get(req.path);
+  const key = pathKey(req.path);
+  const own = colorOf(D.tree.byKey.get(key)) || MUTED;
+  const color = name => name === null ? own : colorOf(D.tree.byKey.get(key + "#" + name)) || own;
+  // Bytes `from..to` of the file stretched over `width` px.
+  const gradient = (from, to, width, tint) => "linear-gradient(to right," + file.strips
+    .map(strip => {
+      const px = offset => width * (Math.min(Math.max(offset, from), to) - from) / (to - from);
+      return tint(color(strip[0])) + " " + px(strip[1]) + "px " + px(strip[2]) + "px";
+    })
+    .join(",") + ")";
+  const width = Math.max(3, MAP_W * req.len / file.size);
+  const left = Math.min(MAP_W * req.off / file.size, MAP_W - width);
+  return "<div class=map style='width:" + MAP_W + "px;background:" +
+    gradient(0, file.size, MAP_W, c => mix(c, "#000000", 0.5)) + "'><i style='left:" +
+    left + "px;width:" + width + "px;background:" + gradient(req.off, req.off + req.len, width, c => c) +
+    "'></i></div>";
+}
+
+/** One `<section> <share>` per section the request touched, widest first. */
+function spanTip(req) {
+  if (!req.spans?.length) return "";
+  const total = Math.max(req.len, 1);
+  const parts = req.spans.map(([name, bytes]) => esc(name) + " " + fmtPct(bytes / total));
+  return "<span class=k>sections</span> " + parts.join("  ") + "\n";
+}
+
+function times(span) {
+  return "<span class=k>start</span> " + fmtMs(span.s) + " ms  " +
+    "<span class=k>end</span> " + fmtMs(span.e) + " ms  " +
+    "<span class=k>dur</span> " + fmtMs(span.e - span.s) + " ms\n";
+}
+
+// ---------- formatting ----------
+
+function fmtMs(us) {
+  const step = view.tpp / 1000;
+  const digits = step < 0.005 ? 4 : step < 0.05 ? 3 : step < 0.5 ? 2 : 1;
+  return (us / 1000).toFixed(digits);
+}
+
+function fmtPct(share) {
+  const pct = 100 * share;
+  return (pct >= 10 ? pct.toFixed(1) : pct.toFixed(2)) + "%";
+}
+
+function fmtTotalMs(us) {
+  return (us / 1000).toFixed(1) + " ms";
+}
+
+// Not `toLocaleString`: the output should not depend on the locale.
+function fmtInt(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function fmtBytes(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + " MB";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + " kB";
+  return n + " B";
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/'/g, "&#39;");
+}
+
+// ---------- events ----------
+
+cv.addEventListener("wheel", e => {
+  if (!D || !L) return;
+  e.preventDefault();
+  const px = e.deltaY * [1, 16, L.ph][e.deltaMode];
+  if (e.ctrlKey || e.metaKey) {
+    // A touchpad pinch arrives as ctrl+wheel with small deltas; clamp a mouse
+    // notch's large one so that both zoom at a usable pace.
+    const anchor = tOf(e.offsetY);
+    view.tpp *= Math.exp(0.01 * Math.min(Math.max(px, -40), 40));
+    clampView();
+    view.t0 = anchor - (e.offsetY - L.top) * view.tpp;
+    clampView();
+    refit = view.tpp >= fitTpp();
+  } else if (refit) {
+    // Nothing to scroll.
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      toastBox.classList.add("on");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastBox.classList.remove("on"), 1500);
+    }
+    return;
+  } else {
+    view.t0 += px * view.tpp;
+    clampView();
+  }
+  pointAt(e.offsetX, e.offsetY);
+}, {passive: false});
+
+cv.addEventListener("pointerdown", e => {
+  if (!D || !L || e.button !== 0) return;
+  if (e.offsetY < L.top) {
+    const lane = hitLane(e.offsetX);
+    if (lane >= 0) {
+      const {node, self} = D.lanes[lane];
+      // A node's own lane stands for the open node; collapsing it merges its children back.
+      if (self || node.children.length) toggle(node, e.shiftKey);
+      pointAt(e.offsetX, e.offsetY);
+    }
+    return;
+  }
+  select = tOf(e.offsetY);
+  pressed = hover;
+  cv.setPointerCapture(e.pointerId);
+  pointAt(e.offsetX, e.offsetY);
+});
+
+for (const type of ["pointerup", "pointercancel"]) {
+  cv.addEventListener(type, e => {
+    if (select === null) return;
+    const click = type === "pointerup" && pressed && !selecting();
+    select = null;
+    if (click) reveal(pressed);
+    pressed = null;
+    pointAt(e.offsetX, e.offsetY);
+  });
+}
+
+cv.addEventListener("pointermove", e => pointAt(e.offsetX, e.offsetY));
+
+cv.addEventListener("pointerleave", () => {
+  mouse = null;
+  hover = null;
+  tip.style.display = "none";
+  redraw();
+});
+
+function pointAt(x, y) {
+  if (!D || !L) return;
+  mouse = {x, y};
+  hover = select === null ? hitReq(x, y) : null;
+  const html = select !== null ? (selecting() ? selectionTip() : null) : hover ? reqTip(hover) : hit(x, y);
+  if (html === null) {
+    tip.style.display = "none";
+  } else {
+    tip.innerHTML = html;
+    tip.style.display = "block";
+    const r = stage.getBoundingClientRect();
+    tip.style.left = Math.max(4, Math.min(x + 16, r.width - tip.offsetWidth - 6)) + "px";
+    tip.style.top = Math.max(4, Math.min(y + 16, r.height - tip.offsetHeight - 6)) + "px";
+  }
+  redraw();
+}
+
+// The help text is the comment at the top of the file.
+document.getElementById("help").innerHTML = esc([...document.childNodes]
+  .find(node => node.nodeType === Node.COMMENT_NODE).data.trim())
+  .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+const rowNode = e => {
+  const row = e.target.closest(".row");
+  return row && D?.tree.byKey.get(row.dataset.key);
+};
+treeBox.addEventListener("click", e => {
+  const n = rowNode(e);
+  if (!n) return;
+  if (e.target.classList.contains("sw")) paint(n, n.color ? null : palette(Math.floor(Math.random() * 1e6)));
+  else toggle(n, e.shiftKey);
+});
+treeBox.addEventListener("contextmenu", e => {
+  const n = rowNode(e);
+  if (!n) return;
+  e.preventDefault();
+  openPalette(n, e.clientX, e.clientY);
+});
+palBox.addEventListener("click", e => {
+  const color = e.target.dataset.color;
+  if (color !== undefined && painting) paint(painting, color || null);
+  closePalette();
+});
+document.addEventListener("pointerdown", e => { if (painting && !palBox.contains(e.target)) closePalette(); });
+filterBox.addEventListener("input", () => { if (D) refilter(); });
+opsBox.addEventListener("change", e => {
+  const op = e.target.dataset.op;
+  if (e.target.checked) D.opsOn.add(op); else D.opsOn.delete(op);
+  refilter();
+});
+marksBox.addEventListener("change", redraw);
+reflowButton.addEventListener("click", () => {
+  hidden = new Set(reflowShowsAll() ? [] : unseen);
+  redraw();
+});
+document.getElementById("upload").addEventListener("click", () => document.getElementById("file").click());
+
+// By key position, so that other keyboard layouts work too.
+document.addEventListener("keydown", e => {
+  if (e.code === "Escape") closePalette();
+  if (e.ctrlKey || e.altKey || e.metaKey || e.repeat || e.target instanceof HTMLInputElement) return;
+  if (e.code === "Slash") {
+    e.preventDefault();
+    filterBox.focus();
+    return;
+  }
+  const id = {KeyF: "reflow", KeyM: "marks", KeyO: "url", KeyU: "upload"}[e.code];
+  if (!id) return;
+  e.preventDefault();
+  document.getElementById(id).click();
+});
+window.addEventListener("resize", redraw);
+
+document.getElementById("file").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (file) loadTrace(file.name, () => file.text(), "");
+});
+
+document.addEventListener("dragover", e => {
+  e.preventDefault();
+  document.body.classList.add("over");
+});
+
+document.addEventListener("dragleave", e => {
+  if (e.relatedTarget === null) document.body.classList.remove("over");
+});
+
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  document.body.classList.remove("over");
+  const file = e.dataTransfer.files[0];
+  if (file) loadTrace(file.name, () => file.text(), "");
+});
+
+document.getElementById("url").addEventListener("click", () => {
+  const url = prompt("trace URL");
+  if (url) loadUrl(url);
+});
+
+window.addEventListener("hashchange", loadHash);
+
+// ---------- init ----------
+
+// Not decoded, so the URL may keep its own `&` and `%XX`.
+function loadHash() {
+  const url = location.hash.match(/^#load=(.+)/)?.[1];
+  if (url) loadUrl(url);
+}
+
+function loadUrl(url) {
+  loadTrace(url.split("/").pop(), () => fetchText(url), "#load=" + url);
+}
+
+const setHash = hash => history.replaceState(null, "", location.pathname + location.search + hash);
+
+async function fetchText(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  return resp.text();
+}
+
+let loads = 0;
+
+async function loadTrace(name, text, hash) {
+  const load = ++loads;
+  let trace;
+  try {
+    trace = build(await text(), name.replace(/\.jsonl$/, ""));
+  } catch (err) {
+    if (load !== loads) return;
+    note.textContent = name + ": " + err.message;
+    if (D) setHash(D.hash);
+    return;
+  }
+  if (load !== loads) return;
+  D = trace;
+  D.hash = hash;
+  setHash(hash);
+  document.title = D.name + " — uio trace";
+  document.getElementById("drop").classList.add("gone");
+  document.getElementById("marksLabel").classList.toggle("off", !D.marks.length);
+  note.textContent = [
+    D.dropped && D.dropped + " events dropped",
+    D.bad && D.bad + " unparsed lines",
+  ].filter(Boolean).join(" · ");
+  picked = null;
+  closePalette();
+  recolor();
+  renderOps();
+  refilter();
+  autoOpen();
+  relane();
+  fit();
+}
+
+loadHash();
+</script>
+</body>
+</html>

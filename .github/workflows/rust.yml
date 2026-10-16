@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ '**' ]
 
+concurrency:
+  # Pushes to dev/master get a unique group and always run to completion
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -13,37 +18,85 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  select-packages:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.select.outputs.packages }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # PRs check out the merge commit, whose first parent is the base branch
+        fetch-depth: 2
+    - name: Select affected packages
+      id: select
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          packages=$(python3 tools/ci/affected_packages.py HEAD^1)
+        else
+          packages=--workspace
+        fi
+        echo "Selected: ${packages:-<none>}"
+        echo "packages=$packages" >> "$GITHUB_OUTPUT"
+
   rust-tests:
+    needs: select-packages
+    if: needs.select-packages.outputs.packages != ''
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest ]
+        # Each OS runs its tests on two runners; each builds the tests and runs half of them
+        partition: [ 1, 2 ]
 
     steps:
+    # The windows-latest image has only the slow C: drive. A ReFS Dev Drive holds the temp files the
+    # tests write. The target directory stays in the workspace, where rust-cache can cache it.
+    - name: Set up Dev Drive
+      if: matrix.os == 'windows-latest'
+      uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+      with:
+        drive-size: 50GB
+        trusted-dev-drive: true
+        env-mapping: |
+          TMP,{{ DEV_DRIVE }}/tmp
+          TEMP,{{ DEV_DRIVE }}/tmp
+    - name: Create temp directory on Dev Drive
+      if: matrix.os == 'windows-latest'
+      run: mkdir -p "$TMP"
+      shell: bash
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      with:
-        # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
-        save-if: ${{ github.ref == 'refs/heads/dev' }}
-    - name: Install Protoc
-      uses: ./.github/actions/setup-protoc
-    - name: Install mold
-      uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
-    - name: Enable mold on Linux
+    # Before rust-cache, so the linker config and CARGO_PROFILE_DEV_DEBUG are part of the cache key
+    - name: Configure linker (mold on Linux, rust-lld on Windows)
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           mkdir .cargo
           echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
           echo "linker = \"clang\"" >> .cargo/config.toml
           echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+        elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          mkdir .cargo
+          echo "[target.x86_64-pc-windows-msvc]" >> .cargo/config.toml
+          echo "linker = \"rust-lld.exe\"" >> .cargo/config.toml
+          # No debug info: MSVC writes a PDB per test binary, which slows linking. Panic messages
+          # keep their file:line; only backtraces lose line numbers.
+          echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
         fi
       shell: bash
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      with:
+        # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget.
+        # Both partitions build the same thing, so one of them saves it.
+        save-if: ${{ github.ref == 'refs/heads/dev' && matrix.partition == 1 }}
+    - name: Install Protoc
+      uses: ./.github/actions/setup-protoc
+    - name: Install mold
+      uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
     - name: Install nextest
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
-      run: cargo build --workspace --tests --locked
+      run: cargo build ${{ needs.select-packages.outputs.packages }} --tests --locked
     # `/dev/shm` is tmpfs. The `model_testing` harness gates preallocate 32 MB gridstore pages
     # per storage per segment and peak around 4.5 GB across the five of them, so on a disk-backed
     # temp dir they are dominated by IO. Linux only: macOS and Windows have no `/dev/shm`.
@@ -52,12 +105,12 @@ jobs:
       run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
       shell: bash
     - name: Run tests
-      # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --profile ci --locked
+      # Profile "ci" is configured in .config/nextest.toml. A small PR can leave a partition without tests.
+      run: cargo nextest run ${{ needs.select-packages.outputs.packages }} --profile ci --locked --partition count:${{ matrix.partition }}/2 --no-tests=warn
     - name: Upload test report
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: junit-${{ matrix.os }}.xml
+        name: junit-${{ matrix.os }}-${{ matrix.partition }}.xml
         path: target/nextest/ci/junit.xml
 
   # After tests are run, this hacky script will process the JUnit output of nextest
@@ -72,11 +125,12 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest, macos-latest  ]
+        partition: [ 1, 2 ]
     steps:
       - name: Download test report
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: junit-${{ matrix.os }}.xml
+          name: junit-${{ matrix.os }}-${{ matrix.partition }}.xml
       - name: Process test report
         id: process-test-report
         run: |

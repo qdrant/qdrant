@@ -9,9 +9,11 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
-use crate::types::{Filter, QuantizationSearchParams, SearchParams};
+use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, QuantizationSearchParams, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
 use crate::vector_storage::{RawScorerBuilder, VectorStorageRead};
 
@@ -79,7 +81,14 @@ where
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
-                    self.search_vectors_with_graph(vectors, None, top, params, query_context)
+                    self.search_vectors_with_graph(
+                        vectors,
+                        None,
+                        top,
+                        params,
+                        SearchAlgorithm::Hnsw,
+                        query_context,
+                    )
                 }
             }
             Some(query_filter) => {
@@ -89,14 +98,11 @@ where
 
                 let available_vector_count = self.vector_storage.available_vector_count();
 
-                let hw_counter = query_context.hardware_counter();
-
                 // Estimated once for every strategy below: for a filter whose conditions
                 // resolve ids (`has_id`), the estimation performs the external->internal
                 // resolution, and the plain search reuses the resolved offsets.
-                let query_point_cardinality = self
-                    .payload_index
-                    .estimate_cardinality(query_filter, &hw_counter)?;
+                let query_point_cardinality =
+                    self.payload_index.estimate_cardinality(query_filter)?;
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
@@ -139,11 +145,10 @@ where
 
                 if query_cardinality.min > self.config.full_scan_threshold {
                     // if cardinality is high enough - use HNSW index
-                    let _timer =
-                        ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    return self.search_vectors_with_graph(
+                    return self.search_vectors_with_graph_filtered(
                         vectors,
-                        filter,
+                        query_filter,
+                        &query_cardinality,
                         top,
                         params,
                         query_context,
@@ -154,9 +159,7 @@ where
                 // The filter context's lifetime is tied to the payload view, which is already
                 // held by this read view.
                 let use_graph = {
-                    let filter_context = self
-                        .payload_index
-                        .filter_context(query_filter, &hw_counter)?;
+                    let filter_context = self.payload_index.filter_context(query_filter)?;
                     sample_check_cardinality(
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),
@@ -168,9 +171,14 @@ where
 
                 if use_graph {
                     // if cardinality is high enough - use HNSW index
-                    let _timer =
-                        ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    self.search_vectors_with_graph(vectors, filter, top, params, query_context)
+                    self.search_vectors_with_graph_filtered(
+                        vectors,
+                        query_filter,
+                        &query_cardinality,
+                        top,
+                        params,
+                        query_context,
+                    )
                 } else {
                     // if cardinality is small - use plain index
                     let _timer =
@@ -185,6 +193,68 @@ where
                     )
                 }
             }
+        }
+    }
+
+    /// Filtered graph search, timed under the counter of the algorithm it runs.
+    fn search_vectors_with_graph_filtered(
+        &self,
+        vectors: &[&QueryVector],
+        filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+        query_context: &VectorQueryContext,
+    ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let algorithm = self.filtered_graph_algorithm(query_cardinality, params);
+        let _timer = ScopeDurationMeasurer::new(match algorithm {
+            SearchAlgorithm::Hnsw | SearchAlgorithm::PathSeer => {
+                &self.searches_telemetry.large_cardinality
+            }
+            SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
+        });
+        self.search_vectors_with_graph(vectors, Some(filter), top, params, algorithm, query_context)
+    }
+
+    /// PathSeer takes precedence over ACORN; ACORN needs a selective filter.
+    fn filtered_graph_algorithm(
+        &self,
+        query_cardinality: &CardinalityEstimation,
+        params: Option<&SearchParams>,
+    ) -> SearchAlgorithm {
+        if self.config.m0 != 0
+            && params
+                .and_then(|params| params.pathseer)
+                .is_some_and(|pathseer| pathseer.enable)
+        {
+            return SearchAlgorithm::PathSeer;
+        }
+
+        let Some(acorn) = params.and_then(|params| params.acorn) else {
+            return SearchAlgorithm::Hnsw;
+        };
+        if !acorn.enable || self.config.m0 == 0 {
+            return SearchAlgorithm::Hnsw;
+        }
+        // NOTE: technically we also might want to use ACORN for unfiltered
+        // searches for segments with a lot of deleted points. But in
+        // practice, such segments most likely to be picked by an optimizer
+        // soon.
+
+        let available_vector_count = self.vector_storage.available_vector_count();
+        let selectivity = if available_vector_count == 0 {
+            1.0
+        } else {
+            query_cardinality.exp as f64 / available_vector_count as f64
+        };
+
+        let max_selectivity = acorn
+            .max_selectivity
+            .map_or(ACORN_MAX_SELECTIVITY_DEFAULT, |v| *v);
+        if selectivity <= max_selectivity {
+            SearchAlgorithm::Acorn
+        } else {
+            SearchAlgorithm::Hnsw
         }
     }
 }

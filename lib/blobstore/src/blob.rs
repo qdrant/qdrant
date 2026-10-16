@@ -1,9 +1,15 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-pub trait Blob {
+use crate::Result;
+use crate::error::BlobstoreError;
+
+pub trait Blob: Sized {
     fn to_bytes(&self) -> Vec<u8>;
 
-    fn from_bytes(bytes: &[u8]) -> Self;
+    /// Decode a value from its bytes.
+    ///
+    /// Stored bytes may be corrupt, so this must return an error rather than panic.
+    fn from_bytes(bytes: &[u8]) -> Result<Self>;
 }
 
 impl Blob for Vec<u8> {
@@ -11,8 +17,8 @@ impl Blob for Vec<u8> {
         self.clone()
     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        bytes.to_vec()
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Ok(bytes.to_vec())
     }
 }
 
@@ -21,8 +27,12 @@ impl Blob for Vec<ecow::EcoString> {
         serde_cbor::to_vec(self).expect("Failed to serialize Vec<ecow::EcoString>")
     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        serde_cbor::from_slice(bytes).expect("Failed to deserialize Vec<ecow::EcoString>")
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        serde_cbor::from_slice(bytes).map_err(|err| {
+            BlobstoreError::decode_error(format!(
+                "Failed to deserialize Vec<ecow::EcoString>: {err}"
+            ))
+        })
     }
 }
 
@@ -33,12 +43,14 @@ impl Blob for Vec<(f64, f64)> {
             .collect()
     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        assert!(
-            bytes.len().is_multiple_of(size_of::<f64>() * 2),
-            "unexpected number of bytes for Vec<(f64, f64)>",
-        );
-        bytes
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if !bytes.len().is_multiple_of(size_of::<f64>() * 2) {
+            return Err(BlobstoreError::decode_error(format!(
+                "unexpected number of bytes for Vec<(f64, f64)>: {}",
+                bytes.len(),
+            )));
+        }
+        Ok(bytes
             .chunks(size_of::<f64>() * 2)
             .map(|v| {
                 let (a, b) = v.split_at(size_of::<f64>());
@@ -47,7 +59,7 @@ impl Blob for Vec<(f64, f64)> {
                     f64::read_from_bytes(b).expect("invalid number of bytes for type f64"),
                 )
             })
-            .collect()
+            .collect())
     }
 }
 
@@ -64,16 +76,18 @@ macro_rules! impl_blob_vec_zerocopy {
                     .collect()
             }
 
-            fn from_bytes(bytes: &[u8]) -> Self {
-                assert!(
-                    bytes.len().is_multiple_of(size_of::<$type>()),
-                    "unexpected number of bytes for Vec<{}>",
-                    stringify!($type),
-                );
-                bytes
+            fn from_bytes(bytes: &[u8]) -> Result<Self> {
+                if !bytes.len().is_multiple_of(size_of::<$type>()) {
+                    return Err(BlobstoreError::decode_error(format!(
+                        "unexpected number of bytes for Vec<{}>: {}",
+                        stringify!($type),
+                        bytes.len(),
+                    )));
+                }
+                Ok(bytes
                     .chunks(size_of::<$type>())
                     .map(|v| <$type>::read_from_bytes(v).expect("invalid chunk size for type T"))
-                    .collect()
+                    .collect())
             }
         }
     };

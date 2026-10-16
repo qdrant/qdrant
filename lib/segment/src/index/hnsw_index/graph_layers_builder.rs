@@ -10,7 +10,7 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, atomic_save_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::MmapFs;
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::distr::Uniform;
 use rand::{Rng, RngExt};
 
@@ -214,7 +214,7 @@ impl GraphLayersBuilder {
         self,
         path: &Path,
         format_param: GraphLinksFormatParam,
-        on_disk: bool,
+        cold: bool,
     ) -> OperationResult<GraphLayers> {
         let links_path = GraphLayers::get_links_path(path, format_param.as_format());
 
@@ -227,7 +227,7 @@ impl GraphLayersBuilder {
         // pre-populate the page cache (cheap: the pages were just written).
         // Never pin the links in heap here, so that the just-built index has
         // the same, single-copy residency as one loaded from disk.
-        let residency = if on_disk {
+        let residency = if cold {
             GraphLinksResidency::Cold
         } else {
             GraphLinksResidency::Cached
@@ -346,40 +346,74 @@ impl GraphLayersBuilder {
     }
 
     pub fn merge_from_other(&mut self, other: GraphLayersBuilder) {
-        self.max_level = AtomicUsize::new(max(
-            self.max_level.load(std::sync::atomic::Ordering::Relaxed),
-            other.max_level.load(std::sync::atomic::Ordering::Relaxed),
-        ));
+        self.max_level.fetch_max(
+            other.max_level.into_inner(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let mut visited_list = self.visited_pool.get(self.num_points());
         if other.links_layers.len() > self.links_layers.len() {
             self.links_layers
                 .resize_with(other.links_layers.len(), Vec::new);
         }
         for (point_id, layers) in other.links_layers.into_iter().enumerate() {
-            let current_layers = &mut self.links_layers[point_id];
-            for (level, other_links) in layers.into_iter().enumerate() {
-                if current_layers.len() <= level {
-                    current_layers.push(other_links);
-                } else {
-                    let other_links = other_links.into_inner();
-                    visited_list.next_iteration();
-                    let mut current_links = current_layers[level].write();
-                    current_links.iter().for_each(|x| {
-                        visited_list.check_and_update_visited(x);
-                    });
-                    for other_link in other_links
-                        .into_vec()
-                        .into_iter()
-                        .filter(|x| !visited_list.check_and_update_visited(*x))
-                    {
-                        current_links.push(other_link);
+            Self::merge_point_links(
+                &mut self.links_layers[point_id],
+                layers.into_iter().map(RwLock::into_inner),
+                &mut visited_list,
+            );
+        }
+        self.entry_points
+            .get_mut()
+            .merge_from_other(other.entry_points.into_inner());
+    }
+
+    /// Append `other_layers` to one point's `current_layers`, skipping links it already has.
+    fn merge_point_links(
+        current_layers: &mut LockedLayersContainer,
+        other_layers: impl IntoIterator<Item = LinksContainer>,
+        visited_list: &mut VisitedListHandle,
+    ) {
+        for (level, other_links) in other_layers.into_iter().enumerate() {
+            if current_layers.len() <= level {
+                current_layers.push(RwLock::new(other_links));
+                continue;
+            }
+            visited_list.next_iteration();
+            let current_links = current_layers[level].get_mut();
+            current_links.iter().for_each(|x| {
+                visited_list.check_and_update_visited(x);
+            });
+            for other_link in other_links.into_vec() {
+                if !visited_list.check_and_update_visited(other_link) {
+                    current_links.push(other_link);
+                }
+            }
+        }
+    }
+
+    /// Merge the links of a payload block built in its own id space: `block` numbers the
+    /// block's points `0..to_global.len()`, and `to_global` maps them to segment ids.
+    ///
+    /// Same result as merging a segment-sized builder with [`Self::merge_from_other`], but visits
+    /// only the block's points.
+    pub fn merge_block(&mut self, block: GraphLayersBuilder, to_global: &[PointOffsetType]) {
+        debug_assert_eq!(block.links_layers.len(), to_global.len());
+        for (local_id, layers) in block.links_layers.into_iter().enumerate() {
+            let current_layers = &mut self.links_layers[to_global[local_id] as usize];
+            for (level, block_links) in layers.into_iter().enumerate() {
+                let current_links = current_layers[level].get_mut();
+                for local_link in block_links.into_inner().into_vec() {
+                    let link = to_global[local_link as usize];
+                    // A point holds a few dozen links at most, so a scan is cheap.
+                    if !current_links.links().contains(&link) {
+                        current_links.push(link);
                     }
                 }
             }
         }
         self.entry_points
-            .lock()
-            .merge_from_other(other.entry_points.into_inner());
+            .get_mut()
+            .merge_translated(block.entry_points.into_inner(), to_global);
     }
 
     fn num_points(&self) -> usize {
@@ -509,6 +543,24 @@ impl GraphLayersBuilder {
             .new_point(point_id, level, |_| true);
     }
 
+    /// Links of a point on a level, including links to points that are not marked ready.
+    pub(crate) fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> RwLockReadGuard<'_, LinksContainer> {
+        self.links_layers[point_id as usize][level].read()
+    }
+
+    /// Links of a point on a level, to change.
+    pub(crate) fn links_mut(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> RwLockWriteGuard<'_, LinksContainer> {
+        self.links_layers[point_id as usize][level].write()
+    }
+
     /// Link a new point on a specific level.
     /// Returns an entry point for the level below.
     fn link_new_point_on_level(
@@ -520,7 +572,7 @@ impl GraphLayersBuilder {
     ) -> ScoredPointOffset {
         let nearest = self
             .search_on_level(
-                level_entry,
+                &[level_entry],
                 curr_level,
                 self.ef_construct,
                 points_scorer,
@@ -615,6 +667,7 @@ impl GraphLayersBuilder {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -685,6 +738,7 @@ mod tests {
             (0..(num_vectors as PointOffsetType))
                 .into_par_iter()
                 .for_each(|idx| {
+                    let _scope = ambient::test_guard();
                     let scorer = vector_holder.internal_scorer(idx);
                     graph_layers.link_new_point(idx, scorer);
                 });
@@ -724,6 +778,7 @@ mod tests {
             graph_layers.set_levels(idx, level);
         }
 
+        let _scope = ambient::test_guard();
         for idx in 0..(num_vectors as PointOffsetType) {
             let scorer = vector_holder.internal_scorer(idx);
             graph_layers.link_new_point(idx, scorer);
@@ -787,10 +842,11 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
+        let _scope = ambient::test_guard();
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
-            let score = scorer.score_point(idx);
+            let score = scorer.score_point(idx).unwrap();
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
@@ -806,7 +862,7 @@ mod tests {
                 ef,
                 SearchAlgorithm::Hnsw,
                 &mut scorer,
-                graph.unfiltered_entry_point(),
+                &graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();
@@ -852,12 +908,12 @@ mod tests {
 
         assert_eq!(orig_len, builder_len);
 
-        for idx in 0..builder_len {
+        for (idx, layers) in graph_layers_builder.links_layers.iter().enumerate() {
             let links_orig = &graph_layers_orig
                 .links
                 .links(idx as PointOffsetType, 0)
                 .collect_vec();
-            let links_builder = graph_layers_builder.links_layers[idx][0].read();
+            let links_builder = layers[0].read();
             let link_container_from_builder = links_builder.links().to_vec();
             let m = match format {
                 GraphLinksFormat::Plain => 0,
@@ -900,10 +956,11 @@ mod tests {
 
         let top = 5;
         let query = random_vector(&mut rng, dim);
+        let _scope = ambient::test_guard();
         let scorer = vector_holder.scorer(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
         for idx in 0..vector_holder.storage().total_vector_count() as PointOffsetType {
-            let score = scorer.score_point(idx);
+            let score = scorer.score_point(idx).unwrap();
             reference_top.push(ScoredPointOffset { idx, score });
         }
 
@@ -919,7 +976,7 @@ mod tests {
                 ef,
                 SearchAlgorithm::Hnsw,
                 &mut scorer,
-                graph.unfiltered_entry_point(),
+                &graph.unfiltered_entry_point(),
                 &DEFAULT_STOPPED,
             )
             .unwrap();
@@ -948,6 +1005,7 @@ mod tests {
         );
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, HnswM::new2(M), EF_CONSTRUCT, 10, USE_HEURISTIC);
+        let _scope = ambient::test_guard();
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let scorer = vector_holder.internal_scorer(idx);
             let level = graph_layers_builder.get_random_layer(&mut rng);

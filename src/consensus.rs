@@ -90,7 +90,12 @@ impl Consensus {
     ) -> anyhow::Result<JoinHandle<std::io::Result<()>>> {
         let tls_client_config = helpers::load_tls_client_config(&settings)?;
 
-        let p2p_host = settings.service.host.clone();
+        let p2p_host = settings
+            .cluster
+            .p2p
+            .host
+            .clone()
+            .unwrap_or_else(|| settings.service.host.clone());
         let p2p_port = settings.cluster.p2p.port.expect("P2P port is not set");
         let config = settings.cluster.consensus.clone();
 
@@ -1719,6 +1724,7 @@ mod tests {
                                 strict_mode_config: None,
                                 uuid: None,
                                 metadata: None,
+                                created_at: None,
                             },
                         )
                         .unwrap(),

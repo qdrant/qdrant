@@ -7,7 +7,7 @@ use collection::shards::shard::PeerId;
 use self::alias_mapping::AliasMapping;
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
-use self::consensus_state_machine::NodeContext;
+use self::consensus_state_machine::{Action, NodeContext};
 use self::errors::StorageError;
 use crate::quota::QuotaConfig;
 
@@ -210,6 +210,9 @@ pub mod consensus_ops {
 /// Collection container abstraction for consensus
 /// Used to mock ToC in consensus state tests
 pub trait CollectionContainer {
+    /// Apply one collection action produced by the consensus state machine
+    fn apply_action(&self, action: Action) -> Result<(), StorageError>;
+
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,

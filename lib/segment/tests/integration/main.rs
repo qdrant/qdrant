@@ -1,6 +1,7 @@
 #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
 mod batch_search_test;
+mod bm25_compare;
 mod byte_storage_hnsw_test;
 mod byte_storage_quantization_test;
 mod disbalanced_vectors_test;
@@ -11,6 +12,7 @@ mod filtrable_hnsw_test;
 mod fixtures;
 #[cfg(feature = "gpu")]
 mod gpu_hnsw_test;
+mod graph_inline_storage_test;
 mod hnsw_discover_test;
 mod hnsw_incremental_build;
 mod hnsw_quantized_search_test;
@@ -26,4 +28,7 @@ mod segment_tests;
 mod sparse_discover_test;
 mod sparse_idf_corpus_test;
 mod sparse_vector_index_search_tests;
+mod tenant_graph_test;
+mod text_bm25_test;
+mod text_statistics_test;
 mod unindexed_text_match_test;

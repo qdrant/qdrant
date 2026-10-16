@@ -1,7 +1,8 @@
 use std::cmp;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient;
+use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
@@ -45,6 +46,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if searches.is_empty() {
             return Ok(Vec::new());
         }
@@ -53,7 +55,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             searches,
             DEFAULT_FULL_SCAN_THRESHOLD,
             self.is_stopped.clone(),
-            HwMeasurementAcc::disposable_edge(),
             |vector_name| {
                 self.config
                     .sparse_vectors
@@ -172,9 +173,9 @@ fn postprocess_scores(
 
 /// Fill a [`QueryContext`] from a pre-collected snapshot of read handles.
 ///
-/// Read-handle equivalent of [`shard::query::query_context::fill_query_context`], which is hard-typed
-/// to a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
-fn fill_query_context_over<H: ReadSegmentHandle>(
+/// Sequential read-handle equivalent of `SegmentsSearcher::fill_query_context`, which
+/// fans out over a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
+pub(super) fn fill_query_context_over<H: ReadSegmentHandle>(
     mut query_context: QueryContext,
     segments: &[H],
     is_stopped: &AtomicBool,

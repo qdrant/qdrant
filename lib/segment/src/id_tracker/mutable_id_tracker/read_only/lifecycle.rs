@@ -6,15 +6,33 @@ use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkNotFound, OpenOptions, Populate, UniversalRead, UniversalReadFs,
 };
+use futures::lock::Mutex;
 
-use super::ReadOnlyAppendableIdTracker;
+use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
-use crate::id_tracker::mutable_id_tracker::versions_storage::versions_path;
+use crate::id_tracker::mutable_id_tracker::update_only::PendingInsert;
+use crate::id_tracker::mutable_id_tracker::versions_storage::{
+    VERSION_ELEMENT_SIZE, versions_path,
+};
 use crate::id_tracker::point_mappings::PointMappings;
-use crate::types::PointIdType;
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
+    /// The versions file: its size is the writer's commit mark.
+    pub fn commit_mark_path(segment_path: &Path) -> Option<PathBuf> {
+        Some(versions_path(segment_path))
+    }
+
+    /// Exclusive offset bound of committed points, from the versions file's size
+    /// in `fs`'s snapshot. `None` if the snapshot has no versions file.
+    pub fn max_committed_offset(
+        fs: &impl CachedReadFs,
+        segment_path: &Path,
+    ) -> Option<PointOffsetType> {
+        fs.cached_file_info(&versions_path(segment_path))
+            .map(|info| (info.size / VERSION_ELEMENT_SIZE) as PointOffsetType)
+    }
+
     pub(super) fn open_options() -> OpenOptions {
         OpenOptions {
             writeable: false,
@@ -55,6 +73,15 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
+        Self::open_capped(fs, segment_path, deferred_internal_id, None)
+    }
+
+    pub fn open_capped(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: impl Into<PathBuf>,
+        deferred_internal_id: Option<PointOffsetType>,
+        max_committed_offset: Option<PointOffsetType>,
+    ) -> OperationResult<Self> {
         // The bootstrap below opens through the raw fs passed here, bypassing
         // any prefetch pool. Later reloads open through the fs their caller
         // provides instead (typically a caching wrapper with a fresh snapshot).
@@ -68,17 +95,21 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 Default::default(),
                 deferred_internal_id,
             ),
-            pending_inserts: Default::default(),
+            unversioned_inserts: Default::default(),
+            staged_inserts: Default::default(),
             max_claimed_internal_id: None,
             mappings_read_to: 0,
             // Opened lazily by `live_reload`: the files may not exist until the writer flushes.
-            mappings_file: None,
-            versions_file: None,
+            files: Mutex::new(TrackerFiles {
+                mappings: None,
+                versions: None,
+            }),
         };
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
         // delta (the whole committed set as inserts) is irrelevant for an initial open.
-        tracker.live_reload(fs)?;
+        tracker.live_reload(fs, max_committed_offset)?;
+        tracker.publish_staged();
 
         #[cfg(debug_assertions)]
         tracker.mappings.assert_mappings();
@@ -104,13 +135,21 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         self.max_claimed_internal_id
     }
 
-    /// External ids the mappings log has inserted whose slots the versions array does not cover, in
+    /// Points whose last insert in the mappings log the versions array does not cover yet, in
     /// arbitrary order.
     ///
-    /// Each is a point this view withholds because its data may be half-written. A writer resuming
-    /// from this view retires them.
-    pub fn pending_inserts(&self) -> impl Iterator<Item = PointIdType> + '_ {
-        self.pending_inserts.keys().copied()
+    /// This view withholds the new slot of each, but keeps serving its committed slots.
+    pub fn pending_inserts(&self) -> impl Iterator<Item = PendingInsert> + '_ {
+        self.unversioned_inserts
+            .keys()
+            .map(|&external_id| PendingInsert {
+                external_id,
+                // A staged insert is complete and supersedes the linked heads.
+                committed_slots: match self.staged_inserts.get(&external_id) {
+                    Some(&staged) => vec![staged],
+                    None => self.mappings.heads(&external_id).collect(),
+                },
+            })
     }
 
     /// Open the file at `path` read-only, returning `None` if it does not exist.

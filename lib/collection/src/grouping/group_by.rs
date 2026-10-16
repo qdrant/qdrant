@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use ahash::AHashMap;
 use api::rest::{BaseGroupRequest, SearchGroupsRequestInternal, SearchRequestInternal};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
 use segment::types::WithVector;
 use shard::grouping::{GroupByDriver, RequestBudget};
@@ -80,7 +79,6 @@ impl GroupRequest {
         routing_token: Option<RoutingToken>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<QueryGroupRequest>
     where
         F: Fn(String) -> Fut,
@@ -96,7 +94,6 @@ impl GroupRequest {
                     read_consistency,
                     routing_token,
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -105,6 +102,8 @@ impl GroupRequest {
                 ShardQueryRequest::from(core_search)
             }
             SourceRequest::Query(query_req) => {
+                collection.check_text_queries(&query_req)?;
+
                 // Lift nested prefetches to root queries for vector resolution
                 let resolver_requests = build_vector_resolver_query(&query_req, &shard_selection);
 
@@ -115,7 +114,6 @@ impl GroupRequest {
                     read_consistency,
                     routing_token,
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
                 query_req.try_into_shard_request(&collection.id, &referenced_vectors)?
@@ -267,7 +265,6 @@ pub async fn group_by(
     routing_token: Option<RoutingToken>,
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<PointGroup>> {
     let start = std::time::Instant::now();
     let score_ordering = shard_query::query_result_order(
@@ -308,7 +305,6 @@ pub async fn group_by(
                 routing_token,
                 shard_selection.clone(),
                 timeout,
-                hw_measurement_acc.clone(),
             )
             .await?;
 
@@ -338,7 +334,6 @@ pub async fn group_by(
             routing_token,
             &shard_selection,
             timeout,
-            hw_measurement_acc.clone(),
         )
         .await?
         .into_iter()

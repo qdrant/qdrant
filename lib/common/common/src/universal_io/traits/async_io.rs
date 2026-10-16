@@ -1,10 +1,10 @@
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::{UniversalRead, UniversalReadFs};
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::AccessPattern;
-use crate::universal_io::{OpenOptions, UioResult};
+use crate::generic_consts::{AccessPattern, Sequential};
+use crate::universal_io::{ListedFile, OpenOptions, UioResult};
 
 /// Async-capable extension of [`UniversalRead`].
 ///
@@ -22,6 +22,43 @@ pub trait UniversalReadAsync: UniversalRead {
         access_pattern: P,
         align: usize,
     ) -> impl Future<Output = UioResult<ACow<'_>>> + Send;
+
+    /// Read the file from byte `from` to its end into a sink: `init` receives the total length
+    /// of the file as read and returns the sink, which then gets the bytes from `from` onwards
+    /// as `(offset, bytes)` chunks at their absolute file offsets as they arrive, each byte
+    /// exactly once. `from == 0` reads the whole file; `from` at or past the end builds the sink
+    /// and writes nothing. Yields the sink once every byte was written.
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static;
+}
+
+/// Destination of [`UniversalReadAsync::read_from_into_async`]'s chunks.
+pub trait ChunkSink {
+    /// Write the chunk of `bytes` at byte `offset` of the file.
+    fn write_chunk(&mut self, offset: u64, bytes: &[u8]) -> UioResult<()>;
+}
+
+/// [`UniversalReadAsync::read_from_into_async`] for files that read the tail with a single
+/// [`UniversalReadAsync::read_bytes_async`].
+pub(crate) async fn read_from_via_read_bytes<F, W, I>(file: &F, from: u64, init: I) -> UioResult<W>
+where
+    F: UniversalReadAsync + Sync,
+    I: FnOnce(u64) -> UioResult<W>,
+    W: ChunkSink,
+{
+    let len = file.len::<u8>()?;
+    let mut sink = init(len)?;
+    if from < len {
+        let bytes = file.read_bytes_async(from..len, Sequential, 1).await?;
+        sink.write_chunk(from, &bytes)?;
+    }
+    Ok(sink)
 }
 
 /// Async-capable extension of [`UniversalReadFs`]: filesystems whose opens
@@ -43,10 +80,25 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
         options: OpenOptions,
         extra: Self::OpenExtra,
     ) -> impl Future<Output = UioResult<Self::File>> + Send + '_;
+
+    /// List files matching `prefix_path` asynchronously.
+    fn list_files_async<'a>(
+        &'a self,
+        prefix_path: &'a Path,
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self>;
+
+    /// Select specific files asynchronously.
+    ///
+    /// Returns the same output format as [`Self::list_files_async`], but for an explicit
+    /// list of candidate files. Files that do not exist are omitted from the result.
+    fn select_files_async<'a, P: AsRef<Path> + Send + Sync>(
+        &'a self,
+        paths: &'a [P],
+    ) -> impl Future<Output = UioResult<Vec<ListedFile>>> + Send + use<'a, Self, P>;
 }
 
 /// The async whole-file write surface, mirroring the same operations on
-/// [`UniversalWriteFileOps`]: a batch of saves runs as one concurrent wave
+/// [`UniversalWriteFs`]: a batch of saves runs as one concurrent wave
 /// instead of a thread per file.
 ///
 /// As with [`UniversalReadFsAsync::open_async`], the futures must not depend on
@@ -55,7 +107,7 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
 /// first poll, so a caller that bounds its wave really does bound the in-flight
 /// saves, however it collects the futures.
 ///
-/// [`UniversalWriteFileOps`]: crate::universal_io::UniversalWriteFileOps
+/// [`UniversalWriteFs`]: crate::universal_io::UniversalWriteFs
 pub trait UniversalWriteFsAsync: Send + Sync {
     /// Backends without materialized directories may treat this as a no-op.
     fn create_dir_async(&self, path: PathBuf) -> impl Future<Output = UioResult<()>> + Send + '_;

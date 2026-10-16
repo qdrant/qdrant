@@ -1,6 +1,8 @@
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::types::DeferredBehavior;
 use fs_err as fs;
 use tempfile::Builder;
 use uuid::Uuid;
@@ -9,8 +11,8 @@ use super::*;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vector_name_config::DenseVectorConfig;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use crate::entry::ReadSegmentEntry as _;
 use crate::entry::entry_point::SegmentEntry as _;
+use crate::entry::{ReadSegmentEntry as _, SnapshotEntry as _};
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 
@@ -47,7 +49,7 @@ fn delete_change(point_id: u64, version: SeqNumberType) -> PendingChange {
 
 /// Build a segment with points 1..=5 at versions 1..=5, flushed to disk.
 fn build_segment(path: &Path) -> Segment {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let mut segment = build_simple_segment(path, 4, Distance::Dot).unwrap();
     for point_id in 1..=5u64 {
         segment
@@ -55,7 +57,6 @@ fn build_segment(path: &Path) -> Segment {
                 point_id,
                 point_id.into(),
                 only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
-                &hw_counter,
             )
             .unwrap();
     }
@@ -162,14 +163,14 @@ fn test_register_flush_load_roundtrip() {
     // Nothing is persisted yet
     assert!(!pending_changes.log_path().is_file());
 
-    let flusher = pending_changes.flusher(14).unwrap();
+    let flusher = pending_changes.flusher(14, None).unwrap();
     flusher().unwrap();
 
     assert!(pending_changes.log_path().is_file());
     assert_eq!(pending_changes.persisted_version(), 14);
 
     // The pending buffer is drained, a new flusher has nothing to do
-    assert!(pending_changes.flusher(14).is_none());
+    assert!(pending_changes.flusher(14, None).is_none());
 
     // Reconstruct the in-memory state from the log file
     let loaded = PendingChanges::load(pending_changes.log_path()).unwrap();
@@ -221,16 +222,16 @@ fn test_flusher_covers_version_without_changes() {
     let pending_changes = PendingChanges::new(dir.path(), 0).unwrap();
 
     // Nothing registered and version 0 already covered
-    assert!(pending_changes.flusher(0).is_none());
+    assert!(pending_changes.flusher(0, None).is_none());
 
     // An operation that buffered nothing (e.g. a delete for an absent point) must still be
     // covered by the persisted version once flushed, without creating a log file
-    let flusher = pending_changes.flusher(7).unwrap();
+    let flusher = pending_changes.flusher(7, None).unwrap();
     flusher().unwrap();
     assert_eq!(pending_changes.persisted_version(), 7);
     assert!(!pending_changes.log_path().is_file());
 
-    assert!(pending_changes.flusher(7).is_none());
+    assert!(pending_changes.flusher(7, None).is_none());
 }
 
 #[test]
@@ -247,7 +248,7 @@ fn test_register_during_flush_is_not_lost_nor_covered() {
     );
 
     // Capture a flusher, then register another operation before it runs
-    let flusher = pending_changes.flusher(10).unwrap();
+    let flusher = pending_changes.flusher(10, None).unwrap();
     pending_changes.register_delete_point(
         2.into(),
         ProxyDeletedPoint {
@@ -260,7 +261,7 @@ fn test_register_during_flush_is_not_lost_nor_covered() {
     // The captured operation is persisted and covered, the raced-in one is neither
     assert_eq!(pending_changes.persisted_version(), 10);
 
-    let flusher = pending_changes.flusher(11).unwrap();
+    let flusher = pending_changes.flusher(11, None).unwrap();
     flusher().unwrap();
     assert_eq!(pending_changes.persisted_version(), 11);
 
@@ -282,7 +283,7 @@ fn test_flusher_skipped_after_drop() {
     );
 
     let log_path = pending_changes.log_path().to_path_buf();
-    let flusher = pending_changes.flusher(10).unwrap();
+    let flusher = pending_changes.flusher(10, None).unwrap();
     drop(pending_changes);
 
     // A flusher captured before the component was dropped must be a no-op
@@ -302,7 +303,7 @@ fn test_torn_tail_is_truncated() {
             operation_version: 10,
         },
     );
-    pending_changes.flusher(10).unwrap()().unwrap();
+    pending_changes.flusher(10, None).unwrap()().unwrap();
 
     let log_path = pending_changes.log_path().to_path_buf();
     let intact_len = fs::metadata(&log_path).unwrap().len();
@@ -338,7 +339,7 @@ fn test_torn_tail_is_truncated() {
             operation_version: 11,
         },
     );
-    resumed.flusher(11).unwrap()().unwrap();
+    resumed.flusher(11, None).unwrap()().unwrap();
 
     let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
@@ -364,7 +365,7 @@ fn test_corruption_in_middle_is_error() {
             operation_version: 11,
         },
     );
-    pending_changes.flusher(11).unwrap()().unwrap();
+    pending_changes.flusher(11, None).unwrap()().unwrap();
 
     let log_path = pending_changes.log_path().to_path_buf();
     drop(pending_changes);
@@ -390,7 +391,7 @@ fn test_new_proxy_never_adopts_old_log() {
             operation_version: 10,
         },
     );
-    first.flusher(10).unwrap()().unwrap();
+    first.flusher(10, None).unwrap()().unwrap();
     let first_log_path = first.log_path().to_path_buf();
     drop(first);
 
@@ -408,7 +409,7 @@ fn test_new_proxy_never_adopts_old_log() {
             operation_version: 20,
         },
     );
-    second.flusher(20).unwrap()().unwrap();
+    second.flusher(20, None).unwrap()().unwrap();
     assert_eq!(second.persisted_version(), 20);
 
     // Both log files coexist, each still holding just its own proxy's entries
@@ -435,7 +436,7 @@ fn test_load_resumes_same_log_name() {
             operation_version: 10,
         },
     );
-    pending_changes.flusher(10).unwrap()().unwrap();
+    pending_changes.flusher(10, None).unwrap()().unwrap();
     let log_path = pending_changes.log_path().to_path_buf();
     drop(pending_changes);
 
@@ -449,7 +450,7 @@ fn test_load_resumes_same_log_name() {
             operation_version: 20,
         },
     );
-    resumed.flusher(20).unwrap()().unwrap();
+    resumed.flusher(20, None).unwrap()().unwrap();
 
     assert_eq!(resumed.log_path(), log_path);
     assert_eq!(list_pending_changes_log_files(dir.path()), vec![log_path]);
@@ -462,7 +463,6 @@ fn test_load_resumes_same_log_name() {
 #[test]
 fn test_recover_pending_changes() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     let mut segment = build_segment(dir.path());
     let segment_dir = segment.data_path();
     let segment_version = segment.version();
@@ -479,7 +479,7 @@ fn test_recover_pending_changes() {
         field("color"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 2),
     );
-    pending_changes.flusher(segment_version + 2).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 2, None).unwrap()().unwrap();
     drop(pending_changes);
 
     // The segment itself never saw the operations
@@ -514,11 +514,7 @@ fn test_recover_pending_changes() {
     assert!(recovered.log_files.is_empty());
 
     // Deleting a point again with the same version is silently skipped
-    assert!(
-        !segment
-            .delete_point(segment_version + 1, 2.into(), &hw_counter)
-            .unwrap()
-    );
+    assert!(!segment.delete_point(segment_version + 1, 2.into()).unwrap());
 }
 
 #[test]
@@ -536,7 +532,7 @@ fn test_recover_ignore_leaves_log_untouched() {
             operation_version: segment_version + 1,
         },
     );
-    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 1, None).unwrap()().unwrap();
     let log_path = pending_changes.log_path().to_path_buf();
     let log_len = fs::metadata(&log_path).unwrap().len();
     drop(pending_changes);
@@ -548,6 +544,12 @@ fn test_recover_ignore_leaves_log_untouched() {
     assert!(segment.has_point(2.into(), common::types::DeferredBehavior::VisibleOnly));
     assert_eq!(segment.version(), segment_version);
     assert_eq!(fs::metadata(&log_path).unwrap().len(), log_len);
+    // The ignored log still holds changes missing in the segment files, so it is packed into
+    // snapshots and listed in the segment manifest, which partial snapshot merges rely on
+    assert_eq!(
+        segment.visible_pending_changes_log_files(),
+        vec![log_path.clone()],
+    );
 
     // A later replaying load still recovers the change
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -560,12 +562,12 @@ fn test_recover_ignore_leaves_log_untouched() {
     segment.flush(true).unwrap();
     fs::remove_file(&log_path).unwrap();
     assert!(!log_path.is_file());
+    assert!(segment.visible_pending_changes_log_files().is_empty());
 }
 
 #[test]
 fn test_recover_stale_log_is_noop() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     let mut segment = build_segment(dir.path());
     let segment_dir = segment.data_path();
     let op_version = segment.version() + 1;
@@ -580,12 +582,10 @@ fn test_recover_stale_log_is_noop() {
             operation_version: op_version,
         },
     );
-    pending_changes.flusher(op_version).unwrap()().unwrap();
+    pending_changes.flusher(op_version, None).unwrap()().unwrap();
     drop(pending_changes);
 
-    segment
-        .delete_point(op_version, 3.into(), &hw_counter)
-        .unwrap();
+    segment.delete_point(op_version, 3.into()).unwrap();
     let point_count = segment.available_point_count();
 
     // Replaying the stale log must not change anything; the file is left for the caller to
@@ -626,7 +626,7 @@ fn test_recover_multiple_levels_in_order() {
         field("color"),
         ProxyIndexChange::Delete(segment_version + 2),
     );
-    inner.flusher(segment_version + 2).unwrap()().unwrap();
+    inner.flusher(segment_version + 2, None).unwrap()().unwrap();
     drop(inner);
 
     let mut outer = PendingChanges::new(&segment_dir, 1).unwrap();
@@ -641,7 +641,7 @@ fn test_recover_multiple_levels_in_order() {
         field("color"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 4),
     );
-    outer.flusher(segment_version + 4).unwrap()().unwrap();
+    outer.flusher(segment_version + 4, None).unwrap()().unwrap();
     drop(outer);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -678,7 +678,7 @@ fn test_recover_same_level_multiple_generations_replayed_in_version_order() {
         field("color"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 1),
     );
-    first.flusher(segment_version + 1).unwrap()().unwrap();
+    first.flusher(segment_version + 1, None).unwrap()().unwrap();
     drop(first);
 
     // A second proxy generation at the very same level starts fresh (it does not adopt the first
@@ -688,7 +688,7 @@ fn test_recover_same_level_multiple_generations_replayed_in_version_order() {
         field("size"),
         ProxyIndexChange::Create(keyword_schema(), segment_version + 2),
     );
-    second.flusher(segment_version + 2).unwrap()().unwrap();
+    second.flusher(segment_version + 2, None).unwrap()().unwrap();
     drop(second);
 
     assert_eq!(list_pending_changes_log_files(&segment_dir).len(), 2);
@@ -728,7 +728,7 @@ fn test_recover_vector_name_changes() {
         segment_version + 1,
         &segment_config,
     );
-    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 1, None).unwrap()().unwrap();
     drop(pending_changes);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -773,12 +773,11 @@ fn test_pending_change_version() {
 #[test]
 fn test_recover_delete_if_incompatible_index_change() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
     let mut segment = build_segment(dir.path());
     let segment_dir = segment.data_path();
 
     segment
-        .create_field_index(6, &field("color"), Some(&keyword_schema()), &hw_counter)
+        .create_field_index(6, &field("color"), Some(&keyword_schema()))
         .unwrap();
     assert!(segment.get_indexed_fields().contains_key(&field("color")));
 
@@ -787,7 +786,7 @@ fn test_recover_delete_if_incompatible_index_change() {
         field("color"),
         ProxyIndexChange::DeleteIfIncompatible(7, keyword_schema()),
     );
-    pending_changes.flusher(7).unwrap()().unwrap();
+    pending_changes.flusher(7, None).unwrap()().unwrap();
     drop(pending_changes);
 
     recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -801,7 +800,7 @@ fn test_recover_delete_if_incompatible_index_change() {
         field("color"),
         ProxyIndexChange::DeleteIfIncompatible(8, integer_schema()),
     );
-    pending_changes.flusher(8).unwrap()().unwrap();
+    pending_changes.flusher(8, None).unwrap()().unwrap();
     drop(pending_changes);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -824,7 +823,7 @@ fn test_recover_delete_if_incompatible_index_change() {
 #[test]
 fn test_recover_superseding_vector_name_change() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let mut segment = build_segment(dir.path());
 
     segment
@@ -833,16 +832,9 @@ fn test_recover_superseding_vector_name_change() {
     let mut vectors = NamedVectors::default();
     vectors.insert(DEFAULT_VECTOR_NAME.to_owned(), vec![1.0f32; 4].into());
     vectors.insert("v2".to_owned(), vec![2.0f32; 4].into());
-    segment
-        .upsert_point(7, 1.into(), vectors, &hw_counter)
-        .unwrap();
+    segment.upsert_point(7, 1.into(), vectors).unwrap();
     segment.flush(true).unwrap();
-    assert!(
-        segment
-            .vector("v2", 1.into(), &hw_counter)
-            .unwrap()
-            .is_some()
-    );
+    assert!(segment.vector("v2", 1.into()).unwrap().is_some());
 
     let segment_dir = segment.data_path();
     let segment_config = segment.config().clone();
@@ -855,7 +847,7 @@ fn test_recover_superseding_vector_name_change() {
         segment_version + 1,
         &segment_config,
     );
-    pending_changes.flusher(segment_version + 1).unwrap()().unwrap();
+    pending_changes.flusher(segment_version + 1, None).unwrap()().unwrap();
     drop(pending_changes);
 
     let recovered = recover_pending_changes(&mut segment, PersistedProxyChanges::Replay).unwrap();
@@ -864,10 +856,7 @@ fn test_recover_superseding_vector_name_change() {
     assert_eq!(vector_config.size, 8);
     assert_eq!(vector_config.distance, Distance::Cosine);
     assert!(
-        segment
-            .vector("v2", 1.into(), &hw_counter)
-            .unwrap()
-            .is_none(),
+        segment.vector("v2", 1.into()).unwrap().is_none(),
         "superseded vector data must be cleared on replay",
     );
 
@@ -895,7 +884,7 @@ fn test_partial_append_is_truncated_on_next_flush() {
             operation_version: 10,
         },
     );
-    pending_changes.flusher(10).unwrap()().unwrap();
+    pending_changes.flusher(10, None).unwrap()().unwrap();
 
     let log_path = pending_changes.log_path().to_path_buf();
     let intact_len = fs::metadata(&log_path).unwrap().len();
@@ -912,7 +901,7 @@ fn test_partial_append_is_truncated_on_next_flush() {
             operation_version: 11,
         },
     );
-    pending_changes.flusher(11).unwrap()().unwrap();
+    pending_changes.flusher(11, None).unwrap()().unwrap();
 
     let loaded = PendingChanges::load(&log_path).unwrap();
     assert_eq!(loaded.deleted_points().len(), 2);
@@ -935,7 +924,7 @@ fn test_torn_tail_truncation_sweep() {
             },
         );
     }
-    pending_changes.flusher(14).unwrap()().unwrap();
+    pending_changes.flusher(14, None).unwrap()().unwrap();
     let log_path = pending_changes.log_path().to_path_buf();
     let pristine = fs::read(&log_path).unwrap();
     drop(pending_changes);
@@ -972,4 +961,320 @@ fn test_torn_tail_truncation_sweep() {
             "torn tail must be truncated for a prefix of {prefix_len} bytes",
         );
     }
+}
+
+fn deleted(version: SeqNumberType) -> ProxyDeletedPoint {
+    ProxyDeletedPoint {
+        local_version: version,
+        operation_version: version,
+    }
+}
+
+fn has_vector_name(segment: &Segment, vector_name: &str) -> bool {
+    segment
+        .vector_names()
+        .iter()
+        .any(|name| name == vector_name)
+}
+
+/// The three change kinds are interleaved by operation version, not yielded kind by kind.
+#[test]
+fn test_proxy_changes_iter_ordered_interleaves_kinds_by_version() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = build_segment(dir.path());
+    let segment_config = segment.config().clone();
+
+    // Register one kind at a time and out of version order, so the order cannot come from
+    // registration order
+    let mut pending_changes = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    pending_changes.register_delete_point(1.into(), deleted(30));
+    pending_changes.register_delete_point(2.into(), deleted(5));
+    pending_changes.register_index_change(
+        field("color"),
+        ProxyIndexChange::Create(keyword_schema(), 10),
+    );
+    pending_changes.register_index_change(field("count"), ProxyIndexChange::Delete(40));
+    pending_changes.register_vector_name_create(
+        "extra".into(),
+        dense_config(4, Distance::Dot),
+        20,
+        &segment_config,
+    );
+    pending_changes.register_vector_name_delete("stale".into(), 50);
+
+    let ordered: Vec<_> = pending_changes.changes().iter_ordered().collect();
+    let versions: Vec<_> = ordered.iter().map(PendingChange::version).collect();
+    assert_eq!(versions, vec![5, 10, 20, 30, 40, 50]);
+
+    assert!(matches!(
+        ordered[0],
+        PendingChange::DeletePoint {
+            point_id: PointIdType::NumId(2),
+            ..
+        },
+    ));
+    assert!(matches!(
+        &ordered[1],
+        PendingChange::IndexChange { field_name, change: ProxyIndexChange::Create(_, 10) }
+            if *field_name == field("color"),
+    ));
+    assert!(matches!(
+        &ordered[2],
+        PendingChange::VectorNameChange { vector_name, intent: IntendedVector::Present { .. } }
+            if vector_name == "extra",
+    ));
+    assert!(matches!(
+        ordered[3],
+        PendingChange::DeletePoint {
+            point_id: PointIdType::NumId(1),
+            ..
+        },
+    ));
+    assert!(matches!(
+        &ordered[4],
+        PendingChange::IndexChange { field_name, change: ProxyIndexChange::Delete(40) }
+            if *field_name == field("count"),
+    ));
+    assert!(matches!(
+        &ordered[5],
+        PendingChange::VectorNameChange { vector_name, intent: IntendedVector::Absent { version: 50 } }
+            if vector_name == "stale",
+    ));
+}
+
+/// Propagating applies every change with its own version, in operation order. Payload index and
+/// vector name changes alternate here, with a point delete in between: applied kind by kind,
+/// whichever kind goes second is gated out by the segment version the first kind bumped past it.
+#[test]
+fn test_proxy_changes_propagate_in_version_order() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_segment(dir.path());
+    let segment_config = segment.config().clone();
+    assert_eq!(segment.version(), 5);
+
+    let mut pending_changes = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    pending_changes.register_index_change(
+        field("color"),
+        ProxyIndexChange::Create(keyword_schema(), 10),
+    );
+    pending_changes.register_vector_name_create(
+        "first".into(),
+        dense_config(4, Distance::Dot),
+        20,
+        &segment_config,
+    );
+    pending_changes.register_delete_point(1.into(), deleted(30));
+    pending_changes.register_index_change(
+        field("count"),
+        ProxyIndexChange::Create(integer_schema(), 40),
+    );
+    pending_changes.register_vector_name_create(
+        "second".into(),
+        dense_config(2, Distance::Cosine),
+        50,
+        &segment_config,
+    );
+
+    pending_changes
+        .changes()
+        .propagate(&mut segment, &AtomicBool::new(false))
+        .unwrap();
+
+    assert_eq!(segment.version(), 50);
+    let indexed_fields = segment.get_indexed_fields();
+    assert_eq!(indexed_fields.get(&field("color")), Some(&keyword_schema()));
+    assert_eq!(indexed_fields.get(&field("count")), Some(&integer_schema()));
+    assert!(has_vector_name(&segment, "first"));
+    assert!(has_vector_name(&segment, "second"));
+    assert!(!segment.has_point(1.into(), DeferredBehavior::WithDeferred));
+    assert!(segment.has_point(2.into(), DeferredBehavior::WithDeferred));
+}
+
+/// Propagation stops with a cancellation error when asked to.
+#[test]
+fn test_proxy_changes_propagate_cancelled() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_segment(dir.path());
+
+    let mut pending_changes = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    pending_changes.register_delete_point(1.into(), deleted(10));
+    pending_changes.register_delete_point(2.into(), deleted(20));
+
+    let result = pending_changes
+        .changes()
+        .propagate(&mut segment, &AtomicBool::new(true));
+    assert!(matches!(result, Err(OperationError::Cancelled { .. })));
+}
+
+/// Merging the changes of several proxies keeps the newest version of a point deleted through
+/// more than one of them.
+#[test]
+fn test_proxy_changes_merge_takes_newest_delete_versions() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = build_segment(dir.path());
+
+    let mut first = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    first.register_delete_point(
+        1.into(),
+        ProxyDeletedPoint {
+            local_version: 10,
+            operation_version: 12,
+        },
+    );
+    let mut second = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    second.register_delete_point(
+        1.into(),
+        ProxyDeletedPoint {
+            local_version: 11,
+            operation_version: 9,
+        },
+    );
+    second.register_delete_point(2.into(), deleted(20));
+
+    let mut merged = ProxyChanges::default();
+    merged.merge(first.changes());
+    merged.merge(second.changes());
+
+    assert_eq!(merged.deleted_points().len(), 2);
+    assert_eq!(
+        merged.deleted_points().get(&1.into()),
+        Some(&ProxyDeletedPoint {
+            local_version: 11,
+            operation_version: 12,
+        }),
+    );
+    assert_eq!(merged.deleted_points().get(&2.into()), Some(&deleted(20)));
+}
+
+/// Excluding an earlier snapshot leaves exactly what arrived since: entries that did not change
+/// go, keys changed again with a newer version and new keys stay.
+#[test]
+fn test_proxy_changes_exclude_applied() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = build_segment(dir.path());
+    let segment_config = segment.config().clone();
+
+    let mut first = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    first.register_delete_point(1.into(), deleted(10));
+    first.register_index_change(
+        field("color"),
+        ProxyIndexChange::Create(keyword_schema(), 20),
+    );
+    first.register_index_change(
+        field("count"),
+        ProxyIndexChange::Create(integer_schema(), 25),
+    );
+    first.register_vector_name_create(
+        "extra".into(),
+        dense_config(4, Distance::Dot),
+        30,
+        &segment_config,
+    );
+
+    // A later snapshot of the same proxy: everything above, plus new changes and keys changed again
+    let mut second = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    second.register_delete_point(1.into(), deleted(10));
+    second.register_index_change(
+        field("color"),
+        ProxyIndexChange::Create(keyword_schema(), 20),
+    );
+    second.register_index_change(
+        field("count"),
+        ProxyIndexChange::Create(integer_schema(), 25),
+    );
+    second.register_vector_name_create(
+        "extra".into(),
+        dense_config(4, Distance::Dot),
+        30,
+        &segment_config,
+    );
+    second.register_index_change(field("count"), ProxyIndexChange::Delete(40));
+    second.register_delete_point(2.into(), deleted(50));
+    second.register_vector_name_delete("extra".into(), 60);
+
+    let mut remaining = ProxyChanges::default();
+    remaining.merge(second.changes());
+    remaining.exclude_applied(first.changes());
+
+    let versions: Vec<_> = remaining
+        .iter_ordered()
+        .map(|change| change.version())
+        .collect();
+    assert_eq!(versions, vec![40, 50, 60]);
+    assert!(!remaining.deleted_points().contains_key(&1.into()));
+    assert!(remaining.deleted_points().contains_key(&2.into()));
+    assert!(remaining.index_changes().get(&field("color")).is_none());
+    assert_eq!(
+        remaining.index_changes().get(&field("count")),
+        Some(&ProxyIndexChange::Delete(40)),
+    );
+    assert_eq!(
+        remaining.vector_name_changes().get("extra"),
+        Some(&IntendedVector::Absent { version: 60 }),
+    );
+
+    // Excluding a snapshot from itself leaves nothing
+    let mut nothing = ProxyChanges::default();
+    nothing.merge(first.changes());
+    nothing.exclude_applied(first.changes());
+    assert!(nothing.is_empty());
+}
+
+/// Propagating in two passes, the way the optimizer does: the first pass applies a snapshot while
+/// changes keep arriving, the second pass excludes that snapshot and applies only what arrived
+/// since. A vector name change in the first snapshot that is older than a point delete applied in
+/// the same pass must neither be lost nor be applied again.
+#[test]
+fn test_proxy_changes_propagate_in_two_passes() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_segment(dir.path());
+    let segment_config = segment.config().clone();
+    let never_stopped = AtomicBool::new(false);
+
+    let mut pending_changes = PendingChanges::new(&segment.data_path(), 0).unwrap();
+    pending_changes.register_vector_name_create(
+        "extra".into(),
+        dense_config(4, Distance::Dot),
+        10,
+        &segment_config,
+    );
+    pending_changes.register_delete_point(1.into(), deleted(20));
+
+    let mut applied = ProxyChanges::default();
+    applied.merge(pending_changes.changes());
+    applied.propagate(&mut segment, &never_stopped).unwrap();
+    assert_eq!(segment.version(), 20);
+    assert!(has_vector_name(&segment, "extra"));
+    assert!(!segment.has_point(1.into(), DeferredBehavior::WithDeferred));
+
+    // Changes keep arriving on the proxy after the first pass
+    pending_changes.register_index_change(
+        field("color"),
+        ProxyIndexChange::Create(keyword_schema(), 30),
+    );
+    pending_changes.register_delete_point(2.into(), deleted(40));
+
+    let mut remaining = ProxyChanges::default();
+    remaining.merge(pending_changes.changes());
+    remaining.exclude_applied(&applied);
+    let versions: Vec<_> = remaining
+        .iter_ordered()
+        .map(|change| change.version())
+        .collect();
+    assert_eq!(
+        versions,
+        vec![30, 40],
+        "only the changes since the first pass are left"
+    );
+    remaining.propagate(&mut segment, &never_stopped).unwrap();
+
+    assert_eq!(segment.version(), 40);
+    assert!(has_vector_name(&segment, "extra"));
+    assert_eq!(
+        segment.get_indexed_fields().get(&field("color")),
+        Some(&keyword_schema()),
+    );
+    assert!(!segment.has_point(1.into(), DeferredBehavior::WithDeferred));
+    assert!(!segment.has_point(2.into(), DeferredBehavior::WithDeferred));
+    assert!(segment.has_point(3.into(), DeferredBehavior::WithDeferred));
 }

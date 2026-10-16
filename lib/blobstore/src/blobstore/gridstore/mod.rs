@@ -9,12 +9,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::is_alive_lock::IsAliveLock;
-use common::universal_io::{Populate, UniversalWrite, UniversalWriteFileOps, UserData};
+use common::universal_io::{Populate, UniversalWrite, UniversalWriteFs, UserData};
 use itertools::Itertools;
 use parking_lot::RwLock;
 pub(super) use reader::GridstoreReader;
@@ -140,7 +138,8 @@ where
         populate: Populate,
     ) -> Result<Self> {
         // Writable store: open pages and tracker writable so it can append.
-        let tracker = Tracker::open(fs, &base_path, populate, true)?;
+        let mut tracker = Tracker::open(fs, &base_path, populate, true)?;
+        tracker.replay_journal()?;
         let mut bitmask = Bitmask::open(fs, &base_path, config.clone())?;
         let num_pages = bitmask.infer_num_pages();
 
@@ -179,6 +178,14 @@ where
             is_alive_flush_lock: IsAliveLock::new(),
             gaps_rebuilt,
         })
+    }
+
+    /// Don't journal pointer writes on flush, see [`Blobstore::disable_journal`].
+    ///
+    /// [`Blobstore::disable_journal`]: super::Blobstore::disable_journal
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    pub(super) fn disable_journal(&mut self) {
+        self.tracker.write().disable_journal();
     }
 
     /// Create a new page and return its id.
@@ -283,9 +290,9 @@ where
         fs: &S::Fs,
         point_offset: PointOffset,
         value: &V,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
-        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_counter)
+        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_metric)
     }
 
     /// Put an already serialized value in the storage.
@@ -299,7 +306,7 @@ where
         fs: &S::Fs,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool> {
         // This function needs to NOT corrupt data in case of a crash.
         //
@@ -352,7 +359,7 @@ where
         let comp_value = self.with_view(|view| view.compress(value_bytes));
         let value_size = comp_value.len();
 
-        hw_counter.incr_delta(value_size);
+        hw_metric.bump(value_size);
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
         let (start_page_id, block_offset) =
@@ -386,8 +393,8 @@ where
 
         self.with_view(|view| {
             let raw = view.read_from_pages::<Random>(pointer)?;
-            let decompressed = view.decompress(raw);
-            let value = V::from_bytes(&decompressed);
+            let decompressed = view.decompress(raw)?;
+            let value = V::from_bytes(&decompressed)?;
             Ok(Some(value))
         })
     }
@@ -438,9 +445,8 @@ where
     pub(super) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
+        self.with_view(|view| view.get_value::<P>(point_offset))
     }
 
     /// Get the serialized value for a given point offset.
@@ -449,10 +455,9 @@ where
     pub(super) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Vec<u8>>> {
         self.with_view(|view| {
-            let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+            let bytes = view.get_value_bytes::<P>(point_offset)?;
             Ok(bytes.map(Cow::into_owned))
         })
     }
@@ -464,7 +469,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -478,7 +483,7 @@ where
                     callback(user_data, point_offset, value)?;
                     Ok(true)
                 },
-                hw_counter_cell,
+                hw_metric,
             )
         })?;
 
@@ -490,7 +495,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -504,7 +509,7 @@ where
                     callback(user_data, point_offset, bytes)?;
                     Ok(true)
                 },
-                hw_counter_cell,
+                hw_metric,
             )
         })?;
 
@@ -513,7 +518,12 @@ where
 
     #[cfg(test)]
     pub(super) fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
-        self.tracker.read().get(point_offset).ok().flatten()
+        use crate::tracker::TrackerRead as _;
+        self.tracker
+            .read()
+            .get::<common::generic_consts::Random>(point_offset)
+            .ok()
+            .flatten()
     }
 
     pub(super) fn max_point_offset(&self) -> PointOffset {
@@ -523,11 +533,7 @@ where
     /// Iterate over all values and execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
-    pub(super) fn iter<F, E>(
-        &self,
-        mut callback: F,
-        hw_counter: HwMetricRefCounter,
-    ) -> Result<(), E>
+    pub(super) fn iter<F, E>(&self, mut callback: F, hw_metric: HwMetric) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
@@ -566,7 +572,7 @@ where
 
                         callback(point_offset, value)
                     },
-                    &hw_counter,
+                    Some(hw_metric),
                 )?;
 
                 if should_continue {
@@ -638,6 +644,13 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
         tracker: &Arc<RwLock<Tracker<S>>>,
         pending_updates: AHashMap<PointOffset, PointerUpdates>,
     ) -> crate::Result<Vec<ValuePointer>> {
+        // Journal the pointer writes first, so opening can repair a torn write to the tracker.
+        // Not holding the tracker lock during the sync
+        let journal = tracker.read().journal();
+        if let Some(journal) = &journal {
+            journal.append(&pending_updates)?;
+        }
+
         let (old_pointers, tracker_flusher) = {
             let mut guard = tracker.write();
             let old_pointers = guard.write_pending(pending_updates)?;
@@ -645,6 +658,14 @@ impl<V, S: UniversalWrite + 'static> Gridstore<V, S> {
             (old_pointers, flusher)
         };
         tracker_flusher()?;
+
+        // The tracker is durable, so the journal isn't needed anymore. Remove it once it grew large
+        if let Some(journal) = &journal
+            && let Err(err) = journal.remove_if_large()
+        {
+            log::warn!("Failed to remove Gridstore tracker journal: {err}");
+        }
+
         Ok(old_pointers)
     }
 

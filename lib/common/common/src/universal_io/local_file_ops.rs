@@ -150,3 +150,24 @@ pub fn local_list_files(prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
 
     Ok(results)
 }
+
+pub fn local_select_files<P: AsRef<Path>>(paths: &[P]) -> UioResult<Vec<ListedFile>> {
+    let mut results = Vec::with_capacity(paths.len());
+    for p in paths {
+        let path = p.as_ref();
+        match fs_err::metadata(path) {
+            Ok(metadata) if metadata.is_file() => {
+                results.push(ListedFile {
+                    path: path.to_path_buf(),
+                    size: metadata.len(),
+                    last_modified: metadata.modified().ok(),
+                    etag: None,
+                });
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(UniversalIoError::extract_not_found(err, path)),
+        }
+    }
+    Ok(results)
+}

@@ -2,7 +2,6 @@ use std::alloc::Layout;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use quantization::EncodedVectors;
 
@@ -323,84 +322,43 @@ impl QuantizedVectors {
         Box::new(move || flusher().map_err(OperationError::from))
     }
 
-    pub fn upsert_vector(
-        &mut self,
-        id: PointOffsetType,
-        vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    pub fn upsert_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         match &mut self.storage_impl {
-            QuantizedVectorStorage::ScalarRam(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::ScalarMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
+            QuantizedVectorStorage::ScalarRam(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::ScalarMmap(q) => Self::upsert_vector_dense(q, id, vector),
             QuantizedVectorStorage::ScalarChunkedMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector)
             }
-            QuantizedVectorStorage::PQRam(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::PQMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::PQChunkedMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::BinaryRam(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::BinaryMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
+            QuantizedVectorStorage::PQRam(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::PQMmap(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::PQChunkedMmap(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::BinaryRam(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::BinaryMmap(q) => Self::upsert_vector_dense(q, id, vector),
             QuantizedVectorStorage::BinaryChunkedMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
+                Self::upsert_vector_dense(q, id, vector)
             }
-            QuantizedVectorStorage::TQRam(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::TQMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::TQChunkedMmap(q) => {
-                Self::upsert_vector_dense(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::ScalarRamMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::ScalarMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
+            QuantizedVectorStorage::TQRam(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::TQMmap(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::TQChunkedMmap(q) => Self::upsert_vector_dense(q, id, vector),
+            QuantizedVectorStorage::ScalarRamMulti(q) => Self::upsert_vector_multi(q, id, vector),
+            QuantizedVectorStorage::ScalarMmapMulti(q) => Self::upsert_vector_multi(q, id, vector),
             QuantizedVectorStorage::ScalarChunkedMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector)
             }
-            QuantizedVectorStorage::PQRamMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::PQMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
+            QuantizedVectorStorage::PQRamMulti(q) => Self::upsert_vector_multi(q, id, vector),
+            QuantizedVectorStorage::PQMmapMulti(q) => Self::upsert_vector_multi(q, id, vector),
             QuantizedVectorStorage::PQChunkedMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector)
             }
-            QuantizedVectorStorage::BinaryRamMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::BinaryMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
+            QuantizedVectorStorage::BinaryRamMulti(q) => Self::upsert_vector_multi(q, id, vector),
+            QuantizedVectorStorage::BinaryMmapMulti(q) => Self::upsert_vector_multi(q, id, vector),
             QuantizedVectorStorage::BinaryChunkedMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector)
             }
-            QuantizedVectorStorage::TQRamMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
-            QuantizedVectorStorage::TQMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
-            }
+            QuantizedVectorStorage::TQRamMulti(q) => Self::upsert_vector_multi(q, id, vector),
+            QuantizedVectorStorage::TQMmapMulti(q) => Self::upsert_vector_multi(q, id, vector),
             QuantizedVectorStorage::TQChunkedMmapMulti(q) => {
-                Self::upsert_vector_multi(q, id, vector, hw_counter)
+                Self::upsert_vector_multi(q, id, vector)
             }
         }
     }
@@ -409,10 +367,9 @@ impl QuantizedVectors {
         quantization_storage: &mut impl quantization::EncodedVectors,
         id: PointOffsetType,
         vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let VectorRef::Dense(vector) = vector {
-            Ok(quantization_storage.upsert_vector(id, vector, hw_counter)?)
+            Ok(quantization_storage.upsert_vector(id, vector)?)
         } else {
             Err(OperationError::WrongMulti)
         }
@@ -422,10 +379,9 @@ impl QuantizedVectors {
         quantization_storage: &mut impl quantization::EncodedVectors,
         id: PointOffsetType,
         vector: VectorRef,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let VectorRef::MultiDense(vector) = vector {
-            Ok(quantization_storage.upsert_vector(id, vector.flattened_vectors, hw_counter)?)
+            Ok(quantization_storage.upsert_vector(id, vector.flattened_vectors)?)
         } else {
             Err(OperationError::WrongMulti)
         }

@@ -56,6 +56,18 @@ def turboquant_collection_setup(collection_name, on_disk_vectors, on_disk_payloa
                         }
                     },
                 },
+                # Manhattan + bits8 covers the L1 score path and the only
+                # bit size quantized without TQ+.
+                "video": {
+                    "size": VECTOR_SIZE,
+                    "distance": "Manhattan",
+                    "on_disk": on_disk_vectors,
+                    "quantization_config": {
+                        "turbo": {
+                            "bits": "bits8",
+                        }
+                    },
+                },
             },
             "quantization_config": {
                 "turbo": {
@@ -77,6 +89,7 @@ def turboquant_collection_setup(collection_name, on_disk_vectors, on_disk_payloa
                 "image": _random_vector(rng),
                 "audio": _random_vector(rng),
                 "text": _random_vector(rng),
+                "video": _random_vector(rng),
             },
             "payload": {"city": "Berlin" if point_id % 2 == 0 else "London"},
         })
@@ -125,6 +138,10 @@ def test_turboquant_config_persists(on_disk_vectors, collection_name):
     assert 'always_ram' not in vectors['text']['quantization_config']['turbo']
     assert vectors['text']['on_disk'] == on_disk_vectors
 
+    assert vectors['video']['quantization_config']['turbo']['bits'] == "bits8"
+    assert 'always_ram' not in vectors['video']['quantization_config']['turbo']
+    assert vectors['video']['on_disk'] == on_disk_vectors
+
     assert config['quantization_config']['turbo']['bits'] == "bits1"
     assert config['quantization_config']['turbo']['always_ram'] is True
 
@@ -134,6 +151,7 @@ def test_turboquant_config_persists(on_disk_vectors, collection_name):
     ("image", True),
     ("audio", True),
     ("text", False),
+    ("video", False),
 ])
 def test_turboquant_search(collection_name, vector_name, descending):
     rng = random.Random(123)
@@ -158,7 +176,7 @@ def test_turboquant_search(collection_name, vector_name, descending):
     assert scores == sorted(scores, reverse=descending)
 
 
-@pytest.mark.parametrize("vector_name", ["image", "audio", "text"])
+@pytest.mark.parametrize("vector_name", ["image", "audio", "text", "video"])
 def test_turboquant_search_with_filter(collection_name, vector_name):
     rng = random.Random(7)
     query_vector = _random_vector(rng)

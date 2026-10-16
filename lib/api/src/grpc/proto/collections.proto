@@ -3,6 +3,7 @@ package qdrant;
 
 import "json_with_int.proto";
 import "qdrant_common.proto";
+import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "Qdrant.Client.Grpc";
 
@@ -12,6 +13,8 @@ enum Datatype {
   Uint8 = 2;
   Float16 = 3;
   Turbo4 = 4;
+  Turbo8 = 5;
+  Turbo16 = 6;
 }
 
 // Memory placement of a component's data.
@@ -226,6 +229,9 @@ message CollectionWarning {
 message HnswConfigDiff {
   // Number of edges per node in the index graph.
   // Larger the value - more accurate the search, more space required.
+  // Set to 0 to disable the main HNSW graph. Additional payload-aware links
+  // may still be built when the effective payload M is positive (see payload_m).
+  // This setting alone does not guarantee exact search.
   optional uint64 m = 1;
   // Number of neighbours to consider during the index building.
   // Larger the value - more accurate the search, more time required to build the index.
@@ -245,8 +251,9 @@ message HnswConfigDiff {
   // Deprecated: use `memory` instead.
   // Store HNSW index on disk. If set to false, the index will be stored in RAM.
   optional bool on_disk = 5 [deprecated = true];
-  // Number of additional payload-aware links per node in the index graph.
-  // If not set - regular M parameter will be used.
+  // Number of additional payload-aware links per node. If unset, the value of m is used.
+  // An effective value of 0 disables these additional links. A positive value allows
+  // them for indexed payload fields with HNSW enabled, even when m is 0.
   optional uint64 payload_m = 6;
   // Store copies of original and quantized vectors within the HNSW index file. Default: false.
   // Enabling this option will trade the search speed for disk usage by reducing amount of
@@ -423,6 +430,7 @@ enum TurboQuantBitSize{
   Bits1_5 = 1;
   Bits2 = 2;
   Bits4 = 3;
+  Bits8 = 4;
 }
 
 message QuantizationConfig {
@@ -803,6 +811,19 @@ message TextIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 11;
+  // Enable ranking points by BM25 over this field.
+  // Implies `phrase_matching: true`. Changing it rebuilds the index.
+  // Default: disabled.
+  optional TextScoringParams scoring = 12;
+}
+
+enum TextScoringType {
+  Bm25 = 0;
+}
+
+message TextScoringParams {
+  // How documents are ranked
+  TextScoringType type = 1;
 }
 
 message StemmingAlgorithm {
@@ -929,6 +950,8 @@ message CollectionInfo {
   repeated CollectionWarning warnings = 11;
   // Update queue info
   UpdateQueueInfo update_queue = 12;
+  // Time of the collection creation, absent for collections created before it was recorded
+  optional google.protobuf.Timestamp created_at = 13;
 }
 
 message ChangeAliases {

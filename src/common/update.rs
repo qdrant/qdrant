@@ -11,7 +11,6 @@ use collection::operations::types::{CollectionError, CollectionResult, UpdateRes
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
@@ -309,7 +308,6 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc_provider: impl CheckedTocProvider,
     collection_name: String,
@@ -318,7 +316,6 @@ pub async fn do_upsert_points(
     params: UpdateParams,
     auth: Auth,
     inference_params: InferenceParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     use point_ops::UpdateMode;
     use segment::types::Filter;
@@ -413,7 +410,6 @@ pub async fn do_upsert_points(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await?;
 
@@ -436,7 +432,6 @@ pub async fn do_delete_points(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &auth)
@@ -461,12 +456,10 @@ pub async fn do_delete_points(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
     toc_provider: impl CheckedTocProvider,
     collection_name: String,
@@ -475,7 +468,6 @@ pub async fn do_update_vectors(
     params: UpdateParams,
     auth: Auth,
     inference_params: InferenceParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -510,7 +502,6 @@ pub async fn do_update_vectors(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await?;
 
@@ -524,7 +515,6 @@ pub async fn do_delete_vectors(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -563,7 +553,6 @@ pub async fn do_delete_vectors(
                 params,
                 shard_key.clone(),
                 auth.clone(),
-                hw_measurement_acc.clone(),
             )
             .await?,
         );
@@ -582,7 +571,6 @@ pub async fn do_delete_vectors(
                 params,
                 shard_key,
                 auth,
-                hw_measurement_acc,
             )
             .await?,
         );
@@ -598,7 +586,6 @@ pub async fn do_set_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -633,7 +620,6 @@ pub async fn do_set_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -645,7 +631,6 @@ pub async fn do_overwrite_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -681,7 +666,6 @@ pub async fn do_overwrite_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -693,7 +677,6 @@ pub async fn do_delete_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(
@@ -726,7 +709,6 @@ pub async fn do_delete_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
@@ -738,7 +720,6 @@ pub async fn do_clear_payload(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let toc = toc_provider
         .check_strict_mode(&points, &collection_name, params.timeout_as_secs(), &auth)
@@ -763,12 +744,10 @@ pub async fn do_clear_payload(
         params,
         shard_key,
         auth,
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
     toc_provider: impl CheckedTocProvider + Clone,
     collection_name: String,
@@ -777,7 +756,6 @@ pub async fn do_batch_update_points(
     params: UpdateParams,
     auth: Auth,
     inference_params: InferenceParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(Vec<UpdateResult>, Option<InferenceUsage>), StorageError> {
     // Check strict mode for all batch operations, *before applying* them
     let mut toc = None;
@@ -811,7 +789,6 @@ pub async fn do_batch_update_points(
                     params,
                     auth.clone(),
                     inference_params.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -826,7 +803,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -838,7 +814,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -850,7 +825,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -862,7 +836,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -874,7 +847,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -887,7 +859,6 @@ pub async fn do_batch_update_points(
                     params,
                     auth.clone(),
                     inference_params.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -902,7 +873,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     auth.clone(),
-                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
@@ -921,7 +891,6 @@ pub async fn do_create_index(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -947,6 +916,9 @@ pub async fn do_create_index(
             "Can't auto-detect field type, please specify `field_schema` in the request",
         ));
     };
+    // Once, before the schema is proposed and applied: every node, and the
+    // direct index operation below, must see the same params.
+    let field_schema = field_schema.normalized();
 
     let consensus_op = CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
         collection_name: collection_name.clone(),
@@ -968,7 +940,6 @@ pub async fn do_create_index(
         Some(field_schema),
         internal_params,
         params,
-        hw_measurement_acc,
     )
     .await
 }
@@ -980,7 +951,6 @@ pub async fn do_create_index_internal(
     field_schema: Option<PayloadFieldSchema>,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -997,7 +967,6 @@ pub async fn do_create_index_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
@@ -1009,7 +978,6 @@ pub async fn do_delete_index(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -1033,15 +1001,7 @@ pub async fn do_delete_index(
         )
         .await?;
 
-    do_delete_index_internal(
-        toc,
-        collection_name,
-        index_name,
-        internal_params,
-        params,
-        hw_measurement_acc,
-    )
-    .await
+    do_delete_index_internal(toc, collection_name, index_name, internal_params, params).await
 }
 
 pub async fn do_delete_index_internal(
@@ -1050,7 +1010,6 @@ pub async fn do_delete_index_internal(
     index_name: JsonPath,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
@@ -1064,12 +1023,10 @@ pub async fn do_delete_index_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_create_vector_name(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -1078,7 +1035,6 @@ pub async fn do_create_vector_name(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // Validate the vector name once at the single chokepoint that both REST and
     // gRPC entrypoints land in (REST also runs the same check via `VectorNamePath`).
@@ -1127,7 +1083,6 @@ pub async fn do_create_vector_name(
         config,
         internal_params,
         params,
-        hw_measurement_acc,
     )
     .await
 }
@@ -1139,7 +1094,6 @@ pub async fn do_create_vector_name_internal(
     config: segment::data_types::vector_name_config::VectorNameConfig,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::VectorNameOperation(
         VectorNameOperations::CreateVectorName(CreateVectorName {
@@ -1156,7 +1110,6 @@ pub async fn do_create_vector_name_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
@@ -1168,7 +1121,6 @@ pub async fn do_delete_vector_name(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     use collection::operations::verification::new_unchecked_verification_pass;
 
@@ -1188,15 +1140,7 @@ pub async fn do_delete_vector_name(
         )
         .await?;
 
-    do_delete_vector_name_internal(
-        toc,
-        collection_name,
-        vector_name,
-        internal_params,
-        params,
-        hw_measurement_acc,
-    )
-    .await
+    do_delete_vector_name_internal(toc, collection_name, vector_name, internal_params, params).await
 }
 
 pub async fn do_delete_vector_name_internal(
@@ -1205,7 +1149,6 @@ pub async fn do_delete_vector_name_internal(
     vector_name: String,
     internal_params: InternalUpdateParams,
     params: UpdateParams,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let operation = CollectionUpdateOperations::VectorNameOperation(
         VectorNameOperations::DeleteVectorName(DeleteVectorName { vector_name }),
@@ -1219,12 +1162,10 @@ pub async fn do_delete_vector_name_internal(
         params,
         None,
         Auth::new_internal(Access::full("Internal API")),
-        hw_measurement_acc,
     )
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn update(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1233,7 +1174,6 @@ pub async fn update(
     params: UpdateParams,
     shard_key: Option<ShardKeySelector>,
     auth: Auth,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let InternalUpdateParams {
         shard_id,
@@ -1312,7 +1252,6 @@ pub async fn update(
         ordering,
         shard_selector,
         auth,
-        hw_measurement_acc,
     )
     .await
 }

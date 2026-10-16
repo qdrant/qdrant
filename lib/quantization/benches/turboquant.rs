@@ -36,6 +36,8 @@ fn bench_quantize(c: &mut Criterion) {
         (TQBits::Bits1, "1bit"),
         (TQBits::Bits2, "2bit"),
         (TQBits::Bits4, "4bit"),
+        (TQBits::Bits8, "8bit"),
+        (TQBits::Bits16, "16bit"),
     ];
 
     for &(bits, bits_name) in bit_widths {
@@ -63,6 +65,8 @@ fn bench_dot(c: &mut Criterion) {
         (TQBits::Bits1, "1bit"),
         (TQBits::Bits2, "2bit"),
         (TQBits::Bits4, "4bit"),
+        (TQBits::Bits8, "8bit"),
+        (TQBits::Bits16, "16bit"),
     ];
 
     for &(bits, bits_name) in bit_widths {
@@ -100,6 +104,8 @@ fn bench_dot_precomputed(c: &mut Criterion) {
         (TQBits::Bits1, "1bit"),
         (TQBits::Bits2, "2bit"),
         (TQBits::Bits4, "4bit"),
+        (TQBits::Bits8, "8bit"),
+        (TQBits::Bits16, "16bit"),
     ];
 
     for &(bits, bits_name) in bit_widths {

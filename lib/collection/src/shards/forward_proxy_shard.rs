@@ -4,8 +4,9 @@ use std::time::{Duration, Instant};
 
 use ahash::HashSet;
 use async_trait::async_trait;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
 use common::flags::feature_flags;
+use common::reason::reason;
 use common::tar_ext;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use parking_lot::Mutex as ParkingMutex;
@@ -85,8 +86,8 @@ impl PreparedTransferBatch {
                 OperationWithClockTag::from(self.operation),
                 WaitUntil::from(self.wait),
                 None,
-                HwMeasurementAcc::disposable(), // Internal operation
             )
+            .unmeasured(reason("Internal operation"))
             .await?;
         let send_duration = send_start.elapsed();
 
@@ -179,8 +180,8 @@ impl ForwardProxyShard {
                     )),
                     WaitUntil::Wal,
                     None,
-                    HwMeasurementAcc::disposable(), // Internal operation
                 )
+                .unmeasured(reason("Internal operation"))
                 .await?;
         }
         Ok(())
@@ -336,9 +337,11 @@ impl ForwardProxyShard {
                 filter,
                 runtime_handle,
                 None,                           // No timeout
-                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
                 DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll operation.
             )
+            .unmeasured(reason(
+                "Internal operation, no need to measure hardware here.",
+            ))
             .await?;
 
         let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
@@ -405,9 +408,11 @@ impl ForwardProxyShard {
                 None,
                 runtime_handle,
                 None,                           // No timeout
-                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
                 DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll op.
             )
+            .unmeasured(reason(
+                "Internal operation, no need to measure hardware here.",
+            ))
             .await?;
 
         let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
@@ -432,10 +437,12 @@ impl ForwardProxyShard {
                 &WithPayload::from(true),
                 &WithVector::Bool(true),
                 runtime_handle,
-                None,                           // No timeout
-                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                None, // No timeout
                 DeferredBehavior::WithDeferred,
             )
+            .unmeasured(reason(
+                "Internal operation, no need to measure hardware here.",
+            ))
             .await?;
 
         let points = batch
@@ -471,9 +478,11 @@ impl ForwardProxyShard {
                 filter,
                 runtime_handle,
                 None,                           // No timeout
-                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
                 DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll operation.
             )
+            .unmeasured(reason(
+                "Internal operation, no need to measure hardware here.",
+            ))
             .await?;
 
         let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
@@ -513,9 +522,11 @@ impl ForwardProxyShard {
                 None,
                 runtime_handle,
                 None,                           // No timeout
-                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
                 DeferredBehavior::WithDeferred, // We must transfer deferred points too so we include them in this scroll op.
             )
+            .unmeasured(reason(
+                "Internal operation, no need to measure hardware here.",
+            ))
             .await?;
 
         let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
@@ -534,10 +545,12 @@ impl ForwardProxyShard {
                 &ids,
                 &WithVector::Bool(true),
                 runtime_handle,
-                None,                           // No timeout
-                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                None, // No timeout
                 DeferredBehavior::WithDeferred,
             )
+            .unmeasured(reason(
+                "Internal operation, no need to measure hardware here.",
+            ))
             .await?;
 
         Ok((points, next_page_offset))
@@ -608,11 +621,8 @@ impl ForwardProxyShard {
     pub async fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<CardinalityEstimation> {
-        self.wrapped_shard
-            .estimate_cardinality(filter, hw_measurement_acc)
-            .await
+        self.wrapped_shard.estimate_cardinality(filter).await
     }
 
     pub async fn set_extended_wal_retention(&self) {
@@ -640,7 +650,6 @@ impl ShardOperation for ForwardProxyShard {
         operation: OperationWithClockTag,
         _wait: WaitUntil,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
         // (or we *might* introduce an inconsistency between shards?), so this method is not cancel
@@ -657,12 +666,7 @@ impl ShardOperation for ForwardProxyShard {
         // wait on deferred points to be fully optimized which is not necessary for transfers.
         let mut result = self
             .wrapped_shard
-            .update(
-                operation.clone(),
-                WaitUntil::Segment,
-                timeout,
-                hw_measurement_acc.clone(),
-            )
+            .update(operation.clone(), WaitUntil::Segment, timeout)
             .await?;
 
         let points_matching_filter_before = {
@@ -680,10 +684,12 @@ impl ShardOperation for ForwardProxyShard {
                         &WithVector::Bool(false),
                         Some(&filter.with_point_ids(point_ids)),
                         &self.wrapped_shard.search_runtime,
-                        None,                           // No timeout
-                        HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here?
+                        None, // No timeout
                         DeferredBehavior::WithDeferred,
                     )
+                    .unmeasured(reason(
+                        "Internal operation, no need to measure hardware here?",
+                    ))
                     .await?
                     .into_iter()
                     .map(|record| record.id)
@@ -745,7 +751,7 @@ impl ShardOperation for ForwardProxyShard {
 
         let remote_result = self
             .remote_shard
-            .update(operation, WaitUntil::Wal, None, hw_measurement_acc)
+            .update(operation, WaitUntil::Wal, None)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
 
@@ -773,11 +779,10 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<ScrollRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .scroll_by(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .scroll_by(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -790,7 +795,6 @@ impl ShardOperation for ForwardProxyShard {
         filter: Option<&Filter>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
@@ -803,7 +807,6 @@ impl ShardOperation for ForwardProxyShard {
                 filter,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -818,11 +821,10 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .core_search(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .core_search(request, search_runtime_handle, timeout)
             .await
     }
 
@@ -831,18 +833,11 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<CountResult> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .count(
-                request,
-                search_runtime_handle,
-                timeout,
-                hw_measurement_acc,
-                deferred_behavior,
-            )
+            .count(request, search_runtime_handle, timeout, deferred_behavior)
             .await
     }
 
@@ -853,7 +848,6 @@ impl ShardOperation for ForwardProxyShard {
         with_vector: &WithVector,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
         deferred_behavior: DeferredBehavior,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
@@ -864,7 +858,6 @@ impl ShardOperation for ForwardProxyShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
-                hw_measurement_acc,
                 deferred_behavior,
             )
             .await
@@ -875,11 +868,10 @@ impl ShardOperation for ForwardProxyShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .query_batch(requests, search_runtime_handle, timeout, hw_measurement_acc)
+            .query_batch(requests, search_runtime_handle, timeout)
             .await
     }
 
@@ -888,11 +880,10 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &AdaptiveSearchHandle,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
+            .facet(request, search_runtime_handle, timeout)
             .await
     }
 

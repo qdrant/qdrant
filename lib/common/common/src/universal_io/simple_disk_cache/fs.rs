@@ -2,19 +2,17 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 use super::config::DiskCacheConfig;
 use super::file::{DiskCache, State};
 use super::pipeline::REMOTE_READ_ALIGNMENT;
-use super::stats::DiskCacheStats;
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::generic_consts::Sequential;
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
 use crate::universal_io::{
     ListedFile, OpenExtra, OpenOptions, OwnedPipeline, Populate, UioResult, UniversalIoError,
-    UniversalRead, UniversalReadFileOps, UniversalReadFs,
+    UniversalRead, UniversalReadFs,
 };
 
 /// Construction context for [`DiskCacheFs`]: carries the
@@ -73,7 +71,6 @@ where
 {
     pub(super) config: Arc<DiskCacheConfig>,
     pub(super) remote_fs: R::Fs,
-    pub(super) stats: DiskCacheStats,
 }
 
 impl<R> Clone for DiskCacheFs<R>
@@ -82,15 +79,10 @@ where
     R::Fs: Clone,
 {
     fn clone(&self) -> Self {
-        let Self {
-            config,
-            remote_fs,
-            stats,
-        } = self;
+        let Self { config, remote_fs } = self;
         Self {
             config: config.clone(),
             remote_fs: remote_fs.clone(),
-            stats: stats.clone(),
         }
     }
 }
@@ -100,13 +92,8 @@ where
     R: UniversalRead,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            config,
-            remote_fs,
-            stats,
-        } = self;
+        let Self { config, remote_fs } = self;
         f.debug_struct("DiskCacheFs")
-            .field("stats", stats)
             .field("config", config)
             .field("remote_fs", remote_fs)
             .finish()
@@ -115,18 +102,14 @@ where
 
 impl<R: UniversalRead> DiskCacheFs<R> {
     /// Wrap an already-built remote filesystem handle. The config-driven
-    /// path is [`UniversalReadFileOps::from_context`].
+    /// path is [`UniversalReadFs::from_context`].
     pub fn new(config: Arc<DiskCacheConfig>, remote_fs: R::Fs) -> Self {
-        Self {
-            config,
-            remote_fs,
-            stats: DiskCacheStats::default(),
-        }
+        Self { config, remote_fs }
     }
 
-    /// Observer aggregating this filesystem, its clones, and all opened files.
-    pub fn stats(&self) -> DiskCacheStats {
-        self.stats.clone()
+    /// The remote filesystem missing blocks are fetched from.
+    pub fn remote_fs(&self) -> &R::Fs {
+        &self.remote_fs
     }
 
     pub(super) fn open_remote(
@@ -139,31 +122,7 @@ impl<R: UniversalRead> DiskCacheFs<R> {
     }
 }
 
-impl<R> UniversalReadFileOps for DiskCacheFs<R>
-where
-    R: UniversalRead + 'static,
-{
-    type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFileOps>::ContextConfig>;
-
-    fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
-        let DiskCacheFsContext { config, remote } = ctx;
-        Ok(Self {
-            config,
-            remote_fs: R::Fs::from_context(remote)?,
-            stats: DiskCacheStats::default(),
-        })
-    }
-
-    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
-        self.remote_fs.list_files(prefix_path)
-    }
-
-    fn exists(&self, path: &Path) -> UioResult<bool> {
-        self.remote_fs.exists(path)
-    }
-}
-
-// Deliberately no `UniversalWriteFileOps` impl: the disk cache is strictly
+// Deliberately no `UniversalWriteFs` impl: the disk cache is strictly
 // read-only, at the filesystem level as much as at the file level (see the
 // `assert_not_impl_any!` on `DiskCache`). Mutations — creating, removing and
 // appending to files — go straight to the backing storage, whose handle the
@@ -191,6 +150,23 @@ where
 {
     type File = DiskCache<R>;
     type OpenExtra = DiskCacheFsOpenExtra<<R::Fs as UniversalReadFs>::OpenExtra>;
+    type ContextConfig = DiskCacheFsContext<<R::Fs as UniversalReadFs>::ContextConfig>;
+
+    fn from_context(ctx: Self::ContextConfig) -> UioResult<Self> {
+        let DiskCacheFsContext { config, remote } = ctx;
+        Ok(Self {
+            config,
+            remote_fs: R::Fs::from_context(remote)?,
+        })
+    }
+
+    fn list_files(&self, prefix_path: &Path) -> UioResult<Vec<ListedFile>> {
+        self.remote_fs.list_files(prefix_path)
+    }
+
+    fn exists(&self, path: &Path) -> UioResult<bool> {
+        self.remote_fs.exists(path)
+    }
 
     fn open(
         &self,
@@ -234,13 +210,9 @@ where
                 let mut pipeline = OwnedPipeline::new(remote)?;
 
                 // FIXME: check `can_schedule` in a loop first
-                let started = Instant::now();
                 pipeline.schedule_whole((), 0)?;
 
-                State::OpenPrefill {
-                    pipeline,
-                    fetch: self.stats.fetch(started),
-                }
+                State::OpenPrefill { pipeline }
             }
             // Special case of no known length and empty range. Don't initialize.
             (None, Populate::Partial(range)) if range.into_byte_range::<u8>().is_empty() => {
@@ -264,7 +236,6 @@ where
                     let mut pipeline = OwnedPipeline::new(remote)?;
 
                     // FIXME: check `can_schedule` in a loop first
-                    let started = Instant::now();
                     pipeline.schedule::<Sequential>(
                         blocks_range,
                         byte_range,
@@ -274,7 +245,6 @@ where
                     State::PartialPrefill {
                         pipeline,
                         len: file_len,
-                        fetch: self.stats.fetch(started),
                     }
                 } else {
                     // empty byte range, just initialize with length.

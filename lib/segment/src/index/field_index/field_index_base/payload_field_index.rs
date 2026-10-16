@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -32,7 +30,6 @@ pub trait PayloadFieldIndexRead {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: &'a HardwareCounterCell,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
 
     /// Return estimation of amount of points which satisfy given condition.
@@ -40,7 +37,6 @@ pub trait PayloadFieldIndexRead {
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<CardinalityEstimation>>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
@@ -59,7 +55,6 @@ pub trait PayloadFieldIndexRead {
     fn condition_checker<'a>(
         &'a self,
         _condition: &FieldCondition,
-        _hw_acc: HwMeasurementAcc,
     ) -> OperationResult<Option<ConditionCheckerEnum<'a>>>;
 
     /// Index-aware check for conditions that need parameters held by
@@ -72,7 +67,6 @@ pub trait PayloadFieldIndexRead {
         &self,
         _condition: &FieldCondition,
         _payload_value: &Value,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<bool>> {
         Ok(None)
     }

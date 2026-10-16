@@ -12,7 +12,7 @@ use super::*;
 fn append_grows_regular_file() {
     fn check<Fs>(fs: &Fs, path: &Path)
     where
-        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs: UniversalWriteFs,
         Fs::File: UniversalAppend,
         Fs::OpenExtra: Default,
     {
@@ -77,7 +77,7 @@ fn mmap_append_requires_writeable() {
 fn write_beyond_eof_still_errors() {
     fn check<Fs>(fs: &Fs, path: &Path)
     where
-        Fs: UniversalReadFs + UniversalWriteFileOps,
+        Fs: UniversalWriteFs,
         Fs::File: UniversalAppend + UniversalWrite,
         Fs::OpenExtra: Default,
     {
@@ -133,4 +133,92 @@ fn io_uring_append_rejects_direct_io() {
         panic!("expected io error, got {err:?}");
     };
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+}
+
+#[tokio::test]
+async fn mmap_select_files_async() {
+    let dir = tempfile::tempdir().unwrap();
+    let file1 = dir.path().join("a.dat");
+    let file2 = dir.path().join("b.dat");
+    let missing = dir.path().join("c.dat");
+
+    fs_err::write(&file1, b"hello").unwrap();
+    fs_err::write(&file2, b"world!").unwrap();
+
+    let selected = MmapFs
+        .select_files_async(&[file1.as_path(), file2.as_path(), missing.as_path()])
+        .await
+        .unwrap();
+
+    assert_eq!(selected.len(), 2);
+    assert_eq!(selected[0].path, file1);
+    assert_eq!(selected[0].size, 5);
+    assert_eq!(selected[1].path, file2);
+    assert_eq!(selected[1].size, 6);
+
+    let empty = MmapFs.select_files_async::<&Path>(&[]).await.unwrap();
+    assert!(empty.is_empty());
+}
+
+#[tokio::test]
+async fn cached_fs_select_files_async() {
+    let dir = tempfile::tempdir().unwrap();
+    let file1 = dir.path().join("f1.dat");
+    let file2 = dir.path().join("f2.dat");
+    let missing = dir.path().join("f3.dat");
+
+    fs_err::write(&file1, b"123").unwrap();
+    fs_err::write(&file2, b"4567").unwrap();
+
+    let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+
+    // Before caching file info: uncached pass-through
+    let selected = cached_fs
+        .select_files_async(&[file1.clone(), file2.clone(), missing.clone()])
+        .await
+        .unwrap();
+    assert_eq!(selected.len(), 2);
+
+    // Populate file info via select_cache_file_info_async
+    cached_fs
+        .select_cache_file_info_async(&[file1.clone(), missing.clone()])
+        .await
+        .unwrap();
+    assert!(cached_fs.file_info(&file1).is_some());
+    assert!(cached_fs.file_info(&file2).is_none());
+
+    // After caching file info: answered from cache
+    let selected = cached_fs
+        .select_files_async(&[file1.clone(), file2.clone()])
+        .await
+        .unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].path, file1);
+    assert_eq!(selected[0].size, 3);
+}
+
+/// A failed prefetch of a listed file is reported until the pool is
+/// discarded; a probe for an unlisted file is not a failure.
+#[tokio::test]
+async fn cached_fs_prefetch_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let listed = dir.path().join("listed.dat");
+    let unlisted = dir.path().join("unlisted.dat");
+    fs_err::write(&listed, b"123").unwrap();
+
+    let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+
+    cached_fs.schedule_open(&unlisted, None, None);
+    cached_fs.wait_all().await;
+    cached_fs.prefetch_error().unwrap();
+
+    // Vanishes between the listing and the open.
+    fs_err::remove_file(&listed).unwrap();
+    cached_fs.schedule_open(&listed, None, None);
+    cached_fs.wait_all().await;
+    assert!(cached_fs.prefetch_error().unwrap_err().is_not_found());
+
+    cached_fs.discard_prefetched();
+    cached_fs.prefetch_error().unwrap();
 }

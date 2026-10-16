@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::AccessPattern;
 use common::universal_io::{UniversalRead, UserData};
 
@@ -10,6 +9,7 @@ use super::logstore::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::error::BlobstoreError;
+use crate::tracker::tracker_enum::TrackerEnum;
 use crate::tracker::{PointOffset, ReadOnlyTracker, ValuePointer};
 
 /// A non-owning view into blobstore data.
@@ -24,7 +24,7 @@ pub struct BlobstoreView<'a, V, S: UniversalRead> {
 /// Mode specific implementation of the view, see [`crate::config::Mode`].
 enum ViewVariant<'a, V, S: UniversalRead> {
     Gridstore(GridstoreView<'a, V, S, ReadOnlyTracker<S>>),
-    Logstore(LogstoreView<'a, V, S>),
+    Logstore(LogstoreView<'a, V, S, TrackerEnum<S>>),
 }
 
 impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
@@ -34,7 +34,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
         }
     }
 
-    pub(super) fn from_logstore(view: LogstoreView<'a, V, S>) -> Self {
+    pub(super) fn from_logstore(view: LogstoreView<'a, V, S, TrackerEnum<S>>) -> Self {
         Self {
             variant: ViewVariant::Logstore(view),
         }
@@ -47,7 +47,7 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
     pub fn max_point_offset(&self) -> Result<PointOffset> {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.max_point_offset(),
-            ViewVariant::Logstore(view) => Ok(view.max_point_offset()),
+            ViewVariant::Logstore(view) => view.max_point_offset(),
         }
     }
 
@@ -75,14 +75,10 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
 
 impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     /// Get the value for a given point offset.
-    pub fn get_value<P: AccessPattern>(
-        &self,
-        point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> Result<Option<V>> {
+    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
         match &self.variant {
-            ViewVariant::Gridstore(view) => view.get_value::<P>(point_offset, hw_counter),
-            ViewVariant::Logstore(view) => view.get_value::<P>(point_offset, hw_counter),
+            ViewVariant::Gridstore(view) => view.get_value::<P>(point_offset),
+            ViewVariant::Logstore(view) => view.get_value::<P>(point_offset),
         }
     }
 
@@ -93,7 +89,7 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         callback: impl FnMut(U, PointOffset, Option<V>) -> Result<bool, E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -102,10 +98,10 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     {
         match &self.variant {
             ViewVariant::Gridstore(view) => {
-                view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                view.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
             ViewVariant::Logstore(view) => {
-                view.read_values::<P, U, E>(point_offsets, callback, hw_counter_cell)
+                view.read_values::<P, U, E>(point_offsets, callback, hw_metric)
             }
         }
     }

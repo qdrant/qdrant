@@ -12,6 +12,7 @@ pub use blobstore::Logstore;
 // The bitmask belongs to the Gridstore variant, it is only public for the benchmarks
 pub use blobstore::gridstore::bitmask;
 pub use blobstore::{Blobstore, BlobstoreReader, BlobstoreView};
+pub use tracker::tracker_journal_path;
 
 use crate::error::BlobstoreError;
 

@@ -7,6 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CountRequestInternal, PointRequestInternal};
 use collection::operations::verification::{VerificationPass, new_unchecked_verification_pass};
 use collection::shards::shard::ShardId;
+use common::ambient::AmbientFutureExt;
 use futures::FutureExt;
 use segment::types::{Condition, Filter};
 use serde::Deserialize;
@@ -64,8 +65,8 @@ async fn get_points(
         params.timeout(),
         ShardSelectorInternal::ShardId(path.shard),
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await
     .map(|records| {
         records
@@ -143,12 +144,11 @@ async fn scroll_points(
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
             auth,
-            request_hw_counter.get_counter(),
         )
     });
 
     let result = match res_future {
-        Ok(e) => e.await,
+        Ok(e) => e.measured(request_hw_counter.get_counter()).await,
         Err(err) => Err(err),
     };
 
@@ -190,7 +190,6 @@ async fn count_points(
         None,
     );
     let timing = Instant::now();
-    let hw_measurement_acc = request_hw_counter.get_counter();
 
     let result = async move {
         let hash_ring_filter = match hash_ring_filter {
@@ -219,10 +218,10 @@ async fn count_points(
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
             auth,
-            hw_measurement_acc,
         )
         .await
     }
+    .measured(request_hw_counter.get_counter())
     .await;
 
     process_response(result, timing, request_hw_counter.to_rest_api())

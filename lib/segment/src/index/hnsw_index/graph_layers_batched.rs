@@ -4,14 +4,18 @@ use std::cmp::max;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::ambient::{self, trace};
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::reason::reason;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{UniversalRead, UniversalReadFs, read_bin_via};
 use itertools::Itertools;
 
 use super::entry_points::{EntryPoint, EntryPoints};
-use super::graph_layers::{GraphLayerData, GraphLayers, SearchAlgorithm};
+use super::graph_layers::{
+    GraphLayerData, GraphLayers, SearchAlgorithm, SearchEntry, evenly_spaced,
+};
 use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksResidency};
 use super::{GraphWithVectorsScorers, HnswM};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -42,17 +46,24 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         dir: &Path,
         residency: GraphLinksResidency,
     ) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let graph_data: GraphLayerData = read_bin_via(fs, GraphLayers::get_path(dir))?;
         let format = GraphLayers::probe_links_format(fs, dir)?
             .ok_or_else(|| OperationError::service_error("No links file found"))?;
+        let links_path = GraphLayers::get_links_path(dir, format);
         let file = fs.open(
-            GraphLayers::get_links_path(dir, format),
+            &links_path,
             GraphLinks::open_options(residency),
             Default::default(),
         )?;
+        let links = GraphLinksFile::open(file, format)?;
+        trace::file_sections(
+            &links_path.to_string_lossy(),
+            links.uio_trace_sections(format),
+        );
         Ok(Self {
             hnsw_m: HnswM::new(graph_data.m, graph_data.m0),
-            links: GraphLinksFile::open(file, format)?,
+            links,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
             residency,
@@ -71,21 +82,32 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         ef: usize,
         algorithm: SearchAlgorithm,
         scorer: &mut FilteredScorer,
-        entry_point: EntryPoint,
+        entry: &SearchEntry,
         batch_size: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let mut arena = stumpalo::Arena::new();
 
-        let entry = match algorithm {
-            SearchAlgorithm::PathSeer => {
-                self.search_entry_no_filter(entry_point, 0, scorer, is_stopped, &mut arena)?
+        let entry: &[_] = match entry {
+            SearchEntry::Point(entry_point) => {
+                trace::mark!("search_entry begin (from level {})", entry_point.level);
+                &[match algorithm {
+                    SearchAlgorithm::PathSeer => self.search_entry_no_filter(
+                        *entry_point,
+                        0,
+                        scorer,
+                        is_stopped,
+                        &mut arena,
+                    )?,
+                    SearchAlgorithm::Hnsw | SearchAlgorithm::Acorn => {
+                        self.search_entry(*entry_point, 0, scorer, is_stopped, &mut arena)?
+                    }
+                }]
             }
-            SearchAlgorithm::Hnsw | SearchAlgorithm::Acorn => {
-                self.search_entry(entry_point, 0, scorer, is_stopped, &mut arena)?
-            }
+            SearchEntry::Seeds(seeds) => seeds,
         };
         let ef = max(ef, top);
+        trace::mark!("level0 begin (bs={batch_size})");
         let nearest = match algorithm {
             SearchAlgorithm::Hnsw => {
                 self.search_on_level(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)
@@ -93,8 +115,16 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             SearchAlgorithm::Acorn => {
                 self.search_on_level_acorn(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena)
             }
-            SearchAlgorithm::PathSeer => self
-                .search_on_level_pathseer(entry, 0, ef, scorer, batch_size, is_stopped, &mut arena),
+            SearchAlgorithm::PathSeer => {
+                let [entry] = entry else {
+                    return Err(OperationError::service_error(
+                        "PathSeer requires a single graph entry point",
+                    ));
+                };
+                self.search_on_level_pathseer(
+                    *entry, 0, ef, scorer, batch_size, is_stopped, &mut arena,
+                )
+            }
         }?;
         Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
@@ -104,21 +134,28 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         top: usize,
         ef: usize,
         scorers: GraphWithVectorsScorers,
-        entry_point: EntryPoint,
+        entry: &SearchEntry,
         links_batch_size: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let mut arena = stumpalo::Arena::new();
-        let zero_level_entry = self.search_entry_with_vectors(
-            entry_point,
-            0,
-            scorers.links.raw_scorer(),
-            scorers.links_bytes,
-            is_stopped,
-            &mut arena,
-        )?;
+        let level_entries: &[_] = match entry {
+            SearchEntry::Point(entry_point) => {
+                trace::mark!("search_entry begin (from level {})", entry_point.level);
+                &[self.search_entry_with_vectors(
+                    *entry_point,
+                    0,
+                    scorers.links.raw_scorer(),
+                    scorers.links_bytes,
+                    is_stopped,
+                    &mut arena,
+                )?]
+            }
+            SearchEntry::Seeds(seeds) => seeds,
+        };
+        trace::mark!("level0 begin (bs={links_batch_size}, inline vectors)");
         let nearest = self.search_on_level_with_vectors(
-            zero_level_entry,
+            level_entries,
             0,
             max(top, ef),
             scorers.links_bytes,
@@ -142,9 +179,10 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut links = Vec::with_capacity(2 * self.hnsw_m.level_m(0));
         let mut current_point = ScoredPointOffset {
             idx: entry_point.point_id,
-            score: points_scorer.score_point(entry_point.point_id),
+            score: points_scorer.score_point(entry_point.point_id)?,
         };
         for level in rev_range(entry_point.level, target_level) {
+            trace::mark!("entry_level {level} begin");
             let limit = self.hnsw_m.level_m(level);
 
             let mut changed = true;
@@ -160,7 +198,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                     })?;
 
                 points_scorer
-                    .score_points(&mut links, limit)
+                    .score_points(&mut links, limit)?
                     .for_each(|score_point| {
                         if score_point.score > current_point.score {
                             changed = true;
@@ -185,7 +223,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut links = Vec::with_capacity(2 * self.hnsw_m.level_m(0));
         let mut current_point = ScoredPointOffset {
             idx: entry_point.point_id,
-            score: points_scorer.score_point(entry_point.point_id),
+            score: points_scorer.score_point(entry_point.point_id)?,
         };
         for level in rev_range(entry_point.level, target_level) {
             let limit = self.hnsw_m.level_m(level);
@@ -206,7 +244,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 links.retain(|&id| points_scorer.filters().check_live(id));
                 links.truncate(member_limit.min(links.len()));
 
-                let scored: Vec<_> = points_scorer.score_points_unfiltered(&links).collect();
+                let scored: Vec<_> = points_scorer.score_points_unfiltered(&links)?.collect();
                 for score_point in scored {
                     if score_point.score > current_point.score {
                         changed = true;
@@ -296,7 +334,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 }
             }
 
-            let scored: Vec<_> = points_scorer.score_points_unfiltered(&to_score).collect();
+            let scored: Vec<_> = points_scorer.score_points_unfiltered(&to_score)?.collect();
             for point in scored {
                 if !context.nearest.is_full() || point.score > context.lower_bound() {
                     context.candidates.push(point);
@@ -324,9 +362,10 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut links = Vec::with_capacity(2 * self.hnsw_m.level_m(0));
         let mut current_point = ScoredPointOffset {
             idx: entry_point.point_id,
-            score: links_scorer_raw.score_point(entry_point.point_id),
+            score: links_scorer_raw.score_point(entry_point.point_id)?,
         };
         for level in rev_range(entry_point.level, target_level) {
+            trace::mark!("entry_level {level} begin");
             let limit = self.hnsw_m.level_m(level);
             let member_limit = if limit == 0 { usize::MAX } else { limit };
 
@@ -379,7 +418,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
     #[allow(clippy::too_many_arguments)]
     fn search_on_level_with_vectors(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         links_scorer: &FilteredBytesScorer,
@@ -389,17 +428,16 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         arena: &mut stumpalo::Arena,
     ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.visited_pool.get(self.num_points());
-        visited_list.check_and_update_visited(level_entry.idx);
-
-        let mut links_search_context = SearchContext::new(ef);
+        let mut links_search_context =
+            SearchContext::with_entries(ef, level_entries, &mut visited_list);
         let mut base_search_context = SearchContext::new(ef);
-        links_search_context.process_candidate(level_entry);
 
         let limit = self.hnsw_m.level_m(level);
         let member_limit = if limit == 0 { usize::MAX } else { limit };
         let mut batch = Vec::with_capacity(links_batch_size);
         let mut links = Vec::with_capacity(2 * limit);
 
+        let mut round = 0;
         loop {
             check_process_stopped(is_stopped)?;
 
@@ -416,6 +454,8 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
                 break;
             }
             let expand_count = batch.len() - usize::from(terminal);
+            trace::mark!("round {round} begin ({} points)", batch.len());
+            round += 1;
 
             arena.reset();
             self.links.links_with_vectors(
@@ -475,7 +515,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
     #[allow(clippy::too_many_arguments)]
     fn search_on_level(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
@@ -484,10 +524,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         arena: &mut stumpalo::Arena,
     ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.visited_pool.get(self.num_points());
-        visited_list.check_and_update_visited(level_entry.idx);
-
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
+        let mut search_context = SearchContext::with_entries(ef, level_entries, &mut visited_list);
 
         let limit = self.hnsw_m.level_m(level);
         let member_limit = if limit == 0 { usize::MAX } else { limit };
@@ -496,8 +533,11 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         let mut links = Vec::with_capacity(2 * limit * links_batch_size);
         let mut points_ids = Vec::with_capacity(limit * links_batch_size);
 
+        let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
             check_process_stopped(is_stopped)?;
+            trace::mark!("round {round} begin ({} points)", batch.len());
+            round += 1;
 
             arena.reset();
             links.clear();
@@ -524,9 +564,10 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
 
             let quotas = arena.alloc_slice_fill_with(batch.len(), |_| member_limit);
             admit_matches(matches, quotas, &mut visited_list, |id| points_ids.push(id));
+            trace::mark!("round links done ({} to score)", points_ids.len());
 
             points_scorer
-                .score_points_unfiltered(&points_ids)
+                .score_points_unfiltered(&points_ids)?
                 .for_each(|scored_point| search_context.process_candidate(scored_point));
         }
 
@@ -538,7 +579,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
     #[allow(clippy::too_many_arguments)]
     fn search_on_level_acorn(
         &self,
-        level_entry: ScoredPointOffset,
+        level_entries: &[ScoredPointOffset],
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
@@ -549,11 +590,10 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         // See `GraphLayers::search_on_level_acorn` for the invariants of the
         // two visited lists.
         let mut hop1_visited_list = self.visited_pool.get(self.num_points());
-        hop1_visited_list.check_and_update_visited(level_entry.idx);
         let mut hop2_visited_list = self.visited_pool.get(self.num_points());
 
-        let mut search_context = SearchContext::new(ef);
-        search_context.process_candidate(level_entry);
+        let mut search_context =
+            SearchContext::with_entries(ef, level_entries, &mut hop1_visited_list);
 
         // Limits are per every explored 1-hop or 2-hop neighbors, not total.
         let hop1_limit = self.hnsw_m.level_m(level);
@@ -561,22 +601,48 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         debug_assert_ne!(hop1_limit, 0); // See `FilteredBytesScorer::score_points`
 
         let mut batch = Vec::with_capacity(links_batch_size);
+        // See `GraphLayers::search_on_level_acorn`.
+        let hop1_tail_limit = hop1_limit;
+
+        #[derive(Clone, Copy)]
+        struct Hop1Link {
+            id: PointOffsetType,
+            source_idx: u32,
+            dest_idx: u32,
+            is_match: bool,
+        }
+
+        let mut hop1_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut unchecked_links = Vec::with_capacity(2 * hop1_limit * links_batch_size);
         let mut to_score = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut to_explore = Vec::with_capacity(hop1_limit * links_batch_size);
+        let mut tail_bridges = Vec::new();
 
+        let mut round = 0;
         while pop_batch(&mut search_context, &mut batch, links_batch_size) {
             check_process_stopped(is_stopped)?;
+            trace::mark!("round {round} begin ({} points)", batch.len());
+            round += 1;
 
             arena.reset();
+            hop1_links.clear();
             unchecked_links.clear();
 
             // Collect 1-hop neighbors (direct neighbors)
             self.links
-                .links(arena, &batch, level, |position, links_iter| {
-                    let position = position as u32;
-                    for hop1 in links_iter {
+                .links(arena, &batch, level, |source_idx, links_iter| {
+                    for (dest_idx, hop1) in links_iter.enumerate() {
                         if !hop1_visited_list.check_and_update_visited(hop1) {
-                            unchecked_links.push(Link { id: hop1, position });
+                            unchecked_links.push(Link {
+                                id: hop1,
+                                position: hop1_links.len() as u32,
+                            });
+                            hop1_links.push(Hop1Link {
+                                id: hop1,
+                                source_idx: source_idx as u32,
+                                dest_idx: dest_idx as u32,
+                                is_match: false,
+                            });
                         }
                     }
                 })?;
@@ -585,23 +651,56 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             let n = points_scorer.filters().check_batched(
                 &mut unchecked_links,
                 Select::Matches,
-                Rest::Keep,
+                Rest::Discard,
             )?;
-            let (matches, non_matches) = unchecked_links.split_at(n);
+            for link in &unchecked_links[..n] {
+                hop1_links[link.position as usize].is_match = true;
+            }
 
-            // Matches go to scoring.
+            // Select 1-hop neighbors per candidate
+            //
+            // - first `hop1_limit` matches → `to_score`, rest matches → unvisit
+            // - head non-matches → `to_explore`
+            // - tail non-matches → `to_explore` evenly spaced, the rest → unvisit
+            //
+            //            ┌─head──┬─tail────────────────┐┌─head──┬─tail────────┐
+            //            │○ × ● ○│◌ ◌ ● ◌ ◌ ◌ ◌ ◌ ◌ ◌ ◌││● ○ ● ●│◌ ◌ ◌ ● ◌ ● ◌│
+            // to_score        ●       ●                  ●   ● ●       ●
+            // to_explore  ○     ○ ◌     ◌     ◌   ◌        ○     ◌ ◌ ◌
+            // unvisit               ◌     ◌ ◌   ◌   ◌ ◌                  ◌ ● ◌
+            //
+            // ● match  ○ head non-match  ◌ tail non-match  × visited earlier
             to_score.clear();
-            let quotas = arena.alloc_slice_fill_with(batch.len(), |_| hop1_limit);
-            admit_matches(matches, quotas, &mut hop1_visited_list, |id| {
-                to_score.push(id)
-            });
+            to_explore.clear();
+            for links in hop1_links.chunk_by(|a, b| a.source_idx == b.source_idx) {
+                let mut matches = 0;
+                tail_bridges.clear();
+                for l in links {
+                    if matches == hop1_limit {
+                        hop1_visited_list.unvisit(l.id);
+                    } else if l.is_match {
+                        matches += 1;
+                        to_score.push(l.id);
+                    } else if (l.dest_idx as usize) < hop1_limit {
+                        to_explore.push(l.id);
+                    } else {
+                        tail_bridges.push(l.id);
+                    }
+                }
+                for &id in &tail_bridges {
+                    hop1_visited_list.unvisit(id);
+                }
+                for hop1 in evenly_spaced(&tail_bridges, hop1_tail_limit) {
+                    hop1_visited_list.check_and_update_visited(hop1);
+                    to_explore.push(hop1);
+                }
+            }
 
-            // Non-matches go to 2-hop exploration.
-            let to_explore = arena.alloc_slice_fill_iter(non_matches.iter().map(|link| link.id));
+            // Collect 2-hop neighbors (neighbors of neighbors)
             if !to_explore.is_empty() {
                 unchecked_links.clear();
                 self.links
-                    .links(arena, to_explore, level, |position, links_iter| {
+                    .links(arena, &to_explore, level, |position, links_iter| {
                         let position = position as u32;
                         for hop2 in links_iter {
                             if !hop1_visited_list.check(hop2)
@@ -627,7 +726,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             }
 
             points_scorer
-                .score_points_unfiltered(&to_score)
+                .score_points_unfiltered(&to_score)?
                 .for_each(|score_point| search_context.process_candidate(score_point));
         }
 
@@ -692,8 +791,8 @@ fn nth<'a>(link_vectors: &std::slice::ChunksExact<'a, u8>, position: usize) -> &
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::bitvec::BitVec;
-    use common::counter::hardware_counter::HardwareCounterCell;
     use common::universal_io::MmapFs;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -822,6 +921,7 @@ mod tests {
             num_points, 8, DIM, false, false, DISTANCE, &mut rng,
         );
 
+        let _scope = ambient::test_guard();
         let mut additional = GraphLayersBuilder::new(num_points, hnsw_m, 16, 10, false);
         for idx in (0..num_points as PointOffsetType).step_by(2) {
             additional.set_levels(idx, 0);
@@ -846,30 +946,30 @@ mod tests {
         let stop = &DEFAULT_STOPPED;
         let none_deleted = BitVec::repeat(false, batched.num_points());
         let some_deleted: BitVec = (0..batched.num_points()).map(|idx| idx % 3 == 0).collect();
+        let most_deleted: BitVec = (0..batched.num_points()).map(|idx| idx % 4 != 0).collect();
         for _ in 0..10 {
             let query = random_vector(&mut rng, DIM);
             let entry = graph.unfiltered_entry_point();
-            for deleted in [&none_deleted, &some_deleted] {
+            for deleted in [&none_deleted, &some_deleted, &most_deleted] {
                 let mut scorer = FilteredScorer::new(
                     query.clone().into(),
                     vector_holder.storage(),
                     vector_holder.quantized_vectors(),
                     None,
                     deleted,
-                    HardwareCounterCell::new(),
                 )
                 .unwrap();
                 for algorithm in [SearchAlgorithm::Hnsw, SearchAlgorithm::Acorn] {
                     let reference = graph
-                        .search(TOP, EF, algorithm, &mut scorer, entry, stop)
+                        .search(TOP, EF, algorithm, &mut scorer, &entry, stop)
                         .unwrap();
                     let result = batched
-                        .search(TOP, EF, algorithm, &mut scorer, entry, 1, stop)
+                        .search(TOP, EF, algorithm, &mut scorer, &entry, 1, stop)
                         .unwrap();
                     assert_eq!(result, reference, "{algorithm:?}");
                     for batch_size in [2, 16, 128] {
                         let result = batched
-                            .search(TOP, EF, algorithm, &mut scorer, entry, batch_size, stop)
+                            .search(TOP, EF, algorithm, &mut scorer, &entry, batch_size, stop)
                             .unwrap();
                         assert_eq!(result.len(), reference.len(), "{algorithm:?}");
                     }
@@ -927,36 +1027,37 @@ mod tests {
         for _ in 0..10 {
             let query = random_vector(rng, DIM);
             let query = DISTANCE.preprocess_vector::<VectorElementType>(query);
+            let _scope = ambient::test_guard();
             let links_scorer = vector_holder.scorer(query.clone());
             let links_scorer_bytes = links_scorer.scorer_bytes().unwrap();
             let base_scorer = vector_holder
                 .storage()
-                .build_raw_scorer(query.clone().into(), HardwareCounterCell::new())
+                .build_raw_scorer(query.clone().into())
                 .unwrap();
             let scorers = GraphWithVectorsScorers {
                 links: &links_scorer,
                 links_bytes: &links_scorer_bytes,
                 base: base_scorer.scorer_bytes().unwrap(),
             };
-            let entry_point = batched.entry_points.get_entry_point(|_| true).unwrap();
+            let entry = SearchEntry::Point(batched.entry_points.get_entry_point(|_| true).unwrap());
 
             let mut reference_top = FixedLengthPriorityQueue::new(TOP);
             for idx in 0..batched.num_points() as PointOffsetType {
                 reference_top.push(ScoredPointOffset {
                     idx,
-                    score: base_scorer.score_point(idx),
+                    score: base_scorer.score_point(idx).unwrap(),
                 });
             }
             let reference = reference_top.into_sorted_vec();
 
             let in_ram = graph
-                .search_with_vectors(TOP, ef, scorers, entry_point, stop)
+                .search_with_vectors(TOP, ef, scorers, &entry, stop)
                 .unwrap();
             assert_eq!(in_ram, reference, "in-RAM");
 
             for batch_size in [1, 2, 16, 128, 512, 4096] {
                 let result = batched
-                    .search_with_vectors(TOP, ef, scorers, entry_point, batch_size, stop)
+                    .search_with_vectors(TOP, ef, scorers, &entry, batch_size, stop)
                     .unwrap();
                 assert_eq!(result, reference, "batch_size={batch_size}");
             }
@@ -976,23 +1077,23 @@ mod tests {
             let query = random_vector(rng, DIM);
             let entry = graph.unfiltered_entry_point();
             for deleted in [&none_deleted, &some_deleted] {
+                let _scope = ambient::test_guard();
                 let mut scorer = FilteredScorer::new(
                     query.clone().into(),
                     vector_holder.storage(),
                     vector_holder.quantized_vectors(),
                     None,
                     deleted,
-                    HardwareCounterCell::new(),
                 )
                 .unwrap();
                 let deleted_count = deleted.count_ones();
                 for algorithm in [SearchAlgorithm::Hnsw, SearchAlgorithm::Acorn] {
                     let reference = graph
-                        .search(TOP, EF, algorithm, &mut scorer, entry, stop)
+                        .search(TOP, EF, algorithm, &mut scorer, &entry, stop)
                         .unwrap();
                     for batch_size in [1, 2, 16, 128] {
                         let result = batched
-                            .search(TOP, EF, algorithm, &mut scorer, entry, batch_size, stop)
+                            .search(TOP, EF, algorithm, &mut scorer, &entry, batch_size, stop)
                             .unwrap();
                         assert_eq!(
                             result, reference,

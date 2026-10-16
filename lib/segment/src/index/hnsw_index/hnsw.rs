@@ -39,6 +39,13 @@ pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
 pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
+/// Longest run of points a rayon job inserts without splitting further during an HNSW build.
+///
+/// Rayon's adaptive splitter stops splitting once its budget is spent unless a job gets stolen, so
+/// with a non-power-of-two thread count one thread can be left with up to half the points while
+/// the others idle. Capping the job length keeps the work stealable to the end.
+pub const HNSW_BUILD_MAX_PAR_LEN: usize = 64;
+
 pub(super) const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
 
 #[derive(Debug)]
@@ -51,7 +58,6 @@ pub struct HNSWIndex {
     path: PathBuf,
     graph: HnswGraph<HnswLinksStorage>,
     searches_telemetry: HNSWSearchesTelemetry,
-    is_on_disk: bool,
 }
 
 pub struct HnswIndexOpenArgs<'a> {
@@ -88,14 +94,13 @@ impl HNSWIndex {
             payload_index,
             config,
             path: path.to_owned(),
-            is_on_disk: graph.is_on_disk(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
         })
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
+    pub fn is_cold(&self) -> bool {
+        self.graph.is_cold()
     }
 
     /// Heap RAM held by the graph links, in bytes.
@@ -132,7 +137,6 @@ impl HNSWIndex {
             path: _,
             graph,
             searches_telemetry: _,
-            is_on_disk: _,
         } = self;
         graph.clear_cache()?;
         Ok(())
@@ -172,9 +176,24 @@ fn load_or_derive_config(
 
     let vector_storage = vector_storage.borrow();
     let available_vectors = vector_storage.available_vector_count();
+    Ok(derive_config(
+        hnsw_config,
+        &*vector_storage,
+        available_vectors,
+    ))
+}
+
+/// Graph config from the collection-level `hnsw_config`, with the full scan threshold
+/// converted from kilobytes into a number of vectors using the average vector size
+/// over `vector_count`.
+fn derive_config(
+    hnsw_config: &HnswConfig,
+    vector_storage: &impl VectorStorageRead,
+    vector_count: usize,
+) -> HnswGraphConfig {
     let full_scan_threshold = vector_storage
         .size_of_available_vectors_in_bytes()
-        .checked_div(available_vectors)
+        .checked_div(vector_count)
         .and_then(|avg_vector_size| {
             hnsw_config
                 .full_scan_threshold
@@ -183,14 +202,14 @@ fn load_or_derive_config(
         })
         .unwrap_or(1);
 
-    Ok(HnswGraphConfig::new(
+    HnswGraphConfig::new(
         hnsw_config.m,
         hnsw_config.ef_construct,
         full_scan_threshold,
         hnsw_config.max_indexing_threads,
         hnsw_config.payload_m,
-        available_vectors,
-    ))
+        vector_count,
+    )
 }
 
 /// Effective placement of the graph links and their residency: the `memory`

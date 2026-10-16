@@ -193,23 +193,39 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
 /// preallocation nor mmap exists.
 #[cfg(not(windows))]
 mod store {
+    use std::collections::HashMap;
     use std::path::Path;
 
     use common::universal_io::{MmapFile, MmapFs};
+    use segment::data_types::vectors::{
+        MultiDenseVectorInternal, NamedQuery, VectorInternal, VectorStructInternal,
+    };
     use segment::payload_json;
     use segment::payload_storage::update_only::UpdateOnlyPayloadStorage;
-    use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
-    use shard::files::SEGMENTS_PATH;
+    use segment::segment_constructor::get_vector_storage_path;
+    use segment::types::{
+        BinaryQuantization, BinaryQuantizationConfig, Distance, Filter, MultiVectorComparator,
+        MultiVectorConfig, Payload, QuantizationConfig, QuantizationSearchParams, SearchParams,
+        TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization, VectorStorageDatatype,
+        WithPayloadInterface, WithVector,
+    };
+    use shard::files::{SEGMENTS_PATH, segment_manifest_path};
+    use shard::operations::CollectionUpdateOperations::PayloadOperation;
+    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
     use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
     use shard::operations::point_ops::PointOperations::{UpsertPoints, UpsertPointsConditional};
     use shard::operations::point_ops::{
-        ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode,
+        ConditionalInsertOperationInternal, PointStructPersisted, UpdateMode, VectorStructPersisted,
     };
+    use shard::optimizers::config::TEMP_SEGMENTS_PATH;
+    use shard::query::ScoringQuery;
+    use shard::query::query_enum::QueryEnum;
 
     use super::*;
-    use crate::RetrieveRequestBuilder;
-    use crate::read_only::tests::{assert_follower_vectors, point};
+    use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
+    use crate::read_only::{ManifestSegmentEnumerator, ReadOnlyEdgeShard};
     use crate::read_view::EdgeShardRead as _;
+    use crate::{QueryRequestBuilder, RetrieveRequestBuilder};
 
     /// The leader writes its payload storage in mutable (Gridstore) mode, which an
     /// append-only writer refuses to append to. Recreate each segment's payload
@@ -329,6 +345,96 @@ mod store {
         assert_eq!(results[1].payload, Some(payload_json! { "kind": "fresh" }),);
     }
 
+    /// A point moved out of an immutable segment loses its old copy while
+    /// the write target is below the deferred-points threshold, and keeps it
+    /// once the target is past it: the new copy is deferred, so a reader
+    /// hiding deferred points still serves the old one.
+    #[test]
+    fn store_past_deferred_threshold_keeps_the_old_copy() {
+        use std::sync::atomic::AtomicBool;
+
+        use segment::data_types::load_profile::LoadProfile;
+
+        use crate::read_only::LocalSegmentEnumerator;
+
+        let dir = vacuumed_leader("edge-update-store-deferred");
+        recreate_payload_storages_append_only(dir.path());
+
+        // 1 KB of 1-dim f32 vectors: slots from 256 on are deferred.
+        let threshold_kb = 1;
+        let writer = UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            LocalSegmentEnumerator::new(dir.path()),
+            Some(threshold_kb),
+        )
+        .unwrap();
+
+        let moved = PointStructPersisted {
+            vector: point(7).vector,
+            ..point(501)
+        };
+        let (writer, outcome) = writer.apply_batch(store_batch(2000, vec![moved])).unwrap();
+        let record = &outcome.points[0];
+        assert_eq!(record.tombstoned.len(), 1, "below the cutoff, moves retire");
+        assert!(record.shadowed.is_empty());
+
+        let filler = (2001..=2256).map(point).collect();
+        let (writer, _) = writer.apply_batch(store_batch(2001, filler)).unwrap();
+
+        let rewritten = PointStructPersisted {
+            vector: point(7).vector,
+            ..point(500)
+        };
+        let (_writer, outcome) = writer
+            .apply_batch(store_batch(2002, vec![rewritten]))
+            .unwrap();
+        let record = &outcome.points[0];
+        assert_eq!(record.kind, PointApplyKind::Stored);
+        assert!(record.tombstoned.is_empty());
+        assert_eq!(record.superseded, None);
+        assert_eq!(
+            record.shadowed.len(),
+            1,
+            "past the cutoff, the old copy stays"
+        );
+
+        let retrieve_500 = |follower: &ReadOnlyEdgeShard<MmapFile>| {
+            let results = follower
+                .retrieve(
+                    RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(500)])
+                        .with_vector(WithVector::Bool(true))
+                        .build(),
+                )
+                .unwrap();
+            assert_eq!(results.len(), 1);
+            results[0].vector.clone()
+        };
+
+        // Showing every point, the newest copy wins.
+        let follower = open_follower(dir.path());
+        assert_eq!(
+            retrieve_500(&follower),
+            Some(point(7).vector.try_into().unwrap()),
+        );
+
+        // Hiding deferred points, the kept copy still serves.
+        let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+            MmapFs,
+            dir.path(),
+            LocalSegmentEnumerator::new(dir.path()),
+            None,
+            Some(LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(threshold_kb))),
+            Default::default(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            retrieve_500(&follower),
+            Some(point(500).vector.try_into().unwrap()),
+        );
+    }
+
     /// A retried store batch is a no-op — through the same writer and through
     /// a fresh one over the same directory alike: every point already carries
     /// the batch's version, which only a published versions array can tell
@@ -442,6 +548,375 @@ mod store {
                 .to_vec(),
         );
         assert_follower_vectors(&follower, &[11, 12]);
+    }
+
+    /// Every quantized row stored in the shard's appendable segments, in slot
+    /// order. The vectors are one-dimensional and Binary-quantized into `u128`
+    /// words, so each row is 16 bytes and a positive vector sets its first bit.
+    fn quantized_rows(shard_dir: &Path) -> Vec<[u8; 16]> {
+        let mut rows = Vec::new();
+        for segment in fs_err::read_dir(shard_dir.join(SEGMENTS_PATH)).unwrap() {
+            let segment_path = segment.unwrap().path();
+            let data_dir =
+                get_vector_storage_path(&segment_path, VECTOR_NAME).join("quantized_data");
+            if !data_dir.is_dir() {
+                continue;
+            }
+            let status = fs_err::read(data_dir.join("status.dat")).unwrap();
+            let len = usize::from_le_bytes(status[..size_of::<usize>()].try_into().unwrap());
+            let data = fs_err::read(data_dir.join("chunk_0.mmap")).unwrap();
+            let (stored, _) = data.as_chunks::<16>();
+            rows.extend_from_slice(&stored[..len]);
+        }
+        rows
+    }
+
+    /// Sequential batches through one writer keep the quantized rows of the
+    /// earlier ones: each batch must see the chunk files the previous one
+    /// wrote, not the listing taken when the quantized writer was opened.
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    fn sequential_batches_keep_quantized_rows() {
+        let dir = tempfile::Builder::new()
+            .prefix("edge-update-quantized-sequential")
+            .tempdir()
+            .unwrap();
+        fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+        let writer = UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+            None,
+        )
+        .unwrap();
+        let config = EdgeConfig {
+            quantization_config: Some(QuantizationConfig::Binary(BinaryQuantization {
+                binary: BinaryQuantizationConfig {
+                    always_ram: None,
+                    memory: None,
+                    encoding: None,
+                    query_encoding: None,
+                },
+            })),
+            ..test_config()
+        }
+        .plain_segment_config();
+        let (mut writer, _) = writer
+            .create_appendable(
+                &config,
+                &HashMap::new(),
+                &dir.path().join(TEMP_SEGMENTS_PATH),
+            )
+            .unwrap();
+
+        for (op_num, ids) in [(1, 1..=3), (2, 4..=6), (3, 7..=9)] {
+            let (next, outcome) = writer
+                .apply_batch(store_batch(op_num, ids.map(point).collect()))
+                .unwrap();
+            assert_eq!(outcome.stored, 3);
+            writer = next;
+        }
+
+        let rows = quantized_rows(dir.path());
+        assert_eq!(rows.len(), 9, "one quantized row per stored point");
+        for (slot, row) in rows.iter().enumerate() {
+            assert!(
+                row.iter().any(|&byte| byte != 0),
+                "quantized row {slot} was zeroed",
+            );
+        }
+
+        let follower = open_follower(dir.path());
+        assert_eq!(exact_count(&follower), 9);
+    }
+
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    fn appended_multivectors_are_found_through_quantization() {
+        let turbo = QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        });
+        let binary = QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                encoding: None,
+                query_encoding: None,
+            },
+        });
+
+        for quantization in [turbo, binary] {
+            let dir = tempfile::Builder::new()
+                .prefix("edge-update-quantized-multivector")
+                .tempdir()
+                .unwrap();
+            fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+            let writer = UpdateOnlyEdgeShard::open(
+                MmapFs,
+                dir.path(),
+                ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+                None,
+            )
+            .unwrap();
+            let mut config = EdgeConfig {
+                quantization_config: Some(quantization.clone()),
+                ..test_config()
+            };
+            let params = config.vectors.get_mut(VECTOR_NAME).unwrap();
+            params.size = 2;
+            params.datatype = Some(VectorStorageDatatype::Float16);
+            params.multivector_config = Some(MultiVectorConfig {
+                comparator: MultiVectorComparator::MaxSim,
+            });
+            let (writer, _) = writer
+                .create_appendable(
+                    &config.plain_segment_config(),
+                    &HashMap::new(),
+                    &dir.path().join(TEMP_SEGMENTS_PATH),
+                )
+                .unwrap();
+
+            let points = (1..=5).map(|id| multivector_point(id, id as f32)).collect();
+            let (writer, outcome) = writer.apply_batch(store_batch(1, points)).unwrap();
+            assert_eq!(outcome.stored, 5);
+            assert_multivectors_found(dir.path(), &quantization);
+
+            // Re-stores the points from their raw bytes.
+            let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload: payload_json! { "kind": "moved" },
+                points: Some((1..=5).map(ExtendedPointId::NumId).collect()),
+                filter: None,
+                key: None,
+            }));
+            let (_writer, outcome) = writer.apply_batch([(2, set_payload)]).unwrap();
+            assert_eq!(outcome.stored, 5);
+            assert_multivectors_found(dir.path(), &quantization);
+        }
+    }
+
+    fn assert_multivectors_found(shard_dir: &Path, quantization: &QuantizationConfig) {
+        let query = MultiDenseVectorInternal::new_unchecked(vec![vec![3.0, 1.0], vec![1.0, 3.0]]);
+        assert_all_found(shard_dir, VectorInternal::from(query), quantization);
+    }
+
+    /// Points 1..=5 are found both exactly and through quantization.
+    fn assert_all_found(shard_dir: &Path, query: VectorInternal, context: &impl std::fmt::Debug) {
+        let follower = open_follower(shard_dir);
+        let found = |params: SearchParams| {
+            let request = QueryRequestBuilder::new(10)
+                .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    query.clone(),
+                    VECTOR_NAME.to_string(),
+                ))))
+                .params(params)
+                .build();
+            let mut ids: Vec<_> = follower
+                .query(request)
+                .unwrap()
+                .into_iter()
+                .map(|point| point.id)
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+
+        let all: Vec<_> = (1..=5).map(ExtendedPointId::NumId).collect();
+        let exact = SearchParams {
+            exact: true,
+            ..Default::default()
+        };
+        assert_eq!(found(exact), all, "{context:?}");
+        assert_eq!(found(SearchParams::default()), all, "{context:?}");
+    }
+
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "always_ram is deprecated but still constructible"
+    )]
+    fn appended_turbo_datatype_vectors_are_found_through_quantization() {
+        const DIM: usize = 8;
+        let turbo = |bits| {
+            QuantizationConfig::Turbo(TurboQuantization {
+                turbo: TurboQuantQuantizationConfig {
+                    always_ram: None,
+                    memory: None,
+                    bits: Some(bits),
+                },
+            })
+        };
+        let binary = QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: None,
+                memory: None,
+                encoding: None,
+                query_encoding: None,
+            },
+        });
+        let quantizations = [
+            turbo(TurboQuantBitSize::Bits1),
+            turbo(TurboQuantBitSize::Bits1_5),
+            binary,
+        ];
+        let datatypes = [
+            VectorStorageDatatype::Turbo4,
+            VectorStorageDatatype::Turbo8,
+            VectorStorageDatatype::Turbo16,
+        ];
+
+        for is_multi in [false, true] {
+            for datatype in datatypes {
+                for quantization in &quantizations {
+                    let context = (is_multi, datatype, quantization);
+                    let dir = tempfile::Builder::new()
+                        .prefix("edge-update-quantized-turbo-datatype")
+                        .tempdir()
+                        .unwrap();
+                    fs_err::write(segment_manifest_path(dir.path()), "{}").unwrap();
+
+                    let writer = UpdateOnlyEdgeShard::open(
+                        MmapFs,
+                        dir.path(),
+                        ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+                        None,
+                    )
+                    .unwrap();
+                    let mut config = EdgeConfig {
+                        quantization_config: Some(quantization.clone()),
+                        ..test_config()
+                    };
+                    let params = config.vectors.get_mut(VECTOR_NAME).unwrap();
+                    params.size = DIM;
+                    params.datatype = Some(datatype);
+                    params.multivector_config = is_multi.then_some(MultiVectorConfig {
+                        comparator: MultiVectorComparator::MaxSim,
+                    });
+                    let (writer, _) = writer
+                        .create_appendable(
+                            &config.plain_segment_config(),
+                            &HashMap::new(),
+                            &dir.path().join(TEMP_SEGMENTS_PATH),
+                        )
+                        .unwrap();
+
+                    let row = |id: u64| -> Vec<f32> {
+                        (0..DIM)
+                            .map(|i| ((id as usize + i) % 3) as f32 + 0.5)
+                            .collect()
+                    };
+                    let vector = |id: u64| {
+                        if is_multi {
+                            VectorInternal::from(MultiDenseVectorInternal::new_unchecked(vec![
+                                row(id),
+                                row(id + 1),
+                            ]))
+                        } else {
+                            VectorInternal::from(row(id))
+                        }
+                    };
+                    let points: Vec<_> = (1..=5)
+                        .map(|id| PointStructPersisted {
+                            id: ExtendedPointId::NumId(id),
+                            vector: VectorStructPersisted::from(VectorStructInternal::Named(
+                                HashMap::from([(VECTOR_NAME.to_string(), vector(id))]),
+                            )),
+                            payload: None,
+                        })
+                        .collect();
+                    // The reference: a regular appendable segment fed the same operations.
+                    let leader_dir = tempfile::Builder::new()
+                        .prefix("edge-leader-quantized-turbo-datatype")
+                        .tempdir()
+                        .unwrap();
+                    let leader = EdgeShard::new(leader_dir.path(), config).unwrap();
+
+                    let (writer, outcome) =
+                        writer.apply_batch(store_batch(1, points.clone())).unwrap();
+                    assert_eq!(outcome.stored, 5, "{context:?}");
+                    leader
+                        .update(PointOperation(UpsertPoints(PointsList(points))))
+                        .unwrap();
+                    leader.flush().unwrap();
+                    assert_all_found(dir.path(), vector(0), &context);
+                    assert_eq!(
+                        quantized_scores(dir.path(), vector(0)),
+                        quantized_scores(leader_dir.path(), vector(0)),
+                        "{context:?}",
+                    );
+
+                    // Re-stores the points from their raw bytes.
+                    let set_payload = PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                        payload: payload_json! { "kind": "moved" },
+                        points: Some((1..=5).map(ExtendedPointId::NumId).collect()),
+                        filter: None,
+                        key: None,
+                    }));
+                    let (_writer, outcome) =
+                        writer.apply_batch([(2, set_payload.clone())]).unwrap();
+                    assert_eq!(outcome.stored, 5, "{context:?}");
+                    leader.update(set_payload).unwrap();
+                    leader.flush().unwrap();
+                    assert_all_found(dir.path(), vector(0), &context);
+                    assert_eq!(
+                        quantized_scores(dir.path(), vector(0)),
+                        quantized_scores(leader_dir.path(), vector(0)),
+                        "{context:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Scores straight from the quantized vectors, with no rescoring, by point id.
+    fn quantized_scores(shard_dir: &Path, query: VectorInternal) -> Vec<(ExtendedPointId, f32)> {
+        let request = QueryRequestBuilder::new(10)
+            .query(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                query,
+                VECTOR_NAME.to_string(),
+            ))))
+            .params(SearchParams {
+                quantization: Some(QuantizationSearchParams {
+                    ignore: false,
+                    rescore: Some(false),
+                    oversampling: None,
+                }),
+                ..Default::default()
+            })
+            .build();
+        let mut scores: Vec<_> = open_follower(shard_dir)
+            .query(request)
+            .unwrap()
+            .into_iter()
+            .map(|point| (point.id, point.score))
+            .collect();
+        scores.sort_unstable_by_key(|(id, _)| *id);
+        scores
+    }
+
+    fn multivector_point(id: u64, value: f32) -> PointStructPersisted {
+        PointStructPersisted {
+            id: ExtendedPointId::NumId(id),
+            vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
+                VECTOR_NAME.to_string(),
+                VectorInternal::from(MultiDenseVectorInternal::new_unchecked(vec![
+                    vec![value, 1.0],
+                    vec![1.0, value],
+                ])),
+            )]))),
+            payload: None,
+        }
     }
 
     /// An `insert_only` batch over a mix of taken and free ids: the free ones
@@ -561,6 +1036,85 @@ mod store {
             Some(payload_json! { "kind": "updated" })
         );
     }
+
+    /// The writer appends through its own path, which has to normalize cosine
+    /// vectors just as the classic one does.
+    #[test]
+    fn appended_cosine_vectors_are_normalized() {
+        // [3, 4] has length 5, so a normalizing store holds [0.6, 0.8].
+        const RAW: [f32; 2] = [3.0, 4.0];
+        const UNIT: [f32; 2] = [0.6, 0.8];
+
+        let dir = cosine_leader("edge-update-cosine");
+        recreate_payload_storages_append_only(dir.path());
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+        let (_writer, outcome) = writer
+            .apply_batch(store_batch(100, vec![cosine_point(2, RAW)]))
+            .unwrap();
+        assert_eq!(outcome.stored, 1);
+
+        let follower = open_follower(dir.path());
+        // Point 1 went in through the classic path: that is the bar.
+        assert_unit_vector(&follower, 1, UNIT);
+        assert_unit_vector(&follower, 2, UNIT);
+    }
+
+    fn cosine_leader(prefix: &str) -> TempDir {
+        let dir = tempfile::Builder::new().prefix(prefix).tempdir().unwrap();
+
+        let mut config = test_config();
+        let params = config.vectors.get_mut(VECTOR_NAME).unwrap();
+        params.size = 2;
+        params.distance = Distance::Cosine;
+
+        let leader = EdgeShard::new(dir.path(), config).unwrap();
+        leader
+            .update(PointOperation(UpsertPoints(PointsList(vec![
+                cosine_point(1, [3.0, 4.0]),
+            ]))))
+            .unwrap();
+        leader.flush().unwrap();
+
+        dir
+    }
+
+    fn cosine_point(id: u64, vector: [f32; 2]) -> PointStructPersisted {
+        PointStructPersisted {
+            id: ExtendedPointId::NumId(id),
+            vector: VectorStructPersisted::from(VectorStructInternal::Named(HashMap::from([(
+                VECTOR_NAME.to_string(),
+                VectorInternal::from(vector.to_vec()),
+            )]))),
+            payload: None,
+        }
+    }
+
+    fn assert_unit_vector(follower: &ReadOnlyEdgeShard<MmapFile>, id: u64, expected: [f32; 2]) {
+        let results = follower
+            .retrieve(
+                RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(id)])
+                    .with_payload(WithPayloadInterface::Bool(false))
+                    .with_vector(WithVector::Bool(true))
+                    .build(),
+            )
+            .unwrap();
+        let vector = results[0].vector.as_ref().expect("vector present");
+        let VectorStructInternal::Named(vectors) = vector else {
+            panic!("expected Named vectors, got {vector:?}");
+        };
+        let named = vectors.get(VECTOR_NAME).expect("vector name exists");
+        let VectorInternal::Dense(stored) = named else {
+            panic!("expected Dense vector, got {named:?}");
+        };
+        assert_eq!(stored.len(), expected.len(), "point {id}: {stored:?}");
+        for (got, want) in stored.iter().zip(&expected) {
+            assert!(
+                (got - want).abs() < 1e-6,
+                "point {id}: stored {stored:?}, expected the unit vector {expected:?}",
+            );
+        }
+    }
 }
 
 /// A claimed target opens non-writable; a created appendable takes the writes.
@@ -598,6 +1152,7 @@ fn optimizing_target_gets_a_created_appendable() {
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -651,6 +1206,7 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
         MmapFs,
         dir.path(),
         ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+        None,
     )
     .unwrap();
     assert_eq!(writer.segments_count(), 0);
@@ -856,4 +1412,235 @@ mod copy_dir {
 
         assert_eq!(tree(&target), tree(local.path()));
     }
+}
+
+#[cfg(unix)]
+fn walkdir_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in fs_err::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            out.extend(walkdir_files(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}
+
+#[cfg(unix)]
+fn lock_files(paths: &[std::path::PathBuf], locked: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = if locked { 0o000 } else { 0o644 };
+    for path in paths {
+        fs_err::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+}
+
+#[cfg(unix)]
+fn segment_files(dir: &std::path::Path, segment: uuid::Uuid) -> Vec<std::path::PathBuf> {
+    walkdir_files(
+        &dir.join(shard::files::SEGMENTS_PATH)
+            .join(segment.to_string()),
+    )
+}
+
+/// Regression test: updating a point that already
+/// sits in the write target claims a fresh slot there, and the store fails
+/// after the id tracker recorded it. The writer that resumes the segment must
+/// point the id back at its committed slot: the point keeps its last committed
+/// state, and replaying the update applies it. Retiring the id instead lost
+/// the point for good, and the replayed update found nothing to update.
+#[cfg(unix)]
+#[test]
+fn an_update_whose_store_fails_keeps_the_point() {
+    use segment::types::{Payload, WithPayloadInterface, WithVector};
+    use shard::files::segment_manifest_path;
+    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use shard::segment_manifest::SegmentsManifest;
+
+    use crate::RetrieveRequestBuilder;
+    use crate::read_only::ManifestSegmentEnumerator;
+    use crate::read_view::EdgeShardRead;
+
+    init_serverless_feature_flags();
+    let dir = leader_with_ten_points("edge-abandoned-update");
+    let manifest: SegmentsManifest =
+        serde_json::from_slice(&fs_err::read(segment_manifest_path(dir.path())).unwrap()).unwrap();
+    let target = *manifest.iter().next().unwrap().0;
+    let open = || {
+        UpdateOnlyEdgeShard::open(
+            MmapFs,
+            dir.path(),
+            ManifestSegmentEnumerator::new(MmapFs, dir.path()),
+            None,
+        )
+        .unwrap()
+    };
+    let set_payload = |version: SeqNumberType| {
+        let payload: Payload = serde_json::from_value(serde_json::json!({"v": 1})).unwrap();
+        [(
+            version,
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload,
+                points: Some(vec![ExtendedPointId::NumId(3)]),
+                filter: None,
+                key: None,
+            })),
+        )]
+    };
+
+    // The writer resolves point 3 through what it opened, then cannot write the
+    // payload storage: the new slot's mapping lands, its data does not.
+    let writer = open();
+    let payload_files: Vec<_> = segment_files(dir.path(), target)
+        .into_iter()
+        .filter(|path| path.to_string_lossy().contains("payload_storage"))
+        .collect();
+    assert!(!payload_files.is_empty());
+    lock_files(&payload_files, true);
+    let failed = writer.apply_batch(set_payload(100));
+    lock_files(&payload_files, false);
+    assert!(
+        failed.is_err(),
+        "the store must fail for this test to mean anything"
+    );
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10, "the point is still committed");
+
+    let (_writer, outcome) = open().apply_batch(set_payload(100)).unwrap();
+    assert_eq!(
+        outcome.points[0].kind,
+        PointApplyKind::Stored,
+        "the replayed update finds the point: {outcome:?}",
+    );
+
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10);
+    let records = follower
+        .retrieve(
+            RetrieveRequestBuilder::new(vec![ExtendedPointId::NumId(3)])
+                .with_payload(WithPayloadInterface::Bool(true))
+                .with_vector(WithVector::Bool(false))
+                .build(),
+        )
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    let payload = records[0].payload.as_ref().expect("payload requested");
+    assert_eq!(serde_json::to_value(payload).unwrap()["v"], 1);
+}
+
+/// A relink after a failed store must keep a committed update searchable even when a follower's
+/// previous reload staged that update but failed before publishing it.
+#[cfg(unix)]
+#[test]
+fn recovery_after_a_failed_reload_keeps_the_committed_vector() {
+    use std::sync::atomic::AtomicBool;
+
+    use common::types::DeferredBehavior;
+    use common::universal_io::MmapFile;
+    use segment::data_types::query_context::QueryContext;
+    use segment::data_types::vectors::{QueryVector, VectorInternal};
+    use segment::entry::entry_point::ReadSegmentEntry as _;
+    use segment::id_tracker::IdTrackerRead as _;
+    use segment::segment::read_only::ReadOnlySegment;
+    use segment::types::{Payload, WithPayload};
+    use shard::files::segment_manifest_path;
+    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
+    use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
+    use shard::operations::point_ops::PointOperations;
+    use shard::segment_manifest::SegmentsManifest;
+
+    use crate::read_only::tests::VECTOR_NAME;
+
+    init_serverless_feature_flags();
+    let _scope = common::ambient::unmeasured_guard(common::reason::reason("Test code"));
+    let dir = leader_with_ten_points("edge-relink-reload");
+    let manifest: SegmentsManifest =
+        serde_json::from_slice(&fs_err::read(segment_manifest_path(dir.path())).unwrap()).unwrap();
+    let target = *manifest.iter().next().unwrap().0;
+    let path = dir
+        .path()
+        .join(shard::files::SEGMENTS_PATH)
+        .join(target.to_string());
+    let mut reader = ReadOnlySegment::<MmapFile>::open(&MmapFs, &path, target, None, None).unwrap();
+    let old_slot = reader
+        .id_tracker
+        .borrow()
+        .internal_id_with_behavior(3.into(), DeferredBehavior::VisibleOnly)
+        .unwrap();
+    let open = || UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path()).unwrap();
+    let set_payload = |version: SeqNumberType| {
+        let payload: Payload = serde_json::from_value(serde_json::json!({"v": version})).unwrap();
+        [(
+            version,
+            CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
+                payload,
+                points: Some(vec![ExtendedPointId::NumId(3)]),
+                filter: None,
+                key: None,
+            })),
+        )]
+    };
+
+    let (writer, _) = open().apply_batch(set_payload(100)).unwrap();
+    drop(writer);
+    // Run the tracker half as if a component then failed, retaining the delta without publishing.
+    let delta = reader
+        .id_tracker
+        .borrow_mut()
+        .live_reload(&MmapFs, None)
+        .unwrap();
+    assert_eq!(delta.inserted, vec![10]);
+    assert_eq!(delta.deleted, vec![old_slot]);
+    reader.pending_reload.borrow_mut().merge(delta);
+
+    // A second update claims slot 11, then fails while storing its payload.
+    let writer = open();
+    let payload_files: Vec<_> = segment_files(dir.path(), target)
+        .into_iter()
+        .filter(|path| path.to_string_lossy().contains("payload_storage"))
+        .collect();
+    assert!(!payload_files.is_empty());
+    lock_files(&payload_files, true);
+    let failed = writer.apply_batch(set_payload(101));
+    lock_files(&payload_files, false);
+    assert!(
+        failed.is_err(),
+        "the store must fail after claiming its slot"
+    );
+
+    // Recovery relinks point 3 to slot 10. Committing point 11 at slot 12 also covers abandoned
+    // slot 11, so the reload sees its insert as versioned before reading the relink.
+    let (_writer, outcome) = open()
+        .apply_batch([(
+            102,
+            PointOperation(PointOperations::UpsertPoints(PointsList(vec![point(11)]))),
+        )])
+        .unwrap();
+    assert_eq!(outcome.stored, 1);
+    let bound = futures::executor::block_on(reader.live_preload(&AtomicBool::new(false))).unwrap();
+    reader.live_reload(bound).unwrap();
+
+    let query = QueryVector::Nearest(VectorInternal::Dense(vec![1.0]));
+    let context = QueryContext::new(0, common::ambient::current());
+    let hits = reader
+        .search_batch(
+            VECTOR_NAME,
+            &[&query],
+            &WithPayload::default(),
+            &false.into(),
+            None,
+            20,
+            None,
+            &context.get_segment_query_context(),
+        )
+        .unwrap();
+    let mut ids: Vec<_> = hits[0].iter().map(|hit| hit.id).collect();
+    ids.sort_unstable();
+    assert_eq!(
+        ids,
+        (1..=11).map(ExtendedPointId::NumId).collect::<Vec<_>>()
+    );
 }

@@ -19,12 +19,13 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_scalar<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
+        keep: impl Iterator<Item = bool> + Clone,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
         scalar_config: &ScalarQuantizationConfig,
         storage_type: QuantizedVectorsStorageType,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         if !storage_type.is_immutable() {
@@ -38,7 +39,7 @@ impl QuantizedVectors {
             encoded_vectors_u8::get_quantized_vector_size(vector_parameters);
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
-        let in_ram = Self::is_ram(scalar_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(scalar_config.memory_placement(), cold_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
                 data_path.as_path(),
@@ -47,9 +48,9 @@ impl QuantizedVectors {
             )?;
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
+                keep,
                 storage_builder,
                 vector_parameters,
-                vectors_count,
                 scalar_config.quantile,
                 encoding,
                 Some(meta_path.as_path()),
@@ -64,9 +65,9 @@ impl QuantizedVectors {
             Ok(QuantizedVectorStorage::ScalarMmap(
                 EncodedVectorsU8::encode(
                     vectors,
+                    keep,
                     storage_builder,
                     vector_parameters,
-                    vectors_count,
                     scalar_config.quantile,
                     encoding,
                     Some(meta_path.as_path()),
@@ -79,6 +80,7 @@ impl QuantizedVectors {
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn create_scalar_multi<'a>(
         vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + Send + Sync + 'a> + Clone,
+        keep: impl Iterator<Item = bool> + Clone,
         offsets: impl Iterator<Item = MultivectorOffset>,
         vector_parameters: &quantization::VectorParameters,
         vectors_count: usize,
@@ -87,7 +89,7 @@ impl QuantizedVectors {
         storage_type: QuantizedVectorsStorageType,
         multi_vector_config: MultiVectorConfig,
         path: &Path,
-        on_disk_vector_storage: bool,
+        cold_vector_storage: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<QuantizedVectorStorage> {
         if !storage_type.is_immutable() {
@@ -102,7 +104,7 @@ impl QuantizedVectors {
         let meta_path = Self::get_meta_path(path);
         let data_path = Self::get_data_path(path, storage_type);
         let offsets_path = Self::get_offsets_path(path, storage_type);
-        let in_ram = Self::is_ram(scalar_config.memory_placement(), on_disk_vector_storage);
+        let in_ram = Self::is_ram(scalar_config.memory_placement(), cold_vector_storage);
         if in_ram {
             let storage_builder = QuantizedRamStorageBuilder::new(
                 data_path.as_path(),
@@ -111,9 +113,9 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsU8::encode(
                 vectors,
+                keep,
                 storage_builder,
                 vector_parameters,
-                inner_vectors_count,
                 scalar_config.quantile,
                 encoding,
                 Some(meta_path.as_path()),
@@ -136,9 +138,9 @@ impl QuantizedVectors {
             )?;
             let quantized_storage = EncodedVectorsU8::encode(
                 vectors,
+                keep,
                 storage_builder,
                 vector_parameters,
-                inner_vectors_count,
                 scalar_config.quantile,
                 encoding,
                 Some(meta_path.as_path()),

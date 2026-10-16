@@ -34,7 +34,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
 pub use self::resharding::AbortReshardingScope;
-use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
+pub use crate::collection::collection_ops::ABORT_TRANSFERS_ON_SHARD_DROP_FIX_FROM_VERSION;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
@@ -587,6 +587,41 @@ impl Collection {
         Ok(())
     }
 
+    /// Apply a replica state already checked by the consensus state machine
+    pub async fn apply_replica_state(
+        &self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        state: ReplicaState,
+    ) -> CollectionResult<()> {
+        let replica_set = self
+            .shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        replica_set
+            .ensure_replica_with_state(peer_id, state)
+            .await?;
+
+        if !self.is_initialized.check_ready() {
+            let is_ready = self
+                .shards_holder
+                .read()
+                .await
+                .all_shards()
+                .all(|replica_set| replica_set.check_peers_state_all(ReplicaState::is_active));
+
+            if is_ready {
+                self.is_initialized.make_ready();
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn shard_recovery_point(&self, shard_id: ShardId) -> CollectionResult<RecoveryPoint> {
         let shard_holder_read = self.shards_holder.read().await;
 
@@ -701,7 +736,33 @@ impl Collection {
         }
     }
 
+    /// Check whether removing this peer requires a resharding abort that would reject
+    pub async fn check_remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        let shard_holder = self.shards_holder.read().await;
+        let Some(resharding) = shard_holder.resharding_state() else {
+            return Ok(());
+        };
+
+        // Removing the driver force-aborts resharding before cleaning up transfers
+        if resharding.peer_id == peer_id {
+            return Ok(());
+        }
+
+        let transfers = shard_holder.get_transfers(|transfer| {
+            transfer.is_resharding() && (transfer.from == peer_id || transfer.to == peer_id)
+        });
+
+        if !transfers.is_empty() {
+            shard_holder.check_abort_resharding(&resharding.key())?;
+        }
+
+        Ok(())
+    }
+
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {
+        // Reject before aborting any ordinary transfers or removing replicas
+        self.check_remove_shards_at_peer(peer_id).await?;
+
         // Abort resharding, if shards are removed from peer driving resharding
         // (which *usually* means the *peer* is being removed from consensus)
         let resharding_state = self

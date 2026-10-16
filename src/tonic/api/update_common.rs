@@ -22,7 +22,8 @@ use collection::operations::point_ops::{
     self, PointOperations, PointStructRawPersisted, PointSyncOperation, PointSyncRawOperation,
 };
 use collection::operations::vector_ops::DeleteVectors;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -80,8 +81,8 @@ pub async fn upsert(
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
         inference_params,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = points_operation_response_internal_with_inference_usage(
@@ -131,8 +132,8 @@ pub async fn delete(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response =
@@ -191,8 +192,8 @@ pub async fn update_vectors(
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
         inference_params,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = points_operation_response_internal_with_inference_usage(
@@ -244,8 +245,8 @@ pub async fn delete_vectors(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response =
@@ -291,8 +292,8 @@ pub async fn set_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response =
@@ -338,8 +339,8 @@ pub async fn overwrite_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response =
@@ -383,8 +384,8 @@ pub async fn delete_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response =
@@ -421,8 +422,8 @@ pub async fn clear_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response =
@@ -735,8 +736,8 @@ pub async fn create_field_index(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = points_operation_response_internal(
@@ -772,8 +773,8 @@ pub async fn create_field_index_internal(
         field_schema,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        HwMeasurementAcc::disposable(), // API unmeasured
     )
+    .unmeasured(reason("API unmeasured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -804,8 +805,8 @@ pub async fn delete_field_index(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        HwMeasurementAcc::disposable(), // API unmeasured
     )
+    .unmeasured(reason("API unmeasured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -834,8 +835,8 @@ pub async fn delete_field_index_internal(
         field_name,
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
-        HwMeasurementAcc::disposable(), // API unmeasured
     )
+    .unmeasured(reason("API unmeasured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -913,8 +914,8 @@ pub async fn sync(
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
         auth,
-        HwMeasurementAcc::disposable(), // API unmeasured
     )
+    .unmeasured(reason("API unmeasured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -950,8 +951,8 @@ pub async fn upsert_raw(
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response =
@@ -1120,8 +1121,8 @@ pub async fn create_vector_name(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -1167,8 +1168,8 @@ pub async fn create_vector_name_internal(
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
         auth,
-        HwMeasurementAcc::disposable(),
     )
+    .unmeasured(reason("This API isn't measured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -1204,8 +1205,8 @@ pub async fn delete_vector_name_internal(
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         None,
         auth,
-        HwMeasurementAcc::disposable(),
     )
+    .unmeasured(reason("This API isn't measured"))
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
@@ -1235,8 +1236,8 @@ pub async fn delete_vector_name(
         internal_params,
         UpdateParams::from_grpc(wait, ordering, timeout)?,
         auth,
-        request_hw_counter.get_counter(),
     )
+    .measured(request_hw_counter.get_counter())
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);

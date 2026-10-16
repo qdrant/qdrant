@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use collection::collection_state;
 use collection::config::CollectionConfigInternal;
@@ -8,12 +9,16 @@ use collection::operations::config_diff::{
 };
 use collection::operations::types::{PeerMetadata, SparseVectorsConfig, VectorsConfigDiff};
 use collection::shards::CollectionId;
-use collection::shards::shard::PeerId;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::resharding::{ReshardKey, ReshardState, ReshardingStage};
+use collection::shards::shard::{PeerId, ShardId};
+use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use segment::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, StrictModeConfig,
+    Payload, PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
     VectorNameBuf,
 };
 use shard::operations::vector_name_ops::VectorNameConfig;
+use tonic::transport::Uri;
 
 use crate::content_manager::collection_meta_ops::UpdateCollection;
 #[cfg(feature = "staging")]
@@ -24,6 +29,16 @@ use crate::quota::QuotaConfig;
 /// A single change a consensus operation makes
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
+    AddPeer {
+        peer_id: PeerId,
+        uri: Uri,
+    },
+
+    /// Remove peer address and metadata after every collection has dropped its replicas
+    RemovePeer {
+        peer_id: PeerId,
+    },
+
     CreateCollection {
         collection: CollectionId,
         state: Box<collection_state::State>,
@@ -60,6 +75,124 @@ pub enum Action {
         field_name: PayloadKeyType,
     },
 
+    /// Build shard replica sets before registering them with one mapping write
+    CreateAndRegisterShards {
+        collection: CollectionId,
+        shard_key: Option<ShardKey>,
+        shards: Vec<(ShardId, Vec<PeerId>, ReplicaState)>,
+    },
+
+    /// Stop cleanup tasks before their shard directories disappear
+    InvalidateCleanLocalShards {
+        collection: CollectionId,
+        shard_ids: Vec<ShardId>,
+    },
+
+    /// Persist the replay gate before dropping shard directories
+    RemoveShardKey {
+        collection: CollectionId,
+        shard_key: ShardKey,
+    },
+
+    DropShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+    },
+
+    SetShardNumber {
+        collection: CollectionId,
+        shard_number: NonZeroU32,
+    },
+
+    RemoveShardFromKeyMapping {
+        collection: CollectionId,
+        shard_id: ShardId,
+        shard_key: ShardKey,
+    },
+
+    SetReplicaState {
+        collection: CollectionId,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        state: ReplicaState,
+    },
+
+    RemoveReplica {
+        collection: CollectionId,
+        shard_id: ShardId,
+        peer_id: PeerId,
+    },
+
+    /// Build or reset the receiver's local shard before changing its replica state
+    InitLocalShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+        mode: LocalShardInitMode,
+    },
+
+    RegisterTransfer {
+        collection: CollectionId,
+        transfer: ShardTransfer,
+    },
+
+    SetTransferMethod {
+        collection: CollectionId,
+        key: ShardTransferKey,
+        method: ShardTransferMethod,
+    },
+
+    /// Delete points copied from the scale-down target into the remaining shards
+    DeleteMigratedPoints {
+        collection: CollectionId,
+        key: ReshardKey,
+    },
+
+    /// Restore the hash ring that preceded `key`
+    RevertHashRing {
+        collection: CollectionId,
+        key: ReshardKey,
+    },
+
+    SetReshardingState {
+        collection: CollectionId,
+        state: Option<ReshardState>,
+    },
+
+    SetReshardingStage {
+        collection: CollectionId,
+        stage: ReshardingStage,
+    },
+
+    /// Stop the node-local transfer task if this peer is its sender
+    StopTransferDriver {
+        collection: CollectionId,
+        key: ShardTransferKey,
+    },
+
+    /// Restore a sender's proxied shard after an aborted transfer
+    RevertProxyShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+    },
+
+    /// Remove the sender's update proxy after a successful transfer
+    UnproxifyShard {
+        collection: CollectionId,
+        shard_id: ShardId,
+    },
+
+    /// Start the node-local transfer task if this peer is its sender
+    SpawnTransferDriver {
+        collection: CollectionId,
+        transfer: ShardTransfer,
+    },
+
+    UnregisterTransfer {
+        collection: CollectionId,
+        key: ShardTransferKey,
+        outcome: TransferOutcome,
+    },
+
     UpdateAliases {
         set: BTreeMap<String, CollectionId>,
         remove: BTreeSet<String>,
@@ -79,11 +212,11 @@ pub enum Action {
         config: QuotaConfig,
     },
 
-    /// TODO: this action has to sleep when implemented for `TableOfContent`
+    /// Introduce the requested delay on the selected peers
     #[cfg(feature = "staging")]
     TestSlowDown(TestSlowDown),
 
-    /// TODO: this action has to return an error when implemented for `TableOfContent`
+    /// Draw a transient failure on the selected peers each time the action is applied
     #[cfg(feature = "staging")]
     TestTransientError(TestTransientError),
 }
@@ -93,14 +226,36 @@ impl Action {
     pub fn collection(&self) -> Option<&CollectionId> {
         match self {
             Action::CreateCollection { collection, .. }
-            | Action::DropCollection { collection }
             | Action::UpdateCollectionConfig { collection, .. }
+            | Action::DropCollection { collection }
+            | Action::CreateAndRegisterShards { collection, .. }
+            | Action::InvalidateCleanLocalShards { collection, .. }
+            | Action::RemoveShardKey { collection, .. }
+            | Action::DropShard { collection, .. }
+            | Action::SetShardNumber { collection, .. }
+            | Action::RemoveShardFromKeyMapping { collection, .. }
+            | Action::SetReplicaState { collection, .. }
+            | Action::RemoveReplica { collection, .. }
+            | Action::InitLocalShard { collection, .. }
+            | Action::RegisterTransfer { collection, .. }
+            | Action::SetTransferMethod { collection, .. }
+            | Action::DeleteMigratedPoints { collection, .. }
+            | Action::RevertHashRing { collection, .. }
+            | Action::SetReshardingState { collection, .. }
+            | Action::SetReshardingStage { collection, .. }
+            | Action::StopTransferDriver { collection, .. }
+            | Action::RevertProxyShard { collection, .. }
+            | Action::UnproxifyShard { collection, .. }
+            | Action::SpawnTransferDriver { collection, .. }
+            | Action::UnregisterTransfer { collection, .. }
             | Action::AddNamedVector { collection, .. }
             | Action::DropNamedVector { collection, .. }
             | Action::SetPayloadIndex { collection, .. }
             | Action::DropPayloadIndex { collection, .. } => Some(collection),
 
-            Action::UpdateAliases { .. }
+            Action::AddPeer { .. }
+            | Action::RemovePeer { .. }
+            | Action::UpdateAliases { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => None,
@@ -110,6 +265,18 @@ impl Action {
             Action::TestSlowDown(_) | Action::TestTransientError(_) => None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransferOutcome {
+    Finish,
+    Abort,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalShardInitMode {
+    EnsureExists,
+    ResetToEmpty,
 }
 
 /// One of the config updates `UpdateCollection` makes, each a separate save today

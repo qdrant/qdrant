@@ -130,6 +130,7 @@ async fn _do_recover_from_snapshot(
         &toc.optional_temp_or_storage_temp_path()?,
         toc.snapshots_path(),
         checksum.is_some(),
+        None,
     )
     .await?;
 
@@ -291,7 +292,7 @@ async fn _do_recover_from_snapshot(
 
         // TODO:
         //   `_do_recover_from_snapshot` is not *yet* analyzed/organized for cancel safety,
-        //   but `recover_local_shard_from` requires `cancel::CanellationToken` argument *now*,
+        //   but `recover_local_shard_from` requires `cancel::CancellationToken` argument *now*,
         //   so we provide a token that is never triggered (in this case `recover_local_shard_from`
         //   works *exactly* as before the `cancel::CancellationToken` parameter was added to it)
         let recovered = collection

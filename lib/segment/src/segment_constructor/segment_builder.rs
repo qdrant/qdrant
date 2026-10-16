@@ -10,10 +10,11 @@ use std::sync::atomic::AtomicBool;
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
+use common::ambient;
 use common::budget::ResourcePermit;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::feature_flags;
+use common::flags::FeatureFlags;
 use common::progress_tracker::ProgressTracker;
+use common::reason::reason;
 use common::small_uint::U24;
 use common::storage_version::StorageVersion;
 use common::types::{DeferredBehavior, PointOffsetType};
@@ -41,8 +42,8 @@ use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::{IndexLoadMode, StorageType, StructPayloadIndex};
 use crate::index::{PayloadIndex, PayloadIndexRead, VectorIndexEnum};
-use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::batched_reader::{PointData, merge_from};
 use crate::segment_constructor::{
@@ -50,12 +51,12 @@ use crate::segment_constructor::{
 };
 use crate::types::{
     CompactExtendedPointId, ExtendedPointId, HnswGlobalConfig, Memory, PayloadFieldSchema,
-    PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf,
+    PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType, VectorNameBuf, VectorStorageType,
 };
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
 };
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, VectorStorageRead, graph_inline};
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
@@ -65,6 +66,7 @@ pub struct SegmentBuilder {
     vector_data: HashMap<VectorNameBuf, VectorData>,
     segment_config: SegmentConfig,
     hnsw_global_config: HnswGlobalConfig,
+    feature_flags: FeatureFlags,
 
     // The temporary segment directory
     temp_dir: TempDir,
@@ -91,6 +93,7 @@ impl SegmentBuilder {
         temp_dir: &Path,
         segment_config: &SegmentConfig,
         hnsw_global_config: &HnswGlobalConfig,
+        feature_flags: FeatureFlags,
     ) -> OperationResult<Self> {
         let temp_dir = create_temp_dir(temp_dir)?;
 
@@ -102,7 +105,10 @@ impl SegmentBuilder {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
 
-        let payload_storage = create_payload_storage(temp_dir.path(), segment_config)?;
+        // A segment being built is thrown away on a crash, and durably flushed before it is
+        // loaded, so its storages don't need a journal to repair torn writes
+        let mut payload_storage = create_payload_storage(temp_dir.path(), segment_config)?;
+        payload_storage.disable_journal();
 
         let mut vector_data = HashMap::new();
 
@@ -124,10 +130,13 @@ impl SegmentBuilder {
         for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
 
-            let vector_storage = create_sparse_vector_storage(
+            let mut vector_storage = create_sparse_vector_storage(
                 &vector_storage_path,
                 &sparse_vector_config.storage_type,
             )?;
+            if let VectorStorageEnum::SparseMmap(storage) = &mut vector_storage {
+                storage.disable_journal();
+            }
 
             vector_data.insert(
                 vector_name.to_owned(),
@@ -145,6 +154,7 @@ impl SegmentBuilder {
             vector_data,
             segment_config: segment_config.clone(),
             hnsw_global_config: hnsw_global_config.clone(),
+            feature_flags,
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
@@ -196,16 +206,12 @@ impl SegmentBuilder {
     ///
     /// Note: This value doesn't guarantee strict ordering in ambiguous cases.
     ///       It should only be used in optimization purposes, not for correctness.
-    fn _get_ordering_value(
-        internal_id: PointOffsetType,
-        indices: &[FieldIndex],
-        hw_counter: &HardwareCounterCell,
-    ) -> u64 {
+    fn _get_ordering_value(internal_id: PointOffsetType, indices: &[FieldIndex]) -> u64 {
         let mut ordering = 0;
         for payload_index in indices {
             match payload_index {
                 FieldIndex::IntMapIndex(index) => {
-                    if let Some(numbers) = index.get_values(internal_id, hw_counter) {
+                    if let Some(numbers) = index.get_values(internal_id) {
                         for number in numbers {
                             ordering = ordering.wrapping_add(*number as u64);
                         }
@@ -213,7 +219,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::KeywordIndex(index) => {
-                    if let Some(keywords) = index.get_values(internal_id, hw_counter) {
+                    if let Some(keywords) = index.get_values(internal_id) {
                         for keyword in keywords {
                             let mut hasher = AHasher::default();
                             keyword.hash(&mut hasher);
@@ -257,7 +263,7 @@ impl SegmentBuilder {
                     break;
                 }
                 FieldIndex::UuidMapIndex(index) => {
-                    if let Some(ids) = index.get_values(internal_id, hw_counter) {
+                    if let Some(ids) = index.get_values(internal_id) {
                         uuid_hash(&mut ordering, ids.map(Cow::into_owned));
                     }
                     break;
@@ -286,12 +292,7 @@ impl SegmentBuilder {
     ///
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
-    pub fn update(
-        &mut self,
-        segments: &[&Segment],
-        stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<bool> {
+    pub fn update(&mut self, segments: &[&Segment], stopped: &AtomicBool) -> OperationResult<bool> {
         if segments.is_empty() {
             return Ok(true);
         }
@@ -331,7 +332,6 @@ impl SegmentBuilder {
                 point_data.ordering = point_data.ordering.wrapping_add(Self::_get_ordering_value(
                     point_data.internal_id,
                     payload_indices,
-                    hw_counter,
                 ));
             }
         }
@@ -446,7 +446,8 @@ impl SegmentBuilder {
             }
         }
 
-        let hw_counter = HardwareCounterCell::disposable(); // Disposable counter for internal operations.
+        let _scope =
+            ambient::unmeasured_guard(reason("Disposable counter for internal operations."));
 
         let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
 
@@ -456,7 +457,7 @@ impl SegmentBuilder {
             let old_internal_id = point_data.internal_id;
 
             let other_payload = payloads[point_data.segment_index.get() as usize]
-                .with_view(|v| v.get_payload_sequential(old_internal_id, &hw_counter))?; // Internal operation, no measurement needed!
+                .with_view(|v| v.get_payload_sequential(old_internal_id))?;
 
             match self.id_tracker.internal_id_with_behavior(
                 ExtendedPointId::from(point_data.external_id),
@@ -485,8 +486,7 @@ impl SegmentBuilder {
                         )?;
                         self.id_tracker
                             .set_internal_version(new_internal_id, point_data.version)?;
-                        self.payload_storage
-                            .clear(existing_internal_id, &hw_counter)?;
+                        self.payload_storage.clear(existing_internal_id)?;
 
                         existing_internal_id
                     } else {
@@ -510,11 +510,9 @@ impl SegmentBuilder {
 
             // Propagate payload to new segment
             if !other_payload.is_empty() {
-                self.payload_storage.set(
-                    new_internal_id,
-                    &other_payload,
-                    &HardwareCounterCell::disposable(),
-                )?;
+                ambient::unmeasured(reason("Internal operation"), || {
+                    self.payload_storage.set(new_internal_id, &other_payload)
+                })?;
             }
         }
 
@@ -540,7 +538,6 @@ impl SegmentBuilder {
             ResourcePermit::dummy(get_num_indexing_threads(0) as u32),
             &AtomicBool::new(false),
             &mut rand::rng(),
-            &HardwareCounterCell::new(),
             ProgressTracker::new_for_test(),
         )
         .unwrap()
@@ -561,7 +558,6 @@ impl SegmentBuilder {
         permit: ResourcePermit,
         stopped: &AtomicBool,
         rng: &mut R,
-        hw_counter: &HardwareCounterCell,
         progress_segment: ProgressTracker,
     ) -> Result<Segment, OperationError> {
         let temp_dir = {
@@ -570,8 +566,9 @@ impl SegmentBuilder {
                 id_tracker,
                 payload_storage,
                 mut vector_data,
-                segment_config,
+                mut segment_config,
                 hnsw_global_config,
+                feature_flags,
                 temp_dir,
                 indexed_fields,
                 defragment_keys: _,
@@ -592,7 +589,11 @@ impl SegmentBuilder {
             let progress_sparse_vector_index = progress_segment.subtask("sparse_vector_index");
 
             let appendable_flag = segment_config.is_appendable();
-
+            // A non-appendable segment is complete once built, its payloads are only read. Before
+            // the flush, which persists the layout
+            if !appendable_flag && feature_flags.compact_logstore_tracker {
+                payload_storage.make_immutable()?;
+            }
             payload_storage.flusher()()?;
             let payload_storage_arc = Arc::new(AtomicRefCell::new(payload_storage));
 
@@ -661,7 +662,7 @@ impl SegmentBuilder {
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_info.vector_storage));
 
-                old_indices.insert(vector_name, vector_info.old_indices);
+                old_indices.insert(vector_name.to_owned(), vector_info.old_indices);
 
                 vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
             }
@@ -692,9 +693,11 @@ impl SegmentBuilder {
                 StorageType::from_appendable(appendable_flag),
                 IndexLoadMode::CreateIfMissing,
             )?;
+            // Like the storages, the field indices of a segment being built need no journal
+            payload_index.disable_journal();
             for (field, payload_schema, progress) in indexed_fields {
                 progress.start();
-                payload_index.set_indexed(&field, payload_schema, hw_counter)?;
+                payload_index.set_indexed(&field, payload_schema)?;
                 check_process_stopped(stopped)?;
             }
             drop(progress_payload_index);
@@ -719,7 +722,8 @@ impl SegmentBuilder {
             check_process_stopped(stopped)?;
 
             progress_vector_index.start();
-            for (vector_name, vector_config) in &segment_config.vector_data {
+            for (vector_name, vector_config) in segment_config.vector_data.iter_mut() {
+                let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
                 let vector_storage = vector_storages_arc.remove(vector_name).unwrap();
                 let quantized_vectors =
                     Arc::new(AtomicRefCell::new(quantized_vectors.remove(vector_name)));
@@ -740,12 +744,13 @@ impl SegmentBuilder {
                         stopped,
                         rng,
                         hnsw_global_config: &hnsw_global_config,
-                        feature_flags: feature_flags(),
+                        feature_flags,
+                        inline_vectors: vector_config.inline_vectors_in_graph(),
                         progress: progress_vector_index.running_subtask(vector_name),
                     },
                 )?;
 
-                if vector_storage.borrow().is_on_disk() {
+                if vector_storage.borrow().is_cold() {
                     // If vector storage is expected to be on-disk, we need to clear cache
                     // to avoid cache pollution
                     vector_storage.borrow().clear_cache()?;
@@ -758,6 +763,24 @@ impl SegmentBuilder {
                 // Index if always loaded on-disk=true from build function
                 // So we may clear unconditionally
                 index.clear_cache()?;
+
+                if feature_flags.combined_vector_storage && vector_config.inline_vectors_in_graph()
+                {
+                    // Reclaim the build storage from its other holders and
+                    // become the sole owner of it.
+                    drop(index);
+                    payload_index_arc
+                        .borrow_mut()
+                        .unregister_vector_storage(vector_name);
+                    let vector_storage = Arc::into_inner(vector_storage)
+                        .map(AtomicRefCell::into_inner)
+                        .ok_or(OperationError::service_error(
+                            "failed to reclaim vector storage for graph-inline finalization",
+                        ))?;
+
+                    graph_inline::finalize(&vector_storage_path, vector_storage)?;
+                    vector_config.storage_type = VectorStorageType::GraphInline;
+                }
             }
             drop(progress_vector_index);
 
@@ -778,13 +801,13 @@ impl SegmentBuilder {
                     tick_progress: || (),
                 })?;
 
-                if sparse_vector_config.storage_type.is_on_disk() {
+                if vector_storage_arc.borrow().is_cold() {
                     // If vector storage is expected to be on-disk, we need to clear cache
                     // to avoid cache pollution
                     vector_storage_arc.borrow().clear_cache()?;
                 }
 
-                if sparse_vector_config.index.index_type.is_on_disk() {
+                if index.is_cold() {
                     index.clear_cache()?;
                 }
 
@@ -793,7 +816,7 @@ impl SegmentBuilder {
             }
             drop(progress_sparse_vector_index);
 
-            if segment_config.payload_storage_type.is_on_disk() {
+            if payload_storage_arc.borrow().is_cold() {
                 // If payload storage is expected to be on-disk, we need to clear cache
                 // to avoid cache pollution
                 payload_storage_arc.borrow().clear_cache()?;

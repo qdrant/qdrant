@@ -13,7 +13,7 @@ workspace = true
 
 [features]
 default = []
-testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing"]
+testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing", "dep:exhaustive"]
 gpu = ["gpu/gpu"]
 
 [build-dependencies]
@@ -35,6 +35,7 @@ rstest = { workspace = true }
 segment = { path = ".", default-features = false, features = ["testing"] }
 proptest = { workspace = true }
 anyhow = { workspace = true }
+bm25 = { path = "../bm25" }
 object_store = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
@@ -67,6 +68,7 @@ ordered-float = { workspace = true }
 thiserror = { workspace = true }
 atomic_refcell = { workspace = true }
 atomicwrites = { workspace = true }
+memchr = { workspace = true }
 memmap2 = { workspace = true }
 schemars = { workspace = true }
 log = { workspace = true }
@@ -95,6 +97,7 @@ tokio = { workspace = true }
 byteorder = { workspace = true }
 stumpalo = { workspace = true }
 zerocopy = { workspace = true }
+zstd = { workspace = true }
 vaporetto = { version = "0.6.5" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "1.2.2" }
 # Memory only; disable `user` so macOS does not pull objc2 via open-directory
@@ -123,6 +126,7 @@ nom = "8.0.0"
 half = { workspace = true }
 roaring = { workspace = true }
 duplicate = { workspace = true }
+exhaustive = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18", default-features = false }

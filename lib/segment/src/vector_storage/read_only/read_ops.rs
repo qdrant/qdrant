@@ -94,25 +94,25 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         }
     }
 
-    fn is_on_disk(&self) -> bool {
+    fn is_cold(&self) -> bool {
         match self {
-            VectorStorageReadEnum::Dense(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseByte(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseHalf(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseGraphInline(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseChunked(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseChunkedByte(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseChunkedHalf(s) => s.is_on_disk(),
-            VectorStorageReadEnum::MultiDenseChunked(s) => s.is_on_disk(),
-            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.is_on_disk(),
-            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseTurbo(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.is_on_disk(),
-            VectorStorageReadEnum::DenseTurboChunked(s) => s.is_on_disk(),
-            VectorStorageReadEnum::MultiDenseTurbo(s) => s.is_on_disk(),
-            VectorStorageReadEnum::Sparse(s) => s.is_on_disk(),
+            VectorStorageReadEnum::Dense(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseByte(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseHalf(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseGraphInline(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseGraphInlineByte(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseGraphInlineHalf(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseChunked(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseChunkedByte(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseChunkedHalf(s) => s.is_cold(),
+            VectorStorageReadEnum::MultiDenseChunked(s) => s.is_cold(),
+            VectorStorageReadEnum::MultiDenseChunkedByte(s) => s.is_cold(),
+            VectorStorageReadEnum::MultiDenseChunkedHalf(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseTurbo(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseTurboGraphInline(s) => s.is_cold(),
+            VectorStorageReadEnum::DenseTurboChunked(s) => s.is_cold(),
+            VectorStorageReadEnum::MultiDenseTurbo(s) => s.is_cold(),
+            VectorStorageReadEnum::Sparse(s) => s.is_cold(),
         }
     }
 
@@ -164,7 +164,7 @@ impl<S: UniversalRead> VectorStorageRead for VectorStorageReadEnum<S> {
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         match self {
             VectorStorageReadEnum::Dense(s) => s.read_vectors::<P, U>(keys, callback),
             VectorStorageReadEnum::DenseByte(s) => s.read_vectors::<P, U>(keys, callback),

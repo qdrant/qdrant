@@ -1,14 +1,22 @@
 pub(crate) mod append_only;
+// Only read by the storages yet, nothing writes it
+#[cfg_attr(not(test), expect(dead_code))]
+pub(crate) mod compacted;
 pub mod iter;
+mod journal;
+mod read;
 pub mod read_only;
+pub(crate) mod tracker_enum;
 
 #[cfg(test)]
 mod tests;
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
-use common::generic_consts::Random;
+use common::generic_consts::{AccessPattern, Random};
 use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
 use common::universal_io::{
     CachedReadFs, OpenOptions, Populate, ReadRange, UniversalIoError, UniversalRead,
@@ -17,6 +25,9 @@ use common::universal_io::{
 use smallvec::SmallVec;
 
 pub use self::iter::{Iter, PointerItem};
+pub(crate) use self::journal::Journal;
+use self::journal::Record;
+pub use self::read::TrackerRead;
 pub use self::read_only::ReadOnlyTracker;
 use crate::Result;
 use crate::error::BlobstoreError;
@@ -43,7 +54,7 @@ fn tracker_open_options(populate: Populate, writeable: bool) -> OpenOptions {
 /// gridstore files, but it is well-defined, unlike [`std::option::Option`].
 ///
 /// Please note that it uses 32-bit tag so that there's no padding before `ValuePointer`.
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub(crate) struct OptionalPointer {
     discriminant: u32,
@@ -114,39 +125,54 @@ impl ValuePointer {
     }
 }
 
-/// Read-side interface over the pointer tracker.
+/// Path of the journal next to the tracker file at `path`, `None` if `path` is no tracker file.
 ///
-/// Implemented by the writable [`Tracker`] — whose reads see pending
-/// in-memory updates — and by [`ReadOnlyTracker`], which serves plain
-/// on-disk state. [`crate::GridstoreView`] is generic over this trait, so
-/// the same read logic works for both.
-pub trait TrackerRead<S: UniversalRead> {
-    /// Exclusive upper bound of point offsets that may have a pointer, as
-    /// maintained by the writer (in memory for [`Tracker`], in the stored
-    /// header for [`ReadOnlyTracker`]).
-    fn max_point_offset(&self) -> Result<PointOffset>;
+/// The journal is no storage file, it isn't part of snapshots. Where storage files are replaced
+/// in place, such as when merging a partial snapshot, it must be removed first: opening would
+/// replay it onto the replaced tracker.
+pub fn tracker_journal_path(path: &Path) -> Option<PathBuf> {
+    (path.file_name()? == Tracker::<()>::FILE_NAME).then(|| path.with_file_name(journal::FILE_NAME))
+}
 
-    /// Get the page pointer at the given point offset.
-    fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>>;
+/// Decode a slot read from the tracker file.
+///
+/// A pointer with length zero reads as `None`. We never write pointers with length zero, but it
+/// may appear on a torn mapping write. Unlike the tracker file, the append-only tracker stores
+/// empty values with length zero, so it must not use this.
+fn decode_slot(slot: OptionalPointer) -> Option<ValuePointer> {
+    let pointer = slot.to_option()?;
 
-    /// Iterate page pointers for the given point offsets.
-    ///
-    /// Issues batched reads against the underlying storage, so async backends
-    /// can fetch entries in parallel.
-    fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffset)>;
+    // Disallow in debug builds, disregard in release builds to avoid panics on startup
+    #[cfg(not(test))]
+    debug_assert_ne!(
+        pointer.length, 0,
+        "ValuePointer with length 0 must not exist"
+    );
+
+    if pointer.length > 0 {
+        Some(pointer)
+    } else {
+        None
+    }
 }
 
 /// Read the slot for `point_offset` directly from `storage`.
 ///
 /// Offsets beyond the file read as `None`; so do allocated-but-never-written
 /// slots — the file is zero-initialized and all-zeroes is the `None` slot.
-fn read_slot<S: UniversalRead>(
+fn read_slot<P: AccessPattern, S: UniversalRead>(
     storage: &S,
     point_offset: PointOffset,
 ) -> Result<Option<ValuePointer>> {
+    Ok(read_raw_slot::<P, _>(storage, point_offset)?.and_then(decode_slot))
+}
+
+/// Read the slot for `point_offset` directly from `storage` without decoding it, `None` if it
+/// is beyond the file.
+fn read_raw_slot<P: AccessPattern, S: UniversalRead>(
+    storage: &S,
+    point_offset: PointOffset,
+) -> Result<Option<OptionalPointer>> {
     let start_offset =
         size_of::<TrackerHeader>() + point_offset as usize * size_of::<OptionalPointer>();
     let end_offset = start_offset + size_of::<OptionalPointer>();
@@ -154,8 +180,37 @@ fn read_slot<S: UniversalRead>(
     if end_offset as u64 > storage_len {
         return Ok(None);
     }
-    let opt = storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), Random)?[0];
-    Ok(opt.to_option())
+    let slot =
+        storage.read::<_, OptionalPointer>(ReadRange::one(start_offset as u64), P::default())?[0];
+    Ok(Some(slot))
+}
+
+/// Read the slots for a contiguous range of point offsets directly from `storage`, with a
+/// single read.
+///
+/// Slots beyond the file read as `None`, like in [`read_slot`].
+fn read_slots<P: AccessPattern, S: UniversalRead>(
+    storage: &S,
+    point_offsets: Range<PointOffset>,
+) -> Result<Vec<Option<ValuePointer>>> {
+    let slot_size = size_of::<OptionalPointer>() as u64;
+    let start_offset =
+        size_of::<TrackerHeader>() as u64 + u64::from(point_offsets.start) * slot_size;
+    let stored_slots = storage.len::<u8>()?.saturating_sub(start_offset) / slot_size;
+    let length = (point_offsets.len() as u64).min(stored_slots);
+
+    let mut pointers = Vec::with_capacity(point_offsets.len());
+    if length > 0 {
+        let range = ReadRange {
+            byte_offset: start_offset,
+            length,
+        };
+        let slots = storage.read::<_, OptionalPointer>(range, P::default())?;
+        pointers.extend(slots.iter().copied().map(decode_slot));
+    }
+    pointers.resize(point_offsets.len(), None);
+
+    Ok(pointers)
 }
 
 /// Pointer updates for a given point offset
@@ -302,6 +357,9 @@ pub struct Tracker<S> {
 
     /// The maximum pointer offset in the tracker (updated in memory).
     next_pointer_offset: PointOffset,
+
+    /// Journal of pointer writes, to repair torn writes of the file. `None` if disabled.
+    journal: Option<Arc<Journal>>,
 }
 
 // Methods that do not use storage (no trait bound).
@@ -312,8 +370,34 @@ impl<S> Tracker<S> {
         path.join(Self::FILE_NAME)
     }
 
+    /// The journal is no storage file, see [`tracker_journal_path`].
     pub fn files(&self) -> Vec<PathBuf> {
         vec![self.path.clone()]
+    }
+
+    /// Journal to append pointer writes to before writing them, `None` if disabled.
+    pub(crate) fn journal(&self) -> Option<Arc<Journal>> {
+        self.journal.clone()
+    }
+
+    /// Don't journal pointer writes anymore, see [`Blobstore::disable_journal`].
+    ///
+    /// [`Blobstore::disable_journal`]: crate::Blobstore::disable_journal
+    pub fn disable_journal(&mut self) {
+        let Some(journal) = self.journal.take() else {
+            return;
+        };
+
+        if journal.path().exists() {
+            debug_assert!(
+                false,
+                "journal must not be disabled while it holds pointer writes"
+            );
+            log::warn!(
+                "Disabled GridStore journalling while a journal file exists: {}",
+                journal.path().display()
+            );
+        }
     }
 
     pub fn pointer_count(&self) -> u32 {
@@ -353,6 +437,7 @@ impl<S: UniversalRead> Tracker<S> {
             header,
             storage,
             pending_updates,
+            journal: Some(Arc::new(Journal::new(dir))),
         })
     }
 
@@ -387,38 +472,11 @@ impl<S: UniversalRead> Tracker<S> {
 
     /// Get the raw value at the given point offset
     fn get_raw(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        read_slot(&self.storage, point_offset)
-    }
-
-    /// Get the page pointer at the given point offset
-    pub fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        match self.pending_updates.get(&point_offset) {
-            // Pending update exists but is empty, should not happen, fall back to real data
-            Some(pending) if pending.is_empty() => {
-                debug_assert!(false, "pending updates must not be empty");
-                self.get_raw(point_offset)
-            }
-            // Use set from pending updates
-            Some(pending) => Ok(pending.current),
-            // No pending update, use real data
-            None => self.get_raw(point_offset),
-        }
-    }
-
-    /// Iterate page pointers for the given point offsets.
-    ///
-    /// Issues batched reads against the underlying storage, so async backends
-    /// can fetch entries in parallel.
-    pub fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffset)>,
-    {
-        Iter::new(point_offsets, &self.storage, &self.pending_updates)
+        read_slot::<Random, _>(&self.storage, point_offset)
     }
 
     pub fn has_pointer(&self, point_offset: PointOffset) -> Result<bool> {
-        Ok(self.get(point_offset)?.is_some())
+        Ok(self.get::<Random>(point_offset)?.is_some())
     }
 
     pub fn populate(&self) -> Result<()> {
@@ -426,23 +484,51 @@ impl<S: UniversalRead> Tracker<S> {
     }
 }
 
-impl<S: UniversalRead> TrackerRead<S> for Tracker<S> {
+impl<S: UniversalRead> TrackerRead for Tracker<S> {
     /// Exact for the writable tracker: maintained in memory alongside the
     /// header (see [`Tracker::pointer_count`]).
     fn max_point_offset(&self) -> Result<PointOffset> {
-        Ok(self.pointer_count())
+        Ok(self.next_pointer_offset)
     }
 
-    fn get(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        Tracker::get(self, point_offset)
+    fn get<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
+        match self.pending_updates.get(&point_offset) {
+            // Pending update exists but is empty, should not happen, fall back to real data
+            Some(pending) if pending.is_empty() => {
+                debug_assert!(false, "pending updates must not be empty");
+                read_slot::<P, _>(&self.storage, point_offset)
+            }
+            // Use set from pending updates
+            Some(pending) => Ok(pending.current),
+            // No pending update, use real data
+            None => read_slot::<P, _>(&self.storage, point_offset),
+        }
     }
 
-    fn iter<U, I>(&self, point_offsets: I) -> Result<Iter<'_, U, I, S>>
+    fn get_range<P: AccessPattern>(
+        &self,
+        point_offsets: Range<PointOffset>,
+    ) -> Result<Vec<Option<ValuePointer>>> {
+        let start = point_offsets.start;
+        let mut pointers = read_slots::<P, _>(&self.storage, point_offsets)?;
+
+        // Pending updates take precedence over the persisted slots, see `get`
+        for (index, pointer) in pointers.iter_mut().enumerate() {
+            if let Some(pending) = self.pending_updates.get(&(start + index as PointOffset)) {
+                debug_assert!(!pending.is_empty(), "pending updates must not be empty");
+                *pointer = pending.current;
+            }
+        }
+
+        Ok(pointers)
+    }
+
+    fn iter<U, I>(&self, point_offsets: I) -> Result<impl Iterator<Item = Result<(U, PointerItem)>>>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffset)>,
     {
-        Tracker::iter(self, point_offsets)
+        Iter::new(point_offsets, &self.storage, &self.pending_updates)
     }
 }
 
@@ -457,10 +543,10 @@ where
     /// The file is created with the default size if no size hint is given
     pub fn new(
         fs: &impl UniversalReadFs<File = S>,
-        path: &Path,
+        dir: &Path,
         size_hint: Option<usize>,
     ) -> Result<Self> {
-        let path = Self::tracker_file_name(path);
+        let path = Self::tracker_file_name(dir);
         let size = size_hint.unwrap_or(Self::DEFAULT_SIZE).next_power_of_two();
         assert!(
             size > std::mem::size_of::<TrackerHeader>(),
@@ -474,15 +560,55 @@ where
         )?;
         let header = TrackerHeader::default();
         let pending_updates = AHashMap::new();
+
+        // An existing journal belongs to an earlier tracker, opening would replay it onto this one
+        let journal = Journal::new(dir);
+        if journal.path().exists() {
+            debug_assert!(false, "new tracker must not have an existing journal");
+            log::warn!(
+                "Removing existing Gridstore tracker journal when creating new tracker: {}",
+                journal.path().display(),
+            );
+            journal.remove()?;
+        }
+
         let mut page_tracker = Self {
             path,
             header,
             storage,
             pending_updates,
             next_pointer_offset: 0,
+            journal: Some(Arc::new(journal)),
         };
         page_tracker.write_header()?;
         Ok(page_tracker)
+    }
+
+    /// Replay the pointer writes in the journal onto the file, which repairs writes a crash may
+    /// have torn during a flush. The file is then durably persisted and the journal removed.
+    ///
+    /// Must be called when opening, before anything else writes.
+    pub fn replay_journal(&mut self) -> Result<()> {
+        let Some(journal) = self.journal.clone() else {
+            return Ok(());
+        };
+        let Some(records) = journal.read()? else {
+            return Ok(());
+        };
+
+        for Record { point_offset, slot } in records {
+            // Only write slots that differ, replaying the journal left behind by a clean
+            // shutdown doesn't rewrite the file
+            let current = read_raw_slot::<Random, _>(&self.storage, point_offset)?;
+            if current.unwrap_or_else(OptionalPointer::none) != slot {
+                self.persist_pointer(point_offset, slot.to_option())?;
+            }
+            self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
+        }
+        self.write_pointer_count()?;
+        self.flusher()()?;
+
+        journal.remove()
     }
 
     /// Writes the accumulated pending updates to storage and flushes it
@@ -596,7 +722,7 @@ where
 
     /// Unset the value at the given point offset and return its previous value
     pub fn unset(&mut self, point_offset: PointOffset) -> Result<Option<ValuePointer>> {
-        let pointer_opt = self.get(point_offset)?;
+        let pointer_opt = self.get::<Random>(point_offset)?;
 
         if let Some(pointer) = pointer_opt {
             self.pending_updates

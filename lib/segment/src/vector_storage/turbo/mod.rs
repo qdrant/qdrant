@@ -24,7 +24,7 @@ pub mod update_only;
 pub use self::appendable_turbo_vector_storage::{
     AppendableMmapTurboVectorStorage, open_appendable_turbo_vector_storage,
 };
-pub use self::shared::turbo_storage_roundtrip;
+pub use self::shared::{datatype_bits, tq_bits, turbo_storage_roundtrip};
 pub use self::turbo_vector_storage::{
     TurboVectorStorageImpl, open_turbo_vector_storage, open_turbo_vector_storage_with_uring,
 };

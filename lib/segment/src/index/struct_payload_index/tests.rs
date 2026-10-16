@@ -5,7 +5,7 @@
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use tempfile::Builder;
 use uuid::Uuid;
 
@@ -16,6 +16,7 @@ use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadConfig, PayloadIndexType,
 };
 use crate::json_path::JsonPath;
+use crate::segment::Segment;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
@@ -33,28 +34,25 @@ fn test_load_payload_index() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let dim = 2;
 
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     let key = JsonPath::from_str("name").unwrap();
 
     let full_segment_path = {
         let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
 
-        segment
-            .set_full_payload(0, 0.into(), &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(0, 0.into(), &payload).unwrap();
 
         segment
             .create_field_index(
                 0,
                 &key,
                 Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
-                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -121,7 +119,7 @@ fn name_filter(key: &JsonPath, value: &str) -> Filter {
 #[test]
 fn create_field_index_persists_index_data_with_config() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let payload: Payload = serde_json::from_str(r#"{ "name": "John Doe" }"#).unwrap();
@@ -129,17 +127,13 @@ fn create_field_index_persists_index_data_with_config() {
     let segment_path = {
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
         segment
-            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
-        segment
-            .set_full_payload(2, 0.into(), &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(2, 0.into(), &payload).unwrap();
         segment.flush(true).unwrap();
 
         // No flush after this op: its own persistence must be self-contained.
-        segment
-            .create_field_index(4, &key, Some(&schema), &hw_counter)
-            .unwrap();
+        segment.create_field_index(4, &key, Some(&schema)).unwrap();
 
         segment.segment_path.clone()
         // Dropped without a further flush: simulates a crash right after the op.
@@ -168,11 +162,7 @@ fn create_field_index_persists_index_data_with_config() {
         .payload_index
         .borrow()
         .with_view(|view| {
-            view.query_points(
-                &name_filter(&key, "John Doe"),
-                &hw_counter,
-                &AtomicBool::new(false),
-            )
+            view.query_points(&name_filter(&key, "John Doe"), &AtomicBool::new(false))
         })
         .unwrap();
     assert_eq!(
@@ -192,7 +182,7 @@ fn create_field_index_persists_index_data_with_config() {
 #[test]
 fn switch_incompatible_index_type_survives_crash() {
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let key = JsonPath::from_str("name").unwrap();
     let keyword_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
     let text_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Text);
@@ -201,20 +191,18 @@ fn switch_incompatible_index_type_survives_crash() {
     let segment_path = {
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
         segment
-            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
+            .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
+        segment.set_full_payload(2, 0.into(), &payload).unwrap();
         segment
-            .set_full_payload(2, 0.into(), &payload, &hw_counter)
-            .unwrap();
-        segment
-            .create_field_index(3, &key, Some(&keyword_schema), &hw_counter)
+            .create_field_index(3, &key, Some(&keyword_schema))
             .unwrap();
         segment.flush(true).unwrap();
 
         // Incompatible switch: drops the keyword index, then builds full-text.
         // No flush after this op: its own persistence must be self-contained.
         segment
-            .create_field_index(4, &key, Some(&text_schema), &hw_counter)
+            .create_field_index(4, &key, Some(&text_schema))
             .unwrap();
 
         segment.segment_path.clone()
@@ -247,7 +235,7 @@ fn switch_incompatible_index_type_survives_crash() {
     let hits = segment
         .payload_index
         .borrow()
-        .with_view(|view| view.query_points(&filter, &hw_counter, &AtomicBool::new(false)))
+        .with_view(|view| view.query_points(&filter, &AtomicBool::new(false)))
         .unwrap();
     assert_eq!(
         hits,
@@ -291,13 +279,7 @@ fn drop_index_if_incompatible_keeps_non_appendable_index_on_on_disk_only_change(
     .unwrap();
 
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    index
-        .set_indexed(
-            &field,
-            PayloadSchemaType::Integer,
-            &HardwareCounterCell::new(),
-        )
-        .unwrap();
+    ambient::test(|| index.set_indexed(&field, PayloadSchemaType::Integer)).unwrap();
 
     // Same integer index, but with on_disk flipped to true.
     let on_disk_schema =
@@ -356,6 +338,132 @@ fn drop_index_if_incompatible_drops_appendable_index_on_on_disk_only_change() {
 }
 
 #[test]
+fn drop_index_if_incompatible_keeps_index_on_enable_hnsw_only_change() {
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::create_struct_payload_index;
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::PayloadIndex;
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    // Appendable: enable_hnsw does not affect index format, so the index must
+    // be kept (unlike on_disk, which still drops on appendable segments).
+    let mut index = create_struct_payload_index(dir.path(), 100, 42);
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+
+    let schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            enable_hnsw: Some(false),
+            ..Default::default()
+        }));
+
+    let dropped = index.drop_index_if_incompatible(&field, &schema).unwrap();
+
+    assert!(
+        !dropped,
+        "an enable_hnsw-only change must keep the index on appendable segments",
+    );
+    assert!(
+        index.field_indexes.contains_key(&field),
+        "the index must remain present after an enable_hnsw-only change",
+    );
+}
+
+#[test]
+fn set_indexed_updates_schema_in_place_on_enable_hnsw_change() {
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::create_struct_payload_index;
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::PayloadIndex;
+    use crate::index::field_index::PayloadFieldIndexRead;
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let mut index = create_struct_payload_index(dir.path(), 100, 42);
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+
+    let before_count: usize = index
+        .field_indexes
+        .get(&field)
+        .unwrap()
+        .iter()
+        .map(|i| i.count_indexed_points().unwrap())
+        .sum();
+    assert!(before_count > 0, "fixture should index some integer points");
+
+    let schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            enable_hnsw: Some(false),
+            ..Default::default()
+        }));
+    index.set_indexed(&field, schema.clone()).unwrap();
+
+    let stored = index
+        .config()
+        .indices
+        .get(&field)
+        .expect("index config must still list the field");
+    assert_eq!(
+        stored.schema, schema,
+        "enable_hnsw flip must persist the new schema without rebuild",
+    );
+    assert!(
+        !stored.schema.enable_hnsw(),
+        "persisted schema must reflect enable_hnsw=false",
+    );
+
+    let after_count: usize = index
+        .field_indexes
+        .get(&field)
+        .unwrap()
+        .iter()
+        .map(|i| i.count_indexed_points().unwrap())
+        .sum();
+    assert_eq!(
+        after_count, before_count,
+        "enable_hnsw in-place update must preserve indexed points",
+    );
+}
+
+#[test]
+fn set_indexed_enable_hnsw_change_keeps_unflushed_appendable_updates() {
+    use crate::data_types::index::IntegerIndexParams;
+    use crate::fixtures::payload_context_fixture::create_struct_payload_index;
+    use crate::fixtures::payload_fixtures::INT_KEY;
+    use crate::index::PayloadIndex;
+    use crate::types::PayloadSchemaParams;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let mut index = create_struct_payload_index(dir.path(), 100, 42);
+    let field = JsonPath::from_str(INT_KEY).unwrap();
+    let _scope = ambient::test_guard();
+
+    // Not flushed: only the live index handles know about this value.
+    let payload: Payload = serde_json::from_str(r#"{"int": 123456789}"#).unwrap();
+    index.overwrite_payload(0, &payload).unwrap();
+
+    let schema =
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+            enable_hnsw: Some(false),
+            ..Default::default()
+        }));
+    index.set_indexed(&field, schema).unwrap();
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        field,
+        Match::new_value(ValueVariants::Integer(123456789)),
+    )));
+    let hits = index
+        .with_view(|view| view.query_points(&filter, &AtomicBool::new(false)))
+        .unwrap();
+    assert_eq!(
+        hits,
+        vec![0],
+        "an enable_hnsw-only change must keep the live index handles",
+    );
+}
+
+#[test]
 fn build_index_reloads_in_new_mode_on_on_disk_change() {
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -390,9 +498,9 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
     .unwrap();
 
     let field = JsonPath::from_str(INT_KEY).unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     index
-        .set_indexed(&field, PayloadSchemaType::Integer, &hw_counter)
+        .set_indexed(&field, PayloadSchemaType::Integer)
         .unwrap();
 
     // Indexed-point count of the freshly built (on_disk = false) index.
@@ -412,13 +520,10 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
             ..Default::default()
         }));
 
-    match index
-        .build_index(&field, &on_disk_schema, &hw_counter)
-        .unwrap()
-    {
+    match index.build_index(&field, &on_disk_schema).unwrap() {
         BuildIndexResult::Built(indexes) => {
             assert!(
-                indexes.iter().any(|i| i.is_on_disk()),
+                indexes.iter().any(|i| i.is_cold()),
                 "an on_disk-only change must reload the existing index in on-disk mode",
             );
             let after_count: usize = indexes
@@ -437,4 +542,134 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
             panic!("expected Built (reloaded from files), got IncompatibleSchema")
         }
     }
+}
+
+/// A mutable keyword index with corrupt data must be rebuilt from payload storage when the
+/// segment loads, instead of failing to load the segment.
+///
+/// Corrupt data can be left behind by a torn write after a hard crash, or by a bit flip. Here a
+/// pointer in the index's Gridstore tracker points at zeroed blocks, so its value fails to
+/// decode. This used to panic on startup, failing to load the local shard.
+///
+/// See: <github.com/qdrant/qdrant/issues/9857>
+#[test]
+fn test_rebuild_corrupt_mutable_keyword_index_on_load() {
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let key = JsonPath::from_str("name").unwrap();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    let segment_path = {
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        for i in 0..3 {
+            segment
+                .upsert_point(1 + i, i.into(), only_default_vector(&[1.0, 1.0]))
+                .unwrap();
+            let payload: Payload =
+                serde_json::from_str(&format!(r#"{{ "name": "name_{i}" }}"#)).unwrap();
+            segment
+                .set_full_payload(10 + i, i.into(), &payload)
+                .unwrap();
+        }
+        segment.create_field_index(20, &key, Some(&schema)).unwrap();
+        segment.flush(true).unwrap();
+        segment.segment_path.clone()
+    };
+
+    let map_index_dir = fs_err::read_dir(segment_path.join("payload_index"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.to_string_lossy().ends_with("-map"))
+        .expect("keyword index must be stored in a map index directory");
+    let tracker_path = map_index_dir.join("tracker.dat");
+
+    // Tracker file layout: a 4-byte header, then one 16-byte record per point offset holding
+    // `[discriminant][page_id][block_offset][length]` as little-endian `u32`s
+    let record_start = 4 + 16; // point offset 1
+    let block_offset_range = record_start + 8..record_start + 12;
+    let read_block_offset =
+        |bytes: &[u8]| u32::from_le_bytes(bytes[block_offset_range.clone()].try_into().unwrap());
+
+    // Point the value of point offset 1 at zeroed blocks far behind the stored values
+    let corrupt_block_offset = 100;
+    let mut tracker_bytes = fs_err::read(&tracker_path).unwrap();
+    assert_eq!(
+        tracker_bytes[record_start..record_start + 4],
+        1u32.to_le_bytes(),
+        "record must hold a Some pointer",
+    );
+    let block_offset = read_block_offset(&tracker_bytes);
+    assert!(block_offset < corrupt_block_offset);
+    tracker_bytes[block_offset_range.clone()].copy_from_slice(&corrupt_block_offset.to_le_bytes());
+    fs_err::write(&tracker_path, &tracker_bytes).unwrap();
+
+    // Remove the tracker journal, loading would repair the tracker from it. Simulates corruption
+    // the journal doesn't cover, such as a bit flip
+    fs_err::remove_file(map_index_dir.join("tracker_journal.dat")).unwrap();
+
+    let segment = load_segment(
+        &segment_path,
+        Uuid::nil(),
+        None,
+        &AtomicBool::new(false),
+        false,
+    )
+    .expect("segment must load, rebuilding the corrupt index");
+
+    // The rebuilt index covers all points, including the one with the corrupt value
+    for i in 0..3 {
+        let hits = segment
+            .payload_index
+            .borrow()
+            .with_view(|view| {
+                view.query_points(
+                    &name_filter(&key, &format!("name_{i}")),
+                    &AtomicBool::new(false),
+                )
+            })
+            .unwrap();
+        assert_eq!(hits, vec![i as u32], "name_{i}");
+    }
+
+    // The rebuilt index is persisted, the corrupt pointer is gone from disk
+    let tracker_bytes = fs_err::read(&tracker_path).unwrap();
+    assert_ne!(read_block_offset(&tracker_bytes), corrupt_block_offset);
+}
+
+/// Field indices built after `disable_journal`, as by the segment builder, flush their Gridstore
+/// without a tracker journal. Other builds journal their flush.
+#[test]
+fn test_build_field_index_without_journal() {
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    segment
+        .upsert_point(1, 0.into(), only_default_vector(&[1.0, 1.0]))
+        .unwrap();
+    let payload: Payload = serde_json::from_str(r#"{ "first": "a", "second": "b" }"#).unwrap();
+    segment.set_full_payload(2, 0.into(), &payload).unwrap();
+
+    // The journal of a Gridstore lives next to its tracker file
+    let has_journal = |segment: &Segment, key: &JsonPath| {
+        segment.payload_index.borrow().field_indexes[key]
+            .iter()
+            .flat_map(|index| index.files())
+            .filter_map(|file| blobstore::tracker_journal_path(&file))
+            .any(|journal| journal.exists())
+    };
+
+    let first = JsonPath::from_str("first").unwrap();
+    segment
+        .create_field_index(3, &first, Some(&schema))
+        .unwrap();
+    assert!(has_journal(&segment, &first));
+
+    segment.payload_index.borrow_mut().disable_journal();
+    let second = JsonPath::from_str("second").unwrap();
+    segment
+        .create_field_index(4, &second, Some(&schema))
+        .unwrap();
+    assert!(!has_journal(&segment, &second));
 }

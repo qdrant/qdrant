@@ -52,6 +52,8 @@ message RecoverShardSnapshotRequest {
   optional string checksum = 5;
   // Optional API key used when fetching the snapshot from a remote URL
   optional string api_key = 6;
+  // Peer ID of the shard transfer source, checked against the registered shard transfer
+  optional uint64 from_peer_id = 7;
 }
 
 message ShardSnapshotLocation {

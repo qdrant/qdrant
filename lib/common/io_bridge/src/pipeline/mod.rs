@@ -19,7 +19,8 @@ use common::generic_consts::AccessPattern;
 use common::universal_io::{ReadPipeline, UioResult, UserData};
 
 pub(crate) use self::buffer::{
-    read_from_into_byte_buffer, read_into_byte_buffer, read_whole_into_byte_buffer,
+    read_from_into_byte_buffer, read_from_into_sink, read_into_byte_buffer,
+    read_whole_into_byte_buffer,
 };
 use self::inner::PipelineInner;
 use crate::file::BlobFile;
@@ -94,9 +95,8 @@ where
         });
         log::trace!(
             target: crate::LATENCY_LOG_TARGET,
-            "schedule_whole read of {} from {}",
+            "schedule read for {user_data:?} of {} range {from}..",
             file.path.display(),
-            from
         );
 
         let future = read_from_into_byte_buffer::<A>(file, from, 1);

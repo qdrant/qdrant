@@ -2,10 +2,10 @@ mod async_io;
 mod config;
 mod file;
 mod fs;
-mod stats;
 
 mod local_state;
 pub mod pipeline;
+mod placeholder;
 #[cfg(test)]
 mod tests;
 
@@ -14,10 +14,11 @@ use std::ops::Range;
 pub use config::DiskCacheConfig;
 pub use file::DiskCache;
 pub use fs::{DiskCacheFs, DiskCacheFsContext};
-pub use stats::{DiskCacheStats, DiskCacheStatsSnapshot};
 
 use crate::mmap::AdviceSetting;
-use crate::universal_io::{OpenOptions, Populate, UniversalReadAsync, UniversalReadFs};
+use crate::universal_io::{
+    OpenOptions, Populate, UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync,
+};
 
 /// Trait bundle for remote backends that can be cached by [`DiskCache`].
 ///
@@ -25,7 +26,7 @@ use crate::universal_io::{OpenOptions, Populate, UniversalReadAsync, UniversalRe
 /// fetch from the remote via `read_bytes_async`.
 pub trait DiskCacheRemote:
     UniversalReadAsync<
-        Fs: Clone + Send + Sync + UniversalReadFs<OpenExtra: Clone + Send + Sync>,
+        Fs: Clone + Send + Sync + UniversalReadFsAsync<OpenExtra: Clone + Send + Sync>,
         ReadPipeline<'static, ()>: Send,
         ReadPipeline<'static, Range<u32>>: Send,
     > + 'static
@@ -35,7 +36,7 @@ pub trait DiskCacheRemote:
 impl<R> DiskCacheRemote for R
 where
     R: UniversalReadAsync + 'static,
-    R::Fs: Clone + Send + Sync,
+    R::Fs: Clone + Send + Sync + UniversalReadFsAsync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
     R::ReadPipeline<'static, ()>: Send,
     R::ReadPipeline<'static, Range<u32>>: Send,
@@ -47,7 +48,7 @@ where
 ///
 /// Matches `disk_cache::BLOCK_SIZE` and is a small multiple of typical
 /// filesystem block sizes (usually 4 KiB).
-const BLOCK_SIZE: usize = 16 * 1024; // 16kB
+pub(super) const BLOCK_SIZE: usize = 16 * 1024; // 16kB
 
 const REMOTE_OPEN_OPTIONS: OpenOptions = OpenOptions {
     writeable: false,
@@ -56,7 +57,7 @@ const REMOTE_OPEN_OPTIONS: OpenOptions = OpenOptions {
     advice: AdviceSetting::Global,
 };
 
-fn to_block_range(byte_range: Range<u64>) -> Range<u32> {
+pub(super) fn to_block_range(byte_range: Range<u64>) -> Range<u32> {
     let start = u32::try_from(byte_range.start / BLOCK_SIZE as u64)
         .expect("file too large for block cache (>70 TiB)");
     if byte_range.start >= byte_range.end {

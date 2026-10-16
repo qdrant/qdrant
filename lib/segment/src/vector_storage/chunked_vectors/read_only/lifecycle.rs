@@ -10,6 +10,7 @@ use super::super::chunks::{
 };
 use super::super::config::{config_file, load_config, read_status_len, status_file};
 use super::ReadOnlyChunkedVectors;
+use super::live_reload::chunks_capacity;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
@@ -57,8 +58,12 @@ impl<T: bytemuck::Pod + Send, S: UniversalRead> ReadOnlyChunkedVectors<T, S> {
             )));
         }
 
-        let len = read_status_len(fs, &status_file(directory))?;
+        // A caching filesystem can serve the status newer than the chunk
+        // lengths it listed, so never claim more than the chunks hold.
+        let status_len = read_status_len(fs, &status_file(directory))?;
         let chunks = read_chunks(fs, directory, advice, populate, false)?;
+        let capacity = chunks_capacity(0, config.chunk_size_vectors, config.dim, &chunks)?;
+        let len = status_len.min(capacity);
 
         Ok(Self {
             config,

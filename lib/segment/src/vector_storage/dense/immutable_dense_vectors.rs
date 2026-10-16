@@ -17,7 +17,7 @@ use common::universal_io::{
 use fs_err::{File, OpenOptions};
 
 use crate::common::error_logging::LogError;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient;
@@ -115,26 +115,33 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
     }
 
     /// Read one vector from storage at the given byte offset.
-    fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> Cow<'_, [T]> {
+    fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> UioResult<Cow<'_, [T]>> {
         let range = ReadRange {
             byte_offset: byte_offset as u64,
             length: self.dim as u64,
         };
 
-        self.storage
-            .read(range, P::default())
-            .expect("vector read from storage failed")
+        self.storage.read(range, P::default())
     }
 
-    /// Returns vector data by key
-    fn get_vector<P: AccessPattern>(&self, key: PointOffsetType) -> Cow<'_, [T]> {
-        self.get_vector_opt::<P>(key).expect("vector not found")
+    /// Returns vector data by key, or an error for a key past the stored
+    /// vectors or a failed read.
+    fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<Cow<'_, [T]>> {
+        let offset = self.data_offset(key).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "vector {key} is past the {} stored vectors",
+                self.num_vectors,
+            ))
+        })?;
+        Ok(self.raw_vector_offset::<P>(offset)?)
     }
 
     /// Returns an optional vector data by key
     pub fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<Cow<'_, [T]>> {
-        self.data_offset(key)
-            .map(|offset| self.raw_vector_offset::<P>(offset))
+        self.data_offset(key).map(|offset| {
+            self.raw_vector_offset::<P>(offset)
+                .expect("vector read from storage failed")
+        })
     }
 
     pub fn for_each_in_batch<F: FnMut(usize, &[T])>(
@@ -152,19 +159,28 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
         let mut vectors_buffer = [const { MaybeUninit::uninit() }; VECTOR_READ_BATCH_SIZE];
 
         for (batch_idx, keys) in keys.chunks(VECTOR_READ_BATCH_SIZE).enumerate() {
+            // The first failed read ends the batch and is returned below.
+            let mut failed = None;
             let vectors = if is_read_with_prefetch_efficient(keys) {
-                let iter = keys
-                    .iter()
-                    .map(|&point_offset| self.get_vector::<Sequential>(point_offset));
+                let iter = keys.iter().map_while(|&point_offset| {
+                    self.read_vector::<Sequential>(point_offset)
+                        .map_err(|err| failed = Some(err))
+                        .ok()
+                });
 
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             } else {
-                let iter = keys
-                    .iter()
-                    .map(|&point_offset| self.get_vector::<Random>(point_offset));
+                let iter = keys.iter().map_while(|&point_offset| {
+                    self.read_vector::<Random>(point_offset)
+                        .map_err(|err| failed = Some(err))
+                        .ok()
+                });
 
                 maybe_uninit_fill_from(&mut vectors_buffer, iter).0
             };
+            if let Some(err) = failed {
+                return Err(err);
+            }
 
             let batch_offset = VECTOR_READ_BATCH_SIZE * batch_idx;
 

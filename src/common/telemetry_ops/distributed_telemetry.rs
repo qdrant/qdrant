@@ -259,6 +259,7 @@ fn aggregate_shard_transfers(
             sync: _,
             method: _,
             comment: _,
+            failed: _,
         } = base_transfer;
 
         get_transfers(peer_id)?.iter().find(|t| {

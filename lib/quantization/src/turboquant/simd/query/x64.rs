@@ -9,6 +9,7 @@
 use core::arch::x86_64::*;
 
 use super::{Code, PLANE_BLOCK, QueryPlanes, QuerySimd, encoding, tail_block};
+use crate::turboquant::simd::query8bit;
 
 /// Packed data bytes per SSE block: one XMM of codes.
 const BLOCK_128: usize = 16;
@@ -113,7 +114,12 @@ impl<const QUERY_BYTES: usize> Acc128<QUERY_BYTES> {
         let ones = _mm_set1_epi16(1);
         let mut shifted = codes;
         for k in 0..PLANES {
-            let values = _mm_shuffle_epi8(codebook, _mm_and_si128(shifted, mask));
+            // The 8-bit code is its own (unsigned) value.
+            let values = if PLANES == 1 {
+                shifted
+            } else {
+                _mm_shuffle_epi8(codebook, _mm_and_si128(shifted, mask))
+            };
             for (acc, planes) in self.bytes.iter_mut().zip(&query.bytes) {
                 acc[k & 1] = _mm_add_epi32(
                     acc[k & 1],
@@ -223,7 +229,12 @@ impl<const QUERY_BYTES: usize> Acc256<QUERY_BYTES> {
         let ones = _mm256_set1_epi16(1);
         let mut shifted = codes;
         for k in 0..PLANES {
-            let values = _mm256_shuffle_epi8(codebook, _mm256_and_si256(shifted, mask));
+            // The 8-bit code is its own (unsigned) value.
+            let values = if PLANES == 1 {
+                shifted
+            } else {
+                _mm256_shuffle_epi8(codebook, _mm256_and_si256(shifted, mask))
+            };
             for (acc, planes) in self.bytes.iter_mut().zip(&query.bytes) {
                 acc[k & 1] = _mm256_add_epi32(
                     acc[k & 1],
@@ -337,7 +348,12 @@ impl<const QUERY_BYTES: usize> Acc512<QUERY_BYTES> {
         let mask = _mm512_set1_epi8(const { code_mask::<PLANES>() });
         let mut shifted = codes;
         for k in 0..PLANES {
-            let values = _mm512_shuffle_epi8(codebook, _mm512_and_si512(shifted, mask));
+            // The 8-bit code is its own (unsigned) value.
+            let values = if PLANES == 1 {
+                shifted
+            } else {
+                _mm512_shuffle_epi8(codebook, _mm512_and_si512(shifted, mask))
+            };
             for (acc, planes) in self.bytes.iter_mut().zip(&query.bytes) {
                 acc[k & 1] = _mm512_dpbusd_epi32(acc[k & 1], values, planes[k]);
             }
@@ -815,8 +831,13 @@ const fn fused_reduction_max_bytes<const PLANES: usize, const QUERY_BYTES: usize
     let mut c_max = 0;
     let mut k = 0;
     while k < (1 << (8 / PLANES)) {
-        if encoding.codebook[k] as usize > c_max {
-            c_max = encoding.codebook[k] as usize;
+        let c = if PLANES == 1 {
+            query8bit::code_value(k as u8)
+        } else {
+            encoding.codebook[k]
+        };
+        if c as usize > c_max {
+            c_max = c as usize;
         }
         k += 1;
     }
@@ -997,6 +1018,7 @@ mod tests {
 
     #[test]
     fn test_kernels_match_scalar() {
+        kernels_match_scalar::<1, 2>();
         kernels_match_scalar::<2, 2>();
         kernels_match_scalar::<4, 2>();
         kernels_match_scalar::<8, 1>();
@@ -1032,6 +1054,7 @@ mod tests {
 
     #[test]
     fn test_saturation_safety_64k() {
+        saturation_safety_64k::<1, 2>();
         saturation_safety_64k::<2, 2>();
         saturation_safety_64k::<4, 2>();
         saturation_safety_64k::<8, 1>();
@@ -1043,6 +1066,7 @@ mod tests {
     /// byte, `4 · i32::MAX / 4 210 560 = 2040`.
     #[test]
     fn test_fused_reduction_bound() {
+        assert_eq!(QuerySimd::<1, 2>::FUSED_REDUCTION_MAX_BYTES, 4080);
         assert_eq!(QuerySimd::<2, 2>::FUSED_REDUCTION_MAX_BYTES, 2040);
         assert_eq!(QuerySimd::<4, 2>::FUSED_REDUCTION_MAX_BYTES, 1020);
         assert_eq!(QuerySimd::<8, 2>::FUSED_REDUCTION_MAX_BYTES, 255);
@@ -1097,6 +1121,7 @@ mod tests {
 
     #[test]
     fn test_batch_kernels_match_scalar() {
+        batch_kernels_match_scalar::<1, 2>();
         batch_kernels_match_scalar::<2, 2>();
         batch_kernels_match_scalar::<4, 2>();
         batch_kernels_match_scalar::<8, 1>();
@@ -1132,6 +1157,7 @@ mod tests {
 
     #[test]
     fn test_fused_reduction_bound_worst_case() {
+        fused_reduction_bound_worst_case::<1, 2>();
         fused_reduction_bound_worst_case::<2, 2>();
         fused_reduction_bound_worst_case::<4, 2>();
         fused_reduction_bound_worst_case::<8, 2>();

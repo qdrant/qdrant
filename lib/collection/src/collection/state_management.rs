@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use ahash::AHashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 
@@ -182,6 +183,7 @@ impl Collection {
                 strict_mode_config,
                 uuid: _,
                 metadata,
+                created_at: _,
             } = &new_config;
 
             let is_core_config_updated = params != &config.params
@@ -296,8 +298,8 @@ impl Collection {
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            // This function is only used in collection state recovery and thus an unmeasured internal operation.
-            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
+            self.create_payload_index(field_name, field_schema)
+                .unmeasured(reason("This function is only used in collection state recovery and thus an unmeasured internal operation."))
                 .await?;
         }
         Ok(())
@@ -427,7 +429,8 @@ impl Collection {
         }
 
         for (vector_name, config) in to_create {
-            self.create_named_vector(vector_name, config, HwMeasurementAcc::disposable())
+            self.create_named_vector(vector_name, config)
+                .unmeasured(reason("Internal operation"))
                 .await?;
         }
 

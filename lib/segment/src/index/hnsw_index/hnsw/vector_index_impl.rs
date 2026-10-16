@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use sparse::common::types::DimId;
 
@@ -36,6 +35,7 @@ impl VectorIndexRead for HNSWIndex {
             unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(detail),
             filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(detail),
             filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(detail),
+            filtered_acorn: tm.acorn.lock().get_statistics(detail),
             filtered_exact: tm.exact_filtered.lock().get_statistics(detail),
             filtered_sparse: Default::default(),
             unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(detail),
@@ -61,7 +61,6 @@ impl VectorIndexRead for HNSWIndex {
         _idf: &mut HashMap<DimId, usize>,
         corpus: Option<&Filter>,
         _is_stopped: &std::sync::atomic::AtomicBool,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         // HNSW (dense) index doesn't track IDF and contributes no df counts.
         Ok(match corpus {
@@ -93,7 +92,6 @@ impl VectorIndex for HNSWIndex {
         &mut self,
         _id: PointOffsetType,
         _vector: Option<VectorRef>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }
@@ -102,7 +100,6 @@ impl VectorIndex for HNSWIndex {
         &mut self,
         _id: PointOffsetType,
         _vector: Option<&[u8]>,
-        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }

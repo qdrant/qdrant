@@ -16,6 +16,7 @@ use api::rest::{
     BaseGroupRequest, LookupLocation, RecommendStrategy, SearchGroupsRequestInternal,
     SearchRequestInternal, ShardKeySelector, VectorStructOutput,
 };
+use chrono::{DateTime, Utc};
 use common::ext::OptionExt;
 use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
@@ -195,6 +196,8 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             strict_mode_config,
             // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
+            // Reported on `CollectionInfo`
+            created_at: _,
             metadata,
         } = config;
 
@@ -237,6 +240,10 @@ pub struct CollectionInfo {
     /// Update queue info
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_queue: Option<UpdateQueueInfo>,
+    /// Time of the collection creation.
+    /// Absent for collections created before Qdrant started recording it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl CollectionInfo {
@@ -248,6 +255,7 @@ impl CollectionInfo {
             status: CollectionStatus::Green,
             optimizer_status: OptimizersStatus::Ok,
             warnings: collection_config.get_warnings(),
+            created_at: collection_config.created_at,
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
@@ -278,6 +286,7 @@ impl From<ShardInfoInternal> for CollectionInfo {
             status: status.into(),
             optimizer_status,
             warnings: config.get_warnings(),
+            created_at: config.created_at,
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,
@@ -376,10 +385,16 @@ pub struct ShardTransferInfo {
     #[anonymize(false)]
     pub method: Option<ShardTransferMethod>,
 
-    /// A human-readable report of the transfer progress. Available only on the source peer.
+    /// A human-readable report of the transfer progress. Available only on the source peer, and
+    /// on the target peer during snapshot recovery.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub comment: Option<String>,
+
+    /// Whether the local sender task failed. Internal state for metrics only.
+    #[serde(skip)]
+    #[anonymize(false)]
+    pub failed: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
@@ -398,7 +413,7 @@ pub struct ReshardingInfo {
 
     pub shard_key: Option<ShardKey>,
 
-    /// Only included in peer telemetry
+    /// Only included in telemetry, not collection cluster responses.
     #[serde(skip)]
     #[anonymize(false)]
     pub stage: ReshardingStage,
@@ -1387,6 +1402,7 @@ pub type CollectionResult<T> = Result<T, CollectionError>;
 #[derive(
     Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
+#[cfg_attr(test, derive(exhaustive::Exhaustive))]
 #[serde(rename_all = "snake_case")]
 pub enum Datatype {
     #[default]
@@ -1394,6 +1410,8 @@ pub enum Datatype {
     Uint8,
     Float16,
     Turbo4,
+    Turbo8,
+    Turbo16,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1403,6 +1421,8 @@ impl From<Datatype> for VectorStorageDatatype {
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
             Datatype::Float16 => VectorStorageDatatype::Float16,
             Datatype::Turbo4 => VectorStorageDatatype::Turbo4,
+            Datatype::Turbo8 => VectorStorageDatatype::Turbo8,
+            Datatype::Turbo16 => VectorStorageDatatype::Turbo16,
         }
     }
 }
@@ -1458,6 +1478,10 @@ pub struct VectorParams {
     ///   It expects vector elements to be in range `[0, 255]`.
     /// - For `turbo4` datatype - vectors are quantized to 4 bits per element using the
     ///   TurboQuant algorithm.
+    /// - For `turbo8` datatype - vectors are quantized to 8 bits per element using the
+    ///   TurboQuant algorithm.
+    /// - For `turbo16` datatype - vectors are quantized to 16 bits per element using the
+    ///   TurboQuant algorithm.
     pub datatype: Option<Datatype>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1471,11 +1495,14 @@ pub fn validate_nonzerou64_range_min_1_max_65536(
     validate_range_generic(value.get(), Some(1), Some(65536))
 }
 
-/// Reject the `Turbo4` datatype on sparse vector configs.
+/// Reject the TurboQuant datatypes on sparse vector configs.
 /// `validator` unwraps `Option<Datatype>` before calling, so we receive `&Datatype`.
 fn validate_sparse_datatype(datatype: &Datatype) -> Result<(), ValidationError> {
-    if matches!(datatype, Datatype::Turbo4) {
-        return Err(common::validation::sparse_turbo4_unsupported_error());
+    match datatype {
+        Datatype::Turbo4 => return Err(common::validation::sparse_turbo4_unsupported_error()),
+        Datatype::Turbo8 => return Err(common::validation::sparse_turbo8_unsupported_error()),
+        Datatype::Turbo16 => return Err(common::validation::sparse_turbo16_unsupported_error()),
+        Datatype::Float32 | Datatype::Uint8 | Datatype::Float16 => {}
     }
     Ok(())
 }
@@ -1959,5 +1986,47 @@ impl PeerMetadata {
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
         self.version != *defaults::QDRANT_VERSION
+    }
+
+    /// Version reported by the peer
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_resharding_info_serialization_omits_stage() {
+        for stage in [
+            ReshardingStage::MigratingPoints,
+            ReshardingStage::ReadHashRingCommitted,
+            ReshardingStage::WriteHashRingCommitted,
+        ] {
+            let info = ReshardingInfo {
+                uuid: Uuid::nil(),
+                direction: ReshardingDirection::Up,
+                shard_id: 1,
+                peer_id: 2,
+                shard_key: None,
+                stage,
+            };
+
+            let mut expected = json!({
+                "uuid": "00000000-0000-0000-0000-000000000000",
+                "direction": "up",
+                "shard_id": 1,
+                "peer_id": 2,
+                "shard_key": null,
+            });
+            assert_eq!(serde_json::to_value(&info).unwrap(), expected);
+
+            expected["uuid"] = json!(Uuid::nil().anonymize());
+            assert_eq!(serde_json::to_value(info.anonymize()).unwrap(), expected);
+        }
     }
 }

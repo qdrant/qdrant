@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
 use common::types::DeferredBehavior;
 use ordered_float::OrderedFloat;
 use tempfile::{Builder, TempDir};
@@ -58,7 +58,7 @@ fn build_segment() -> (TempDir, Segment) {
 /// Build a fixture of `n` points, each with a `colour` (3 uniques), a unique
 /// `tag`, and a `seq` equal to its index (for filters of exact selectivity).
 fn build_segment_n(n: usize) -> (TempDir, Segment) {
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("facet_segment").tempdir().unwrap();
 
     let dim = 2;
@@ -69,9 +69,7 @@ fn build_segment_n(n: usize) -> (TempDir, Segment) {
     let mut op = 0u64;
     for i in 0..n {
         let point_id = PointIdType::from(i as u64 + 1);
-        segment
-            .insert_new_vectors(point_id, op, &vectors, &hw_counter)
-            .unwrap();
+        segment.insert_new_vectors(point_id, op, &vectors).unwrap();
         op += 1;
 
         let payload = payload_json! {
@@ -79,9 +77,7 @@ fn build_segment_n(n: usize) -> (TempDir, Segment) {
             TAG_KEY: format!("tag_{i}"),
             SEQ_KEY: i as f64,
         };
-        segment
-            .set_full_payload(op, point_id, &payload, &hw_counter)
-            .unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
         op += 1;
     }
 
@@ -95,7 +91,6 @@ fn build_segment_n(n: usize) -> (TempDir, Segment) {
                 op,
                 &JsonPath::new(key),
                 Some(&PayloadFieldSchema::FieldType(schema)),
-                &hw_counter,
             )
             .unwrap();
         op += 1;
@@ -122,13 +117,7 @@ fn run_facet(segment: &Segment, key: &str, filter: Option<Filter>) -> HashMap<Fa
         filter,
         exact: false,
     };
-    segment
-        .facet(
-            &request,
-            &AtomicBool::new(false),
-            &HardwareCounterCell::new(),
-        )
-        .unwrap()
+    segment.facet(&request, &AtomicBool::new(false)).unwrap()
 }
 
 /// Independently recompute the exact count for every returned value and assert
@@ -141,7 +130,6 @@ fn assert_counts_exact(
     filter: Option<&Filter>,
     hits: &HashMap<FacetValue, usize>,
 ) {
-    let hw_counter = HardwareCounterCell::new();
     for (value, &count) in hits {
         let value_match = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(key),
@@ -154,7 +142,6 @@ fn assert_counts_exact(
                 None,
                 exact_filter.as_ref(),
                 &AtomicBool::new(false),
-                &hw_counter,
                 DeferredBehavior::VisibleOnly,
             )
             .unwrap()

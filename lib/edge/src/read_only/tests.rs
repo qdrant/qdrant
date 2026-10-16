@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Leader + follower tests: a read-write [`EdgeShard`] (leader) writes to a directory and a
 //! [`ReadOnlyEdgeShard`] (follower) opened over the same directory serves reads, converging on the
 //! leader's flushed state after a [`live_reload`](ReadOnlyEdgeShard::live_reload).
@@ -5,6 +6,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::universal_io::{MmapFile, MmapFs};
@@ -45,6 +48,8 @@ pub(crate) fn test_config() -> EdgeConfig {
     init_serverless_feature_flags();
     EdgeConfig {
         on_disk_payload: Some(false),
+        payload_memory: None,
+        id_tracker_memory: None,
         vectors: HashMap::from([(
             VECTOR_NAME.to_string(),
             EdgeVectorParams {
@@ -54,6 +59,7 @@ pub(crate) fn test_config() -> EdgeConfig {
                 multivector_config: None,
                 datatype: None,
                 on_disk: None,
+                memory: None,
                 hnsw_config: None,
             },
         )]),
@@ -62,6 +68,7 @@ pub(crate) fn test_config() -> EdgeConfig {
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: None,
         search_pool_core: None,
     }
@@ -99,6 +106,8 @@ pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFil
         LocalSegmentEnumerator::new(path),
         None,
         None,
+        Default::default(),
+        &AtomicBool::new(false),
     )
     .unwrap()
 }
@@ -204,6 +213,8 @@ fn follower_with_load_profile_serves_reads() {
         LocalSegmentEnumerator::new(dir.path()),
         None,
         Some(scroll_request.load_profile()),
+        Default::default(),
+        &AtomicBool::new(false),
     )
     .unwrap();
 
@@ -373,12 +384,15 @@ fn provided_config_overrides_tunables_at_open() {
     // Tunables only — no vector params. Those must come from the segments.
     let provided = EdgeConfig {
         on_disk_payload: None,
+        payload_memory: None,
+        id_tracker_memory: None,
         vectors: HashMap::new(),
         sparse_vectors: HashMap::new(),
         hnsw_config: None,
         quantization_config: None,
         optimizers: None,
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: Some(2),
         search_pool_core: None,
     };
@@ -389,6 +403,8 @@ fn provided_config_overrides_tunables_at_open() {
         LocalSegmentEnumerator::new(dir.path()),
         Some(provided),
         None,
+        Default::default(),
+        &AtomicBool::new(false),
     )
     .unwrap();
 
@@ -471,6 +487,8 @@ fn follower_uses_injected_enumerator() {
         },
         None,
         None,
+        Default::default(),
+        &AtomicBool::new(false),
     )
     .unwrap();
     assert_eq!(follower.segments_count(), all_segments.len() - 1);
@@ -553,4 +571,192 @@ fn leader_writes_manifest_and_follower_loads_it() {
     let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
     follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 100);
+}
+
+fn assert_cancelled<T>(result: OperationResult<T>) {
+    assert!(matches!(
+        result,
+        Err(segment::common::operation_error::OperationError::Cancelled { .. })
+    ));
+}
+
+/// A directory-scanning [`SegmentEnumerator`] that, once armed, sets the shared stop flag from
+/// inside `list_segments`: a deterministic way to cancel a live_reload right after discovery, once
+/// it is under way but before any segment is loaded or swapped in.
+struct CancelOnList {
+    inner: LocalSegmentEnumerator,
+    stopped: Arc<AtomicBool>,
+    armed: Arc<AtomicBool>,
+}
+
+impl SegmentEnumerator for CancelOnList {
+    fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
+        if self.armed.load(Ordering::Relaxed) {
+            self.stopped.store(true, Ordering::Relaxed);
+        }
+        self.inner.list_segments()
+    }
+}
+
+#[test]
+fn open_rejects_a_cancelled_flag() {
+    init_serverless_feature_flags();
+    let dir = tempfile::tempdir().unwrap();
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush().unwrap();
+
+    let stopped = Arc::new(AtomicBool::new(true));
+    assert_cancelled(ReadOnlyEdgeShard::<MmapFile>::open_with_cancellation(
+        MmapFs,
+        dir.path(),
+        None,
+        None,
+        stopped.clone(),
+    ));
+    assert_cancelled(ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        dir.path(),
+        LocalSegmentEnumerator::new(dir.path()),
+        None,
+        None,
+        Default::default(),
+        &stopped,
+    ));
+    assert!(stopped.load(Ordering::Relaxed));
+
+    // An unset flag opens exactly like the plain open and is left unset.
+    let stopped = Arc::new(AtomicBool::new(false));
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_cancellation(
+        MmapFs,
+        dir.path(),
+        None,
+        None,
+        stopped.clone(),
+    )
+    .unwrap();
+    assert_eq!(exact_count(&follower), 10);
+    assert_eq!(
+        follower.segments_count(),
+        ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path())
+            .unwrap()
+            .segments_count()
+    );
+    assert!(!stopped.load(Ordering::Relaxed));
+}
+
+#[test]
+fn live_reload_rejects_a_cancelled_flag_and_keeps_serving() {
+    let dir = tempfile::tempdir().unwrap();
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush().unwrap();
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10);
+
+    upsert(&leader, 11..=20);
+    leader.flush().unwrap();
+
+    let stopped = Arc::new(AtomicBool::new(true));
+    assert_cancelled(follower.live_reload_with_cancellation(stopped.clone()));
+    assert!(stopped.load(Ordering::Relaxed));
+    // Nothing was picked up, and the previous state is still served.
+    assert_eq!(exact_count(&follower), 10);
+
+    // A cancellation is scoped to its flag, not stored on the shard.
+    let stopped = Arc::new(AtomicBool::new(false));
+    follower
+        .live_reload_with_cancellation(stopped.clone())
+        .unwrap();
+    assert!(!stopped.load(Ordering::Relaxed));
+    assert_eq!(exact_count(&follower), 20);
+    assert_eq!(scrolled_ids(&follower).len(), 20);
+}
+
+#[test]
+fn cancellation_after_discovery_leaves_the_shard_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush().unwrap();
+
+    let stopped = Arc::new(AtomicBool::new(false));
+    let armed = Arc::new(AtomicBool::new(false));
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
+        MmapFs,
+        dir.path(),
+        CancelOnList {
+            inner: LocalSegmentEnumerator::new(dir.path()),
+            stopped: stopped.clone(),
+            armed: armed.clone(),
+        },
+        None,
+        None,
+        Default::default(),
+        &stopped,
+    )
+    .unwrap();
+    assert_eq!(exact_count(&follower), 10);
+    let segments_before = follower.segments_count();
+
+    // New leader segments appear; the follower discovers them and is cancelled right after.
+    upsert(&leader, 11..=30);
+    leader.flush().unwrap();
+    armed.store(true, Ordering::Relaxed);
+    assert_cancelled(follower.live_reload_with_cancellation(stopped.clone()));
+    assert!(stopped.load(Ordering::Relaxed));
+
+    // The discovered segments were neither loaded nor swapped in.
+    assert_eq!(follower.segments_count(), segments_before);
+    assert_eq!(exact_count(&follower), 10);
+
+    // The plain live_reload is unaffected by the earlier cancellation.
+    armed.store(false, Ordering::Relaxed);
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 30);
+}
+
+/// A segment whose reload failed is reopened in place: it serves the leader's
+/// current state, and later reloads continue from the reopened segment.
+#[test]
+fn failed_reload_reopens_segment() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-reopen")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    upsert(&leader, 1..=10);
+    leader.flush().unwrap();
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 10);
+
+    upsert(&leader, 11..=20);
+    leader.flush().unwrap();
+    let segments: Vec<_> = {
+        let holder = follower.segments.read();
+        holder
+            .uuids()
+            .into_iter()
+            .filter_map(|uuid| holder.segment_arc(&uuid))
+            .collect()
+    };
+    for segment in segments {
+        let injected = segment::common::operation_error::OperationError::service_error("injected");
+        crate::read_only::load::reopen_after_failed_reload(
+            &mut segment.write(),
+            injected,
+            &MmapFs,
+            None,
+        )
+        .unwrap();
+    }
+    assert_eq!(exact_count(&follower), 20);
+    assert_follower_vectors(&follower, &[1, 20]);
+
+    upsert(&leader, 21..=30);
+    leader.flush().unwrap();
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 30);
+    assert_follower_vectors(&follower, &[30]);
 }

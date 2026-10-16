@@ -62,8 +62,8 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         T::datatype()
     }
 
-    fn is_on_disk(&self) -> bool {
-        self.vectors.is_on_disk()
+    fn is_cold(&self) -> bool {
+        self.vectors.is_cold()
     }
 
     fn total_vector_count(&self) -> usize {
@@ -81,7 +81,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
         &self,
         keys: impl IntoIterator<Item = (U, PointOffsetType)>,
         mut callback: impl FnMut(U, PointOffsetType, CowVector<'_>),
-    ) {
+    ) -> OperationResult<()> {
         let keys = keys
             .into_iter()
             .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset, 1));
@@ -92,7 +92,6 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> VectorStorageRead
                 callback(user_data, point_offset, vector);
                 Ok(())
             })
-            .expect("read vectors");
     }
 
     fn get_vector_opt<P: AccessPattern>(&self, key: PointOffsetType) -> Option<CowVector<'_>> {

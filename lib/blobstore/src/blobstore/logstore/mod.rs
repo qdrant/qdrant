@@ -9,14 +9,12 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::counter::counter_cell::CounterCell;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::referenced_counter::HwMetricRefCounter;
+use common::ambient::hw::HwMetric;
 use common::generic_consts::{AccessPattern, Sequential};
 use common::is_alive_lock::IsAliveLock;
 use common::universal_io::{
     OkNotFound as _, Populate, UniversalAppend, UniversalAppendFs, UniversalRead, UniversalReadFs,
-    UniversalWriteFileOps, UserData,
+    UniversalWriteFs, UserData,
 };
 use page::AppendOnlyPages;
 use parking_lot::RwLock;
@@ -29,8 +27,9 @@ use crate::Result;
 use crate::blob::Blob;
 use crate::config::{LogstoreConfig, StorageConfig};
 use crate::error::BlobstoreError;
-use crate::tracker::append_only::AppendOnlyTracker;
-use crate::tracker::{PointOffset, ValuePointer};
+use crate::tracker::compacted::CompactedTracker;
+use crate::tracker::tracker_enum::TrackerEnum;
+use crate::tracker::{PointOffset, TrackerRead, ValuePointer};
 
 /// Number of most recent mappings validated against the page file lengths when opening
 const OPEN_CHECK_MAPPINGS: PointOffset = 256;
@@ -40,11 +39,11 @@ const OPEN_CHECK_MAPPINGS: PointOffset = 256;
 /// Guards against page files that are missing or shorter than what the tracker references, for
 /// example after a partial copy or restore of the storage directory. Only the most recent
 /// mappings are checked to keep opening cheap.
-fn validate_consistency<S: UniversalRead>(
-    tracker: &AppendOnlyTracker<S>,
+fn validate_consistency<S: UniversalRead, T: TrackerRead>(
+    tracker: &T,
     pages: &AppendOnlyPages<S>,
 ) -> Result<()> {
-    let count = tracker.pointer_count();
+    let count = tracker.max_point_offset()?;
     let start = count.saturating_sub(OPEN_CHECK_MAPPINGS);
     for pointer in tracker
         .get_range::<Sequential>(start..count)?
@@ -86,6 +85,9 @@ fn validate_consistency<S: UniversalRead>(
 /// Values cannot be updated or deleted, and must be put at monotonically increasing point
 /// offsets. All files are read and written through the universal IO backend `S`.
 ///
+/// The tracker is in whichever format is on disk, see [`TrackerEnum`]. New storages always start
+/// with the append-only format.
+///
 /// Uses `Arc<RwLock<...>>` for the pages and tracker to support concurrent flushing.
 #[derive(Debug)]
 pub struct Logstore<V, S>
@@ -93,7 +95,7 @@ where
     S: UniversalAppend + 'static,
 {
     pub(super) config: LogstoreConfig,
-    tracker: Arc<RwLock<AppendOnlyTracker<S>>>,
+    tracker: Arc<RwLock<TrackerEnum<S>>>,
     pages: Arc<RwLock<AppendOnlyPages<S>>>,
     base_path: PathBuf,
     /// Lock to prevent concurrent flushes and used for waiting for ongoing flushes to finish.
@@ -124,9 +126,9 @@ where
     /// It should exist already.
     pub(super) fn new<Fs>(fs: &Fs, base_path: PathBuf, config: LogstoreConfig) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        let tracker = AppendOnlyTracker::new(fs, &base_path)?;
+        let tracker = TrackerEnum::new(fs, &base_path)?;
         let pages = AppendOnlyPages::new(fs, &base_path)?;
 
         let config_path = base_path.join(CONFIG_FILENAME);
@@ -176,9 +178,9 @@ where
         populate: Populate,
     ) -> Result<Self>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        let tracker = AppendOnlyTracker::open_writable(fs, &base_path, populate)?;
+        let tracker = TrackerEnum::open_writable(fs, &base_path, populate)?;
         let pages = AppendOnlyPages::open(fs, &base_path, true, populate)?;
         validate_consistency(&tracker, &pages)?;
 
@@ -194,7 +196,10 @@ where
 
     /// Create an [`LogstoreView`] by locking tracker and pages, then call `f` with the
     /// view.
-    pub(super) fn with_view<R>(&self, f: impl FnOnce(LogstoreView<'_, V, S>) -> R) -> R {
+    pub(super) fn with_view<R>(
+        &self,
+        f: impl FnOnce(LogstoreView<'_, V, S, TrackerEnum<S>>) -> R,
+    ) -> R {
         let tracker = self.tracker.read();
         let pages = self.pages.read();
         f(LogstoreView::new(&self.config, &tracker, &pages))
@@ -216,12 +221,12 @@ where
         fs: &Fs,
         point_offset: PointOffset,
         value: &V,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
-        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_counter)
+        self.put_value_bytes(fs, point_offset, value.to_bytes(), hw_metric)
     }
 
     /// Put an already serialized value in the storage.
@@ -237,10 +242,10 @@ where
         fs: &Fs,
         point_offset: PointOffset,
         value_bytes: Vec<u8>,
-        hw_counter: HwMetricRefCounter,
+        hw_metric: HwMetric,
     ) -> Result<bool>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         // Validate before buffering anything, a rejected put must not leave data behind
         let next = self.tracker.read().pointer_count();
@@ -255,7 +260,7 @@ where
         let comp_value = self.config.compression.compress(value_bytes);
         let value_size = comp_value.len();
 
-        hw_counter.incr_delta(value_size);
+        hw_metric.bump(value_size);
 
         let value_size = u32::try_from(value_size)
             .map_err(|_| BlobstoreError::service_error("value is too large"))?;
@@ -285,7 +290,7 @@ where
     /// Completely wipes the storage, and recreates it in append-only mode.
     pub(super) fn clear<Fs>(&mut self, fs: &Fs) -> Result<()>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S> + UniversalReadFs<File = S>,
+        Fs: UniversalWriteFs<AppendFile = S> + UniversalReadFs<File = S>,
     {
         self.is_alive_flush_lock.blocking_mark_dead();
 
@@ -297,6 +302,29 @@ where
         Ok(())
     }
 
+    /// Hold the mappings in the compacted tracker format from now on, see [`TrackerEnum`]. Does
+    /// nothing if the tracker is compacted already.
+    ///
+    /// The append-only file is removed right away, the next flush saves the compacted one after
+    /// the value data as always. Until then the storage on disk has no tracker file and cannot be
+    /// opened, so this suits a storage being built, which a crash discards anyway.
+    pub(super) fn make_immutable<Fs: UniversalWriteFs>(&self, fs: &Fs) -> Result<()> {
+        let mut tracker = self.tracker.write();
+        let (compacted, append_only_files) = match &*tracker {
+            TrackerEnum::AppendOnly(append_only) => (
+                CompactedTracker::from_tracker(fs, &self.base_path, append_only)?,
+                append_only.files(),
+            ),
+            TrackerEnum::Compacted(_) => return Ok(()),
+        };
+        // Drops the append-only file handle before the file is removed
+        *tracker = TrackerEnum::Compacted(compacted);
+        for path in append_only_files {
+            fs.remove(&path)?;
+        }
+        Ok(())
+    }
+
     /// Wipe the storage, drop the tracker and pages and delete the base directory.
     ///
     /// Takes ownership because this function leaves the storage in an inconsistent state which
@@ -304,7 +332,7 @@ where
     /// storage.
     pub(super) fn wipe<Fs>(self, fs: &Fs) -> Result<()>
     where
-        Fs: UniversalWriteFileOps<AppendFile = S>,
+        Fs: UniversalWriteFs<AppendFile = S>,
     {
         let Self {
             config: _,
@@ -333,9 +361,8 @@ where
     pub(super) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<V>> {
-        self.with_view(|view| view.get_value::<P>(point_offset, hw_counter))
+        self.with_view(|view| view.get_value::<P>(point_offset))
     }
 
     /// Get the serialized value for a given point offset.
@@ -344,10 +371,9 @@ where
     pub(super) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
     ) -> Result<Option<Vec<u8>>> {
         self.with_view(|view| {
-            let bytes = view.get_value_bytes::<P>(point_offset, hw_counter)?;
+            let bytes = view.get_value_bytes::<P>(point_offset)?;
             Ok(bytes.map(Cow::into_owned))
         })
     }
@@ -357,7 +383,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<V>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -371,7 +397,7 @@ where
                     callback(user_data, point_offset, value)?;
                     Ok(true)
                 },
-                hw_counter_cell,
+                hw_metric,
             )
         })?;
 
@@ -383,7 +409,7 @@ where
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<&[u8]>) -> Result<(), E>,
-        hw_counter_cell: &CounterCell,
+        hw_metric: Option<HwMetric>,
     ) -> Result<(), E>
     where
         P: AccessPattern,
@@ -397,7 +423,7 @@ where
                     callback(user_data, point_offset, bytes)?;
                     Ok(true)
                 },
-                hw_counter_cell,
+                hw_metric,
             )
         })?;
 
@@ -417,14 +443,15 @@ where
         self.tracker.read().pointer_count()
     }
 
+    /// Heap RAM held beyond the page cache of the files, see [`TrackerEnum::ram_usage_bytes`].
+    pub(super) fn ram_usage_bytes(&self) -> usize {
+        self.tracker.read().ram_usage_bytes()
+    }
+
     /// Iterate over all values and execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
-    pub(super) fn iter<F, E>(
-        &self,
-        mut callback: F,
-        hw_counter: HwMetricRefCounter,
-    ) -> Result<(), E>
+    pub(super) fn iter<F, E>(&self, mut callback: F, hw_metric: HwMetric) -> Result<(), E>
     where
         F: FnMut(PointOffset, V) -> Result<bool, E>,
         E: From<BlobstoreError>,
@@ -443,7 +470,7 @@ where
             const BATCH_SIZE: PointOffset = 256;
 
             self.with_view(|view| -> Result<_, E> {
-                max_offset = view.max_point_offset();
+                max_offset = view.max_point_offset()?;
 
                 if current_offset >= max_offset {
                     return Ok(());
@@ -452,7 +479,7 @@ where
                 let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_offset);
 
                 should_continue =
-                    view.iter_range(current_offset..end_offset, &mut callback, hw_counter)?;
+                    view.iter_range(current_offset..end_offset, &mut callback, hw_metric)?;
 
                 if should_continue {
                     current_offset = end_offset;
@@ -504,7 +531,7 @@ impl<V, S: UniversalAppend + 'static> Logstore<V, S> {
             let tracker_flusher = {
                 let mut tracker_guard = tracker.write();
                 tracker_guard.write_pending(target)?;
-                tracker_guard.flusher()
+                tracker_guard.flusher(target)
             };
             tracker_flusher()?;
 

@@ -76,11 +76,10 @@ impl IndexingOptimizer {
                 let optimize_for_index = is_big_for_index && !is_indexed;
                 let optimize_for_mmap = match vector_data.storage_type.memory() {
                     Some(memory) => {
-                        let is_on_disk = memory.is_on_disk();
-                        if let Some(on_disk_config) = vector_cfg.on_disk {
-                            on_disk_config && !is_on_disk
-                        } else {
-                            is_big_for_mmap && !is_on_disk
+                        let is_cold = memory.is_cold();
+                        match vector_cfg.memory_placement() {
+                            Some(required) => required.is_cold() && !is_cold,
+                            None => is_big_for_mmap && !is_cold,
                         }
                     }
                     None => false,

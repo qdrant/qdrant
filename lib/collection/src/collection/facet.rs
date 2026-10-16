@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryStreamExt;
 use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse, FacetValue};
@@ -87,7 +86,6 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let response_limit = request.limit;
         if response_limit == 0 {
@@ -110,7 +108,6 @@ impl Collection {
             read_consistency,
             routing_token,
             timeout,
-            hw_measurement_acc,
         )
         .await
     }
@@ -124,7 +121,6 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         routing_token: Option<RoutingToken>,
         timeout: Option<Duration>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         if request.limit == 0 {
             return Ok(FacetResponse::default());
@@ -144,7 +140,6 @@ impl Collection {
                     routing_token,
                     shard_selection.is_shard_id(),
                     timeout,
-                    hw_measurement_acc.clone(),
                 )
             })
             .collect::<FuturesUnordered<_>>();

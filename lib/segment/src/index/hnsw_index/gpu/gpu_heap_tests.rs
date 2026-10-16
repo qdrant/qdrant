@@ -2,6 +2,7 @@
 
 use std::collections::{BinaryHeap, HashMap};
 
+use common::ambient;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use rand::rngs::StdRng;
@@ -49,6 +50,7 @@ struct GpuHeapTestParams {
 
 #[rstest]
 fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -249,6 +251,7 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
 
 #[rstest]
 fn test_gpu_candidates_heap(#[values(true, false)] linear: bool) {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)

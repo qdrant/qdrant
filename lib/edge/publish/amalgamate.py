@@ -179,6 +179,11 @@ def main() -> None:
         # Cleanup public API.
         (r"^#\[macro_export]$\n", ""),
     )
+    substitute(
+        AMALGAMATION.glob("src/common/ambient/trace/*.rs"),
+        # Non-`#[macro_export]` macros can't be re-exported as `pub`.
+        (r"^pub use (__\w+ as \w+|record::\{.*\});$", r"pub(crate) use \1;"),
+    )
 
     # Fix doctests
     substitute(

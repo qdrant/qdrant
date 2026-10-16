@@ -15,7 +15,7 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
     open_appendable_memmap_multi_vector_storage, open_appendable_memmap_vector_storage,
 };
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
-use crate::vector_storage::turbo::open_turbo_vector_storage;
+use crate::vector_storage::turbo::{open_turbo_vector_storage, tq_bits};
 
 fn open_mmap_vector_storage(
     vector_storage_path: &Path,
@@ -57,10 +57,13 @@ fn open_mmap_vector_storage(
                 vector_config.distance,
                 memory,
             ),
-            VectorStorageDatatype::Turbo4 => open_turbo_vector_storage(
+            VectorStorageDatatype::Turbo4
+            | VectorStorageDatatype::Turbo8
+            | VectorStorageDatatype::Turbo16 => open_turbo_vector_storage(
                 vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
+                tq_bits(storage_element_type),
                 memory,
             ),
         }

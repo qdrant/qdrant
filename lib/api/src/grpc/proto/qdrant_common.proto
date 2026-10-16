@@ -125,6 +125,8 @@ message Match {
     string text_any = 10;
     // Match keywords starting with the given prefix
     string prefix = 11;
+    // Match keywords containing the given substring
+    string substring = 12;
   }
 }
 

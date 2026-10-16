@@ -4,9 +4,8 @@ mod tests;
 use std::borrow::Cow;
 use std::path::Path;
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFileOps};
+use common::universal_io::{UniversalAppend, UniversalReadFs, UniversalWriteFs};
 
 use super::appendable_mmap_multi_dense_vector_storage::{
     DELETED_DIR_PATH, MultivectorMmapOffset, OFFSETS_DIR_PATH, VECTORS_DIR_PATH,
@@ -40,11 +39,7 @@ pub struct UpdateOnlyMultiDenseVectorStorage<T: PrimitiveVectorElement> {
 impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
     /// Open the storage at `path` for appending, creating it if it is not there
     /// yet.
-    pub fn open<Fs: UniversalReadFs + UniversalWriteFileOps>(
-        fs: &Fs,
-        path: &Path,
-        dim: usize,
-    ) -> OperationResult<Self> {
+    pub fn open<Fs: UniversalWriteFs>(fs: &Fs, path: &Path, dim: usize) -> OperationResult<Self> {
         let deleted = UpdateOnlyStoredFlags::open(fs, &path.join(DELETED_DIR_PATH))?;
         let vectors = UpdateOnlyChunkedVectors::open(fs, &path.join(VECTORS_DIR_PATH), dim)?;
         // One offset entry per point, so the "vector" is a single element.
@@ -62,12 +57,11 @@ impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
 
     /// Append one multi-vector per point of a batch, starting at `start_slot`,
     /// and persist them.
-    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFileOps>(
+    pub fn append_many<'a, Fs: UniversalReadFs<File: UniversalAppend> + UniversalWriteFs>(
         &mut self,
         fs: &Fs,
         start_slot: PointOffsetType,
         vectors: impl IntoIterator<Item = VectorToStore<'a>>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let batch_start = self.next_row;
         let mut rows: Vec<T> = Vec::new();
@@ -101,21 +95,19 @@ impl<T: PrimitiveVectorElement> UpdateOnlyMultiDenseVectorStorage<T> {
             fs,
             batch_start as VectorOffsetType,
             rows.chunks_exact(self.dim),
-            hw_counter,
         )?;
 
         self.offsets.append_many(
             fs,
             start_slot as VectorOffsetType,
             offsets.iter().map(std::slice::from_ref),
-            hw_counter,
         )?;
 
         for slot in missing {
             self.deleted.set(slot, true);
         }
 
-        self.deleted.flush(fs, hw_counter)
+        self.deleted.flush(fs)
     }
 
     fn flatten_decoded(&self, vector: VectorRef<'_>) -> OperationResult<Vec<T>> {

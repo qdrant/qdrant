@@ -3,21 +3,30 @@
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use aligned_vec::{AVec, RuntimeAlign};
+use futures::FutureExt;
+use futures::channel::oneshot::Receiver;
 use futures::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
 
 use super::local_state::LocalState;
-use super::stats::{DiskCacheStats, FetchStats};
 use super::{DiskCacheFs, DiskCacheRemote};
 use crate::universal_io::simple_disk_cache::REMOTE_OPEN_OPTIONS;
-use crate::universal_io::{OpenOptions, OwnedPipeline, UioResult, UniversalRead, UniversalReadFs};
+use crate::universal_io::{
+    OpenOptions, OwnedPipeline, UioResult, UniversalIoError, UniversalRead, UniversalReadFs,
+};
 
 mod init;
 mod read;
 mod reopen;
+
+/// A staged tail fetch, shared by every waiter. Resolves to a copy of the
+/// fetch error, while the owned result travels to the apply through the
+/// staged `data` receiver.
+type SharedFetch = Shared<BoxFuture<'static, Result<(), Arc<UniversalIoError>>>>;
 
 /// A lazily-populated local mirror of an append-only remote file.
 ///
@@ -26,7 +35,9 @@ mod reopen;
 /// shrink or change in place. This type implements [`UniversalRead`] only —
 /// appends are deliberately not supported through the cache (append
 /// directly to the backing storage instead), and random-offset writes stay
-/// unsupported.
+/// unsupported. It is important to respect immutability, since with current
+/// architecture random-offset writes can cause UB or data races, as described
+/// in Security Advisory [GHSA-hwvf-r68q-v2g7](https://github.com/qdrant/qdrant/security/advisories/GHSA-hwvf-r68q-v2g7)
 ///
 /// The local mirror can either be initialized lazily on first read (filling
 /// blocks on demand from the remote) or eagerly if populate is set. See
@@ -45,7 +56,6 @@ where
 {
     /// Clone of the remote filesystem handle, used to lazily open `remote`.
     remote_fs: R::Fs,
-    pub(super) stats: DiskCacheStats,
     /// Backend-specific per-open extras for the remote.
     remote_extra: <R::Fs as UniversalReadFs>::OpenExtra,
     /// Path to the remote file. Used to lazily open `remote`.
@@ -87,15 +97,11 @@ pub(crate) enum State<R: UniversalRead + 'static> {
     /// Eager open-time prefill: an in-flight whole-object read scheduled at open;
     /// init waits on it and writes the whole mirror. For `Populate::Blocking` /
     /// `PreferBackground`.
-    OpenPrefill {
-        pipeline: OwnedPipeline<R, ()>,
-        fetch: FetchStats,
-    },
+    OpenPrefill { pipeline: OwnedPipeline<R, ()> },
     /// Open-time partial prefill
     PartialPrefill {
         pipeline: OwnedPipeline<R, Range<u32>>,
         len: u64,
-        fetch: FetchStats,
     },
 }
 
@@ -107,32 +113,38 @@ pub(crate) enum State<R: UniversalRead + 'static> {
 /// and components keep `len()` as their growth signal. Nothing else remembers
 /// the staged targets, hence the `target_len` on every variant.
 #[derive(Debug)]
+#[expect(clippy::type_complexity)]
 pub(crate) enum ScheduledReopen<R: UniversalRead + 'static> {
-    /// Scheduling detected that the file size has not changed, so no need to
-    /// reopen.
+    /// File size has not changed.
     Unchanged,
-    /// Lazy populate (`No` / `Auto` / `Partial`): apply resizes the mirror to
-    /// `target_len` and lets the new blocks fault in on demand.
+    /// Resize mirror to `target_len`; new blocks fault in on demand.
     Resize { target_len: u64 },
-    /// Populated (`Blocking` / `PreferBackground`): the appended tail is
-    /// already in flight on a fresh remote handle; apply resizes, drains it
-    /// and writes it. `future` drives the fetch (clones of it may be polled
-    /// externally); `data` receives the fetched bytes and the handle once
-    /// `future` completes.
+    /// Bounded tail fetch for populated files with known length.
     Tail {
-        future: Shared<BoxFuture<'static, ()>>,
-        data: futures::channel::oneshot::Receiver<UioResult<(R, AVec<u8, RuntimeAlign>)>>,
+        future: SharedFetch,
+        data: Receiver<UioResult<(R, AVec<u8, RuntimeAlign>)>>,
         blocks_range: Range<u32>,
         target_len: u64,
+    },
+    /// Unbounded tail fetch for populated files with unknown length.
+    UnboundedTail {
+        future: SharedFetch,
+        data: Receiver<UioResult<(R, u64, AVec<u8, RuntimeAlign>)>>,
+        from: u64,
     },
 }
 
 impl<R: UniversalRead + 'static> ScheduledReopen<R> {
     /// Length the scheduled reopen would bring the mirror to, if anything is
-    /// staged.
+    /// staged with a known length.
     pub(super) fn target_len(&self) -> Option<u64> {
         match self {
-            ScheduledReopen::Unchanged => None,
+            ScheduledReopen::Unchanged
+            | ScheduledReopen::UnboundedTail {
+                future: _,
+                data: _,
+                from: _,
+            } => None,
             ScheduledReopen::Resize { target_len }
             | ScheduledReopen::Tail {
                 target_len,
@@ -141,6 +153,22 @@ impl<R: UniversalRead + 'static> ScheduledReopen<R> {
                 blocks_range: _,
             } => Some(*target_len),
         }
+    }
+
+    pub(super) fn future(&self) -> SharedFetch {
+        match self {
+            ScheduledReopen::Tail { future, .. }
+            | ScheduledReopen::UnboundedTail { future, .. } => future.clone(),
+            ScheduledReopen::Unchanged | ScheduledReopen::Resize { .. } => {
+                async { Ok(()) }.boxed().shared()
+            }
+        }
+    }
+
+    /// `true` if a staged fetch already completed with an error. Such a
+    /// reopen can only fail, so the next `live_preload` stages it again.
+    pub(super) fn has_failed(&self) -> bool {
+        self.future().peek().is_some_and(Result::is_err)
     }
 }
 
@@ -188,7 +216,6 @@ where
         let is_ready = state.is_ready();
         Self {
             remote_fs: fs.remote_fs.clone(),
-            stats: fs.stats.clone(),
             remote_extra,
             remote_path: remote_path.as_ref().to_owned(),
             open_options: options,

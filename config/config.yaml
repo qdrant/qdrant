@@ -3,6 +3,7 @@ log_level: INFO
 # Logging configuration
 # Qdrant logs to stdout. You may configure to also write logs to a file on disk.
 # Be aware that this file may grow indefinitely.
+# Log timestamps are in UTC, set the `TZ` environment variable to use a different timezone.
 # logger:
 #   # Logging format, supports `text` and `json`
 #   format: text
@@ -22,13 +23,50 @@ storage:
   snapshots_path: ./snapshots
 
   snapshots_config:
-    # "local" or "s3" - where to store snapshots
+    # Where to store snapshots: "local", "s3", "gcs" or "azure"
     snapshots_storage: local
+
+    # Amazon S3 or any S3-compatible storage. Fields left unset are resolved
+    # from the AWS_* environment and the default credential chain.
     # s3_config:
     #   bucket: ""
+    #   # Optional key prefix, objects become <prefix>/snapshots/...
+    #   prefix: ""
     #   region: ""
     #   access_key: ""
     #   secret_key: ""
+    #   # Custom endpoint, for MinIO and similar
+    #   endpoint_url: ""
+
+    # Google Cloud Storage. Without credential fields, Application Default
+    # Credentials are used: GOOGLE_* environment, gcloud config or the
+    # metadata server on GCE and GKE.
+    # gcs_config:
+    #   bucket: ""
+    #   # Optional object name prefix, objects become <prefix>/snapshots/...
+    #   prefix: ""
+    #   # Use at most one of the following
+    #   service_account_path: ""
+    #   service_account_key: ""
+    #   application_credentials_path: ""
+    #   # Custom endpoint, for fake-gcs-server and similar
+    #   endpoint_url: ""
+
+    # Azure Blob Storage. Without credential fields, the default chain is
+    # used: AZURE_* environment, managed identity or the Azure CLI.
+    # azure_config:
+    #   account: ""
+    #   container: ""
+    #   # Optional blob name prefix, blobs become <prefix>/snapshots/...
+    #   prefix: ""
+    #   # Use one authentication method
+    #   access_key: ""
+    #   sas_token: ""
+    #   client_id: ""
+    #   client_secret: ""
+    #   tenant_id: ""
+    #   # Custom endpoint, for Azurite and similar
+    #   endpoint_url: ""
 
   # Where to store temporary files
   # If null, temporary snapshots are stored in: storage/snapshots_temp/
@@ -191,6 +229,9 @@ storage:
   # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    # Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    # may still be built when the effective payload M is positive (see payload_m).
+    # This setting alone does not guarantee exact search.
     m: 16
 
     # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
@@ -218,7 +259,9 @@ storage:
     # Overrides the deprecated `on_disk` flag if both are set.
     # memory: cached
 
-    # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
+    # Number of additional payload-aware links per node. If unset, the value of m is used.
+    # An effective value of 0 disables these additional links. A positive value allows
+    # them for indexed payload fields with HNSW enabled, even when m is 0.
     payload_m: null
 
   # Default shard transfer method to use if none is defined.
@@ -391,7 +434,10 @@ service:
   #
   # jwt_rbac: true
 
-  # Enforce API key / JWT authentication on the internal (p2p) gRPC API.
+  # Enforce API key authentication on the internal (p2p) gRPC API.
+  # Only `api_key` and `alt_api_key` are accepted there; the read-only key
+  # and JWT tokens are rejected, since peers joining consensus and moving
+  # shards must hold the read-write key.
   # The regular api_key is always forwarded on internal requests, but the
   # receiving side only verifies it when this flag is enabled. Keep disabled
   # during a rolling upgrade so older peers (that do not attach a key yet)
@@ -424,6 +470,12 @@ cluster:
 
   # Configuration of the inter-cluster communication
   p2p:
+    # Host or IP address to bind the internal (p2p) gRPC listener to.
+    # Defaults to `service.host` when unset. Set this to an internal
+    # interface to keep the internal port off the interface that serves
+    # the public API.
+    #
+    # host: <internal IP of this node>
     # Port for internal communication between peers
     port: 6335
 
@@ -487,3 +539,10 @@ tls:
 #   # WARNING: Enabling this without a trusted proxy allows clients to spoof their IP.
 #   # Default: false
 #   trust_forwarded_headers: false
+#   # Where to write audit log entries:
+#   #   file            - rolling log files in `dir`
+#   #   stdout / stderr - only the given stream, nothing is written to `dir`
+#   #   file_and_stdout / file_and_stderr - both
+#   # Each entry is a JSON line with `"kind": "audit"`, to tell it apart from regular logs.
+#   # Default: file
+#   output: file

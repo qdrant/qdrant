@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use blobstore::Blobstore;
 use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::ambient;
+use common::ambient::hw::HwMetric;
+use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{MmapFs, Populate};
 
@@ -52,16 +54,15 @@ impl MutableGeoIndex {
 
         // Load in-memory index from Gridstore
         let mut in_memory_index = InMemoryGeoIndex::new();
-        let hw_counter = HardwareCounterCell::disposable();
-        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         store
             .iter::<_, OperationError>(
                 |idx, values: Vec<RawGeoPoint>| {
                     let geo_points = values.into_iter().map(GeoPoint::from).collect::<Vec<_>>();
-                    in_memory_index.add_many_geo_points(idx, geo_points, &hw_counter)?;
+                    in_memory_index.add_many_geo_points(idx, geo_points)?;
                     Ok(true)
                 },
-                hw_counter_ref,
+                HwMetric::PayloadIndexIoWrite,
             )
             .map_err(|err| {
                 OperationError::service_error(format!(
@@ -109,21 +110,19 @@ impl MutableGeoIndex {
         &mut self,
         idx: PointOffsetType,
         values: Vec<GeoPoint>,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Update persisted storage
         if values.is_empty() {
             // An empty value cannot be stored; drop whatever the slot holds
             self.remove_point(idx)?;
         } else {
-            let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
             let raw_values = values
                 .iter()
                 .cloned()
                 .map(RawGeoPoint::from)
                 .collect::<Vec<_>>();
             self.storage
-                .put_value(idx, &raw_values, hw_counter_ref)
+                .put_value(idx, &raw_values, HwMetric::PayloadIndexIoWrite)
                 .map_err(|err| {
                     OperationError::service_error(format!(
                         "failed to put value in mutable geo index gridstore: {err}"
@@ -131,8 +130,7 @@ impl MutableGeoIndex {
                 })?;
         }
 
-        self.in_memory_index
-            .add_many_geo_points(idx, values, hw_counter)
+        self.in_memory_index.add_many_geo_points(idx, values)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {

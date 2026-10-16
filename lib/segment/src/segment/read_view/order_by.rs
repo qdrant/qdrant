@@ -2,7 +2,6 @@ use std::cmp::Reverse;
 use std::sync::atomic::AtomicBool;
 
 use common::condition_checker::ConditionChecker;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::{Either, Itertools};
@@ -31,7 +30,6 @@ where
         limit: Option<usize>,
         condition: &Filter,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let numeric_index = self
@@ -41,9 +39,7 @@ where
                 key: order_by.key.to_string(),
             })?;
 
-        let cardinality_estimation = self
-            .payload_index
-            .estimate_cardinality(condition, hw_counter)?;
+        let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
 
         let start_from = order_by.start_from();
 
@@ -52,7 +48,6 @@ where
             .iter_filtered_points(
                 condition,
                 &cardinality_estimation,
-                hw_counter,
                 is_stopped,
                 deferred_behavior,
             )?
@@ -99,7 +94,6 @@ where
         limit: Option<usize>,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let numeric_index = self
@@ -126,7 +120,7 @@ where
         let filtered_iter = match filter {
             None => Either::Left(directed_range_iter.map(Ok)),
             Some(filter) => {
-                let filter_context = self.payload_index.filter_context(filter, hw_counter)?;
+                let filter_context = self.payload_index.filter_context(filter)?;
 
                 Either::Right(
                     directed_range_iter
@@ -152,7 +146,6 @@ where
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
-        hw_counter: &HardwareCounterCell,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
@@ -161,17 +154,15 @@ where
                 limit,
                 None,
                 is_stopped,
-                hw_counter,
                 deferred_behavior,
             ),
             Some(filter) => {
-                if self.should_pre_filter(filter, limit, hw_counter)? {
+                if self.should_pre_filter(filter, limit)? {
                     self.filtered_read_by_index_ordered(
                         order_by,
                         limit,
                         filter,
                         is_stopped,
-                        hw_counter,
                         deferred_behavior,
                     )
                 } else {
@@ -180,7 +171,6 @@ where
                         limit,
                         Some(filter),
                         is_stopped,
-                        hw_counter,
                         deferred_behavior,
                     )
                 }

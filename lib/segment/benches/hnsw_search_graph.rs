@@ -44,7 +44,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                         EF,
                         SearchAlgorithm::Hnsw,
                         &mut scorer,
-                        graph_layers.unfiltered_entry_point(),
+                        &graph_layers.unfiltered_entry_point(),
                         &DEFAULT_STOPPED,
                     )
                     .unwrap(),
@@ -67,7 +67,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                         EF,
                         SearchAlgorithm::Hnsw,
                         &mut scorer,
-                        graph_layers.unfiltered_entry_point(),
+                        &graph_layers.unfiltered_entry_point(),
                         &DEFAULT_STOPPED,
                     )
                     .unwrap(),
@@ -85,7 +85,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let mut scorer = vector_holder.scorer(query);
 
             let mut top_score = 0.;
-            let scores = scorer.score_points(&mut plain_search_range, NUM_VECTORS);
+            let scores = scorer
+                .score_points(&mut plain_search_range, NUM_VECTORS)
+                .unwrap();
             scores.for_each(|score| {
                 if score.score > top_score {
                     top_score = score.score

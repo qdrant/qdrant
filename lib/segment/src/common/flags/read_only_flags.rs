@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs};
-use futures::future::BoxFuture;
+use common::universal_io::{CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs};
 use roaring::RoaringBitmap;
 
 use super::mode::FlagsMode;
@@ -77,7 +76,7 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
     fn live_preload<Fs: CachedReadFs<File = Self::File>>(
         &self,
         cached_fs: &Fs,
-    ) -> OperationResult<Vec<BoxFuture<'static, ()>>> {
+    ) -> OperationResult<Vec<PreloadFuture>> {
         match self {
             ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_preload(cached_fs),
             ReadOnlyFlags::Compact(compact) => compact.live_preload(cached_fs),
@@ -90,7 +89,6 @@ impl<S: UniversalRead> LiveReload for ReadOnlyFlags<S> {
         fs: &Fs,
         _deleted_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
         _new_points: &common::sorted_slice::SortedSlice<'_, common::types::PointOffsetType>,
-        _hw_counter: &common::counter::hardware_counter::HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             ReadOnlyFlags::Dynamic(dynamic) => dynamic.live_reload(fs),

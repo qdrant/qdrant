@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use std::collections::HashMap;
 
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
@@ -15,6 +16,8 @@ pub(crate) const VECTOR_NAME: &str = "edge-test-vector";
 pub(crate) fn test_config() -> EdgeConfig {
     EdgeConfig {
         on_disk_payload: Some(false),
+        payload_memory: None,
+        id_tracker_memory: None,
         vectors: HashMap::from([(
             VECTOR_NAME.to_string(),
             EdgeVectorParams {
@@ -24,6 +27,7 @@ pub(crate) fn test_config() -> EdgeConfig {
                 multivector_config: None,
                 datatype: None,
                 on_disk: None,
+                memory: None,
                 hnsw_config: None,
             },
         )]),
@@ -32,6 +36,7 @@ pub(crate) fn test_config() -> EdgeConfig {
         quantization_config: None,
         optimizers: Default::default(),
         wal_options: None,
+        wal_enabled: None,
         max_search_threads: None,
         search_pool_core: None,
     }

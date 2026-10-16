@@ -1,4 +1,4 @@
-use super::{UniversalFlush, UniversalRead, UniversalWriteFileOps};
+use super::{UniversalFlush, UniversalRead, UniversalWriteFs};
 use crate::universal_io::{ByteOffset, UioResult, UniversalReadFsAsync};
 
 /// A file handle that supports atomic appends at a caller-provided offset.
@@ -13,7 +13,7 @@ use crate::universal_io::{ByteOffset, UioResult, UniversalReadFsAsync};
 /// (`Fs::AppendFile = Self`), so `S::Fs` is the file-creating, append-opening
 /// filesystem without a second associated type. As on the read side it is the
 /// canonical producer, not the only one — code that accepts any takes
-/// `&impl UniversalWriteFileOps<AppendFile = S>`.
+/// `&impl UniversalWriteFs<AppendFile = S>`.
 ///
 /// # Contract
 ///
@@ -47,7 +47,7 @@ use crate::universal_io::{ByteOffset, UioResult, UniversalReadFsAsync};
 ///   rather than duplicating; re-check the length before appending at a new
 ///   offset.
 /// - Requires a handle opened with `writeable: true` — either through
-///   [`UniversalWriteFileOps::open_append`], or through
+///   [`UniversalWriteFs::open_append`], or through
 ///   [`UniversalReadFs::open`] on a backend whose read handle appends. Not
 ///   supported on `prevent_caching` (`O_DIRECT`) handles.
 /// - Appending no bytes trivially succeeds, without touching the file or
@@ -65,7 +65,7 @@ use crate::universal_io::{ByteOffset, UioResult, UniversalReadFsAsync};
 /// [`len`]: UniversalRead::len
 /// [`live_reload`]: UniversalRead::live_reload
 pub trait UniversalAppend:
-    UniversalRead<Fs: UniversalWriteFileOps<AppendFile = Self>> + UniversalFlush
+    UniversalRead<Fs: UniversalWriteFs<AppendFile = Self>> + UniversalFlush
 {
     /// Atomically grow the file by appending `data` at exactly `offset`,
     /// which must equal the current end of file; rejected with
@@ -97,14 +97,14 @@ pub trait UniversalAppend:
 }
 
 pub trait UniversalAppendFs:
-    UniversalReadFsAsync<File = <Self as UniversalWriteFileOps>::AppendFile>
-    + UniversalWriteFileOps<AppendFile: UniversalAppend>
+    UniversalReadFsAsync<File = <Self as UniversalWriteFs>::AppendFile>
+    + UniversalWriteFs<AppendFile: UniversalAppend>
 {
 }
 
 impl<Fs> UniversalAppendFs for Fs
 where
-    Fs: UniversalReadFsAsync + UniversalWriteFileOps<AppendFile = Self::File>,
+    Fs: UniversalReadFsAsync + UniversalWriteFs<AppendFile = Self::File>,
     Self::File: UniversalAppend,
 {
 }

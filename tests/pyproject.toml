@@ -5,8 +5,9 @@ requires-python = ">=3.10,<4"
 dependencies = [
     "grpc-interceptor>=0.15,<0.16",
     "grpc-requests>=0.1,<0.2",
+    "grpcio>=1.80,<2",
     "more-itertools>=10.8,<11",
-    "pyjwt>=2.13.0,<3",
+    "pyjwt>=2.15.0,<3",
     "jsons>=1.6.3,<2",
     "pytest>=8.4,<9",
     "pytest-timeout>=2.4,<3",
@@ -19,6 +20,8 @@ dependencies = [
     "pytest-subtests>=0.14.1,<0.15",
     "qdrant-client>=1.19.0,<2",
     "tqdm>=4.67.1,<5",
+    "filelock>=3.20,<4",
+    "pytest-split>=0.10,<1",
 ]
 
 [tool.uv]

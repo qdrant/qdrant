@@ -3,7 +3,9 @@
 #![allow(deprecated)]
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
+use chrono::{DateTime, Utc};
 use collection::config::{
     CollectionConfigInternal, CollectionParams, IdTrackerParams, PayloadStorageParams,
     ShardingMethod,
@@ -36,6 +38,9 @@ use validator::Validate;
 pub use super::staging::{TestSlowDown, TestTransientError};
 use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+
+pub(crate) static CREATE_CUSTOM_SHARDS_IN_INITIALIZING_STATE: LazyLock<semver::Version> =
+    LazyLock::new(|| semver::Version::parse("1.14.2-dev").unwrap());
 
 // *Operation wrapper structure is only required for better OpenAPI generation
 
@@ -196,6 +201,9 @@ pub struct CreateCollection {
     /// such as creation time, migration data, inference model info, etc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Payload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 /// Fill exactly one placement level, by precedence: request `memory`, request legacy `on_disk`,
@@ -409,10 +417,6 @@ impl UpdateCollectionOperation {
         })
     }
 
-    pub fn has_shard_replica_changes(&self) -> bool {
-        self.shard_replica_changes.is_some()
-    }
-
     pub fn take_shard_replica_changes(&mut self) -> Option<Vec<replica_set::Change>> {
         self.shard_replica_changes.take()
     }
@@ -573,6 +577,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         } = value;
 
         let CollectionParams {
@@ -606,6 +611,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             strict_mode_config,
             uuid,
             metadata,
+            created_at,
         }
     }
 }

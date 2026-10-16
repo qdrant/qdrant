@@ -1,6 +1,8 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
+mod test_heal_payload_links;
 
+use common::ambient;
 use common::types::PointOffsetType;
 use rand::Rng;
 
@@ -34,6 +36,7 @@ pub(crate) fn create_graph_layer_builder_fixture<R: Rng + ?Sized>(
         use_heuristic,
     );
 
+    let _scope = ambient::test_guard();
     for idx in 0..(num_vectors as PointOffsetType) {
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);

@@ -39,6 +39,8 @@ message InitiateShardTransferRequest {
   string collection_name = 1;
   // Id of the temporary shard
   uint32 shard_id = 2;
+  // Peer ID of the transfer source, checked against the registered shard transfer
+  optional uint64 from_peer_id = 3;
 }
 
 message WaitForShardStateRequest {

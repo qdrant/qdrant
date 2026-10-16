@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::universal_io::{
-    UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFileOps, read_json_via,
-    read_whole_via,
+    UioResult, UniversalIoError, UniversalReadFs, UniversalWriteFs, read_json_via, read_whole_via,
 };
 use serde::{Deserialize, Serialize};
 
@@ -31,8 +30,6 @@ pub(super) struct ChunkedVectorsConfig {
     pub(super) chunk_size_bytes: usize,
     pub(super) chunk_size_vectors: usize,
     pub(super) dim: usize,
-    #[serde(default)]
-    pub(super) populate: Option<bool>,
 }
 
 /// One chunk's share of a run of vectors.
@@ -108,10 +105,9 @@ pub(super) fn ensure_config<T, Fs>(
     fs: &Fs,
     directory: &Path,
     dim: usize,
-    populate: bool,
 ) -> OperationResult<ChunkedVectorsConfig>
 where
-    Fs: UniversalReadFs + UniversalWriteFileOps,
+    Fs: UniversalWriteFs,
 {
     let config_file = config_file(directory);
     match load_config(fs, &config_file) {
@@ -126,19 +122,18 @@ where
                 )))
             }
         }
-        Ok(None) => create_config::<T>(fs, &config_file, dim, populate),
+        Ok(None) => create_config::<T>(fs, &config_file, dim),
         Err(e) => {
             log::error!("Failed to deserialize config file {config_file:?}: {e}");
-            create_config::<T>(fs, &config_file, dim, populate)
+            create_config::<T>(fs, &config_file, dim)
         }
     }
 }
 
 fn create_config<T>(
-    fs: &impl UniversalWriteFileOps,
+    fs: &impl UniversalWriteFs,
     config_file: &Path,
     dim: usize,
-    populate: bool,
 ) -> OperationResult<ChunkedVectorsConfig> {
     if dim == 0 {
         return Err(OperationError::service_error(
@@ -155,7 +150,6 @@ fn create_config<T>(
         chunk_size_bytes: corrected_chunk_size_bytes,
         chunk_size_vectors,
         dim,
-        populate: Some(populate),
     };
     fs.atomic_save(config_file, &serde_json::to_vec(&config)?)?;
     Ok(config)

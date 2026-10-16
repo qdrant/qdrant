@@ -16,7 +16,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
@@ -51,7 +50,8 @@ use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_trait::WaitUntil;
+use crate::shards::shard_initializing_flag_path;
+use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
 
 //    │    Collection Created
 //    │
@@ -393,6 +393,37 @@ impl ShardReplicaSet {
         }
     }
 
+    /// The local shard's segments, for tests to inspect their layout and schema
+    #[cfg(feature = "testing")]
+    pub async fn local_segments_for_test(
+        &self,
+    ) -> Option<shard::segment_holder::locked::LockedSegmentHolder> {
+        use crate::shards::shard::Shard;
+        match &*self.local.read().await {
+            Some(Shard::Local(local)) => Some(local.segments()),
+            _ => None,
+        }
+    }
+
+    /// Config cached by each optimizer on the local shard
+    #[cfg(feature = "testing")]
+    pub async fn local_optimizer_configs_for_test(
+        &self,
+    ) -> Option<Vec<shard::optimizers::config::SegmentOptimizerConfig>> {
+        let local = self.local.read().await;
+        let Some(Shard::Local(local)) = local.as_ref() else {
+            return None;
+        };
+
+        let configs = local
+            .optimizers
+            .load()
+            .iter()
+            .map(|optimizer| optimizer.segment_optimizer_config().clone())
+            .collect();
+        Some(configs)
+    }
+
     pub fn shard_key(&self) -> Option<ShardKey> {
         self.shard_key.read().clone()
     }
@@ -614,12 +645,16 @@ impl ShardReplicaSet {
 
     /// Clears the local shard data and loads an empty local shard
     ///
+    /// Removes the shard initializing flag after the empty shard is built, before installing it. The removal happens
+    /// under the `local` lock, so it never deletes a flag created by a concurrent
+    /// [`Self::restore_local_replica_from`] for its own restore.
+    ///
     /// # Cancel safety
     ///
     /// This is cancel safe. If the future is dropped, `local` is left holding a dummy shard rather
     /// than the real thing. That dummy state is picked up like any other initialization failure: a
     /// retried call to this method clears it and tries again.
-    pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
+    pub async fn init_empty_local_shard(&self, collection_path: &Path) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         // Keep a dummy placeholder because every await below may drop the future early on
@@ -658,6 +693,16 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
+                let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
+                match fs_err::tokio::remove_file(&shard_flag).await {
+                    Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => {
+                        local_shard.stop_gracefully().await;
+                        return Err(err.into());
+                    }
+                }
+
                 local.replace(Shard::Local(local_shard));
                 Ok(())
             }
@@ -977,6 +1022,20 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Whether the local shard, if any, has an optimizer error recorded.
+    pub(crate) async fn has_local_optimizer_errors(&self) -> bool {
+        match self
+            .local
+            .read()
+            .await
+            .as_ref()
+            .and_then(|shard| shard.local_shard())
+        {
+            Some(local_shard) => local_shard.has_optimizer_errors().await,
+            None => false,
+        }
+    }
+
     /// Apply shard's strict mode configuration update
     ///
     /// The actual rate limiters live on `LocalShard`, so this just delegates
@@ -1038,7 +1097,6 @@ impl ShardReplicaSet {
     pub async fn delete_local_points(
         &self,
         filter: Filter,
-        hw_measurement_acc: HwMeasurementAcc,
         force: bool,
         deferred_behavior: DeferredBehavior,
         wait: WaitUntil,
@@ -1068,7 +1126,6 @@ impl ShardReplicaSet {
                     Some(&filter),
                     &self.search_runtime,
                     None,
-                    hw_measurement_acc.clone(),
                     deferred_behavior,
                 )
                 .await?;
@@ -1099,7 +1156,7 @@ impl ShardReplicaSet {
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
         let result = self
-            .update_local(op.into(), wait, None, hw_measurement_acc, force)
+            .update_local(op.into(), wait, None, force)
             .await?
             .ok_or_else(|| {
                 CollectionError::bad_request(format!(

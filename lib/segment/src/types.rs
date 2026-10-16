@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use bytemuck::{Pod, Zeroable};
+use chrono::SubsecRound as _;
 use common::raw_bytes_serde;
 use common::stable_hash::StableHash;
 use common::types::{PointOffsetType, ScoreType};
@@ -74,6 +75,10 @@ pub type VectorName = str;
 pub type VectorNameBuf = String;
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
+///
+/// Qdrant supports datetimes with microsecond precision. Constructing through [`From`],
+/// [`FromStr`] or deserialization truncates anything below a microsecond, so that filtering
+/// gives the same result with and without a payload index.
 #[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, Eq, PartialOrd, Hash)]
 #[serde(transparent)]
 pub struct DateTimeWrapper(pub chrono::DateTime<chrono::Utc>);
@@ -156,8 +161,9 @@ impl Display for DateTimePayloadType {
 }
 
 impl From<chrono::DateTime<chrono::Utc>> for DateTimePayloadType {
+    /// Truncates to microseconds, matching [`DateTimeWrapper::timestamp`]
     fn from(dt: chrono::DateTime<chrono::Utc>) -> Self {
-        DateTimeWrapper(dt)
+        DateTimeWrapper(dt.trunc_subsecs(6))
     }
 }
 
@@ -701,22 +707,24 @@ pub struct SearchParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pathseer: Option<PathSeerSearchParams>,
 
-    /// Which population sparse vector IDF statistics are computed over.
+    /// Which population IDF statistics are computed over.
     /// By default (or with explicit `"global"`) statistics are collection-wide.
-    /// Only applicable to sparse vectors with the IDF modifier enabled.
+    /// Only applicable to sparse vectors with the IDF modifier enabled, and to
+    /// BM25 over a text index.
     #[serde(default)]
     #[validate(nested)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idf: Option<IdfParams>,
 }
 
-/// Population over which sparse vector IDF statistics are computed for scoring —
-/// the *IDF corpus*.
+/// Population over which IDF statistics are computed for scoring — the *IDF
+/// corpus*.
 ///
 /// - `"global"` — collection-wide statistics, same as omitting the parameter.
 /// - `{ "corpus": <filter> }` — document count and per-term document frequencies
-///   are computed over the points matching the corpus filter only. The corpus is
-///   independent of the retrieval filter and is usually broader than it.
+///   (and, for BM25 over a text index, the average document length) are computed
+///   over the points matching the corpus filter only. The corpus is independent
+///   of the retrieval filter and is usually broader than it.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum IdfParams {
@@ -818,10 +826,10 @@ impl Indexes {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             Indexes::Plain {} => false,
-            Indexes::Hnsw(config) => config.memory_placement().is_on_disk(),
+            Indexes::Hnsw(config) => config.memory_placement().is_cold(),
         }
     }
 }
@@ -834,6 +842,9 @@ impl Indexes {
 #[anonymize(false)]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    /// Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    /// may still be built when the effective payload M is positive (see payload_m).
+    /// This setting alone does not guarantee exact search.
     pub m: usize,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
     #[validate(range(min = 4))]
@@ -861,7 +872,9 @@ pub struct HnswConfig {
     /// set. Default: `cached` (`cold` if `on_disk` is set to true).
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub memory: Option<Memory>,
-    /// Custom M param for hnsw graph built for payload index. If not set, default M will be used.
+    /// Number of additional payload-aware links per node. If unset, the value of m is used.
+    /// An effective value of 0 disables these additional links. A positive value allows
+    /// them for indexed payload fields with HNSW enabled, even when m is 0.
     #[serde(default, skip_serializing_if = "Option::is_none")] // Better backward compatibility
     pub payload_m: Option<usize>,
     /// Store copies of original and quantized vectors within the HNSW index file. Default: false.
@@ -1105,6 +1118,7 @@ pub enum TurboQuantBitSize {
     Bits2,
     #[default]
     Bits4,
+    Bits8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema, Validate)]
@@ -1728,7 +1742,7 @@ impl PayloadStorageType {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadStorageType::Mmap => true,
             PayloadStorageType::InRamMmap => false,
@@ -1790,11 +1804,11 @@ impl SegmentConfig {
 
     /// Check if any vector storage is on-disk
     pub fn is_any_on_disk(&self) -> bool {
-        self.vector_data.values().any(|config| config.is_on_disk())
+        self.vector_data.values().any(|config| config.is_cold())
             || self
                 .sparse_vector_data
                 .values()
-                .any(|config| config.index.index_type.is_on_disk())
+                .any(|config| config.index.index_type.is_mmap())
     }
 
     pub fn is_appendable(&self) -> bool {
@@ -1892,6 +1906,7 @@ where
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
 )]
+#[cfg_attr(any(test, feature = "testing"), derive(exhaustive::Exhaustive))]
 #[serde(rename_all = "snake_case")]
 pub enum Memory {
     // Data is not pre-loaded from disk to RAM. Preferred for rarely queried components or
@@ -1920,14 +1935,6 @@ impl Memory {
     /// in-RAM data is fully materialized on heap and never evicted.
     pub fn from_on_disk_heap(on_disk: bool) -> Self {
         if on_disk { Self::Cold } else { Self::Pinned }
-    }
-
-    /// Whether this placement corresponds to `on_disk = true` in the legacy options.
-    pub fn is_on_disk(self) -> bool {
-        match self {
-            Self::Cold => true,
-            Self::Cached | Self::Pinned => false,
-        }
     }
 
     /// Whether data is left on disk and paged in on demand, rather than held in RAM. Reads of
@@ -2079,6 +2086,10 @@ pub enum VectorStorageDatatype {
     Uint8,
     // TurboQuant 4-bit compressed storage
     Turbo4,
+    // TurboQuant 8-bit compressed storage
+    Turbo8,
+    // TurboQuant 16-bit compressed storage
+    Turbo16,
 }
 
 #[derive(
@@ -2299,8 +2310,8 @@ impl VectorDataConfig {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.storage_memory().is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.storage_memory().is_cold()
     }
 }
 
@@ -2315,8 +2326,8 @@ pub enum SparseVectorStorageType {
 }
 
 impl SparseVectorStorageType {
-    /// Whether this storage type is a mmap on disk
-    pub fn is_on_disk(&self) -> bool {
+    /// Whether this storage type is left on disk, see [`Memory::is_cold`]
+    pub fn is_cold(&self) -> bool {
         match self {
             // On disk; kept explicit for the case if someone adds a new storage
             // type in the future.
@@ -2742,8 +2753,8 @@ impl PayloadSchemaParams {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
-        self.memory_placement().is_on_disk()
+    pub fn is_cold(&self) -> bool {
+        self.memory_placement().is_cold()
     }
 
     /// Effective memory placement of the field index, resolving the new `memory` parameter
@@ -2785,7 +2796,7 @@ impl Validate for PayloadSchemaParams {
             PayloadSchemaParams::Integer(integer_index_params) => integer_index_params.validate(),
             PayloadSchemaParams::Float(_) => Ok(()),
             PayloadSchemaParams::Geo(_) => Ok(()),
-            PayloadSchemaParams::Text(_) => Ok(()),
+            PayloadSchemaParams::Text(text_index_params) => text_index_params.validate(),
             PayloadSchemaParams::Bool(_) => Ok(()),
             PayloadSchemaParams::Datetime(_) => Ok(()),
             PayloadSchemaParams::Uuid(_) => Ok(()),
@@ -2888,6 +2899,20 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 }
 
 impl PayloadFieldSchema {
+    /// Apply what the params imply, see [`TextIndexParams::normalized`]. A
+    /// schema is normalized once, as the collection stores it, so every node
+    /// and every segment sees the same params.
+    pub fn normalized(self) -> Self {
+        match self {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)) => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params.normalized()))
+            }
+            schema @ (PayloadFieldSchema::FieldType(_) | PayloadFieldSchema::FieldParams(_)) => {
+                schema
+            }
+        }
+    }
+
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
         match self {
             PayloadFieldSchema::FieldType(t) => Cow::Owned(t.expand()),
@@ -2910,10 +2935,10 @@ impl PayloadFieldSchema {
         }
     }
 
-    pub fn is_on_disk(&self) -> bool {
+    pub fn is_cold(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
-            PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
+            PayloadFieldSchema::FieldParams(params) => params.is_cold(),
         }
     }
 
@@ -3156,6 +3181,26 @@ impl<S: Into<String>> From<S> for MatchPrefix {
     }
 }
 
+/// Match keyword values that contain the given string.
+///
+/// Byte-wise (hence, for valid UTF-8, character-wise) and case-sensitive,
+/// consistent with exact keyword and prefix matching. Served by a keyword
+/// index with the `prefix` option, through a scan of its key dictionary;
+/// without one, falls back to reading the payload.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchSubstring {
+    pub substring: String,
+}
+
+impl<S: Into<String>> From<S> for MatchSubstring {
+    fn from(substring: S) -> Self {
+        MatchSubstring {
+            substring: substring.into(),
+        }
+    }
+}
+
 /// Exact match on any of the given values
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -3179,6 +3224,7 @@ pub enum MatchInterface {
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Prefix(MatchPrefix),
+    Substring(MatchSubstring),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -3192,6 +3238,7 @@ pub enum Match {
     TextAny(MatchTextAny),
     Phrase(MatchPhrase),
     Prefix(MatchPrefix),
+    Substring(MatchSubstring),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -3211,12 +3258,35 @@ impl Match {
         })
     }
 
+    pub fn new_substring(substring: &str) -> Self {
+        Self::Substring(MatchSubstring {
+            substring: substring.into(),
+        })
+    }
+
     pub fn new_any(any: AnyVariants) -> Self {
         Self::Any(MatchAny { any })
     }
 
     pub fn new_except(except: AnyVariants) -> Self {
         Self::Except(MatchExcept { except })
+    }
+
+    /// Whether values are matched by an unanchored substring.
+    ///
+    /// No key ordering bounds such a match, so answering it means looking at
+    /// every distinct value of the field, whichever index serves it.
+    pub fn is_substring(&self) -> bool {
+        match self {
+            Match::Substring(_) => true,
+            Match::Value(_)
+            | Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_)
+            | Match::Prefix(_)
+            | Match::Any(_)
+            | Match::Except(_) => false,
+        }
     }
 }
 
@@ -3240,6 +3310,9 @@ impl From<MatchInterface> for Match {
             }),
             MatchInterface::Phrase(MatchPhrase { phrase }) => Self::Phrase(MatchPhrase { phrase }),
             MatchInterface::Prefix(MatchPrefix { prefix }) => Self::Prefix(MatchPrefix { prefix }),
+            MatchInterface::Substring(MatchSubstring { substring }) => {
+                Self::Substring(MatchSubstring { substring })
+            }
         }
     }
 }
@@ -3848,6 +3921,7 @@ impl FieldCondition {
             Match::Phrase(_) => 0,
             Match::TextAny(_) => 0,
             Match::Prefix(_) => 0,
+            Match::Substring(_) => 0,
         }
     }
 }
@@ -4231,6 +4305,28 @@ impl Condition {
             Condition::Nested(nested_condition) => Some(nested_condition.array_key()),
             Condition::Filter(filter) => filter.iter_conditions().find_map(|c| c.targeted_key()),
             Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_) => None,
+        }
+    }
+
+    /// Key of the first [`Match::is_substring`] condition this condition
+    /// carries, nested filters included.
+    pub fn one_substring_match_key(&self) -> Option<PayloadKeyType> {
+        match self {
+            Condition::Field(field_condition) => field_condition
+                .r#match
+                .as_ref()
+                .is_some_and(Match::is_substring)
+                .then(|| field_condition.key.clone()),
+            Condition::Nested(nested_condition) => {
+                nested_condition.filter().one_substring_match_key()
+            }
+            Condition::Filter(filter) => filter.one_substring_match_key(),
+            Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasId(_)
             | Condition::HasVector(_)
             | Condition::Slice(_)
             | Condition::CustomIdChecker(_) => None,
@@ -4684,6 +4780,13 @@ impl Filter {
             .max()
             .unwrap_or(0)
     }
+
+    /// Key of the first [`Match::is_substring`] condition in this filter,
+    /// nested filters included.
+    pub fn one_substring_match_key(&self) -> Option<PayloadKeyType> {
+        self.iter_conditions()
+            .find_map(Condition::one_substring_match_key)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -4825,9 +4928,9 @@ mod tests {
         assert_eq!(Memory::from_on_disk_heap(true), Memory::Cold);
         assert_eq!(Memory::from_on_disk_heap(false), Memory::Pinned);
 
-        assert!(Memory::Cold.is_on_disk());
-        assert!(!Memory::Cached.is_on_disk());
-        assert!(!Memory::Pinned.is_on_disk());
+        assert!(Memory::Cold.is_cold());
+        assert!(!Memory::Cached.is_cold());
+        assert!(!Memory::Pinned.is_cold());
 
         assert!(!Memory::Cold.is_heap());
         assert!(!Memory::Cached.is_heap());
@@ -5097,6 +5200,33 @@ mod tests {
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
     }
 
+    /// Sub-microsecond digits must be truncated on parse, so that range filters give the same
+    /// result with and without a payload index. See: <https://github.com/qdrant/qdrant/issues/11087>
+    #[rstest]
+    #[case::one_nano("2024-01-01T00:00:00.000000001Z", "2024-01-01T00:00:00Z")]
+    #[case::nanos("2024-01-01T00:00:00.123456789Z", "2024-01-01T00:00:00.123456Z")]
+    #[case::without_z("2024-01-01T00:00:00.123456789", "2024-01-01T00:00:00.123456")]
+    #[case::with_tz("2024-01-01T01:00:00.123456789+01:00", "2024-01-01T00:00:00.123456Z")]
+    #[case::before_epoch("1969-12-31T23:59:59.999999999Z", "1969-12-31T23:59:59.999999Z")]
+    fn test_datetime_truncates_to_micros(#[case] input: &str, #[case] expected: &str) {
+        let datetime = DateTimePayloadType::from_str(input).unwrap();
+        let expected = DateTimePayloadType::from_str(expected).unwrap();
+        assert_eq!(datetime, expected);
+
+        // Must match the microsecond timestamp the payload index stores
+        let from_timestamp = DateTimePayloadType::from_timestamp(datetime.timestamp()).unwrap();
+        assert_eq!(datetime, from_timestamp);
+
+        // Range checks must agree with the index on the truncated value
+        let range = Range {
+            lt: None,
+            gt: Some(expected),
+            gte: None,
+            lte: None,
+        };
+        assert!(!range.check_range(datetime));
+    }
+
     #[test]
     fn test_invalid_datetime_range_returns_clear_rfc3339_error() {
         let json = r#"{
@@ -5287,7 +5417,7 @@ mod tests {
 
     #[test]
     fn test_datetime_wrapper_transcoding() {
-        let expected = DateTimeWrapper(chrono::Utc::now());
+        let expected = DateTimeWrapper::from(chrono::Utc::now());
         let transcoded = DateTimeWrapper::from_str(&expected.to_string()).unwrap();
         assert_eq!(expected, transcoded);
     }

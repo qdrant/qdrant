@@ -4,7 +4,7 @@
 //! field to the target struct forces a compile error here.
 
 use segment::data_types::modifier::Modifier;
-use segment::types::VectorStorageDatatype;
+use segment::types::{Memory, VectorStorageDatatype};
 
 use crate::config::vectors::EdgeSparseVectorParams;
 
@@ -16,6 +16,7 @@ use crate::config::vectors::EdgeSparseVectorParams;
 pub struct EdgeSparseVectorParamsBuilder {
     full_scan_threshold: Option<usize>,
     on_disk: Option<bool>,
+    memory: Option<Memory>,
     modifier: Option<Modifier>,
     datatype: Option<VectorStorageDatatype>,
 }
@@ -30,9 +31,18 @@ impl EdgeSparseVectorParamsBuilder {
         self
     }
 
+    /// Deprecated: use [`Self::memory`] instead.
     /// If `true`, sparse index is on disk (mmap); otherwise in RAM.
+    #[deprecated(since = "1.19.0", note = "Use `memory` instead")]
     pub fn on_disk(mut self, on_disk: bool) -> Self {
         self.on_disk = Some(on_disk);
+        self
+    }
+
+    /// Memory placement of the sparse index. Overrides the deprecated `on_disk`
+    /// flag if both are set.
+    pub fn memory(mut self, memory: Memory) -> Self {
+        self.memory = Some(memory);
         self
     }
 
@@ -46,18 +56,21 @@ impl EdgeSparseVectorParamsBuilder {
         self
     }
 
+    #[allow(deprecated)]
     pub fn build(self) -> EdgeSparseVectorParams {
         // Exhaustively destructure Self and construct EdgeSparseVectorParams:
         // adding a field to either type forces a compile error here.
         let Self {
             full_scan_threshold,
             on_disk,
+            memory,
             modifier,
             datatype,
         } = self;
         EdgeSparseVectorParams {
             full_scan_threshold,
             on_disk,
+            memory,
             modifier,
             datatype,
         }

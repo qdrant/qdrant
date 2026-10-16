@@ -1,5 +1,6 @@
 use std::cmp::max;
 
+use common::ambient;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
 use rand::SeedableRng;
@@ -40,7 +41,7 @@ fn search_in_builder(
 
     let nearest = builder
         .search_on_level(
-            zero_level_entry,
+            &[zero_level_entry],
             0,
             max(top, ef),
             &mut points_scorer,
@@ -79,6 +80,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         .map(|_| random_vector(&mut rng, dim))
         .collect_vec();
 
+    let _scope = ambient::test_guard();
     let reference_results = queries
         .iter()
         .map(|query| {
@@ -101,7 +103,7 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
                     ef,
                     SearchAlgorithm::Hnsw,
                     &mut scorer,
-                    graph_layers.unfiltered_entry_point(),
+                    &graph_layers.unfiltered_entry_point(),
                     &DEFAULT_STOPPED,
                 )
                 .unwrap()

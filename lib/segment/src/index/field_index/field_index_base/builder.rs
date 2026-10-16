@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -28,12 +27,7 @@ pub trait FieldIndexBuilderTrait {
     /// Expected to be called exactly once before any other method.
     fn init(&mut self) -> OperationResult<()>;
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()>;
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType>;
 
@@ -63,13 +57,44 @@ pub enum FieldIndexBuilder {
     GeoMmapIndex(GeoIndexMmapBuilder),
     GeoGridstoreIndex(GeoIndexGridstoreBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
-    FullTextGridstoreIndex(FullTextGridstoreIndexBuilder),
+    // Boxed: the mutable index it builds in place is the largest variant.
+    FullTextGridstoreIndex(Box<FullTextGridstoreIndexBuilder>),
     BoolMmapIndex(ImmutableBoolIndexBuilder),
     BoolGridstoreIndex(MutableBoolIndexBuilder),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
     UuidGridstoreIndex(MapIndexGridstoreBuilder<UuidIntType>),
     MutableNullIndex(MutableNullIndexBuilder),
     ImmutableNullIndex(ImmutableNullIndexBuilder),
+}
+
+impl FieldIndexBuilder {
+    /// Don't journal the value mappings of an index stored in a Gridstore, see
+    /// [`Blobstore::disable_journal`](blobstore::Blobstore::disable_journal). Call after `init`.
+    pub fn disable_journal(&mut self) {
+        match self {
+            Self::IntGridstoreIndex(builder) => builder.disable_journal(),
+            Self::DatetimeGridstoreIndex(builder) => builder.disable_journal(),
+            Self::IntMapGridstoreIndex(builder) => builder.disable_journal(),
+            Self::KeywordGridstoreIndex(builder) => builder.disable_journal(),
+            Self::FloatGridstoreIndex(builder) => builder.disable_journal(),
+            Self::GeoGridstoreIndex(builder) => builder.disable_journal(),
+            Self::FullTextGridstoreIndex(builder) => builder.disable_journal(),
+            Self::UuidGridstoreIndex(builder) => builder.disable_journal(),
+            // Not stored in a Gridstore, the mutable bool index uses flags despite its name
+            Self::IntMmapIndex(_)
+            | Self::DatetimeMmapIndex(_)
+            | Self::IntMapMmapIndex(_)
+            | Self::KeywordMmapIndex(_)
+            | Self::FloatMmapIndex(_)
+            | Self::GeoMmapIndex(_)
+            | Self::FullTextMmapIndex(_)
+            | Self::BoolMmapIndex(_)
+            | Self::BoolGridstoreIndex(_)
+            | Self::UuidMmapIndex(_)
+            | Self::MutableNullIndex(_)
+            | Self::ImmutableNullIndex(_) => {}
+        }
+    }
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -100,37 +125,32 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
         }
     }
 
-    fn add_point(
-        &mut self,
-        id: PointOffsetType,
-        payload: &[&Value],
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         match self {
-            Self::IntMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::IntGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::DatetimeMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::DatetimeGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::IntMapMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::IntMapGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::KeywordMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::KeywordGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::FloatMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::FloatGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::GeoMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::GeoGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::BoolGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::BoolMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::IntMmapIndex(index) => index.add_point(id, payload),
+            Self::IntGridstoreIndex(index) => index.add_point(id, payload),
+            Self::DatetimeMmapIndex(index) => index.add_point(id, payload),
+            Self::DatetimeGridstoreIndex(index) => index.add_point(id, payload),
+            Self::IntMapMmapIndex(index) => index.add_point(id, payload),
+            Self::IntMapGridstoreIndex(index) => index.add_point(id, payload),
+            Self::KeywordMmapIndex(index) => index.add_point(id, payload),
+            Self::KeywordGridstoreIndex(index) => index.add_point(id, payload),
+            Self::FloatMmapIndex(index) => index.add_point(id, payload),
+            Self::FloatGridstoreIndex(index) => index.add_point(id, payload),
+            Self::GeoMmapIndex(index) => index.add_point(id, payload),
+            Self::GeoGridstoreIndex(index) => index.add_point(id, payload),
+            Self::BoolGridstoreIndex(index) => index.add_point(id, payload),
+            Self::BoolMmapIndex(index) => index.add_point(id, payload),
             Self::FullTextMmapIndex(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder, id, payload)
             }
             Self::FullTextGridstoreIndex(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                FieldIndexBuilderTrait::add_point(builder.as_mut(), id, payload)
             }
-            Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::UuidGridstoreIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::MutableNullIndex(index) => index.add_point(id, payload, hw_counter),
-            Self::ImmutableNullIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::UuidMmapIndex(index) => index.add_point(id, payload),
+            Self::UuidGridstoreIndex(index) => index.add_point(id, payload),
+            Self::MutableNullIndex(index) => index.add_point(id, payload),
+            Self::ImmutableNullIndex(index) => index.add_point(id, payload),
         }
     }
 
@@ -153,7 +173,9 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             }
             Self::BoolMmapIndex(index) => FieldIndex::BoolIndex(BoolIndex::from(index.finalize()?)),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
-            Self::FullTextGridstoreIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
+            Self::FullTextGridstoreIndex(builder) => {
+                FieldIndex::FullTextIndex((*builder).finalize()?)
+            }
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidGridstoreIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::MutableNullIndex(index) => {
