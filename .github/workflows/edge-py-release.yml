@@ -313,6 +313,7 @@ jobs:
     name: Publish to PyPI
 
     runs-on: ubuntu-latest
+    environment: dev-publish
     needs:
       - merge-artifacts
 
@@ -342,6 +343,7 @@ jobs:
     name: Publish dev wheels to GCS
 
     runs-on: ubuntu-latest
+    environment: dev-publish
     needs:
       - merge-artifacts
 

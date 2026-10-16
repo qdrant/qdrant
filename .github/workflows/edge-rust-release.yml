@@ -81,6 +81,7 @@ jobs:
     name: Publish to crates.io
 
     runs-on: ubuntu-latest
+    environment: dev-publish
     needs:
       - edge-rust-check
 
