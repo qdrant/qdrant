@@ -46,10 +46,16 @@ pub struct Codebook {
     /// `values[q]` for code `q`
     pub(crate) values: [i8; 16],
     /// For a nibble `n` holding two 2-bit codes: the first's value, `values[n & 3]`
-    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+    #[cfg_attr(
+        not(target_arch = "x86_64"),
+        expect(dead_code, reason = "read only by the x86 code tile")
+    )]
     pub(crate) first: [i8; 16],
     /// And the second's, `values[n >> 2]`
-    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
+    #[cfg_attr(
+        not(target_arch = "x86_64"),
+        expect(dead_code, reason = "read only by the x86 code tile")
+    )]
     pub(crate) second: [i8; 16],
 }
 
