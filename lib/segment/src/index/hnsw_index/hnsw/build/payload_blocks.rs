@@ -4,11 +4,13 @@ use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::bitvec::BitSliceExt as _;
+use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
 use log::debug;
 
 use self::old_blocks::old_range_blocks;
+use super::block_filter::BlockSkip;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::PayloadBlockCondition;
@@ -20,7 +22,41 @@ use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, PayloadFieldSchema, PayloadKeyType};
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
-/// One payload block, collected without the graph.
+/// The payload blocks of one indexed field.
+pub(super) struct FieldBlocks<'a> {
+    /// Progress of the field, started by the caller. The builder counts the points it links.
+    pub progress: ProgressTracker,
+    /// Which blocks to skip, besides those too large to build.
+    pub skip: BlockSkip,
+    /// The blocks, without their points: `loader` reads those, one block at a time, once the
+    /// block is known to be small enough to build.
+    pub blocks: Vec<PayloadBlockCondition>,
+    pub loader: BlockLoader<'a>,
+}
+
+/// Reads the points of payload blocks.
+#[derive(Clone, Copy)]
+pub(super) struct BlockLoader<'a> {
+    pub payload_index: &'a StructPayloadIndex,
+    pub vector_storage: &'a VectorStorageEnum,
+    pub config: &'a HnswGraphConfig,
+    pub stopped: &'a AtomicBool,
+}
+
+impl BlockLoader<'_> {
+    /// Read the non-deleted points of `block`. `None` if the block is mostly deleted.
+    pub fn load(&self, block: PayloadBlockCondition) -> OperationResult<Option<PayloadBlock>> {
+        let Self {
+            payload_index,
+            vector_storage,
+            config,
+            stopped,
+        } = *self;
+        load_payload_block(block, payload_index, vector_storage, config, stopped)
+    }
+}
+
+/// One payload block, with its points.
 pub(super) struct PayloadBlock {
     /// The payload index's estimate. The size limit is checked against this.
     pub cardinality: usize,
@@ -55,8 +91,8 @@ pub(super) fn payload_block_fields(
     fields
 }
 
-/// The payload blocks of `field`, without their points: [`load_payload_block`] reads those,
-/// one block at a time.
+/// The payload blocks of `field`, without their points: [`BlockLoader`] reads those, one block
+/// at a time.
 ///
 /// With an `old_index`, a numeric field keeps the block ranges of the old index where it can,
 /// see [`old_range_blocks`].
@@ -105,7 +141,7 @@ pub(super) fn field_payload_blocks(
 }
 
 /// Read the non-deleted points of `payload_block`. `None` if the block is mostly deleted.
-pub(super) fn load_payload_block(
+fn load_payload_block(
     payload_block: PayloadBlockCondition,
     payload_index: &StructPayloadIndex,
     vector_storage: &VectorStorageEnum,

@@ -77,7 +77,8 @@ impl<'a> OldIndexCandidate<'a> {
             || config.ef_construct != old_index.config.ef_construct
             || new_quantization_config != old_quantization_config;
         // Without a main graph, only payload links can be reused.
-        let nothing_to_reuse = config.m == 0 && !payload_links_reusable(config, &old_index.config);
+        let nothing_to_reuse =
+            config.m == 0 && !payload_links_reusable(payload_hnsw_m(config), &old_index.config);
         // If old graph has vectors, reusing it will cause a lot of random reads,
         // making it slower than building from scratch.
         let old_graph_is_with_vectors = old_index.graph.has_inline_vectors();
@@ -260,9 +261,8 @@ pub(super) fn payload_hnsw_m(config: &HnswGraphConfig) -> HnswM {
     )
 }
 
-/// Whether payload blocks of a graph built with `config` can start from the payload links of a
-/// graph built with `old`: there must be some, and of the same size.
-pub(super) fn payload_links_reusable(config: &HnswGraphConfig, old: &HnswGraphConfig) -> bool {
-    let payload_m = payload_hnsw_m(config);
+/// Whether payload blocks built with `payload_m` can start from the payload links of a graph
+/// built with `old`: there must be some, and of the same size.
+pub(super) fn payload_links_reusable(payload_m: HnswM, old: &HnswGraphConfig) -> bool {
     payload_m.m > 0 && payload_m == payload_hnsw_m(old)
 }
