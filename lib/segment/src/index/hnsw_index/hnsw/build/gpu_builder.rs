@@ -6,6 +6,9 @@ use common::reason::reason;
 use common::types::PointOffsetType;
 
 use super::context::{GraphBuildContext, GraphParams};
+use super::graph_builder::GraphBuilderMethod;
+use super::hnsw_builder::HnswBuilder;
+use super::payload_blocks::FieldBlocks;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
@@ -21,6 +24,9 @@ use crate::index::hnsw_index::hnsw::{
 };
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::VectorStorageRead as _;
+
+/// Inserts points in batches on a GPU. Whatever fails on the GPU is built with HNSW.
+pub(super) struct GpuBuilder<'a>(pub HnswBuilder<'a>, pub GpuState);
 
 /// GPU vectors and block insert context, kept across blocks.
 pub(super) struct GpuState {
@@ -150,6 +156,44 @@ impl GpuState {
             |point_id| scorer(ctx, point_id),
             ctx.stopped,
         )
+    }
+}
+
+impl GraphBuilderMethod for GpuBuilder<'_> {
+    fn build_main(&mut self) -> OperationResult<()> {
+        let GpuBuilder(hnsw, gpu) = self;
+        let Some(progress) = hnsw.0.main_graph_progress.take() else {
+            // No main graph when `m == 0`
+            return Ok(());
+        };
+        progress.start();
+        match gpu.build_main(hnsw.0.ctx, &hnsw.0.graph, &hnsw.0.points)? {
+            Some(graph) => {
+                hnsw.0.graph = graph;
+                Ok(())
+            }
+            None => hnsw.insert(&hnsw.0.points, progress),
+        }
+    }
+
+    fn build_field_blocks(&mut self, field: FieldBlocks) -> OperationResult<()> {
+        let GpuBuilder(hnsw, gpu) = self;
+        hnsw.build_blocks_with(field, |hnsw, points, counter| {
+            match gpu.build_block(hnsw.0.ctx, points)? {
+                Some(block_graph) => {
+                    hnsw.0.graph.merge_from_other(block_graph);
+                    Ok(())
+                }
+                None => hnsw.build_block(points, counter),
+            }
+        })
+    }
+
+    fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
+        let GpuBuilder(hnsw, gpu) = self;
+        // Release the GPU memory before the graph is saved
+        drop(gpu);
+        hnsw.finalize()
     }
 }
 

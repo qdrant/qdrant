@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::bitvec::BitSliceExt as _;
+use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
 use log::debug;
@@ -19,6 +20,16 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::types::Condition::Field;
 use crate::types::{FieldCondition, Filter, PayloadFieldSchema, PayloadKeyType};
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
+
+/// The payload blocks of one indexed field.
+pub(super) struct FieldBlocks {
+    /// Progress of the field, started by the caller. The builder counts the points it links.
+    pub progress: ProgressTracker,
+    /// Skip blocks the graph already connects well.
+    /// False for the first field and for tenant fields, true otherwise.
+    pub skip_if_connected: bool,
+    pub blocks: Vec<PayloadBlock>,
+}
 
 /// One payload block, collected without the graph.
 pub(super) struct PayloadBlock {
