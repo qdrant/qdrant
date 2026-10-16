@@ -136,6 +136,11 @@ fn codebook_signed_i64(idx: u8) -> i64 {
     codebook_value_i64(idx) - CODEBOOK_OFFSET
 }
 
+/// The codes' true signed values, as [`codebook_signed_i64`] gives them.
+pub(crate) fn signed_codebook() -> [i8; 16] {
+    std::array::from_fn(|code| codebook_signed_i64(code as u8) as i8)
+}
+
 /// Encoded query for asymmetric 4-bit scoring: [`QuerySimd`] over two codes
 /// per byte (low nibble = even dim, high nibble = odd dim).
 pub type Query4bitSimd = QuerySimd<2, 2>;
@@ -185,7 +190,7 @@ pub fn score_4bit_internal(a: &[u8], b: &[u8]) -> f32 {
 /// [`score_4bit_internal`] enforces them before dispatching.
 pub fn score_4bit_internal_scalar(a: &[u8], b: &[u8]) -> f32 {
     // c_signed ≈ c_float · c_scale → c_signed_a · c_signed_b ≈ c_float_a · c_float_b · c_scale².
-    score_4bit_internal_integer(a, b) as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+    centroid_dot(score_4bit_internal_integer(a, b) as f32)
 }
 
 /// Integer-only scalar kernel shared by all backends — used by SIMD paths to
@@ -271,6 +276,14 @@ pub fn score_4bit_internal_weighted_scalar(a: &[u8], b: &[u8], weights: &[i16]) 
 /// [`score_4bit_internal_weighted`] is divided by `weight_scale ·
 /// CODEBOOK_SCALE_SQ` to get the f32 weighted dot.
 pub const CODEBOOK_SCALE_SQ: f32 = CODEBOOK_SCALE * CODEBOOK_SCALE;
+
+/// The centroid dot of two vectors from the sum of their codes' products, the codes as their
+/// signed codebook values: shared by every backend and the matrix operands, so all agree on
+/// the rounding.
+#[inline(always)]
+pub(crate) fn centroid_dot(sum: f32) -> f32 {
+    sum / CODEBOOK_SCALE_SQ
+}
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 mod arm;
