@@ -19,6 +19,9 @@ pub enum Direction {
     Desc,
 }
 
+/// Largest magnitude below which every integer is exactly representable as `f64`.
+const MAX_EXACT_F64_INT: u64 = 1 << 53;
+
 impl Direction {
     pub fn as_range_from<T>(&self, from: T) -> Range<T> {
         match self {
@@ -34,6 +37,19 @@ impl Direction {
                 gte: None,
                 lt: None,
             },
+        }
+    }
+
+    /// `from` as `f64`, rounded away from the scan direction when that conversion is
+    /// lossy, so a range starting there never excludes `from` itself.
+    fn widen_to_include(&self, from: IntPayloadType) -> f64 {
+        let rounded = from as f64;
+        if from.unsigned_abs() <= MAX_EXACT_F64_INT {
+            return rounded;
+        }
+        match self {
+            Direction::Asc => rounded.next_down(),
+            Direction::Desc => rounded.next_up(),
         }
     }
 }
@@ -112,14 +128,20 @@ pub struct OrderBy {
 
 impl OrderBy {
     /// Returns a range representation of OrderBy.
+    ///
+    /// For an integer `start_from` above 2^53 the range is only a superset: the bound is
+    /// rounded outward because `f64` cannot hold the exact value. Callers must re-check
+    /// each value against [`OrderBy::start_from`].
     pub fn as_range(&self) -> RangeInterface {
         self.start_from
             .as_ref()
             .map(|start_from| match start_from {
                 // TODO: When we introduce integer ranges, we'll stop doing lossy conversion to f64 here
+                // (widened below so it never excludes the start value)
                 // Accepting an integer as start_from simplifies the client generation.
                 StartFrom::Integer(i) => {
-                    RangeInterface::Float(self.direction().as_range_from(OrderedFloat(*i as f64)))
+                    let from = self.direction().widen_to_include(*i);
+                    RangeInterface::Float(self.direction().as_range_from(OrderedFloat(from)))
                 }
                 StartFrom::Float(f) => {
                     RangeInterface::Float(self.direction().as_range_from(OrderedFloat(*f)))
@@ -257,7 +279,51 @@ impl Ord for OrderValue {
 mod tests {
     use proptest::proptest;
 
-    use crate::data_types::order_by::OrderValue;
+    use crate::data_types::order_by::{Direction, OrderBy, OrderValue, StartFrom};
+    use crate::json_path::JsonPath;
+    use crate::types::RangeInterface;
+
+    /// The f64 range built for an integer `start_from` must never exclude that value,
+    /// including above 2^53 where `i as f64` rounds.
+    #[test]
+    fn as_range_includes_large_integer_start_values() {
+        let starts = [
+            0,
+            (1 << 53) - 1,
+            1 << 53,
+            (1 << 53) + 1,
+            1 << 60,
+            (1 << 60) + 1,
+            1_780_000_000_003_000_000,
+            i64::MAX,
+            -(1 << 53) - 1,
+            -(1 << 60) - 1,
+            i64::MIN + 1,
+        ];
+        for start in starts {
+            for direction in [Direction::Asc, Direction::Desc] {
+                let order_by = OrderBy {
+                    key: JsonPath::new("n"),
+                    direction: Some(direction),
+                    start_from: Some(StartFrom::Integer(start)),
+                };
+                let RangeInterface::Float(range) = order_by.as_range() else {
+                    panic!("integer start_from must produce a float range");
+                };
+                // f64 values this large are whole numbers, so i128 compares them exactly.
+                match direction {
+                    Direction::Asc => {
+                        let gte = range.gte.unwrap().0 as i128;
+                        assert!(gte <= i128::from(start), "{start}: gte {gte} excludes it");
+                    }
+                    Direction::Desc => {
+                        let lte = range.lte.unwrap().0 as i128;
+                        assert!(lte >= i128::from(start), "{start}: lte {lte} excludes it");
+                    }
+                }
+            }
+        }
+    }
 
     proptest! {
 
