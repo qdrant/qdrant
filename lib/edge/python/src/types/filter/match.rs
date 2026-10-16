@@ -128,11 +128,15 @@ impl FromPyObject<'_, '_> for PyValueVariants {
     type Error = PyErr;
 
     fn extract(value: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        // Order matters: Python's `bool` is a subclass of `int`, so `True`/`False` would
+        // otherwise be matched as `Integer` (True == 1, False == 0) and the `Bool` arm
+        // would never be reached. Putting `Bool` first matches the canonical order used
+        // by `PyValue::extract` in `types/value.rs`.
         #[derive(FromPyObject)]
         enum Helper {
+            Bool(bool),
             String(String),
             Integer(IntPayloadType),
-            Bool(bool),
         }
 
         fn _variants(value: ValueVariants) {
