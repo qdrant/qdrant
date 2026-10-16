@@ -104,8 +104,7 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// [`encode_doc_len`](super::doc_len::encode_doc_len), 2 bytes a point:
     /// the sidecar is compressed, and a query reads the lengths of candidates
     /// spread over the whole point space, so [`OnDiskInvertedIndex::open`]
-    /// decodes it once. Left empty once an in-RAM index loaded from this one
-    /// takes the codes over; the sidecar stays part of this index's files.
+    /// decodes it once.
     pub point_to_doc_len: Option<Vec<u16>>,
     pub deleted_points: DeletedBitVec,
 }
@@ -218,15 +217,6 @@ impl OnDiskInvertedIndex<MmapFile> {
 }
 
 impl<S: UniversalRead> OnDiskInvertedIndex<S> {
-    fn open_options(populate: Populate, advice: AdviceSetting) -> OpenOptions {
-        OpenOptions {
-            writeable: false,
-            need_sequential: false,
-            populate,
-            advice,
-        }
-    }
-
     /// Schedule background prefetch of every file [`open`](Self::open) will read.
     ///
     /// Returns `false` when the index is not in the on-disk format.
@@ -242,7 +232,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         }
         fs.schedule_open(
             &postings_path,
-            Some(Self::open_options(
+            Some(open_options(
                 populate,
                 AdviceSetting::Advice(Advice::Normal),
             )),
@@ -253,13 +243,13 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         UniversalHashMap::<str, TokenId, S>::preopen(
             fs,
             &path.join(VOCAB_FILE),
-            Self::open_options(populate, AdviceSetting::Global),
+            open_options(populate, AdviceSetting::Global),
         );
 
         // Point to tokens count
         fs.schedule_open(
             &path.join(POINT_TO_TOKENS_COUNT_FILE),
-            Some(Self::open_options(populate, AdviceSetting::Global)),
+            Some(open_options(populate, AdviceSetting::Global)),
             None,
         );
 
@@ -273,7 +263,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             fs,
             path,
             DELETED_POINTS_FILE,
-            Self::open_options(Populate::PreferBackground, AdviceSetting::Global),
+            open_options(Populate::PreferBackground, AdviceSetting::Global),
         );
 
         Ok(true)
@@ -286,97 +276,28 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         has_positions: bool,
         deleted_points: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        let postings_path = path.join(POSTINGS_FILE);
-        let vocab_path = path.join(VOCAB_FILE);
-        let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
-        let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
-
-        let postings_open_options =
-            Self::open_options(populate, AdviceSetting::Advice(Advice::Normal));
-
-        let Some(postings) = (match has_positions {
-            false => OnDiskPostings::<(), S>::open(
-                fs,
-                &postings_path,
-                postings_open_options,
-                Default::default(),
-            )?
-            .map(OnDiskPostingsEnum::Ids),
-            true => OnDiskPostings::<Positions, S>::open(
-                fs,
-                &postings_path,
-                postings_open_options,
-                Default::default(),
-            )?
-            .map(OnDiskPostingsEnum::WithPositions),
-        }) else {
+        let Some(postings) = open_postings(
+            fs,
+            &path,
+            has_positions,
+            open_options(populate, AdviceSetting::Advice(Advice::Normal)),
+        )?
+        else {
             // If postings don't exist, assume the index doesn't exist on disk
             return Ok(None);
         };
-        let vocab = UniversalHashMap::<str, TokenId, S>::open(
-            fs,
-            &vocab_path,
-            Self::open_options(populate, AdviceSetting::Global),
-            Default::default(),
-        )?;
-
-        let point_to_tokens_count = TypedStorage::<S, usize>::new(fs.open(
-            &point_to_tokens_count_path,
-            Self::open_options(populate, AdviceSetting::Global),
-            Default::default(),
-        )?);
-
-        // Absent unless this index records lengths. What that means is the
-        // caller's call, not this one's: see `FullTextIndex::new_mmap`.
-        //
-        // Decoded into RAM whatever the placement: 2 bytes a point, and a query
-        // reads the lengths of candidates spread over the whole point space.
-        // One sequential read, then the file leaves the page cache.
-        let point_to_doc_len = OneshotFile::open(fs, &point_to_doc_len_path).ok_not_found()?;
-
-        // `deleted` length must match `point_to_tokens_count.len()` because it
-        // only tracks the index's contents. The id-tracker's deleted mask can
-        // be shorter or longer; if shorter, the missing entries default to
-        // live (the id-tracker is the source of truth for deletions, and a
-        // shorter mask just means it doesn't yet know about those higher
-        // offsets).
+        let vocab = open_vocab(fs, &path, open_options(populate, AdviceSetting::Global))?;
+        let point_to_tokens_count =
+            open_point_to_tokens_count(fs, &path, open_options(populate, AdviceSetting::Global))?;
         let total_count = point_to_tokens_count.len()? as usize;
-
-        // A sidecar that does not cover exactly the index's points can only
-        // come from a partially copied or stale file set, and is not trusted to
-        // locate lengths: a short one would have to be padded with zeroes that
-        // read like real lengths, and a long one would be silently truncated.
-        // Nor is one in another format, such as the raw `u32` array of
-        // earlier builds. Treated as absent, with a warning, the way
-        // `SortedBlockIndex::open` treats a stale block index.
-        let point_to_doc_len = match point_to_doc_len {
-            Some(file) => {
-                let bytes = file.read_whole::<u8>()?;
-                match doc_len_sidecar::read_codes(&bytes, total_count) {
-                    Ok(codes) => Some(codes),
-                    Err(reason) => {
-                        log::warn!(
-                            "Ignoring document length sidecar {path}: {reason}",
-                            path = point_to_doc_len_path.display(),
-                        );
-                        None
-                    }
-                }
-            }
-            None => None,
-        };
-
-        let mut deleted = deleted_points.to_owned();
-        deleted.resize(total_count, false);
-        let compact_deleted_mask = bitor_deleted_mask(
+        let point_to_doc_len = read_doc_len_codes(fs, &path, total_count)?;
+        let (deleted, compact_deleted_mask) = read_deleted_points(
             fs,
             &path,
-            DELETED_POINTS_FILE,
-            Self::open_options(populate, AdviceSetting::Global),
-            &mut deleted,
+            open_options(populate, AdviceSetting::Global),
+            deleted_points,
+            total_count,
         )?;
-
-        let deleted = DeletedBitVec::new(deleted);
 
         Ok(Some(Self {
             path,
@@ -405,12 +326,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage.point_to_doc_len.is_some()
     }
 
-    /// Move the decoded lengths out, for an in-RAM index loaded from this one
-    /// to own. `None` when this index records no lengths.
-    pub(super) fn take_doc_len_codes(&mut self) -> Option<Vec<u16>> {
-        self.storage.point_to_doc_len.as_mut().map(std::mem::take)
-    }
-
+    #[cfg(test)]
     pub(super) fn doc_len_codes(&self) -> Option<&[u16]> {
         self.storage.point_to_doc_len.as_deref()
     }
@@ -757,21 +673,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        let mut files = vec![
-            self.path.join(POSTINGS_FILE),
-            self.path.join(VOCAB_FILE),
-            self.path.join(POINT_TO_TOKENS_COUNT_FILE),
-            deleted_mask_file(&self.path, self.compact_deleted_mask, DELETED_POINTS_FILE),
-        ];
-        // Listed only when the index loaded it, which is not the same as the
-        // file existing: one rejected at `open` is deliberately left out of the
-        // snapshot file set, since restoring it would only get it rejected
-        // again. `wipe` removes the directory rather than this list, so the
-        // rejected file does not outlive the index.
-        if self.storage.point_to_doc_len.is_some() {
-            files.push(self.path.join(POINT_TO_DOC_LEN_FILE));
-        }
-        files
+        index_files(
+            &self.path,
+            self.compact_deleted_mask,
+            self.storage.point_to_doc_len.is_some(),
+        )
     }
 
     /// Every file of this index is written once at build time, so the full file
@@ -816,16 +722,165 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             point_to_doc_len: _,
             deleted_points: _,
         } = storage;
-        postings.clear_cache()?;
-        vocab.clear_ram_cache()?;
-        point_to_tokens_count.clear_ram_cache()?;
-        clear_disk_cache(&deleted_mask_file(
+        clear_files_cache(
             path,
             *compact_deleted_mask,
-            DELETED_POINTS_FILE,
-        ))?;
-        Ok(())
+            postings,
+            vocab,
+            point_to_tokens_count,
+        )
     }
+}
+
+pub(super) fn open_options(populate: Populate, advice: AdviceSetting) -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate,
+        advice,
+    }
+}
+
+/// Every file of the index at `path`. The sidecar is listed only when the
+/// index loaded it, which is not the same as the file existing: one rejected
+/// at open is deliberately left out of the snapshot file set, since restoring
+/// it would only get it rejected again. `wipe` removes the directory rather
+/// than this list, so the rejected file does not outlive the index.
+pub(in super::super) fn index_files(
+    path: &Path,
+    compact_deleted_mask: bool,
+    has_doc_len: bool,
+) -> Vec<PathBuf> {
+    let mut files = vec![
+        path.join(POSTINGS_FILE),
+        path.join(VOCAB_FILE),
+        path.join(POINT_TO_TOKENS_COUNT_FILE),
+        deleted_mask_file(path, compact_deleted_mask, DELETED_POINTS_FILE),
+    ];
+    if has_doc_len {
+        files.push(path.join(POINT_TO_DOC_LEN_FILE));
+    }
+    files
+}
+
+/// `None` when the postings file is absent, which means there is no index.
+pub(super) fn open_postings<S: UniversalRead>(
+    fs: &impl UniversalReadFs<File = S>,
+    path: &Path,
+    has_positions: bool,
+    options: OpenOptions,
+) -> OperationResult<Option<OnDiskPostingsEnum<S>>> {
+    let postings_path = path.join(POSTINGS_FILE);
+    Ok(match has_positions {
+        false => OnDiskPostings::<(), S>::open(fs, &postings_path, options, Default::default())?
+            .map(OnDiskPostingsEnum::Ids),
+        true => {
+            OnDiskPostings::<Positions, S>::open(fs, &postings_path, options, Default::default())?
+                .map(OnDiskPostingsEnum::WithPositions)
+        }
+    })
+}
+
+pub(super) fn open_vocab<S: UniversalRead>(
+    fs: &impl UniversalReadFs<File = S>,
+    path: &Path,
+    options: OpenOptions,
+) -> OperationResult<UniversalHashMap<str, TokenId, S>> {
+    Ok(UniversalHashMap::open(
+        fs,
+        &path.join(VOCAB_FILE),
+        options,
+        Default::default(),
+    )?)
+}
+
+pub(super) fn open_point_to_tokens_count<S: UniversalRead>(
+    fs: &impl UniversalReadFs<File = S>,
+    path: &Path,
+    options: OpenOptions,
+) -> OperationResult<TypedStorage<S, usize>> {
+    Ok(TypedStorage::new(fs.open(
+        path.join(POINT_TO_TOKENS_COUNT_FILE),
+        options,
+        Default::default(),
+    )?))
+}
+
+/// The sidecar decoded into codes, or `None` when the index records no
+/// lengths. What that means is the caller's call, not this one's: see
+/// `FullTextIndex::new_mmap`.
+///
+/// Decoded into RAM whatever the placement: 2 bytes a point, and a query reads
+/// the lengths of candidates spread over the whole point space. One sequential
+/// read, then the file leaves the page cache.
+///
+/// A sidecar that does not cover exactly the index's `total_count` points can
+/// only come from a partially copied or stale file set, and is not trusted to
+/// locate lengths: a short one would have to be padded with zeroes that read
+/// like real lengths, and a long one would be silently truncated. Nor is one in
+/// another format, such as the raw `u32` array of earlier builds. Treated as
+/// absent, with a warning, the way `SortedBlockIndex::open` treats a stale
+/// block index.
+pub(super) fn read_doc_len_codes<S: UniversalRead>(
+    fs: &impl UniversalReadFs<File = S>,
+    path: &Path,
+    total_count: usize,
+) -> OperationResult<Option<Vec<u16>>> {
+    let sidecar_path = path.join(POINT_TO_DOC_LEN_FILE);
+    let Some(file) = OneshotFile::open(fs, &sidecar_path).ok_not_found()? else {
+        return Ok(None);
+    };
+    let bytes = file.read_whole::<u8>()?;
+    match doc_len_sidecar::read_codes(&bytes, total_count) {
+        Ok(codes) => Ok(Some(codes)),
+        Err(reason) => {
+            log::warn!(
+                "Ignoring document length sidecar {path}: {reason}",
+                path = sidecar_path.display(),
+            );
+            Ok(None)
+        }
+    }
+}
+
+/// The id-tracker's `deleted_points` combined with the index's own "no values"
+/// mask, and whether that mask was the compact one.
+///
+/// The result covers exactly the index's `total_count` points, because the
+/// mask only tracks the index's contents. The id-tracker's mask can be shorter
+/// or longer; if shorter, the missing entries default to live (the id-tracker
+/// is the source of truth for deletions, and a shorter mask just means it
+/// doesn't yet know about those higher offsets).
+pub(super) fn read_deleted_points<S: UniversalRead>(
+    fs: &impl UniversalReadFs<File = S>,
+    path: &Path,
+    options: OpenOptions,
+    deleted_points: &BitSlice,
+    total_count: usize,
+) -> OperationResult<(DeletedBitVec, bool)> {
+    let mut deleted = deleted_points.to_owned();
+    deleted.resize(total_count, false);
+    let compact_deleted_mask =
+        bitor_deleted_mask(fs, path, DELETED_POINTS_FILE, options, &mut deleted)?;
+    Ok((DeletedBitVec::new(deleted), compact_deleted_mask))
+}
+
+pub(super) fn clear_files_cache<S: UniversalRead>(
+    path: &Path,
+    compact_deleted_mask: bool,
+    postings: &OnDiskPostingsEnum<S>,
+    vocab: &UniversalHashMap<str, TokenId, S>,
+    point_to_tokens_count: &TypedStorage<S, usize>,
+) -> OperationResult<()> {
+    postings.clear_cache()?;
+    vocab.clear_ram_cache()?;
+    point_to_tokens_count.clear_ram_cache()?;
+    clear_disk_cache(&deleted_mask_file(
+        path,
+        compact_deleted_mask,
+        DELETED_POINTS_FILE,
+    ))?;
+    Ok(())
 }
 
 impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {

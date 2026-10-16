@@ -15,7 +15,7 @@ use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
     fn tokenizer(&self) -> &Tokenizer {
-        &self.storage.tokenizer
+        &self.tokenizer
     }
 
     fn telemetry_index_type(&self) -> &'static str {

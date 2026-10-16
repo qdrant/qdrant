@@ -37,7 +37,7 @@ mod read_ops;
 /// [6]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
 pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
     /// Loads into RAM from appendable storage format
-    Appendable(ReadOnlyAppendableFullTextIndex<S>),
+    Appendable(Box<ReadOnlyAppendableFullTextIndex<S>>),
     /// Loads into RAM from immutable format
     Immutable(ImmutableFullTextIndex<S>),
     /// Directly reads from storage in immutable format

@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
+use common::bitvec::{BitSlice, DeletedBitVec};
+use common::mmap::{Advice, AdviceSetting};
+use common::persisted_hashmap::UniversalHashMap;
 use common::types::{PointOffsetType, ScoredPointOffset};
-use common::universal_io::UserData;
+use common::universal_io::{Populate, TypedStorage, UniversalRead, UniversalReadFs, UserData};
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
@@ -12,8 +16,11 @@ use super::bm25::{Bm25Accept, Bm25Query, PositionalCursors, score_top_k};
 use super::doc_len::{decode_doc_len, encode_doc_len};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
-use super::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
+use super::on_disk_inverted_index::{
+    OnDiskInvertedIndex, Storage, clear_files_cache, index_files, open_options,
+    open_point_to_tokens_count, open_postings, open_vocab, read_deleted_points, read_doc_len_codes,
+};
 use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
@@ -625,66 +632,108 @@ fn create_compressed_postings_with_positions(
 
 /// Copies the document lengths, leaving the on-disk index able to answer for
 /// them too.
-impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
-    for ImmutableInvertedIndex
-{
+impl<S: UniversalRead> TryFrom<&OnDiskInvertedIndex<S>> for ImmutableInvertedIndex {
     type Error = OperationError;
 
     fn try_from(index: &OnDiskInvertedIndex<S>) -> OperationResult<Self> {
-        let codes = index.doc_len_codes().map(<[u16]>::to_vec);
-        Self::from_on_disk(index, codes)
+        let Storage {
+            postings,
+            vocab,
+            point_to_tokens_count,
+            point_to_doc_len,
+            deleted_points,
+        } = &index.storage;
+        Self::from_parts(
+            postings,
+            vocab,
+            point_to_tokens_count,
+            point_to_doc_len.clone(),
+            deleted_points,
+        )
     }
 }
 
 impl ImmutableInvertedIndex {
-    /// Load from `index`, moving its document lengths over rather than
-    /// copying them: the on-disk index stays as backing storage, and holding
-    /// the lengths twice would double the 2 bytes a point they cost.
-    pub fn load_from_on_disk<S: common::universal_io::UniversalRead>(
-        index: &mut OnDiskInvertedIndex<S>,
-    ) -> OperationResult<Self> {
-        let codes = index.take_doc_len_codes();
-        Self::from_on_disk(index, codes)
+    /// Read the on-disk index at `path` into RAM. Each file is read once and
+    /// leaves the page cache afterwards.
+    ///
+    /// Returns the index with the files it was read from, or `None` when there
+    /// is no index at `path`.
+    pub fn open<S: UniversalRead>(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        populate: Populate,
+        has_positions: bool,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<(Self, Vec<PathBuf>)>> {
+        let options = open_options(populate, AdviceSetting::Advice(Advice::Sequential));
+        let Some(postings) = open_postings(fs, path, has_positions, options)? else {
+            return Ok(None);
+        };
+        let vocab = open_vocab(fs, path, options)?;
+        let point_to_tokens_count = open_point_to_tokens_count(fs, path, options)?;
+        let total_count = point_to_tokens_count.len()? as usize;
+        let point_to_doc_len = read_doc_len_codes(fs, path, total_count)?;
+        let (deleted_points, compact_deleted_mask) =
+            read_deleted_points(fs, path, options, deleted_points, total_count)?;
+
+        let index = Self::from_parts(
+            &postings,
+            &vocab,
+            &point_to_tokens_count,
+            point_to_doc_len,
+            &deleted_points,
+        )?;
+
+        if let Err(err) = clear_files_cache(
+            path,
+            compact_deleted_mask,
+            &postings,
+            &vocab,
+            &point_to_tokens_count,
+        ) {
+            log::warn!("Failed to clear cache of on-disk full text index: {err}");
+        }
+
+        let files = index_files(path, compact_deleted_mask, index.point_to_doc_len.is_some());
+        Ok(Some((index, files)))
     }
 
-    fn from_on_disk<S: common::universal_io::UniversalRead>(
-        index: &OnDiskInvertedIndex<S>,
-        codes: Option<Vec<u16>>,
+    /// Materialize the on-disk files. The on-disk format leaves deletions out
+    /// of `point_to_tokens_count` and `point_to_doc_len`, tracking them in
+    /// `deleted_points` instead; the in-RAM index uses zero as its deletion
+    /// marker, so the mask is applied here.
+    fn from_parts<S: UniversalRead>(
+        postings: &OnDiskPostingsEnum<S>,
+        vocab: &UniversalHashMap<str, TokenId, S>,
+        point_to_tokens_count: &TypedStorage<S, usize>,
+        point_to_doc_len: Option<Vec<u16>>,
+        deleted_points: &DeletedBitVec,
     ) -> OperationResult<Self> {
-        let postings = match &index.storage.postings {
+        let postings = match postings {
             OnDiskPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
             OnDiskPostingsEnum::WithPositions(postings) => {
                 ImmutablePostings::WithPositions(postings.all_postings()?)
             }
         };
 
-        let mut vocab = HashMap::with_capacity(index.storage.vocab.keys_count());
-        index.storage.vocab.for_each_entry(|token_str, token_id| {
-            vocab.insert(token_str.to_owned(), token_id[0]);
+        let mut token_ids = HashMap::with_capacity(vocab.keys_count());
+        vocab.for_each_entry(|token_str, token_id| {
+            token_ids.insert(token_str.to_owned(), token_id[0]);
             OperationResult::Ok(())
         })?;
 
         debug_assert!(
-            postings.len() == vocab.len(),
+            postings.len() == token_ids.len(),
             "postings and vocab must be the same size",
         );
 
-        // The in-RAM index uses `count == 0` as its deletion marker. The mmap
-        // variant tracks deletions in a separate in-memory bitmask and leaves
-        // `point_to_tokens_count` untouched on disk, so we apply the bitmask
-        // here when materializing the count vector.
-        let point_to_tokens_count: Vec<u32> = index
-            .storage
-            .point_to_tokens_count
+        let point_to_tokens_count: Vec<u32> = point_to_tokens_count
             .read_whole()?
             .iter()
             .enumerate()
             .map(|(idx, &count)| {
-                if index
-                    .storage
-                    .deleted_points
-                    .is_active(idx as PointOffsetType)
-                {
+                if deleted_points.is_active(idx as PointOffsetType) {
                     count as u32
                 } else {
                     0
@@ -692,36 +741,28 @@ impl ImmutableInvertedIndex {
             })
             .collect();
 
-        // Document lengths are masked the same way, so that whoever sums them
-        // gets the live total rather than one inflated by deleted points.
         // Summed here rather than later: this walk already has to touch every
-        // element to apply the mask.
+        // element to apply the mask, and summing after it gives the live total
+        // rather than one inflated by deleted points.
         let mut total_tokens = 0;
-        let point_to_doc_len = match codes {
-            None => None,
-            Some(mut lens) => {
-                lens.resize(point_to_tokens_count.len(), 0);
-                for (idx, doc_len) in lens.iter_mut().enumerate() {
-                    if !index
-                        .storage
-                        .deleted_points
-                        .is_active(idx as PointOffsetType)
-                    {
-                        *doc_len = 0;
-                    }
-                    total_tokens += u64::from(decode_doc_len(*doc_len));
+        let point_to_doc_len = point_to_doc_len.map(|mut lens| {
+            lens.resize(point_to_tokens_count.len(), 0);
+            for (idx, doc_len) in lens.iter_mut().enumerate() {
+                if !deleted_points.is_active(idx as PointOffsetType) {
+                    *doc_len = 0;
                 }
-                Some(lens)
+                total_tokens += u64::from(decode_doc_len(*doc_len));
             }
-        };
+            lens
+        });
 
         Ok(ImmutableInvertedIndex {
             postings,
-            vocab,
+            vocab: token_ids,
             point_to_tokens_count,
             point_to_doc_len,
             total_tokens,
-            points_count: index.points_count(),
+            points_count: deleted_points.active_count(),
         })
     }
 }

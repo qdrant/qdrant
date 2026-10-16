@@ -1083,9 +1083,16 @@ mod tests {
         };
         let mmap = open();
         let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
-        // The heap placement's path, which moves the lengths instead.
-        let mut backing = open();
-        let loaded = ImmutableInvertedIndex::load_from_on_disk(&mut backing).unwrap();
+        // The heap placement's path, which reads the files directly.
+        let (loaded, _) = ImmutableInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path(),
+            Populate::No,
+            phrase_matching,
+            &empty_deleted,
+        )
+        .unwrap()
+        .unwrap();
 
         // Whatever the backends round to, the file keeps every length exactly,
         // the removed point's zeroed.
@@ -1126,17 +1133,6 @@ mod tests {
             assert_eq!(lengths, expected, "{backend}");
             assert_eq!(total, Some(expected_total), "{backend}");
         }
-
-        // Moved, not copied: the backing index keeps the file, not the codes.
-        assert!(backing.records_doc_len());
-        assert_eq!(backing.doc_len_codes(), Some(&[][..]));
-        assert!(
-            backing
-                .files()
-                .contains(&mmap_dir.path().join(POINT_TO_DOC_LEN_FILE)),
-            "the sidecar stays in the snapshot file set",
-        );
-        assert!(backing.ram_usage_bytes() < mmap.ram_usage_bytes());
     }
 
     #[rstest]
