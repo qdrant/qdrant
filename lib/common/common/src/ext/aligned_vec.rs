@@ -12,7 +12,6 @@ pub enum ACow<'a> {
 }
 
 impl<'a> ACow<'a> {
-    /// Borrow aligned slices, copying unaligned slices into a typed allocation.
     pub fn try_cast_bytemuck<T: bytemuck::Pod>(self) -> Result<Cow<'a, [T]>, PodCastError> {
         Ok(match self {
             ACow::Borrowed([]) => Cow::Borrowed(&[]),
