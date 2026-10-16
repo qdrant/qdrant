@@ -25,9 +25,13 @@ pub struct MutableInvertedIndex {
 
     /// Per-point token counts, including repetitions, used as document lengths in BM25.
     /// `None` when length recording is disabled.
+    ///
+    /// Exact, since the on-disk sidecar built from this index keeps them
+    /// exactly. Everything that reads them, the total included, sees
+    /// [`round_doc_len`] of them, as every other backend holds them.
     pub point_to_doc_len: Option<Vec<u32>>,
 
-    /// Total token count across live points.
+    /// Total token count across live points, of rounded lengths.
     /// Divide by `points_count` to get the average document length for BM25.
     pub total_tokens: u64,
     /// Points this index counts as documents: those with at least one indexed
@@ -92,8 +96,8 @@ impl MutableInvertedIndex {
     /// Record a point's length, replacing any previous value so an overwrite
     /// does not double-count in `total_tokens`. The only writer, so that every
     /// path agrees on what a record without a length means: `None` zeroes the
-    /// slot rather than leaving a stale value behind. Rounded here, as every
-    /// other backend stores it, so the total sums what the slots hold.
+    /// slot rather than leaving a stale value behind. Stored exactly, counted
+    /// rounded, so the total sums what every reader of the slots sees.
     pub(super) fn set_doc_len(&mut self, point_id: PointOffsetType, doc_len: Option<u32>) {
         let Some(point_to_doc_len) = self.point_to_doc_len.as_mut() else {
             return;
@@ -102,9 +106,12 @@ impl MutableInvertedIndex {
         if point_to_doc_len.len() < needed {
             point_to_doc_len.resize(needed, 0);
         }
-        let doc_len = round_doc_len(doc_len.unwrap_or(0));
+        let doc_len = doc_len.unwrap_or(0);
         let slot = &mut point_to_doc_len[point_id as usize];
-        self.total_tokens = self.total_tokens.saturating_sub(u64::from(*slot)) + u64::from(doc_len);
+        self.total_tokens = self
+            .total_tokens
+            .saturating_sub(u64::from(round_doc_len(*slot)))
+            + u64::from(round_doc_len(doc_len));
         *slot = doc_len;
     }
 
@@ -298,7 +305,9 @@ impl InvertedIndex for MutableInvertedIndex {
             .as_mut()
             .and_then(|lens| lens.get_mut(point_id as usize))
         {
-            self.total_tokens = self.total_tokens.saturating_sub(u64::from(*doc_len));
+            self.total_tokens = self
+                .total_tokens
+                .saturating_sub(u64::from(round_doc_len(*doc_len)));
             *doc_len = 0;
         }
 
@@ -359,7 +368,7 @@ impl InvertedIndex for MutableInvertedIndex {
             &mut cursors,
             |point_ids, out| {
                 for (point_id, doc_len) in point_ids.iter().zip(out) {
-                    *doc_len = lengths.get(*point_id as usize).copied();
+                    *doc_len = lengths.get(*point_id as usize).copied().map(round_doc_len);
                 }
                 Ok(())
             },
@@ -437,7 +446,8 @@ impl InvertedIndex for MutableInvertedIndex {
         for (index, &point_id) in point_ids.iter().enumerate() {
             f(
                 index,
-                lens.and_then(|lens| lens.get(point_id as usize).copied()),
+                lens.and_then(|lens| lens.get(point_id as usize).copied())
+                    .map(round_doc_len),
             );
         }
         Ok(())

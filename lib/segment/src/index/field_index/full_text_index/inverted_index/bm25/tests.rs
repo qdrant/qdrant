@@ -133,10 +133,10 @@ fn assert_top_k(actual: &[ScoredPointOffset], expected: &[ScoredPointOffset], li
 
 fn on_disk(
     dir: &std::path::Path,
-    immutable: &ImmutableInvertedIndex,
+    mutable: &MutableInvertedIndex,
     deleted: &BitVec,
 ) -> OnDiskInvertedIndex<MmapFile> {
-    OnDiskInvertedIndex::create(dir.to_path_buf(), immutable).unwrap();
+    OnDiskInvertedIndex::create(dir.to_path_buf(), mutable.clone()).unwrap();
     OnDiskInvertedIndex::<MmapFile>::open(&MmapFs, dir.to_path_buf(), Populate::No, true, deleted)
         .unwrap()
         .unwrap()
@@ -189,7 +189,7 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
     for &idx in &deleted_after {
         after_mask.set(idx as usize, true);
     }
-    let on_disk = on_disk(dir.path(), &immutable, &after_mask);
+    let on_disk = on_disk(dir.path(), &mutable, &after_mask);
     let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
     for &idx in &deleted_after {
         mutable.remove(idx);
@@ -268,7 +268,7 @@ fn the_filter_is_checked_per_block(#[values(1, 10, 1000)] limit: usize) {
     let mutable = fixture(37, 400, &[8, 9, 100]);
     let immutable = ImmutableInvertedIndex::from(mutable.clone());
     let dir = tempfile::tempdir().unwrap();
-    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
+    let on_disk = on_disk(dir.path(), &mutable, &BitVec::new());
     let odd = OptimizedFilter::from_checker(ConditionCheckerEnum::TestBitOfId(TestBitOfId(0)));
     let accept = Bm25Accept::new(&|_| true, Some(&odd));
     let is_odd = |idx: PointOffsetType| idx % 2 == 1;
@@ -331,7 +331,7 @@ fn accept_restricts_the_ranking() {
     let mutable = fixture(5, 300, &[]);
     let immutable = ImmutableInvertedIndex::from(mutable.clone());
     let dir = tempfile::tempdir().unwrap();
-    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
+    let on_disk = on_disk(dir.path(), &mutable, &BitVec::new());
     let even = |idx: PointOffsetType| idx.is_multiple_of(2);
 
     for terms in queries() {
@@ -375,7 +375,7 @@ fn a_failing_filter_reports_its_error() {
     let mutable = fixture(7, 100, &[]);
     let immutable = ImmutableInvertedIndex::from(mutable.clone());
     let dir = tempfile::tempdir().unwrap();
-    let on_disk = on_disk(dir.path(), &immutable, &BitVec::new());
+    let on_disk = on_disk(dir.path(), &mutable, &BitVec::new());
     let query = query(&mutable, &["w0", "w1"], Bm25Params::default());
 
     let filter =

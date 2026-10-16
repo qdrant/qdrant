@@ -454,17 +454,26 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
 impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
     fn from(index: MutableInvertedIndex) -> Self {
+        Self::from_mutable(index).0
+    }
+}
+
+impl ImmutableInvertedIndex {
+    /// Convert, and hand back the exact document lengths the mutable index
+    /// held alongside: this index keeps only their codes, and the on-disk
+    /// sidecar keeps the exact values.
+    pub(super) fn from_mutable(index: MutableInvertedIndex) -> (Self, Option<Vec<u32>>) {
         let MutableInvertedIndex {
             postings,
             vocab,
             point_to_tokens,
             point_to_doc,
             mut point_to_doc_len,
-            // Carried as-is: the counter is already the sum of the vector being
-            // moved across, which `set_doc_len` rounds as it is encoded here,
-            // and the padding below only adds zeroes. Masking is what a total
-            // read back from disk cannot survive, and that path recomputes
-            // instead.
+            // Carried as-is: the counter already sums the rounded lengths of
+            // the vector being moved across, which is what their codes decode
+            // to, and the padding below only adds zeroes. Masking is what a
+            // total read back from disk cannot survive, and that path
+            // recomputes instead.
             total_tokens,
             points_count,
         } = index;
@@ -504,17 +513,19 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
         }
         // Collected into a new vector of the exact length, so none of the
         // capacity the mutable one grew by doubling outlives the conversion.
-        let point_to_doc_len =
-            point_to_doc_len.map(|lens| lens.into_iter().map(encode_doc_len).collect::<Vec<_>>());
+        let codes = point_to_doc_len
+            .as_ref()
+            .map(|lens| lens.iter().copied().map(encode_doc_len).collect::<Vec<_>>());
 
-        ImmutableInvertedIndex {
+        let index = ImmutableInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count,
-            point_to_doc_len,
+            point_to_doc_len: codes,
             total_tokens,
             points_count,
-        }
+        };
+        (index, point_to_doc_len)
     }
 }
 
@@ -612,12 +623,34 @@ fn create_compressed_postings_with_positions(
             .collect()
 }
 
+/// Copies the document lengths, leaving the on-disk index able to answer for
+/// them too.
 impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
     for ImmutableInvertedIndex
 {
     type Error = OperationError;
 
     fn try_from(index: &OnDiskInvertedIndex<S>) -> OperationResult<Self> {
+        let codes = index.doc_len_codes().map(<[u16]>::to_vec);
+        Self::from_on_disk(index, codes)
+    }
+}
+
+impl ImmutableInvertedIndex {
+    /// Load from `index`, moving its document lengths over rather than
+    /// copying them: the on-disk index stays as backing storage, and holding
+    /// the lengths twice would double the 2 bytes a point they cost.
+    pub fn load_from_on_disk<S: common::universal_io::UniversalRead>(
+        index: &mut OnDiskInvertedIndex<S>,
+    ) -> OperationResult<Self> {
+        let codes = index.take_doc_len_codes();
+        Self::from_on_disk(index, codes)
+    }
+
+    fn from_on_disk<S: common::universal_io::UniversalRead>(
+        index: &OnDiskInvertedIndex<S>,
+        codes: Option<Vec<u16>>,
+    ) -> OperationResult<Self> {
         let postings = match &index.storage.postings {
             OnDiskPostingsEnum::Ids(postings) => ImmutablePostings::Ids(postings.all_postings()?),
             OnDiskPostingsEnum::WithPositions(postings) => {
@@ -664,10 +697,9 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
         // Summed here rather than later: this walk already has to touch every
         // element to apply the mask.
         let mut total_tokens = 0;
-        let point_to_doc_len = match &index.storage.point_to_doc_len {
+        let point_to_doc_len = match codes {
             None => None,
-            Some(storage) => {
-                let mut lens = storage.read_whole()?.into_owned();
+            Some(mut lens) => {
                 lens.resize(point_to_tokens_count.len(), 0);
                 for (idx, doc_len) in lens.iter_mut().enumerate() {
                     if !index
