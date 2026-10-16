@@ -14,7 +14,7 @@ use log::{debug, trace};
 use rand::Rng;
 use rayon::ThreadPool;
 
-use self::block::build_block;
+use self::block::Block;
 use self::old_blocks::old_range_blocks;
 use self::seeds::BlockSeeds;
 use super::context::GraphBuildContext;
@@ -258,15 +258,17 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 return Ok(());
             }
 
+            // Points that kept enough links from the old graph start with them, the rest are
+            // inserted by search
+            let block = Block::new(ctx, &points_to_index);
+            let to_insert = match seeds.as_mut() {
+                Some(seeds) => seeds.seed_block(&block, graph_layers_builder, pool, &counter)?,
+                None => (0..points_to_index.len() as PointOffsetType).collect(),
+            };
             block_points += points_to_index.len();
-            seeded_points += build_block(
-                ctx,
-                pool,
-                graph_layers_builder,
-                &points_to_index,
-                seeds.as_mut(),
-                &counter,
-            )?;
+            seeded_points += points_to_index.len() - to_insert.len();
+            block.insert(&to_insert, pool, &counter)?;
+            block.merge_into(graph_layers_builder);
             Ok(())
         };
 
