@@ -68,23 +68,21 @@ pub fn init_query_context_with_stopping_flag(
     Ok(query_context)
 }
 
-/// Fill one segment's contribution into a [`QueryContext::fork_statistics`]
-/// copy of `query_context`, to fold back with
-/// [`QueryContext::merge_statistics`]. Segments fill in parallel this way.
+/// Add one segment's statistics to `query_context`. To fill segments in
+/// parallel, give each one a clone of the unfilled context and fold them back
+/// with [`QueryContext::merge_statistics`].
 pub fn fill_segment_query_context(
-    query_context: &QueryContext,
+    query_context: &mut QueryContext,
     segment: &LockedSegment,
     timeout: Duration,
     is_stopped: &AtomicBool,
-) -> OperationResult<QueryContext> {
+) -> OperationResult<()> {
     check_process_stopped(is_stopped)?;
-    let mut fork = query_context.fork_statistics();
     let segment = segment.get();
     let Some(segment_guard) = segment.try_read_for(timeout) else {
         return Err(OperationError::timeout(timeout, "fill query context"));
     };
-    segment_guard.fill_query_context(&mut fork)?;
-    Ok(fork)
+    segment_guard.fill_query_context(query_context)
 }
 
 #[cfg(test)]

@@ -211,7 +211,8 @@ impl SegmentsSearcher {
     }
 
     /// Fill `query_context` with the statistics of every segment, one blocking
-    /// task per segment. Returns `None` when there are no segments.
+    /// task per segment when there are IDF or text statistics to collect, a
+    /// single sequential task otherwise. Returns `None` when there are no segments.
     async fn fill_query_context(
         mut query_context: QueryContext,
         segments: LockedSegmentHolder,
@@ -235,19 +236,44 @@ impl SegmentsSearcher {
             return Ok(None);
         }
 
-        // Tasks read the seed while the merge below writes into `query_context`.
-        let seed = Arc::new(query_context.fork_statistics());
+        let cpu_utilization = hw::cpu_utilization();
+
+        // Only the available point count is gathered, too little work per
+        // segment to pay for a task each.
+        if !query_context.has_statistics_to_collect() {
+            let is_stopped = is_stopped_guard.get_is_stopped();
+            // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
+            let handle = runtime_handle.spawn_blocking(move || {
+                cpu_utilization.measure(|| {
+                    for segment in &segments {
+                        let timeout = timeout.saturating_sub(start.elapsed());
+                        fill_segment_query_context(
+                            &mut query_context,
+                            segment,
+                            timeout,
+                            &is_stopped,
+                        )?;
+                    }
+                    Ok::<_, OperationError>(query_context)
+                })
+            });
+            return Ok(Some(AbortOnDropHandle::new(handle).await??));
+        }
+
+        // Every count is still zero, so each clone carries only its own segment.
+        debug_assert_eq!(query_context.available_point_count(), 0);
         let mut forks = segments
             .into_iter()
             .map(|segment| {
-                let seed = seed.clone();
+                let mut fork = query_context.clone();
                 let is_stopped = is_stopped_guard.get_is_stopped();
                 let timeout = timeout.saturating_sub(start.elapsed());
-                let cpu_utilization = hw::cpu_utilization();
+                let cpu_utilization = cpu_utilization.clone();
                 // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
                 let handle = runtime_handle.spawn_blocking(move || {
                     cpu_utilization.measure(|| {
-                        fill_segment_query_context(&seed, &segment, timeout, &is_stopped)
+                        fill_segment_query_context(&mut fork, &segment, timeout, &is_stopped)?;
+                        Ok::<_, OperationError>(fork)
                     })
                 });
                 AbortOnDropHandle::new(handle)

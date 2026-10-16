@@ -99,7 +99,10 @@ pub fn fancy_idf(n: DimWeight, df: DimWeight) -> DimWeight {
     ((n - df + 0.5) / (df + 0.5) + 1.).ln()
 }
 
-#[derive(Debug)]
+/// Filling segments in parallel: each segment fills its own clone of an
+/// unfilled context, then [`QueryContext::merge_statistics`] sums the clones
+/// back into the original.
+#[derive(Debug, Clone)]
 pub struct QueryContext {
     /// Total amount of available (and visible) points in the segment.
     available_point_count: usize,
@@ -248,45 +251,13 @@ impl QueryContext {
         &mut self.text_stats
     }
 
-    /// A copy seeded with the same scopes, dimensions and terms, every count at
-    /// zero, for one segment to fill on its own thread. Fold it back with
-    /// [`Self::merge_statistics`].
-    pub fn fork_statistics(&self) -> Self {
-        let mut idf_stats = self.idf_stats.clone();
-        for scope in &mut idf_stats.scopes {
-            scope
-                .idf
-                .values_mut()
-                .flat_map(HashMap::values_mut)
-                .for_each(|df| *df = 0);
-            scope
-                .indexed_vectors
-                .values_mut()
-                .for_each(|count| *count = 0);
-        }
-        let text_stats = self
-            .text_stats
-            .iter()
-            .map(|(field, stats)| {
-                let stats = TextFieldStats {
-                    corpus: stats.corpus.clone(),
-                    df: stats.df.keys().map(|term| (term.clone(), 0)).collect(),
-                    ..TextFieldStats::default()
-                };
-                (field.clone(), stats)
-            })
-            .collect();
-        Self {
-            available_point_count: 0,
-            search_optimized_threshold_kb: self.search_optimized_threshold_kb,
-            is_stopped: self.is_stopped.clone(),
-            idf_stats,
-            text_stats,
-            handoff: self.handoff.clone(),
-        }
+    /// Whether filling needs more than the available point count, which
+    /// makes it worth spreading over segments in parallel.
+    pub fn has_statistics_to_collect(&self) -> bool {
+        !self.idf_stats.scopes.is_empty() || !self.text_stats.is_empty()
     }
 
-    /// Sum the statistics of a [`Self::fork_statistics`] copy into this context.
+    /// Sum the statistics of a filled clone of this unfilled context into it.
     pub fn merge_statistics(&mut self, fork: Self) {
         let Self {
             available_point_count,
@@ -543,7 +514,7 @@ mod tests {
 
         // Each fork stands for one segment's fill.
         let segment_fill = |documents, total_tokens, fox_df, dim_1_df| {
-            let mut fork = context.fork_statistics();
+            let mut fork = context.clone();
             fork.add_available_point_count(documents);
             let scope = &mut fork.mut_idf_stats().scopes[0];
             *scope.indexed_vectors.get_mut("sparse").unwrap() += documents;
@@ -567,11 +538,6 @@ mod tests {
         let stats = &context.mut_text_stats()[&field];
         assert_eq!((stats.df["fox"], stats.df["dog"]), (3, 0));
         assert_eq!((stats.documents, stats.total_tokens), (7, Some(17)));
-
-        // A fork of a filled context starts from zero again.
-        let fork = context.fork_statistics();
-        assert_eq!(fork.available_point_count(), 0);
-        assert_eq!(fork.idf_stats().scopes[0].idf.get("sparse").unwrap()[&1], 0);
 
         // One segment without document lengths drops `avgdl` for the shard.
         context.merge_statistics(without_lengths);
