@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use common::ambient;
 use common::bitvec::{BitSliceExt as _, BitVec};
@@ -7,18 +7,17 @@ use common::types::PointOffsetType;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 
+use super::super::context::{GraphBuildContext, GraphParams};
 use super::seeds::{BlockContext, BlockSeeds};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
-use crate::index::hnsw_index::HnswM;
+use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::hnsw::{
     HNSW_BUILD_MAX_PAR_LEN, HNSW_USE_HEURISTIC, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
 use crate::index::hnsw_index::links_container::ItemsBuffer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::VectorStorageRead;
 
 /// Build one payload block, linking its points only to each other, and merge it into
 /// `graph_layers_builder`.
@@ -28,20 +27,22 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 ///
 /// With `seeds`, points that kept enough links to the block from the old graph are added with
 /// those links, and only the rest are inserted by search. Returns the number of seeded points.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn build_block(
-    id_tracker: &IdTrackerEnum,
-    vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    ctx: GraphBuildContext,
     pool: &ThreadPool,
-    stopped: &AtomicBool,
     graph_layers_builder: &mut GraphLayersBuilder,
     points_to_index: &[PointOffsetType],
     seeds: Option<&mut BlockSeeds>,
-    payload_m: HnswM,
-    ef_construct: usize,
     counter: &AtomicU64,
 ) -> OperationResult<usize> {
+    let GraphBuildContext {
+        id_tracker,
+        vector_storage,
+        quantized_vectors,
+        block_params,
+        stopped,
+        ..
+    } = ctx;
     let vector_deleted = vector_storage.deleted_vector_bitslice();
     let point_deleted = id_tracker.deleted_point_bitslice();
     let block_deleted: BitVec = points_to_index
@@ -52,11 +53,16 @@ pub(super) fn build_block(
         })
         .collect();
 
+    let GraphParams {
+        hnsw_m,
+        ef_construct,
+        entry_points_num,
+    } = block_params;
     let block_graph = GraphLayersBuilder::new_with_params(
         points_to_index.len(),
-        payload_m,
+        hnsw_m,
         ef_construct,
-        1,
+        entry_points_num,
         HNSW_USE_HEURISTIC,
         false,
     );
@@ -68,7 +74,7 @@ pub(super) fn build_block(
             points_to_index[local_id as usize],
             points_to_index,
             vector_storage,
-            quantized_vectors.as_ref(),
+            quantized_vectors,
             &block_deleted,
         )?;
         block_graph.link_new_point(local_id, points_scorer);
