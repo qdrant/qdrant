@@ -31,7 +31,7 @@ pub struct GraphWithVectorsScorers<'a> {
 }
 
 /// Maximum number of links per level.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HnswM {
     /// M for all levels except level 0.
     pub m: usize,

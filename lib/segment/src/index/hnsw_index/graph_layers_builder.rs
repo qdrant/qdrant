@@ -10,7 +10,7 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::fs::{atomic_save, atomic_save_bin};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::MmapFs;
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use rand::distr::Uniform;
 use rand::{Rng, RngExt};
 
@@ -541,6 +541,24 @@ impl GraphLayersBuilder {
         self.entry_points
             .lock()
             .new_point(point_id, level, |_| true);
+    }
+
+    /// Links of a point on a level, including links to points that are not marked ready.
+    pub(crate) fn links(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> RwLockReadGuard<'_, LinksContainer> {
+        self.links_layers[point_id as usize][level].read()
+    }
+
+    /// Links of a point on a level, to change.
+    pub(crate) fn links_mut(
+        &self,
+        point_id: PointOffsetType,
+        level: usize,
+    ) -> RwLockWriteGuard<'_, LinksContainer> {
+        self.links_layers[point_id as usize][level].write()
     }
 
     /// Link a new point on a specific level.
