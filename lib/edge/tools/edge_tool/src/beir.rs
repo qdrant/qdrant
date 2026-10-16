@@ -74,7 +74,11 @@ pub fn run(args: LoadBeirArgs) -> Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let id = PointId::NumId(args.start_id + loaded);
+        let id = args
+            .start_id
+            .checked_add(loaded)
+            .context("point id past u64::MAX: lower --start-id")?;
+        let id = PointId::NumId(id);
         let point = document_point(&line, id, &field, &doc_id_key, &schema, &mut rng)
             .with_context(|| format!("{}:{line_number}", args.corpus.display()))?;
         batch.push(point);
@@ -94,7 +98,7 @@ pub fn run(args: LoadBeirArgs) -> Result<()> {
         "loaded {loaded} document(s) from {} into {field} (ids {}..{})",
         args.corpus.display(),
         args.start_id,
-        args.start_id + loaded,
+        args.start_id.saturating_add(loaded),
     );
     Ok(())
 }

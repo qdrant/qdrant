@@ -151,7 +151,9 @@ pub struct LoadBeirArgs {
     pub batch_size: usize,
 
     /// Point id of the first document; the others follow in corpus order, so a
-    /// re-run overwrites the same points. Pass the end of the previous range to
+    /// re-run overwrites the same points. A re-run loading fewer documents
+    /// leaves the earlier ones past its end: recreate the collection to reload
+    /// a smaller or different corpus. Pass the end of the previous range to
     /// load a second corpus next to the first.
     #[arg(long, default_value_t = 0)]
     pub start_id: u64,
