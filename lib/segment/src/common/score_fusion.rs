@@ -144,8 +144,7 @@ fn welfords_mean_variance(points: &[ScoredPoint]) -> (f32, f32) {
     (mean, sample_variance)
 }
 
-/// Estimates the mean and variance of the given points and normalizes them between 0.0 and 1.0, using the 3rd
-/// standard deviation as extremes.
+/// Estimates mean and variance to normalize scores between 0 and 1, using three standard deviations as extremes.
 pub fn distr_norm(mut points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
     if points.len() < 2 {
         if points.len() == 1 {
@@ -154,13 +153,25 @@ pub fn distr_norm(mut points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
         return points;
     }
 
+    // Prefetch results are ordered by their source metric, so endpoints reveal score direction.
+    let small_better = points
+        .first()
+        .zip(points.last())
+        .is_some_and(|(first, last)| first.score < last.score);
     let (mean, variance) = welfords_mean_variance(&points);
 
     let std_dev = variance.sqrt();
     let min = mean - 3.0 * std_dev;
     let max = mean + 3.0 * std_dev;
 
-    norm(points, min, max)
+    let mut normalized = norm(points, min, max);
+    if small_better {
+        normalized
+            .iter_mut()
+            .for_each(|point| point.score = 1.0 - point.score);
+    }
+
+    normalized
 }
 
 #[cfg(test)]
@@ -179,6 +190,48 @@ mod tests {
             shard_key: None,
             order_value: None,
         }
+    }
+
+    #[test]
+    fn dbsf_preserves_small_better_ranking() {
+        let seed = vec![point(0, 0.0), point(1, 0.2), point(2, 0.4), point(3, 0.8)];
+        let fused_seed = score_fusion(vec![seed.clone(), seed], ScoreFusion::dbsf());
+        assert_eq!(
+            fused_seed.iter().map(|point| point.id).collect_vec(),
+            vec![
+                PointIdType::NumId(0),
+                PointIdType::NumId(1),
+                PointIdType::NumId(2),
+                PointIdType::NumId(3),
+            ],
+        );
+
+        let mutant = vec![point(0, 0.0), point(2, 0.4), point(1, 0.7), point(3, 0.8)];
+        let fused_mutant = score_fusion(vec![mutant.clone(), mutant], ScoreFusion::dbsf());
+        assert_eq!(
+            fused_mutant.iter().map(|point| point.id).collect_vec(),
+            vec![
+                PointIdType::NumId(0),
+                PointIdType::NumId(2),
+                PointIdType::NumId(1),
+                PointIdType::NumId(3),
+            ],
+        );
+    }
+
+    #[test]
+    fn dbsf_preserves_large_better_ranking() {
+        let source = vec![point(3, 0.8), point(2, 0.4), point(1, 0.2), point(0, 0.0)];
+        let fused = score_fusion(vec![source.clone(), source], ScoreFusion::dbsf());
+        assert_eq!(
+            fused.iter().map(|point| point.id).collect_vec(),
+            vec![
+                PointIdType::NumId(3),
+                PointIdType::NumId(2),
+                PointIdType::NumId(1),
+                PointIdType::NumId(0),
+            ],
+        );
     }
 
     fn assert_close(a: f32, b: f32) {
