@@ -17,10 +17,15 @@ use super::TokensProcessor;
 /// - a run that starts with a digit is a number literal and is kept whole, without its `_`
 ///   separators (`1_000_000` -> `1000000`, `0xFF`, `3e10`).
 ///
-/// Documents index the subwords in text order, followed by every multi-part identifier joined into
-/// one token (`getUserName` -> `getusername`). Queries are split into subwords only. Together, a
-/// query for `getUserName`, `get_user_name`, `GetUserName` or `user name` finds all four
-/// spellings, and a query for `getusername` or `hashmap` finds the joined identifier.
+/// Documents index the subwords in text order, followed by every `camelCase` identifier joined into
+/// one token (`getUserName` -> `getusername`, `test_getUserName` -> `getusername`). Queries are
+/// split into subwords only. Together, a query for `getUserName`, `get_user_name`, `GetUserName`
+/// or `user name` finds all four spellings, and a query for `getusername` or `hashmap` finds the
+/// `camelCase` identifier.
+///
+/// Only `camelCase` is joined: people type it as one lowercase word, while they type `snake_case`
+/// with its `_`, which splits into subwords already. And only when tokens are lowercased: a query
+/// word with case changes is split, so it would never match a joined identifier that keeps them.
 ///
 /// Joined identifiers are detached from the document's token sequence: phrase queries are made
 /// of subwords, and the index keeps a joined identifier apart from all other tokens, so it only
@@ -38,16 +43,18 @@ impl CodeTokenizer {
     ) {
         let processor = PartProcessor::new(tokens_processor);
         let mut joined = Vec::new();
+        let mut push_joined = |token: Cow<'a, str>| joined.push(token);
 
         for_each_word(text, |word, is_ascii| {
-            let parts = split_word(word, is_ascii, &processor, &mut |token| {
-                callback(token, false)
-            });
-            if parts > 1
-                && let Some(token) = processor.joined(word, is_ascii)
-            {
-                joined.push(token);
-            }
+            split_word(
+                word,
+                is_ascii,
+                &processor,
+                &mut |token| callback(token, false),
+                tokens_processor
+                    .lowercase
+                    .then_some(&mut push_joined as &mut dyn FnMut(Cow<'a, str>)),
+            );
         });
 
         for token in joined {
@@ -62,7 +69,7 @@ impl CodeTokenizer {
     ) {
         let processor = PartProcessor::new(tokens_processor);
         for_each_word(text, |word, is_ascii| {
-            split_word(word, is_ascii, &processor, &mut callback);
+            split_word(word, is_ascii, &processor, &mut callback, None);
         });
     }
 }
@@ -133,8 +140,8 @@ impl<'p> PartProcessor<'p> {
         }
     }
 
-    /// The word without its `_` separators: all of its subwords, joined.
-    fn joined<'a>(&self, word: &'a str, is_ascii: bool) -> Option<Cow<'a, str>> {
+    /// A number literal, without its `_` separators.
+    fn number<'a>(&self, word: &'a str, is_ascii: bool) -> Option<Cow<'a, str>> {
         if !(is_ascii && self.ascii_lowercase_only) {
             let joined = if word.contains('_') {
                 Cow::Owned(word.chars().filter(|&c| c != '_').collect())
@@ -197,23 +204,24 @@ fn char_class(c: char) -> CharClass {
     }
 }
 
-/// Passes each processed subword of `word` to `callback`, in order, and returns how many subwords
-/// it has.
+/// Passes each processed subword of `word` to `callback`, in order. If `joined` is given, passes
+/// it each `camelCase` run of the word as one processed token: a run between `_` separators that
+/// splits at a case change.
 fn split_word<'a>(
     word: &'a str,
     is_ascii: bool,
     processor: &PartProcessor,
     callback: &mut impl FnMut(Cow<'a, str>),
-) -> usize {
+    mut joined: Option<&mut dyn FnMut(Cow<'a, str>)>,
+) {
     if word.starts_with(|c: char| c.is_ascii_digit()) {
         // A number literal
-        if let Some(token) = processor.joined(word, is_ascii) {
+        if let Some(token) = processor.number(word, is_ascii) {
             callback(token);
         }
-        return 1;
+        return;
     }
 
-    let mut parts = 0;
     if is_ascii {
         let bytes = word.as_bytes();
         split_classes(
@@ -223,9 +231,16 @@ fn split_word<'a>(
             |i| i,
             word.len(),
             |start, end, has_upper| {
-                parts += 1;
                 if let Some(token) = processor.ascii(&word[start..end], has_upper) {
                     callback(token);
+                }
+            },
+            |start, end| {
+                // A case change means an uppercase letter
+                if let Some(joined) = joined.as_mut()
+                    && let Some(token) = processor.ascii(&word[start..end], true)
+                {
+                    joined(token);
                 }
             },
         );
@@ -238,20 +253,27 @@ fn split_word<'a>(
             |i| chars[i].0,
             word.len(),
             |start, end, _| {
-                parts += 1;
                 let part = &word[start..end];
                 if let Some(token) = processor.tokens_processor.process_token(part, true) {
                     callback(token);
                 }
             },
+            |start, end| {
+                let run = &word[start..end];
+                if let Some(joined) = joined.as_mut()
+                    && let Some(token) = processor.tokens_processor.process_token(run, true)
+                {
+                    joined(token);
+                }
+            },
         );
     }
-    parts
 }
 
 /// Finds subword boundaries in a word of `len` characters, and calls `emit` with the byte range of
-/// each subword and whether it has uppercase letters. `offset` maps a character index to its byte
-/// offset in the word.
+/// each subword and whether it has uppercase letters, and `emit_camel` with the byte range of each
+/// run between `_` separators that has more than one subword. `offset` maps a character index to
+/// its byte offset in the word.
 fn split_classes(
     len: usize,
     class: impl Fn(usize) -> CharClass,
@@ -259,20 +281,31 @@ fn split_classes(
     offset: impl Fn(usize) -> usize,
     byte_len: usize,
     mut emit: impl FnMut(usize, usize, bool),
+    mut emit_camel: impl FnMut(usize, usize),
 ) {
     // Start of the current subword; there is none while `prev` is an underscore
     let mut start = 0;
     let mut has_upper = false;
+    // Start of the current run between `_` separators, and whether it split at a case change
+    let mut run_start = 0;
+    let mut is_camel = false;
     let mut prev = CharClass::Underscore;
 
     for i in 0..len {
         let cur = class(i);
         match (prev, cur) {
             (CharClass::Underscore, CharClass::Underscore) => {}
-            (_, CharClass::Underscore) => emit(offset(start), offset(i), has_upper),
+            (_, CharClass::Underscore) => {
+                emit(offset(start), offset(i), has_upper);
+                if is_camel {
+                    emit_camel(offset(run_start), offset(i));
+                }
+            }
             (CharClass::Underscore, _) => {
                 start = i;
                 has_upper = false;
+                run_start = i;
+                is_camel = false;
             }
             (prev, cur) => {
                 let boundary = match (prev, cur) {
@@ -290,6 +323,7 @@ fn split_classes(
                     emit(offset(start), offset(i), has_upper);
                     start = i;
                     has_upper = false;
+                    is_camel = true;
                 }
             }
         }
@@ -299,6 +333,9 @@ fn split_classes(
 
     if prev != CharClass::Underscore {
         emit(offset(start), byte_len, has_upper);
+        if is_camel {
+            emit_camel(offset(run_start), byte_len);
+        }
     }
 }
 
@@ -375,21 +412,8 @@ mod tests {
         assert_eq!(
             doc(text),
             [
-                "let",
-                "map",
-                "hash",
-                "map",
-                "string",
-                "u32",
-                "self",
-                "get",
-                "user",
-                "name",
-                "user",
-                "id",
-                "hashmap",
-                "getusername",
-                "userid",
+                "let", "map", "hash", "map", "string", "u32", "self", "get", "user", "name",
+                "user", "id", "hashmap",
             ],
         );
         assert_eq!(
@@ -423,7 +447,46 @@ mod tests {
 
         // A query word that does not split finds the joined identifier
         assert!(doc("new HashMap()").contains(&query("hashmap")[0]));
-        assert!(doc("get_user_name").contains(&query("getusername")[0]));
+        assert!(doc("getUserName").contains(&query("getusername")[0]));
+    }
+
+    #[test]
+    fn test_joined_identifiers() {
+        let joined = |text: &str, tokens_processor: &TokensProcessor| {
+            let mut joined = Vec::new();
+            CodeTokenizer::tokenize_doc(text, tokens_processor, |token, detached| {
+                if detached {
+                    joined.push(token.into_owned());
+                }
+            });
+            joined
+        };
+
+        // `camelCase` runs between `_` separators
+        let cases: &[(&str, &[&str])] = &[
+            ("getUserName", &["getusername"]),
+            ("HashMap::new", &["hashmap"]),
+            ("HTTPServer", &["httpserver"]),
+            ("getURLs", &["geturls"]),
+            ("Int32Array", &["int32array"]),
+            ("ÜberCafé", &["übercafé"]),
+            ("test_getUserName", &["getusername"]),
+            ("get_HTTPResponse_code", &["httpresponse"]),
+            ("fooBar_bazQux", &["foobar", "bazqux"]),
+            ("get_user_name", &[]),
+            ("MAX_BUFFER_SIZE", &[]),
+            ("__init__", &[]),
+            ("utf8 URLs Self", &[]),
+            ("1_000_000 0xFF", &[]),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(joined(text, &lowercase()), *expected, "joining {text:?}");
+        }
+
+        // Without lowercasing, no query token could match a joined identifier
+        let keep_case = TokensProcessor::default();
+        assert!(!keep_case.lowercase);
+        assert_eq!(joined("getUserName HashMap", &keep_case), [] as [String; 0]);
     }
 
     #[test]
