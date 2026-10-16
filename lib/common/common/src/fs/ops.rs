@@ -36,6 +36,7 @@ where
 /// Same as `atomicwrites` (temp file in the same directory, then replace),
 /// but retries the final rename, which an antivirus/EDR scanner holding the
 /// target or the fresh temp file can make fail with access denied.
+/// Persistence retains `atomicwrites`' Windows write-through replacement.
 #[cfg(windows)]
 #[allow(
     clippy::disallowed_types,
