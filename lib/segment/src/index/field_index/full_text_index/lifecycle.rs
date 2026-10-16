@@ -48,9 +48,14 @@ impl FullTextIndex {
             return Ok(None);
         }
 
-        let Some(on_disk_index) =
+        let opened = if memory.is_heap() {
+            ImmutableFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
+                .map(|index| (index.records_doc_len(), Self::Immutable(index)))
+        } else {
             OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
-        else {
+                .map(|index| (index.records_doc_len(), Self::OnDisk(index)))
+        };
+        let Some((records_doc_len, index)) = opened else {
             return Ok(None);
         };
 
@@ -61,18 +66,11 @@ impl FullTextIndex {
         //
         // Reachable past the probe above when the sidecar exists but `open`
         // rejected it, so the log says which of the two happened.
-        if scoring && !on_disk_index.records_doc_len() {
+        if scoring && !records_doc_len {
             log::info!("Text index rejected its document length sidecar, rebuilding from payload");
             return Ok(None);
         }
 
-        let index = if memory.is_heap() {
-            // Load into RAM, use mmap as backing storage
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
-        } else {
-            // Use on-disk directly
-            Self::OnDisk(on_disk_index)
-        };
         Ok(Some(index))
     }
 
@@ -230,7 +228,8 @@ impl FullTextIndex {
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.clear_cache(),
-            Self::Immutable(index) => index.clear_cache(),
+            // Nothing to drop: no file is open, and the load cleared their cache.
+            Self::Immutable(_) => Ok(()),
             Self::OnDisk(index) => index.clear_cache(),
         }
     }
