@@ -2,6 +2,7 @@ use common::types::ScoreType;
 use segment::data_types::load_profile::LoadProfile;
 use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 use shard::query::ScoringQuery;
+use shard::query::query_enum::QueryEnum;
 
 /// Universal query over an edge shard: a scoring query with optional prefetch stages.
 #[derive(Clone, Debug, PartialEq)]
@@ -108,7 +109,9 @@ impl Prefetch {
 
 /// Profile of one query stage, prefetches excluded. A stage with prefetches
 /// rescores their candidates, reading a vector per candidate: that vector
-/// serves fine cold, like the stored vectors of the results.
+/// serves fine cold, like the stored vectors of the results. Unless it is
+/// sparse: a sparse query gathers its idf statistics over the whole vector
+/// index of every segment, rescoring or not.
 fn stage_load_profile(
     query: Option<&ScoringQuery>,
     filter: Option<&Filter>,
@@ -117,7 +120,7 @@ fn stage_load_profile(
     with_payload: bool,
 ) -> LoadProfile {
     let mut profile = match query {
-        Some(ScoringQuery::Vector(query)) if !rescores => {
+        Some(ScoringQuery::Vector(query)) if !rescores || is_sparse(query) => {
             LoadProfile::for_search(query.get_vector_name(), filter, with_payload)
         }
         Some(ScoringQuery::Mmr(mmr)) if !rescores => {
@@ -167,18 +170,27 @@ fn stage_load_profile(
     profile
 }
 
+fn is_sparse(query: &QueryEnum) -> bool {
+    let mut sparse = false;
+    query.iterate_sparse(|_, _| sparse = true);
+    sparse
+}
+
 #[cfg(test)]
 mod tests {
     use common::universal_io::Populate;
     use segment::data_types::vectors::{NamedQuery, VectorInternal};
     use segment::index::field_index::full_text_index::Bm25Params;
+    use segment::index::query_optimization::rescore_formula::parsed_formula::{
+        ParsedExpression, ParsedFormula, VariableId,
+    };
     use segment::json_path::JsonPath;
     use segment::types::{
         Condition, FieldCondition, IdfCorpusParams, IdfParams, Match, ValueVariants,
     };
     use shard::query::FusionInternal;
-    use shard::query::query_enum::QueryEnum;
     use shard::query::text::TextScoringQuery;
+    use sparse::common::sparse_vector::SparseVector;
 
     use super::*;
 
@@ -232,16 +244,25 @@ mod tests {
         assert_eq!(profile.vector_storage_placement(""), Some(Populate::No));
     }
 
+    fn nearest(using: &str) -> ScoringQuery {
+        ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::from(vec![1.0]),
+            using.to_string(),
+        )))
+    }
+
+    fn text(field: &str) -> ScoringQuery {
+        ScoringQuery::Text(TextScoringQuery {
+            field: path(field),
+            text: "alpha".to_string(),
+            params: Bm25Params::default(),
+        })
+    }
+
     /// A root that rescores prefetched candidates leaves its vector cold; the
     /// prefetch searching another vector warms that one.
     #[test]
     fn rescoring_root_leaves_its_vector_cold() {
-        let nearest = |using: &str| {
-            ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
-                VectorInternal::from(vec![1.0]),
-                using.to_string(),
-            )))
-        };
         let request = QueryRequest {
             prefetches: vec![Prefetch {
                 query: Some(nearest("small")),
@@ -257,5 +278,87 @@ mod tests {
             profile.vector_storage_placement("large"),
             Some(Populate::No),
         );
+    }
+
+    /// A sparse root keeps its vector warm even when it only rescores: its idf
+    /// statistics read the whole sparse index.
+    #[test]
+    fn rescoring_sparse_root_warms_its_vector() {
+        let sparse = SparseVector::new(vec![1, 2], vec![0.5, 0.5]).unwrap();
+        let request = QueryRequest {
+            prefetches: vec![Prefetch {
+                query: Some(nearest("dense")),
+                ..Prefetch::new(100)
+            }],
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                VectorInternal::from(sparse),
+                "sparse".to_string(),
+            )))),
+            ..QueryRequest::new(10)
+        };
+
+        let profile = request.load_profile();
+        assert_eq!(profile.vector_storage_placement("sparse"), None);
+        assert_eq!(profile.vector_index_placement("sparse"), None);
+    }
+
+    /// Prefetches nested in prefetches contribute their own profile.
+    #[test]
+    fn nested_prefetch_warms_its_field() {
+        let request = QueryRequest {
+            prefetches: vec![Prefetch {
+                prefetches: vec![Prefetch {
+                    query: Some(text("body")),
+                    filter: Some(match_filter("city")),
+                    ..Prefetch::new(100)
+                }],
+                query: Some(nearest("dense")),
+                ..Prefetch::new(10)
+            }],
+            ..QueryRequest::new(10)
+        };
+
+        let profile = request.load_profile();
+        for warm in ["body", "city"] {
+            assert_eq!(profile.payload_index_placement(&path(warm)), None, "{warm}");
+        }
+        // The middle stage rescores, so its dense vector stays cold.
+        assert_eq!(
+            profile.vector_storage_placement("dense"),
+            Some(Populate::No),
+        );
+    }
+
+    /// A formula warms its variables, the fields of its conditions and the
+    /// payload storage.
+    #[test]
+    fn formula_warms_its_variables_conditions_and_payload() {
+        let formula = ParsedFormula {
+            payload_vars: [path("price")].into(),
+            conditions: vec![Condition::Field(FieldCondition::new_match(
+                path("city"),
+                Match::new_value(ValueVariants::String("value".to_string())),
+            ))],
+            defaults: Default::default(),
+            formula: ParsedExpression::Variable(VariableId::Score(0)),
+        };
+        let request = QueryRequest {
+            prefetches: vec![Prefetch {
+                query: Some(nearest("dense")),
+                ..Prefetch::new(100)
+            }],
+            query: Some(ScoringQuery::Formula(formula)),
+            ..QueryRequest::new(10)
+        };
+
+        let profile = request.load_profile();
+        for warm in ["price", "city"] {
+            assert_eq!(profile.payload_index_placement(&path(warm)), None, "{warm}");
+        }
+        assert_eq!(
+            profile.payload_index_placement(&path("other")),
+            Some(Populate::No),
+        );
+        assert_eq!(profile.payload_storage_placement(), None);
     }
 }
