@@ -1084,8 +1084,8 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             .point_to_doc_len
             .is_some()
             .then(|| self.storage.postings.total_tokens())
-            // Zero over live documents is a header written before it carried
-            // the total: report no lengths rather than a wrong average.
+            // Zero over a build with documents is a header written before it
+            // carried the total: report no lengths rather than a wrong average.
             .filter(|&total| total > 0 || self.storage.documents == 0)
     }
 

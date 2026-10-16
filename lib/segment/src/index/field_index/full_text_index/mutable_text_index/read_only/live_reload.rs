@@ -35,6 +35,11 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
         // deletion the record stays: the writer's index keeps counting the
         // tombstoned document until the segment is rebuilt, and so does this
         // one. The id tracker hides it from results.
+        //
+        // Assumes append-only deletion, the mode live-reloaded readers run
+        // under. Otherwise the writer flushes the id tracker before the payload
+        // index, so a reload in between sees the delete with the record still
+        // there, and keeps counting a document no later delta removes.
         self.storage
             .view()
             .read_values::<Sequential, _, OperationError>(
