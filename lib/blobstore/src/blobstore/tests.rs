@@ -2463,3 +2463,42 @@ fn test_disable_journal() {
     storage.flusher()().unwrap();
     assert!(!dir.path().join(TRACKER_JOURNAL_FILE).exists());
 }
+
+#[test]
+fn test_iter_batch_in_order() {
+    let mut batch = Vec::new();
+    let mut visited = Vec::new();
+
+    // Reads completing out of order are passed on in ascending order
+    let should_continue = iter_batch_in_order(
+        &mut batch,
+        |batch| -> std::result::Result<_, BlobstoreError> {
+            batch.extend([(7, 'c'), (2, 'a'), (5, 'b')]);
+            Ok(())
+        },
+        |point_offset, value| {
+            visited.push((point_offset, value));
+            Ok(true)
+        },
+    )
+    .unwrap();
+    assert!(should_continue);
+    assert_eq!(visited, [(2, 'a'), (5, 'b'), (7, 'c')]);
+
+    // Stopping early skips the rest of the batch
+    visited.clear();
+    let should_continue = iter_batch_in_order(
+        &mut batch,
+        |batch| -> std::result::Result<_, BlobstoreError> {
+            batch.extend([(9, 'e'), (8, 'd')]);
+            Ok(())
+        },
+        |point_offset, value| {
+            visited.push((point_offset, value));
+            Ok(false)
+        },
+    )
+    .unwrap();
+    assert!(!should_continue);
+    assert_eq!(visited, [(8, 'd')]);
+}
