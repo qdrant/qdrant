@@ -32,7 +32,7 @@ pub(super) fn upload_and_build_main_graph(
     has_additional_links: bool,
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    quantized_vectors: Option<&QuantizedVectors>,
     graph_layers_builder: &GraphLayersBuilder,
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
@@ -67,7 +67,7 @@ pub(super) fn upload_and_build_main_graph(
 fn build_main_graph_on_gpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    quantized_vectors: Option<&QuantizedVectors>,
     gpu_vectors: Option<&Arc<GpuVectorStorage>>,
     graph_layers_builder: &GraphLayersBuilder,
     deleted_bitslice: &BitSlice,
@@ -78,7 +78,7 @@ fn build_main_graph_on_gpu(
         FilteredScorer::new_internal(
             vector_id,
             vector_storage,
-            quantized_vectors.as_ref(),
+            quantized_vectors,
             None,
             id_tracker.deleted_point_bitslice(),
         )
@@ -114,7 +114,7 @@ fn build_main_graph_on_gpu(
 pub(super) fn build_block_on_gpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    quantized_vectors: Option<&QuantizedVectors>,
     gpu_insert_context: &mut GpuInsertContext,
     reference_graph: &GraphLayersBuilder,
     points_to_index: &[PointOffsetType],
@@ -131,7 +131,7 @@ pub(super) fn build_block_on_gpu(
             FilteredScorer::new_internal(
                 block_point_id,
                 vector_storage,
-                quantized_vectors.as_ref(),
+                quantized_vectors,
                 None,
                 id_tracker.deleted_point_bitslice(),
             )
@@ -184,7 +184,7 @@ fn build_graph_on_gpu<'a>(
 fn create_gpu_vectors(
     gpu_device: Option<&LockedGpuDevice>,
     vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    quantized_vectors: Option<&QuantizedVectors>,
     stopped: &AtomicBool,
 ) -> OperationResult<Option<GpuVectorStorage>> {
     use crate::index::hnsw_index::gpu::get_gpu_force_half_precision;
@@ -196,7 +196,7 @@ fn create_gpu_vectors(
         let gpu_vectors = GpuVectorStorage::new(
             gpu_device.device(),
             vector_storage,
-            quantized_vectors.as_ref(),
+            quantized_vectors,
             get_gpu_force_half_precision(),
             stopped,
         );
