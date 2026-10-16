@@ -181,7 +181,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             mutable_index,
             config,
             memory,
-            tokenizer,
+            tokenizer: _,
             deleted_points,
         } = self;
 
@@ -194,27 +194,16 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         // Same placement a later open would apply, so the built index can serve as-is.
         let memory = memory.clamp_to_low_memory();
         let populate = Populate::from(memory.populate_on_open());
-        let has_positions = config.phrase_matching.unwrap_or_default();
-        let inverted_index =
-            OnDiskInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
-                .ok_or_else(|| {
-                    OperationError::service_error(
-                        "Failed to open OnDiskInvertedIndex that was just created",
-                    )
-                })?;
-
-        let on_disk_index = OnDiskFullTextIndex {
-            inverted_index,
-            tokenizer,
-            cold: !memory.populate_on_open(),
-        };
-
         let text_index = if memory.is_heap() {
-            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+            ImmutableFullTextIndex::open(&MmapFs, path, config, populate, &deleted_points)?
+                .map(FullTextIndex::Immutable)
         } else {
-            FullTextIndex::OnDisk(on_disk_index)
+            OnDiskFullTextIndex::open(&MmapFs, path, config, populate, &deleted_points)?
+                .map(FullTextIndex::OnDisk)
         };
 
-        Ok(text_index)
+        text_index.ok_or_else(|| {
+            OperationError::service_error("Failed to open full text index that was just created")
+        })
     }
 }

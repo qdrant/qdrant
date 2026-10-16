@@ -1,64 +1,76 @@
+use std::marker::PhantomData;
 use std::path::PathBuf;
 
+use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{Populate, UniversalRead, UniversalReadFs};
 
 use super::super::inverted_index::InvertedIndex;
 use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
-use super::super::on_disk_text_index::OnDiskFullTextIndex;
+use super::super::tokenizers::Tokenizer;
 use super::ImmutableFullTextIndex;
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
+use crate::data_types::index::TextIndexParams;
 
 impl<S: UniversalRead> ImmutableFullTextIndex<S> {
-    /// Open and load the immutable full text index from on-disk storage.
-    pub fn load_from_on_disk(mut index: OnDiskFullTextIndex<S>) -> OperationResult<Self> {
-        let inverted_index = ImmutableInvertedIndex::load_from_on_disk(&mut index.inverted_index)?;
-
-        // Index is now loaded into memory, clear cache of backing on-disk storage
-        if let Err(err) = index.inverted_index.clear_cache() {
-            log::warn!("Failed to clear cache of on-disk full text index: {err}");
-        }
-
-        let mut result = Self {
-            inverted_index,
-            storage: index,
-            cached_ram_usage_bytes: 0,
+    /// Read the on-disk index at `path` into RAM, or `None` when there is no
+    /// index at `path`.
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: PathBuf,
+        config: TextIndexParams,
+        populate: Populate,
+        deleted_points: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
+        let has_positions = config.phrase_matching == Some(true);
+        let Some((inverted_index, files)) =
+            ImmutableInvertedIndex::open(fs, &path, populate, has_positions, deleted_points)?
+        else {
+            return Ok(None);
         };
-        result.cached_ram_usage_bytes = result.inverted_index.ram_usage_bytes();
-        Ok(result)
+        let cached_ram_usage_bytes = inverted_index.ram_usage_bytes();
+        Ok(Some(Self {
+            inverted_index,
+            tokenizer: Tokenizer::new_from_text_index_params(&config),
+            path,
+            files,
+            cached_ram_usage_bytes,
+            _storage: PhantomData,
+        }))
     }
 
-    /// Apply the deletion to both `inverted_index` (the in-RAM cache used
-    /// by queries) and `storage` (keeps the mmap's `points_count()` in
-    /// sync; not persisted — id-tracker re-supplies on reload).
+    /// Whether this index has document lengths on disk.
+    pub fn records_doc_len(&self) -> bool {
+        self.inverted_index.total_tokens().is_some()
+    }
+
+    /// Not persisted: the id-tracker re-supplies deletions on reload.
     pub fn remove_point(&mut self, id: PointOffsetType) {
-        if self.inverted_index.remove(id) {
-            self.storage.remove_point(id);
-        }
+        self.inverted_index.remove(id);
     }
 
+    /// Remove the directory rather than the files `files()` reports, for the
+    /// same reason
+    /// [`OnDiskFullTextIndex::wipe`](super::super::on_disk_text_index::OnDiskFullTextIndex::wipe)
+    /// does.
     pub fn wipe(self) -> OperationResult<()> {
-        self.storage.wipe()
+        fs_err::remove_dir_all(&self.path)?;
+        Ok(())
     }
 
+    /// No-op flusher: the on-disk files are build-time only.
+    #[allow(clippy::unused_self)]
     pub fn flusher(&self) -> Flusher {
-        self.storage.flusher()
-    }
-
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.storage.clear_cache().map_err(|err| {
-            OperationError::service_error(format!(
-                "Failed to clear immutable full text index gridstore cache: {err}"
-            ))
-        })
+        Box::new(|| Ok(()))
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        self.storage.files()
+        self.files.clone()
     }
 
+    /// Every file is written once at build time, as for the on-disk index.
     pub fn immutable_files(&self) -> Vec<PathBuf> {
-        self.storage.immutable_files()
+        self.files()
     }
 }

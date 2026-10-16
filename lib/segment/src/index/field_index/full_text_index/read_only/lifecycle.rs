@@ -45,7 +45,7 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         let scoring = config.scoring();
         Ok(
             ReadOnlyAppendableFullTextIndex::open(fs, dir, max_point_offset, config, scoring)?
-                .map(Self::Appendable),
+                .map(|index| Self::Appendable(Box::new(index))),
         )
     }
 
@@ -103,24 +103,23 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             return Ok(None);
         }
 
-        let Some(on_disk_index) =
+        let opened = if memory.is_heap() {
+            ImmutableFullTextIndex::open(fs, path, config, populate, deleted_points)?
+                .map(|index| (index.records_doc_len(), Self::Immutable(index)))
+        } else {
             OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points)?
-        else {
+                .map(|index| (index.records_doc_len(), Self::OnDisk(index)))
+        };
+        let Some((records_doc_len, index)) = opened else {
             return Ok(None);
         };
 
         // Reachable past the probe when the sidecar exists but `open` rejected
         // it, so the log says which of the two happened.
-        if scoring && !on_disk_index.records_doc_len() {
+        if scoring && !records_doc_len {
             log::info!("Text index rejected its document length sidecar, not opened read-only");
             return Ok(None);
         }
-
-        let index = if memory.is_heap() {
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
-        } else {
-            Self::OnDisk(on_disk_index)
-        };
 
         Ok(Some(index))
     }
@@ -174,7 +173,8 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
             Self::Appendable(index) => index.clear_cache(),
-            Self::Immutable(index) => index.clear_cache(),
+            // Nothing to drop: no file is open, and the load cleared their cache.
+            Self::Immutable(_) => Ok(()),
             Self::OnDisk(index) => index.clear_cache(),
         }
     }
