@@ -29,6 +29,9 @@ mod batch;
 mod holder;
 mod lifecycle;
 pub(crate) mod locate;
+mod metering;
+#[cfg(test)]
+mod metering_tests;
 mod preview;
 #[cfg(test)]
 mod tests;
@@ -47,6 +50,7 @@ use uuid::Uuid;
 pub use self::apply::{PointApplyKind, PointApplyRecord, UpdateBatchOutcome};
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
 use self::holder::LookupSegmentHolder;
+pub use self::metering::{UpdateBytes, UpdateMetering};
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
 
 /// A batch writer over the segments of one shard directory.
