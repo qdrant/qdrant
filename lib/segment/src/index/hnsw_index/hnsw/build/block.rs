@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 
-use super::super::context::{GraphBuildContext, GraphParams};
+use super::context::{GraphBuildContext, GraphParams};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
