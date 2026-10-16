@@ -119,7 +119,7 @@ pub fn cut_at_threshold(points: &mut Vec<ScoredPoint>, score_threshold: Option<S
 /// A query context seeded with the text statistics of `field` for `terms`
 /// over `idf_corpus` (every point when `None`), ready to be filled over the
 /// shard's segments by
-/// [`fill_query_context`](super::query_context::fill_query_context).
+/// [`fill_segment_query_context`](super::query_context::fill_segment_query_context).
 pub fn init_text_query_context(
     field: &JsonPath,
     idf_corpus: Option<&Filter>,

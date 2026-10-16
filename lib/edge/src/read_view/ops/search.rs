@@ -173,8 +173,8 @@ fn postprocess_scores(
 
 /// Fill a [`QueryContext`] from a pre-collected snapshot of read handles.
 ///
-/// Read-handle equivalent of [`shard::query::query_context::fill_query_context`], which is hard-typed
-/// to a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
+/// Sequential read-handle equivalent of `SegmentsSearcher::fill_query_context`, which
+/// fans out over a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
 pub(super) fn fill_query_context_over<H: ReadSegmentHandle>(
     mut query_context: QueryContext,
     segments: &[H],
