@@ -9,7 +9,6 @@ use serde_json::Value;
 use super::super::FullTextIndex;
 use super::super::immutable_text_index::ImmutableFullTextIndex;
 use super::super::inverted_index::InvertedIndex;
-use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::super::tokenizers::Tokenizer;
@@ -186,11 +185,11 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             deleted_points,
         } = self;
 
-        let immutable = ImmutableInvertedIndex::from(mutable_index);
-
         fs::create_dir_all(path.as_path())?;
 
-        OnDiskInvertedIndex::create(path.clone(), &immutable)?;
+        // Reopened below rather than kept: the in-RAM placement loads from the
+        // files, the same way a restart does.
+        let _ = OnDiskInvertedIndex::create(path.clone(), mutable_index)?;
 
         // Same placement a later open would apply, so the built index can serve as-is.
         let memory = memory.clamp_to_low_memory();

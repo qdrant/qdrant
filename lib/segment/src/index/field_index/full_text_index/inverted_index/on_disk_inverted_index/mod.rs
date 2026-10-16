@@ -10,8 +10,8 @@ use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OpenOptions, Populate, ReadRange, TypedStorage, UioResult,
-    UniversalRead, UniversalReadFs, UserData,
+    CachedReadFs, MmapFile, OkNotFound, OneshotFile, OpenOptions, Populate, ReadRange,
+    TypedStorage, UioResult, UniversalRead, UniversalReadFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
@@ -21,6 +21,7 @@ use super::bm25::{Bm25Accept, Bm25Query, ON_DISK_BLOCK, PositionalCursors, score
 use super::doc_len::decode_doc_len;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
+use super::mutable_inverted_index::MutableInvertedIndex;
 use super::on_disk_inverted_index::on_disk_postings_enum::OnDiskPostingsEnum;
 use super::positions::Positions;
 use super::postings_iterator::{
@@ -38,6 +39,7 @@ use crate::index::field_index::full_text_index::inverted_index::postings_iterato
 };
 
 mod create_postings;
+pub(super) mod doc_len_sidecar;
 mod on_disk_postings;
 pub mod on_disk_postings_enum;
 mod raw_posting_list;
@@ -91,19 +93,28 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     pub postings: OnDiskPostingsEnum<S>,
     pub vocab: UniversalHashMap<str, TokenId, S>,
     pub point_to_tokens_count: TypedStorage<S, usize>,
-    /// Total tokens per point, for BM25 length normalization, as the codes of
-    /// [`encode_doc_len`](super::doc_len::encode_doc_len). `None` when the
+    /// Total tokens per point, for BM25 length normalization. `None` when the
     /// index does not record lengths.
     ///
     /// Written once at build time and never masked, like
     /// `point_to_tokens_count`, so anything summing these must filter through
     /// `deleted_points` first.
-    pub point_to_doc_len: Option<TypedStorage<S, u16>>,
+    pub point_to_doc_len: Option<DocLens>,
     pub deleted_points: DeletedBitVec,
-    /// Slots in the per-point files, live or not. The point space this index
-    /// covers, so that a point id past it can be told apart from one this index
-    /// holds no tokens for.
-    pub total_points: usize,
+}
+
+/// The document lengths of an on-disk index, held in RAM.
+///
+/// The sidecar keeps exact lengths, bit-packed, and is never read in place: a
+/// query reads the lengths of candidates spread over the whole point space, so
+/// [`OnDiskInvertedIndex::open`] decodes it once into the codes of
+/// [`encode_doc_len`](super::doc_len::encode_doc_len), 2 bytes a point.
+pub enum DocLens {
+    /// One code per point, unmasked like the file they come from.
+    Loaded(Vec<u16>),
+    /// Handed over to the in-RAM index loaded from this one, which answers
+    /// for them from then on. The sidecar is still part of this index's files.
+    Moved,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -112,22 +123,44 @@ impl<S: UniversalRead> Storage<S> {
             postings: _,
             vocab: _,
             point_to_tokens_count: _,
-            point_to_doc_len: _,
+            point_to_doc_len,
             deleted_points,
-            total_points: _,
         } = self;
 
-        deleted_points.ram_usage_bytes()
+        let doc_len_bytes = match point_to_doc_len {
+            Some(DocLens::Loaded(codes)) => codes.capacity() * size_of::<u16>(),
+            Some(DocLens::Moved) | None => 0,
+        };
+        deleted_points.ram_usage_bytes() + doc_len_bytes
     }
 }
 
 impl OnDiskInvertedIndex<MmapFile> {
-    pub fn create(path: PathBuf, inverted_index: &ImmutableInvertedIndex) -> OperationResult<()> {
+    /// Write the index built in `mutable` to `path`, and hand back the in-RAM
+    /// immutable index it was written from.
+    ///
+    /// Takes the mutable index rather than the immutable one because only the
+    /// mutable index holds exact document lengths, which is what the sidecar
+    /// keeps; the immutable one holds their codes.
+    pub fn create(
+        path: PathBuf,
+        mutable: MutableInvertedIndex,
+    ) -> OperationResult<ImmutableInvertedIndex> {
+        let (inverted_index, doc_lens) = ImmutableInvertedIndex::from_mutable(mutable);
+        Self::write_files(&path, &inverted_index, doc_lens.as_deref())?;
+        Ok(inverted_index)
+    }
+
+    fn write_files(
+        path: &Path,
+        inverted_index: &ImmutableInvertedIndex,
+        doc_lens: Option<&[u32]>,
+    ) -> OperationResult<()> {
         let ImmutableInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count,
-            point_to_doc_len,
+            point_to_doc_len: _,
             total_tokens,
             points_count: _,
         } = inverted_index;
@@ -156,7 +189,7 @@ impl OnDiskInvertedIndex<MmapFile> {
         // Save point_to_tokens_count, separated into a "no tokens" mask and a
         // slice for actual values.
         save_deleted_mask(
-            &path,
+            path,
             DELETED_POINTS_FILE,
             point_to_tokens_count.len(),
             point_to_tokens_count
@@ -171,9 +204,10 @@ impl OnDiskInvertedIndex<MmapFile> {
 
         MmapSlice::create(&point_to_tokens_count_path, point_to_tokens_count_iter)?;
 
-        match point_to_doc_len {
+        match doc_lens {
             Some(lens) => {
-                let _ = MmapSlice::create(&point_to_doc_len_path, lens.iter().copied())?;
+                debug_assert_eq!(lens.len(), point_to_tokens_count.len());
+                doc_len_sidecar::write(&point_to_doc_len_path, lens)?;
             }
             // Every other file here is rewritten in place, so this is the only
             // one that could survive a rebuild. `open` would then read a
@@ -237,16 +271,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         );
 
         // Scheduled unconditionally: the scheduler records a missing path as a
-        // ready not-found rather than erroring. Populated whatever the
+        // ready not-found rather than erroring. Read in full whatever the
         // placement, as in `open`.
-        fs.schedule_open(
-            &path.join(POINT_TO_DOC_LEN_FILE),
-            Some(Self::open_options(
-                Populate::PreferBackground,
-                AdviceSetting::Global,
-            )),
-            None,
-        );
+        OneshotFile::<S>::preopen(fs, path.join(POINT_TO_DOC_LEN_FILE));
 
         // "No tokens" mask
         preopen_deleted_mask(
@@ -309,17 +336,10 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // Absent unless this index records lengths. What that means is the
         // caller's call, not this one's: see `FullTextIndex::new_mmap`.
         //
-        // Populated whatever the placement: 2 bytes a point, and a query reads
-        // the lengths of candidates spread over the whole file, so a cold one
-        // would fault it in a page at a time.
-        let point_to_doc_len = fs
-            .open(
-                &point_to_doc_len_path,
-                Self::open_options(Populate::PreferBackground, AdviceSetting::Global),
-                Default::default(),
-            )
-            .ok_not_found()?
-            .map(TypedStorage::<S, u16>::new);
+        // Decoded into RAM whatever the placement: 2 bytes a point, and a query
+        // reads the lengths of candidates spread over the whole point space.
+        // One sequential read, then the file leaves the page cache.
+        let point_to_doc_len = OneshotFile::open(fs, &point_to_doc_len_path).ok_not_found()?;
 
         // `deleted` length must match `point_to_tokens_count.len()` because it
         // only tracks the index's contents. The id-tracker's deleted mask can
@@ -332,21 +352,22 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // A sidecar that does not cover exactly the index's points can only
         // come from a partially copied or stale file set, and is not trusted to
         // locate lengths: a short one would have to be padded with zeroes that
-        // read like real lengths, and a long one would be silently truncated
-        // when it is materialized. Treated as absent, with a warning, the way
+        // read like real lengths, and a long one would be silently truncated.
+        // Nor is one in another format, such as the unpacked `u32` array of
+        // earlier builds. Treated as absent, with a warning, the way
         // `SortedBlockIndex::open` treats a stale block index.
         let point_to_doc_len = match point_to_doc_len {
-            Some(storage) => {
-                let sidecar_count = storage.len()? as usize;
-                if sidecar_count == total_count {
-                    Some(storage)
-                } else {
-                    log::warn!(
-                        "Ignoring document length sidecar {path}: it covers {sidecar_count} \
-                         points while the index has {total_count}",
-                        path = point_to_doc_len_path.display(),
-                    );
-                    None
+            Some(file) => {
+                let bytes = file.read_whole::<u8>()?;
+                match doc_len_sidecar::read_codes(&bytes, total_count) {
+                    Ok(codes) => Some(DocLens::Loaded(codes)),
+                    Err(reason) => {
+                        log::warn!(
+                            "Ignoring document length sidecar {path}: {reason}",
+                            path = point_to_doc_len_path.display(),
+                        );
+                        None
+                    }
                 }
             }
             None => None,
@@ -372,7 +393,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 point_to_tokens_count,
                 point_to_doc_len,
                 deleted_points: deleted,
-                total_points: total_count,
             },
             compact_deleted_mask,
         }))
@@ -390,6 +410,25 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     /// Whether this index has document lengths on disk.
     pub fn records_doc_len(&self) -> bool {
         self.storage.point_to_doc_len.is_some()
+    }
+
+    /// Move the decoded lengths out, for an in-RAM index loaded from this one
+    /// to own. `None` when this index records no lengths, or they were moved
+    /// already.
+    pub(super) fn take_doc_len_codes(&mut self) -> Option<Vec<u16>> {
+        let doc_lens = self.storage.point_to_doc_len.as_mut()?;
+        match std::mem::replace(doc_lens, DocLens::Moved) {
+            DocLens::Loaded(codes) => Some(codes),
+            DocLens::Moved => None,
+        }
+    }
+
+    /// The decoded lengths, unless they were moved to an in-RAM index.
+    pub(super) fn doc_len_codes(&self) -> Option<&[u16]> {
+        match self.storage.point_to_doc_len.as_ref()? {
+            DocLens::Loaded(codes) => Some(codes),
+            DocLens::Moved => None,
+        }
     }
 
     /// Returns whether the point id is valid and active.
@@ -775,9 +814,6 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage.postings.populate()?;
         self.storage.vocab.populate()?;
         self.storage.point_to_tokens_count.populate()?;
-        if let Some(point_to_doc_len) = &self.storage.point_to_doc_len {
-            point_to_doc_len.populate()?;
-        }
         Ok(())
     }
 
@@ -792,16 +828,13 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings,
             vocab,
             point_to_tokens_count,
-            point_to_doc_len,
+            // In RAM, and its file left the page cache when it was read.
+            point_to_doc_len: _,
             deleted_points: _,
-            total_points: _,
         } = storage;
         postings.clear_cache()?;
         vocab.clear_ram_cache()?;
         point_to_tokens_count.clear_ram_cache()?;
-        if let Some(point_to_doc_len) = point_to_doc_len {
-            point_to_doc_len.clear_ram_cache()?;
-        }
         clear_disk_cache(&deleted_mask_file(
             path,
             *compact_deleted_mask,
@@ -962,38 +995,35 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         point_ids: &[PointOffsetType],
         mut f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()> {
-        let Some(storage) = self.storage.point_to_doc_len.as_ref() else {
-            (0..point_ids.len()).for_each(|index| f(index, None));
-            return Ok(());
+        let codes = match self.storage.point_to_doc_len.as_ref() {
+            None => {
+                (0..point_ids.len()).for_each(|index| f(index, None));
+                return Ok(());
+            }
+            Some(DocLens::Loaded(codes)) => codes,
+            // Only the in-RAM index loaded from this one serves queries then.
+            Some(DocLens::Moved) => {
+                return Err(OperationError::service_error(
+                    "document lengths were moved to the in-RAM text index",
+                ));
+            }
         };
-        let mut reads = Vec::with_capacity(point_ids.len());
         for (index, &point_id) in point_ids.iter().enumerate() {
-            if point_id as usize >= self.storage.total_points {
+            let doc_len = match codes.get(point_id as usize) {
                 // Past the point space this index covers. The in-RAM backends
-                // answer the same way, by the length of their vector. Bounding
-                // by `total_points` is enough, since `open` drops a sidecar
-                // shorter than `point_to_tokens_count`; asking the file its
-                // `len()` instead is an fstat on io_uring and a blocking HEAD
-                // request on object storage.
-                f(index, None);
-            } else if !self.storage.deleted_points.is_active(point_id) {
+                // answer the same way, by the length of their vector; `open`
+                // keeps only a sidecar that covers exactly the index's points.
+                None => None,
                 // Deleted, or empty when the index was built. The sidecar is
                 // written unmasked and still holds the old length, while the
                 // in-RAM backends hold a zero: answer the zero, so the same
                 // data reads the same way whichever backend a host loads.
-                f(index, Some(0));
-            } else {
-                let byte_offset = u64::from(point_id) * size_of::<u16>() as u64;
-                reads.push((index, ReadRange::one(byte_offset)));
-            }
+                Some(_) if !self.storage.deleted_points.is_active(point_id) => Some(0),
+                Some(&code) => Some(decode_doc_len(code)),
+            };
+            f(index, doc_len);
         }
-        HwMetric::PayloadIndexIoRead.bump(reads.len() * size_of::<u16>());
-        // A failed read is an error rather than a missing value: `None` means
-        // "no length recorded", which is the distinction the sidecar keeps.
-        storage.read_batch(reads, Random, |index, doc_len: &[u16]| {
-            f(index, doc_len.first().copied().map(decode_doc_len));
-            Ok::<_, OperationError>(())
-        })
+        Ok(())
     }
 
     /// The build-time total from the postings header: deletions since the

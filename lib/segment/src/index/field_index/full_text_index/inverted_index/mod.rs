@@ -442,7 +442,7 @@ pub trait InvertedIndex {
 mod tests {
     use common::ambient;
     use common::ambient::AmbientContext;
-    use common::ambient::hw::{self, HwMetric};
+    use common::ambient::hw::HwMetric;
     use common::bitvec::BitVec;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, MmapFs, Populate};
@@ -455,6 +455,7 @@ mod tests {
     use crate::index::field_index::full_text_index::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::mutable_inverted_index::MutableInvertedIndex;
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::types::PostingsHeader;
+    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::doc_len_sidecar::read_exact;
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::{
         OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE, POSTINGS_FILE,
     };
@@ -593,13 +594,11 @@ mod tests {
         use std::collections::HashSet;
 
         let mutable = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
-        let immutable = ImmutableInvertedIndex::from(mutable);
-
         let mmap_dir = tempfile::tempdir().unwrap();
 
         let _scope = ambient::test_guard();
 
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let immutable = OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -652,13 +651,9 @@ mod tests {
             .unwrap()
             .into_owned();
         let mmap_doc_lens = mmap
-            .storage
-            .point_to_doc_len
-            .as_ref()
+            .doc_len_codes()
             .expect("sidecar written for a scoring index")
-            .read_whole()
-            .unwrap()
-            .into_owned();
+            .to_vec();
         let immutable_doc_lens = immutable
             .point_to_doc_len
             .as_ref()
@@ -708,10 +703,9 @@ mod tests {
     #[rstest]
     fn missing_doc_len_sidecar_reports_no_lengths(#[values(false, true)] phrase_matching: bool) {
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
-        let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable).unwrap();
         let empty_deleted = BitVec::new();
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
 
@@ -752,14 +746,13 @@ mod tests {
     #[rstest]
     fn doc_len_is_masked_for_runtime_deletions(#[values(false, true)] phrase_matching: bool) {
         let mutable = mutable_inverted_index(64, 0, phrase_matching);
-        let immutable = ImmutableInvertedIndex::from(mutable);
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let immutable = OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable).unwrap();
         let lens_at_build = immutable
             .point_to_doc_len
             .clone()
             .expect("the fixture records lengths");
-
-        let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
 
         // A point that is live and non-empty on disk, deleted only at runtime.
         let victim = lens_at_build
@@ -779,14 +772,7 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        let on_disk = mmap
-            .storage
-            .point_to_doc_len
-            .as_ref()
-            .unwrap()
-            .read_whole()
-            .unwrap()
-            .into_owned();
+        let on_disk = mmap.doc_len_codes().unwrap();
         assert_eq!(
             on_disk[victim], lens_at_build[victim],
             "the file itself is written once and keeps the original length",
@@ -831,9 +817,8 @@ mod tests {
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
         let empty_deleted = BitVec::new();
 
-        let with_lengths =
-            ImmutableInvertedIndex::from(mutable_inverted_index(64, 0, phrase_matching));
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &with_lengths).unwrap();
+        let with_lengths = mutable_inverted_index(64, 0, phrase_matching);
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), with_lengths).unwrap();
         assert!(sidecar.exists());
 
         // The same points, indexed by a build that records nothing.
@@ -844,8 +829,7 @@ mod tests {
                 .index_str_tokens(idx, &tokens, None)
                 .unwrap();
         }
-        let without_lengths = ImmutableInvertedIndex::from(without_lengths);
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &without_lengths).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), without_lengths).unwrap();
 
         assert!(
             !sidecar.exists(),
@@ -870,10 +854,9 @@ mod tests {
     #[rstest]
     fn oversized_doc_len_sidecar_is_ignored(#[values(false, true)] phrase_matching: bool) {
         let mutable = mutable_inverted_index(64, 0, phrase_matching);
-        let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable).unwrap();
 
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
         let full = fs_err::metadata(&sidecar).unwrap().len();
@@ -905,10 +888,9 @@ mod tests {
     #[rstest]
     fn truncated_doc_len_sidecar_is_ignored(#[values(false, true)] phrase_matching: bool) {
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
-        let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable).unwrap();
 
         let sidecar = mmap_dir.path().join(POINT_TO_DOC_LEN_FILE);
         let full = fs_err::metadata(&sidecar).unwrap().len();
@@ -940,10 +922,9 @@ mod tests {
     #[rstest]
     fn zero_header_total_reports_no_total(#[values(false, true)] phrase_matching: bool) {
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
-        let immutable = ImmutableInvertedIndex::from(mutable);
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable).unwrap();
 
         let postings = mmap_dir.path().join(POSTINGS_FILE);
         let mut bytes = fs_err::read(&postings).unwrap();
@@ -976,10 +957,10 @@ mod tests {
     ) {
         let _scope = ambient::test_guard();
         let mutable = mutable_inverted_index(200, 20, phrase_matching);
-        let immutable = ImmutableInvertedIndex::from(mutable.clone());
 
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let immutable =
+            OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable.clone()).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -1009,24 +990,13 @@ mod tests {
             .map(|doc_len| u64::from(doc_len.expect("every point of the index has a length")))
             .sum();
 
-        // Only the lengths that come from the sidecar are billed.
+        // The on-disk backend holds its lengths in RAM too, so answering
+        // reads nothing and bills nothing.
         let mmap_acc = AmbientContext::new();
         mmap_acc.measure(|| doc_lens(&mmap, &shuffled));
-        let read_count = shuffled
-            .iter()
-            .filter(|&&point_id| point_id < point_count && mmap.is_active(point_id))
-            .count();
-        assert_eq!(
-            mmap_acc.hw_data()[HwMetric::PayloadIndexIoRead],
-            read_count * size_of::<u16>(),
-        );
+        assert_eq!(mmap_acc.hw_data()[HwMetric::PayloadIndexIoRead], 0);
 
         assert!(live_total > 0, "the fixture indexed nothing");
-        // Only the on-disk backend reads anything to answer, and it bills it.
-        assert!(
-            hw::pending()[HwMetric::PayloadIndexIoRead] > 0,
-            "on-disk reads must be measured",
-        );
 
         for (backend, total) in [
             ("mutable", mutable.total_tokens()),
@@ -1051,10 +1021,9 @@ mod tests {
             let tokens: Vec<String> = (0..=idx).map(|_| generate_word()).collect();
             mutable.index_str_tokens(idx, &tokens, None).unwrap();
         }
-        let immutable = ImmutableInvertedIndex::from(mutable.clone());
-
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let immutable =
+            OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable.clone()).unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -1097,20 +1066,33 @@ mod tests {
             .unwrap();
         mutable.remove(removed);
 
-        let immutable = ImmutableInvertedIndex::from(mutable.clone());
         let mmap_dir = tempfile::tempdir().unwrap();
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        let immutable =
+            OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable.clone()).unwrap();
         let empty_deleted = BitVec::new();
-        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
-            &MmapFs,
-            mmap_dir.path().into(),
-            Populate::No,
-            phrase_matching,
-            &empty_deleted,
-        )
-        .unwrap()
-        .unwrap();
+        let open = || -> OnDiskInvertedIndex {
+            OnDiskInvertedIndex::open(
+                &MmapFs,
+                mmap_dir.path().into(),
+                Populate::No,
+                phrase_matching,
+                &empty_deleted,
+            )
+            .unwrap()
+            .unwrap()
+        };
+        let mmap = open();
         let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+        // The heap placement's path, which moves the lengths instead.
+        let mut backing = open();
+        let loaded = ImmutableInvertedIndex::load_from_on_disk(&mut backing).unwrap();
+
+        // Whatever the backends round to, the file keeps every length exactly,
+        // the removed point's zeroed.
+        let sidecar = fs_err::read(mmap_dir.path().join(POINT_TO_DOC_LEN_FILE)).unwrap();
+        let mut exact = lens.to_vec();
+        exact.push(0);
+        assert_eq!(read_exact(&sidecar, exact.len()).unwrap(), exact);
 
         let point_ids: Vec<PointOffsetType> = (0..lens.len() as PointOffsetType).collect();
         let expected: Vec<Option<u32>> = lens.iter().map(|&len| Some(round_doc_len(len))).collect();
@@ -1135,10 +1117,27 @@ mod tests {
                 doc_lens(&imm_mmap, &point_ids),
                 imm_mmap.total_tokens(),
             ),
+            (
+                "loaded from mmap",
+                doc_lens(&loaded, &point_ids),
+                loaded.total_tokens(),
+            ),
         ] {
             assert_eq!(lengths, expected, "{backend}");
             assert_eq!(total, Some(expected_total), "{backend}");
         }
+
+        // Moved, not copied: the backing index keeps the file, not the codes.
+        assert!(backing.records_doc_len());
+        assert!(backing.doc_len_codes().is_none());
+        assert!(
+            backing
+                .files()
+                .contains(&mmap_dir.path().join(POINT_TO_DOC_LEN_FILE)),
+            "the sidecar stays in the snapshot file set",
+        );
+        assert!(backing.ram_usage_bytes() < mmap.ram_usage_bytes());
+        assert!(ImmutableInvertedIndex::load_from_on_disk(&mut backing).is_err());
     }
 
     #[rstest]
@@ -1151,8 +1150,7 @@ mod tests {
 
         let mut mut_index = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
 
-        let immutable = ImmutableInvertedIndex::from(mut_index.clone());
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), &immutable).unwrap();
+        OnDiskInvertedIndex::create(mmap_dir.path().into(), mut_index.clone()).unwrap();
         let empty_deleted = BitVec::new();
         let mut mmap_index = OnDiskInvertedIndex::open(
             &MmapFs,
