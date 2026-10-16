@@ -182,6 +182,14 @@ where
         }
     }
 
+    /// Whether this storage is in append-only (Logstore) mode.
+    ///
+    /// Append-only storages reject [`Self::delete_value`]; callers that only need a soft
+    /// deletion marker must skip the hard delete themselves.
+    pub fn is_append_only(&self) -> bool {
+        matches!(self.inner, BlobstoreInner::Logstore(_))
+    }
+
     /// Delete a value from the storage.
     ///
     /// Returns None if the point_offset, page, or value was not found.
