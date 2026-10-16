@@ -22,6 +22,7 @@ use storage::content_manager::collection_meta_ops::{
     CreateCollection, CreateCollectionOperation, DeleteAlias, RenameAlias,
 };
 use storage::content_manager::consensus::operation_sender::OperationSender;
+use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::consensus_state_machine::Action;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::{ALIASES_PATH, TableOfContent};
@@ -167,8 +168,28 @@ fn update_aliases_action_persists_mapping() {
 }
 
 pub(super) fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
-    let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
+    let (storage_dir, handle, dispatcher, _proposals) = new_dispatcher_with_proposals();
+    (storage_dir, handle, dispatcher)
+}
 
+pub(super) fn new_dispatcher_with_proposals() -> (
+    TempDir,
+    Handle,
+    Dispatcher,
+    std::sync::mpsc::Receiver<ConsensusOperations>,
+) {
+    let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
+    open_dispatcher(storage_dir)
+}
+
+pub(super) fn open_dispatcher(
+    storage_dir: TempDir,
+) -> (
+    TempDir,
+    Handle,
+    Dispatcher,
+    std::sync::mpsc::Receiver<ConsensusOperations>,
+) {
     let config = StorageConfig {
         storage_path: storage_dir.path().to_path_buf(),
         snapshots_path: storage_dir.path().join("snapshots"),
@@ -219,7 +240,7 @@ pub(super) fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
         quotas: Default::default(),
     };
 
-    let (propose_sender, _propose_receiver) = std::sync::mpsc::channel();
+    let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
     let propose_operation_sender = OperationSender::new(propose_sender);
 
     let toc = Arc::new(
@@ -234,7 +255,7 @@ pub(super) fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
     );
     let handle = toc.general_runtime_handle().clone();
 
-    (storage_dir, handle, Dispatcher::new(toc))
+    (storage_dir, handle, Dispatcher::new(toc), propose_receiver)
 }
 
 pub(super) fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {

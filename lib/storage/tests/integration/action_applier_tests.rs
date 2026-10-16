@@ -3,7 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
-use collection::config::ShardingMethod;
+use collection::collection_state::{self, ShardInfo};
+use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::hash_ring::HashRingRouter;
 use collection::operations::cluster_ops::ReshardingDirection;
 use collection::operations::config_diff::HnswConfigDiff;
@@ -34,17 +35,373 @@ use shard::segment_holder::SegmentHolder;
 use shard::segment_holder::locked::LockedSegmentHolder;
 use storage::content_manager::CollectionContainer;
 use storage::content_manager::collection_meta_ops::{CollectionMetaOperations, CreateShardKey};
+use storage::content_manager::consensus::operation_sender::OperationSender;
+use storage::content_manager::consensus::persistent::Persistent;
+use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
+use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::consensus_state_machine::{
-    Action, CollectionConfigDiff, TransferOutcome,
+    Action, CollectionConfigDiff, LocalShardInitMode, TransferOutcome,
 };
 use storage::content_manager::errors::StorageError;
+use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::AccessRequirements;
 use tokio::runtime::Handle;
 
 use super::alias_tests::{
     FULL_ACCESS, create_collection, create_custom_collection, new_dispatcher,
+    new_dispatcher_with_proposals, open_dispatcher,
 };
+
+#[cfg(feature = "staging")]
+#[test]
+fn test_slow_down_action_replay() {
+    use storage::content_manager::collection_meta_ops::TestSlowDown;
+
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let delay = Duration::from_millis(20);
+
+    for peer_id in [None, Some(toc.this_peer_id)] {
+        let operation = TestSlowDown {
+            peer_id,
+            duration_ms: delay.as_millis() as u64,
+        };
+        let action = Action::TestSlowDown(operation);
+
+        for _ in 0..2 {
+            let start = std::time::Instant::now();
+            toc.apply_action(action.clone()).unwrap();
+
+            assert!(start.elapsed() >= delay);
+        }
+    }
+}
+
+#[test]
+fn create_collection_action_replay() {
+    let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
+    create_collection(&handle, &dispatcher, "other");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let other_state = toc.collection_state("other").unwrap();
+    let state = create_collection_action_state(&other_state);
+    let action = Action::CreateCollection {
+        collection: "test".into(),
+        state: Box::new(state.clone()),
+    };
+    proposals.try_iter().for_each(drop);
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert_eq!(toc.collection_state("test").unwrap(), state);
+        assert_eq!(toc.collection_state("other").unwrap(), other_state);
+        let persisted =
+            CollectionConfigInternal::load(&storage_dir.path().join("collections/test")).unwrap();
+        assert_eq!(persisted, state.config);
+        let proposal = proposals.try_recv().unwrap();
+        assert_eq!(
+            proposal,
+            ConsensusOperations::initialize_replica("test".into(), 0, 0)
+        );
+        assert!(proposals.try_iter().next().is_none());
+    }
+
+    // Creation must not rebuild a shard that has already received writes
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 0,
+        state: ReplicaState::Active,
+    })
+    .unwrap();
+    let segments = local_segments(&handle, &dispatcher);
+    let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
+            id: 1.into(),
+            vector: VectorStructPersisted::Single(vec![1.0; 10]),
+            payload: None,
+        }]),
+    ));
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let context = AmbientContext::request("test", toc.get_collection_hw_metrics("test".into()));
+    handle.block_on(async {
+        let collection = toc.get_collection(&collection_pass).await.unwrap();
+        let holder = collection.shards_holder();
+        let holder = holder.read().await;
+        holder
+            .get_shard(0)
+            .unwrap()
+            .update_local(operation.into(), WaitUntil::Visible, None, false)
+            .measured(context)
+            .await
+            .unwrap();
+    });
+
+    toc.apply_action(action.clone()).unwrap();
+
+    assert_eq!(
+        segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.get().read().available_point_count())
+            .sum::<usize>(),
+        1
+    );
+    drop(segments);
+    stop_collections(&handle, &dispatcher);
+    drop(dispatcher);
+    drop(handle);
+    let (_storage_dir, handle, dispatcher, proposals) = open_dispatcher(storage_dir);
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    toc.apply_action(action).unwrap();
+
+    let segments = local_segments(&handle, &dispatcher);
+    assert_eq!(
+        segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.get().read().available_point_count())
+            .sum::<usize>(),
+        1
+    );
+    assert_eq!(
+        proposals.try_recv().unwrap(),
+        ConsensusOperations::initialize_replica("test".into(), 0, 0)
+    );
+}
+
+#[test]
+fn create_collection_action_incomplete_directory_retry() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "other");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let state = create_collection_action_state(&toc.collection_state("other").unwrap());
+    let path = storage_dir.path().join("collections/test");
+    fs_err::create_dir_all(path.join("0")).unwrap();
+    fs_err::write(path.join("0/unfinished"), "partial collection build").unwrap();
+    let blocker = storage_dir.path().join(".deleted");
+    fs_err::write(&blocker, "block removal of incomplete collection").unwrap();
+    let action = Action::CreateCollection {
+        collection: "test".into(),
+        state: Box::new(state.clone()),
+    };
+
+    let error = toc.apply_action(action.clone()).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(toc.collection_state("test").is_none());
+    fs_err::remove_file(blocker).unwrap();
+
+    toc.apply_action(action).unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), state);
+    assert!(!path.join("0/unfinished").exists());
+}
+
+#[test]
+fn create_collection_action_different_uuid() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let initial_state = toc.collection_state("test").unwrap();
+    let mut state = initial_state.clone();
+    state.config.uuid = Some(uuid::Uuid::from_u128(42));
+
+    let error = toc
+        .apply_action(Action::CreateCollection {
+            collection: "test".into(),
+            state: Box::new(state),
+        })
+        .unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+fn create_collection_action_state(template: &collection_state::State) -> collection_state::State {
+    let mut state = template.clone();
+    state.config.uuid = Some(uuid::Uuid::from_u128(42));
+    let metadata = serde_json::from_value(serde_json::json!({"owner": "action"})).unwrap();
+    state.config.metadata = Some(metadata);
+    state.config.params.shard_number = NonZeroU32::new(2).unwrap();
+    state.config.hnsw_config.m = 7;
+    state.config.optimizer_config.default_segment_number = 1;
+    state.shards = [
+        (
+            0,
+            ShardInfo {
+                replicas: [
+                    (0, ReplicaState::Initializing),
+                    (1, ReplicaState::Initializing),
+                ]
+                .into(),
+            },
+        ),
+        (
+            1,
+            ShardInfo {
+                replicas: [(2, ReplicaState::Initializing)].into(),
+            },
+        ),
+    ]
+    .into();
+    state
+}
+
+#[test]
+fn drop_collection_action_replay() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+    create_collection(&handle, &dispatcher, "other");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::UpdateAliases {
+        set: [("alias".into(), "test".into())].into(),
+        remove: Default::default(),
+    })
+    .unwrap();
+    let other_state = toc.collection_state("other").unwrap();
+    let action = Action::DropCollection {
+        collection: "test".into(),
+    };
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert!(toc.collection_state("test").is_none());
+        assert!(!storage_dir.path().join("collections/test").exists());
+        assert!(toc.alias_mapping().get("alias").is_none());
+        assert_eq!(toc.collection_state("other").unwrap(), other_state);
+    }
+}
+
+#[test]
+fn drop_collection_action_does_not_resolve_aliases() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    toc.apply_action(Action::UpdateAliases {
+        set: [("alias".into(), "test".into())].into(),
+        remove: Default::default(),
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let aliases = toc.alias_mapping();
+
+    toc.apply_action(Action::DropCollection {
+        collection: "alias".into(),
+    })
+    .unwrap();
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    assert_eq!(toc.alias_mapping(), aliases);
+}
+
+#[test]
+fn drop_collection_action_delete_failure_retry() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let deleted_path = storage_dir.path().join(".deleted");
+    fs_err::write(&deleted_path, "block collection deletion").unwrap();
+    let action = Action::DropCollection {
+        collection: "test".into(),
+    };
+
+    let error = toc.apply_action(action.clone()).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(toc.collection_state("test").is_none());
+    assert!(storage_dir.path().join("collections/test").exists());
+    fs_err::remove_file(deleted_path).unwrap();
+
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+
+        assert!(toc.collection_state("test").is_none());
+        assert!(!storage_dir.path().join("collections/test").exists());
+    }
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn test_slow_down_action_other_peer() {
+    use storage::content_manager::collection_meta_ops::TestSlowDown;
+
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass).clone();
+    let operation = TestSlowDown {
+        peer_id: Some(toc.this_peer_id + 1),
+        // An incorrectly targeted sleep cannot finish within the receive timeout
+        duration_ms: u64::MAX,
+    };
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let task = std::thread::spawn(move || {
+        let action = Action::TestSlowDown(operation);
+        for _ in 0..2 {
+            toc.apply_action(action.clone()).unwrap();
+        }
+        sender.send(()).unwrap();
+    });
+
+    receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+    task.join().unwrap();
+}
+
+#[test]
+#[cfg(feature = "staging")]
+fn test_transient_error_action_replay() {
+    use storage::content_manager::collection_meta_ops::TestTransientError;
+
+    let (_storage_dir, _handle, dispatcher) = new_dispatcher();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+
+    // The endpoints make the draw deterministic while still exercising the applier
+    for peer_id in [None, Some(toc.this_peer_id), Some(toc.this_peer_id + 1)] {
+        for probability in [0, 100] {
+            let operation = TestTransientError {
+                peer_id,
+                failure_probability_percent: probability,
+            };
+            let action = Action::TestTransientError(operation);
+            let should_fail = probability == 100 && peer_id.is_none_or(|id| id == toc.this_peer_id);
+
+            for _ in 0..2 {
+                let result = toc.apply_action(action.clone());
+
+                if should_fail {
+                    let error = result.unwrap_err();
+                    assert!(matches!(error, StorageError::ServiceError { .. }));
+                    assert!(
+                        error
+                            .to_string()
+                            .contains("simulated transient consensus error")
+                    );
+                } else {
+                    result.unwrap();
+                }
+            }
+        }
+    }
+}
 
 #[test]
 fn set_payload_index_action_replay() {
@@ -1413,6 +1770,323 @@ fn unregister_transfer_action_replay(outcome: TransferOutcome) {
 }
 
 #[test]
+fn init_local_shard_action_ensure_exists_replay() {
+    init_local_shard_action_replay(LocalShardInitMode::EnsureExists);
+}
+
+#[test]
+fn init_local_shard_action_reset_to_empty_replay() {
+    init_local_shard_action_replay(LocalShardInitMode::ResetToEmpty);
+}
+
+fn init_local_shard_action_replay(mode: LocalShardInitMode) {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let holder = collection.shards_holder();
+    let replica_set = handle.block_on(async { holder.read().await.get_shard(0).unwrap().clone() });
+    let field_name: JsonPath = "city".parse().unwrap();
+    let field_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+    toc.apply_action(Action::SetPayloadIndex {
+        collection: "test".into(),
+        field_name: field_name.clone(),
+        field_schema: field_schema.clone(),
+    })
+    .unwrap();
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 1,
+        state: ReplicaState::Dead,
+    })
+    .unwrap();
+    handle.block_on(replica_set.remove_local()).unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    let action = Action::InitLocalShard {
+        collection: "test".into(),
+        shard_id: 0,
+        mode,
+    };
+
+    toc.apply_action(action.clone()).unwrap();
+
+    assert!(handle.block_on(replica_set.has_local_shard()));
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    toc.apply_action(Action::SetReplicaState {
+        collection: "test".into(),
+        shard_id: 0,
+        peer_id: 0,
+        state: ReplicaState::Active,
+    })
+    .unwrap();
+    let expected_state = toc.collection_state("test").unwrap();
+    let context = AmbientContext::request("test", toc.get_collection_hw_metrics("test".into()));
+
+    if mode == LocalShardInitMode::EnsureExists {
+        // A transfer may already have copied indexes before consensus replays Start
+        toc.apply_action(Action::SetPayloadIndex {
+            collection: "test".into(),
+            field_name: field_name.clone(),
+            field_schema: field_schema.clone(),
+        })
+        .unwrap();
+        let segments = local_segments(&handle, &dispatcher);
+        wait_for_local_segments(&handle, &segments, |holder| {
+            holder.iter().all(|(_, segment)| {
+                segment.get().read().get_indexed_fields().get(&field_name) == Some(&field_schema)
+            })
+        });
+    }
+
+    for _ in 0..2 {
+        let point = PointStructPersisted {
+            id: 1.into(),
+            vector: VectorStructPersisted::Single(vec![1.0; 10]),
+            payload: None,
+        };
+        let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![point]),
+        ));
+        handle
+            .block_on(
+                collection
+                    .update_from_client_simple(operation, true, None, WriteOrdering::default())
+                    .measured(context.clone()),
+            )
+            .unwrap();
+
+        toc.apply_action(action.clone()).unwrap();
+
+        let request = Arc::new(CountRequestInternal {
+            filter: None,
+            exact: true,
+        });
+        let count = handle
+            .block_on(
+                replica_set
+                    .count_local(request, None, DeferredBehavior::VisibleOnly)
+                    .measured(context.clone()),
+            )
+            .unwrap()
+            .unwrap();
+        let expected_count = usize::from(mode == LocalShardInitMode::EnsureExists);
+        assert_eq!(count.count, expected_count);
+        assert_eq!(toc.collection_state("test").unwrap(), expected_state);
+        let state_file = fs_err::File::open(
+            storage_dir
+                .path()
+                .join("collections/test/0/replica_state.json"),
+        )
+        .unwrap();
+        let persisted: ReplicaSetState = serde_json::from_reader(state_file).unwrap();
+        assert_eq!(persisted.peers(), &expected_state.shards[&0].replicas);
+        let segments = local_segments(&handle, &dispatcher);
+        let expected_schema = match mode {
+            LocalShardInitMode::EnsureExists => Some(&field_schema),
+            LocalShardInitMode::ResetToEmpty => None,
+        };
+        wait_for_local_segments(&handle, &segments, |holder| {
+            holder.iter().all(|(_, segment)| {
+                segment.get().read().get_indexed_fields().get(&field_name) == expected_schema
+            })
+        });
+    }
+}
+
+#[test]
+fn init_local_shard_action_missing_shard() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let initial_state = toc.collection_state("test").unwrap();
+
+    for mode in [
+        LocalShardInitMode::EnsureExists,
+        LocalShardInitMode::ResetToEmpty,
+    ] {
+        let action = Action::InitLocalShard {
+            collection: "test".into(),
+            shard_id: 99,
+            mode,
+        };
+        let error = toc.apply_action(action).unwrap_err();
+
+        assert!(matches!(error, StorageError::ServiceError { .. }));
+        assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    }
+}
+
+#[test]
+fn spawn_transfer_driver_action_replay() {
+    let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
+    create_collection(&handle, &dispatcher, "test");
+    let _consensus = setup_transfer_consensus(&dispatcher, storage_dir.path());
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    let mut unrelated = transfer.clone();
+    unrelated.to = 2;
+    for transfer in [&transfer, &unrelated] {
+        toc.apply_action(Action::RegisterTransfer {
+            collection: "test".into(),
+            transfer: transfer.clone(),
+        })
+        .unwrap();
+    }
+    let initial_state = toc.collection_state("test").unwrap();
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    proposals.try_iter().for_each(drop);
+
+    toc.apply_action(Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: unrelated.clone(),
+    })
+    .unwrap();
+    let action = Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    };
+
+    // Drivers wait for a leader, so replay must cancel and await a running task
+    for _ in 0..2 {
+        toc.apply_action(action.clone()).unwrap();
+    }
+
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    for transfer in [&transfer, &unrelated] {
+        let result = handle.block_on(collection.stop_shard_transfer(&transfer.key()));
+        assert!(result.is_some(), "driver was not spawned for {transfer:?}");
+        assert!(
+            handle
+                .block_on(collection.stop_shard_transfer(&transfer.key()))
+                .is_none()
+        );
+    }
+    assert!(proposals.try_iter().next().is_none());
+
+    // A restarted consensus thread can replay after all node-local tasks were lost
+    toc.apply_action(action).unwrap();
+    assert!(
+        handle
+            .block_on(collection.stop_shard_transfer(&transfer.key()))
+            .is_some()
+    );
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+#[test]
+fn spawn_transfer_driver_action_reports_failure() {
+    let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
+    create_collection(&handle, &dispatcher, "test");
+    let consensus = setup_transfer_consensus(&dispatcher, storage_dir.path());
+    consensus.is_leader_established.make_ready();
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let transfer = ordinary_transfer();
+    toc.apply_action(Action::RegisterTransfer {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    })
+    .unwrap();
+    let initial_state = toc.collection_state("test").unwrap();
+    proposals.try_iter().for_each(drop);
+
+    // The destination has no address, so every driver attempt fails without networking
+    toc.apply_action(Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: transfer.clone(),
+    })
+    .unwrap();
+
+    let proposal = proposals.recv_timeout(Duration::from_secs(10)).unwrap();
+    let expected =
+        ConsensusOperations::abort_transfer("test".into(), transfer.clone(), "transmission failed");
+    assert_eq!(proposal, expected);
+    assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+    toc.apply_action(Action::StopTransferDriver {
+        collection: "test".into(),
+        key: transfer.key(),
+    })
+    .unwrap();
+}
+
+#[test]
+fn spawn_transfer_driver_action_missing_dispatcher() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let action = Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer: ordinary_transfer(),
+    };
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(error.to_string().contains("without a consensus dispatcher"));
+}
+
+#[test]
+fn spawn_transfer_driver_action_missing_method() {
+    let (storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+    let _consensus = setup_transfer_consensus(&dispatcher, storage_dir.path());
+
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let mut transfer = ordinary_transfer();
+    transfer.method = None;
+    let action = Action::SpawnTransferDriver {
+        collection: "test".into(),
+        transfer,
+    };
+    let error = toc.apply_action(action).unwrap_err();
+
+    assert!(matches!(error, StorageError::ServiceError { .. }));
+    assert!(error.to_string().contains("without a transfer method"));
+}
+
+fn setup_transfer_consensus(
+    dispatcher: &Dispatcher,
+    storage_path: &std::path::Path,
+) -> ConsensusStateRef {
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let mut persistent = Persistent::load_or_init(storage_path, true, false, None).unwrap();
+    persistent.this_peer_id = toc.this_peer_id;
+    let (sender, _receiver) = std::sync::mpsc::channel();
+    let consensus = ConsensusManager::new(
+        persistent,
+        toc.clone(),
+        OperationSender::new(sender),
+        storage_path,
+    )
+    .unwrap();
+    let consensus = ConsensusStateRef::from(consensus);
+    toc.with_toc_dispatcher(TocDispatcher::new(Arc::downgrade(toc), consensus.clone()));
+
+    consensus
+}
+
+#[test]
 fn stop_transfer_driver_action_replay() {
     let (_storage_dir, handle, dispatcher) = new_dispatcher();
     create_collection(&handle, &dispatcher, "test");
@@ -1762,6 +2436,23 @@ fn unproxify_shard_action_missing_local(drop_shard: bool) {
 
     assert!(matches!(error, StorageError::ServiceError { .. }));
     assert_eq!(toc.collection_state("test").unwrap(), initial_state);
+}
+
+fn stop_collections(handle: &Handle, dispatcher: &Dispatcher) {
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    for name in toc.collection_names() {
+        let collection_pass = FULL_ACCESS
+            .check_collection_access(&name, AccessRequirements::new(), "test")
+            .unwrap();
+        handle.block_on(async {
+            toc.get_collection(&collection_pass)
+                .await
+                .unwrap()
+                .stop_gracefully()
+                .await;
+        });
+    }
 }
 
 fn local_segments(handle: &Handle, dispatcher: &Dispatcher) -> LockedSegmentHolder {

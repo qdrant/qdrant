@@ -287,18 +287,30 @@ impl ShardHolder {
         // Persist mapping first: it is the only fallible step, so a failed write leaves
         // in-memory state untouched.
         if let Some(shard_key) = &shard_key {
-            self.key_mapping.write_optional(|mapping| {
-                let mut mapping = mapping.clone();
-                let shard_ids = mapping.entry(shard_key.clone()).or_default();
+            let result = self
+                .key_mapping
+                .write_optional(|mapping| {
+                    let mut mapping = mapping.clone();
+                    let shard_ids = mapping.entry(shard_key.clone()).or_default();
 
-                let mut changed = false;
+                    let mut changed = false;
 
-                for &(shard_id, _) in &shards {
-                    changed |= shard_ids.insert(shard_id);
+                    for &(shard_id, _) in &shards {
+                        changed |= shard_ids.insert(shard_id);
+                    }
+
+                    if changed { Some(mapping) } else { None }
+                })
+                .map_err(CollectionError::from);
+
+            if let Err(error) = result {
+                // Replay rebuilds these directories, so their workers must stop before retry
+                for (_, shard) in shards {
+                    shard.stop_gracefully().await;
                 }
 
-                if changed { Some(mapping) } else { None }
-            })?;
+                return Err(error);
+            }
         }
 
         let ring = self
