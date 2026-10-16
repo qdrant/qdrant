@@ -2787,9 +2787,28 @@ impl Validate for PayloadSchemaParams {
 
 #[derive(Clone, Debug, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
+#[serde(try_from = "serde_json::Value")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+impl TryFrom<serde_json::Value> for PayloadFieldSchema {
+    type Error = serde_json::Error;
+
+    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        // Derived struct deserializers also accept sequences (positional fields),
+        // so `["keyword"]` would silently be read as `{"type": "keyword"}`.
+        if value.is_array() {
+            return Err(serde::de::Error::custom(
+                "invalid field schema: expected a string or an object, got an array",
+            ));
+        }
+        match PayloadSchemaType::deserialize(&value) {
+            Ok(field_type) => Ok(Self::FieldType(field_type)),
+            Err(_) => PayloadSchemaParams::deserialize(value).map(Self::FieldParams),
+        }
+    }
 }
 
 impl PartialEq for PayloadFieldSchema {
@@ -4899,6 +4918,26 @@ mod tests {
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
+
+    #[test]
+    fn test_payload_field_schema_rejects_array() {
+        for bad in [r#"["keyword"]"#, "[]", r#"[{"type": "keyword"}]"#] {
+            assert!(
+                serde_json::from_str::<PayloadFieldSchema>(bad).is_err(),
+                "{bad}"
+            );
+        }
+        assert_matches!(
+            serde_json::from_str(r#""keyword""#),
+            Ok(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword))
+        );
+        assert_matches!(
+            serde_json::from_str(r#"{"type": "keyword", "is_tenant": true}"#),
+            Ok(PayloadFieldSchema::FieldParams(
+                PayloadSchemaParams::Keyword(_)
+            ))
+        );
+    }
 
     #[test]
     fn test_memory_legacy_mapping() {
