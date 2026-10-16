@@ -15,10 +15,7 @@ use super::payload_blocks::field_payload_blocks;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::config::HnswGraphConfig;
-use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-#[cfg(feature = "gpu")]
-use crate::index::hnsw_index::hnsw::HNSW_USE_HEURISTIC;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
@@ -30,15 +27,13 @@ use crate::vector_storage::VectorStorageRead;
 ///
 /// With an `old_index` (whose payload links have the same `m`), each block starts from the
 /// links its points had to each other in the old graph; see [`BlockSeeds`].
+///
+/// `build_on_gpu` builds a block on the GPU, if there is one. A block it returns `None` for is
+/// built on the CPU.
 #[allow(clippy::too_many_arguments)]
-#[cfg_attr(
-    not(feature = "gpu"),
-    allow(unused_variables, clippy::needless_pass_by_ref_mut)
-)]
 pub(super) fn build_additional_links<R: Rng + ?Sized>(
     ctx: GraphBuildContext,
     payload_index: &StructPayloadIndex,
-    gpu_insert_context: &mut Option<GpuInsertContext>,
     graph_layers_builder: &mut GraphLayersBuilder,
     config: &HnswGraphConfig,
     indexed_fields: Vec<(ProgressTracker, JsonPath, PayloadFieldSchema)>,
@@ -46,11 +41,11 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     progress_additional_links: ProgressTracker,
     pool: &ThreadPool,
     rng: &mut R,
+    mut build_on_gpu: impl FnMut(&[PointOffsetType]) -> OperationResult<Option<GraphLayersBuilder>>,
 ) -> OperationResult<()> {
     let GraphBuildContext {
         id_tracker,
         vector_storage,
-        quantized_vectors,
         block_params,
         stopped,
         ..
@@ -70,21 +65,6 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         .map(|old_index| BlockSeeds::new(old_index, block_params.hnsw_m, total_vector_count));
     let mut seeded_points = 0;
     let mut block_points = 0;
-
-    // The GPU stores vectors and links by segment id, so it builds blocks in a segment-sized
-    // builder. This one only carries the block graph's settings: `payload_m`, `ef_construct`
-    // and level 0 for every point.
-    #[cfg(feature = "gpu")]
-    let gpu_block_reference = gpu_insert_context.is_some().then(|| {
-        GraphLayersBuilder::new_with_params(
-            total_vector_count,
-            block_params.hnsw_m,
-            block_params.ef_construct,
-            block_params.entry_points_num,
-            HNSW_USE_HEURISTIC,
-            false,
-        )
-    });
 
     for (index_pos, (field_progress, field, payload_schema)) in
         indexed_fields.into_iter().enumerate()
@@ -120,20 +100,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
 
             let points_to_index = &payload_block.points;
 
-            #[cfg(feature = "gpu")]
-            if let (Some(gpu_insert_context), Some(reference_graph)) =
-                (gpu_insert_context.as_mut(), &gpu_block_reference)
-                && let Some(gpu_graph) =
-                    crate::index::hnsw_index::hnsw::gpu_build::build_block_on_gpu(
-                        id_tracker,
-                        vector_storage,
-                        quantized_vectors,
-                        gpu_insert_context,
-                        reference_graph,
-                        points_to_index,
-                        stopped,
-                    )?
-            {
+            if let Some(gpu_graph) = build_on_gpu(points_to_index)? {
                 graph_layers_builder.merge_from_other(gpu_graph);
                 continue;
             }

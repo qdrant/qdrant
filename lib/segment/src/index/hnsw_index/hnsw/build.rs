@@ -12,6 +12,8 @@ use log::debug;
 use rand::Rng;
 use rayon::ThreadPool;
 
+#[cfg(feature = "gpu")]
+use super::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use super::old_index::{OldIndexCandidate, payload_hnsw_m, payload_links_reusable};
 use super::telemetry::HNSWSearchesTelemetry;
 use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs, derive_config};
@@ -30,11 +32,15 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 mod additional_links;
 mod block_filter;
 mod context;
+#[cfg(feature = "gpu")]
+mod gpu_builder;
 mod main_graph;
 mod payload_blocks;
 
 use self::additional_links::build_additional_links;
 use self::context::{GraphBuildContext, GraphParams};
+#[cfg(feature = "gpu")]
+use self::gpu_builder::GpuState;
 use self::main_graph::build_main_graph_on_cpu;
 use self::payload_blocks::payload_block_fields;
 
@@ -126,18 +132,8 @@ impl HNSWIndex {
         // Build main index graph
         let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
-        #[cfg(feature = "gpu")]
-        let gpu_name_postfix = if let Some(gpu_device) = gpu_device {
-            format!(" and GPU {}", gpu_device.device().name())
-        } else {
-            Default::default()
-        };
-        #[cfg(not(feature = "gpu"))]
-        let gpu_name_postfix = "";
-        #[cfg(not(feature = "gpu"))]
-        let _ = gpu_device;
         debug!(
-            "building HNSW for {total_vector_count} vectors with {} CPUs{gpu_name_postfix}",
+            "building HNSW for {total_vector_count} vectors with {} CPUs",
             permit.num_cpus,
         );
 
@@ -192,20 +188,32 @@ impl HNSWIndex {
             graph_layers_builder.set_levels(vector_id, level);
         }
 
-        // Try to build graphs on GPU if possible.
+        // Upload the vectors to the GPU, if any graph is going to be built there and the
+        // segment is not too small
         #[cfg(feature = "gpu")]
-        let (gpu_vectors, gpu_graph) = super::gpu_build::upload_and_build_main_graph(
-            gpu_device,
-            build_main_graph,
-            progress_payload_blocks.is_some(),
-            id_tracker_ref.deref(),
-            &vector_storage_ref,
-            quantized_vectors_ref.as_ref(),
-            &graph_layers_builder,
-            deleted_bitslice,
-            num_entries,
-            stopped,
-        )?;
+        let mut gpu = match gpu_device {
+            Some(gpu_device)
+                if (build_main_graph || progress_payload_blocks.is_some())
+                    && total_vector_count >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD =>
+            {
+                GpuState::new(ctx, gpu_device)?
+            }
+            _ => None,
+        };
+        #[cfg(not(feature = "gpu"))]
+        let _ = gpu_device;
+
+        #[cfg(feature = "gpu")]
+        let gpu_graph = match &gpu {
+            Some(gpu) if build_main_graph => {
+                let points = id_tracker_ref
+                    .point_mappings()
+                    .iter_internal_excluding(deleted_bitslice)
+                    .collect::<Vec<_>>();
+                gpu.build_main(ctx, &graph_layers_builder, &points)?
+            }
+            _ => None,
+        };
         #[cfg(not(feature = "gpu"))]
         let gpu_graph: Option<GraphLayersBuilder> = None;
 
@@ -232,19 +240,18 @@ impl HNSWIndex {
             .filter(|old_index| payload_links_reusable(&config, &old_index.index.config));
 
         if let Some((progress_additional_links, indexed_fields)) = progress_payload_blocks {
+            // Blocks are built on the GPU if the vectors are there
             #[cfg(feature = "gpu")]
-            let mut gpu_insert_context = super::gpu_build::create_gpu_insert_context(
-                gpu_vectors.as_ref(),
-                payload_m,
-                config.ef_construct,
-            )?;
+            let build_on_gpu = |points: &[PointOffsetType]| match gpu.as_mut() {
+                Some(gpu) => gpu.build_block(ctx, points),
+                None => Ok(None),
+            };
             #[cfg(not(feature = "gpu"))]
-            let mut gpu_insert_context = None;
+            let build_on_gpu = |_: &[PointOffsetType]| Ok(None);
 
             build_additional_links(
                 ctx,
                 &payload_index_ref,
-                &mut gpu_insert_context,
                 &mut graph_layers_builder,
                 &config,
                 indexed_fields,
@@ -252,6 +259,7 @@ impl HNSWIndex {
                 progress_additional_links,
                 &pool,
                 rng,
+                build_on_gpu,
             )?;
         } else {
             debug!("skip building additional HNSW links");
