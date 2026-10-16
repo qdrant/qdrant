@@ -156,6 +156,19 @@ impl TableOfContent {
                 Ok(())
             }
 
+            Action::CreateAndRegisterShards {
+                collection,
+                shard_key,
+                shards,
+            } => {
+                self.get_collection_unchecked(collection)
+                    .await?
+                    .create_and_register_shards(shard_key.clone(), shards)
+                    .await?;
+
+                Ok(())
+            }
+
             Action::RemoveShardKey {
                 collection,
                 shard_key,
@@ -488,7 +501,6 @@ impl TableOfContent {
 
             Action::AddPeer { .. }
             | Action::RemovePeer { .. }
-            | Action::CreateAndRegisterShards { .. }
             | Action::SetPeerMetadata { .. }
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => Err(StorageError::service_error(format!(
