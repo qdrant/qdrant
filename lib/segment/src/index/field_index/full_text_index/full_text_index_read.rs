@@ -268,7 +268,7 @@ pub trait FullTextIndexRead {
     /// token. A value that tokenizes to nothing is in neither, so that does
     /// not move the ratio across storage placements. Deletions since the last
     /// build do: the on-disk index returns its build-time total, which still
-    /// counts them as [`Self::posting_len`] does, while the immutable index
+    /// counts them as [`Self::posting_lens`] does, while the immutable index
     /// loaded from the same files subtracts them.
     fn total_tokens(&self) -> Option<u64>;
 
