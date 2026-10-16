@@ -41,7 +41,7 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username qdrant --password-stdin
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build regular image for Docker Hub
@@ -110,7 +110,7 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username qdrant --password-stdin
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build GPU NVIDIA image for Docker Hub
