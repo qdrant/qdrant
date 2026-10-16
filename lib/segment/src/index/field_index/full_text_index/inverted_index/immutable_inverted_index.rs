@@ -631,16 +631,9 @@ impl<S: common::universal_io::UniversalRead> TryFrom<&OnDiskInvertedIndex<S>>
     type Error = OperationError;
 
     fn try_from(index: &OnDiskInvertedIndex<S>) -> OperationResult<Self> {
-        let codes = match index.records_doc_len() {
-            false => None,
-            true => Some(index.doc_len_codes().ok_or_else(doc_lens_moved)?.to_vec()),
-        };
+        let codes = index.doc_len_codes().map(<[u16]>::to_vec);
         Self::from_on_disk(index, codes)
     }
-}
-
-fn doc_lens_moved() -> OperationError {
-    OperationError::service_error("document lengths were moved to another in-RAM text index")
 }
 
 impl ImmutableInvertedIndex {
@@ -650,10 +643,7 @@ impl ImmutableInvertedIndex {
     pub fn load_from_on_disk<S: common::universal_io::UniversalRead>(
         index: &mut OnDiskInvertedIndex<S>,
     ) -> OperationResult<Self> {
-        let codes = match index.records_doc_len() {
-            false => None,
-            true => Some(index.take_doc_len_codes().ok_or_else(doc_lens_moved)?),
-        };
+        let codes = index.take_doc_len_codes();
         Self::from_on_disk(index, codes)
     }
 

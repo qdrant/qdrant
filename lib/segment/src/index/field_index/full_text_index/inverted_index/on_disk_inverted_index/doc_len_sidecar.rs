@@ -32,7 +32,7 @@
 use std::io::Write as _;
 use std::path::Path;
 
-use common::fs::atomic_save;
+use common::universal_io::UniversalWriteFs;
 use zerocopy::little_endian::{U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -72,29 +72,30 @@ struct Header {
 
 const _: () = assert!(size_of::<Header>() == 64);
 
-/// Write the exact `lens`, one per point, to `path`.
-pub(super) fn write(path: &Path, lens: &[u32]) -> OperationResult<()> {
-    atomic_save(path, |writer| -> OperationResult<()> {
-        let header = Header {
-            magic: MAGIC,
-            version: U32::new(FORMAT_VERSION),
-            compression: U32::new(Compression::ShuffledZstd as u32),
-            count: U64::new(lens.len() as u64),
-            reserved: [0; 40],
-        };
-        writer.write_all(header.as_bytes())?;
+/// Atomically replace the sidecar at `path` with the exact `lens`, one per point.
+pub(super) fn save(fs: &impl UniversalWriteFs, path: &Path, lens: &[u32]) -> OperationResult<()> {
+    fs.atomic_save(path, &encode(lens)?)?;
+    Ok(())
+}
 
-        let mut encoder = zstd::Encoder::new(writer, zstd::DEFAULT_COMPRESSION_LEVEL)?;
-        encoder.include_checksum(true)?;
-        let mut plane = Vec::with_capacity(lens.len());
-        for byte in 0..PLANES_COUNT {
-            plane.clear();
-            plane.extend(lens.iter().map(|len| len.to_le_bytes()[byte]));
-            encoder.write_all(&plane)?;
-        }
-        encoder.finish()?;
-        Ok(())
-    })
+fn encode(lens: &[u32]) -> std::io::Result<Vec<u8>> {
+    let header = Header {
+        magic: MAGIC,
+        version: U32::new(FORMAT_VERSION),
+        compression: U32::new(Compression::ShuffledZstd as u32),
+        count: U64::new(lens.len() as u64),
+        reserved: [0; 40],
+    };
+    let mut encoder =
+        zstd::Encoder::new(header.as_bytes().to_vec(), zstd::DEFAULT_COMPRESSION_LEVEL)?;
+    encoder.include_checksum(true)?;
+    let mut plane = Vec::with_capacity(lens.len());
+    for byte in 0..PLANES_COUNT {
+        plane.clear();
+        plane.extend(lens.iter().map(|len| len.to_le_bytes()[byte]));
+        encoder.write_all(&plane)?;
+    }
+    encoder.finish()
 }
 
 /// Decode a sidecar into the codes of [`encode_doc_len`], one per point.
@@ -168,10 +169,7 @@ mod tests {
     use super::*;
 
     fn round_trip(lens: &[u32]) -> Vec<u8> {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("lens");
-        write(&path, lens).unwrap();
-        let bytes = fs_err::read(&path).unwrap();
+        let bytes = encode(lens).unwrap();
         assert_eq!(
             read_exact(&bytes, lens.len()).unwrap(),
             lens,

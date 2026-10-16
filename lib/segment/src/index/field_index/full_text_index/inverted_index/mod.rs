@@ -1129,7 +1129,7 @@ mod tests {
 
         // Moved, not copied: the backing index keeps the file, not the codes.
         assert!(backing.records_doc_len());
-        assert!(backing.doc_len_codes().is_none());
+        assert_eq!(backing.doc_len_codes(), Some(&[][..]));
         assert!(
             backing
                 .files()
@@ -1137,7 +1137,6 @@ mod tests {
             "the sidecar stays in the snapshot file set",
         );
         assert!(backing.ram_usage_bytes() < mmap.ram_usage_bytes());
-        assert!(ImmutableInvertedIndex::load_from_on_disk(&mut backing).is_err());
     }
 
     #[rstest]

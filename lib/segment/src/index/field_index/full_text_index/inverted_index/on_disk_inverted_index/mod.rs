@@ -10,8 +10,8 @@ use common::mmap::{Advice, AdviceSetting, MmapSlice};
 use common::persisted_hashmap::{READ_ENTRY_OVERHEAD, UniversalHashMap, serialize_hashmap};
 use common::types::{PointOffsetType, ScoredPointOffset};
 use common::universal_io::{
-    CachedReadFs, MmapFile, OkNotFound, OneshotFile, OpenOptions, Populate, ReadRange,
-    TypedStorage, UioResult, UniversalRead, UniversalReadFs, UserData,
+    CachedReadFs, MmapFile, MmapFs, OkNotFound, OneshotFile, OpenOptions, Populate, ReadRange,
+    TypedStorage, UioResult, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
@@ -99,22 +99,15 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// Written once at build time and never masked, like
     /// `point_to_tokens_count`, so anything summing these must filter through
     /// `deleted_points` first.
-    pub point_to_doc_len: Option<DocLens>,
+    ///
+    /// Held in RAM as the codes of
+    /// [`encode_doc_len`](super::doc_len::encode_doc_len), 2 bytes a point:
+    /// the sidecar is compressed, and a query reads the lengths of candidates
+    /// spread over the whole point space, so [`OnDiskInvertedIndex::open`]
+    /// decodes it once. Left empty once an in-RAM index loaded from this one
+    /// takes the codes over; the sidecar stays part of this index's files.
+    pub point_to_doc_len: Option<Vec<u16>>,
     pub deleted_points: DeletedBitVec,
-}
-
-/// The document lengths of an on-disk index, held in RAM.
-///
-/// The sidecar keeps exact lengths, compressed, and is never read in place: a
-/// query reads the lengths of candidates spread over the whole point space, so
-/// [`OnDiskInvertedIndex::open`] decodes it once into the codes of
-/// [`encode_doc_len`](super::doc_len::encode_doc_len), 2 bytes a point.
-pub enum DocLens {
-    /// One code per point, unmasked like the file they come from.
-    Loaded(Vec<u16>),
-    /// Handed over to the in-RAM index loaded from this one, which answers
-    /// for them from then on. The sidecar is still part of this index's files.
-    Moved,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -127,10 +120,9 @@ impl<S: UniversalRead> Storage<S> {
             deleted_points,
         } = self;
 
-        let doc_len_bytes = match point_to_doc_len {
-            Some(DocLens::Loaded(codes)) => codes.capacity() * size_of::<u16>(),
-            Some(DocLens::Moved) | None => 0,
-        };
+        let doc_len_bytes = point_to_doc_len
+            .as_ref()
+            .map_or(0, |codes| codes.capacity() * size_of::<u16>());
         deleted_points.ram_usage_bytes() + doc_len_bytes
     }
 }
@@ -147,11 +139,12 @@ impl OnDiskInvertedIndex<MmapFile> {
         mutable: MutableInvertedIndex,
     ) -> OperationResult<ImmutableInvertedIndex> {
         let (inverted_index, doc_lens) = ImmutableInvertedIndex::from_mutable(mutable);
-        Self::write_files(&path, &inverted_index, doc_lens.as_deref())?;
+        Self::write_files(&MmapFs, &path, &inverted_index, doc_lens.as_deref())?;
         Ok(inverted_index)
     }
 
     fn write_files(
+        fs: &impl UniversalWriteFs,
         path: &Path,
         inverted_index: &ImmutableInvertedIndex,
         doc_lens: Option<&[u32]>,
@@ -207,7 +200,7 @@ impl OnDiskInvertedIndex<MmapFile> {
         match doc_lens {
             Some(lens) => {
                 debug_assert_eq!(lens.len(), point_to_tokens_count.len());
-                doc_len_sidecar::write(&point_to_doc_len_path, lens)?;
+                doc_len_sidecar::save(fs, &point_to_doc_len_path, lens)?;
             }
             // Every other file here is rewritten in place, so this is the only
             // one that could survive a rebuild. `open` would then read a
@@ -360,7 +353,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             Some(file) => {
                 let bytes = file.read_whole::<u8>()?;
                 match doc_len_sidecar::read_codes(&bytes, total_count) {
-                    Ok(codes) => Some(DocLens::Loaded(codes)),
+                    Ok(codes) => Some(codes),
                     Err(reason) => {
                         log::warn!(
                             "Ignoring document length sidecar {path}: {reason}",
@@ -413,22 +406,13 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     }
 
     /// Move the decoded lengths out, for an in-RAM index loaded from this one
-    /// to own. `None` when this index records no lengths, or they were moved
-    /// already.
+    /// to own. `None` when this index records no lengths.
     pub(super) fn take_doc_len_codes(&mut self) -> Option<Vec<u16>> {
-        let doc_lens = self.storage.point_to_doc_len.as_mut()?;
-        match std::mem::replace(doc_lens, DocLens::Moved) {
-            DocLens::Loaded(codes) => Some(codes),
-            DocLens::Moved => None,
-        }
+        self.storage.point_to_doc_len.as_mut().map(std::mem::take)
     }
 
-    /// The decoded lengths, unless they were moved to an in-RAM index.
     pub(super) fn doc_len_codes(&self) -> Option<&[u16]> {
-        match self.storage.point_to_doc_len.as_ref()? {
-            DocLens::Loaded(codes) => Some(codes),
-            DocLens::Moved => None,
-        }
+        self.storage.point_to_doc_len.as_deref()
     }
 
     /// Returns whether the point id is valid and active.
@@ -995,18 +979,9 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         point_ids: &[PointOffsetType],
         mut f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()> {
-        let codes = match self.storage.point_to_doc_len.as_ref() {
-            None => {
-                (0..point_ids.len()).for_each(|index| f(index, None));
-                return Ok(());
-            }
-            Some(DocLens::Loaded(codes)) => codes,
-            // Only the in-RAM index loaded from this one serves queries then.
-            Some(DocLens::Moved) => {
-                return Err(OperationError::service_error(
-                    "document lengths were moved to the in-RAM text index",
-                ));
-            }
+        let Some(codes) = self.storage.point_to_doc_len.as_ref() else {
+            (0..point_ids.len()).for_each(|index| f(index, None));
+            return Ok(());
         };
         for (index, &point_id) in point_ids.iter().enumerate() {
             let doc_len = match codes.get(point_id as usize) {
