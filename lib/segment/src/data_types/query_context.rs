@@ -254,7 +254,15 @@ impl QueryContext {
     /// Whether filling needs more than the available point count, which
     /// makes it worth spreading over segments in parallel.
     pub fn has_statistics_to_collect(&self) -> bool {
-        !self.idf_stats.scopes.is_empty() || !self.text_stats.is_empty()
+        let Self {
+            available_point_count: _,
+            search_optimized_threshold_kb: _,
+            is_stopped: _,
+            idf_stats: QueryIdfStats { scopes },
+            text_stats,
+            handoff: _,
+        } = self;
+        !scopes.is_empty() || !text_stats.is_empty()
     }
 
     /// Sum the statistics of a filled clone of this unfilled context into it.
