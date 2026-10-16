@@ -104,7 +104,7 @@ impl<'a> BlockSeeds<'a> {
     ///
     /// A block the old build had too gives about as many candidates as the point had links,
     /// while main graph links alone give a fraction proportional to the block size, which
-    /// [`super::build_additional_links`] keeps below a few links.
+    /// the block filter keeps below a few links.
     fn min_candidates(&self, old_links_count: usize) -> usize {
         old_links_count.min(self.old_m0).div_ceil(2).max(1)
     }
