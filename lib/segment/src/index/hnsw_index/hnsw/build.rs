@@ -28,12 +28,15 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
 mod additional_links;
+mod block_filter;
 mod context;
 mod main_graph;
+mod payload_blocks;
 
-use self::additional_links::{additional_links_fields, build_additional_links};
+use self::additional_links::build_additional_links;
 use self::context::{GraphBuildContext, GraphParams};
 use self::main_graph::build_main_graph_on_cpu;
+use self::payload_blocks::payload_block_fields;
 
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
@@ -91,8 +94,19 @@ impl HNSWIndex {
         // Progress subtasks
         let progress_migrate = build_main_graph.then(|| progress.subtask("migrate"));
         let progress_main_graph = build_main_graph.then(|| progress.subtask("main_graph"));
-        let additional_links_params =
-            additional_links_fields(&payload_index_ref, payload_m, &progress);
+        let payload_block_fields = payload_block_fields(&payload_index_ref, payload_m);
+        let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
+            let progress_additional_links = progress.subtask("additional_links");
+            let fields = payload_block_fields
+                .into_iter()
+                .map(|(field, payload_schema)| {
+                    let subtask_name = format!("{}:{field}", payload_schema.name());
+                    let field_progress = progress_additional_links.subtask(subtask_name);
+                    (field_progress, field, payload_schema)
+                })
+                .collect::<Vec<_>>();
+            (progress_additional_links, fields)
+        });
 
         let old_index = old_indices
             .iter()
@@ -183,9 +197,7 @@ impl HNSWIndex {
         let (gpu_vectors, gpu_graph) = super::gpu_build::upload_and_build_main_graph(
             gpu_device,
             build_main_graph,
-            additional_links_params
-                .as_ref()
-                .is_some_and(|(_, indexed_fields)| !indexed_fields.is_empty()),
+            progress_payload_blocks.is_some(),
             id_tracker_ref.deref(),
             &vector_storage_ref,
             quantized_vectors_ref.as_ref(),
@@ -219,7 +231,7 @@ impl HNSWIndex {
             .as_ref()
             .filter(|old_index| payload_links_reusable(&config, &old_index.index.config));
 
-        if let Some((progress_additional_links, indexed_fields)) = additional_links_params {
+        if let Some((progress_additional_links, indexed_fields)) = progress_payload_blocks {
             #[cfg(feature = "gpu")]
             let mut gpu_insert_context = super::gpu_build::create_gpu_insert_context(
                 gpu_vectors.as_ref(),
