@@ -667,6 +667,51 @@ fn immutable_nested_count_after_deletions_and_reload() {
     }
 }
 
+/// Payload blocks of a deduplicating index are sized in points, like the flattened ones.
+#[test]
+fn nested_payload_blocks_count_points() {
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("nested_blocks").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    let field = JsonPath::from_str("offers[].shop").unwrap();
+    for id in 0..10u64 {
+        let payload = json!({"offers": [{"shop": "a"}, {"shop": "a"}, {"shop": "a"}]});
+        segment
+            .upsert_point(id + 1, id.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        segment
+            .set_full_payload(id + 1, id.into(), &serde_json::from_value(payload).unwrap())
+            .unwrap();
+    }
+    segment
+        .create_field_index(
+            11,
+            &field,
+            Some(&schema(PayloadSchemaType::Keyword, true, None)),
+        )
+        .unwrap();
+
+    let indexes = segment.payload_index.borrow();
+    let index = indexes.field_indexes[&field]
+        .iter()
+        .find_map(FieldIndex::as_nested)
+        .unwrap();
+    let blocks = |threshold| {
+        let mut cardinalities = Vec::new();
+        index
+            .for_each_payload_block(threshold, field.clone(), &mut |block| {
+                cardinalities.push(block.cardinality);
+                Ok(())
+            })
+            .unwrap();
+        cardinalities
+    };
+
+    // 30 elements of 10 points hold "a"
+    assert_eq!(blocks(5), [10]);
+    assert_eq!(blocks(15), Vec::<usize>::new());
+}
+
 /// Directories of the element maps of the per-element indexes of `field`.
 fn element_map_dirs(segment: &Segment, field: &str) -> Vec<std::path::PathBuf> {
     let field = JsonPath::from_str(field).unwrap();

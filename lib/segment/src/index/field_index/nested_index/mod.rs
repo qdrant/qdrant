@@ -363,13 +363,31 @@ impl PayloadFieldIndexRead for NestedFieldIndex {
         key: PayloadKeyType,
         f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        // A block has at most as many points as elements
+        // Inner blocks count elements. The flattened index of a deduplicating type counts
+        // each value once per point, so its blocks are estimated in points, and the ones
+        // that would fall below `threshold` are skipped. The estimate never exceeds the
+        // element count, so the inner index can apply `threshold` to elements as is.
+        let dedups_values = self.dedups_values();
         let points = self.indexed_points;
         self.inner
             .for_each_payload_block(threshold, key, &mut |block| {
+                let PayloadBlockCondition {
+                    condition,
+                    cardinality,
+                } = block;
+                let cardinality = if dedups_values {
+                    let estimation = CardinalityEstimation::exact(cardinality);
+                    self.to_points_estimation(estimation, &self.element_map).exp
+                } else {
+                    // A block has at most as many points as elements
+                    cardinality.min(points)
+                };
+                if cardinality < threshold {
+                    return Ok(());
+                }
                 f(PayloadBlockCondition {
-                    condition: block.condition,
-                    cardinality: block.cardinality.min(points),
+                    condition,
+                    cardinality,
                 })
             })
     }
