@@ -14,9 +14,8 @@ use rayon::ThreadPool;
 
 use super::old_index::{OldIndexCandidate, payload_hnsw_m, payload_links_reusable};
 use super::telemetry::HNSWSearchesTelemetry;
-use super::{HNSW_USE_HEURISTIC, HNSWIndex, HnswIndexOpenArgs, derive_config};
+use super::{HNSWIndex, HnswIndexOpenArgs, derive_config};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::graph::HnswGraph;
@@ -27,16 +26,20 @@ use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
-mod additional_links;
+mod block;
 mod block_filter;
 mod context;
-mod main_graph;
+#[cfg(feature = "gpu")]
+mod gpu_builder;
+mod graph_builder;
+mod healing_builder;
+mod hnsw_builder;
+mod local_builder;
 mod payload_blocks;
 
-use self::additional_links::build_additional_links;
 use self::context::{GraphBuildContext, GraphParams};
-use self::main_graph::build_main_graph_on_cpu;
-use self::payload_blocks::payload_block_fields;
+use self::graph_builder::{GraphBuildOptions, GraphBuilder, GraphBuilderMethod};
+use self::payload_blocks::{FieldBlocks, field_payload_blocks, payload_block_fields};
 
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
@@ -84,29 +87,12 @@ impl HNSWIndex {
         let total_vector_count = vector_storage_ref.total_vector_count();
         let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
 
-        let mut build_main_graph = config.m > 0;
-        if !build_main_graph {
+        if config.m == 0 {
             debug!("skip building main HNSW graph");
         }
 
         let payload_m = payload_hnsw_m(&config);
-
-        // Progress subtasks
-        let progress_migrate = build_main_graph.then(|| progress.subtask("migrate"));
-        let progress_main_graph = build_main_graph.then(|| progress.subtask("main_graph"));
         let payload_block_fields = payload_block_fields(&payload_index_ref, payload_m);
-        let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
-            let progress_additional_links = progress.subtask("additional_links");
-            let fields = payload_block_fields
-                .into_iter()
-                .map(|(field, payload_schema)| {
-                    let subtask_name = format!("{}:{field}", payload_schema.name());
-                    let field_progress = progress_additional_links.subtask(subtask_name);
-                    (field_progress, field, payload_schema)
-                })
-                .collect::<Vec<_>>();
-            (progress_additional_links, fields)
-        });
 
         let old_index = old_indices
             .iter()
@@ -121,23 +107,11 @@ impl HNSWIndex {
                     id_tracker_ref.deref(),
                 )
             })
-            .max_by_key(|old_index| old_index.valid_points);
+            .max_by_key(|old_index| old_index.valid_points)
+            .map(|old_index| old_index.reuse(total_vector_count));
 
-        // Build main index graph
-        let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
-
-        #[cfg(feature = "gpu")]
-        let gpu_name_postfix = if let Some(gpu_device) = gpu_device {
-            format!(" and GPU {}", gpu_device.device().name())
-        } else {
-            Default::default()
-        };
-        #[cfg(not(feature = "gpu"))]
-        let gpu_name_postfix = "";
-        #[cfg(not(feature = "gpu"))]
-        let _ = gpu_device;
         debug!(
-            "building HNSW for {total_vector_count} vectors with {} CPUs{gpu_name_postfix}",
+            "building HNSW for {total_vector_count} vectors with {} CPUs",
             permit.num_cpus,
         );
 
@@ -148,10 +122,14 @@ impl HNSWIndex {
                 .unwrap_or(0)
                 * 10,
         );
+
+        let pool = build_thread_pool(permit.num_cpus as usize)?;
+
         let ctx = GraphBuildContext {
             id_tracker: &id_tracker_ref,
             vector_storage: &vector_storage_ref,
             quantized_vectors: quantized_vectors_ref.as_ref(),
+            progress: &progress,
             main_params: GraphParams {
                 hnsw_m: HnswM::new(config.m, config.m0),
                 ef_construct: config.ef_construct,
@@ -164,98 +142,77 @@ impl HNSWIndex {
             },
             stopped,
         };
-
-        let mut graph_layers_builder = GraphLayersBuilder::new(
-            total_vector_count,
-            ctx.main_params.hnsw_m,
-            ctx.main_params.ef_construct,
-            ctx.main_params.entry_points_num,
-            HNSW_USE_HEURISTIC,
-        );
-
-        let pool = build_thread_pool(permit.num_cpus as usize)?;
-
-        let old_index = old_index.map(|old_index| old_index.reuse(total_vector_count));
-
-        let mut indexed_vectors = 0;
-        for vector_id in id_tracker_ref
-            .point_mappings()
-            .iter_internal_excluding(deleted_bitslice)
-        {
-            check_process_stopped(stopped)?;
-            indexed_vectors += 1;
-
-            let level = old_index
-                .as_ref()
-                .and_then(|old_index| old_index.point_level(vector_id))
-                .unwrap_or_else(|| graph_layers_builder.get_random_layer(rng));
-            graph_layers_builder.set_levels(vector_id, level);
-        }
-
-        // Try to build graphs on GPU if possible.
-        #[cfg(feature = "gpu")]
-        let (gpu_vectors, gpu_graph) = super::gpu_build::upload_and_build_main_graph(
-            gpu_device,
-            build_main_graph,
-            progress_payload_blocks.is_some(),
-            id_tracker_ref.deref(),
-            &vector_storage_ref,
-            quantized_vectors_ref.as_ref(),
-            &graph_layers_builder,
-            deleted_bitslice,
-            num_entries,
-            stopped,
+        // `R` may be unsized, while `&mut R` is not
+        let mut rng = rng;
+        let mut builder = GraphBuilder::select(
+            ctx,
+            &pool,
+            &mut rng as &mut dyn Rng,
+            GraphBuildOptions {
+                old_index: old_index.as_ref(),
+                gpu_device,
+                has_payload_blocks: !payload_block_fields.is_empty(),
+            },
         )?;
-        #[cfg(not(feature = "gpu"))]
-        let gpu_graph: Option<GraphLayersBuilder> = None;
 
-        if let Some(gpu_graph) = gpu_graph {
-            graph_layers_builder = gpu_graph;
-            build_main_graph = false;
-        }
+        // Progress subtasks of the payload blocks, after those of the builder
+        let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
+            let progress_additional_links = progress.subtask("additional_links");
+            let fields = payload_block_fields
+                .into_iter()
+                .map(|(field, payload_schema)| {
+                    let subtask_name = format!("{}:{field}", payload_schema.name());
+                    let field_progress = progress_additional_links.subtask(subtask_name);
+                    (field_progress, field, payload_schema)
+                })
+                .collect::<Vec<_>>();
+            (progress_additional_links, fields)
+        });
+
+        // Links nothing when `m == 0`
+        builder.build_main()?;
 
         check_process_stopped(stopped)?;
 
-        if build_main_graph {
-            build_main_graph_on_cpu(
-                ctx,
-                old_index.as_ref(),
-                &graph_layers_builder,
-                progress_migrate.unwrap(),
-                progress_main_graph.unwrap(),
-                &pool,
-            )?;
-        }
-
+        // Blocks keep the ranges of the old index only if they can start from its links
         let payload_seed = old_index
             .as_ref()
-            .filter(|old_index| payload_links_reusable(&config, &old_index.index.config));
+            .filter(|old_index| payload_links_reusable(payload_m, &old_index.index.config));
 
-        if let Some((progress_additional_links, indexed_fields)) = progress_payload_blocks {
-            #[cfg(feature = "gpu")]
-            let mut gpu_insert_context = super::gpu_build::create_gpu_insert_context(
-                gpu_vectors.as_ref(),
-                payload_m,
-                config.ef_construct,
-            )?;
-            #[cfg(not(feature = "gpu"))]
-            let mut gpu_insert_context = None;
+        if let Some((progress_additional_links, fields)) = progress_payload_blocks {
+            progress_additional_links.start();
+            for (index_pos, (field_progress, field, payload_schema)) in
+                fields.into_iter().enumerate()
+            {
+                field_progress.start();
 
-            build_additional_links(
-                ctx,
-                &payload_index_ref,
-                &mut gpu_insert_context,
-                &mut graph_layers_builder,
-                &config,
-                indexed_fields,
-                payload_seed,
-                progress_additional_links,
-                &pool,
-                rng,
-            )?;
+                debug!("building additional index for field {field}");
+
+                let blocks = field_payload_blocks(
+                    &field,
+                    &payload_schema,
+                    &payload_index_ref,
+                    &vector_storage_ref,
+                    payload_seed,
+                    &config,
+                    stopped,
+                )?;
+
+                // Tenant blocks are always built
+                let skip_if_connected = index_pos > 0 && !payload_index_ref.is_tenant(&field);
+
+                builder.build_field_blocks(FieldBlocks {
+                    progress: field_progress,
+                    skip_if_connected,
+                    blocks,
+                })?;
+            }
         } else {
             debug!("skip building additional HNSW links");
         }
+
+        // Consumes the builder: what it holds is released before the graph is saved
+        let (graph_layers_builder, indexed_vectors) = builder.finalize()?;
         drop(old_index);
 
         config.indexed_vector_count.replace(indexed_vectors);
@@ -273,7 +230,7 @@ impl HNSWIndex {
             cold,
         )?;
         debug_assert!(
-            deleted_points_unlinked(&graph, deleted_bitslice),
+            deleted_points_unlinked(&graph, vector_storage_ref.deleted_vector_bitslice()),
             "Deleted point in the graph"
         );
 
