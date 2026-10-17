@@ -9,8 +9,8 @@
 //! Every per-element index has its own element offsets, but all of them agree on the
 //! elements of a point and their order, see
 //! [`ElementMap`](crate::index::field_index::nested_index::ElementMap). So the filter is
-//! an [`OptimizedFilter`] over the element offsets of one of them, and every condition
-//! translates an element to the offset of the same position in its own index.
+//! an [`OptimizedFilter`] over the element offsets of one of them, the input map, see
+//! [`ElementConditionChecker`].
 
 use common::condition_checker::{
     CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
@@ -31,9 +31,8 @@ use crate::vector_storage::VectorStorageRead;
 
 /// Matches a point if any of its elements matches the nested filter.
 struct NestedElementChecker<'a> {
-    /// Element map whose offsets `filter` is checked with, see
-    /// [`ElementConditionChecker::with_anchor`]
-    anchor: &'a ElementMap,
+    /// Map of the offsets `filter` takes, see [`ElementConditionChecker::with_input_map`]
+    input_map: &'a ElementMap,
     filter: OptimizedFilter<'a>,
 }
 
@@ -41,8 +40,8 @@ impl ConditionChecker for NestedElementChecker<'_> {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        for element in self.anchor.point_elements(point_id) {
-            if self.filter.check(element)? {
+        for input_element in self.input_map.point_elements(point_id) {
+            if self.filter.check(input_element)? {
                 return Ok(true);
             }
         }
@@ -75,26 +74,26 @@ where
         nested: &NestedCondition,
     ) -> OperationResult<Option<ConditionCheckerEnum<'b>>> {
         let array_key = nested.array_key();
-        let mut anchor = None;
-        let Some(filter) = self.element_filter(&array_key, nested.filter(), &mut anchor)? else {
+        let mut input_map = None;
+        let Some(filter) = self.element_filter(&array_key, nested.filter(), &mut input_map)? else {
             return Ok(None);
         };
         // Without field conditions there is no index to list the elements of a point
-        let Some(anchor) = anchor else {
+        let Some(input_map) = input_map else {
             return Ok(None);
         };
         Ok(Some(ConditionCheckerEnum::Dyn(Box::new(
-            NestedElementChecker { anchor, filter },
+            NestedElementChecker { input_map, filter },
         ))))
     }
 
-    /// `filter` over element offsets of `anchor`, which is set to the map of the first
+    /// `filter` over element offsets of `input_map`, which is set to the map of the first
     /// field condition. `None` if any condition of `filter` is not covered.
     fn element_filter<'b>(
         &'b self,
         array_key: &JsonPath,
         filter: &Filter,
-        anchor: &mut Option<&'b ElementMap>,
+        input_map: &mut Option<&'b ElementMap>,
     ) -> OperationResult<Option<OptimizedFilter<'b>>> {
         let Filter {
             should,
@@ -111,7 +110,7 @@ where
         };
 
         let mut convert = |conditions: Option<&[Condition]>| {
-            self.element_conditions(array_key, conditions.unwrap_or_default(), anchor)
+            self.element_conditions(array_key, conditions.unwrap_or_default(), input_map)
         };
         let Some(mut should) = convert(should.as_deref())? else {
             return Ok(None);
@@ -146,7 +145,7 @@ where
         &'b self,
         array_key: &JsonPath,
         conditions: &[Condition],
-        anchor: &mut Option<&'b ElementMap>,
+        input_map: &mut Option<&'b ElementMap>,
     ) -> OperationResult<Option<Vec<ConditionCheckerEnum<'b>>>> {
         let mut converted = Vec::with_capacity(conditions.len());
         for condition in conditions {
@@ -155,11 +154,11 @@ where
                     let Some(checker) = self.element_field_checker(array_key, condition)? else {
                         return Ok(None);
                     };
-                    let anchor = *anchor.get_or_insert(checker.element_map());
-                    ConditionCheckerEnum::Dyn(Box::new(checker.with_anchor(anchor)))
+                    let input_map = *input_map.get_or_insert(checker.own_map());
+                    ConditionCheckerEnum::Dyn(Box::new(checker.with_input_map(input_map)))
                 }
                 Condition::Filter(filter) => {
-                    let Some(filter) = self.element_filter(array_key, filter, anchor)? else {
+                    let Some(filter) = self.element_filter(array_key, filter, input_map)? else {
                         return Ok(None);
                     };
                     ConditionCheckerEnum::Filter(filter)

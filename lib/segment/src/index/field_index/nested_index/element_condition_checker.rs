@@ -6,45 +6,58 @@ use crate::index::condition_checker::ConditionCheckerEnum;
 
 /// A condition checked on the elements of one per-element index.
 ///
-/// [`ConditionChecker::check`] takes element offsets of the `anchor` map, so that
-/// conditions answered by different indexes of the array can be combined in one
+/// Every per-element index has its own element offsets, so the conditions of one nested
+/// filter can't share them as they are. Instead, all conditions of a filter take offsets
+/// of one `input_map`, the map of one of the indexes, and each translates them to the
+/// offsets of its own index: input offset → (point, position) → own offset, see
+/// [`ElementMap::element_position`]. That way they can be combined in one
 /// [`OptimizedFilter`](crate::index::query_optimization::optimized_filter::OptimizedFilter).
-/// Each offset is translated to the index's own map, see [`ElementMap::translate`].
 pub struct ElementConditionChecker<'a> {
-    anchor: &'a ElementMap,
-    element_map: &'a ElementMap,
+    /// Map of the offsets passed to [`ConditionChecker::check`]. Starts as `own_map`, see
+    /// [`Self::with_input_map`].
+    input_map: &'a ElementMap,
+    /// Map of the index that answers the condition, the offsets `checker` takes.
+    own_map: &'a ElementMap,
+    /// Checker of the inner index, over offsets of `own_map`.
     checker: ConditionCheckerEnum<'a>,
 }
 
 impl<'a> ElementConditionChecker<'a> {
-    /// `checker` is a checker of an index keyed by the offsets of `element_map`, which
-    /// are also the offsets it takes until [`Self::with_anchor`].
-    pub(super) fn new(element_map: &'a ElementMap, checker: ConditionCheckerEnum<'a>) -> Self {
+    /// `checker` takes offsets of `own_map`, the map of the index it checks.
+    pub(super) fn new(own_map: &'a ElementMap, checker: ConditionCheckerEnum<'a>) -> Self {
         Self {
-            anchor: element_map,
-            element_map,
+            input_map: own_map,
+            own_map,
             checker,
         }
     }
 
-    pub fn element_map(&self) -> &'a ElementMap {
-        self.element_map
+    /// Map of the index that answers the condition.
+    pub fn own_map(&self) -> &'a ElementMap {
+        self.own_map
     }
 
-    /// Take element offsets of `anchor` instead of the index's own map.
-    pub fn with_anchor(self, anchor: &'a ElementMap) -> Self {
-        Self { anchor, ..self }
+    /// Take offsets of `input_map` instead of [`Self::own_map`].
+    pub fn with_input_map(self, input_map: &'a ElementMap) -> Self {
+        Self { input_map, ..self }
     }
 }
 
 impl ConditionChecker for ElementConditionChecker<'_> {
     type Error = OperationError;
 
-    fn check(&self, element: ElementOffsetType) -> OperationResult<bool> {
-        match self.element_map.translate(self.anchor, element) {
-            Some(element) => self.checker.check(element),
-            None => Ok(false),
+    fn check(&self, input_element: ElementOffsetType) -> OperationResult<bool> {
+        if std::ptr::eq(self.input_map, self.own_map) {
+            return self.checker.check(input_element);
         }
+        let Some((point, position)) = self.input_map.element_position(input_element) else {
+            return Ok(false);
+        };
+        // All maps of an array agree on the elements of a point and their order
+        let Some(own_element) = self.own_map.element_at(point, position) else {
+            return Ok(false);
+        };
+        self.checker.check(own_element)
     }
 
     fn check_batched<K: CheckItem>(

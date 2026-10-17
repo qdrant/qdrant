@@ -179,23 +179,22 @@ impl ElementMap {
         }
     }
 
-    /// Offset in this map of the element at `element` in `other`: the element of the same
-    /// point at the same position. `None` if no point owns `element` in `other`.
+    /// The point that owns `element` and the position of the element among the point's
+    /// elements, `None` if no point owns it.
     ///
-    /// All maps of an array agree on the elements of a point and their order, see the
-    /// [module docs](self).
-    pub fn translate(
-        &self,
-        other: &ElementMap,
-        element: ElementOffsetType,
-    ) -> Option<ElementOffsetType> {
-        if std::ptr::eq(self, other) {
-            return Some(element);
-        }
-        let point = other.element_point(element)?;
-        let position = other
+    /// Unlike the offset, the pair identifies the element in every map of the array, see
+    /// [`Self::element_at`].
+    pub fn element_position(&self, element: ElementOffsetType) -> Option<(PointOffsetType, usize)> {
+        let point = self.element_point(element)?;
+        let position = self
             .point_elements(point)
             .position(|owned| owned == element)?;
+        Some((point, position))
+    }
+
+    /// Offset of the element at `position` among the elements of `point`, `None` if the
+    /// point has fewer elements.
+    pub fn element_at(&self, point: PointOffsetType, position: usize) -> Option<ElementOffsetType> {
         self.point_elements(point).nth(position)
     }
 
