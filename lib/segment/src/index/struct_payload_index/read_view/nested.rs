@@ -12,6 +12,8 @@
 //! an [`OptimizedFilter`] over the element offsets of one of them, the input map, see
 //! [`ElementConditionChecker`].
 
+use std::borrow::Cow;
+
 use common::condition_checker::{
     CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
 };
@@ -26,7 +28,10 @@ use crate::index::field_index::nested_index::{ElementConditionChecker, ElementMa
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
-use crate::types::{Condition, FieldCondition, Filter, MinShould, NestedCondition};
+use crate::types::{
+    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
+    NestedCondition,
+};
 use crate::vector_storage::VectorStorageRead;
 
 /// Matches a point if any of its elements matches the nested filter.
@@ -149,31 +154,35 @@ where
     ) -> OperationResult<Option<Vec<ConditionCheckerEnum<'b>>>> {
         let mut converted = Vec::with_capacity(conditions.len());
         for condition in conditions {
-            let checker = match condition {
-                Condition::Field(condition) => {
-                    let Some(checker) = self.element_field_checker(array_key, condition)? else {
-                        return Ok(None);
-                    };
-                    let input_map = *input_map.get_or_insert(checker.own_map());
-                    ConditionCheckerEnum::Dyn(Box::new(checker.with_input_map(input_map)))
+            let field_condition = match condition {
+                Condition::Field(condition) => Cow::Borrowed(condition),
+                Condition::IsEmpty(IsEmptyCondition { is_empty }) => {
+                    Cow::Owned(FieldCondition::new_is_empty(is_empty.key.clone(), true))
+                }
+                Condition::IsNull(IsNullCondition { is_null }) => {
+                    Cow::Owned(FieldCondition::new_is_null(is_null.key.clone(), true))
                 }
                 Condition::Filter(filter) => {
                     let Some(filter) = self.element_filter(array_key, filter, input_map)? else {
                         return Ok(None);
                     };
-                    ConditionCheckerEnum::Filter(filter)
+                    converted.push(ConditionCheckerEnum::Filter(filter));
+                    continue;
                 }
-                // Answered from payload: emptiness is tracked per point, not per element,
-                // and ids, vectors and deeper nesting have no per-element index
-                Condition::IsEmpty(_)
-                | Condition::IsNull(_)
-                | Condition::HasId(_)
+                // Ids, vectors and deeper nesting have no per-element index
+                Condition::HasId(_)
                 | Condition::HasVector(_)
                 | Condition::Slice(_)
                 | Condition::Nested(_)
                 | Condition::CustomIdChecker(_) => return Ok(None),
             };
-            converted.push(checker);
+            let Some(checker) = self.element_field_checker(array_key, &field_condition)? else {
+                return Ok(None);
+            };
+            let input_map = *input_map.get_or_insert(checker.own_map());
+            converted.push(ConditionCheckerEnum::Dyn(Box::new(
+                checker.with_input_map(input_map),
+            )));
         }
         Ok(Some(converted))
     }
@@ -191,12 +200,12 @@ where
             geo_bounding_box: _,
             geo_polygon: _,
             values_count,
-            is_empty,
-            is_null,
+            is_empty: _,
+            is_null: _,
         } = condition;
 
-        // Indexes don't answer these: they also match elements without values
-        if values_count.is_some() || is_empty.is_some() || is_null.is_some() {
+        // No index counts values: it would also have to match elements without values
+        if values_count.is_some() {
             return Ok(None);
         }
 

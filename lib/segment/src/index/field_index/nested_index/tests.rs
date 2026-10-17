@@ -7,6 +7,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::ambient;
 use common::condition_checker::ConditionChecker as _;
 use common::flags::FeatureFlags;
@@ -32,13 +33,15 @@ use crate::index::field_index::null_index::NullIndexRead as _;
 use crate::index::field_index::{FieldIndex, FieldIndexRead as _, PayloadFieldIndexRead as _};
 use crate::index::payload_config::PayloadIndexType;
 use crate::json_path::JsonPath;
+use crate::payload_storage::query_checker::check_payload;
 use crate::segment::Segment;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
-    Distance, ExtendedPointId, FieldCondition, Filter, HnswGlobalConfig, Indexes, Memory, Payload,
-    PayloadFieldSchema, PayloadSchemaType, SegmentConfig, VectorDataConfig, VectorStorageType,
+    Distance, ExtendedPointId, FieldCondition, Filter, HnswGlobalConfig, Indexes, Memory,
+    OwnedPayloadRef, Payload, PayloadFieldSchema, PayloadSchemaType, SegmentConfig,
+    VectorDataConfig, VectorStorageType,
 };
 
 const NUM_POINTS: u64 = 200;
@@ -66,7 +69,12 @@ fn random_offer(rng: &mut StdRng) -> Value {
         offer.insert("price".into(), price);
     }
     if rng.random_bool(0.85) {
-        offer.insert("shop".into(), json!(format!("s{}", rng.random_range(0..5))));
+        let shop = if rng.random_bool(0.1) {
+            Value::Null
+        } else {
+            json!(format!("s{}", rng.random_range(0..5)))
+        };
+        offer.insert("shop".into(), shop);
     }
     // Few decimals: values re-read from payload storage must parse back exactly
     if rng.random_bool(0.8) {
@@ -218,6 +226,53 @@ fn nested_filters() -> Vec<(Filter, bool)> {
     filters
 }
 
+/// Nested filters with emptiness conditions, all answered from per-element indexes.
+///
+/// The flattened segment can't serve as their reference: it estimates a nested `is_empty`
+/// with the flattened null index, which selects too few points, see [`payload_reference`].
+fn nested_emptiness_filters() -> Vec<Filter> {
+    let nested = |filter: Value| json!({"must": [{"nested": {"key": "offers", "filter": filter}}]});
+    let shop = json!({"key": "shop", "match": {"value": "s1"}});
+    let cheap = json!({"key": "price", "range": {"lt": 20}});
+    [
+        nested(json!({"must": [{"is_empty": {"key": "price"}}, shop]})),
+        nested(json!({"must": [{"is_null": {"key": "shop"}}]})),
+        nested(json!({"must": [cheap], "must_not": [{"is_empty": {"key": "tags"}}]})),
+        nested(json!({"must": [{"key": "tags", "is_empty": true}]})),
+        nested(json!({"should": [{"is_null": {"key": "shop"}}, {"is_empty": {"key": "rating"}}]})),
+    ]
+    .into_iter()
+    .map(|filter| serde_json::from_value(filter).unwrap())
+    .collect()
+}
+
+/// Points of `segment` matching `filter`, checked on their payload without any index.
+fn payload_reference(segment: &Segment, filter: &Filter) -> Vec<ExtendedPointId> {
+    let no_indexes = AHashMap::<JsonPath, Vec<FieldIndex>>::new();
+    segment
+        .read_filtered(
+            None,
+            None,
+            None,
+            &AtomicBool::new(false),
+            DeferredBehavior::WithDeferred,
+        )
+        .unwrap()
+        .into_iter()
+        .filter(|&id| {
+            let payload = segment.payload(id).unwrap();
+            check_payload(
+                Box::new(|| OwnedPayloadRef::from(&payload)),
+                None,
+                &HashMap::new(),
+                filter,
+                0,
+                &no_indexes,
+            )
+        })
+        .collect()
+}
+
 /// Whether the `nested` conditions of `filter` are answered from per-element indexes.
 fn nested_from_indexes(segment: &Segment, filter: &Filter) -> Vec<bool> {
     let conditions = filter
@@ -254,7 +309,10 @@ fn nested_filters_use_per_element_indexes() {
     pair.upsert(&mut rng, 0..NUM_POINTS);
     pair.create_indexes(None);
 
-    for (filter, covered) in nested_filters() {
+    let emptiness = nested_emptiness_filters()
+        .into_iter()
+        .map(|filter| (filter, true));
+    for (filter, covered) in nested_filters().into_iter().chain(emptiness) {
         assert!(
             nested_from_indexes(&pair.flat, &filter)
                 .iter()
@@ -592,6 +650,27 @@ fn assert_equal(flat: &Segment, nested: &Segment) {
                 .unwrap();
             assert_eq!(expected, points, "filter {filter:?}");
         }
+    }
+
+    for filter in nested_emptiness_filters() {
+        let points = nested
+            .read_filtered(
+                None,
+                None,
+                Some(&filter),
+                &stopped,
+                DeferredBehavior::WithDeferred,
+            )
+            .unwrap();
+        assert!(
+            !points.is_empty(),
+            "filter {filter:?} must select something"
+        );
+        assert_eq!(
+            payload_reference(nested, &filter),
+            points,
+            "filter {filter:?}"
+        );
     }
 
     for &(field, _) in FIELDS {
