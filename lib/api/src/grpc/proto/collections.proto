@@ -720,7 +720,8 @@ message KeywordIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 5;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements. Default: disabled.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 6;
 }
 
@@ -749,7 +750,8 @@ message IntegerIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 6;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements. Default: disabled.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 7;
 }
 
@@ -768,7 +770,8 @@ message FloatIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements. Default: disabled.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 5;
 }
 
@@ -784,7 +787,8 @@ message GeoIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 3;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements. Default: disabled.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 4;
 }
 
@@ -830,7 +834,8 @@ message TextIndexParams {
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`.
   // The field must be inside the array's elements. Every query on the field, not only nested filters,
   // treats each element as its own document: a condition matches a point when a single element
-  // matches it, and BM25 scores elements separately. Default: disabled.
+  // matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when
+  // one of its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 13;
 }
 
@@ -872,7 +877,8 @@ message BoolIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 3;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements. Default: disabled.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 4;
 }
 
@@ -891,7 +897,8 @@ message DatetimeIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements. Default: disabled.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 5;
 }
 
@@ -909,7 +916,8 @@ message UuidIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 4;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`.
-  // The field must be inside the array's elements. Default: disabled.
+  // The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+  // its elements lacks the field, and never a point without elements. Default: disabled.
   optional string nested = 5;
 }
 

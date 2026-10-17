@@ -55,7 +55,9 @@ pub struct KeywordIndexParams {
     pub prefix: Option<bool>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    /// `offers[].price`. The field must be inside the array's elements. `is_empty` on the
+    /// field matches a point when one of its elements lacks the field, and never a point
+    /// without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
@@ -106,7 +108,9 @@ pub struct IntegerIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    /// `offers[].price`. The field must be inside the array's elements. `is_empty` on the
+    /// field matches a point when one of its elements lacks the field, and never a point
+    /// without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
@@ -199,7 +203,9 @@ pub struct UuidIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    /// `offers[].price`. The field must be inside the array's elements. `is_empty` on the
+    /// field matches a point when one of its elements lacks the field, and never a point
+    /// without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
@@ -241,7 +247,9 @@ pub struct FloatIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    /// `offers[].price`. The field must be inside the array's elements. `is_empty` on the
+    /// field matches a point when one of its elements lacks the field, and never a point
+    /// without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
@@ -279,7 +287,9 @@ pub struct GeoIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    /// `offers[].price`. The field must be inside the array's elements. `is_empty` on the
+    /// field matches a point when one of its elements lacks the field, and never a point
+    /// without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
@@ -372,7 +382,8 @@ pub struct TextIndexParams {
     /// `offers[].title`. The field must be inside the array's elements. Every query on the
     /// field, not only nested filters, treats each element as its own document: a
     /// condition matches a point when a single element matches it, and BM25 scores
-    /// elements separately. Default: disabled.
+    /// elements separately. `is_empty` on the field matches a point when one of its
+    /// elements lacks the field, and never a point without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
@@ -776,7 +787,9 @@ pub struct BoolIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    /// `offers[].price`. The field must be inside the array's elements. `is_empty` on the
+    /// field matches a point when one of its elements lacks the field, and never a point
+    /// without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
@@ -818,7 +831,9 @@ pub struct DatetimeIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Index every object of this array as a separate entry, e.g. `offers` for the field
-    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    /// `offers[].price`. The field must be inside the array's elements. `is_empty` on the
+    /// field matches a point when one of its elements lacks the field, and never a point
+    /// without elements. Default: disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nested: Option<JsonPath>,
 }
