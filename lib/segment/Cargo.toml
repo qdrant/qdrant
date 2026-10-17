@@ -88,6 +88,7 @@ ecow = { workspace = true }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
+crc32c = "0.6.8"
 self_cell.workspace = true
 sha2 = { workspace = true }
 siphasher = "1.0.3"
