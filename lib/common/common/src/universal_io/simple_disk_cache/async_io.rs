@@ -78,15 +78,17 @@ where
                     None => remote.len::<u8>()?,
                 };
                 let byte_range = read_range.into_byte_range::<u8>();
-                let (block_range, fetch_range) =
-                    block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
-
-                let content = remote
-                    .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
-                    .await?;
-
                 let local = LocalState::new(&local_path, file_len, options)?;
-                unsafe { local.write_mmap_bytes(&content, block_range) };
+                // An empty range, or one starting at/after EOF (e.g. a header
+                // prefill of a zero-length file), has nothing to fetch: just
+                // initialize with the length, like the sync open in `fs.rs`.
+                if let Some((block_range, fetch_range)) = block_aligned_fetch(byte_range, file_len)
+                {
+                    let content = remote
+                        .read_bytes_async(fetch_range.clone(), Sequential, REMOTE_READ_ALIGNMENT)
+                        .await?;
+                    unsafe { local.write_mmap_bytes(&content, block_range) };
+                }
                 State::ready(remote, local)
             }
         };

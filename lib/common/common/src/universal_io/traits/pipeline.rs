@@ -30,7 +30,7 @@ use std::ops::Range;
 use super::{Item, UniversalRead};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::AccessPattern;
-use crate::universal_io::{UioResult, UserData};
+use crate::universal_io::{UioResult, UniversalIoError, UserData};
 
 /// File-borrowing read pipeline.
 ///
@@ -85,8 +85,8 @@ where
         };
 
         let items = bytes
-            .try_cast_bytemuck()
-            .expect("data has compatible layout");
+            .cast_bytemuck_or_copy()
+            .map_err(UniversalIoError::BytemuckCast)?;
 
         Ok(Some((user_data, items)))
     }
@@ -193,8 +193,8 @@ where
         };
 
         let items = bytes
-            .try_cast_bytemuck()
-            .expect("data has compatible layout");
+            .cast_bytemuck_or_copy()
+            .map_err(UniversalIoError::BytemuckCast)?;
 
         Ok(Some((user_data, items)))
     }

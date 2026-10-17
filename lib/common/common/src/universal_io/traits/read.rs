@@ -106,7 +106,9 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
             access_pattern,
             align_of::<T>(),
         )?;
-        Ok(bytes.try_cast_bytemuck().unwrap())
+        bytes
+            .cast_bytemuck_or_copy()
+            .map_err(UniversalIoError::BytemuckCast)
     }
 
     fn read_bytes<P: AccessPattern>(
