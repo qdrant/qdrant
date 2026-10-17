@@ -158,6 +158,19 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         Ok(self.bitmap.get_or_init(|| bitmap))
     }
 
+    /// Clear the flags of `points` in RAM, materializing the bitmap.
+    pub fn remove(
+        &mut self,
+        points: impl IntoIterator<Item = PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.bitmap()?;
+        let bitmap = self.bitmap.get_mut().expect("materialized just above");
+        for point in points {
+            bitmap.remove(point);
+        }
+        Ok(())
+    }
+
     pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) {
         let directory = self.directory.as_path();
 
