@@ -64,7 +64,7 @@ impl FieldIndexBuilderTrait for NestedFieldIndexBuilder {
         self.inner.init()
     }
 
-    fn add_point(&mut self, point: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, point: PointOffsetType, values: &[&Value]) -> OperationResult<bool> {
         // Immutable maps need points in ascending order, as payload storage visits them.
         debug_assert!(
             self.last_point.is_none_or(|last_point| last_point < point),
@@ -78,13 +78,12 @@ impl FieldIndexBuilderTrait for NestedFieldIndexBuilder {
         let mut has_values = false;
         for (element, object) in offsets.zip(elements) {
             let values = self.relative_path.value_get(object);
-            has_values |= values.iter().any(|value| may_be_indexed(value));
-            self.inner.add_point(element, &values)?;
+            has_values |= self.inner.add_point(element, &values)?;
         }
         if has_values {
             self.indexed_points += 1;
         }
-        Ok(())
+        Ok(has_values)
     }
 
     fn finalize(self) -> OperationResult<NestedFieldIndex> {
@@ -106,20 +105,5 @@ impl FieldIndexBuilderTrait for NestedFieldIndexBuilder {
             inner,
             indexed_points,
         )
-    }
-}
-
-/// Whether a value may be indexed, without checking the field's type. Like
-/// `ValueIndexer::get_values`, arrays contribute their non-array, non-null items.
-fn may_be_indexed(value: &Value) -> bool {
-    let is_item = |value: &Value| match value {
-        Value::Null | Value::Array(_) => false,
-        Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => true,
-    };
-    match value {
-        Value::Array(items) => items.iter().any(is_item),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
-            is_item(value)
-        }
     }
 }

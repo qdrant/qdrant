@@ -74,7 +74,7 @@ impl IndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
-    ) -> crate::common::operation_error::OperationResult<()> {
+    ) -> crate::common::operation_error::OperationResult<bool> {
         match self {
             IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload),
             IndexBuilder::Mmap(builder) => builder.add_point(id, payload),

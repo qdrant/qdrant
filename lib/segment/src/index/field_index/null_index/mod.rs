@@ -36,7 +36,7 @@ impl From<ImmutableNullIndex> for NullIndex {
 }
 
 impl NullIndex {
-    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
             NullIndex::Mutable(mutable) => mutable.add_point(id, payload),
             NullIndex::Immutable(_immutable) => Err(OperationError::service_error(

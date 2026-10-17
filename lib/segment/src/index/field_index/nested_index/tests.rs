@@ -54,7 +54,13 @@ fn random_offer(rng: &mut StdRng) -> Value {
     let mut offer = serde_json::Map::new();
     // Each field is sometimes missing, so elements differ in what they have
     if rng.random_bool(0.85) {
-        offer.insert("price".into(), json!(rng.random_range(0..40)));
+        // Values of the wrong type are not indexed
+        let price = if rng.random_bool(0.1) {
+            json!("cheap")
+        } else {
+            json!(rng.random_range(0..40))
+        };
+        offer.insert("price".into(), price);
     }
     if rng.random_bool(0.85) {
         offer.insert("shop".into(), json!(format!("s{}", rng.random_range(0..5))));

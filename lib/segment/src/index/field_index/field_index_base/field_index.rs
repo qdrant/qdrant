@@ -153,7 +153,7 @@ impl FieldIndex {
     }
 
     /// Index values extracted at [`Self::input_path`].
-    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index.add_point(id, payload),
             FieldIndex::DatetimeIndex(payload_field_index) => {

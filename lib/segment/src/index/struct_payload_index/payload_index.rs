@@ -299,6 +299,7 @@ fn update_index(
     if field_value.is_empty() {
         index.remove_point(point_id)
     } else {
-        index.add_point(point_id, field_value)
+        index.add_point(point_id, field_value)?;
+        Ok(())
     }
 }

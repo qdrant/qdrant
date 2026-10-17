@@ -29,7 +29,9 @@ pub trait FieldIndexBuilderTrait {
     /// Expected to be called exactly once before any other method.
     fn init(&mut self) -> OperationResult<()>;
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
+    /// Index `payload` for `id`. Returns whether the payload holds a value of the
+    /// index's type.
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool>;
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType>;
 
@@ -157,7 +159,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
             Self::IntMmapIndex(index) => index.add_point(id, payload),
             Self::IntGridstoreIndex(index) => index.add_point(id, payload),

@@ -340,7 +340,8 @@ impl ValueIndexer for FullTextGridstoreIndexBuilder {
     ) -> OperationResult<()> {
         let values: Vec<Value> = values.into_iter().map(Value::String).collect();
         let values: Vec<&Value> = values.iter().collect();
-        FieldIndexBuilderTrait::add_point(self, id, &values)
+        FieldIndexBuilderTrait::add_point(self, id, &values)?;
+        Ok(())
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -376,7 +377,7 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "FullTextIndexGridstoreBuilder: index must be initialized before adding points",

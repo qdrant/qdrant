@@ -27,12 +27,14 @@ impl FieldIndexBuilderTrait for GeoIndexMmapBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let values = payload
             .iter()
             .flat_map(|value| <GeoIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
-        self.in_memory_index.add_many_geo_points(id, values)
+        let has_values = !values.is_empty();
+        self.in_memory_index.add_many_geo_points(id, values)?;
+        Ok(has_values)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -91,7 +93,7 @@ impl FieldIndexBuilderTrait for GeoIndexGridstoreBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "GeoIndexGridstoreBuilder: index must be initialized before adding points",

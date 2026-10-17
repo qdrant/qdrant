@@ -137,8 +137,13 @@ impl NestedFieldIndex {
         Ok(false)
     }
 
-    /// Index the elements extracted at [`Self::array_key`] for `point`.
-    pub fn add_point(&mut self, point: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+    /// Index the elements extracted at [`Self::array_key`] for `point`. Returns whether
+    /// any element holds a value of the inner index's type.
+    pub fn add_point(
+        &mut self,
+        point: PointOffsetType,
+        values: &[&Value],
+    ) -> OperationResult<bool> {
         let elements = nested_elements(values);
         let update = self.element_map.assign(point, elements.len())?;
         let had_values = self.has_values(update.old.iter().copied())?;
@@ -161,7 +166,7 @@ impl NestedFieldIndex {
             (true, false) => self.indexed_points -= 1,
             (false, false) | (true, true) => {}
         }
-        Ok(())
+        Ok(has_values)
     }
 
     /// Remove `point` and the values of its elements.
