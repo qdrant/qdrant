@@ -52,6 +52,12 @@ pub struct KeywordIndexParams {
     /// field. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix: Option<bool>,
+
+    /// If true, build a trigram index over the keys, so regex conditions
+    /// (`match: { "regex": ... }`) on this field select matching values
+    /// without checking each of them. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regex: Option<bool>,
 }
 
 // Integer

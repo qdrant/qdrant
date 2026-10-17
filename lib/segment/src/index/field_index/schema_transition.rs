@@ -143,6 +143,7 @@ mod tests {
             on_disk,
             enable_hnsw,
             prefix: None,
+            regex: None,
         })
     }
 
@@ -310,6 +311,7 @@ mod tests {
             on_disk: Some(false),
             enable_hnsw: None,
             prefix: Some(true),
+            regex: None,
         }));
         assert_eq!(
             classify(&plain, &with_prefix),
@@ -317,6 +319,30 @@ mod tests {
         );
         assert_eq!(
             classify(&with_prefix, &plain),
+            SchemaTransition::Incompatible
+        );
+    }
+
+    #[test]
+    fn keyword_regex_change_is_incompatible() {
+        // Enabling or disabling regex support requires building or dropping
+        // the trigram index file — a full rebuild, never an in-place swap.
+        let plain = wrap(keyword(Some(false), None, None));
+        let with_regex = wrap(PayloadSchemaParams::Keyword(KeywordIndexParams {
+            memory: None,
+            r#type: KeywordIndexType::Keyword,
+            is_tenant: None,
+            on_disk: Some(false),
+            enable_hnsw: None,
+            prefix: None,
+            regex: Some(true),
+        }));
+        assert_eq!(
+            classify(&plain, &with_regex),
+            SchemaTransition::Incompatible
+        );
+        assert_eq!(
+            classify(&with_regex, &plain),
             SchemaTransition::Incompatible
         );
     }

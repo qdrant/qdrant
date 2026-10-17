@@ -66,6 +66,7 @@ fn test_tenant_graph_with_second_condition() {
                 memory: None,
                 enable_hnsw: Some(is_tenant),
                 prefix: None,
+                regex: None,
             }));
         segment
             .create_field_index(seq as SeqNumberType, &JsonPath::new(field), Some(&schema))

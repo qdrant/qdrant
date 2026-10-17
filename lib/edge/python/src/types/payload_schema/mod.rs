@@ -213,13 +213,14 @@ pub struct PyKeywordIndexParams(KeywordIndexParams);
 #[pymethods]
 impl PyKeywordIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, prefix = None, memory = None))]
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, prefix = None, memory = None, regex = None))]
     pub fn new(
         is_tenant: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
         prefix: Option<bool>,
         memory: Option<PyMemory>,
+        regex: Option<bool>,
     ) -> Self {
         Self(KeywordIndexParams {
             r#type: Default::default(),
@@ -228,6 +229,7 @@ impl PyKeywordIndexParams {
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
             prefix,
+            regex,
         })
     }
 
@@ -258,6 +260,11 @@ impl PyKeywordIndexParams {
     pub fn prefix(&self) -> Option<bool> {
         self.0.prefix
     }
+
+    #[getter]
+    pub fn regex(&self) -> Option<bool> {
+        self.0.regex
+    }
 }
 
 impl PyKeywordIndexParams {
@@ -270,6 +277,7 @@ impl PyKeywordIndexParams {
             memory: _,
             enable_hnsw: _,
             prefix: _,
+            regex: _,
         } = self.0;
     }
 }

@@ -583,3 +583,93 @@ mod immutable_map_index {
         assert!(!dir.path().join(REGEX_INDEX_PATH).exists());
     }
 }
+
+/// The `regex` option of keyword index params reaches every variant.
+mod index_option {
+    use common::ambient;
+    use common::bitvec::BitVec;
+    use common::types::PointOffsetType;
+    use common::universal_io::MmapFs;
+    use rstest::rstest;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    use super::super::{RegexMatcher, StrMapIndexRegexRead};
+    use crate::data_types::index::{KeywordIndexParams, KeywordIndexType};
+    use crate::index::field_index::index_selector::IndexSelector;
+    use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait, ReadOnlyFieldIndex};
+    use crate::json_path::JsonPath;
+    use crate::types::{Memory, PayloadFieldSchema, PayloadSchemaParams};
+
+    fn schema(regex: Option<bool>) -> PayloadFieldSchema {
+        PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+            r#type: KeywordIndexType::Keyword,
+            regex,
+            ..Default::default()
+        }))
+    }
+
+    fn has_regex_index(index: &FieldIndex) -> bool {
+        let FieldIndex::KeywordIndex(index) = index else {
+            panic!("expected a keyword index");
+        };
+        let matcher = RegexMatcher::new("abc").unwrap();
+        index.regex_keys(&matcher).unwrap().is_some()
+    }
+
+    #[rstest]
+    fn built_and_reopened(
+        #[values(true, false)] appendable: bool,
+        #[values(Some(true), Some(false), None)] regex: Option<bool>,
+    ) {
+        let dir = TempDir::with_prefix("regex_index_option").unwrap();
+        let field = JsonPath::new("key");
+        let schema = schema(regex);
+        let deleted = BitVec::repeat(false, 16);
+        let selector = if appendable {
+            IndexSelector::Appendable { dir: dir.path() }
+        } else {
+            IndexSelector::NonAppendable {
+                dir: dir.path(),
+                memory: Memory::Cold,
+            }
+        };
+        let expected = regex == Some(true);
+
+        let _scope = ambient::test_guard();
+        let mut builders = selector.index_builder(&field, &schema, &deleted).unwrap();
+        let mut builder = builders.pop().unwrap();
+        builder.init().unwrap();
+        let value = Value::from("abcdef");
+        builder.add_point(0 as PointOffsetType, &[&value]).unwrap();
+        let built = builder.finalize().unwrap();
+        assert_eq!(has_regex_index(&built), expected);
+        let index_type = built.get_full_index_type();
+        drop(built);
+
+        // Read-only open, as of a segment opened by a reader.
+        let read_only = ReadOnlyFieldIndex::open(
+            &MmapFs,
+            dir.path(),
+            &field,
+            &schema,
+            &index_type,
+            1,
+            &deleted,
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        let ReadOnlyFieldIndex::KeywordIndex(read_only) = read_only else {
+            panic!("expected a keyword index");
+        };
+        let matcher = RegexMatcher::new("abc").unwrap();
+        assert_eq!(read_only.regex_keys(&matcher).unwrap().is_some(), expected);
+
+        let mut reopened = selector
+            .new_index(&field, &schema, false, &deleted)
+            .unwrap()
+            .unwrap();
+        assert_eq!(has_regex_index(&reopened.pop().unwrap()), expected);
+    }
+}

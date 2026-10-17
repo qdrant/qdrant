@@ -86,6 +86,7 @@ fn test_on_disk_segment_snapshot(
                     on_disk: Some(true),
                     enable_hnsw: None,
                     prefix: None,
+                    regex: None,
                 }),
             )),
         )

@@ -139,6 +139,7 @@ where
     dir: PathBuf,
     index: Option<MapIndex<N>>,
     prefix_index: bool,
+    regex_index: bool,
 }
 
 impl<N: MapIndexKey + ?Sized> MapIndexGridstoreBuilder<N>
@@ -150,7 +151,13 @@ where
             dir,
             index: None,
             prefix_index,
+            regex_index: false,
         }
+    }
+
+    /// Also maintain a trigram index over the keys, for regex conditions.
+    pub fn enable_regex_index(&mut self) {
+        self.regex_index = true;
     }
 
     /// Don't journal the value mappings of the built index, see
@@ -175,11 +182,12 @@ where
             self.index.is_none(),
             "index must be initialized exactly once",
         );
-        self.index.replace(
-            MapIndex::new_mutable(self.dir.clone(), true, self.prefix_index)?.ok_or_else(|| {
-                OperationError::service_error("Failed to create mutable map index")
-            })?,
-        );
+        let mut index = MapIndex::new_mutable(self.dir.clone(), true, self.prefix_index)?
+            .ok_or_else(|| OperationError::service_error("Failed to create mutable map index"))?;
+        if self.regex_index {
+            index.enable_regex_index();
+        }
+        self.index.replace(index);
         Ok(())
     }
 

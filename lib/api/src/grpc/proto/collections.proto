@@ -719,11 +719,20 @@ message KeywordIndexParams {
   // Memory placement of the index.
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 5;
+  // If set, build a trigram index over the keys, so regex conditions
+  // (`match: { "regex": ... }`) on this field select matching values
+  // without checking each of them.
+  optional KeywordRegexParams regex = 6;
 }
 
 // Prefix matching options for the keyword index. Has no options yet:
 // presence of this message enables prefix matching.
 message KeywordPrefixParams {
+}
+
+// Regex matching options for the keyword index. Has no options yet:
+// presence of this message enables the trigram index.
+message KeywordRegexParams {
 }
 
 message IntegerIndexParams {

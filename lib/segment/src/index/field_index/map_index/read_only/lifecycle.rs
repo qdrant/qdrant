@@ -44,6 +44,16 @@ where
         Ok(ReadOnlyAppendableMapIndex::open(fs, dir, max_point_offset)?.map(Self::Appendable))
     }
 
+    /// Maintain a trigram index over the keys of the appendable variant, for
+    /// regex conditions. No-op for the immutable variants, which have it if
+    /// the regex index file was built.
+    pub fn enable_regex_index(&mut self) {
+        match self {
+            Self::Appendable(index) => index.enable_regex_index(),
+            Self::Immutable(_) | Self::OnDisk(_) => {}
+        }
+    }
+
     pub fn preopen_immutable(
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
