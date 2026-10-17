@@ -106,9 +106,7 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// array.
     ///
     /// See [`nested_index`](crate::index::field_index::nested_index).
-    fn element_map(&self, _array_key: &JsonPath) -> Option<&ElementMap> {
-        None
-    }
+    fn element_map(&self, array_key: &JsonPath) -> Option<&ElementMap>;
 
     /// Checker of `condition` over the elements of the `array_key` array, if this is a
     /// per-element index of it that can serve the condition.
@@ -116,9 +114,7 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// The condition key is the full path of the field, e.g. `offers[].price`.
     fn element_condition_checker<'a>(
         &'a self,
-        _array_key: &JsonPath,
-        _condition: &FieldCondition,
-    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
-        Ok(None)
-    }
+        array_key: &JsonPath,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>>;
 }
