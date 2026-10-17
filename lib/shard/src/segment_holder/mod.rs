@@ -1111,9 +1111,27 @@ impl SegmentHolder {
                         // we must guarantee, that data in new segment will be persisted before
                         // deleting point from old segment.
                         // Do ensure that, we add a flush dependency
-                        self.flush_dependency
+                        //
+                        // The edge can be refused when the two segments already constrain each
+                        // other in the opposite direction. A segment id changes its copy-on-write
+                        // role in place while the optimizer proxies it and unwraps it again, and
+                        // edges outlive the role flip, so `appendable_idx` may already be
+                        // recorded as depending on `idx`. Ordering both ways is impossible, and
+                        // recording it anyway left the flush topology cyclic, which
+                        // `sort_segment_ids_by_flush_dependency` detects and panics on. The
+                        // pre-existing edge is kept and this move goes unordered, which is what
+                        // the topology's unordered leftovers already degraded to.
+                        if !self
+                            .flush_dependency
                             .lock()
-                            .add_dependency(idx, appendable_idx, op_num);
+                            .add_dependency(idx, appendable_idx, op_num)
+                        {
+                            log::warn!(
+                                "Dropped copy-on-write flush dependency: segment {idx} must be \
+                                 flushed after segment {appendable_idx}, but the latter already \
+                                 depends on the former",
+                            );
+                        }
 
                         // Read the latest head of the point, including a
                         // deferred head that is invisible to ordinary
