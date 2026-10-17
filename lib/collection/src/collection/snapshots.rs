@@ -19,7 +19,7 @@ use crate::collection::CollectionVersion;
 use crate::common::snapshot_stream::SnapshotStream;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::{COLLECTION_CONFIG_FILE, CollectionConfigInternal, ShardingMethod};
-use crate::operations::snapshot_ops::SnapshotDescription;
+use crate::operations::snapshot_ops::{SnapshotDescription, unique_snapshot_timestamp};
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -62,7 +62,7 @@ impl Collection {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"),
+            unique_snapshot_timestamp(),
         );
 
         // Final location of snapshot

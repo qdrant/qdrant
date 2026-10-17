@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use api::grpc::conversions::naive_date_time_to_proto;
-use chrono::{DateTime, NaiveDateTime};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use fs_err::tokio as tokio_fs;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -156,6 +157,17 @@ pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
     checksum_path.into()
 }
 
+/// Timestamp part of a new snapshot name, unique within this process.
+///
+/// The time has second precision; the suffix is a process-wide counter, so concurrent
+/// snapshot requests within the same second still get distinct names.
+pub fn unique_snapshot_timestamp() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}-{counter}", Utc::now().format("%Y-%m-%d-%H-%M-%S"))
+}
+
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema, Validate)]
 pub struct ShardSnapshotRecover {
     pub location: ShardSnapshotLocation,
@@ -228,5 +240,34 @@ impl TryFrom<api::grpc::qdrant::ShardSnapshotLocation> for ShardSnapshotLocation
         };
 
         Ok(location)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn unique_snapshot_timestamp_is_unique_across_threads() {
+        let timestamps: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        (0..1000)
+                            .map(|_| unique_snapshot_timestamp())
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().unwrap())
+                .collect()
+        });
+
+        let unique: HashSet<_> = timestamps.iter().collect();
+        assert_eq!(unique.len(), timestamps.len());
     }
 }

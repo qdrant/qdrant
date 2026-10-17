@@ -6,7 +6,7 @@ pub mod recover;
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
 
-use collection::operations::snapshot_ops::SnapshotDescription;
+use collection::operations::snapshot_ops::{SnapshotDescription, unique_snapshot_timestamp};
 use collection::operations::verification::new_unchecked_verification_pass;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
@@ -125,9 +125,7 @@ async fn _do_create_full_snapshot(
         let snapshot_details = toc.create_snapshot(collection_pass).await?;
         created_snapshots.push((collection_pass.name(), snapshot_details));
     }
-    let current_time = chrono::Utc::now()
-        .format("%Y-%m-%d-%H-%M-%S-%3f")
-        .to_string();
+    let current_time = unique_snapshot_timestamp();
 
     let snapshot_name = format!("{FULL_SNAPSHOT_FILE_NAME}-{current_time}.snapshot");
 
