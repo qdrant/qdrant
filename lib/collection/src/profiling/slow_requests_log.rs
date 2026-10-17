@@ -16,7 +16,12 @@ pub struct LogEntry {
     collection_name: String,
     #[serde(serialize_with = "duration_as_seconds")]
     duration: Duration,
+    /// Time of the slowest request in this group
     datetime: DateTime<Utc>,
+    /// Time of the oldest request in this group
+    datetime_first: DateTime<Utc>,
+    /// Time of the newest request in this group
+    datetime_last: DateTime<Utc>,
     request_name: &'static str,
     approx_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -42,6 +47,8 @@ impl LogEntry {
             collection_name,
             duration,
             datetime,
+            datetime_first: datetime,
+            datetime_last: datetime,
             request_name,
             approx_count: 1,
             cpu_usage_ratio,
@@ -52,6 +59,11 @@ impl LogEntry {
 
     pub fn upd_counter(&mut self, count: usize) {
         self.approx_count = count;
+    }
+
+    pub fn upd_datetime_range(&mut self, first: DateTime<Utc>, last: DateTime<Utc>) {
+        self.datetime_first = first;
+        self.datetime_last = last;
     }
 }
 
@@ -87,6 +99,8 @@ impl Ord for LogEntry {
 pub struct SlowRequestsLog {
     log_priority_queue: AHashMap<&'static str, FixedLengthPriorityQueue<LogEntry>>,
     counters: CountMinSketch64<u64>,
+    /// Oldest and newest request time of each group in the log, by content hash
+    datetime_ranges: AHashMap<u64, (DateTime<Utc>, DateTime<Utc>)>,
     max_entries: usize,
 }
 
@@ -95,6 +109,7 @@ impl SlowRequestsLog {
         SlowRequestsLog {
             log_priority_queue: Default::default(),
             counters: CountMinSketch64::new(1024, 0.95, 0.1).unwrap(), // 95% probability, 10% tolerance
+            datetime_ranges: Default::default(),
             max_entries,
         }
     }
@@ -121,7 +136,13 @@ impl SlowRequestsLog {
             }
         } else {
             // just insert
-            queue.push(entry)
+            self.datetime_ranges
+                .insert(entry.content_hash, (entry.datetime, entry.datetime));
+            let evicted = queue.push(entry);
+            if let Some(evicted) = &evicted {
+                self.datetime_ranges.remove(&evicted.content_hash);
+            }
+            evicted
         }
     }
 
@@ -152,6 +173,12 @@ impl SlowRequestsLog {
         let content_hash = Self::content_hash(request.request_hash(), collection_name);
 
         self.inc_counter(content_hash);
+
+        // Track oldest and newest request, also if this one is too fast to replace the logged one
+        if let Some((first, last)) = self.datetime_ranges.get_mut(&content_hash) {
+            *first = (*first).min(datetime);
+            *last = (*last).max(datetime);
+        }
 
         let queue = self
             .log_priority_queue
@@ -210,6 +237,9 @@ impl SlowRequestsLog {
             .map(|mut entry| {
                 let approx_count = self.counters.estimate(&entry.content_hash);
                 entry.upd_counter(approx_count as usize);
+                if let Some(&(first, last)) = self.datetime_ranges.get(&entry.content_hash) {
+                    entry.upd_datetime_range(first, last);
+                }
                 entry
             })
             .collect()
@@ -261,5 +291,54 @@ mod tests {
         assert!(evicted.is_none());
         let entries = log.get_log_entries(10, None);
         assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn test_get_slow_requests_datetime_range() {
+        let mut log = SlowRequestsLog::new(2);
+        let request = DummyLoggable;
+        let t0 = Utc::now();
+        let t = |secs| t0 + chrono::Duration::seconds(secs);
+
+        log.log_request("col1", Duration::from_secs(2), t(1), &request, None);
+        log.log_request("col2", Duration::from_secs(3), t(2), &request, None);
+        // Too fast to be logged, but still a newer request in the col1 group
+        log.log_request("col1", Duration::from_secs(1), t(3), &request, None);
+        // Slower, replaces the logged col1 request
+        log.log_request("col1", Duration::from_secs(5), t(4), &request, None);
+        // Arrives out of order, an older request in the col1 group
+        log.log_request("col1", Duration::from_secs(1), t(0), &request, None);
+
+        let entries = log.get_log_entries(10, None);
+        assert_eq!(entries.len(), 2);
+        let col1 = entries
+            .iter()
+            .find(|e| e.collection_name == "col1")
+            .unwrap();
+        assert_eq!(col1.datetime, t(4));
+        assert_eq!(col1.datetime_first, t(0));
+        assert_eq!(col1.datetime_last, t(4));
+        let col2 = entries
+            .iter()
+            .find(|e| e.collection_name == "col2")
+            .unwrap();
+        assert_eq!(col2.datetime, t(2));
+        assert_eq!(col2.datetime_first, t(2));
+        assert_eq!(col2.datetime_last, t(2));
+
+        // Evicting col2 forgets its range, logging it again starts a new one
+        let evicted = log.log_request("col3", Duration::from_secs(10), t(5), &request, None);
+        assert_eq!(evicted.unwrap().collection_name, "col2");
+        assert_eq!(log.datetime_ranges.len(), 2);
+        log.log_request("col2", Duration::from_secs(20), t(6), &request, None);
+        assert_eq!(log.datetime_ranges.len(), 2);
+
+        let entries = log.get_log_entries(10, None);
+        let col2 = entries
+            .iter()
+            .find(|e| e.collection_name == "col2")
+            .unwrap();
+        assert_eq!(col2.datetime_first, t(6));
+        assert_eq!(col2.datetime_last, t(6));
     }
 }
