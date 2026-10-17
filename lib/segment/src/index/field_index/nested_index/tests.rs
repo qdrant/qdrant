@@ -29,6 +29,7 @@ use crate::entry::entry_point::{
 };
 use crate::id_tracker::IdTrackerRead as _;
 use crate::index::PayloadIndexRead as _;
+use crate::index::field_index::nested_index::ElementMapRead as _;
 use crate::index::field_index::null_index::NullIndexRead as _;
 use crate::index::field_index::{FieldIndex, FieldIndexRead as _, PayloadFieldIndexRead as _};
 use crate::index::payload_config::PayloadIndexType;

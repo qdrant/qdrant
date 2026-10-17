@@ -30,10 +30,13 @@ use serde_json::Value;
 pub use self::builder::NestedFieldIndexBuilder;
 pub use self::element_condition_checker::ElementConditionChecker;
 use self::element_map::nested_elements;
-pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType, PointElements};
+pub use self::element_map::{
+    ElementMap, ElementMapBuilder, ElementMapRead, ElementOffsetType, PointElements,
+};
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
-use super::numeric_index::NumericFieldIndexRead;
+use super::facet_index::FacetIndexEnum;
+use super::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use super::stat_tools::estimate_multi_value_selection_cardinality;
 use super::{
     CardinalityEstimation, FacetIndex, FieldIndex, FieldIndexRead, PayloadBlockCondition,
@@ -44,33 +47,69 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::MultiValue;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::condition_checker::ConditionCheckerEnum;
-use crate::index::field_index::full_text_index::full_text_index_read::{
-    fill_text_statistics, score_bm25,
-};
-use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params, FullTextIndex};
-use crate::index::payload_config::FullPayloadIndexType;
+use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
+use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
+/// What a per-element index needs from the index it wraps, besides reading it.
+///
+/// Implemented by the field index of every kind of segment that can hold per-element
+/// indexes, so that they share the wrapper.
+pub trait NestedInnerIndex: FieldIndexRead {
+    fn get_full_index_type(&self) -> FullPayloadIndexType;
+
+    fn ram_usage_bytes(&self) -> usize;
+
+    fn is_cold(&self) -> bool;
+
+    fn populate(&self) -> OperationResult<()>;
+
+    fn clear_cache(&self) -> OperationResult<()>;
+}
+
+impl NestedInnerIndex for FieldIndex {
+    fn get_full_index_type(&self) -> FullPayloadIndexType {
+        FieldIndex::get_full_index_type(self)
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
+        FieldIndex::ram_usage_bytes(self)
+    }
+
+    fn is_cold(&self) -> bool {
+        FieldIndex::is_cold(self)
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        FieldIndex::populate(self)
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        FieldIndex::clear_cache(self)
+    }
+}
+
 /// A field index of the elements of a nested array, read as an index of points.
 ///
-/// See the [module docs](self).
-pub struct NestedFieldIndex {
+/// `inner` is the wrapped index, `element_map` its point ↔ element mapping. The defaults
+/// are those of writable segments. See the [module docs](self).
+pub struct NestedFieldIndex<I = FieldIndex, M = ElementMap> {
     /// The array whose elements are indexed, as its array key, e.g. `offers[]`
     array_key: JsonPath,
     /// The indexed field inside an element, e.g. `price` for `offers[].price`
     relative_path: JsonPath,
-    element_map: ElementMap,
+    element_map: M,
     /// Index keyed by element offsets
-    inner: FieldIndex,
+    inner: I,
     /// Number of points with at least one value in `inner`. For immutable indexes,
     /// an upper bound: opening restores the build-time count, ignoring prior deletions.
     indexed_points: usize,
 }
 
-impl NestedFieldIndex {
+impl<I: NestedInnerIndex, M: ElementMapRead> NestedFieldIndex<I, M> {
     /// Wrap `inner`, an index of `field` keyed by the element offsets of `element_map`.
     ///
     /// `indexed_points` is an upper bound on points with a value in `inner`, if available.
@@ -78,8 +117,8 @@ impl NestedFieldIndex {
     pub fn new(
         field: &JsonPath,
         array_key: JsonPath,
-        element_map: ElementMap,
-        inner: FieldIndex,
+        element_map: M,
+        inner: I,
         indexed_points: Option<usize>,
     ) -> OperationResult<Self> {
         let relative_path = field.strip_prefix(&array_key).ok_or_else(|| {
@@ -117,12 +156,12 @@ impl NestedFieldIndex {
         &self.array_key
     }
 
-    pub fn element_map(&self) -> &ElementMap {
+    pub fn element_map(&self) -> &M {
         &self.element_map
     }
 
     /// The wrapped index, keyed by element offsets.
-    pub fn inner(&self) -> &FieldIndex {
+    pub fn inner(&self) -> &I {
         &self.inner
     }
 
@@ -138,6 +177,122 @@ impl NestedFieldIndex {
         Ok(false)
     }
 
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.inner.ram_usage_bytes() + self.element_map.ram_usage_bytes()
+    }
+
+    pub fn is_cold(&self) -> bool {
+        self.inner.is_cold()
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inner.populate()?;
+        self.element_map.populate()
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inner.clear_cache()?;
+        self.element_map.clear_cache()
+    }
+
+    pub fn get_full_index_type(&self) -> FullPayloadIndexType {
+        self.inner.get_full_index_type()
+    }
+
+    /// Whether the flattened index of the field would keep each value once per point.
+    fn dedups_values(&self) -> bool {
+        match self.inner.get_full_index_type().index_type {
+            PayloadIndexType::IntMapIndex
+            | PayloadIndexType::KeywordIndex
+            | PayloadIndexType::UuidMapIndex
+            | PayloadIndexType::BoolIndex => true,
+            PayloadIndexType::IntIndex
+            | PayloadIndexType::DatetimeIndex
+            | PayloadIndexType::FloatIndex
+            | PayloadIndexType::GeoIndex
+            | PayloadIndexType::FullTextIndex
+            | PayloadIndexType::UuidIndex
+            | PayloadIndexType::NullIndex => false,
+        }
+    }
+
+    /// Whether the inner index is a full-text index, which scores elements with BM25.
+    fn is_text(&self) -> bool {
+        match self.inner.get_full_index_type().index_type {
+            PayloadIndexType::FullTextIndex => true,
+            PayloadIndexType::IntIndex
+            | PayloadIndexType::DatetimeIndex
+            | PayloadIndexType::IntMapIndex
+            | PayloadIndexType::KeywordIndex
+            | PayloadIndexType::FloatIndex
+            | PayloadIndexType::GeoIndex
+            | PayloadIndexType::BoolIndex
+            | PayloadIndexType::UuidIndex
+            | PayloadIndexType::UuidMapIndex
+            | PayloadIndexType::NullIndex => false,
+        }
+    }
+
+    /// Convert an estimation over elements into one over points.
+    fn to_points_estimation(
+        &self,
+        estimation: CardinalityEstimation,
+        map: &M,
+    ) -> OperationResult<CardinalityEstimation> {
+        let CardinalityEstimation {
+            primary_clauses,
+            min,
+            exp,
+            max,
+        } = estimation;
+
+        // The elements the inner index can match, and an upper bound on the points owning
+        // them. A value index matches elements with values, the null index any element.
+        let (elements, points) = match self.inner.get_full_index_type().index_type {
+            PayloadIndexType::IntIndex
+            | PayloadIndexType::DatetimeIndex
+            | PayloadIndexType::IntMapIndex
+            | PayloadIndexType::KeywordIndex
+            | PayloadIndexType::FloatIndex
+            | PayloadIndexType::GeoIndex
+            | PayloadIndexType::FullTextIndex
+            | PayloadIndexType::BoolIndex
+            | PayloadIndexType::UuidIndex
+            | PayloadIndexType::UuidMapIndex => {
+                // The inner index is keyed by elements, so it counts elements with values
+                let elements = self.inner.count_indexed_points()?;
+                // `indexed_points` of an immutable index ignores deletions, so it can
+                // exceed the elements still holding values, which the estimator requires
+                // to bound it
+                (elements, self.indexed_points.min(elements))
+            }
+            PayloadIndexType::NullIndex => {
+                let elements = map.elements_count();
+                (elements, map.points_upper_bound().min(elements))
+            }
+        };
+        let max = max.min(points);
+        let min = min.div_ceil(map.max_elements_per_point()).min(max);
+        let exp = if points == 0 {
+            0
+        } else {
+            // Assume matching elements spread randomly among points
+            estimate_multi_value_selection_cardinality(points, elements, exp.min(elements)).round()
+                as usize
+        };
+
+        Ok(CardinalityEstimation {
+            // Field conditions resolve through this index, so they select points too
+            primary_clauses,
+            min,
+            exp: exp.clamp(min, max),
+            max,
+        })
+    }
+}
+
+/// Writes and typed views of the per-element indexes of writable segments.
+impl NestedFieldIndex {
     /// Index the elements extracted at [`Self::array_key`] for `point`. Returns whether
     /// any element holds a value of the inner index's type.
     pub fn add_point(
@@ -183,30 +338,8 @@ impl NestedFieldIndex {
         Ok(())
     }
 
-    pub fn ram_usage_bytes(&self) -> usize {
-        self.inner.ram_usage_bytes() + self.element_map.ram_usage_bytes()
-    }
-
-    pub fn is_cold(&self) -> bool {
-        self.inner.is_cold()
-    }
-
-    pub fn populate(&self) -> OperationResult<()> {
-        self.inner.populate()?;
-        self.element_map.populate()
-    }
-
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.inner.clear_cache()?;
-        self.element_map.clear_cache()
-    }
-
-    pub fn get_full_index_type(&self) -> FullPayloadIndexType {
-        self.inner.get_full_index_type()
-    }
-
     /// Order-by view over points, if the inner index is numeric.
-    pub fn numeric_view(&self) -> Option<NestedNumericView<'_>> {
+    pub fn numeric_view(&self) -> Option<NestedNumericView<'_, NumericFieldIndex<'_>, ElementMap>> {
         Some(NestedNumericView::new(
             self.inner.numeric_view()?,
             &self.element_map,
@@ -214,114 +347,21 @@ impl NestedFieldIndex {
     }
 
     /// Facet view over points, if the inner index supports faceting.
-    pub fn facet_view(&self) -> Option<NestedFacetView<'_>> {
+    pub fn facet_view(&self) -> Option<NestedFacetView<'_, FacetIndexEnum<'_>, ElementMap>> {
         Some(NestedFacetView::new(
             self.inner.facet_view()?,
             &self.element_map,
         ))
     }
-
-    fn text_index(&self) -> Option<&FullTextIndex> {
-        match &self.inner {
-            FieldIndex::FullTextIndex(index) => Some(index),
-            FieldIndex::IntIndex(_)
-            | FieldIndex::DatetimeIndex(_)
-            | FieldIndex::IntMapIndex(_)
-            | FieldIndex::KeywordIndex(_)
-            | FieldIndex::FloatIndex(_)
-            | FieldIndex::GeoIndex(_)
-            | FieldIndex::BoolIndex(_)
-            | FieldIndex::UuidIndex(_)
-            | FieldIndex::UuidMapIndex(_)
-            | FieldIndex::NullIndex(_)
-            | FieldIndex::Nested(_) => None,
-        }
-    }
-
-    /// Whether the flattened index of the field would keep each value once per point.
-    fn dedups_values(&self) -> bool {
-        match &self.inner {
-            FieldIndex::IntMapIndex(_)
-            | FieldIndex::KeywordIndex(_)
-            | FieldIndex::UuidMapIndex(_)
-            | FieldIndex::BoolIndex(_) => true,
-            FieldIndex::IntIndex(_)
-            | FieldIndex::DatetimeIndex(_)
-            | FieldIndex::FloatIndex(_)
-            | FieldIndex::GeoIndex(_)
-            | FieldIndex::FullTextIndex(_)
-            | FieldIndex::UuidIndex(_)
-            | FieldIndex::NullIndex(_)
-            | FieldIndex::Nested(_) => false,
-        }
-    }
-
-    /// Convert an estimation over elements into one over points.
-    fn to_points_estimation(
-        &self,
-        estimation: CardinalityEstimation,
-        map: &ElementMap,
-    ) -> OperationResult<CardinalityEstimation> {
-        let CardinalityEstimation {
-            primary_clauses,
-            min,
-            exp,
-            max,
-        } = estimation;
-
-        // The elements the inner index can match, and an upper bound on the points owning
-        // them. A value index matches elements with values, the null index any element.
-        let (elements, points) = match &self.inner {
-            FieldIndex::IntIndex(_)
-            | FieldIndex::DatetimeIndex(_)
-            | FieldIndex::IntMapIndex(_)
-            | FieldIndex::KeywordIndex(_)
-            | FieldIndex::FloatIndex(_)
-            | FieldIndex::GeoIndex(_)
-            | FieldIndex::FullTextIndex(_)
-            | FieldIndex::BoolIndex(_)
-            | FieldIndex::UuidIndex(_)
-            | FieldIndex::UuidMapIndex(_)
-            | FieldIndex::Nested(_) => {
-                // The inner index is keyed by elements, so it counts elements with values
-                let elements = self.inner.count_indexed_points()?;
-                // `indexed_points` of an immutable index ignores deletions, so it can
-                // exceed the elements still holding values, which the estimator requires
-                // to bound it
-                (elements, self.indexed_points.min(elements))
-            }
-            FieldIndex::NullIndex(_) => {
-                let elements = map.elements_count();
-                (elements, map.points_upper_bound().min(elements))
-            }
-        };
-        let max = max.min(points);
-        let min = min.div_ceil(map.max_elements_per_point()).min(max);
-        let exp = if points == 0 {
-            0
-        } else {
-            // Assume matching elements spread randomly among points
-            estimate_multi_value_selection_cardinality(points, elements, exp.min(elements)).round()
-                as usize
-        };
-
-        Ok(CardinalityEstimation {
-            // Field conditions resolve through this index, so they select points too
-            primary_clauses,
-            min,
-            exp: exp.clamp(min, max),
-            max,
-        })
-    }
 }
 
 /// Matches a point if any of its elements matches the condition of the inner index.
-struct NestedConditionChecker<'a> {
+struct NestedConditionChecker<'a, M> {
     inner: ConditionCheckerEnum<'a>,
-    element_map: &'a ElementMap,
+    element_map: &'a M,
 }
 
-impl ConditionChecker for NestedConditionChecker<'_> {
+impl<M: ElementMapRead> ConditionChecker for NestedConditionChecker<'_, M> {
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
@@ -343,7 +383,7 @@ impl ConditionChecker for NestedConditionChecker<'_> {
     }
 }
 
-impl PayloadFieldIndexRead for NestedFieldIndex {
+impl<I: NestedInnerIndex, M: ElementMapRead> PayloadFieldIndexRead for NestedFieldIndex<I, M> {
     fn count_indexed_points(&self) -> OperationResult<usize> {
         Ok(self.indexed_points)
     }
@@ -472,7 +512,7 @@ impl PayloadFieldIndex for NestedFieldIndex {
     }
 }
 
-impl FieldIndexRead for NestedFieldIndex {
+impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex<I, M> {
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
         let telemetry = self.inner.get_telemetry_data()?;
         Ok(PayloadIndexTelemetry {
@@ -518,7 +558,8 @@ impl FieldIndexRead for NestedFieldIndex {
     }
 
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_> {
-        self.numeric_view()
+        let inner = self.inner.as_numeric()?;
+        Some(NestedNumericView::new(inner, &self.element_map))
     }
 
     /// Statistics over elements: every element is a document of its own.
@@ -528,9 +569,9 @@ impl FieldIndexRead for NestedFieldIndex {
         corpus: Option<&[PointOffsetType]>,
         is_stopped: &AtomicBool,
     ) -> OperationResult<bool> {
-        let Some(index) = self.text_index() else {
+        if !self.is_text() {
             return Ok(false);
-        };
+        }
         let corpus_elements = corpus.map(|points| {
             let map = &self.element_map;
             points
@@ -538,8 +579,8 @@ impl FieldIndexRead for NestedFieldIndex {
                 .flat_map(|&point| map.point_elements(point))
                 .collect::<Vec<ElementOffsetType>>()
         });
-        fill_text_statistics(index, stats, corpus_elements.as_deref(), is_stopped)?;
-        Ok(true)
+        self.inner
+            .fill_text_statistics(stats, corpus_elements.as_deref(), is_stopped)
     }
 
     /// Scores every element as a document; a point scores as its best element.
@@ -551,9 +592,9 @@ impl FieldIndexRead for NestedFieldIndex {
         accept: &Bm25Accept<'_>,
         limit: usize,
     ) -> OperationResult<Option<Vec<ScoredPointOffset>>> {
-        let Some(index) = self.text_index() else {
+        if !self.is_text() {
             return Ok(None);
-        };
+        }
         let map = &self.element_map;
         let element_point = |element: ElementOffsetType| map.element_point(element);
         let visible = |element: ElementOffsetType| {
@@ -568,15 +609,12 @@ impl FieldIndexRead for NestedFieldIndex {
         let elements_limit = limit
             .saturating_mul(map.max_elements_per_point())
             .min(map.elements_count());
-        let scored_elements = score_bm25(
-            index,
-            terms,
-            context,
-            params,
-            &element_accept,
-            elements_limit,
-            context.is_stopped(),
-        )?;
+        let Some(scored_elements) =
+            self.inner
+                .score_bm25(terms, context, params, &element_accept, elements_limit)?
+        else {
+            return Ok(None);
+        };
 
         // Highest first, so the first element of a point is its best
         let mut seen = BitVec::repeat(false, map.points_upper_bound());
@@ -593,7 +631,8 @@ impl FieldIndexRead for NestedFieldIndex {
     }
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
-        self.facet_view()
+        let inner = self.inner.as_facet_index()?;
+        Some(NestedFacetView::new(inner, &self.element_map))
     }
 
     fn element_condition_checker<'a>(

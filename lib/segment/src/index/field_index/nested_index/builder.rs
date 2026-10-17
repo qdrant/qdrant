@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use super::{ElementMap, ElementMapBuilder, NestedFieldIndex, nested_elements};
+use super::{
+    ElementMap, ElementMapBuilder, ElementMapRead as _, NestedFieldIndex, nested_elements,
+};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{FieldIndexBuilder, FieldIndexBuilderTrait};
 use crate::json_path::JsonPath;

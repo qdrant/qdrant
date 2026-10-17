@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use common::types::PointOffsetType;
 
-use super::{ElementMap, ElementOffsetType};
+use super::{ElementMapRead, ElementOffsetType};
 use crate::data_types::order_by::OrderValue;
 
 type ValuePoint = (OrderValue, PointOffsetType);
@@ -27,9 +27,9 @@ type ValuePoint = (OrderValue, PointOffsetType);
 /// Each end buffers a run of its own. A run is always taken whole from the pairs neither
 /// end has taken yet, which are a sorted, contiguous part of `inner` (the pairs held in
 /// `front_next` and `back_next` included), so a value never ends up in both runs.
-pub(super) struct PointRuns<'a, I> {
+pub(super) struct PointRuns<'a, I, M> {
     inner: I,
-    element_map: &'a ElementMap,
+    element_map: &'a M,
     /// Read from the front of `inner` past the end of the front run
     front_next: Option<(OrderValue, ElementOffsetType)>,
     /// Read from the back of `inner` past the start of the back run
@@ -40,11 +40,12 @@ pub(super) struct PointRuns<'a, I> {
     back: VecDeque<ValuePoint>,
 }
 
-impl<'a, I> PointRuns<'a, I>
+impl<'a, I, M> PointRuns<'a, I, M>
 where
     I: DoubleEndedIterator<Item = (OrderValue, ElementOffsetType)>,
+    M: ElementMapRead,
 {
-    pub(super) fn new(inner: I, element_map: &'a ElementMap) -> Self {
+    pub(super) fn new(inner: I, element_map: &'a M) -> Self {
         Self {
             inner,
             element_map,
@@ -123,9 +124,10 @@ fn sorted_by_point(run: VecDeque<ValuePoint>) -> VecDeque<ValuePoint> {
     VecDeque::from(run)
 }
 
-impl<I> Iterator for PointRuns<'_, I>
+impl<I, M> Iterator for PointRuns<'_, I, M>
 where
     I: DoubleEndedIterator<Item = (OrderValue, ElementOffsetType)>,
+    M: ElementMapRead,
 {
     type Item = ValuePoint;
 
@@ -142,9 +144,10 @@ where
     }
 }
 
-impl<I> DoubleEndedIterator for PointRuns<'_, I>
+impl<I, M> DoubleEndedIterator for PointRuns<'_, I, M>
 where
     I: DoubleEndedIterator<Item = (OrderValue, ElementOffsetType)>,
+    M: ElementMapRead,
 {
     fn next_back(&mut self) -> Option<ValuePoint> {
         loop {
@@ -164,7 +167,7 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use super::*;
-    use crate::index::field_index::nested_index::ElementMapBuilder;
+    use crate::index::field_index::nested_index::{ElementMap, ElementMapBuilder};
     use crate::index::payload_config::IndexMutability;
 
     /// Any interleaving of `next` and `next_back` yields the sorted, deduplicated pairs.
