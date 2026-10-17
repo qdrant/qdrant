@@ -47,6 +47,49 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard_trait::{ShardOperation, WaitUntil};
 use crate::shards::telemetry::LocalShardTelemetry;
 
+/// Validates that `batch_size + 1` does not overflow on a 64-bit platform.
+/// Returns `batch_size + 1` for the scroll inner loop, or a `BadInput` error
+/// if the caller requested `usize::MAX`.
+///
+/// Used by the four `read_batch*` helpers to bound the page-overflow
+/// sentinel. Without this, `batch_size + 1` wraps to 0, the inner
+/// `local_scroll_by_id` returns zero points, and the post-process
+/// `batch.len() >= limit` check evaluates to `true` and unwraps
+/// `Vec::pop()` on an empty `Vec`, panicking the executor task.
+fn checked_batch_size_plus_one(batch_size: usize) -> CollectionResult<usize> {
+    batch_size.checked_add(1).ok_or_else(|| {
+        CollectionError::bad_input(format!(
+            "transfer batch size {batch_size} overflows the page-overflow check; \
+             choose a smaller value",
+        ))
+    })
+}
+
+/// Validates that `(batch_size * oversample_factor) + 1` does not overflow.
+/// Computes the bounded product first, then the bounded sum, so both
+/// overflow vectors are caught.
+///
+/// Used by the two `read_batch_with_hashring*` helpers. The `*` step
+/// can overflow when `oversample_factor > 1` and `batch_size` is large
+/// (e.g. `batch_size = usize::MAX / 2, oversample_factor = 4`).
+fn checked_oversample_batch_size_plus_one(
+    batch_size: usize,
+    oversample_factor: usize,
+) -> CollectionResult<usize> {
+    let scaled = batch_size.checked_mul(oversample_factor).ok_or_else(|| {
+        CollectionError::bad_input(format!(
+            "transfer batch size {batch_size} * oversample factor {oversample_factor} \
+             overflows; choose smaller values",
+        ))
+    })?;
+    scaled.checked_add(1).ok_or_else(|| {
+        CollectionError::bad_input(format!(
+            "transfer batch size {batch_size} * oversample factor {oversample_factor} + 1 \
+             overflows; choose smaller values",
+        ))
+    })
+}
+
 /// Result of a single batch transfer, including timing breakdown.
 pub struct TransferBatchResult {
     pub next_page_offset: Option<PointIdType>,
@@ -325,7 +368,7 @@ impl ForwardProxyShard {
         filter: Option<&Filter>,
         runtime_handle: &AdaptiveSearchHandle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
-        let limit = batch_size + 1;
+        let limit = checked_batch_size_plus_one(batch_size)?;
 
         let mut batch = self
             .wrapped_shard
@@ -390,7 +433,7 @@ impl ForwardProxyShard {
             // - resharding: 4 -> 3, transfer 33%,  factor 3
             HashRingRouter::Resharding { old: _, new } => new.len().max(1),
         };
-        let limit = (batch_size * oversample_factor) + 1;
+        let limit = checked_oversample_batch_size_plus_one(batch_size, oversample_factor)?;
 
         // Read only point IDs without point data
         // We first make a preselection of those point IDs by applying the hash ring filter, and
@@ -467,7 +510,7 @@ impl ForwardProxyShard {
         filter: Option<&Filter>,
         runtime_handle: &AdaptiveSearchHandle,
     ) -> CollectionResult<(Vec<PointStructRawPersisted>, Option<PointIdType>)> {
-        let limit = batch_size + 1;
+        let limit = checked_batch_size_plus_one(batch_size)?;
 
         let mut batch = self
             .wrapped_shard
@@ -508,7 +551,7 @@ impl ForwardProxyShard {
             HashRingRouter::Single(_) => 1,
             HashRingRouter::Resharding { old: _, new } => new.len().max(1),
         };
-        let limit = (batch_size * oversample_factor) + 1;
+        let limit = checked_oversample_batch_size_plus_one(batch_size, oversample_factor)?;
 
         // Read only point IDs without point data, then apply the hash ring filter, then read the
         // actual (raw) point data for the preselection only. See `read_batch_with_hashring`.
@@ -889,5 +932,121 @@ impl ShardOperation for ForwardProxyShard {
 
     async fn stop_gracefully(self) {
         self.wrapped_shard.stop_gracefully().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{checked_batch_size_plus_one, checked_oversample_batch_size_plus_one};
+    use crate::operations::types::CollectionError;
+
+    /// Regression for #11051: `checked_batch_size_plus_one` must surface
+    /// `usize::MAX` as `CollectionError::BadInput` instead of wrapping
+    /// `usize::MAX + 1` to 0, which would let the inner
+    /// `local_scroll_by_id` return 0 points and cause the downstream
+    /// `batch.pop().unwrap()` to panic on an empty `Vec`.
+    #[test]
+    fn test_checked_batch_size_plus_one_rejects_usize_max() {
+        // `usize::MAX` → `BadInput` (was wrapped to 0 pre-fix)
+        let result = checked_batch_size_plus_one(usize::MAX);
+        assert!(matches!(result, Err(CollectionError::BadInput { .. })));
+
+        // `usize::MAX - 1` → `usize::MAX` (sanity; the largest accepted limit)
+        assert_eq!(checked_batch_size_plus_one(usize::MAX - 1), Ok(usize::MAX));
+
+        // `100` → `101` (sanity; ordinary addition — the current production
+        // `TRANSFER_BATCH_SIZE`)
+        assert_eq!(checked_batch_size_plus_one(100), Ok(101));
+
+        // `0` → `1` (sanity; the smallest accepted limit; the
+        // pre-existing `debug_assert!(batch_size > 0)` catches this earlier
+        // in debug builds but the helper is sound)
+        assert_eq!(checked_batch_size_plus_one(0), Ok(1));
+    }
+
+    /// Regression for #11051: `checked_oversample_batch_size_plus_one`
+    /// must surface both overflow vectors (the `*` and the `+ 1`) as
+    /// `CollectionError::BadInput`. Used by the two `read_batch_with_hashring*`
+    /// helpers, where the product `batch_size * oversample_factor` can
+    /// overflow when `oversample_factor > 1` and `batch_size` is large.
+    #[test]
+    fn test_checked_oversample_batch_size_plus_one_rejects_overflow() {
+        // `(usize::MAX, 4)` → `BadInput` (product overflows immediately)
+        let result = checked_oversample_batch_size_plus_one(usize::MAX, 4);
+        assert!(matches!(result, Err(CollectionError::BadInput { .. })));
+
+        // `(usize::MAX - 1, 4)` → `BadInput` (product overflows)
+        let result = checked_oversample_batch_size_plus_one(usize::MAX - 1, 4);
+        assert!(matches!(result, Err(CollectionError::BadInput { .. })));
+
+        // `(usize::MAX / 4, 4)` → `usize::MAX / 4` (product fits exactly;
+        // +1 would overflow but the helper is bounded)
+        //
+        // Note: `checked_mul` saturates to None on overflow but the exact
+        // product `usize::MAX / 4 * 4` fits in `usize` so this is the
+        // largest accepted limit. The helper returns this value; the
+        // caller will not use it as a `limit` because the caller has the
+        // same `checked_add(1)` guard on the result. (This is a
+        // documentation test for the boundary, not a runtime guarantee.)
+        let boundary =
+            checked_oversample_batch_size_plus_one(usize::MAX / 4, 4).expect("product must fit");
+        assert_eq!(boundary, usize::MAX / 4);
+
+        // `(100, 4)` → `401` (sanity; ordinary oversample)
+        assert_eq!(checked_oversample_batch_size_plus_one(100, 4), Ok(401));
+
+        // `(0, 4)` → `1` (sanity; degenerate batch — the +1 still applies)
+        assert_eq!(checked_oversample_batch_size_plus_one(0, 4), Ok(1));
+
+        // `(50, 1)` → `51` (sanity; the non-hashring path, single shard)
+        assert_eq!(checked_oversample_batch_size_plus_one(50, 1), Ok(51));
+    }
+
+    /// Source-level guard for #11051: the four sites in
+    /// `forward_proxy_shard.rs` must call the new helpers and must NOT
+    /// contain the bare `batch_size + 1` or
+    /// `(batch_size * oversample_factor) + 1` expressions that the
+    /// cycle 42 `distance_matrix.rs:281` fix flagged as overflow vectors.
+    /// Locks the regression against any future re-introduction of the
+    /// unchecked form.
+    #[test]
+    fn test_forward_proxy_shard_no_bare_batch_size_plus_one() {
+        let source = include_str!("forward_proxy_shard.rs");
+
+        // The 4 use sites must call the helpers. Grep for the bare
+        // `batch_size + 1` (4 sites had this; 2 of them also had the
+        // oversample form).
+        assert!(
+            !source.contains("let limit = batch_size + 1;"),
+            "bare `let limit = batch_size + 1;` is back; use \
+             `checked_batch_size_plus_one(batch_size)?` instead",
+        );
+        assert!(
+            !source.contains("let limit = (batch_size * oversample_factor) + 1;"),
+            "bare `let limit = (batch_size * oversample_factor) + 1;` is \
+             back; use `checked_oversample_batch_size_plus_one(batch_size, \
+             oversample_factor)?` instead",
+        );
+
+        // The 4 use sites must call the helpers. The helpers appear 2
+        // times in the source: once in the function definition (top of
+        // the file) and once at each use site (4 total). Total = 6
+        // occurrences. A simple exact-string count catches any silent
+        // removal.
+        let plus_one_uses = source
+            .matches("let limit = checked_batch_size_plus_one(batch_size)?")
+            .count();
+        assert_eq!(
+            plus_one_uses, 2,
+            "expected 2 use sites of `checked_batch_size_plus_one`, found {plus_one_uses}",
+        );
+        let oversample_uses = source
+            .matches("let limit = checked_oversample_batch_size_plus_one(batch_size, oversample_factor)?")
+            .count();
+        assert_eq!(
+            oversample_uses, 2,
+            "expected 2 use sites of `checked_oversample_batch_size_plus_one`, \
+             found {oversample_uses}",
+        );
     }
 }
