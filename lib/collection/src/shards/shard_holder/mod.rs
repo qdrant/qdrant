@@ -48,7 +48,7 @@ use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::snapshot_ops::SnapshotDescription;
+use crate::operations::snapshot_ops::{SnapshotDescription, unique_snapshot_timestamp};
 use crate::operations::types::{
     CollectionError, CollectionResult, ReshardingInfo, ShardTransferInfo,
 };
@@ -1272,7 +1272,7 @@ impl ShardHolder {
 
         let snapshot_file_name = format!(
             "{collection_name}-shard-{shard_id}-{}.snapshot",
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            unique_snapshot_timestamp(),
         );
 
         let snapshot_temp_dir = tempfile::Builder::new()
@@ -1348,7 +1348,7 @@ impl ShardHolder {
 
         let snapshot_file_name = format!(
             "{collection_name}-shard-{shard_id}-{}.snapshot",
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            unique_snapshot_timestamp(),
         );
 
         let snapshot_temp_dir = tempfile::Builder::new()
