@@ -46,6 +46,7 @@ use crate::types::{
 };
 
 mod read_only;
+mod update_only;
 
 const NUM_POINTS: u64 = 200;
 
