@@ -24,10 +24,13 @@
 //!   boundary markers;
 //! - [`query`](self::query) — regex → trigram query analysis;
 //! - [`matcher`](self::matcher) — [`RegexMatcher`], the compiled pattern and
-//!   its safety limits.
+//!   its safety limits;
+//! - [`re2`](self::re2) — the public syntax is RE2's: patterns are checked
+//!   against it and rewritten for the engine.
 
 mod matcher;
 mod query;
+mod re2;
 mod trigram;
 
 #[cfg(test)]
