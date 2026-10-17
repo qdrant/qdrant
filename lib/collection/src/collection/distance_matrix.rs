@@ -15,7 +15,7 @@ use crate::collection::Collection;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::{
     CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
 };
@@ -136,6 +136,15 @@ impl From<CollectionSearchMatrixResponse> for api::grpc::qdrant::SearchMatrixOff
     }
 }
 
+/// Validates that `limit_per_sample + 1` does not overflow on a 64-bit
+/// platform. Returns `limit_per_sample + 1` for the search inner loop, or a
+/// `BadInput` error if the user requested `usize::MAX`.
+fn checked_limit_per_sample_plus_one(limit_per_sample: usize) -> CollectionResult<usize> {
+    limit_per_sample.checked_add(1).ok_or_else(|| {
+        CollectionError::bad_input("limit_per_sample is too large: must be at most usize::MAX - 1")
+    })
+}
+
 impl Collection {
     pub async fn search_points_matrix(
         &self,
@@ -155,6 +164,14 @@ impl Collection {
         if limit_per_sample == 0 || sample_size == 0 {
             return Ok(Default::default());
         }
+
+        // The matrix implementation requests `limit_per_sample + 1` nearest
+        // neighbours per sample so the sample itself can be removed from the
+        // result afterward. On a 64-bit platform, `limit_per_sample ==
+        // usize::MAX` wraps to zero in a release build and the inner nearest
+        // searches return no candidates. Validate the addition before any
+        // subtraction consumes it.
+        let limit_per_sample_plus_one = checked_limit_per_sample_plus_one(limit_per_sample)?;
 
         self.collection_config
             .read()
@@ -235,7 +252,7 @@ impl Collection {
                 using: using.clone(),
                 filter: Some(filter.clone()),
                 score_threshold: None,
-                limit: limit_per_sample + 1, // +1 to exclude the point itself afterward
+                limit: limit_per_sample_plus_one, // +1 to exclude the point itself afterward
                 offset: 0,
                 params: None,
                 with_vector: WithVector::Bool(false),
@@ -271,7 +288,7 @@ impl Collection {
                 scores.remove(sample_pos);
             } else {
                 // if not found pop lowest score
-                if scores.len() == limit_per_sample + 1 {
+                if scores.len() == limit_per_sample_plus_one {
                     // if we have enough results, remove the last one
                     scores.pop();
                 }
@@ -345,5 +362,32 @@ mod tests {
 
         let actual = SearchMatrixOffsetsResponse::from(response);
         assert_eq!(actual, expected);
+    }
+
+    /// Regression for issue #10548: the matrix-pairs endpoint silently
+    /// accepted `limit_per_sample = usize::MAX` and returned HTTP 200 with
+    /// an empty `pairs` array. The cause was that the inner nearest-neighbor
+    /// search requests `limit_per_sample + 1` results so the sample itself
+    /// can be removed afterward; on a 64-bit platform, `usize::MAX + 1`
+    /// wraps to zero in release builds and the searches return nothing.
+    ///
+    /// Pre-fix the overflow happened silently. Post-fix the helper at the
+    /// top of `search_points_matrix` returns a controlled
+    /// `CollectionError::BadInput`.
+    #[test]
+    fn test_checked_limit_per_sample_plus_one_rejects_usize_max() {
+        // usize::MAX is rejected — checked_add returns None, helper errors.
+        let result = checked_limit_per_sample_plus_one(usize::MAX);
+        assert!(matches!(result, Err(CollectionError::BadInput { .. })));
+
+        // usize::MAX - 1 is accepted and produces usize::MAX.
+        let limit = usize::MAX - 1;
+        assert_eq!(
+            checked_limit_per_sample_plus_one(limit).unwrap(),
+            usize::MAX,
+        );
+
+        // A normal small limit returns limit + 1.
+        assert_eq!(checked_limit_per_sample_plus_one(3).unwrap(), 4,);
     }
 }
