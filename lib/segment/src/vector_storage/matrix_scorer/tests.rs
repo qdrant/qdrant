@@ -7,6 +7,8 @@ use std::sync::atomic::AtomicBool;
 use common::ambient;
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
+use quantization::turboquant::TQBits;
+use quantization::turboquant::matrix::CODES_IN_F32;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom as _;
 use rand::{RngExt as _, SeedableRng as _};
@@ -18,14 +20,18 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
-    QuantizationConfig, ScalarQuantizationConfig,
+    QuantizationConfig, ScalarQuantizationConfig, TurboQuantBitSize, TurboQuantQuantizationConfig,
+    TurboQuantization,
 };
-use crate::vector_storage::VectorStorage as _;
 use crate::vector_storage::dense::volatile_dense_vector_storage::{
     new_volatile_dense_byte_vector_storage, new_volatile_dense_half_vector_storage,
     new_volatile_dense_vector_storage,
 };
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsStorageType;
+use crate::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectorStorage, QuantizedVectorsStorageType,
+};
+use crate::vector_storage::turbo::appendable_turbo_vector_storage::open_appendable_turbo_vector_storage;
+use crate::vector_storage::{VectorStorage as _, VectorStorageRead as _};
 
 const POINTS: usize = 300;
 /// Not a multiple of 16, so padded codes are covered.
@@ -37,9 +43,25 @@ enum Element {
     F32,
     F16,
     U8,
+    /// A TurboQuant datatype storage
+    Turbo(TQBits),
+}
+
+/// How close the matrix scores must be to `score_internal`.
+#[derive(Clone, Copy, Debug)]
+enum Tolerance {
+    /// The same scores and picks.
+    Exact,
+    /// Relative to the score, at least 1.
+    Score(f32),
+    /// Relative to the magnitude of the inputs, `‖a‖·‖b‖`, or `‖a‖² + ‖b‖²` for Euclid: the
+    /// error of a sum in f32 scales with it, and Euclid cancels it for close pairs.
+    Input(f32),
 }
 
 struct Fixture {
+    vectors: Vec<Vec<VectorElementType>>,
+    distance: Distance,
     storage: VectorStorageEnum,
     quantized: Option<QuantizedVectors>,
     _dir: TempDir,
@@ -48,34 +70,42 @@ struct Fixture {
 impl Fixture {
     fn new(element: Element, distance: Distance, quantization: Option<QuantizationConfig>) -> Self {
         let mut rng = StdRng::seed_from_u64(42);
+        let dir = tempfile::tempdir().unwrap();
         let mut storage = match element {
             Element::F32 => new_volatile_dense_vector_storage(DIM, distance),
             Element::F16 => new_volatile_dense_half_vector_storage(DIM, distance),
             Element::U8 => new_volatile_dense_byte_vector_storage(DIM, distance),
+            Element::Turbo(bits) => VectorStorageEnum::DenseTurboAppendableMemmap(Box::new(
+                open_appendable_turbo_vector_storage(dir.path(), DIM, distance, bits, true)
+                    .unwrap(),
+            )),
         };
+        let mut vectors = Vec::with_capacity(POINTS);
         for id in 0..POINTS as PointOffsetType {
             let vector: Vec<VectorElementType> = match element {
-                Element::F32 | Element::F16 => {
+                Element::F32 | Element::F16 | Element::Turbo(_) => {
                     let v = (0..DIM).map(|_| rng.random_range(-1.0..1.0)).collect();
                     distance.preprocess_vector::<VectorElementType>(v)
                 }
                 Element::U8 => (0..DIM).map(|_| f32::from(rng.random::<u8>())).collect(),
             };
             storage.insert_vector(id, VectorRef::from(&vector)).unwrap();
+            vectors.push(vector);
         }
-        let dir = tempfile::tempdir().unwrap();
         let quantized = quantization.map(|config| {
             QuantizedVectors::create(
                 &storage,
                 &config,
                 QuantizedVectorsStorageType::Immutable,
-                dir.path(),
+                &dir.path().join("quantized"),
                 1,
                 &AtomicBool::new(false),
             )
             .unwrap()
         });
         Self {
+            vectors,
+            distance,
             storage,
             quantized,
             _dir: dir,
@@ -108,11 +138,54 @@ impl Fixture {
             .collect()
     }
 
-    /// `tolerance`: `None` for exact scores and picks, else the allowed relative score error.
-    fn check(&self, tolerance: Option<f32>) {
+    /// See [`Tolerance::Input`].
+    fn magnitude(&self, row: PointOffsetType) -> f32 {
+        let norm = |v: &[f32]| v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let max = self.vectors.iter().map(|v| norm(v)).fold(0.0, f32::max);
+        let own = norm(&self.vectors[row as usize]);
+        match self.distance {
+            Distance::Euclid => own * own + max * max,
+            Distance::Dot | Distance::Cosine | Distance::Manhattan => own * max,
+        }
+    }
+
+    fn check(&self, tolerance: Tolerance) {
         let scorer = new_matrix_scorer(&self.storage, self.quantized.as_ref())
             .expect("storage has a matrix operands");
+        self.check_scorer(&scorer, tolerance);
+    }
 
+    /// [`Self::check`] with TurboQuant operands that decode the Normal 2, 4, and 8 bits to f32,
+    /// as on aarch64.
+    #[expect(clippy::wildcard_enum_match_arm, reason = "test code")]
+    fn check_codes_in_f32(&self, tolerance: Tolerance) {
+        let scorer = match (&self.storage, &self.quantized) {
+            (_, Some(quantized)) => match quantized.get_storage() {
+                QuantizedVectorStorage::TQRam(q) => {
+                    turbo_matrix_scorer(q.matrix_operands_with(true))
+                }
+                QuantizedVectorStorage::TQMmap(q) => {
+                    turbo_matrix_scorer(q.matrix_operands_with(true))
+                }
+                QuantizedVectorStorage::TQChunkedMmap(q) => {
+                    turbo_matrix_scorer(q.matrix_operands_with(true))
+                }
+                _ => panic!("not TurboQuant quantization"),
+            },
+            (VectorStorageEnum::DenseTurboAppendableMemmap(storage), None) => {
+                turbo_matrix_scorer(TurboMatrixOperands::new_with(
+                    storage.quantizer(),
+                    TurboStorageSource(storage.as_ref()),
+                    invert_score(storage.distance()),
+                    true,
+                ))
+            }
+            _ => panic!("not a TurboQuant storage"),
+        };
+        self.check_scorer(&scorer.expect("storage has matrix operands"), tolerance);
+    }
+
+    fn check_scorer(&self, scorer: &MatrixScorer<'_>, tolerance: Tolerance) {
         let mut ids: Vec<PointOffsetType> = (0..POINTS as PointOffsetType).collect();
         ids.shuffle(&mut StdRng::seed_from_u64(7));
         let leaf = &ids[..200];
@@ -129,8 +202,13 @@ impl Fixture {
             assert_eq!(out.rows(), rows.len());
             for (r, expected) in expected.iter().enumerate() {
                 let (got_cols, got_scores) = out.row(r);
+                let allowed = |want: f32| match tolerance {
+                    Tolerance::Exact => unreachable!(),
+                    Tolerance::Score(tolerance) => tolerance * want.abs().max(1.0),
+                    Tolerance::Input(tolerance) => tolerance * self.magnitude(rows[r]),
+                };
                 match tolerance {
-                    None => {
+                    Tolerance::Exact => {
                         let got: Vec<_> = got_cols
                             .iter()
                             .copied()
@@ -139,11 +217,14 @@ impl Fixture {
                         assert_eq!(&got, expected, "row {r}");
                     }
                     // Near-ties may swap, so compare the scores by rank
-                    Some(tolerance) => {
+                    Tolerance::Score(_) | Tolerance::Input(_) => {
                         assert_eq!(got_scores.len(), expected.len(), "row {r}");
                         for (&got, &(_, want)) in got_scores.iter().zip(expected) {
-                            let error = (got - want).abs() / want.abs().max(1.0);
-                            assert!(error <= tolerance, "row {r}: {got} vs {want}");
+                            let allowed = allowed(want);
+                            assert!(
+                                (got - want).abs() <= allowed,
+                                "row {r}: {got} vs {want}, allowed {allowed}",
+                            );
                         }
                     }
                 }
@@ -191,7 +272,7 @@ fn original_vectors(
     } else {
         1e-4
     };
-    Fixture::new(element, distance, None).check(Some(tolerance));
+    Fixture::new(element, distance, None).check(Tolerance::Score(tolerance));
 }
 
 /// Integer inner products in the same order of operations: exact.
@@ -200,7 +281,7 @@ fn scalar_quantization(
     #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
 ) {
     let _scope = ambient::test_guard();
-    Fixture::new(Element::F32, distance, Some(scalar())).check(None);
+    Fixture::new(Element::F32, distance, Some(scalar())).check(Tolerance::Exact);
 }
 
 /// Popcounts: exact.
@@ -215,7 +296,99 @@ fn binary_quantization(
     #[values(Distance::Dot, Distance::Euclid, Distance::Manhattan)] distance: Distance,
 ) {
     let _scope = ambient::test_guard();
-    Fixture::new(Element::F32, distance, Some(binary(encoding))).check(None);
+    Fixture::new(Element::F32, distance, Some(binary(encoding))).check(Tolerance::Exact);
+}
+
+#[expect(deprecated, reason = "always_ram")]
+fn turbo(bits: TurboQuantBitSize) -> QuantizationConfig {
+    QuantizationConfig::Turbo(TurboQuantization {
+        turbo: TurboQuantQuantizationConfig {
+            always_ram: None,
+            memory: None,
+            bits: Some(bits),
+        },
+    })
+}
+
+/// Popcounts, combined in the same order of operations: exact.
+#[rstest]
+fn turbo_quantization_one_bit(
+    #[values(TurboQuantBitSize::Bits1, TurboQuantBitSize::Bits1_5)] bits: TurboQuantBitSize,
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+) {
+    let _scope = ambient::test_guard();
+    Fixture::new(Element::F32, distance, Some(turbo(bits))).check(Tolerance::Exact);
+}
+
+/// TQ+ below 8 bits: weighted codes summed in f32, about 1e-7 of the input magnitude, see the
+/// TurboQuant matrix tests in `quantization`.
+#[rstest]
+fn turbo_quantization_weighted(
+    #[values(TurboQuantBitSize::Bits2, TurboQuantBitSize::Bits4)] bits: TurboQuantBitSize,
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+) {
+    let _scope = ambient::test_guard();
+    Fixture::new(Element::F32, distance, Some(turbo(bits))).check(Tolerance::Input(2e-6));
+}
+
+/// The integer operands, or on aarch64 their codes decoded to f32, which round once the sums
+/// pass 2²⁴, see `CODES_IN_F32`.
+fn codes_tolerance() -> Tolerance {
+    if CODES_IN_F32 {
+        Tolerance::Input(2e-6)
+    } else {
+        Tolerance::Exact
+    }
+}
+
+/// Integer sums of grid values, in the same order of operations: exact, except on aarch64.
+#[rstest]
+fn turbo_quantization_eight_bits(
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+) {
+    let _scope = ambient::test_guard();
+    let config = turbo(TurboQuantBitSize::Bits8);
+    Fixture::new(Element::F32, distance, Some(config)).check(codes_tolerance());
+}
+
+/// The aarch64 operands of [`turbo_quantization_eight_bits`] on every platform.
+#[rstest]
+fn turbo_quantization_eight_bits_in_f32(
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+) {
+    let _scope = ambient::test_guard();
+    let config = turbo(TurboQuantBitSize::Bits8);
+    Fixture::new(Element::F32, distance, Some(config)).check_codes_in_f32(Tolerance::Input(2e-6));
+}
+
+/// As TurboQuant quantization: exact, except on aarch64.
+#[rstest]
+fn turbo_storage(
+    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+) {
+    let _scope = ambient::test_guard();
+    Fixture::new(Element::Turbo(bits), distance, None).check(codes_tolerance());
+}
+
+/// The aarch64 operands of [`turbo_storage`] on every platform.
+#[rstest]
+fn turbo_storage_in_f32(
+    #[values(TQBits::Bits4, TQBits::Bits8)] bits: TQBits,
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+) {
+    let _scope = ambient::test_guard();
+    Fixture::new(Element::Turbo(bits), distance, None).check_codes_in_f32(Tolerance::Input(2e-6));
+}
+
+/// 16-bit codes summed in f32, restarted every 256: about 5e-7 of the input magnitude, see
+/// the TurboQuant matrix tests in `quantization`.
+#[rstest]
+fn turbo16_storage(
+    #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+) {
+    let _scope = ambient::test_guard();
+    Fixture::new(Element::Turbo(TQBits::Bits16), distance, None).check(Tolerance::Input(2e-6));
 }
 
 #[test]
@@ -225,4 +398,6 @@ fn no_matrix_form() {
     assert!(new_matrix_scorer(&fixture.storage, None).is_none());
     let fixture = Fixture::new(Element::F32, Distance::Manhattan, Some(scalar()));
     assert!(new_matrix_scorer(&fixture.storage, fixture.quantized.as_ref()).is_none());
+    let fixture = Fixture::new(Element::Turbo(TQBits::Bits16), Distance::Manhattan, None);
+    assert!(new_matrix_scorer(&fixture.storage, None).is_none());
 }

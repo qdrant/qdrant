@@ -116,6 +116,11 @@ fn codebook_signed_i64(idx: u8) -> i64 {
     codebook_value_i64(idx) - CODEBOOK_OFFSET
 }
 
+/// The codes' true signed values, as [`codebook_signed_i64`] gives them.
+pub(crate) fn signed_codebook() -> [i8; 4] {
+    std::array::from_fn(|code| codebook_signed_i64(code as u8) as i8)
+}
+
 /// Encoded query for asymmetric 2-bit scoring: [`QuerySimd`] over four
 /// codes per byte (code `k` of dim `4j + k` in bits `[2k, 2k + 2)` of byte
 /// `j`).

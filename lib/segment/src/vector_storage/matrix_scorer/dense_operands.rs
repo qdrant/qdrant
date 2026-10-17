@@ -1,5 +1,6 @@
 use common::types::PointOffsetType;
-use pairwise::{Combine, MatrixOperands};
+use half::slice::HalfFloatSliceExt as _;
+use pairwise::{Aux, Combine, MatrixOperands};
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -12,23 +13,26 @@ pub(super) trait MatrixElement: PrimitiveVectorElement {
     /// How Cosine scores vectors of this type.
     const COSINE: Combine;
 
-    fn to_f32(self) -> f32;
+    /// `src` into `out`, of the same length.
+    fn decode(src: &[Self], out: &mut [f32]);
 }
 
 /// Float vectors are stored normalized, so Cosine is their dot product.
 impl MatrixElement for VectorElementType {
     const COSINE: Combine = Combine::Plain;
 
-    fn to_f32(self) -> f32 {
-        self
+    fn decode(src: &[Self], out: &mut [f32]) {
+        out.copy_from_slice(src);
     }
 }
 
 impl MatrixElement for VectorElementTypeHalf {
     const COSINE: Combine = Combine::Plain;
 
-    fn to_f32(self) -> f32 {
-        VectorElementTypeHalf::to_f32(self)
+    /// The slice conversion uses F16C several values at a time; `f16::to_f32` checks for it
+    /// per value unless the build enables it, which cost a leaf about 20%.
+    fn decode(src: &[Self], out: &mut [f32]) {
+        src.convert_to_f32_slice(out);
     }
 }
 
@@ -36,8 +40,10 @@ impl MatrixElement for VectorElementTypeHalf {
 impl MatrixElement for VectorElementTypeByte {
     const COSINE: Combine = Combine::Cos;
 
-    fn to_f32(self) -> f32 {
-        f32::from(self)
+    fn decode(src: &[Self], out: &mut [f32]) {
+        for (o, &x) in out.iter_mut().zip(src) {
+            *o = f32::from(x);
+        }
     }
 }
 
@@ -81,27 +87,31 @@ where
         self.combine
     }
 
+    fn param(&self) {}
+
     fn decode_batch(
         &self,
         ids: &[PointOffsetType],
         out: &mut [f32],
-        aux: &mut [f32],
+        aux: &mut [Aux],
     ) -> Result<(), OperationError> {
         let depth = self.depth();
         self.storage.for_each_in_dense_batch(ids, |i, vector| {
             let decoded = &mut out[i * depth..(i + 1) * depth];
-            for (o, &x) in decoded.iter_mut().zip(vector) {
-                *o = x.to_f32();
-            }
-            aux[i] = match self.combine {
+            T::decode(vector, decoded);
+            let value = match self.combine {
                 Combine::Euclid => squared_norm(decoded),
                 Combine::Cos => match squared_norm(decoded) {
                     // A zero vector scores 0, as in `cosine_similarity_bytes`
                     0.0 => 0.0,
                     norm => 1.0 / norm.sqrt(),
                 },
-                Combine::Plain | Combine::Affine { .. } | Combine::Hamming { .. } => 0.0,
+                Combine::Plain
+                | Combine::Affine { .. }
+                | Combine::Hamming { .. }
+                | Combine::Turbo { .. } => 0.0,
             };
+            aux[i] = [value, 0.0, 0.0];
         })
     }
 }

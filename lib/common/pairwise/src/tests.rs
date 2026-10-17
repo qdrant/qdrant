@@ -9,16 +9,54 @@ use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
-use crate::{Bits, Cols, Combine, Kernel, KernelElem, MatrixOperands, TopK, top_k_with};
+use crate::{
+    Aux, Bits, Codebook, Codes2, Codes4, Codes8, Cols, Combine, Kernel, KernelElem, MatrixOperands,
+    TopK, TurboDot, top_k_with,
+};
 
 struct TestOperands<E> {
     depth: usize,
     vectors: Vec<E>,
-    aux: Vec<f32>,
+    aux: Vec<Aux>,
     combine: Combine,
+    /// For the codebook types
+    values: Vec<i8>,
 }
 
-impl<E: KernelElem> MatrixOperands for TestOperands<E> {
+/// An element type with the parameter of its inner product in these tests.
+trait TestElem: KernelElem {
+    fn test_param(operands: &TestOperands<Self>) -> Self::Param<'_>;
+}
+
+impl TestElem for f32 {
+    fn test_param(_: &TestOperands<Self>) {}
+}
+
+impl TestElem for u8 {
+    fn test_param(_: &TestOperands<Self>) {}
+}
+
+impl TestElem for Bits {
+    fn test_param(_: &TestOperands<Self>) {}
+}
+
+impl TestElem for Codes2 {
+    fn test_param(operands: &TestOperands<Self>) -> Codebook {
+        Codebook::new(&operands.values)
+    }
+}
+
+impl TestElem for Codes4 {
+    fn test_param(operands: &TestOperands<Self>) -> Codebook {
+        Codebook::new(&operands.values)
+    }
+}
+
+impl TestElem for Codes8 {
+    fn test_param(_: &TestOperands<Self>) {}
+}
+
+impl<E: TestElem> MatrixOperands for TestOperands<E> {
     type Elem = E;
     type Error = Infallible;
 
@@ -30,11 +68,15 @@ impl<E: KernelElem> MatrixOperands for TestOperands<E> {
         self.combine
     }
 
+    fn param(&self) -> E::Param<'_> {
+        E::test_param(self)
+    }
+
     fn decode_batch(
         &self,
         ids: &[PointOffsetType],
         out: &mut [E],
-        aux: &mut [f32],
+        aux: &mut [Aux],
     ) -> Result<(), Infallible> {
         let depth = self.depth;
         for (i, &id) in ids.iter().enumerate() {
@@ -57,7 +99,7 @@ enum Shape {
 
 const POINTS: usize = 1500;
 
-impl<E: KernelElem> TestOperands<E> {
+impl<E: TestElem> TestOperands<E> {
     fn new(
         rng: &mut StdRng,
         depth: usize,
@@ -67,8 +109,11 @@ impl<E: KernelElem> TestOperands<E> {
         Self {
             depth,
             vectors: (0..POINTS * depth).map(|_| element(rng)).collect(),
-            aux: (0..POINTS).map(|_| rng.random_range(-2.0..2.0)).collect(),
+            aux: (0..POINTS)
+                .map(|_| std::array::from_fn(|_| rng.random_range(-2.0..2.0)))
+                .collect(),
             combine,
+            values: Vec::new(),
         }
     }
 
@@ -142,10 +187,34 @@ const GEMM_SHAPES: &[Shape] = &[
 fn f32_kernels_match_fallback() {
     let mut rng = StdRng::seed_from_u64(1);
     let mut reused = HashMap::new();
-    let combines = [Combine::Plain, Combine::Euclid, Combine::Cos];
+    let combines = [
+        Combine::Plain,
+        Combine::Euclid,
+        Combine::Cos,
+        Combine::Turbo {
+            dot: TurboDot::Scaled { div: 1.0 },
+            l2: false,
+            invert: false,
+        },
+        Combine::Turbo {
+            dot: TurboDot::Scaled { div: 3.0 },
+            l2: true,
+            invert: true,
+        },
+        Combine::Turbo {
+            dot: TurboDot::Corrected { div: 7.0, mm: 0.3 },
+            l2: true,
+            invert: false,
+        },
+        Combine::Turbo {
+            dot: TurboDot::Corrected { div: 0.5, mm: -1.0 },
+            l2: false,
+            invert: true,
+        },
+    ];
     // Depth slices of 256
     for (i, depth) in [1, 7, 16, 255, 256, 257, 600].into_iter().enumerate() {
-        let operands = TestOperands::new(&mut rng, depth, combines[i % 3], |rng| {
+        let operands = TestOperands::new(&mut rng, depth, combines[i], |rng| {
             rng.random_range(-1.0f32..1.0)
         });
         for (j, &shape) in GEMM_SHAPES.iter().enumerate() {
@@ -190,9 +259,20 @@ fn bits_kernels_match_fallback() {
         Shape::Other(25, 7),
     ];
     for (i, bytes) in [1, 7, 31, 32, 33, 100, 500].into_iter().enumerate() {
-        let combine = Combine::Hamming {
-            dim: (bytes * 8) as f32,
-            negate: i % 2 == 0,
+        let combine = match i % 3 {
+            0 => Combine::Hamming {
+                dim: (bytes * 8) as f32,
+                negate: i % 2 == 0,
+            },
+            // 1-bit TurboQuant
+            _ => Combine::Turbo {
+                dot: TurboDot::Signs {
+                    bits: (bytes * 8) as f32,
+                    centroid_sq: 0.6,
+                },
+                l2: i % 3 == 2,
+                invert: i.is_multiple_of(2),
+            },
         };
         let operands = TestOperands::new(&mut rng, bytes, combine, |rng| Bits(rng.random()));
         for (j, &shape) in shapes.iter().enumerate() {
@@ -200,4 +280,116 @@ fn bits_kernels_match_fallback() {
             operands.check(&mut rng, shape, k, &mut reused);
         }
     }
+}
+
+/// Codebook values with both extremes, the rest random.
+fn with_codebook<E>(
+    mut operands: TestOperands<E>,
+    rng: &mut StdRng,
+    values: usize,
+) -> TestOperands<E> {
+    operands.values = (0..values)
+        .map(|q| match q {
+            0 => -128,
+            1 => 127,
+            _ => rng.random(),
+        })
+        .collect();
+    operands
+}
+
+/// [`GEMM_SHAPES`] with fewer pairs, for the slower scalar inner products: tiles of 4
+/// rows, panels of 16 columns, row blocks of 48, and column blocks of 128.
+const CODE_SHAPES: &[Shape] = &[
+    Shape::Other(1, 1),
+    Shape::Rows(2),
+    Shape::Rows(49),
+    Shape::Rows(131),
+    Shape::Other(47, 300),
+    Shape::Other(6, 140),
+    Shape::Other(51, 17),
+];
+
+fn code_combine(i: usize) -> Combine {
+    Combine::Turbo {
+        dot: TurboDot::Scaled { div: 1.3 },
+        l2: i.is_multiple_of(2),
+        invert: i.is_multiple_of(3),
+    }
+}
+
+/// The shapes with all kernels, at depths in bytes around the tiles' groups of two pair steps
+/// and their depth `slice`.
+fn check_codes<E: TestElem>(seed: u64, values: usize, slice: usize, element: fn(&mut StdRng) -> E) {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut reused = HashMap::new();
+    for (i, depth) in [1, 3, 8, slice - 1, slice, slice + 3]
+        .into_iter()
+        .enumerate()
+    {
+        let operands = TestOperands::new(&mut rng, depth, code_combine(i), element);
+        let operands = with_codebook(operands, &mut rng, values);
+        for (j, &shape) in CODE_SHAPES.iter().enumerate() {
+            let k = [4, 1, 10][j % 3];
+            operands.check(&mut rng, shape, k, &mut reused);
+        }
+    }
+}
+
+/// Mostly random codes, a quarter of the vectors all code 0: with the value −128, the largest
+/// sums.
+fn extreme_or<E>(rng: &mut StdRng, all_zero: E, random: impl Fn(&mut StdRng) -> E) -> E {
+    if rng.random_bool(0.25) {
+        all_zero
+    } else {
+        random(rng)
+    }
+}
+
+#[test]
+fn codes2_kernels_match_fallback() {
+    check_codes(4, 4, 256, |rng| {
+        extreme_or(rng, Codes2(0), |rng| Codes2(rng.random()))
+    });
+}
+
+#[test]
+fn codes4_kernels_match_fallback() {
+    check_codes(5, 16, 512, |rng| {
+        extreme_or(rng, Codes4(0), |rng| Codes4(rng.random()))
+    });
+}
+
+#[test]
+fn codes8_kernels_match_fallback() {
+    // 0 is the value −128
+    check_codes(6, 0, 1024, |rng| {
+        extreme_or(rng, Codes8(0), |rng| Codes8(rng.random()))
+    });
+}
+
+/// Vectors of the value −128 only, `codes` per element, with the most codes the i32 kernels
+/// take and twice that: sums of 2³⁰ and 2³¹, which the kernels must leave to i64.
+fn check_i32_limit<E: TestElem>(zero: E, codes: usize) {
+    let mut rng = StdRng::seed_from_u64(7);
+    let mut reused = HashMap::new();
+    for positions in [1 << 16, 1 << 17] {
+        let depth = positions / codes;
+        let operands = TestOperands {
+            depth,
+            vectors: vec![zero; POINTS * depth],
+            aux: vec![[1.0, 0.0, 0.0]; POINTS],
+            combine: code_combine(1),
+            values: vec![-128; 16],
+        };
+        operands.check(&mut rng, Shape::Other(2, 3), 2, &mut reused);
+    }
+}
+
+#[test]
+fn code_sums_near_the_i32_limit() {
+    check_i32_limit(Codes2(0), 4);
+    check_i32_limit(Codes4(0), 2);
+    // 0 is the value −128
+    check_i32_limit(Codes8(0), 1);
 }
