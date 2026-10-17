@@ -48,6 +48,14 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
+    fn document_count(&self) -> usize {
+        match self {
+            Self::Mutable(index) => index.document_count(),
+            Self::Immutable(index) => index.document_count(),
+            Self::OnDisk(index) => index.document_count(),
+        }
+    }
+
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         match self {
             Self::Mutable(index) => index.values_count(point_id),
