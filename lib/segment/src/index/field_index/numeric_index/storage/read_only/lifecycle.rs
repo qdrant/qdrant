@@ -60,8 +60,12 @@ where
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableNumericIndex::open(fs, dir, max_point_offset)?.map(Self::Appendable))
+        Ok(
+            ReadOnlyAppendableNumericIndex::open(fs, dir, max_point_offset, deleted)?
+                .map(Self::Appendable),
+        )
     }
 
     /// Read-only mirror of [`NumericIndexInner::new_mmap`][1]: open the
