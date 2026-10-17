@@ -17,7 +17,9 @@ use on_disk_postings::OnDiskPostings;
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
-use super::bm25::{Bm25Accept, Bm25Query, ON_DISK_BLOCK, PositionalCursors, score_top_k};
+use super::bm25::{
+    Bm25Accept, Bm25Query, FrequencyCursors, ON_DISK_BLOCK, PositionalCursors, score_top_k,
+};
 use super::doc_len::decode_doc_len;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
@@ -27,6 +29,7 @@ use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
 };
+use super::term_frequencies::{self, OnDiskTermFrequencies};
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -49,6 +52,9 @@ pub(super) const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
+/// Term frequencies of an index that scores without positions, apart from its
+/// ids-only postings. See [`super::term_frequencies`].
+pub(in super::super) const TERM_FREQUENCIES_FILE: &str = "term_frequencies.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
 /// Whether a document length sidecar is on disk, without opening the index.
@@ -106,6 +112,9 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// spread over the whole point space, so [`OnDiskInvertedIndex::open`]
     /// decodes it once.
     pub point_to_doc_len: Option<Vec<u16>>,
+    /// `term_frequencies.dat`, when the index scores without positions.
+    /// Boxed: most text indexes have none, and it would widen every one.
+    pub term_frequencies: Option<Box<OnDiskTermFrequencies<S>>>,
     pub deleted_points: DeletedBitVec,
 }
 
@@ -116,6 +125,8 @@ impl<S: UniversalRead> Storage<S> {
             vocab: _,
             point_to_tokens_count: _,
             point_to_doc_len,
+            // Mmap-backed, like the postings: not part of the resident set.
+            term_frequencies: _,
             deleted_points,
         } = self;
 
@@ -155,6 +166,7 @@ impl OnDiskInvertedIndex<MmapFile> {
             point_to_doc_len: _,
             total_tokens,
             points_count: _,
+            term_frequencies,
         } = inverted_index;
 
         debug_assert_eq!(vocab.len(), postings.len());
@@ -212,6 +224,16 @@ impl OnDiskInvertedIndex<MmapFile> {
             },
         }
 
+        // Unlinked when absent for the same reason as the length sidecar.
+        let term_frequencies_path = path.join(TERM_FREQUENCIES_FILE);
+        match term_frequencies {
+            Some(bytes) => term_frequencies::write(&term_frequencies_path, bytes)?,
+            None => match fs_err::remove_file(&term_frequencies_path) {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
+                result => result?,
+            },
+        }
+
         Ok(())
     }
 }
@@ -258,6 +280,16 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // placement, as in `open`.
         OneshotFile::<S>::preopen(fs, path.join(POINT_TO_DOC_LEN_FILE));
 
+        // Populated whatever the placement, as in `open`.
+        fs.schedule_open(
+            &path.join(TERM_FREQUENCIES_FILE),
+            Some(open_options(
+                Populate::PreferBackground,
+                AdviceSetting::Global,
+            )),
+            None,
+        );
+
         // "No tokens" mask
         preopen_deleted_mask(
             fs,
@@ -291,6 +323,8 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             open_point_to_tokens_count(fs, &path, open_options(populate, AdviceSetting::Global))?;
         let total_count = point_to_tokens_count.len()? as usize;
         let point_to_doc_len = read_doc_len_codes(fs, &path, total_count)?;
+        let term_frequencies =
+            open_term_frequencies(fs, &path, postings.posting_count())?.map(Box::new);
         let (deleted, compact_deleted_mask) = read_deleted_points(
             fs,
             &path,
@@ -306,6 +340,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 vocab,
                 point_to_tokens_count,
                 point_to_doc_len,
+                term_frequencies,
                 deleted_points: deleted,
             },
             compact_deleted_mask,
@@ -329,6 +364,14 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     #[cfg(test)]
     pub(super) fn doc_len_codes(&self) -> Option<&[u16]> {
         self.storage.point_to_doc_len.as_deref()
+    }
+
+    /// Whether this index holds what BM25 needs: lengths, and term
+    /// frequencies from either positions or `term_frequencies.dat`.
+    pub fn can_score(&self) -> bool {
+        self.records_doc_len()
+            && (matches!(self.storage.postings, OnDiskPostingsEnum::WithPositions(_))
+                || self.storage.term_frequencies.is_some())
     }
 
     /// Returns whether the point id is valid and active.
@@ -677,6 +720,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             &self.path,
             self.compact_deleted_mask,
             self.storage.point_to_doc_len.is_some(),
+            self.storage.term_frequencies.is_some(),
         )
     }
 
@@ -704,6 +748,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         self.storage.postings.populate()?;
         self.storage.vocab.populate()?;
         self.storage.point_to_tokens_count.populate()?;
+        if let Some(term_frequencies) = &self.storage.term_frequencies {
+            term_frequencies.storage().populate()?;
+        }
         Ok(())
     }
 
@@ -720,6 +767,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             point_to_tokens_count,
             // In RAM, and its file left the page cache when it was read.
             point_to_doc_len: _,
+            term_frequencies,
             deleted_points: _,
         } = storage;
         clear_files_cache(
@@ -728,6 +776,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             postings,
             vocab,
             point_to_tokens_count,
+            term_frequencies.as_deref(),
         )
     }
 }
@@ -750,6 +799,7 @@ pub(in super::super) fn index_files(
     path: &Path,
     compact_deleted_mask: bool,
     has_doc_len: bool,
+    has_term_frequencies: bool,
 ) -> Vec<PathBuf> {
     let mut files = vec![
         path.join(POSTINGS_FILE),
@@ -757,8 +807,14 @@ pub(in super::super) fn index_files(
         path.join(POINT_TO_TOKENS_COUNT_FILE),
         deleted_mask_file(path, compact_deleted_mask, DELETED_POINTS_FILE),
     ];
+    // Listed only when the index loaded them, which is not the same as the
+    // files existing: one rejected at open is deliberately left out of the
+    // snapshot file set, since restoring it would only get it rejected again.
     if has_doc_len {
         files.push(path.join(POINT_TO_DOC_LEN_FILE));
+    }
+    if has_term_frequencies {
+        files.push(path.join(TERM_FREQUENCIES_FILE));
     }
     files
 }
@@ -865,16 +921,67 @@ pub(super) fn read_deleted_points<S: UniversalRead>(
     Ok((DeletedBitVec::new(deleted), compact_deleted_mask))
 }
 
+/// `term_frequencies.dat` when it holds one list per posting list.
+///
+/// Absent unless the index scores without positions; whether that is expected
+/// is the caller's call, as for the length sidecar. One that does not hold a
+/// list per posting list is from another build and is treated as absent, like
+/// a sidecar of the wrong length. A malformed file is the same.
+///
+/// Populated whatever the placement: a fraction of the postings' size, and a
+/// cold query would otherwise fault in each query term's frequencies a page at
+/// a time, while the postings come in with readahead.
+pub(super) fn open_term_frequencies<S: UniversalRead>(
+    fs: &impl UniversalReadFs<File = S>,
+    path: &Path,
+    posting_count: usize,
+) -> OperationResult<Option<OnDiskTermFrequencies<S>>> {
+    let Some(file) = fs
+        .open(
+            path.join(TERM_FREQUENCIES_FILE),
+            open_options(Populate::PreferBackground, AdviceSetting::Global),
+            Default::default(),
+        )
+        .ok_not_found()?
+    else {
+        return Ok(None);
+    };
+    match OnDiskTermFrequencies::open(TypedStorage::<S, u8>::new(file)) {
+        Ok(term_frequencies) if term_frequencies.term_count() == posting_count => {
+            Ok(Some(term_frequencies))
+        }
+        Ok(term_frequencies) => {
+            log::warn!(
+                "Ignoring term frequencies at {path}: {} terms for {posting_count} posting lists",
+                term_frequencies.term_count(),
+                path = path.display(),
+            );
+            Ok(None)
+        }
+        Err(err) => {
+            log::warn!(
+                "Ignoring term frequencies at {path}: {err}",
+                path = path.display(),
+            );
+            Ok(None)
+        }
+    }
+}
+
 pub(super) fn clear_files_cache<S: UniversalRead>(
     path: &Path,
     compact_deleted_mask: bool,
     postings: &OnDiskPostingsEnum<S>,
     vocab: &UniversalHashMap<str, TokenId, S>,
     point_to_tokens_count: &TypedStorage<S, usize>,
+    term_frequencies: Option<&OnDiskTermFrequencies<S>>,
 ) -> OperationResult<()> {
     postings.clear_cache()?;
     vocab.clear_ram_cache()?;
     point_to_tokens_count.clear_ram_cache()?;
+    if let Some(term_frequencies) = term_frequencies {
+        term_frequencies.storage().clear_ram_cache()?;
+    }
     clear_disk_cache(&deleted_mask_file(
         path,
         compact_deleted_mask,
@@ -886,16 +993,6 @@ pub(super) fn clear_files_cache<S: UniversalRead>(
 impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
     fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId> {
         unreachable!("OnDiskInvertedIndex does not support mutable operations")
-    }
-
-    fn index_tokens(
-        &mut self,
-        _idx: PointOffsetType,
-        _tokens: super::TokenSet,
-    ) -> OperationResult<()> {
-        Err(OperationError::service_error(
-            "Can't add values to mmap immutable text index",
-        ))
     }
 
     fn index_document(
@@ -931,47 +1028,72 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let OnDiskPostingsEnum::WithPositions(postings) = &self.storage.postings else {
-            return Err(OperationError::service_error(
-                "text index does not score: BM25 needs positions and document lengths",
-            ));
-        };
         if !self.records_doc_len() {
             return Err(OperationError::service_error(
-                "text index does not score: BM25 needs positions and document lengths",
+                "text index does not score: BM25 needs term frequencies and document lengths",
             ));
         }
         let terms = query.terms();
         let token_ids: Vec<TokenId> = terms.iter().map(|term| term.token_id).collect();
+        // Deleted points stay in these postings and are masked here, as the
+        // filter path does.
+        let visible =
+            |point_id: PointOffsetType| self.is_active(point_id) && accept.is_visible(point_id);
+        let lengths = |point_ids: &[PointOffsetType], lengths: &mut [Option<u32>]| {
+            self.doc_len_batch(point_ids, |index, doc_len| {
+                lengths[index] = doc_len;
+            })
+        };
         // A term without a posting list contributes nothing, so only the
         // existing ones are read, and handed back in the query's term order.
-        postings.with_existing_postings(&token_ids, |views| {
-            let mut by_term = vec![None; terms.len()];
+        fn by_term<V: Clone>(token_ids: &[TokenId], views: Vec<(TokenId, V)>) -> Vec<Option<V>> {
+            let mut by_term = vec![None; token_ids.len()];
             for (token_id, view) in views {
-                let term = terms
+                let term = token_ids
                     .iter()
-                    .position(|term| term.token_id == token_id)
+                    .position(|&term| term == token_id)
                     .expect("a returned posting list belongs to a requested term");
                 by_term[term] = Some(view);
             }
-            let mut cursors = PositionalCursors::new(by_term);
-            // Deleted points stay in these postings and are masked here, as
-            // the filter path does.
-            let visible =
-                |point_id: PointOffsetType| self.is_active(point_id) && accept.is_visible(point_id);
-            score_top_k::<_, ON_DISK_BLOCK>(
-                query,
-                &mut cursors,
-                |point_ids, lengths| {
-                    self.doc_len_batch(point_ids, |index, doc_len| {
-                        lengths[index] = doc_len;
+            by_term
+        }
+        match (&self.storage.postings, &self.storage.term_frequencies) {
+            (OnDiskPostingsEnum::WithPositions(postings), _) => {
+                postings.with_existing_postings(&token_ids, |views| {
+                    score_top_k::<_, ON_DISK_BLOCK>(
+                        query,
+                        &mut PositionalCursors::new(by_term(&token_ids, views)),
+                        lengths,
+                        &accept.with_visible(&visible),
+                        limit,
+                        is_stopped,
+                    )
+                })
+            }
+            (OnDiskPostingsEnum::Ids(postings), Some(frequencies)) => {
+                // Only the query terms' frequencies, in two batched reads.
+                frequencies.with_terms(&token_ids, |frequencies| {
+                    postings.with_existing_postings(&token_ids, |views| {
+                        let views = by_term(&token_ids, views)
+                            .into_iter()
+                            .zip(frequencies)
+                            .map(|(view, frequencies)| view.map(|view| (view, frequencies)))
+                            .collect();
+                        score_top_k::<_, ON_DISK_BLOCK>(
+                            query,
+                            &mut FrequencyCursors::new(views)?,
+                            lengths,
+                            &accept.with_visible(&visible),
+                            limit,
+                            is_stopped,
+                        )
                     })
-                },
-                &accept.with_visible(&visible),
-                limit,
-                is_stopped,
-            )
-        })
+                })
+            }
+            (OnDiskPostingsEnum::Ids(_), None) => Err(OperationError::service_error(
+                "text index does not score: BM25 needs term frequencies and document lengths",
+            )),
+        }
     }
 
     fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {

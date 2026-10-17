@@ -1557,9 +1557,9 @@ class TextIndexParams:
             enable_hnsw: Whether to enable HNSW index for this field.
             memory: Memory placement of the payload index. Overrides the deprecated
                     on_disk flag if both are set.
-            scoring: Record document lengths, so a TextQuery can rank points over
-                     this field. `True` for BM25, or the TextScoringParams.
-                     Implies phrase_matching. Default: disabled.
+            scoring: Record document lengths and term frequencies, so a
+                     TextQuery can rank points over this field. `True` for
+                     BM25, or the TextScoringParams. Default: disabled.
         """
         ...
 

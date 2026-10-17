@@ -8,6 +8,7 @@ pub(super) mod on_disk_inverted_index;
 mod positions;
 mod posting_list;
 mod postings_iterator;
+pub(super) mod term_frequencies;
 
 use std::cmp::min;
 use std::collections::HashMap;
@@ -207,8 +208,6 @@ pub trait InvertedIndex {
             }
         }
     }
-
-    fn index_tokens(&mut self, idx: PointOffsetType, tokens: TokenSet) -> OperationResult<()>;
 
     fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()>;
 

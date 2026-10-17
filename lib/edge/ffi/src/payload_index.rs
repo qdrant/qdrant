@@ -200,8 +200,9 @@ pub struct TextIndexParams {
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
     /// If set, record document lengths, so a [`ScoringQuery::Text`] can rank
-    /// points over this field. Implies `phrase_matching`. Changing it rebuilds
-    /// the index. `None`/`null` disables ranking.
+    /// points over this field. Term frequencies come from the positions when
+    /// `phrase_matching` is on, and from their own file otherwise. Changing it
+    /// rebuilds the index. `None`/`null` disables ranking.
     ///
     /// [`ScoringQuery::Text`]: crate::ScoringQuery::Text
     #[uniffi(default = None)]
