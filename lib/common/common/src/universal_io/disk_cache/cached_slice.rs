@@ -50,7 +50,9 @@ impl CachedSlice {
         debug_assert!(t_size != 0, "cannot use zero-sized type");
         let byte_range = range.start * t_size..range.end * t_size;
         let cow_bytes = self.get_range_bytes(byte_range, align_of::<T>())?;
-        Ok(cow_bytes.try_cast_bytemuck().unwrap())
+        cow_bytes
+            .cast_bytemuck_or_copy()
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, format!("{err:?}")))
     }
 
     /// Read a byte range, returning a [`CowBytes`] view.

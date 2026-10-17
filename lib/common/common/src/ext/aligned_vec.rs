@@ -22,6 +22,30 @@ impl<'a> ACow<'a> {
         })
     }
 
+    /// Like [`Self::try_cast_bytemuck`], but a borrowed slice that is not aligned
+    /// for `T` is copied into an owned, aligned buffer instead of failing.
+    ///
+    /// Zero-copy casts need the source to start on an `align_of::<T>()` boundary.
+    /// Backends that hand out borrowed views (mmap, the disk-cache mirror) only
+    /// guarantee that when the requested byte offset is itself aligned, and
+    /// bytemuck checks alignment even for an empty slice. Only a length that is
+    /// not a whole number of `T` remains an error.
+    pub fn cast_bytemuck_or_copy<T: bytemuck::Pod>(self) -> Result<Cow<'a, [T]>, PodCastError> {
+        match self {
+            ACow::Borrowed(slice) => match bytemuck::try_cast_slice::<u8, T>(slice) {
+                Ok(items) => Ok(Cow::Borrowed(items)),
+                Err(PodCastError::TargetAlignmentGreaterAndInputNotAligned) => {
+                    if slice.len() % size_of::<T>() != 0 {
+                        return Err(PodCastError::OutputSliceWouldHaveSlop);
+                    }
+                    Ok(Cow::Owned(bytemuck::pod_collect_to_vec::<u8, T>(slice)))
+                }
+                Err(err) => Err(err),
+            },
+            owned @ ACow::Owned(_) => owned.try_cast_bytemuck(),
+        }
+    }
+
     /// Convert into owned AVec. If it was a slice, it will have the provided align.
     pub fn into_owned(self, align_if_borrowed: usize) -> AVec<u8, RuntimeAlign> {
         match self {
