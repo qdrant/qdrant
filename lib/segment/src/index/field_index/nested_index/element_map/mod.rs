@@ -179,6 +179,25 @@ impl ElementMap {
         }
     }
 
+    /// The point that owns `element` and the position of the element among the point's
+    /// elements, `None` if no point owns it.
+    ///
+    /// Unlike the offset, the pair identifies the element in every map of the array, see
+    /// [`Self::element_at`].
+    pub fn element_position(&self, element: ElementOffsetType) -> Option<(PointOffsetType, usize)> {
+        let point = self.element_point(element)?;
+        let position = self
+            .point_elements(point)
+            .position(|owned| owned == element)?;
+        Some((point, position))
+    }
+
+    /// Offset of the element at `position` among the elements of `point`, `None` if the
+    /// point has fewer elements.
+    pub fn element_at(&self, point: PointOffsetType, position: usize) -> Option<ElementOffsetType> {
+        self.point_elements(point).nth(position)
+    }
+
     /// The point that owns `element`, `None` if no point does.
     pub fn element_point(&self, element: ElementOffsetType) -> Option<PointOffsetType> {
         match self {

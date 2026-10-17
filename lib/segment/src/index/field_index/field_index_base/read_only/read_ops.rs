@@ -15,6 +15,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::{
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
+use crate::index::field_index::nested_index::ElementConditionChecker;
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{
     NumericFieldIndexRead, NumericIndexRead, ReadOnlyNumericFieldIndex,
@@ -23,6 +24,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition, PayloadFieldIndexRead,
 };
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
+use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 
@@ -352,6 +354,27 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             | ReadOnlyFieldIndex::GeoIndex(_)
             | ReadOnlyFieldIndex::FullTextIndex(_)
             | ReadOnlyFieldIndex::NullIndex(_) => None,
+        }
+    }
+
+    // Read-only segments have no per-element indexes yet
+    fn element_condition_checker<'a>(
+        &'a self,
+        _array_key: &JsonPath,
+        _condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
+        match self {
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_) => Ok(None),
         }
     }
 }

@@ -98,6 +98,13 @@ where
                 }
             }
             Condition::Nested(nested) => {
+                // Answered from per-element indexes of the array, if they cover the filter
+                if let Some(checker) = self.nested_element_checker(nested)? {
+                    return Ok(checker);
+                }
+
+                // Otherwise, check every element in the payload.
+                //
                 // Select indexes for nested fields. Trim nested part from key, so
                 // that nested condition can address fields without nested part.
 
