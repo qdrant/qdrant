@@ -943,6 +943,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         }
         let terms = query.terms();
         let token_ids: Vec<TokenId> = terms.iter().map(|term| term.token_id).collect();
+        let doc_count = self.storage.point_to_tokens_count.len()? as usize;
         // A term without a posting list contributes nothing, so only the
         // existing ones are read, and handed back in the query's term order.
         postings.with_existing_postings(&token_ids, |views| {
@@ -962,6 +963,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             score_top_k::<_, ON_DISK_BLOCK>(
                 query,
                 &mut cursors,
+                doc_count,
                 |point_ids, lengths| {
                     self.doc_len_batch(point_ids, |index, doc_len| {
                         lengths[index] = doc_len;

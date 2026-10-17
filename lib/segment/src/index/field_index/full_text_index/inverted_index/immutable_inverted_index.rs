@@ -370,6 +370,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         score_top_k::<_, 1>(
             query,
             &mut cursors,
+            self.point_to_tokens_count.len(),
             |point_ids, out| {
                 for (point_id, doc_len) in point_ids.iter().zip(out) {
                     *doc_len = lengths.get(*point_id as usize).copied().map(decode_doc_len);
