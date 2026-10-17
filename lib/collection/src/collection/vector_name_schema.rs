@@ -64,6 +64,28 @@ impl Collection {
     }
 
     pub async fn delete_named_vector(&self, vector_name: VectorNameBuf) -> CollectionResult<()> {
+        log::debug!(
+            "Flushing segments before deleting vector '{}' to prevent WAL replay divergence",
+            vector_name
+        );
+
+        // 1. Isolate the read lock to clone shard references quickly.
+        // We drop the lock immediately to avoid stalling concurrent reads during heavy I/O.
+        let target_shards: Vec<_> = {
+            let shards_holder = self.shards_holder.read().await;
+            shards_holder
+                .get_shards()
+                .map(|(_, replica_set)| replica_set.clone())
+                .collect()
+        };
+
+        // 2. Flush segments durably before removing the vectors from the config (Fixes #9386).
+        // This ensures uncommitted WAL operations depending on these vectors are safely baked to disk.
+        for replica_set in target_shards {
+            replica_set.flush().await?;
+        }
+
+        // 3. With historical operations safely on disk, we can now erase the vector from the schema.
         self.update_collection_vector_config(|params| {
             remove_vector_from_config(params, &vector_name);
             Ok(())
@@ -82,12 +104,7 @@ impl Collection {
         .unmeasured(reason("Schema changes aren't measured"))
         .await?;
 
-        // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the
-        // removed vector. Without this, optimization keeps allocating storage for it
-        // using the old config.
-        //
-        // Done in the background: this path is reached from consensus, where blocking can stall the
-        // whole cluster.
+        // Refresh shard optimizers so the cached `SegmentOptimizerConfig` drops the removed vector.
         self.recreate_optimizers_background();
 
         Ok(())
