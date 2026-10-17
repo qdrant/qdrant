@@ -10,6 +10,7 @@
 //! as those of the flattened index of the field.
 
 mod builder;
+mod element_condition_checker;
 mod element_map;
 mod element_points;
 mod facet;
@@ -27,6 +28,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use serde_json::Value;
 
 pub use self::builder::NestedFieldIndexBuilder;
+pub use self::element_condition_checker::ElementConditionChecker;
 use self::element_map::nested_elements;
 pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType, PointElements};
 pub use self::facet::{FacetView, NestedFacetView};
@@ -66,49 +68,6 @@ pub struct NestedFieldIndex {
     /// Number of points with at least one value in `inner`. For immutable indexes,
     /// an upper bound: opening restores the build-time count, ignoring prior deletions.
     indexed_points: usize,
-}
-
-/// A condition checked on the elements of one per-element index.
-///
-/// [`ConditionChecker::check`] takes element offsets of the `anchor` map, so that
-/// conditions answered by different indexes of the array can be combined in one
-/// [`OptimizedFilter`](crate::index::query_optimization::optimized_filter::OptimizedFilter).
-/// Each offset is translated to the index's own map, see [`ElementMap::translate`].
-pub struct ElementConditionChecker<'a> {
-    anchor: &'a ElementMap,
-    element_map: &'a ElementMap,
-    checker: ConditionCheckerEnum<'a>,
-}
-
-impl<'a> ElementConditionChecker<'a> {
-    pub fn element_map(&self) -> &'a ElementMap {
-        self.element_map
-    }
-
-    /// Take element offsets of `anchor` instead of the index's own map.
-    pub fn with_anchor(self, anchor: &'a ElementMap) -> Self {
-        Self { anchor, ..self }
-    }
-}
-
-impl ConditionChecker for ElementConditionChecker<'_> {
-    type Error = OperationError;
-
-    fn check(&self, element: ElementOffsetType) -> OperationResult<bool> {
-        match self.element_map.translate(self.anchor, element) {
-            Some(element) => self.checker.check(element),
-            None => Ok(false),
-        }
-    }
-
-    fn check_batched<K: CheckItem>(
-        &self,
-        items: &mut [K],
-        select: Select,
-        rest: Rest,
-    ) -> OperationResult<usize> {
-        default_check_batched(items, select, rest, |element| self.check(element))
-    }
 }
 
 impl NestedFieldIndex {
@@ -649,10 +608,9 @@ impl FieldIndexRead for NestedFieldIndex {
         let Some(checker) = self.inner.condition_checker(condition)? else {
             return Ok(None);
         };
-        Ok(Some(ElementConditionChecker {
-            anchor: &self.element_map,
-            element_map: &self.element_map,
+        Ok(Some(ElementConditionChecker::new(
+            &self.element_map,
             checker,
-        }))
+        )))
     }
 }
