@@ -7262,6 +7262,8 @@ dependencies = [
  "rand 0.10.3",
  "rand_distr",
  "rayon",
+ "regex",
+ "regex-syntax",
  "roaring",
  "rstest",
  "schemars",
