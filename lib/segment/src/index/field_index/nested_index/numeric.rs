@@ -42,13 +42,16 @@ impl<N: NumericFieldIndexRead, M: ElementMapRead> NumericFieldIndexRead
     }
 }
 
-/// Order-by view of any writable field index: a flattened one, or a per-element one.
-pub enum NumericView<'a> {
-    Plain(NumericFieldIndex<'a>),
-    Nested(NestedNumericView<'a, NumericFieldIndex<'a>, ElementMap>),
+/// Order-by view of any field index: a flattened one, or a per-element one.
+///
+/// `N` is the numeric view of a flattened index, `M` the element map of a per-element
+/// one. The defaults are those of writable segments.
+pub enum NumericView<'a, N = NumericFieldIndex<'a>, M = ElementMap> {
+    Plain(N),
+    Nested(NestedNumericView<'a, N, M>),
 }
 
-impl NumericFieldIndexRead for NumericView<'_> {
+impl<N: NumericFieldIndexRead, M: ElementMapRead> NumericFieldIndexRead for NumericView<'_, N, M> {
     fn get_ordering_values(&self, idx: PointOffsetType) -> impl Iterator<Item = OrderValue> + '_ {
         match self {
             NumericView::Plain(index) => Either::Left(index.get_ordering_values(idx)),

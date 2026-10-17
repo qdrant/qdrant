@@ -6,7 +6,7 @@
 
 use std::io::{BufWriter, Write as _};
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
@@ -82,14 +82,28 @@ impl ImmutableElementMap {
     }
 
     pub fn open(path: PathBuf) -> OperationResult<Option<Self>> {
-        let file = path.join(STARTS_FILE);
+        let file = Self::starts_file(&path);
         if !file.exists() {
             return Ok(None);
         }
-        let (starts, indexed_points) = unpack_starts(&fs_err::read(&file)?).ok_or_else(|| {
-            OperationError::service_error(format!("element map {} is invalid", file.display()))
+        Self::from_bytes(path, &fs_err::read(&file)?).map(Some)
+    }
+
+    /// The file a map in `path` is stored in.
+    pub(super) fn starts_file(path: &Path) -> PathBuf {
+        path.join(STARTS_FILE)
+    }
+
+    /// The map in `path`, decoded from `bytes`, the contents of its
+    /// [`Self::starts_file`].
+    pub(super) fn from_bytes(path: PathBuf, bytes: &[u8]) -> OperationResult<Self> {
+        let (starts, indexed_points) = unpack_starts(bytes).ok_or_else(|| {
+            OperationError::service_error(format!(
+                "element map {} is invalid",
+                Self::starts_file(&path).display(),
+            ))
         })?;
-        Ok(Some(Self::new(path, starts, indexed_points)))
+        Ok(Self::new(path, starts, indexed_points))
     }
 
     fn new(path: PathBuf, starts: Vec<ElementOffsetType>, built_indexed_points: usize) -> Self {
@@ -179,7 +193,7 @@ impl ImmutableElementMap {
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        vec![self.path.join(STARTS_FILE)]
+        vec![Self::starts_file(&self.path)]
     }
 
     pub fn wipe(self) -> OperationResult<()> {
