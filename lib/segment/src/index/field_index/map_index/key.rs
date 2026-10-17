@@ -31,6 +31,13 @@ pub trait MapIndexKey: Key + StoredValue + Eq + Display + Debug + 'static {
         None
     }
 
+    /// The key as text, for regex matching ([`super::regex_index`]). `None`
+    /// for key types without regex matching semantics; only string keys
+    /// support it.
+    fn as_str(&self) -> Option<&str> {
+        None
+    }
+
     /// Whether a key of this type starts with the given prefix key. `false`
     /// for key types without prefix matching semantics.
     fn starts_with(&self, _prefix: &Self) -> bool {
@@ -69,6 +76,10 @@ impl MapIndexKey for str {
 
     fn prefix_index_bytes(&self) -> Option<&[u8]> {
         Some(self.as_bytes())
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        Some(self)
     }
 
     fn starts_with(&self, prefix: &Self) -> bool {

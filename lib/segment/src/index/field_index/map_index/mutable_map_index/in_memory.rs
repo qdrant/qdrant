@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use roaring::RoaringBitmap;
 
 use super::super::read_ops::MapIndexRead;
+use super::super::regex_index::InMemoryRegexIndex;
 use super::super::{IdIter, MapIndexKey};
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::StorageType;
@@ -33,6 +34,10 @@ where
     /// `map`, keys are never removed when their postings become empty.
     pub(in crate::index::field_index::map_index) sorted_keys:
         Option<BTreeSet<<N as MapIndexKey>::Owned>>,
+    /// Trigram index over `map`'s keys, maintained only when the index is
+    /// built with the `regex` option; selects the keys a regex may match.
+    pub(in crate::index::field_index::map_index) regex_index:
+        Option<InMemoryRegexIndex<<N as MapIndexKey>::Owned>>,
 }
 
 impl<N: MapIndexKey + ?Sized> InMemoryMapIndex<N>
@@ -46,7 +51,23 @@ where
             indexed_points: 0,
             values_count: 0,
             sorted_keys: prefix_index.then(BTreeSet::new),
+            regex_index: None,
         }
+    }
+
+    /// Start maintaining the regex index, indexing the keys present so far.
+    /// No-op for key types without regex semantics, or if already enabled.
+    pub(in crate::index::field_index::map_index) fn enable_regex_index(&mut self) {
+        if self.regex_index.is_some() {
+            return;
+        }
+        let mut regex_index = InMemoryRegexIndex::default();
+        for key in self.map.keys() {
+            if let Some(text) = N::as_str(key.borrow()) {
+                regex_index.add_key(key.clone(), text);
+            }
+        }
+        self.regex_index = Some(regex_index);
     }
 
     pub fn add_many_to_map(&mut self, idx: u32, values: Vec<<N as MapIndexKey>::Owned>) {
@@ -63,8 +84,15 @@ where
 
         for value in values {
             let entry = self.map.entry(value.clone());
-            if let (Entry::Vacant(_), Some(sorted_keys)) = (&entry, &mut self.sorted_keys) {
-                sorted_keys.insert(value.clone());
+            if let Entry::Vacant(_) = &entry {
+                if let Some(sorted_keys) = &mut self.sorted_keys {
+                    sorted_keys.insert(value.clone());
+                }
+                if let Some(regex_index) = &mut self.regex_index
+                    && let Some(text) = N::as_str(value.borrow())
+                {
+                    regex_index.add_key(value.clone(), text);
+                }
             }
             let inserted = entry.or_default().insert(idx);
 
@@ -218,6 +246,7 @@ where
             indexed_points: _,
             values_count: _,
             sorted_keys,
+            regex_index,
         } = self;
 
         let sorted_keys_bytes = sorted_keys.as_ref().map_or(0, |keys| {
@@ -240,6 +269,9 @@ where
                 .iter()
                 .map(|v| v.capacity() * std::mem::size_of::<<N as MapIndexKey>::Owned>())
                 .sum::<usize>();
-        map_bytes + ptv_bytes + sorted_keys_bytes
+        let regex_index_bytes = regex_index
+            .as_ref()
+            .map_or(0, |regex_index| regex_index.ram_usage_bytes());
+        map_bytes + ptv_bytes + sorted_keys_bytes + regex_index_bytes
     }
 }

@@ -23,7 +23,7 @@ pub struct ReadOnlyAppendableMapIndex<N: MapIndexKey + ?Sized, S: UniversalRead>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    pub(super) in_memory_index: InMemoryMapIndex<N>,
+    pub(in crate::index::field_index::map_index) in_memory_index: InMemoryMapIndex<N>,
     /// Backing Blobstore reader, populated by [`Self::open`]. Held to keep the
     /// storage mapped for [`Self::files`] / [`Self::clear_cache`] (those are
     /// not part of the [`MapIndexRead`](super::super::read_ops::MapIndexRead)
