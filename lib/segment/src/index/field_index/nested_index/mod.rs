@@ -32,6 +32,7 @@ pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType};
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
 use super::numeric_index::NumericFieldIndexRead;
+use super::stat_tools::estimate_multi_value_selection_cardinality;
 use super::{
     CardinalityEstimation, FacetIndex, FieldIndex, FieldIndexRead, PayloadBlockCondition,
     PayloadFieldIndex, PayloadFieldIndexRead,
@@ -254,7 +255,7 @@ impl NestedFieldIndex {
         &self,
         estimation: CardinalityEstimation,
         map: &ElementMap,
-    ) -> CardinalityEstimation {
+    ) -> OperationResult<CardinalityEstimation> {
         let CardinalityEstimation {
             primary_clauses,
             min,
@@ -262,20 +263,28 @@ impl NestedFieldIndex {
             max,
         } = estimation;
 
-        let points = self.indexed_points;
-        let elements = map.elements_count().max(1);
+        // The inner index is keyed by elements, so it counts elements with values
+        let elements = self.inner.count_indexed_points()?;
+        // `indexed_points` of an immutable index ignores deletions, so it can exceed
+        // the elements still holding values, which the estimator requires to bound it
+        let points = self.indexed_points.min(elements);
         let max = max.min(points);
         let min = min.div_ceil(map.max_elements_per_point()).min(max);
-        // Assume matching elements spread like all elements
-        let exp = ((exp as u128 * points as u128) / elements as u128) as usize;
+        let exp = if points == 0 {
+            0
+        } else {
+            // Assume matching elements spread randomly among points
+            estimate_multi_value_selection_cardinality(points, elements, exp.min(elements)).round()
+                as usize
+        };
 
-        CardinalityEstimation {
+        Ok(CardinalityEstimation {
             // Field conditions resolve through this index, so they select points too
             primary_clauses,
             min,
             exp: exp.clamp(min, max),
             max,
-        }
+        })
     }
 }
 
@@ -353,7 +362,7 @@ impl PayloadFieldIndexRead for NestedFieldIndex {
             return Ok(None);
         };
         Ok(Some(
-            self.to_points_estimation(estimation, &self.element_map),
+            self.to_points_estimation(estimation, &self.element_map)?,
         ))
     }
 
@@ -377,7 +386,8 @@ impl PayloadFieldIndexRead for NestedFieldIndex {
                 } = block;
                 let cardinality = if dedups_values {
                     let estimation = CardinalityEstimation::exact(cardinality);
-                    self.to_points_estimation(estimation, &self.element_map).exp
+                    self.to_points_estimation(estimation, &self.element_map)?
+                        .exp
                 } else {
                     // A block has at most as many points as elements
                     cardinality.min(points)

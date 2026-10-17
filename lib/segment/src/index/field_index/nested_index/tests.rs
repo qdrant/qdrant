@@ -712,6 +712,49 @@ fn nested_payload_blocks_count_points() {
     assert_eq!(blocks(15), Vec::<usize>::new());
 }
 
+/// Elements without the field must not dilute the estimation of a condition.
+#[test]
+fn nested_estimation_ignores_elements_without_field() {
+    let _scope = ambient::test_guard();
+    let dir = Builder::new()
+        .prefix("nested_estimation")
+        .tempdir()
+        .unwrap();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    let field = JsonPath::from_str("offers[].shop").unwrap();
+    for id in 0..20u64 {
+        let mut offers = vec![json!({}); 9];
+        offers.push(json!({"shop": "a"}));
+        let payload = json!({ "offers": offers });
+        segment
+            .upsert_point(id + 1, id.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        segment
+            .set_full_payload(id + 1, id.into(), &serde_json::from_value(payload).unwrap())
+            .unwrap();
+    }
+    segment
+        .create_field_index(
+            21,
+            &field,
+            Some(&schema(PayloadSchemaType::Keyword, true, None)),
+        )
+        .unwrap();
+
+    let indexes = segment.payload_index.borrow();
+    let index = indexes.field_indexes[&field]
+        .iter()
+        .find_map(FieldIndex::as_nested)
+        .unwrap();
+    let condition: FieldCondition = serde_json::from_value(json!({
+        "key": "offers[].shop", "match": {"value": "a"}
+    }))
+    .unwrap();
+    let estimation = index.estimate_cardinality(&condition).unwrap().unwrap();
+    // All 20 points match; the estimator's approximation may be off by a little
+    assert!((18..=20).contains(&estimation.exp), "{estimation:?}");
+}
+
 /// Directories of the element maps of the per-element indexes of `field`.
 fn element_map_dirs(segment: &Segment, field: &str) -> Vec<std::path::PathBuf> {
     let field = JsonPath::from_str(field).unwrap();
