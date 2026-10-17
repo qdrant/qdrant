@@ -13,6 +13,7 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use fs_err as fs;
+use pairwise::{Bits, Combine, MatrixOperands};
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
@@ -1029,6 +1030,75 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 u8::BITS as usize / 2,
             ),
         }
+    }
+}
+
+/// Binary quantized vectors as matrix operands: the stored bits, with no `aux`, combined as in
+/// `EncodedVectorsBin::calculate_metric`.
+///
+/// Covers every encoding: `score_internal` counts the differing bits over the whole stored
+/// vector, whether it holds one, one and a half, or two bits per dimension.
+pub struct BinaryOperands<'a, TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
+    vectors: &'a EncodedVectorsBin<TBitsStoreType, TStorage>,
+    depth: usize,
+    combine: Combine,
+}
+
+impl<'a, TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
+    BinaryOperands<'a, TBitsStoreType, TStorage>
+{
+    pub fn new(vectors: &'a EncodedVectorsBin<TBitsStoreType, TStorage>) -> Self {
+        let params = &vectors.metadata.vector_parameters;
+        let negate = match params.distance_type {
+            DistanceType::Dot | DistanceType::Cosine => params.invert,
+            DistanceType::L1 | DistanceType::L2 => !params.invert,
+        };
+        Self {
+            vectors,
+            depth: get_quantized_vector_size_from_params::<TBitsStoreType>(
+                params.dim,
+                vectors.metadata.encoding,
+            ),
+            combine: Combine::Hamming {
+                dim: params.dim as f32,
+                negate,
+            },
+        }
+    }
+}
+
+impl<TBitsStoreType, TStorage> MatrixOperands for BinaryOperands<'_, TBitsStoreType, TStorage>
+where
+    TBitsStoreType: BitsStoreType + Sync,
+    TStorage: EncodedStorage + Sync,
+{
+    type Elem = Bits;
+    type Error = std::io::Error;
+
+    /// Bytes per vector.
+    fn depth(&self) -> usize {
+        self.depth
+    }
+
+    fn combine(&self) -> Combine {
+        self.combine
+    }
+
+    fn decode_batch(
+        &self,
+        ids: &[PointOffsetType],
+        out: &mut [Bits],
+        _aux: &mut [f32],
+    ) -> std::io::Result<()> {
+        let depth = self.depth;
+        self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {
+            for (o, &byte) in out[i * depth..(i + 1) * depth]
+                .iter_mut()
+                .zip(&data[..depth])
+            {
+                *o = Bits(byte);
+            }
+        })
     }
 }
 
