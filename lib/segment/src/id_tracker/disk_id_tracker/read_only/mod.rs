@@ -60,9 +60,8 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
 #[derive(Debug)]
 pub(super) struct DiskMoves<S: UniversalRead> {
     pub(super) moves: SlotMoves<S>,
-    /// The deleted mask as last read: the baseline new tombstones are found against.
-    pub(super) raw: BitVec,
     /// What reads see: the mask without the held tombstones, plus the slots settled moves masked.
+    /// A tombstone in the mask is new when it is neither set here nor held.
     pub(super) effective: BitVec,
 }
 

@@ -1,3 +1,4 @@
+use common::bitmap_scan::newly_set;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
 use common::universal_io::{
@@ -60,34 +61,25 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
             });
         };
 
-        if let Some(moves) = &mut self.moves {
-            let newly_deleted: Vec<PointOffsetType> = fresh
-                .read_all()?
-                .iter_ones()
-                .map(|internal_id| internal_id as PointOffsetType)
-                .filter(|&internal_id| {
-                    !self.mappings.is_deleted_point(internal_id)
-                        && !moves.held.contains_key(&internal_id)
-                })
-                .collect();
-            for internal_id in newly_deleted {
-                moves.hold(internal_id);
-            }
-            self.deleted = fresh;
-            return Ok(LiveReloadResult::default());
-        }
-
         // `mappings` already reflects every previously reported deletion, so
         // it is the diff baseline: a set bit not yet dropped there is new.
+        // Slots past the mappings hold no point.
         let newly_deleted: Vec<PointOffsetType> = {
-            let deleted = fresh.read_all()?;
-            deleted
-                .iter_ones()
-                .map(|internal_id| internal_id as PointOffsetType)
-                .filter(|&internal_id| !self.mappings.is_deleted_point(internal_id))
-                .collect()
+            let fresh_bits = fresh.read_all()?;
+            let baseline = self.mappings.deleted();
+            let fresh_bits = &fresh_bits[..fresh_bits.len().min(baseline.len())];
+            newly_set(fresh_bits, baseline).collect()
         };
         self.deleted = fresh;
+
+        if let Some(moves) = &mut self.moves {
+            for internal_id in newly_deleted {
+                if !moves.held.contains_key(&internal_id) {
+                    moves.hold(internal_id);
+                }
+            }
+            return Ok(LiveReloadResult::default());
+        }
 
         let mut deleted = Vec::with_capacity(newly_deleted.len());
         for internal_id in newly_deleted {

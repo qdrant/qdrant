@@ -1,5 +1,6 @@
 //! Live-reload: pick up deletions written by the leader after open.
 
+use common::bitmap_scan::newly_set;
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -74,31 +75,23 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         self.deleted_file = fresh;
 
         if let Some(moves) = &mut self.moves {
-            let newly_deleted: Vec<PointOffsetType> = new
-                .iter_ones()
-                .filter(|&i| !moves.raw.get(i).is_some_and(|bit| *bit))
-                .map(|i| i as PointOffsetType)
-                .collect();
             if new.len() > moves.effective.len() {
                 moves.effective.resize(new.len(), false);
             }
+            // A new tombstone is neither deleted in the view nor held yet. A copy a settled move
+            // already masked needs no hold.
+            let newly_deleted: Vec<PointOffsetType> = newly_set(&new, &moves.effective)
+                .filter(|internal_id| !moves.moves.held.contains_key(internal_id))
+                .collect();
             for internal_id in newly_deleted {
-                // A copy a settled move already masked needs no hold
-                if !moves.effective[internal_id as usize] {
-                    moves.moves.hold(internal_id);
-                }
+                moves.moves.hold(internal_id);
             }
-            moves.raw = new;
             return Ok(LiveReloadResult::default());
         }
 
         let baseline = self.deleted_full.take();
         let deleted: Vec<PointOffsetType> = match baseline {
-            Some(old) => new
-                .iter_ones()
-                .filter(|&i| !old.get(i).is_some_and(|b| *b))
-                .map(|i| i as PointOffsetType)
-                .collect(),
+            Some(old) => newly_set(&new, &old).collect(),
             None => new.iter_ones().map(|i| i as PointOffsetType).collect(),
         };
         debug_assert!(deleted.is_sorted());
@@ -128,7 +121,6 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         if let Some(moves) = self.moves.as_deref_mut() {
             let DiskMoves {
                 moves: slot_moves,
-                raw: _,
                 effective,
             } = moves;
             slot_moves.ingest_tail(start, bytes, effective);
