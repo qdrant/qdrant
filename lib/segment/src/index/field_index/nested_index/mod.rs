@@ -10,6 +10,7 @@
 //! as those of the flattened index of the field.
 
 mod builder;
+mod element_condition_checker;
 mod element_map;
 mod element_points;
 mod facet;
@@ -27,8 +28,9 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use serde_json::Value;
 
 pub use self::builder::NestedFieldIndexBuilder;
+pub use self::element_condition_checker::ElementConditionChecker;
 use self::element_map::nested_elements;
-pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType};
+pub use self::element_map::{ElementMap, ElementMapBuilder, ElementOffsetType, PointElements};
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
 use super::numeric_index::NumericFieldIndexRead;
@@ -592,5 +594,23 @@ impl FieldIndexRead for NestedFieldIndex {
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
         self.facet_view()
+    }
+
+    fn element_condition_checker<'a>(
+        &'a self,
+        array_key: &JsonPath,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
+        if &self.array_key != array_key {
+            return Ok(None);
+        }
+        // The inner index is keyed by element offsets
+        let Some(checker) = self.inner.condition_checker(condition)? else {
+            return Ok(None);
+        };
+        Ok(Some(ElementConditionChecker::new(
+            &self.element_map,
+            checker,
+        )))
     }
 }

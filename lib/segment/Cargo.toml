@@ -216,6 +216,10 @@ name = "range_filtering"
 harness = false
 
 [[bench]]
+name = "nested_filtering"
+harness = false
+
+[[bench]]
 name = "in_memory_id_tracker"
 harness = false
 

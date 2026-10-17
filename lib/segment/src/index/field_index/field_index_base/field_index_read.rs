@@ -7,9 +7,12 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
+use crate::index::field_index::nested_index::ElementConditionChecker;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
+use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
+use crate::types::FieldCondition;
 
 /// Read-only access surface of [`FieldIndex`](super::FieldIndex).
 ///
@@ -98,4 +101,14 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     ///
     /// [`PayloadIndexRead::facet_index_for`]: crate::index::PayloadIndexRead::facet_index_for
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_>;
+
+    /// Checker of `condition` over the elements of the `array_key` array, if this is a
+    /// per-element index of it that can serve the condition.
+    ///
+    /// The condition key is the full path of the field, e.g. `offers[].price`.
+    fn element_condition_checker<'a>(
+        &'a self,
+        array_key: &JsonPath,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>>;
 }

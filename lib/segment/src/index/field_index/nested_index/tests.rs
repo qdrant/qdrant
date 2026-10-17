@@ -7,6 +7,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::ambient;
 use common::condition_checker::ConditionChecker as _;
 use common::flags::FeatureFlags;
@@ -27,17 +28,20 @@ use crate::entry::entry_point::{
     StorageSegmentEntry as _,
 };
 use crate::id_tracker::IdTrackerRead as _;
+use crate::index::PayloadIndexRead as _;
 use crate::index::field_index::null_index::NullIndexRead as _;
 use crate::index::field_index::{FieldIndex, FieldIndexRead as _, PayloadFieldIndexRead as _};
 use crate::index::payload_config::PayloadIndexType;
 use crate::json_path::JsonPath;
+use crate::payload_storage::query_checker::check_payload;
 use crate::segment::Segment;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::segment_builder::SegmentBuilder;
 use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{
-    Distance, ExtendedPointId, FieldCondition, Filter, HnswGlobalConfig, Indexes, Memory, Payload,
-    PayloadFieldSchema, PayloadSchemaType, SegmentConfig, VectorDataConfig, VectorStorageType,
+    Distance, ExtendedPointId, FieldCondition, Filter, HnswGlobalConfig, Indexes, Memory,
+    OwnedPayloadRef, Payload, PayloadFieldSchema, PayloadSchemaType, SegmentConfig,
+    VectorDataConfig, VectorStorageType,
 };
 
 const NUM_POINTS: u64 = 200;
@@ -65,7 +69,12 @@ fn random_offer(rng: &mut StdRng) -> Value {
         offer.insert("price".into(), price);
     }
     if rng.random_bool(0.85) {
-        offer.insert("shop".into(), json!(format!("s{}", rng.random_range(0..5))));
+        let shop = if rng.random_bool(0.1) {
+            Value::Null
+        } else {
+            json!(format!("s{}", rng.random_range(0..5)))
+        };
+        offer.insert("shop".into(), shop);
     }
     // Few decimals: values re-read from payload storage must parse back exactly
     if rng.random_bool(0.8) {
@@ -155,7 +164,198 @@ fn filters() -> Vec<Filter> {
         }))
         .unwrap(),
     );
+    filters.extend(nested_filters().into_iter().map(|(filter, _)| filter));
     filters
+}
+
+/// Filters with a `nested` condition on `offers`, and whether per-element indexes of all
+/// fields cover the nested filter.
+fn nested_filters() -> Vec<(Filter, bool)> {
+    let nested = |filter: Value| json!({"nested": {"key": "offers", "filter": filter}});
+    let shop = json!({"key": "shop", "match": {"value": "s1"}});
+    let shops = json!({"key": "shop", "match": {"any": ["s2", "s3"]}});
+    let not_shops = json!({"key": "shop", "match": {"except": ["s0"]}});
+    let price = json!({"key": "price", "range": {"gte": 10, "lt": 25}});
+    let cheap = json!({"key": "price", "range": {"lt": 20}});
+    let rating = json!({"key": "rating", "range": {"gt": 2.5}});
+    let available = json!({"key": "available", "match": {"value": true}});
+    let tag = json!({"key": "tags", "match": {"value": "t1"}});
+    let near = json!({"key": "location", "geo_radius": {
+        "center": {"lon": 0.5, "lat": 0.5}, "radius": 40000.0
+    }});
+
+    let covered = [
+        nested(json!({"must": [shop, price]})),
+        nested(json!({"should": [shops, tag], "must_not": [available]})),
+        nested(json!({"min_should": {"conditions": [cheap, rating, tag], "min_count": 2}})),
+        nested(json!({"must": [near, not_shops]})),
+        nested(json!({"must": [{"should": [shop, shops]}, {"must_not": [cheap]}]})),
+        // An empty `should` matches no element
+        nested(json!({"should": [], "must": [shop]})),
+        // Ids, vectors and slices never match an element
+        nested(json!({"should": [shop, {"has_id": [1, 2, 3]}]})),
+        nested(json!({"must": [price], "must_not": [{"has_vector": ""}]})),
+        nested(json!({"must": [cheap, {"slice": {"total": 2, "index": 0}}]})),
+    ];
+    let not_covered = [
+        // Values counts, emptiness and unindexed fields are checked in the payload
+        nested(json!({"must": [shop, {"key": "tags", "values_count": {"gte": 2}}]})),
+        nested(json!({"must": [{"is_empty": {"key": "note"}}, rating]})),
+        nested(json!({"should": [shop, {"key": "name", "match": {"value": "x"}}]})),
+        // Without field conditions, no index lists the elements of a point
+        nested(json!({})),
+        nested(json!({"should": []})),
+    ];
+
+    let mut filters: Vec<(Filter, bool)> = covered
+        .into_iter()
+        .map(|condition| (json!({"must": [condition]}), true))
+        .chain(
+            not_covered
+                .into_iter()
+                .map(|condition| (json!({"must": [condition]}), false)),
+        )
+        .map(|(filter, covered)| (serde_json::from_value(filter).unwrap(), covered))
+        .collect();
+
+    // Next to other conditions, and negated
+    filters.push((
+        serde_json::from_value(json!({
+            "must": [nested(json!({"must": [shop, price]})), {"key": "offers[].available", "match": {"value": false}}],
+            "must_not": [nested(json!({"must": [rating]}))],
+        }))
+        .unwrap(),
+        true,
+    ));
+    filters
+}
+
+/// Nested filters with emptiness conditions, all answered from per-element indexes.
+///
+/// The flattened segment can't serve as their reference: it estimates a nested `is_empty`
+/// with the flattened null index, which selects too few points, see [`payload_reference`].
+fn nested_emptiness_filters() -> Vec<Filter> {
+    let nested = |filter: Value| json!({"must": [{"nested": {"key": "offers", "filter": filter}}]});
+    let shop = json!({"key": "shop", "match": {"value": "s1"}});
+    let cheap = json!({"key": "price", "range": {"lt": 20}});
+    [
+        nested(json!({"must": [{"is_empty": {"key": "price"}}, shop]})),
+        nested(json!({"must": [{"is_null": {"key": "shop"}}]})),
+        nested(json!({"must": [cheap], "must_not": [{"is_empty": {"key": "tags"}}]})),
+        nested(json!({"must": [{"key": "tags", "is_empty": true}]})),
+        nested(json!({"should": [{"is_null": {"key": "shop"}}, {"is_empty": {"key": "rating"}}]})),
+    ]
+    .into_iter()
+    .map(|filter| serde_json::from_value(filter).unwrap())
+    .collect()
+}
+
+/// Points of `segment` matching `filter`, checked on their payload without any index.
+fn payload_reference(segment: &Segment, filter: &Filter) -> Vec<ExtendedPointId> {
+    let no_indexes = AHashMap::<JsonPath, Vec<FieldIndex>>::new();
+    segment
+        .read_filtered(
+            None,
+            None,
+            None,
+            &AtomicBool::new(false),
+            DeferredBehavior::WithDeferred,
+        )
+        .unwrap()
+        .into_iter()
+        .filter(|&id| {
+            let payload = segment.payload(id).unwrap();
+            check_payload(
+                Box::new(|| OwnedPayloadRef::from(&payload)),
+                None,
+                &HashMap::new(),
+                filter,
+                0,
+                &no_indexes,
+            )
+        })
+        .collect()
+}
+
+/// Whether the `nested` conditions of `filter` are answered from per-element indexes.
+fn nested_from_indexes(segment: &Segment, filter: &Filter) -> Vec<bool> {
+    let conditions = filter
+        .must
+        .iter()
+        .chain(&filter.must_not)
+        .flatten()
+        .filter_map(|condition| match condition {
+            crate::types::Condition::Nested(nested) => Some(nested),
+            crate::types::Condition::Field(_)
+            | crate::types::Condition::IsEmpty(_)
+            | crate::types::Condition::IsNull(_)
+            | crate::types::Condition::HasId(_)
+            | crate::types::Condition::HasVector(_)
+            | crate::types::Condition::Slice(_)
+            | crate::types::Condition::Filter(_)
+            | crate::types::Condition::CustomIdChecker(_) => None,
+        });
+    let payload_index = segment.payload_index.borrow();
+    payload_index.with_view(|view| {
+        conditions
+            .map(|nested| view.nested_element_checker(nested).unwrap().is_some())
+            .collect()
+    })
+}
+
+#[test]
+fn nested_filters_use_per_element_indexes() {
+    let dir = Builder::new().prefix("nested_index").tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(11);
+    let _scope = ambient::test_guard();
+
+    let mut pair = Pair::new(dir.path());
+    pair.upsert(&mut rng, 0..NUM_POINTS);
+    pair.create_indexes(None);
+
+    let emptiness = nested_emptiness_filters()
+        .into_iter()
+        .map(|filter| (filter, true));
+    for (filter, covered) in nested_filters().into_iter().chain(emptiness) {
+        assert!(
+            nested_from_indexes(&pair.flat, &filter)
+                .iter()
+                .all(|used| !used),
+            "flattened indexes can't answer {filter:?}",
+        );
+        assert!(
+            nested_from_indexes(&pair.nested, &filter)
+                .iter()
+                .all(|&used| used == covered),
+            "per-element indexes must answer {filter:?}: {covered}",
+        );
+    }
+
+    // Without per-element indexes of the array, nested filters fall back to the payload
+    let key = JsonPath::from_str(FIELDS[0].0).unwrap();
+    let mut op_num = pair.op_num;
+    for &(field, _) in FIELDS {
+        op_num += 1;
+        pair.nested
+            .delete_field_index(op_num, &JsonPath::from_str(field).unwrap())
+            .unwrap();
+    }
+    assert!(
+        !pair
+            .nested
+            .payload_index
+            .borrow()
+            .field_indexes
+            .contains_key(&key)
+    );
+    for (filter, _) in nested_filters() {
+        assert!(
+            nested_from_indexes(&pair.nested, &filter)
+                .iter()
+                .all(|used| !used)
+        );
+    }
+    assert_equal_filters(&pair.flat, &pair.nested);
 }
 
 /// Field conditions served by an index, for index-level checks.
@@ -410,24 +610,7 @@ fn assert_equal(flat: &Segment, nested: &Segment) {
 
     assert_eq!(flat.available_point_count(), nested.available_point_count());
 
-    let mut matched_any = false;
-    for filter in filters() {
-        let read = |segment: &Segment| {
-            segment
-                .read_filtered(
-                    None,
-                    None,
-                    Some(&filter),
-                    &stopped,
-                    DeferredBehavior::WithDeferred,
-                )
-                .unwrap()
-        };
-        let flat_points = read(flat);
-        matched_any |= !flat_points.is_empty();
-        assert_eq!(flat_points, read(nested), "filter {filter:?}");
-    }
-    assert!(matched_any, "filters must select something to compare");
+    assert_equal_filters(flat, nested);
 
     // A per-element null index treats each element as its own entry: a condition matches
     // a point if one of its elements matches it, checked here on the payload
@@ -471,6 +654,27 @@ fn assert_equal(flat: &Segment, nested: &Segment) {
                 .unwrap();
             assert_eq!(expected, points, "filter {filter:?}");
         }
+    }
+
+    for filter in nested_emptiness_filters() {
+        let points = nested
+            .read_filtered(
+                None,
+                None,
+                Some(&filter),
+                &stopped,
+                DeferredBehavior::WithDeferred,
+            )
+            .unwrap();
+        assert!(
+            !points.is_empty(),
+            "filter {filter:?} must select something"
+        );
+        assert_eq!(
+            payload_reference(nested, &filter),
+            points,
+            "filter {filter:?}"
+        );
     }
 
     for &(field, _) in FIELDS {
@@ -524,6 +728,43 @@ fn assert_equal(flat: &Segment, nested: &Segment) {
             }
         }
     }
+}
+
+/// Filtered reads, including `nested` conditions, match.
+fn assert_equal_filters(flat: &Segment, nested: &Segment) {
+    let stopped = AtomicBool::new(false);
+    let mut matched_any = false;
+    for filter in filters() {
+        let read = |segment: &Segment| {
+            segment
+                .read_filtered(
+                    None,
+                    None,
+                    Some(&filter),
+                    &stopped,
+                    DeferredBehavior::WithDeferred,
+                )
+                .unwrap()
+        };
+        let flat_points = read(flat);
+        matched_any |= !flat_points.is_empty();
+        assert_eq!(flat_points, read(nested), "filter {filter:?}");
+
+        // Also checked point by point, without the index-driven candidates of the query plan
+        let checked = |segment: &Segment| {
+            let total = segment.id_tracker.borrow().total_point_count() as PointOffsetType;
+            let payload_index = segment.payload_index.borrow();
+            let points = payload_index.with_view(|view| {
+                let context = view.filter_context(&filter).unwrap();
+                (0..total)
+                    .filter(|&point| context.check(point).unwrap())
+                    .collect::<Vec<_>>()
+            });
+            external_ids(segment, points.into_iter())
+        };
+        assert_eq!(checked(flat), checked(nested), "checked filter {filter:?}");
+    }
+    assert!(matched_any, "filters must select something to compare");
 }
 
 fn reload(segment: Segment) -> Segment {
@@ -1243,6 +1484,57 @@ fn nested_text_index_scores_elements() {
         &dir.path().join("reference_4"),
         &mut rng,
     );
+}
+
+/// Text conditions in a `nested` filter match per element, from the per-element index
+/// or from the payload of each element alike.
+#[test]
+fn nested_text_filters_match_payload_check() {
+    let dir = Builder::new().prefix("nested_text").tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(5);
+    let _scope = ambient::test_guard();
+    let stopped = AtomicBool::new(false);
+
+    let points: Vec<_> = (0..NUM_POINTS)
+        .map(|id| (id, random_titles(&mut rng)))
+        .collect();
+    let flat = text_segment(&dir.path().join("flat"), &points, false);
+    let nested = text_segment(&dir.path().join("nested"), &points, true);
+
+    let mut matched_any = false;
+    for _ in 0..50 {
+        let text = format!("{} {}", text_word(&mut rng), text_word(&mut rng));
+        let condition = match rng.random_range(0..3) {
+            0 => json!({"key": "title", "match": {"text": text}}),
+            1 => json!({"key": "title", "match": {"phrase": text}}),
+            _ => json!({"key": "title", "match": {"text_any": text}}),
+        };
+        let other = json!({"key": "title", "match": {"text": text_word(&mut rng)}});
+        let filter: Filter = serde_json::from_value(json!({"must": [{"nested": {
+            "key": "offers",
+            "filter": {"must": [condition], "must_not": [other]},
+        }}]}))
+        .unwrap();
+
+        assert_eq!(nested_from_indexes(&flat, &filter), vec![false]);
+        assert_eq!(nested_from_indexes(&nested, &filter), vec![true]);
+
+        let read = |segment: &Segment| {
+            segment
+                .read_filtered(
+                    None,
+                    None,
+                    Some(&filter),
+                    &stopped,
+                    DeferredBehavior::WithDeferred,
+                )
+                .unwrap()
+        };
+        let expected = read(&flat);
+        matched_any |= !expected.is_empty();
+        assert_eq!(read(&nested), expected, "filter {filter:?}");
+    }
+    assert!(matched_any);
 }
 
 #[test]
