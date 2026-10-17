@@ -74,9 +74,9 @@ A new endpoint must also be added in the same PR to: `EXPECTED_NUMBER_OF_APIS` i
 
 - PRs target `dev`. `master` is release-only.
 - AI-assisted PRs follow `docs/CONTRIBUTING.md#contributing-with-ai`. Mark each commit
-  `[AI]` or `[manual]` in the PR description, and include the original prompt. External
-  contributors must write the motivation for the PR themselves. The rest of the
-  description can be AI-generated.
+  `[AI]` or `[manual]` in the PR description, and include the original prompt. Don't
+  generate the PR description or replies to review comments, and don't add
+  AI-generated walkthroughs or diagrams.
 
 ## Code conventions
 
