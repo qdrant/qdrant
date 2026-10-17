@@ -61,9 +61,10 @@ fn pattern_strategy() -> impl Strategy<Value = String> {
             r"\z",
             "(?m:^)",
             "(?m:$)",
-            r"(?-u:\w)",
-            "(?-u:.)",
-            r"(?-u:\xC3)",
+            r"\D",
+            r"\pL",
+            r"\p{Greek}",
+            "[[:alpha:]]",
             "",
         ])
         .prop_map(String::from),
@@ -144,8 +145,9 @@ fn query_admits_tricky_keys() {
         ("ΟΔΟΣ", &["ΟΔΟΣ", "ΟΔΟΣ_1"]),
         ("(?i)οδος", &["ΟΔΟΣ", "οδος", "οδοσ"]),
         ("(?i)été", &["ÉTÉ"]),
-        // ASCII-only classes.
-        (r"(?-u:\w)bc", &["abc", "Ébc_bc"]),
+        // ASCII-only Perl classes and word boundaries (RE2 semantics).
+        (r"\wbc", &["abc", "Ébc_bc"]),
+        (r"caf\b", &["café"]),
         // Line anchors and word boundaries don't touch the key boundary.
         ("(?m)^abc", &["x\nabc"]),
         (r"abc\b", &["x abc y"]),
