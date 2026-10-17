@@ -102,6 +102,11 @@ impl RawScorer for RemappedRawScorer<'_> {
 }
 
 impl<'a> ScorerFilters<'a> {
+    /// Check vector visibility without applying the payload predicate.
+    pub fn check_live(&self, point_id: PointOffsetType) -> bool {
+        self.deleted.check_infallible(point_id)
+    }
+
     pub fn new(
         filter_context: Option<OptimizedFilter<'a>>,
         deleted: NotDeletedChecker<'a>,
