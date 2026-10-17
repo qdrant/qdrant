@@ -127,21 +127,54 @@ where
     })
 }
 
-/// Decide, for every segment of `trackers`, what to delete now. Segments with nothing to delete are
-/// left out.
+/// What one resolution over the trackers of a pass decided.
+pub(super) struct Resolution {
+    /// Per segment, what to delete now. Segments with nothing to delete are left out.
+    pub(super) deletes: HashMap<Uuid, MoveResolution>,
+    /// Per source segment, the slots that settled moved-in records name and the source deleted for
+    /// good: an earlier pass applied their masks, and the records can be forgotten.
+    pub(super) retired: HashMap<Uuid, RoaringBitmap>,
+}
+
+/// Decide, for every segment of `trackers`, what to delete now, and which settled moved-in records
+/// have done their work.
 pub(super) fn resolve_moves<S: UniversalRead>(
     trackers: &Trackers<S>,
     unheld: &UnheldTargets<'_>,
-) -> HashMap<Uuid, MoveResolution> {
+) -> Resolution {
     let borrowed: HashMap<Uuid, AtomicRef<'_, ReadOnlyIdTrackerEnum<S>>> = trackers
         .iter()
         .map(|(uuid, tracker)| (*uuid, tracker.borrow()))
         .collect();
 
-    // Per segment, the slots whose copy a settled move replaced
-    let mut superseded: HashMap<Uuid, RoaringBitmap> = HashMap::new();
+    // Per source segment in `trackers`, the slots that settled moved-in records of any segment
+    // name. The records naming a source the follower does not hold wait for it to load.
+    let mut masks: HashMap<Uuid, RoaringBitmap> = HashMap::new();
+    for tracker in borrowed.values() {
+        for (source, slots) in tracker.settled_moved_in().into_iter().flatten() {
+            if borrowed.contains_key(source) {
+                *masks.entry(*source).or_default() |= slots;
+            }
+        }
+    }
 
-    // By the segment's own moved-out records, once their target settled
+    // A slot its source deleted for good needs no mask anymore
+    let mut retired = HashMap::new();
+    for (source, slots) in &mut masks {
+        let tracker = &borrowed[source];
+        let deleted: RoaringBitmap = slots
+            .iter()
+            .filter(|&slot| tracker.is_retired(slot))
+            .collect();
+        if !deleted.is_empty() {
+            *slots -= &deleted;
+            retired.insert(*source, deleted);
+        }
+    }
+
+    // Per segment, the slots whose copy a settled move replaced: those the masks name, and those
+    // the segment's own moved-out records name once their target settled
+    let mut superseded = masks;
     for (uuid, tracker) in &borrowed {
         for (slot, target) in tracker.moved_out() {
             let settled = match borrowed.get(&target.segment) {
@@ -154,17 +187,12 @@ pub(super) fn resolve_moves<S: UniversalRead>(
         }
     }
 
-    // By the settled moved-in records of any segment
-    for tracker in borrowed.values() {
-        for (source, slots) in tracker.settled_moved_in().into_iter().flatten() {
-            *superseded.entry(*source).or_default() |= slots;
-        }
-    }
-
-    borrowed
+    let deletes = borrowed
         .iter()
         .filter(|(_, tracker)| tracker.resolves_point_moves())
         .map(|(uuid, tracker)| (*uuid, tracker.resolve_point_moves(superseded.get(uuid))))
         .filter(|(_, resolution)| !resolution.is_empty())
-        .collect()
+        .collect();
+
+    Resolution { deletes, retired }
 }
