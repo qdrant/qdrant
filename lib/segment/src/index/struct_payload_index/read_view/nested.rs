@@ -8,7 +8,7 @@
 //!
 //! Every per-element index has its own element offsets, but all of them agree on the
 //! elements of a point and their order, see
-//! [`ElementMap`](crate::index::field_index::nested_index::ElementMap). So the filter is
+//! [`ElementMapRead`](crate::index::field_index::nested_index::ElementMapRead). So the filter is
 //! an [`OptimizedFilter`] over the element offsets of one of them, the input map, see
 //! [`ElementConditionChecker`].
 
@@ -24,7 +24,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::FieldIndexRead;
-use crate::index::field_index::nested_index::{ElementConditionChecker, ElementMap};
+use crate::index::field_index::nested_index::{ElementConditionChecker, ElementMapRead};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorageRead;
@@ -37,7 +37,7 @@ use crate::vector_storage::VectorStorageRead;
 /// Matches a point if any of its elements matches the nested filter.
 struct NestedElementChecker<'a> {
     /// Map of the offsets `filter` takes, see [`ElementConditionChecker::with_input_map`]
-    input_map: &'a ElementMap,
+    input_map: &'a dyn ElementMapRead,
     filter: OptimizedFilter<'a>,
 }
 
@@ -98,7 +98,7 @@ where
         &'b self,
         array_key: &JsonPath,
         filter: &Filter,
-        input_map: &mut Option<&'b ElementMap>,
+        input_map: &mut Option<&'b dyn ElementMapRead>,
     ) -> OperationResult<Option<OptimizedFilter<'b>>> {
         let Filter {
             should,
@@ -150,7 +150,7 @@ where
         &'b self,
         array_key: &JsonPath,
         conditions: &[Condition],
-        input_map: &mut Option<&'b ElementMap>,
+        input_map: &mut Option<&'b dyn ElementMapRead>,
     ) -> OperationResult<Option<Vec<ConditionCheckerEnum<'b>>>> {
         let mut converted = Vec::with_capacity(conditions.len());
         for condition in conditions {
