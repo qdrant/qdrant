@@ -4,10 +4,11 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalWriteFs;
+use common::universal_io::{UniversalAppendFs, UniversalWriteFs};
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::tombstone_points_in_stored_mask;
+use crate::id_tracker::point_moves::{PointMovesWriter, Retirement, moved_out_entries};
 use crate::types::PointIdType;
 
 /// The mapping is frozen, so the one thing to write is the stored deleted
@@ -21,6 +22,8 @@ pub struct UpdateOnlyDiskIdTracker {
     /// Consumed by the first [`tombstone_points`](Self::tombstone_points) in
     /// place of reading the mask file.
     deleted: Option<BitVec>,
+    /// The segment's move log, see [`point_moves`](crate::id_tracker::point_moves).
+    moves: PointMovesWriter,
 }
 
 impl UpdateOnlyDiskIdTracker {
@@ -30,7 +33,22 @@ impl UpdateOnlyDiskIdTracker {
         Ok(Self {
             segment_path: segment_path.to_path_buf(),
             deleted,
+            moves: PointMovesWriter::new(segment_path),
         })
+    }
+
+    /// Retire the points of `retirements`, see
+    /// [`UpdateOnlyImmutableIdTracker::retire_points`](crate::id_tracker::immutable_id_tracker::update_only::UpdateOnlyImmutableIdTracker::retire_points).
+    pub fn retire_points<Fs>(&mut self, fs: &Fs, retirements: &[Retirement]) -> OperationResult<()>
+    where
+        Fs: UniversalAppendFs,
+    {
+        self.moves.append(fs, &moved_out_entries(retirements))?;
+        let points: Vec<(PointIdType, PointOffsetType)> = retirements
+            .iter()
+            .map(|retirement| (retirement.id, retirement.slot))
+            .collect();
+        tombstone_points_in_stored_mask(fs, &self.segment_path, &mut self.deleted, &points)
     }
 
     /// Retire the given points by marking the slots they occupy in the stored

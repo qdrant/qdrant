@@ -1,12 +1,16 @@
 use std::io::Write as _;
 
+use ahash::AHashMap;
+use common::bitvec::BitVec;
 use common::universal_io::{MmapFile, MmapFs};
+use roaring::RoaringBitmap;
 use tempfile::Builder;
 use uuid::Uuid;
 
 use super::format::{decode_entries, decode_entry, encode_entry};
 use super::{
-    MoveEntry, MoveKind, PointMovesView, PointMovesWriter, point_moves_path, read_point_moves_tail,
+    Hold, MoveEntry, MoveKind, PointMoves, PointMovesView, PointMovesWriter, SlotMoves, SlotRef,
+    point_moves_path, read_point_moves_tail,
 };
 
 fn segment(id: u128) -> Uuid {
@@ -212,4 +216,93 @@ fn tail_read_follows_the_offset() {
 
     // A tail read from anywhere else is ignored
     assert_eq!(view.consume(0, &tail), []);
+}
+
+/// Moved-out records name local slots and their targets; moved-in records fold into the
+/// per-source index once their local slot settles.
+#[test]
+fn move_state_settles_and_lists_moves() {
+    let mut moves = PointMoves::default();
+    moves.ingest([
+        moved_out(2, &[(1, 10), (2, 11)]),
+        moved_in(3, &[(20, 5), (21, 6)]),
+    ]);
+
+    assert!(moves.names(1) && moves.names(2) && !moves.names(3));
+    assert!(moves.settled_moved_in().is_empty());
+    assert_eq!(moves.unsettled_slots().collect::<Vec<_>>(), [20, 21]);
+
+    moves.settle(&RoaringBitmap::from_iter([20u32]));
+    let settled = moves.settled_moved_in();
+    assert_eq!(settled.len(), 1);
+    assert!(settled[&segment(3)].contains(5) && !settled[&segment(3)].contains(6));
+    assert_eq!(moves.unsettled_slots().collect::<Vec<_>>(), [21]);
+
+    moves.settle_all();
+    assert!(moves.settled_moved_in()[&segment(3)].contains(6));
+    assert_eq!(moves.unsettled_slots().count(), 0);
+
+    let target = |slot| SlotRef {
+        segment: segment(2),
+        slot,
+    };
+    let mut moved_out: Vec<_> = moves.moved_out().collect();
+    moved_out.sort_unstable();
+    assert_eq!(moved_out, [(1, target(10)), (2, target(11))]);
+
+    moves.forget([1]);
+    assert!(!moves.names(1));
+    assert_eq!(moves.moved_out().collect::<Vec<_>>(), [(2, target(11))]);
+}
+
+/// Held tombstones resolve as plain deletes once classified, or as superseded once the shard names
+/// their slot; live copies the shard names are superseded too, deleted ones are not.
+#[test]
+fn slot_moves_resolve_against_superseded_slots() {
+    let dir = Builder::new().prefix("moves").tempdir().unwrap();
+    let mut moves = SlotMoves::<MmapFile> {
+        view: PointMovesView::new(dir.path()),
+        state: PointMoves::default(),
+        held: AHashMap::from_iter([(1, Hold::Plain), (2, Hold::Move), (3, Hold::Unclassified)]),
+    };
+    let mut deleted = BitVec::repeat(false, 6);
+    deleted.set(5, true);
+
+    let superseded = RoaringBitmap::from_iter([2u32, 4, 5]);
+    let resolution = moves.resolve(Some(&superseded), &deleted);
+    assert_eq!(resolution.plain, [1]);
+    assert_eq!(resolution.superseded, [2, 4]);
+
+    // Without superseded slots only plain deletes go
+    let resolution = moves.resolve(None, &deleted);
+    assert_eq!(resolution.plain, [1]);
+    assert!(resolution.superseded.is_empty());
+
+    // Slots past the deleted state count as deleted
+    let resolution = moves.resolve(Some(&RoaringBitmap::from_iter([7u32])), &deleted);
+    assert!(resolution.superseded.is_empty());
+
+    moves.forget(&[1, 2]);
+    assert_eq!(moves.held.len(), 1);
+}
+
+/// A slot two moved-out records name, after an interrupted move and a later rewrite, keeps the
+/// target of the last record only.
+#[test]
+fn moved_out_keeps_the_last_target() {
+    let mut moves = PointMoves::default();
+    moves.ingest([moved_out(2, &[(1, 10)])]);
+    moves.ingest([moved_out(4, &[(1, 40)])]);
+
+    let first = SlotRef {
+        segment: segment(2),
+        slot: 10,
+    };
+    let last = SlotRef {
+        segment: segment(4),
+        slot: 40,
+    };
+    assert!(moves.names(1));
+    assert_ne!(first, last);
+    assert_eq!(moves.moved_out().collect::<Vec<_>>(), [(1, last)]);
 }
