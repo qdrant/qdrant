@@ -73,6 +73,6 @@ impl DiskUsageWatcher {
 
     /// Free space below which the WAL refuses to grow.
     fn min_free_bytes(&self) -> u64 {
-        self.min_free_disk_size_mb as u64 * MB
+        (self.min_free_disk_size_mb as u64).saturating_mul(MB)
     }
 }

@@ -63,7 +63,7 @@ impl From<&WalConfig> for WalOptions {
             wal_retain_closed,
         } = config;
         WalOptions {
-            segment_capacity: wal_capacity_mb * 1024 * 1024,
+            segment_capacity: wal_capacity_mb.saturating_mul(1024 * 1024),
             segment_queue_len: *wal_segments_ahead,
             retain_closed: NonZeroUsize::new(*wal_retain_closed).unwrap(),
         }
