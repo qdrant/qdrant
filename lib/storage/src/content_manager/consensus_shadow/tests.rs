@@ -787,6 +787,10 @@ impl CollectionContainer for Container {
         }
     }
 
+    fn remove_peer_channels(&self, _peer_id: PeerId) -> Result<(), StorageError> {
+        unimplemented!()
+    }
+
     // Remaining `CollectionContainer` methods are not exercised by these tests
 
     fn peer_has_shards(&self, _peer_id: PeerId) -> bool {
