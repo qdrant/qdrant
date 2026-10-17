@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use common::defaults::log_load_timing;
-use common::fs::{safe_delete_with_suffix, sync_parent_dir};
+use common::fs::{rename_with_retry, safe_delete_with_suffix, sync_parent_dir};
 use common::storage_version::StorageVersion;
 use common::types::PointOffsetType;
 use common::universal_io::MmapFs;
@@ -94,7 +94,7 @@ pub fn normalize_segment_dir(path: &Path) -> OperationResult<Option<(PathBuf, Uu
                 "Segment name is not a valid UUID: {}. Renaming to {segment_uuid}",
                 path.display(),
             );
-            fs::rename(path, &new_path)?;
+            rename_with_retry(path, &new_path)?;
             sync_parent_dir(&new_path)?;
             Ok(Some((new_path, segment_uuid)))
         }

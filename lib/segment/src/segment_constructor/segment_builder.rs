@@ -859,7 +859,7 @@ impl SegmentBuilder {
 
         // Move fully constructed segment into collection directory and load back to RAM
         let destination_path = segments_path.join(segment_uuid.to_string());
-        fs::rename(temp_dir.keep(), &destination_path)
+        common::fs::rename_with_retry(&temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
         load_segment(
