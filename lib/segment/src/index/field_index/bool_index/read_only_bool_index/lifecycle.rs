@@ -1,9 +1,11 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
+use common::bitvec::BitSlice;
 use common::universal_io::{CachedReadFs, Populate, UniversalReadFs};
 
 use super::super::mutable_bool_index::{FALSES_DIRNAME, TRUES_DIRNAME};
+use super::live_flags::LiveFlags;
 use super::{ReadOnlyBoolIndex, ReadOnlyStorage};
 use crate::common::flags::read_only_flags::ReadOnlyFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -43,7 +45,14 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// index that would drop the persisted postings of the present half.
     ///
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
-    pub fn open(fs: &impl UniversalReadFs<File = S>, path: &Path) -> OperationResult<Option<Self>> {
+    ///
+    /// `deleted` are the deleted points of the segment: the index doesn't report their
+    /// values, like the writable immutable index.
+    pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        path: &Path,
+        deleted: &BitSlice,
+    ) -> OperationResult<Option<Self>> {
         // Open both directories first so a partial layout can be distinguished
         // from a genuinely absent index, regardless of which half is missing.
         let trues_flags = ReadOnlyFlags::<S>::open(fs, &path.join(TRUES_DIRNAME))?;
@@ -55,8 +64,8 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
             (Some(trues_flags), Some(falses_flags)) => Ok(Some(Self {
                 _base_dir: path.to_path_buf(),
                 storage: ReadOnlyStorage {
-                    trues_flags,
-                    falses_flags,
+                    trues_flags: LiveFlags::new(trues_flags, deleted),
+                    falses_flags: LiveFlags::new(falses_flags, deleted),
                 },
                 counts: OnceLock::new(),
             })),

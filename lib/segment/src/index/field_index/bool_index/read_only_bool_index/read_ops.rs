@@ -2,7 +2,7 @@ use common::types::PointOffsetType;
 
 use super::super::read_ops::{self, BoolIndexRead};
 use super::ReadOnlyBoolIndex;
-use crate::common::flags::read_only_flags::ReadOnlyFlags;
+use super::live_flags::LiveFlags;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::UniversalReadExt;
@@ -23,7 +23,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
 }
 
 impl<S: UniversalReadExt> BoolIndexRead for ReadOnlyBoolIndex<S> {
-    type Flags = ReadOnlyFlags<S>;
+    type Flags = LiveFlags<S>;
 
     fn trues_flags(&self) -> &Self::Flags {
         &self.storage.trues_flags
