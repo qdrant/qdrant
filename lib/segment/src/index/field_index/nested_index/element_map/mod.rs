@@ -16,6 +16,7 @@ mod mutable;
 mod read_only;
 #[cfg(test)]
 mod tests;
+mod update_only;
 
 use std::iter::Copied;
 use std::ops::Range;
@@ -30,6 +31,7 @@ use serde_json::{Map, Value};
 use self::immutable::ImmutableElementMap;
 use self::mutable::MutableElementMap;
 pub use self::read_only::{ElementChanges, ReadOnlyElementMap};
+pub use self::update_only::UpdateOnlyElementMap;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::IndexMutability;
