@@ -7808,7 +7808,7 @@
             "nullable": true
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }
@@ -7867,7 +7867,7 @@
             "nullable": true
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }
@@ -7916,7 +7916,7 @@
             "nullable": true
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }
@@ -7960,7 +7960,7 @@
             "nullable": true
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }
@@ -8069,7 +8069,7 @@
             ]
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`. The field must be inside the array's elements. Every query on the field, not only nested filters, treats each element as its own document: a condition matches a point when a single element matches it, and BM25 scores elements separately. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`. The field must be inside the array's elements. Every query on the field, not only nested filters, treats each element as its own document: a condition matches a point when a single element matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }
@@ -8295,7 +8295,7 @@
             "nullable": true
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }
@@ -8344,7 +8344,7 @@
             "nullable": true
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }
@@ -8393,7 +8393,7 @@
             "nullable": true
           },
           "nested": {
-            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. Default: disabled.",
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
             "type": "string",
             "nullable": true
           }

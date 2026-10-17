@@ -80,7 +80,6 @@ impl NestedFieldIndex {
         inner: FieldIndex,
         indexed_points: Option<usize>,
     ) -> OperationResult<Self> {
-        debug_assert!(stores_values(&inner));
         let relative_path = field.strip_prefix(&array_key).ok_or_else(|| {
             OperationError::service_error(format!(
                 "field `{field}` is not inside the elements of `{array_key}`",
@@ -268,11 +267,32 @@ impl NestedFieldIndex {
             max,
         } = estimation;
 
-        // The inner index is keyed by elements, so it counts elements with values
-        let elements = self.inner.count_indexed_points()?;
-        // `indexed_points` of an immutable index ignores deletions, so it can exceed
-        // the elements still holding values, which the estimator requires to bound it
-        let points = self.indexed_points.min(elements);
+        // The elements the inner index can match, and an upper bound on the points owning
+        // them. A value index matches elements with values, the null index any element.
+        let (elements, points) = match &self.inner {
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::Nested(_) => {
+                // The inner index is keyed by elements, so it counts elements with values
+                let elements = self.inner.count_indexed_points()?;
+                // `indexed_points` of an immutable index ignores deletions, so it can
+                // exceed the elements still holding values, which the estimator requires
+                // to bound it
+                (elements, self.indexed_points.min(elements))
+            }
+            FieldIndex::NullIndex(_) => {
+                let elements = map.elements_count();
+                (elements, map.points_upper_bound().min(elements))
+            }
+        };
         let max = max.min(points);
         let min = min.div_ceil(map.max_elements_per_point()).min(max);
         let exp = if points == 0 {
@@ -290,24 +310,6 @@ impl NestedFieldIndex {
             exp: exp.clamp(min, max),
             max,
         })
-    }
-}
-
-/// Whether `index` holds values of the field, so it can be keyed by elements: neither
-/// the null index, which stays an index of points, nor an already wrapped index.
-fn stores_values(index: &FieldIndex) -> bool {
-    match index {
-        FieldIndex::IntIndex(_)
-        | FieldIndex::DatetimeIndex(_)
-        | FieldIndex::IntMapIndex(_)
-        | FieldIndex::KeywordIndex(_)
-        | FieldIndex::FloatIndex(_)
-        | FieldIndex::GeoIndex(_)
-        | FieldIndex::FullTextIndex(_)
-        | FieldIndex::BoolIndex(_)
-        | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => true,
-        FieldIndex::NullIndex(_) | FieldIndex::Nested(_) => false,
     }
 }
 

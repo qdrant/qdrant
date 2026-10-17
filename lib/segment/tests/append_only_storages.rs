@@ -231,8 +231,9 @@ fn nested_indexes_use_append_only_storage(#[case] build_before_points: bool) {
                 .ends_with("-elements")
         })
         .collect();
-    // Keyword, integer lookup, and integer range each have their own map.
-    assert_eq!(map_dirs.len(), 3);
+    // Keyword, integer lookup, integer range, and the null index of each field have their
+    // own map.
+    assert_eq!(map_dirs.len(), 5);
     for path in &map_dirs {
         assert_eq!(storage_mode(path), "append_only");
     }

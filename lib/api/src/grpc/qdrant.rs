@@ -1468,7 +1468,8 @@ pub struct KeywordIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "5")]
     pub memory: ::core::option::Option<i32>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Default: disabled.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "6")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1506,7 +1507,8 @@ pub struct IntegerIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "6")]
     pub memory: ::core::option::Option<i32>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Default: disabled.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "7")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1532,7 +1534,8 @@ pub struct FloatIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "4")]
     pub memory: ::core::option::Option<i32>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Default: disabled.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "5")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1554,7 +1557,8 @@ pub struct GeoIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "3")]
     pub memory: ::core::option::Option<i32>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Default: disabled.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "4")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1618,7 +1622,8 @@ pub struct TextIndexParams {
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].title`.
     /// The field must be inside the array's elements. Every query on the field, not only nested filters,
     /// treats each element as its own document: a condition matches a point when a single element
-    /// matches it, and BM25 scores elements separately. Default: disabled.
+    /// matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when
+    /// one of its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "13")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1677,7 +1682,8 @@ pub struct BoolIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "3")]
     pub memory: ::core::option::Option<i32>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Default: disabled.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "4")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1703,7 +1709,8 @@ pub struct DatetimeIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "4")]
     pub memory: ::core::option::Option<i32>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Default: disabled.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "5")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -1728,7 +1735,8 @@ pub struct UuidIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "4")]
     pub memory: ::core::option::Option<i32>,
     /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
-    /// The field must be inside the array's elements. Default: disabled.
+    /// The field must be inside the array's elements. `is_empty` on the field matches a point when one of
+    /// its elements lacks the field, and never a point without elements. Default: disabled.
     #[prost(string, optional, tag = "5")]
     pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
