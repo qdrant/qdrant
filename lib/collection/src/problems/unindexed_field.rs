@@ -244,6 +244,9 @@ fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<Fie
             Match::Phrase(_match_text) => vec![FieldIndexType::TextPhrase],
             Match::Prefix(_match_prefix) => vec![FieldIndexType::KeywordPrefix],
             Match::Substring(_match_substring) => vec![FieldIndexType::KeywordPrefix],
+            // Any keyword index serves a regex without reading payload, but
+            // only the trigram index avoids checking every value.
+            Match::Regex(_match_regex) => vec![FieldIndexType::KeywordRegex],
             Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
             Match::TextAny(_match_text_any) => vec![FieldIndexType::Text],
@@ -728,6 +731,16 @@ mod tests {
         assert!(index_types.contains(&FieldIndexType::KeywordMatch));
         assert!(index_types.contains(&FieldIndexType::KeywordRegex));
         assert!(!index_types.contains(&FieldIndexType::KeywordPrefix));
+
+        // A regex condition requires the regex capability.
+        let condition = FieldCondition::new_match(
+            segment::json_path::JsonPath::new("url"),
+            segment::types::Match::new_regex(r"\.pdf$"),
+        );
+        assert_eq!(
+            infer_index_from_field_condition(&condition),
+            vec![FieldIndexType::KeywordRegex],
+        );
     }
 
     /// The walker shares one arm for `max` and `min`, so this pins down that `min` recurses too
@@ -761,6 +774,35 @@ mod tests {
 
         let unindexed: Vec<_> = extractor.unindexed_schema().keys().cloned().collect();
         assert_eq!(unindexed, vec![JsonPath::new("popularity")]);
+    }
+
+    /// The schema named in the strict-mode rejection is what the user has to
+    /// create, so pin how it renders.
+    #[test]
+    fn regex_on_plain_keyword_index_reports_regex_schema() {
+        let payload_schema = HashMap::from([(
+            JsonPath::new("url"),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+        )]);
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new("url"),
+            segment::types::Match::new_regex("qdrant"),
+        )));
+
+        let mut extractor = Extractor::new(&payload_schema);
+        extractor.update_from_filter_once(None, &filter);
+
+        let reported = extractor
+            .unindexed_schema()
+            .get(&JsonPath::new("url"))
+            .unwrap();
+        assert_eq!(
+            reported
+                .iter()
+                .map(|schema| schema.to_string())
+                .collect_vec(),
+            vec!["keyword (with regex: true)"],
+        );
     }
 
     /// The schema named in the strict-mode rejection is what the user has to

@@ -2329,6 +2329,11 @@ impl TryFrom<Match> for segment::types::Match {
                 MatchValue::Substring(substring) => segment::types::Match::Substring(
                     segment::types::MatchSubstring::from(substring),
                 ),
+                MatchValue::Regex(regex) => {
+                    segment::index::field_index::map_index::regex_index::compiled(&regex)
+                        .map_err(|err| Status::invalid_argument(err.to_string()))?;
+                    segment::types::Match::Regex(segment::types::MatchRegex::from(regex))
+                }
             }),
             _ => Err(Status::invalid_argument("Malformed Match condition")),
         }
@@ -2377,6 +2382,9 @@ impl From<segment::types::Match> for Match {
             }
             segment::types::Match::Substring(segment::types::MatchSubstring { substring }) => {
                 MatchValue::Substring(substring)
+            }
+            segment::types::Match::Regex(segment::types::MatchRegex { regex }) => {
+                MatchValue::Regex(regex)
             }
         };
         Self {

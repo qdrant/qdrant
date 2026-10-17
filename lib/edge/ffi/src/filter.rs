@@ -7,10 +7,10 @@ use segment::types::{
     GeoBoundingBox as SegmentGeoBoundingBox, GeoLineString as SegmentGeoLineString,
     GeoPoint as SegmentGeoPoint, GeoPolygon as SegmentGeoPolygon, GeoRadius as SegmentGeoRadius,
     HasIdCondition, HasVectorCondition, IsEmptyCondition, IsNullCondition, Match as SegmentMatch,
-    MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchSubstring, MatchText, MatchTextAny,
-    MatchValue, MinShould as SegmentMinShould, Nested as SegmentNested, NestedCondition,
-    PayloadField, PointIdType, Range, RangeInterface, Slice as SegmentSlice, SliceCondition,
-    ValueVariants as SegmentValueVariants, ValuesCount as SegmentValuesCount,
+    MatchAny, MatchExcept, MatchPhrase, MatchPrefix, MatchRegex, MatchSubstring, MatchText,
+    MatchTextAny, MatchValue, MinShould as SegmentMinShould, Nested as SegmentNested,
+    NestedCondition, PayloadField, PointIdType, Range, RangeInterface, Slice as SegmentSlice,
+    SliceCondition, ValueVariants as SegmentValueVariants, ValuesCount as SegmentValuesCount,
 };
 use segment::utils::maybe_arc::MaybeArc;
 
@@ -344,6 +344,10 @@ pub enum Match {
     /// Substring match: some value of the field must contain `substring`
     /// (case-sensitive; served by a keyword index, otherwise a payload scan).
     Substring { substring: String },
+    /// Regex match: some value of the field must match `regex` (RE2 syntax,
+    /// anywhere in the value unless anchored with `^` / `$`; served by a
+    /// keyword index, otherwise a payload scan).
+    Regex { regex: String },
     /// The field value must equal any of the given values (IN).
     Any { any: AnyVariants },
     /// The field value must equal none of the given values (NOT IN).
@@ -364,6 +368,11 @@ impl TryFrom<Match> for SegmentMatch {
             Match::Prefix { prefix } => Ok(SegmentMatch::Prefix(MatchPrefix { prefix })),
             Match::Substring { substring } => {
                 Ok(SegmentMatch::Substring(MatchSubstring { substring }))
+            }
+            Match::Regex { regex } => {
+                segment::index::field_index::map_index::regex_index::compiled(&regex)
+                    .map_err(|err| crate::error::EdgeError::invalid_argument(err.to_string()))?;
+                Ok(SegmentMatch::Regex(MatchRegex { regex }))
             }
             Match::Any { any } => Ok(SegmentMatch::Any(MatchAny { any: any.into() })),
             Match::Except { except } => Ok(SegmentMatch::Except(MatchExcept {
@@ -796,6 +805,8 @@ fn assert_every_filter_condition_is_mapped(c: SegmentCondition) {
                     SegmentMatch::Prefix(_) => {}
                     // [`Match::Substring`]
                     SegmentMatch::Substring(_) => {}
+                    // [`Match::Regex`]
+                    SegmentMatch::Regex(_) => {}
                     // [`Match::Any`]
                     SegmentMatch::Any(MatchAny { any }) => match any {
                         // [`Match::Any`] `strings`

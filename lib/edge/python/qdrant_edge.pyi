@@ -35,6 +35,7 @@ MatchType = Union[
     "MatchPhrase",
     "MatchPrefix",
     "MatchSubstring",
+    "MatchRegex",
     "MatchAny",
     "MatchExcept",
 ]
@@ -3159,6 +3160,24 @@ class MatchSubstring:
     @property
     def substring(self) -> str:
         """Substring."""
+        ...
+
+class MatchRegex:
+    """Match keyword values the given regular expression matches."""
+
+    def __init__(self, regex: str) -> None:
+        """
+        Create a MatchRegex.
+
+        Args:
+            regex: Regular expression (RE2 syntax), matched anywhere in the
+                   value unless anchored with `^` / `$`.
+        """
+        ...
+
+    @property
+    def regex(self) -> str:
+        """Regular expression."""
         ...
 
 class MatchAny:
