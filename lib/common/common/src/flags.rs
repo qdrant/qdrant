@@ -92,6 +92,14 @@ pub struct FeatureFlags {
     /// Existing `GraphInline` segments are always readable, regardless of this flag.
     pub combined_vector_storage: bool,
 
+    /// Choose between scoring a filter's matches and walking the HNSW graph by a calibrated
+    /// break-even that follows the request's `ef` and the vector size, scaled by
+    /// `full_scan_threshold_kb`, instead of `full_scan_threshold_kb` alone.
+    ///
+    /// The graph walk costs more as `ef` grows and the scan does not, so a threshold that
+    /// ignores `ef` is right at one `ef` only.
+    pub ef_aware_filtered_planner: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].
@@ -118,6 +126,7 @@ impl Default for FeatureFlags {
             transfer_raw_payloads: false,
             persist_proxy_segments: false,
             combined_vector_storage: true,
+            ef_aware_filtered_planner: false,
             serverless_compatible: false,
         }
     }
@@ -156,6 +165,7 @@ impl FeatureFlags {
             transfer_raw_payloads: false,
             persist_proxy_segments: true,
             combined_vector_storage: true,
+            ef_aware_filtered_planner: true,
             serverless_compatible: false,
         }
     }
