@@ -84,9 +84,7 @@ where
             return Ok(None);
         };
 
-        let items = bytes
-            .try_cast_bytemuck()
-            .expect("data has compatible layout");
+        let items = bytes.try_cast_bytemuck()?;
 
         Ok(Some((user_data, items)))
     }
@@ -192,9 +190,7 @@ where
             return Ok(None);
         };
 
-        let items = bytes
-            .try_cast_bytemuck()
-            .expect("data has compatible layout");
+        let items = bytes.try_cast_bytemuck()?;
 
         Ok(Some((user_data, items)))
     }

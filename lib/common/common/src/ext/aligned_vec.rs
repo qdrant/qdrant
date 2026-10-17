@@ -14,7 +14,16 @@ pub enum ACow<'a> {
 impl<'a> ACow<'a> {
     pub fn try_cast_bytemuck<T: bytemuck::Pod>(self) -> Result<Cow<'a, [T]>, PodCastError> {
         Ok(match self {
-            ACow::Borrowed(slice) => Cow::Borrowed(bytemuck::try_cast_slice(slice)?),
+            ACow::Borrowed([]) => Cow::Borrowed(&[]),
+            ACow::Borrowed(slice) => match bytemuck::try_cast_slice(slice) {
+                Ok(items) => Cow::Borrowed(items),
+                Err(PodCastError::TargetAlignmentGreaterAndInputNotAligned)
+                    if size_of::<T>() != 0 && slice.len().is_multiple_of(size_of::<T>()) =>
+                {
+                    Cow::Owned(bytemuck::pod_collect_to_vec(slice))
+                }
+                Err(err) => return Err(err),
+            },
             ACow::Owned(vec) => Cow::Owned(
                 cast_avec(vec, bytemuck::try_cast_slice, PodCastError::SizeMismatch)
                     .map_err(|(_, e)| e)?,
