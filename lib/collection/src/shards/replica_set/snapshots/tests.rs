@@ -1,17 +1,20 @@
 use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
+use rstest::rstest;
 use segment::types::Distance;
 use tempfile::{Builder, TempDir};
 use tokio::runtime::Handle;
-use tokio::sync::{RwLock, oneshot};
+use tokio::sync::{RwLock, mpsc, oneshot};
 
 use super::*;
+use crate::collection::Collection;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::adaptive_handle::AdaptiveSearchHandle;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
@@ -24,10 +27,13 @@ use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
+use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_trait::WaitUntil;
+use crate::tests::fixtures::create_collection_config;
+use crate::update_handler::UpdateSignal;
 
 const TEST_COLLECTION_ID: &str = "test_collection";
 const TEST_TARGET_SHARD_ID: ShardId = 1;
@@ -37,6 +43,111 @@ const TEST_PEER_ID: PeerId = 1;
 /// How long the abandoned recovery stalls before restoring, once it is clear the
 /// retry is not going to finish because it is queued behind it.
 const STALLED_RECOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+#[rstest]
+#[case::file(false)]
+#[case::stream(true)]
+#[tokio::test]
+async fn test_snapshot_setup_releases_holder_while_update_queue_is_full(#[case] streaming: bool) {
+    let collection_dir = tempfile::tempdir().unwrap();
+    let snapshots_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let config = create_collection_config();
+    let distribution = CollectionShardDistribution::all_local(Some(1), TEST_PEER_ID);
+    let collection = Collection::new(
+        TEST_COLLECTION_ID.to_string(),
+        TEST_PEER_ID,
+        collection_dir.path(),
+        snapshots_dir.path(),
+        &config,
+        Arc::new(Default::default()),
+        distribution,
+        None,
+        ChannelService::default(),
+        Arc::new(|_, _, _| {}),
+        Arc::new(|_| {}),
+        Arc::new(|_, _| {}),
+        None,
+        None,
+        ResourceBudget::default(),
+        None,
+    )
+    .await
+    .unwrap();
+    let shard = collection
+        .shards_holder()
+        .read()
+        .await
+        .get_shard(0)
+        .cloned()
+        .unwrap();
+    let local_read = shard.local.read().await;
+    let Some(Shard::Local(local)) = local_read.as_ref() else {
+        panic!("fixture must have a local shard");
+    };
+
+    // Replace the sender with a full queue whose receiver we control. Snapshot setup
+    // must wait here until we make room for its plunger.
+    let (sender, mut receiver) = mpsc::channel(1);
+    sender.try_send(UpdateSignal::Nop).unwrap();
+    let original_sender = local.update_sender.swap(Arc::new(sender));
+    let mut snapshot = Box::pin(async {
+        if streaming {
+            use actix_web::Responder as _;
+
+            let stream = collection
+                .stream_shard_snapshot(0, None, temp_dir.path())
+                .await?;
+            let request = actix_web::test::TestRequest::default().to_http_request();
+            let response = stream.respond_to(&request);
+            let body = actix_web::body::to_bytes(response.into_body())
+                .await
+                .unwrap();
+            assert!(!body.is_empty());
+        } else {
+            let description = collection.create_shard_snapshot(0, temp_dir.path()).await?;
+            let snapshot_path = snapshots_dir.path().join("shards/0").join(description.name);
+            assert!(snapshot_path.is_file());
+        }
+        CollectionResult::Ok(())
+    });
+
+    assert!(futures::poll!(snapshot.as_mut()).is_pending());
+
+    // Probe the holder directly: a strict-mode update also needs the local-shard
+    // write lock, which waits for snapshot setup's local-shard read lock.
+    let holder = collection.shards_holder();
+    let writer = tokio::time::timeout(Duration::from_secs(10), holder.write())
+        .await
+        .expect("holder writer must complete while snapshot setup waits for queue capacity");
+    drop(writer);
+    tokio::time::timeout(Duration::from_secs(10), collection.state())
+        .await
+        .expect("collection reader must complete while snapshot setup waits for queue capacity");
+
+    // Restore the worker's sender before completing setup. The pending send must
+    // still use our full queue, proving setup reached that send before the writer ran.
+    local.update_sender.store(original_sender);
+    assert!(matches!(receiver.try_recv(), Ok(UpdateSignal::Nop)));
+    let signal = tokio::select! {
+        result = &mut snapshot => panic!("snapshot finished before sending its plunger: {result:?}"),
+        signal = tokio::time::timeout(Duration::from_secs(10), receiver.recv()) => {
+            signal.unwrap().unwrap()
+        }
+    };
+    let UpdateSignal::Plunger(notify) = signal else {
+        panic!("snapshot setup must send a plunger");
+    };
+
+    notify.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(10), snapshot)
+        .await
+        .unwrap()
+        .unwrap();
+
+    drop(local_read);
+    collection.stop_gracefully().await;
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_snapshot_recovery_before_initializing_flag_does_not_mark_dirty() {
