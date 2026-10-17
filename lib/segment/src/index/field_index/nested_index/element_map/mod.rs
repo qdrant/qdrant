@@ -179,6 +179,28 @@ impl ElementMap {
         }
     }
 
+    /// Offset in this map of the element at `element` in `other`: the element of the same
+    /// point at the same position. `None` if no point owns `element` in `other`.
+    ///
+    /// All maps of an array agree on the elements of a point and their order, see the
+    /// [module docs](self).
+    pub fn translate(
+        &self,
+        other: &ElementMap,
+        element: ElementOffsetType,
+    ) -> Option<ElementOffsetType> {
+        // ponytail: immutable maps of one array built together have equal starts, so
+        // translating between them is the identity; detect it if the lookup shows up
+        if std::ptr::eq(self, other) {
+            return Some(element);
+        }
+        let point = other.element_point(element)?;
+        let position = other
+            .point_elements(point)
+            .position(|owned| owned == element)?;
+        self.point_elements(point).nth(position)
+    }
+
     /// The point that owns `element`, `None` if no point does.
     pub fn element_point(&self, element: ElementOffsetType) -> Option<PointOffsetType> {
         match self {

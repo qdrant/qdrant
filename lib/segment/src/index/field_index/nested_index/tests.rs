@@ -182,16 +182,17 @@ fn nested_filters() -> Vec<(Filter, bool)> {
         nested(json!({"min_should": {"conditions": [cheap, rating, tag], "min_count": 2}})),
         nested(json!({"must": [near, not_shops]})),
         nested(json!({"must": [{"should": [shop, shops]}, {"must_not": [cheap]}]})),
-        // Any element
-        nested(json!({})),
         // An empty `should` matches no element
-        nested(json!({"should": []})),
+        nested(json!({"should": [], "must": [shop]})),
     ];
     let not_covered = [
         // Values counts, emptiness and unindexed fields are checked in the payload
         nested(json!({"must": [shop, {"key": "tags", "values_count": {"gte": 2}}]})),
         nested(json!({"must": [{"is_empty": {"key": "note"}}, rating]})),
         nested(json!({"should": [shop, {"key": "name", "match": {"value": "x"}}]})),
+        // Without field conditions, no index lists the elements of a point
+        nested(json!({})),
+        nested(json!({"should": []})),
     ];
 
     let mut filters: Vec<(Filter, bool)> = covered

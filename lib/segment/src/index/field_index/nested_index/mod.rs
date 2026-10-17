@@ -70,10 +70,12 @@ pub struct NestedFieldIndex {
 
 /// A condition checked on the elements of one per-element index.
 ///
-/// Element offsets belong to one index, so an element is checked through the
-/// [`ElementMap`] of the index that answers the condition: the offset of a point's
-/// element at a position is its place in [`ElementMap::point_elements`].
+/// [`ConditionChecker::check`] takes element offsets of the `anchor` map, so that
+/// conditions answered by different indexes of the array can be combined in one
+/// [`OptimizedFilter`](crate::index::query_optimization::optimized_filter::OptimizedFilter).
+/// Each offset is translated to the index's own map, see [`ElementMap::translate`].
 pub struct ElementConditionChecker<'a> {
+    anchor: &'a ElementMap,
     element_map: &'a ElementMap,
     checker: ConditionCheckerEnum<'a>,
 }
@@ -83,9 +85,29 @@ impl<'a> ElementConditionChecker<'a> {
         self.element_map
     }
 
-    /// Check the element at `element`, an offset from [`Self::element_map`].
-    pub fn check(&self, element: ElementOffsetType) -> OperationResult<bool> {
-        self.checker.check(element)
+    /// Take element offsets of `anchor` instead of the index's own map.
+    pub fn with_anchor(self, anchor: &'a ElementMap) -> Self {
+        Self { anchor, ..self }
+    }
+}
+
+impl ConditionChecker for ElementConditionChecker<'_> {
+    type Error = OperationError;
+
+    fn check(&self, element: ElementOffsetType) -> OperationResult<bool> {
+        match self.element_map.translate(self.anchor, element) {
+            Some(element) => self.checker.check(element),
+            None => Ok(false),
+        }
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        items: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        default_check_batched(items, select, rest, |element| self.check(element))
     }
 }
 
@@ -615,10 +637,6 @@ impl FieldIndexRead for NestedFieldIndex {
         self.facet_view()
     }
 
-    fn element_map(&self, array_key: &JsonPath) -> Option<&ElementMap> {
-        (&self.array_key == array_key).then_some(&self.element_map)
-    }
-
     fn element_condition_checker<'a>(
         &'a self,
         array_key: &JsonPath,
@@ -632,6 +650,7 @@ impl FieldIndexRead for NestedFieldIndex {
             return Ok(None);
         };
         Ok(Some(ElementConditionChecker {
+            anchor: &self.element_map,
             element_map: &self.element_map,
             checker,
         }))

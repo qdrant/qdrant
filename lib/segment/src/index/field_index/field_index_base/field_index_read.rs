@@ -7,7 +7,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::facet_index::FacetIndex;
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
-use crate::index::field_index::nested_index::{ElementConditionChecker, ElementMap};
+use crate::index::field_index::nested_index::ElementConditionChecker;
 use crate::index::field_index::numeric_index::NumericFieldIndexRead;
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
@@ -101,12 +101,6 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     ///
     /// [`PayloadIndexRead::facet_index_for`]: crate::index::PayloadIndexRead::facet_index_for
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_>;
-
-    /// The element map of this index, if it is a per-element index of the `array_key`
-    /// array.
-    ///
-    /// See [`nested_index`](crate::index::field_index::nested_index).
-    fn element_map(&self, array_key: &JsonPath) -> Option<&ElementMap>;
 
     /// Checker of `condition` over the elements of the `array_key` array, if this is a
     /// per-element index of it that can serve the condition.
