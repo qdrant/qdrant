@@ -31,16 +31,22 @@
 //!   the postings of a trigram index;
 //! - [`in_memory`](self::in_memory) — [`InMemoryRegexIndex`], the trigram
 //!   index of the appendable (in-RAM) map index;
+//! - [`format`](self::format), [`writer`](self::writer),
+//!   [`reader`](self::reader) — [`RegexIndex`], the trigram index file of the
+//!   immutable map index;
 //! - [`map_read`](self::map_read) — [`StrMapIndexRegexRead`], the key
 //!   selection trait implemented by every map index variant.
 
 mod candidates;
+mod format;
 mod in_memory;
 mod map_read;
 mod matcher;
 mod query;
 mod re2;
+mod reader;
 mod trigram;
+mod writer;
 
 #[cfg(test)]
 mod tests;
@@ -50,4 +56,8 @@ pub use self::in_memory::InMemoryRegexIndex;
 pub use self::map_read::{RegexCandidateStats, StrMapIndexRegexRead};
 pub use self::matcher::{MAX_REGEX_LEN, RegexError, RegexMatcher};
 pub use self::query::{MAX_QUERY_TRIGRAMS, TrigramQuery};
+pub use self::reader::RegexIndex;
 pub use self::trigram::{BOUNDARY, Trigram, fold, key_trigrams};
+pub use self::writer::build_regex_index;
+
+pub const REGEX_INDEX_PATH: &str = "regex_index.bin";

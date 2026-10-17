@@ -55,6 +55,14 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
     pub(super) memory: Memory,
     pub(super) deleted_points: BitVec,
     pub(super) prefix_index: bool,
+    pub(super) regex_index: bool,
+}
+
+impl<N: MapIndexKey + ?Sized> MapIndexMmapBuilder<N> {
+    /// Also build a trigram index over the keys, for regex conditions.
+    pub fn enable_regex_index(&mut self) {
+        self.regex_index = true;
+    }
 }
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
@@ -111,6 +119,7 @@ where
             populate,
             &self.deleted_points,
             self.prefix_index,
+            self.regex_index,
         )?;
 
         let index = if memory.is_heap() {

@@ -240,6 +240,7 @@ mod map_index {
         data: &[Vec<String>],
         live: &[Vec<String>],
     ) {
+        let _scope = ambient::test_guard();
         for pattern in PATTERNS {
             let matcher = RegexMatcher::new(pattern).unwrap();
             let keys: BTreeSet<String> = index
@@ -355,5 +356,230 @@ mod map_index {
         };
         appendable.enable_regex_index();
         check(&index, &data);
+    }
+}
+
+/// The regex index file, against a scan of its keys.
+mod file {
+    use std::collections::BTreeSet;
+
+    use common::ambient;
+    use common::universal_io::{MmapFile, MmapFs, Populate};
+    use tempfile::TempDir;
+
+    use super::super::{RegexIndex, RegexMatcher, build_regex_index};
+
+    /// Enough keys for many key blocks.
+    fn keys() -> Vec<String> {
+        let words = [
+            "alpha",
+            "Beta",
+            "gamma_ray",
+            "Δέλτα",
+            "colour",
+            "color",
+            "x",
+        ];
+        let mut keys: Vec<String> = (0..5000)
+            .map(|i| {
+                format!(
+                    "{}_{i}_{}",
+                    words[i % words.len()],
+                    words[(i / words.len()) % words.len()],
+                )
+            })
+            .chain(["".to_string(), "a".to_string(), "ab".to_string()])
+            .collect();
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
+    fn build(dir: &TempDir, keys: &[String]) -> RegexIndex<MmapFile> {
+        let _scope = ambient::test_guard();
+        build_regex_index(
+            dir.path(),
+            keys.iter()
+                .enumerate()
+                .map(|(i, key)| (key.as_str(), i % 3 + 1)),
+        )
+        .unwrap();
+        RegexIndex::open(&MmapFs, dir.path(), Populate::No)
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn matching_keys_equal_a_scan() {
+        let _scope = ambient::test_guard();
+        let dir = TempDir::with_prefix("regex_index_file").unwrap();
+        let keys = keys();
+        let index = build(&dir, &keys);
+        assert_eq!(index.key_count(), keys.len());
+
+        for pattern in [
+            "alpha",
+            "(?i)^beta_1",
+            "_42_",
+            "colou?r$",
+            "(?i)ΔΈΛΤΑ",
+            "ray_4999",
+            "^a$",
+            "^$",
+            "^ab",
+            r"_\d{4}_",
+            ".",
+            "nope",
+        ] {
+            let matcher = RegexMatcher::new(pattern).unwrap();
+            let expected: Vec<String> = keys
+                .iter()
+                .filter(|key| matcher.is_match(key))
+                .cloned()
+                .collect();
+            let actual: Vec<String> = index
+                .matching_keys(&matcher)
+                .unwrap()
+                .into_iter()
+                .map(|key| key.to_string())
+                .collect();
+            assert_eq!(actual, expected, "{pattern}");
+
+            // Bounds hold, with every key carrying `i % 3 + 1` points.
+            if let Some(stats) = index.candidate_stats(matcher.query()).unwrap() {
+                let expected_points: usize = keys
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, key)| matcher.is_match(key))
+                    .map(|(i, _)| i % 3 + 1)
+                    .sum();
+                assert!(stats.keys >= expected.len(), "{pattern}: {stats:?}");
+                assert!(stats.postings >= expected_points, "{pattern}: {stats:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn empty_index() {
+        let _scope = ambient::test_guard();
+        let dir = TempDir::with_prefix("regex_index_empty").unwrap();
+        let index = build(&dir, &[]);
+        for pattern in ["abc", "."] {
+            let matcher = RegexMatcher::new(pattern).unwrap();
+            assert!(index.matching_keys(&matcher).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn missing_file_is_no_index() {
+        let dir = TempDir::with_prefix("regex_index_missing").unwrap();
+        assert!(
+            RegexIndex::<MmapFile>::open(&MmapFs, dir.path(), Populate::No)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn selective_queries_read_few_blocks() {
+        let _scope = ambient::test_guard();
+        let dir = TempDir::with_prefix("regex_index_selective").unwrap();
+        let keys = keys();
+        let index = build(&dir, &keys);
+        let matcher = RegexMatcher::new("_4998_").unwrap();
+        let stats = index.candidate_stats(matcher.query()).unwrap().unwrap();
+        assert!(stats.keys < 10, "{stats:?}");
+        let found: BTreeSet<_> = index.matching_keys(&matcher).unwrap().into_iter().collect();
+        assert_eq!(found.len(), 1);
+    }
+}
+
+/// The immutable variants: built with the regex index file, opened in RAM
+/// and on disk, writable and read-only.
+mod immutable_map_index {
+    use common::ambient;
+    use common::bitvec::BitVec;
+    use common::types::PointOffsetType;
+    use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
+    use rstest::rstest;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    use super::super::{REGEX_INDEX_PATH, RegexMatcher, StrMapIndexRegexRead};
+    use super::map_index::{check, data};
+    use crate::index::field_index::FieldIndexBuilderTrait;
+    use crate::index::field_index::map_index::MapIndex;
+    use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
+    use crate::types::Memory;
+
+    fn deleted() -> BitVec {
+        BitVec::repeat(false, 1024)
+    }
+
+    fn build(dir: &TempDir, data: &[Vec<String>], regex: bool) {
+        let _scope = ambient::test_guard();
+        let mut builder =
+            MapIndex::<str>::builder_immutable(dir.path(), Memory::Pinned, &deleted(), false);
+        if regex {
+            builder.enable_regex_index();
+        }
+        builder.init().unwrap();
+        for (idx, values) in data.iter().enumerate() {
+            let values: Vec<Value> = values.iter().map(|v| Value::from(v.as_str())).collect();
+            let values: Vec<&Value> = values.iter().collect();
+            builder.add_point(idx as PointOffsetType, &values).unwrap();
+        }
+        builder.finalize().unwrap();
+    }
+
+    #[rstest]
+    #[case::in_ram(Memory::Pinned)]
+    #[case::on_disk(Memory::Cold)]
+    fn selects_matching_keys(#[case] memory: Memory) {
+        let dir = TempDir::with_prefix("regex_immutable").unwrap();
+        let data = data();
+        build(&dir, &data, true);
+
+        let index = MapIndex::<str>::new_immutable(dir.path(), memory, &deleted())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            matches!(index, MapIndex::Immutable(_)),
+            memory == Memory::Pinned,
+        );
+        check(&index, &data);
+        assert!(index.files().contains(&dir.path().join(REGEX_INDEX_PATH)));
+    }
+
+    #[rstest]
+    #[case::in_ram(Memory::Pinned)]
+    #[case::on_disk(Memory::Cold)]
+    fn read_only_selects_matching_keys(#[case] memory: Memory) {
+        let dir = TempDir::with_prefix("regex_read_only_immutable").unwrap();
+        let data = data();
+        build(&dir, &data, true);
+
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+        let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> =
+            ReadOnlyMapIndex::open_immutable(&fs, dir.path(), memory, &deleted())
+                .unwrap()
+                .unwrap();
+        check(&index, &data);
+    }
+
+    #[test]
+    fn built_without_regex_option() {
+        let dir = TempDir::with_prefix("regex_immutable_without").unwrap();
+        let data = data();
+        build(&dir, &data, false);
+
+        let index = MapIndex::<str>::new_immutable(dir.path(), Memory::Cold, &deleted())
+            .unwrap()
+            .unwrap();
+        let _scope = ambient::test_guard();
+        let matcher = RegexMatcher::new("Einstein").unwrap();
+        assert!(index.regex_keys(&matcher).unwrap().is_none());
+        assert!(!dir.path().join(REGEX_INDEX_PATH).exists());
     }
 }
