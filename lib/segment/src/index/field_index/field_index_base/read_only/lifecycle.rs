@@ -210,8 +210,9 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// the [`TextIndexParams`] the full-text leaf open needs. `total_point_count` sizes the
     /// null arm and caps what the appendable arms load: their storage may hold
     /// values for offsets the id tracker does not cover yet.
-    /// `deleted_points` reaches the immutable-only leaves; the roaring-flag bool
-    /// and null leaves ignore it (a single `open` serves both modes).
+    /// `deleted_points` reaches the immutable and appendable leaves, which don't load
+    /// the values of deleted points, as a live reload drops them too. The roaring-flag
+    /// bool and null leaves ignore it (a single `open` serves both modes).
     ///
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
     /// `populate_override` mirrors [`preopen`](Self::preopen): it re-decides
@@ -236,6 +237,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     fs,
                     map_dir(dir, field),
                     max_point_offset,
+                    deleted_points,
                 )?,
                 ReadMode::Immutable { memory } => ReadOnlyMapIndex::<str, S>::open_immutable(
                     fs,
@@ -250,6 +252,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     fs,
                     map_dir(dir, field),
                     max_point_offset,
+                    deleted_points,
                 )?,
                 ReadMode::Immutable { memory } => {
                     ReadOnlyMapIndex::<IntPayloadType, S>::open_immutable(
@@ -270,6 +273,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     fs,
                     map_dir(dir, field),
                     max_point_offset,
+                    deleted_points,
                 )?,
                 ReadMode::Immutable { memory } => {
                     ReadOnlyMapIndex::<UuidIntType, S>::open_immutable(
@@ -287,6 +291,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         fs,
                         numeric_dir(dir, field),
                         max_point_offset,
+                        deleted_points,
                     )?
                 }
                 ReadMode::Immutable { memory } => {
@@ -305,6 +310,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         fs,
                         numeric_dir(dir, field),
                         max_point_offset,
+                        deleted_points,
                     )?
                 }
                 ReadMode::Immutable { memory } => {
@@ -323,6 +329,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         fs,
                         numeric_dir(dir, field),
                         max_point_offset,
+                        deleted_points,
                     )?
                 }
                 ReadMode::Immutable { memory } => {
@@ -337,9 +344,12 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             .map(Self::FloatIndex),
             // Geo reuses the writable selector's `map_dir` (`-map` suffix).
             PayloadIndexType::GeoIndex => match mode {
-                ReadMode::Appendable => {
-                    ReadOnlyGeoIndex::open_appendable(fs, map_dir(dir, field), max_point_offset)?
-                }
+                ReadMode::Appendable => ReadOnlyGeoIndex::open_appendable(
+                    fs,
+                    map_dir(dir, field),
+                    max_point_offset,
+                    deleted_points,
+                )?,
                 ReadMode::Immutable { memory } => ReadOnlyGeoIndex::open_immutable(
                     fs,
                     &map_dir(dir, field),
@@ -355,6 +365,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         fs,
                         text_dir(dir, field),
                         max_point_offset,
+                        deleted_points,
                         config,
                     )?,
                     ReadMode::Immutable { memory } => ReadOnlyFullTextIndex::open_immutable(
