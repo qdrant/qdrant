@@ -490,7 +490,21 @@ impl SnapshotStorageLocalFS {
         drop(file);
 
         move_file(&source_path, &target_path_tmp).await?;
-        target_path_tmp.persist(target_path).map_err(|e| e.error)?;
+        // Never replace an existing snapshot: the snapshot and its checksum are promoted
+        // by two separate renames, so a crash in between would pair the new snapshot
+        // with the old checksum.
+        target_path_tmp
+            .persist_noclobber(target_path)
+            .map_err(|err| {
+                if err.error.kind() == std::io::ErrorKind::AlreadyExists {
+                    CollectionError::bad_input(format!(
+                        "Snapshot {} already exists",
+                        target_path.display(),
+                    ))
+                } else {
+                    CollectionError::from(err.error)
+                }
+            })?;
 
         if let Err(err) = checksum_path_tmp.persist(&checksum_path) {
             // Snapshot persisted but checksum promotion failed: rollback to
@@ -1036,6 +1050,30 @@ mod tests {
                 "{storage:?}"
             );
         }
+    }
+
+    /// Replacing a stored snapshot is not atomic with its checksum, so it must be refused
+    /// and leave the original pair intact.
+    #[tokio::test]
+    async fn local_store_file_refuses_to_overwrite() {
+        let manager = SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS);
+        let temp_dir = tempfile::Builder::new().tempdir().unwrap();
+        let target = temp_dir.path().join("snapshots/my.snapshot");
+
+        let first = temp_dir.path().join("first.snapshot");
+        fs::write(&first, b"first").unwrap();
+        let stored = manager.store_file(&first, &target).await.unwrap();
+
+        let second = temp_dir.path().join("second.snapshot");
+        fs::write(&second, b"second").unwrap();
+        let err = manager.store_file(&second, &target).await.unwrap_err();
+        assert!(matches!(err, CollectionError::BadInput { .. }), "{err:?}");
+
+        assert_eq!(fs::read(&target).unwrap(), b"first");
+        assert_eq!(
+            fs::read_to_string(get_checksum_path(&target)).unwrap(),
+            stored.checksum.unwrap(),
+        );
     }
 
     #[test]

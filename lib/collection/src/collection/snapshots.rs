@@ -62,7 +62,7 @@ impl Collection {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f"),
         );
 
         // Final location of snapshot

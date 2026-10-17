@@ -125,7 +125,9 @@ async fn _do_create_full_snapshot(
         let snapshot_details = toc.create_snapshot(collection_pass).await?;
         created_snapshots.push((collection_pass.name(), snapshot_details));
     }
-    let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();
+    let current_time = chrono::Utc::now()
+        .format("%Y-%m-%d-%H-%M-%S-%3f")
+        .to_string();
 
     let snapshot_name = format!("{FULL_SNAPSHOT_FILE_NAME}-{current_time}.snapshot");
 
