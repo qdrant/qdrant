@@ -139,22 +139,21 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             return Ok(());
         }
 
-        // Through the shared helper: `document_length` subtracts the sentinels
+        // Through the shared helper: its document length subtracts the sentinels
         // it inserts, so the two rules have to agree. Read from the config like
         // the other two callers, rather than from whether a container happens
         // to be allocated, so that the two halves cannot drift apart.
         let phrase_matching = self.config.phrase_matching.unwrap_or_default();
-        let str_tokens =
-            FullTextIndex::tokenize_document(&self.tokenizer, phrase_matching, &values);
+        let document = FullTextIndex::tokenize_document(&self.tokenizer, phrase_matching, &values);
 
         // Measured here, the last point at which every token exists.
         let doc_len = self
             .mutable_index
             .records_doc_len()
-            .then(|| FullTextIndex::document_length(&str_tokens, phrase_matching, &values));
+            .then(|| document.length());
 
         self.mutable_index
-            .index_str_tokens(id, &str_tokens, doc_len)
+            .index_str_tokens(id, &document.tokens, doc_len)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {

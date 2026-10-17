@@ -453,3 +453,26 @@ fn scoring_off_records_no_lengths(#[values(false, true)] phrase_matching: bool) 
         "records without lengths must not open under scoring",
     );
 }
+
+/// With phrase matching on, the code tokenizer's joined identifiers are each preceded by a
+/// sentinel. The length counts the joined identifiers, but not those sentinels, so it is the same
+/// with phrase matching on and off.
+#[rstest]
+fn doc_len_of_code_tokens(#[values(false, true)] phrase_matching: bool) {
+    let temp_dir = Builder::new().prefix("doc_len_code").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let config = TextIndexParams {
+        tokenizer: TokenizerType::Code,
+        ..length_config(phrase_matching)
+    };
+    let mut index = gridstore_index(temp_dir.path().join("index"), config, true, true)
+        .unwrap()
+        .unwrap();
+    // get, user, name, hash, map, and the joined getusername, hashmap
+    index
+        .add_point(0, &[&serde_json::json!("getUserName HashMap")])
+        .unwrap();
+
+    assert_eq!(doc_lens(&index), (vec![7], 7));
+}

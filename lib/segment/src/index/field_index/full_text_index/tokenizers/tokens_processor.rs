@@ -52,6 +52,15 @@ impl TokensProcessor {
         }
     }
 
+    /// Whether processing an ASCII token does nothing but (optionally) lowercase it: no stopwords,
+    /// stemming or length limits. ASCII folding leaves ASCII unchanged.
+    pub fn is_ascii_lowercase_only(&self) -> bool {
+        self.stopwords_filter.is_empty()
+            && self.stemmer.is_none()
+            && self.min_token_len.is_none()
+            && self.max_token_len.is_none()
+    }
+
     pub fn is_stopword(&self, token: &str) -> bool {
         self.stopwords_filter.is_stopword(token)
     }
@@ -81,7 +90,7 @@ impl TokensProcessor {
 
         // Handle lowercase
         if *lowercase {
-            token_cow = Cow::Owned(token_cow.to_lowercase());
+            token_cow = lowercase_cow(token_cow);
         }
 
         // Handle stopwords
@@ -114,4 +123,17 @@ impl TokensProcessor {
     pub fn process_token<'a>(&self, token: &'a str, check_max_len: bool) -> Option<Cow<'a, str>> {
         self.process_token_cow(Cow::Borrowed(token), check_max_len)
     }
+}
+
+/// Lowercases `token`, without allocating when it is ASCII and already lowercase.
+fn lowercase_cow(token: Cow<'_, str>) -> Cow<'_, str> {
+    if !token.is_ascii() {
+        return Cow::Owned(token.to_lowercase());
+    }
+    if !token.bytes().any(|b| b.is_ascii_uppercase()) {
+        return token;
+    }
+    let mut owned = token.into_owned();
+    owned.make_ascii_lowercase();
+    Cow::Owned(owned)
 }

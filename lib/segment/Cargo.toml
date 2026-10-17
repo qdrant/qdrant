@@ -234,3 +234,7 @@ harness = false
 [[bench]]
 name = "facets"
 harness = false
+
+[[bench]]
+name = "tokenizers"
+harness = false
