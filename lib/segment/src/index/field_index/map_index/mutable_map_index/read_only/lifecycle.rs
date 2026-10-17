@@ -88,6 +88,12 @@ where
         self.storage.files()
     }
 
+    /// Maintain a trigram index over the keys, for regex conditions. Not
+    /// persisted: like the prefix structures, it is rebuilt on every open.
+    pub fn enable_regex_index(&mut self) {
+        self.in_memory_index.enable_regex_index();
+    }
+
     /// Clear gridstore disk cache. Does not affect the in-memory index.
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.storage.clear_cache().map_err(|err| {

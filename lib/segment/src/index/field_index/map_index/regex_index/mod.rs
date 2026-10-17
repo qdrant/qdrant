@@ -26,8 +26,17 @@
 //! - [`matcher`](self::matcher) — [`RegexMatcher`], the compiled pattern and
 //!   its safety limits;
 //! - [`re2`](self::re2) — the public syntax is RE2's: patterns are checked
-//!   against it and rewritten for the engine.
+//!   against it and rewritten for the engine;
+//! - [`candidates`](self::candidates) — evaluation of a trigram query over
+//!   the postings of a trigram index;
+//! - [`in_memory`](self::in_memory) — [`InMemoryRegexIndex`], the trigram
+//!   index of the appendable (in-RAM) map index;
+//! - [`map_read`](self::map_read) — [`StrMapIndexRegexRead`], the key
+//!   selection trait implemented by every map index variant.
 
+mod candidates;
+mod in_memory;
+mod map_read;
 mod matcher;
 mod query;
 mod re2;
@@ -36,6 +45,9 @@ mod trigram;
 #[cfg(test)]
 mod tests;
 
+pub use self::candidates::{Candidates, TrigramPostings, candidates};
+pub use self::in_memory::InMemoryRegexIndex;
+pub use self::map_read::{RegexCandidateStats, StrMapIndexRegexRead};
 pub use self::matcher::{MAX_REGEX_LEN, RegexError, RegexMatcher};
 pub use self::query::{MAX_QUERY_TRIGRAMS, TrigramQuery};
 pub use self::trigram::{BOUNDARY, Trigram, fold, key_trigrams};
