@@ -236,3 +236,7 @@ harness = false
 [[bench]]
 name = "facets"
 harness = false
+
+[[bench]]
+name = "regex_filtering"
+harness = false
