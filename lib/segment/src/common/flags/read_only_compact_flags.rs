@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 
 use common::mmap::AdviceSetting;
 use common::stored_bitmask::{self, StoredBitmask};
+use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkNotFound, OkUnchanged, OpenOptions, Populate, ReadRange, UniversalRead,
     UniversalReadFs,
@@ -130,6 +131,19 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
 
         let bitmap = self.storage.read_ones()?;
         Ok(self.bitmap.get_or_init(|| bitmap))
+    }
+
+    /// Clear the flags of `points` in RAM, materializing the bitmap.
+    pub fn remove(
+        &mut self,
+        points: impl IntoIterator<Item = PointOffsetType>,
+    ) -> OperationResult<()> {
+        self.bitmap()?;
+        let bitmap = self.bitmap.get_mut().expect("materialized just above");
+        for point in points {
+            bitmap.remove(point);
+        }
+        Ok(())
     }
 
     pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) {

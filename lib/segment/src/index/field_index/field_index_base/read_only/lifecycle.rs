@@ -210,8 +210,8 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// the [`TextIndexParams`] the full-text leaf open needs. `total_point_count` sizes the
     /// null arm and caps what the appendable arms load: their storage may hold
     /// values for offsets the id tracker does not cover yet.
-    /// `deleted_points` reaches the immutable-only leaves; the roaring-flag bool
-    /// and null leaves ignore it (a single `open` serves both modes).
+    /// `deleted_points` reaches the immutable-only leaves and the bool leaf; the
+    /// roaring-flag null leaf ignores it.
     ///
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
     /// `populate_override` mirrors [`preopen`](Self::preopen): it re-decides
@@ -371,7 +371,8 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             // serves both modes (neither consumes the immutable-only
             // `memory` / `deleted_points`).
             PayloadIndexType::BoolIndex => {
-                ReadOnlyBoolIndex::<S>::open(fs, &bool_dir(dir, field))?.map(Self::BoolIndex)
+                ReadOnlyBoolIndex::<S>::open(fs, &bool_dir(dir, field), deleted_points)?
+                    .map(Self::BoolIndex)
             }
             PayloadIndexType::NullIndex => {
                 ReadOnlyNullIndex::<S>::open(fs, &null_dir(dir, field), total_point_count)?
