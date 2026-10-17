@@ -17,6 +17,7 @@ use crate::index::field_index::full_text_index::read_only::ReadOnlyFullTextIndex
 use crate::index::field_index::geo_index::{GeoIndexRead, ReadOnlyGeoIndex};
 use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
+use crate::index::field_index::nested_index::{NestedFieldIndex, ReadOnlyElementMap};
 use crate::index::field_index::null_index::{NullIndexRead, ReadOnlyNullIndex};
 use crate::index::field_index::numeric_index::{NumericIndexRead, ReadOnlyNumericIndex};
 use crate::index::payload_config::{
@@ -38,7 +39,13 @@ pub enum ReadOnlyFieldIndex<S: UniversalReadExt> {
     UuidIndex(ReadOnlyNumericIndex<UuidIntType, UuidPayloadType, S>),
     UuidMapIndex(ReadOnlyMapIndex<UuidIntType, S>),
     NullIndex(ReadOnlyNullIndex<S>),
+    /// Index of the elements of a nested array, see [`NestedFieldIndex`]
+    Nested(Box<ReadOnlyNestedFieldIndex<S>>),
 }
+
+/// Per-element index of a read-only segment.
+pub type ReadOnlyNestedFieldIndex<S> =
+    NestedFieldIndex<ReadOnlyFieldIndex<S>, ReadOnlyElementMap<S>>;
 
 /// Mirrors [`impl Debug for FieldIndex`][1] one-for-one: each arm prints
 /// the variant's discriminant. No payload is rendered (matches the
@@ -59,6 +66,7 @@ impl<S: UniversalReadExt> Debug for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(_) => write!(f, "UuidIndex"),
             ReadOnlyFieldIndex::UuidMapIndex(_) => write!(f, "UuidMapIndex"),
             ReadOnlyFieldIndex::NullIndex(_) => write!(f, "NullIndex"),
+            ReadOnlyFieldIndex::Nested(index) => write!(f, "Nested({:?})", index.inner()),
         }
     }
 }
@@ -94,6 +102,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::files(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::files(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::files(index),
+            ReadOnlyFieldIndex::Nested(index) => index.files(),
         }
     }
 
@@ -110,6 +119,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::immutable_files(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::immutable_files(index),
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::immutable_files(index),
+            ReadOnlyFieldIndex::Nested(index) => index.immutable_files(),
         }
     }
 
@@ -126,6 +136,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(index) => NumericIndexRead::ram_usage_bytes(index),
             ReadOnlyFieldIndex::UuidMapIndex(index) => MapIndexRead::ram_usage_bytes(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::ram_usage_bytes(index),
+            ReadOnlyFieldIndex::Nested(index) => index.ram_usage_bytes(),
         }
     }
 
@@ -142,6 +153,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::is_cold(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_cold(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::Nested(index) => index.is_cold(),
         }
     }
 
@@ -159,6 +171,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::populate(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::populate(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::populate(index),
+            ReadOnlyFieldIndex::Nested(index) => index.populate(),
         }
     }
 
@@ -176,6 +189,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::clear_cache(index),
             ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::clear_cache(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::clear_cache(index),
+            ReadOnlyFieldIndex::Nested(index) => index.clear_cache(),
         }
     }
 
@@ -195,6 +209,8 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(_) => PayloadIndexType::UuidIndex,
             ReadOnlyFieldIndex::UuidMapIndex(_) => PayloadIndexType::UuidMapIndex,
             ReadOnlyFieldIndex::NullIndex(_) => PayloadIndexType::NullIndex,
+            // Persisted as the inner type, the schema says the index is per element
+            ReadOnlyFieldIndex::Nested(index) => return index.get_full_index_type(),
         };
         FullPayloadIndexType {
             index_type,
@@ -216,6 +232,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(index) => index.get_mutability_type(),
             ReadOnlyFieldIndex::UuidMapIndex(index) => index.get_mutability_type(),
             ReadOnlyFieldIndex::NullIndex(index) => index.get_mutability_type(),
+            ReadOnlyFieldIndex::Nested(index) => index.get_full_index_type().mutability,
         }
     }
 
@@ -232,6 +249,7 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(index) => NumericIndexRead::storage_type(index),
             ReadOnlyFieldIndex::UuidMapIndex(index) => MapIndexRead::storage_type(index),
             ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::get_storage_type(index),
+            ReadOnlyFieldIndex::Nested(index) => index.get_full_index_type().storage_type,
         }
     }
 }
@@ -255,6 +273,7 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(index) => index.live_preload(fs),
             ReadOnlyFieldIndex::UuidMapIndex(index) => index.live_preload(fs),
             ReadOnlyFieldIndex::NullIndex(index) => index.live_preload(fs),
+            ReadOnlyFieldIndex::Nested(index) => index.live_preload(fs),
         }
     }
 
@@ -298,6 +317,7 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::NullIndex(index) => {
                 index.live_reload(fs, deleted_points, new_points)
             }
+            ReadOnlyFieldIndex::Nested(index) => index.live_reload(fs, deleted_points, new_points),
         }
     }
 }

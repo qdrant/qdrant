@@ -16,6 +16,7 @@ mod element_points;
 mod facet;
 mod numeric;
 mod point_runs;
+mod read_only;
 #[cfg(test)]
 mod tests;
 
@@ -31,7 +32,8 @@ pub use self::builder::NestedFieldIndexBuilder;
 pub use self::element_condition_checker::ElementConditionChecker;
 use self::element_map::nested_elements;
 pub use self::element_map::{
-    ElementMap, ElementMapBuilder, ElementMapRead, ElementOffsetType, PointElements,
+    ElementChanges, ElementMap, ElementMapBuilder, ElementMapRead, ElementOffsetType,
+    PointElements, ReadOnlyElementMap,
 };
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
@@ -59,7 +61,23 @@ use crate::types::{FieldCondition, PayloadKeyType};
 /// Implemented by the field index of every kind of segment that can hold per-element
 /// indexes, so that they share the wrapper.
 pub trait NestedInnerIndex: FieldIndexRead {
+    /// Order-by view of the index, see [`Self::numeric_view`].
+    type Numeric<'a>: NumericFieldIndexRead
+    where
+        Self: 'a;
+
     fn get_full_index_type(&self) -> FullPayloadIndexType;
+
+    /// Order-by view of the index, if it is numeric.
+    fn numeric_view(&self) -> Option<Self::Numeric<'_>>;
+
+    /// Facet view of the index, see [`Self::facet_view`].
+    type Facet<'a>: FacetIndex
+    where
+        Self: 'a;
+
+    /// Facet view of the index, if it supports faceting.
+    fn facet_view(&self) -> Option<Self::Facet<'_>>;
 
     fn ram_usage_bytes(&self) -> usize;
 
@@ -71,8 +89,19 @@ pub trait NestedInnerIndex: FieldIndexRead {
 }
 
 impl NestedInnerIndex for FieldIndex {
+    type Numeric<'a> = NumericFieldIndex<'a>;
+    type Facet<'a> = FacetIndexEnum<'a>;
+
     fn get_full_index_type(&self) -> FullPayloadIndexType {
         FieldIndex::get_full_index_type(self)
+    }
+
+    fn numeric_view(&self) -> Option<NumericFieldIndex<'_>> {
+        FieldIndex::numeric_view(self)
+    }
+
+    fn facet_view(&self) -> Option<FacetIndexEnum<'_>> {
+        FieldIndex::facet_view(self)
     }
 
     fn ram_usage_bytes(&self) -> usize {
@@ -197,6 +226,22 @@ impl<I: NestedInnerIndex, M: ElementMapRead> NestedFieldIndex<I, M> {
 
     pub fn get_full_index_type(&self) -> FullPayloadIndexType {
         self.inner.get_full_index_type()
+    }
+
+    /// Order-by view over points, if the inner index is numeric.
+    pub fn numeric_view(&self) -> Option<NestedNumericView<'_, I::Numeric<'_>, M>> {
+        Some(NestedNumericView::new(
+            self.inner.numeric_view()?,
+            &self.element_map,
+        ))
+    }
+
+    /// Facet view over points, if the inner index supports faceting.
+    pub fn facet_view(&self) -> Option<NestedFacetView<'_, I::Facet<'_>, M>> {
+        Some(NestedFacetView::new(
+            self.inner.facet_view()?,
+            &self.element_map,
+        ))
     }
 
     /// Whether the flattened index of the field would keep each value once per point.
@@ -336,22 +381,6 @@ impl NestedFieldIndex {
         }
         self.element_map.assign(point, 0)?;
         Ok(())
-    }
-
-    /// Order-by view over points, if the inner index is numeric.
-    pub fn numeric_view(&self) -> Option<NestedNumericView<'_, NumericFieldIndex<'_>, ElementMap>> {
-        Some(NestedNumericView::new(
-            self.inner.numeric_view()?,
-            &self.element_map,
-        ))
-    }
-
-    /// Facet view over points, if the inner index supports faceting.
-    pub fn facet_view(&self) -> Option<NestedFacetView<'_, FacetIndexEnum<'_>, ElementMap>> {
-        Some(NestedFacetView::new(
-            self.inner.facet_view()?,
-            &self.element_map,
-        ))
     }
 }
 
@@ -558,8 +587,7 @@ impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex
     }
 
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_> {
-        let inner = self.inner.as_numeric()?;
-        Some(NestedNumericView::new(inner, &self.element_map))
+        self.numeric_view()
     }
 
     /// Statistics over elements: every element is a document of its own.
@@ -631,8 +659,7 @@ impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex
     }
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
-        let inner = self.inner.as_facet_index()?;
-        Some(NestedFacetView::new(inner, &self.element_map))
+        self.facet_view()
     }
 
     fn element_condition_checker<'a>(
