@@ -32,6 +32,19 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         check_fn: impl Fn(&N) -> bool,
     ) -> OperationResult<bool>;
 
+    /// This index's id for `value`, for an index that can match a point on
+    /// one value by id. `None` when it cannot, or does not hold `value`.
+    fn value_id(&self, _value: &N) -> Option<u32> {
+        None
+    }
+
+    /// Whether `idx` holds exactly the value of id `id`, when the index can
+    /// tell without reading the point's values: `None` sends the caller to
+    /// [`Self::check_values_any`].
+    fn check_value_id(&self, _idx: PointOffsetType, _id: u32) -> Option<bool> {
+        None
+    }
+
     /// Batched counterpart of [`Self::check_values_any`].
     fn for_each_matching_value<I, F, M, U>(
         &self,
@@ -232,7 +245,10 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
         MapConditionChecker {
             index: self,
 
-            predicate: MapPredicate::Value(<N as MapIndexKey>::to_owned(value.borrow())),
+            predicate: MapPredicate::Value {
+                id: self.value_id(value.borrow()),
+                expected: <N as MapIndexKey>::to_owned(value.borrow()),
+            },
         }
     }
 
@@ -302,6 +318,20 @@ where
             MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::OnDisk(index) => index.check_values_any(idx, check_fn),
+        }
+    }
+
+    fn value_id(&self, value: &N) -> Option<u32> {
+        match self {
+            MapIndex::Immutable(index) => index.value_id(value),
+            MapIndex::Mutable(_) | MapIndex::OnDisk(_) => None,
+        }
+    }
+
+    fn check_value_id(&self, idx: PointOffsetType, id: u32) -> Option<bool> {
+        match self {
+            MapIndex::Immutable(index) => index.check_value_id(idx, id),
+            MapIndex::Mutable(_) | MapIndex::OnDisk(_) => None,
         }
     }
 
@@ -528,8 +558,12 @@ pub struct MapConditionChecker<'a, N: MapIndexKey + ?Sized, T> {
 }
 
 enum MapPredicate<N: MapIndexKey + ?Sized> {
-    /// For [`crate::types::Match::Value`].
-    Value(<N as MapIndexKey>::Owned),
+    /// For [`crate::types::Match::Value`], with the index's id for the value
+    /// when it has one ([`MapIndexRead::value_id`]).
+    Value {
+        expected: <N as MapIndexKey>::Owned,
+        id: Option<u32>,
+    },
     /// For [`crate::types::Match::Prefix`]; meaningful for string keys only
     /// ([`MapIndexKey::starts_with`] is constant `false` elsewhere).
     Prefix(<N as MapIndexKey>::Owned),
@@ -558,6 +592,11 @@ where
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        if let MapPredicate::Value { id: Some(id), .. } = self.predicate
+            && let Some(matched) = self.index.check_value_id(point_id, id)
+        {
+            return Ok(matched);
+        }
         self.index
             .check_values_any(point_id, |value| self.matches(value))
     }
@@ -582,7 +621,7 @@ impl<'a, N: MapIndexKey + ?Sized + 'a, T> MapConditionChecker<'a, N, T> {
     /// Whether a single indexed `value` satisfies this checker's predicate.
     fn matches(&self, value: &N) -> bool {
         match &self.predicate {
-            MapPredicate::Value(expected) => value == expected.borrow(),
+            MapPredicate::Value { expected, .. } => value == expected.borrow(),
             MapPredicate::Prefix(prefix) => N::starts_with(value, prefix.borrow()),
             MapPredicate::Substring(substring) => N::contains(value, substring.borrow()),
             MapPredicate::AnyScan { list, negate } => {
