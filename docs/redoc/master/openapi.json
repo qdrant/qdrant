@@ -7806,6 +7806,11 @@
             "description": "If true, enable prefix matching (`match: { \"prefix\": ... }`) on this field. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "regex": {
+            "description": "If true, build a trigram index over the keys, so regex conditions (`match: { \"regex\": ... }`) on this field select matching values without checking each of them. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

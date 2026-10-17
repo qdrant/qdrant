@@ -1232,6 +1232,7 @@ class KeywordIndexParams:
         enable_hnsw: Optional[bool] = None,
         prefix: Optional[bool] = None,
         memory: Optional["Memory"] = None,
+        regex: Optional[bool] = None,
     ) -> None:
         """
         Create KeywordIndexParams.
@@ -1243,6 +1244,7 @@ class KeywordIndexParams:
             prefix: Whether to enable prefix matching for this field.
             memory: Memory placement of the payload index. Overrides the deprecated
                     on_disk flag if both are set.
+            regex: Whether to build a trigram index for regex matching on this field.
         """
         ...
 
@@ -1264,6 +1266,11 @@ class KeywordIndexParams:
     @property
     def prefix(self) -> Optional[bool]:
         """Whether prefix matching is enabled."""
+        ...
+
+    @property
+    def regex(self) -> Optional[bool]:
+        """Whether the trigram index for regex matching is enabled."""
         ...
 
     @property

@@ -103,6 +103,10 @@ pub struct KeywordIndexParams {
     /// If true, enable prefix matching on this field. Default: false.
     #[uniffi(default = None)]
     pub prefix: Option<bool>,
+    /// If true, build a trigram index over the keys for regex matching on
+    /// this field. Default: false.
+    #[uniffi(default = None)]
+    pub regex: Option<bool>,
 }
 
 /// Parameters of an integer payload index.
@@ -661,6 +665,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     memory,
                     enable_hnsw,
                     prefix,
+                    regex,
                 } = config;
                 Ok(PayloadSchemaParams::Keyword(
                     segment_index::KeywordIndexParams {
@@ -670,6 +675,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
                         prefix,
+                        regex,
                     },
                 ))
             }
@@ -844,6 +850,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     memory: _,
                     enable_hnsw,
                     prefix,
+                    regex,
                 } = params;
                 PayloadIndexParams::Keyword {
                     config: KeywordIndexParams {
@@ -851,6 +858,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                         memory,
                         enable_hnsw,
                         prefix,
+                        regex,
                     },
                 }
             }

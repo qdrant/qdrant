@@ -14,7 +14,7 @@ use super::numeric_index::{
 };
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::index::TextIndexParams;
+use crate::data_types::index::{KeywordIndexParams, TextIndexParams};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::FullTextIndex;
@@ -79,12 +79,7 @@ impl IndexSelector<'_> {
                 .map(FieldIndex::DatetimeIndex),
 
             (PayloadIndexType::KeywordIndex, PayloadSchemaParams::Keyword(params)) => self
-                .map_new(
-                    field,
-                    create_if_missing,
-                    deleted_points,
-                    params.prefix.unwrap_or_default(),
-                )?
+                .keyword_new(field, create_if_missing, deleted_points, params)?
                 .map(FieldIndex::KeywordIndex),
 
             (PayloadIndexType::FloatIndex, PayloadSchemaParams::Float(_)) => self
@@ -141,12 +136,7 @@ impl IndexSelector<'_> {
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         let indexes = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(params) => self
-                .map_new(
-                    field,
-                    create_if_missing,
-                    deleted_points,
-                    params.prefix.unwrap_or_default(),
-                )?
+                .keyword_new(field, create_if_missing, deleted_points, params)?
                 .map(|index| vec![FieldIndex::KeywordIndex(index)]),
             PayloadSchemaParams::Integer(integer_params) => {
                 let use_lookup = integer_params.lookup.unwrap_or(true);
@@ -213,13 +203,7 @@ impl IndexSelector<'_> {
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
         let builders = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(params) => {
-                vec![self.map_builder(
-                    field,
-                    FieldIndexBuilder::KeywordMmapIndex,
-                    FieldIndexBuilder::KeywordGridstoreIndex,
-                    deleted_points,
-                    params.prefix.unwrap_or_default(),
-                )]
+                vec![self.keyword_builder(field, deleted_points, params)]
             }
             PayloadSchemaParams::Integer(integer_params) => {
                 let use_lookup = integer_params.lookup.unwrap_or(true);
@@ -292,6 +276,62 @@ impl IndexSelector<'_> {
         };
 
         Ok(builders)
+    }
+
+    /// Keyword index: a string-keyed map index with the key structures its
+    /// params ask for.
+    fn keyword_new(
+        &self,
+        field: &JsonPath,
+        create_if_missing: bool,
+        deleted_points: &BitSlice,
+        params: &KeywordIndexParams,
+    ) -> OperationResult<Option<MapIndex<str>>> {
+        let index = self.map_new::<str>(
+            field,
+            create_if_missing,
+            deleted_points,
+            params.prefix.unwrap_or_default(),
+        )?;
+        Ok(index.map(|mut index| {
+            // The immutable variants detect regex support from the presence
+            // of the regex index file, written at build time.
+            if params.regex.unwrap_or_default() {
+                index.enable_regex_index();
+            }
+            index
+        }))
+    }
+
+    fn keyword_builder(
+        &self,
+        field: &JsonPath,
+        deleted_points: &BitSlice,
+        params: &KeywordIndexParams,
+    ) -> FieldIndexBuilder {
+        let prefix_index = params.prefix.unwrap_or_default();
+        let regex_index = params.regex.unwrap_or_default();
+        match self {
+            IndexSelector::NonAppendable { dir, memory } => {
+                let mut builder = MapIndex::builder_immutable(
+                    &map_dir(dir, field),
+                    *memory,
+                    deleted_points,
+                    prefix_index,
+                );
+                if regex_index {
+                    builder.enable_regex_index();
+                }
+                FieldIndexBuilder::KeywordMmapIndex(builder)
+            }
+            IndexSelector::Appendable { dir } => {
+                let mut builder = MapIndex::builder_mutable(map_dir(dir, field), prefix_index);
+                if regex_index {
+                    builder.enable_regex_index();
+                }
+                FieldIndexBuilder::KeywordGridstoreIndex(builder)
+            }
+        }
     }
 
     /// `prefix_index` enables the sorted key dictionary for prefix matching;

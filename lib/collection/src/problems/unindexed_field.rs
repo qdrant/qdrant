@@ -557,6 +557,8 @@ enum FieldIndexType {
     KeywordMatch,
     /// Keyword index with the `prefix` option enabled.
     KeywordPrefix,
+    /// Keyword index with the `regex` option enabled.
+    KeywordRegex,
     FloatRange,
     Text,
     TextPhrase,
@@ -590,6 +592,9 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
             PayloadSchemaParams::Keyword(keyword_index_params) => {
                 if keyword_index_params.prefix.unwrap_or_default() {
                     index_types.insert(FieldIndexType::KeywordPrefix);
+                }
+                if keyword_index_params.regex.unwrap_or_default() {
+                    index_types.insert(FieldIndexType::KeywordRegex);
                 }
                 index_types.insert(FieldIndexType::KeywordMatch)
             }
@@ -641,6 +646,13 @@ impl From<FieldIndexType> for PayloadFieldSchema {
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
                     r#type: KeywordIndexType::Keyword,
                     prefix: Some(true),
+                    ..Default::default()
+                }))
+            }
+            FieldIndexType::KeywordRegex => {
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                    r#type: KeywordIndexType::Keyword,
+                    regex: Some(true),
                     ..Default::default()
                 }))
             }
@@ -698,6 +710,24 @@ mod tests {
             infer_index_from_field_condition(&condition),
             vec![FieldIndexType::KeywordPrefix],
         );
+    }
+
+    #[test]
+    fn keyword_regex_capabilities() {
+        let plain = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        assert!(!schema_capabilities(&plain).contains(&FieldIndexType::KeywordRegex));
+
+        // The regex option is independent of the prefix option.
+        let with_regex =
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Keyword(KeywordIndexParams {
+                r#type: KeywordIndexType::Keyword,
+                regex: Some(true),
+                ..Default::default()
+            }));
+        let index_types = schema_capabilities(&with_regex);
+        assert!(index_types.contains(&FieldIndexType::KeywordMatch));
+        assert!(index_types.contains(&FieldIndexType::KeywordRegex));
+        assert!(!index_types.contains(&FieldIndexType::KeywordPrefix));
     }
 
     /// The walker shares one arm for `max` and `min`, so this pins down that `min` recurses too

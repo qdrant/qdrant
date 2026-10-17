@@ -945,6 +945,7 @@ fn payload_index_params_all_variants_convert_to_matching_engine_type() {
                     memory: None,
                     enable_hnsw: None,
                     prefix: None,
+                    regex: None,
                 },
             },
             SegmentPayloadSchemaType::Keyword,
@@ -1084,6 +1085,7 @@ fn payload_index_params_bad_field_name_rejected() {
                 memory: None,
                 enable_hnsw: None,
                 prefix: None,
+                regex: None,
             },
         },
     );
@@ -1257,6 +1259,7 @@ fn legacy_on_disk_flag_resolves_to_memory_on_read() {
             memory,
             enable_hnsw: None,
             prefix: None,
+            regex: None,
         })
     };
     let reported_memory = |params: PayloadSchemaParams| {

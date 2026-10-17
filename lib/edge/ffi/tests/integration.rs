@@ -4458,6 +4458,7 @@ fn field_index_params_echo_in_info_and_survive_reload() {
                             memory: Some(Memory::Cold),
                             enable_hnsw: Some(false),
                             prefix: Some(true),
+                            regex: None,
                         },
                     },
                 )

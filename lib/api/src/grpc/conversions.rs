@@ -37,10 +37,10 @@ use super::qdrant::{
     BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
     Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
     FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
-    KeywordIndexParams, KeywordPrefixParams, LookupLocation, MaxOptimizationThreads, Memory,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
-    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
-    ShardKeySelector, SliceCondition, StartFrom, StrictModeMultivector,
+    KeywordIndexParams, KeywordPrefixParams, KeywordRegexParams, LookupLocation,
+    MaxOptimizationThreads, Memory, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue,
+    Range, RawVector, RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups,
+    SearchPoints, ShardKeySelector, SliceCondition, StartFrom, StrictModeMultivector,
     StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig, TurboQuantBitSize,
     TurboQuantization, UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
@@ -248,6 +248,7 @@ impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams
             memory,
             enable_hnsw,
             prefix,
+            regex,
         } = params;
         PayloadIndexParams {
             index_params: Some(IndexParams::KeywordIndexParams(KeywordIndexParams {
@@ -256,6 +257,7 @@ impl From<segment::data_types::index::KeywordIndexParams> for PayloadIndexParams
                 enable_hnsw,
                 prefix: prefix.unwrap_or_default().then_some(KeywordPrefixParams {}),
                 memory: convert_memory_to_proto(memory),
+                regex: regex.unwrap_or_default().then_some(KeywordRegexParams {}),
             })),
         }
     }
@@ -591,6 +593,7 @@ impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexPar
             enable_hnsw,
             prefix,
             memory,
+            regex,
         } = params;
         Ok(segment::data_types::index::KeywordIndexParams {
             r#type: KeywordIndexType::Keyword,
@@ -601,6 +604,8 @@ impl TryFrom<KeywordIndexParams> for segment::data_types::index::KeywordIndexPar
             // Presence of the (currently empty) message enables prefix
             // matching.
             prefix: prefix.map(|KeywordPrefixParams {}| true),
+            // Same for the regex index.
+            regex: regex.map(|KeywordRegexParams {}| true),
         })
     }
 }

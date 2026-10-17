@@ -78,6 +78,16 @@ where
         super::builders::MapIndexGridstoreBuilder::new(dir, prefix_index)
     }
 
+    /// Maintain a trigram index over the keys of the appendable variant, for
+    /// regex conditions. No-op for the immutable variants, which have it if
+    /// the regex index file was built.
+    pub fn enable_regex_index(&mut self) {
+        match self {
+            MapIndex::Mutable(index) => index.enable_regex_index(),
+            MapIndex::Immutable(_) | MapIndex::OnDisk(_) => {}
+        }
+    }
+
     pub(crate) fn flusher(&self) -> Flusher {
         match self {
             MapIndex::Mutable(index) => index.flusher(),

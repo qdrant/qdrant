@@ -1467,12 +1467,22 @@ pub struct KeywordIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "5")]
     pub memory: ::core::option::Option<i32>,
+    /// If set, build a trigram index over the keys, so regex conditions
+    /// (`match: { "regex": ... }`) on this field select matching values
+    /// without checking each of them.
+    #[prost(message, optional, tag = "6")]
+    pub regex: ::core::option::Option<KeywordRegexParams>,
 }
 /// Prefix matching options for the keyword index. Has no options yet:
 /// presence of this message enables prefix matching.
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct KeywordPrefixParams {}
+/// Regex matching options for the keyword index. Has no options yet:
+/// presence of this message enables the trigram index.
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct KeywordRegexParams {}
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IntegerIndexParams {

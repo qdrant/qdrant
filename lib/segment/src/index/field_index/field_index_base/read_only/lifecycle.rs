@@ -20,7 +20,8 @@ use crate::index::field_index::numeric_index::ReadOnlyNumericIndex;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType, StorageType};
 use crate::json_path::JsonPath;
 use crate::types::{
-    DateTimePayloadType, FloatPayloadType, IntPayloadType, Memory, PayloadFieldSchema, UuidIntType,
+    DateTimePayloadType, FloatPayloadType, IntPayloadType, Memory, PayloadFieldSchema,
+    PayloadSchemaParams, UuidIntType,
 };
 
 /// Which read-only open path a leaf index should take, derived from the stored
@@ -244,7 +245,14 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                     deleted_points,
                 )?,
             }
-            .map(Self::KeywordIndex),
+            .map(|mut index| {
+                if let PayloadSchemaParams::Keyword(params) = payload_schema.expand().as_ref()
+                    && params.regex.unwrap_or_default()
+                {
+                    index.enable_regex_index();
+                }
+                Self::KeywordIndex(index)
+            }),
             PayloadIndexType::IntMapIndex => match mode {
                 ReadMode::Appendable => ReadOnlyMapIndex::<IntPayloadType, S>::open_appendable(
                     fs,

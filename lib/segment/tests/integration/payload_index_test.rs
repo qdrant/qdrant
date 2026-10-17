@@ -142,6 +142,7 @@ impl TestSegments {
                         on_disk: None,
                         enable_hnsw: None,
                         prefix: Some(true),
+                        regex: None,
                     },
                 ))),
             )
@@ -309,6 +310,7 @@ impl TestSegments {
                         on_disk: Some(true),
                         enable_hnsw: None,
                         prefix: Some(true),
+                        regex: None,
                     },
                 ))),
             )
