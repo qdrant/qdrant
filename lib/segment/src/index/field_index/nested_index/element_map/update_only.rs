@@ -9,9 +9,9 @@ use std::ops::Range;
 use std::path::Path;
 
 use blobstore::BlobstoreReader;
-use blobstore::error::BlobstoreError;
 use common::ambient;
 use common::ambient::hw::HwMetric;
+use common::generic_consts::Random;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{OkNotFound, Populate, UniversalAppend, UniversalAppendFs};
@@ -34,6 +34,11 @@ impl<S: UniversalAppend + 'static> UpdateOnlyElementMap<S> {
     /// New elements get offsets from `min_next_element` up, and above every offset the
     /// map has given out: the index the map belongs to may already hold values up to
     /// there, that the map doesn't know of.
+    ///
+    /// Offsets of an append-only map increase with the points: this writer gives out the
+    /// next ones, and the writable map never frees any, as it updates and deletes points
+    /// of append-only segments by moving and tombstoning them. So the highest offset is
+    /// in the list of the last point with elements, and only that list is read.
     pub fn open(
         fs: &impl UniversalAppendFs<AppendFile = S>,
         path: &Path,
@@ -45,16 +50,15 @@ impl<S: UniversalAppend + 'static> UpdateOnlyElementMap<S> {
                 .ok_not_found()?
         {
             let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-            reader.iter::<_, BlobstoreError>(
-                reader.max_point_offset()?,
-                |_, elements: StoredElements| {
-                    if let Some(&max_element) = elements.0.iter().max() {
-                        next_element = next_element.max(max_element.saturating_add(1));
-                    }
-                    Ok(true)
-                },
-                HwMetric::PayloadIndexIoRead,
-            )?;
+            for point in (0..reader.max_point_offset()?).rev() {
+                let Some(elements) = reader.get_value::<Random>(point)? else {
+                    continue;
+                };
+                if let Some(&max_element) = elements.0.iter().max() {
+                    next_element = next_element.max(max_element.saturating_add(1));
+                    break;
+                }
+            }
         }
 
         let storage = UpdateOnlyBlobstore::open(fs, path, LOGSTORE_CONFIG)?;
