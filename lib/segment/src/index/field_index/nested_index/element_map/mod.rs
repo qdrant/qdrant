@@ -189,8 +189,6 @@ impl ElementMap {
         other: &ElementMap,
         element: ElementOffsetType,
     ) -> Option<ElementOffsetType> {
-        // ponytail: immutable maps of one array built together have equal starts, so
-        // translating between them is the identity; detect it if the lookup shows up
         if std::ptr::eq(self, other) {
             return Some(element);
         }
