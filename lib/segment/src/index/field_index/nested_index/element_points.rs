@@ -2,7 +2,7 @@
 
 use common::types::PointOffsetType;
 
-use super::{ElementMap, ElementOffsetType};
+use super::{ElementMapRead, ElementOffsetType};
 
 /// Maps the elements of one value at a time to the points that own them, reusing its
 /// buffer from one value to the next.
@@ -10,15 +10,15 @@ use super::{ElementMap, ElementOffsetType};
 /// The points of each value are sorted. In an immutable map the elements are laid out in
 /// point order, so the points of elements in element order come already sorted, which
 /// the sort handles in close to linear time.
-pub(super) struct ElementPoints<'a> {
-    element_map: &'a ElementMap,
+pub(super) struct ElementPoints<'a, M> {
+    element_map: &'a M,
     /// Points of the current value. Cleared for every value, but keeps its capacity, so a
     /// facet over many distinct values doesn't allocate a vector for each of them.
     points: Vec<PointOffsetType>,
 }
 
-impl<'a> ElementPoints<'a> {
-    pub(super) fn new(element_map: &'a ElementMap) -> Self {
+impl<'a, M: ElementMapRead> ElementPoints<'a, M> {
+    pub(super) fn new(element_map: &'a M) -> Self {
         Self {
             element_map,
             points: Vec::new(),
@@ -55,7 +55,7 @@ mod tests {
     use rand::{RngExt, SeedableRng};
 
     use super::*;
-    use crate::index::field_index::nested_index::ElementMapBuilder;
+    use crate::index::field_index::nested_index::{ElementMap, ElementMapBuilder};
     use crate::index::payload_config::IndexMutability;
 
     /// Consecutive values give the same points as mapping each value on its own.

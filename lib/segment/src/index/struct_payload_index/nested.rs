@@ -5,7 +5,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead as _};
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::index_selector::IndexSelector;
-use crate::index::field_index::nested_index::{ElementMap, NestedFieldIndex};
+use crate::index::field_index::nested_index::{ElementMap, ElementMapRead as _, NestedFieldIndex};
 use crate::index::payload_config::FullPayloadIndexType;
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadKeyTypeRef};

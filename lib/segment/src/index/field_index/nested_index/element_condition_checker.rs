@@ -1,6 +1,6 @@
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 
-use super::{ElementMap, ElementOffsetType};
+use super::{ElementMapRead, ElementOffsetType};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::condition_checker::ConditionCheckerEnum;
 
@@ -15,16 +15,16 @@ use crate::index::condition_checker::ConditionCheckerEnum;
 pub struct ElementConditionChecker<'a> {
     /// Map of the offsets passed to [`ConditionChecker::check`]. Starts as `own_map`, see
     /// [`Self::with_input_map`].
-    input_map: &'a ElementMap,
+    input_map: &'a dyn ElementMapRead,
     /// Map of the index that answers the condition, the offsets `checker` takes.
-    own_map: &'a ElementMap,
+    own_map: &'a dyn ElementMapRead,
     /// Checker of the inner index, over offsets of `own_map`.
     checker: ConditionCheckerEnum<'a>,
 }
 
 impl<'a> ElementConditionChecker<'a> {
     /// `checker` takes offsets of `own_map`, the map of the index it checks.
-    pub(super) fn new(own_map: &'a ElementMap, checker: ConditionCheckerEnum<'a>) -> Self {
+    pub(super) fn new(own_map: &'a dyn ElementMapRead, checker: ConditionCheckerEnum<'a>) -> Self {
         Self {
             input_map: own_map,
             own_map,
@@ -33,12 +33,12 @@ impl<'a> ElementConditionChecker<'a> {
     }
 
     /// Map of the index that answers the condition.
-    pub fn own_map(&self) -> &'a ElementMap {
+    pub fn own_map(&self) -> &'a dyn ElementMapRead {
         self.own_map
     }
 
     /// Take offsets of `input_map` instead of [`Self::own_map`].
-    pub fn with_input_map(self, input_map: &'a ElementMap) -> Self {
+    pub fn with_input_map(self, input_map: &'a dyn ElementMapRead) -> Self {
         Self { input_map, ..self }
     }
 }
@@ -47,7 +47,7 @@ impl ConditionChecker for ElementConditionChecker<'_> {
     type Error = OperationError;
 
     fn check(&self, input_element: ElementOffsetType) -> OperationResult<bool> {
-        if std::ptr::eq(self.input_map, self.own_map) {
+        if std::ptr::addr_eq(self.input_map, self.own_map) {
             return self.checker.check(input_element);
         }
         let Some((point, position)) = self.input_map.element_position(input_element) else {

@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use common::types::PointOffsetType;
 
-use super::ElementMap;
 use super::element_points::ElementPoints;
+use super::{ElementMap, ElementMapRead};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValue, FacetValueRef};
 use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
@@ -12,13 +12,15 @@ use crate::index::field_index::facet_index::{FacetIndex, FacetIndexEnum};
 ///
 /// Like the flattened index, it counts a point once per value, however many of its
 /// elements have that value.
-pub struct NestedFacetView<'a> {
-    inner: FacetIndexEnum<'a>,
-    element_map: &'a ElementMap,
+///
+/// `inner` is the facet view of the inner index, keyed by the offsets of `element_map`.
+pub struct NestedFacetView<'a, F, M> {
+    inner: F,
+    element_map: &'a M,
 }
 
-impl<'a> NestedFacetView<'a> {
-    pub fn new(inner: FacetIndexEnum<'a>, element_map: &'a ElementMap) -> Self {
+impl<'a, F, M> NestedFacetView<'a, F, M> {
+    pub fn new(inner: F, element_map: &'a M) -> Self {
         Self { inner, element_map }
     }
 }
@@ -32,7 +34,7 @@ fn facet_value_ref(value: &FacetValue) -> FacetValueRef<'_> {
     }
 }
 
-impl FacetIndex for NestedFacetView<'_> {
+impl<F: FacetIndex, M: ElementMapRead> FacetIndex for NestedFacetView<'_, F, M> {
     fn unique_values_count(&self) -> usize {
         self.inner.unique_values_count()
     }
@@ -109,7 +111,7 @@ impl FacetIndex for NestedFacetView<'_> {
 /// Facet view of any writable field index: a flattened one, or a per-element one.
 pub enum FacetView<'a> {
     Plain(FacetIndexEnum<'a>),
-    Nested(NestedFacetView<'a>),
+    Nested(NestedFacetView<'a, FacetIndexEnum<'a>, ElementMap>),
 }
 
 impl FacetIndex for FacetView<'_> {

@@ -78,7 +78,7 @@ impl ElementUpdate {
     }
 }
 
-/// Element offsets of one point, in array order, see [`ElementMap::point_elements`].
+/// Element offsets of one point, in array order, see [`ElementMapRead::point_elements`].
 pub type PointElements<'a> =
     Either<Range<ElementOffsetType>, Copied<slice::Iter<'a, ElementOffsetType>>>;
 
@@ -134,7 +134,7 @@ impl ElementMap {
     ///
     /// An immutable map stores `indexed_points`, an upper bound on points with indexed
     /// values, so that opening it doesn't need to read the index, see
-    /// [`Self::indexed_points`].
+    /// [`ElementMapRead::indexed_points`].
     pub fn create(
         path: PathBuf,
         mutability: IndexMutability,
@@ -168,76 +168,6 @@ impl ElementMap {
             IndexMutability::Immutable => {
                 Ok(ImmutableElementMap::open(path)?.map(ElementMap::Immutable))
             }
-        }
-    }
-
-    /// Element offsets of `point` in array order, empty if it has no elements.
-    pub fn point_elements(&self, point: PointOffsetType) -> PointElements<'_> {
-        match self {
-            ElementMap::Mutable(map) => Either::Right(map.point_elements(point).iter().copied()),
-            ElementMap::Immutable(map) => Either::Left(map.point_elements(point)),
-        }
-    }
-
-    /// The point that owns `element` and the position of the element among the point's
-    /// elements, `None` if no point owns it.
-    ///
-    /// Unlike the offset, the pair identifies the element in every map of the array, see
-    /// [`Self::element_at`].
-    pub fn element_position(&self, element: ElementOffsetType) -> Option<(PointOffsetType, usize)> {
-        let point = self.element_point(element)?;
-        let position = self
-            .point_elements(point)
-            .position(|owned| owned == element)?;
-        Some((point, position))
-    }
-
-    /// Offset of the element at `position` among the elements of `point`, `None` if the
-    /// point has fewer elements.
-    pub fn element_at(&self, point: PointOffsetType, position: usize) -> Option<ElementOffsetType> {
-        self.point_elements(point).nth(position)
-    }
-
-    /// The point that owns `element`, `None` if no point does.
-    pub fn element_point(&self, element: ElementOffsetType) -> Option<PointOffsetType> {
-        match self {
-            ElementMap::Mutable(map) => map.element_point(element),
-            ElementMap::Immutable(map) => map.element_point(element),
-        }
-    }
-
-    /// Upper bound of the point offsets with elements.
-    pub fn points_upper_bound(&self) -> usize {
-        match self {
-            ElementMap::Mutable(map) => map.points_upper_bound(),
-            ElementMap::Immutable(map) => map.points_upper_bound(),
-        }
-    }
-
-    /// Number of elements owned by a point.
-    pub fn elements_count(&self) -> usize {
-        match self {
-            ElementMap::Mutable(map) => map.elements_count(),
-            ElementMap::Immutable(map) => map.elements_count(),
-        }
-    }
-
-    /// Largest number of elements of a point, at least 1. For a mutable map, the largest
-    /// since it was opened.
-    pub fn max_elements_per_point(&self) -> usize {
-        let max = match self {
-            ElementMap::Mutable(map) => map.max_elements_per_point(),
-            ElementMap::Immutable(map) => map.max_elements_per_point(),
-        };
-        max.max(1)
-    }
-
-    /// Build-time upper bound on indexed points for an immutable map, without
-    /// subtracting subsequent deletions. `None` for a mutable map.
-    pub fn indexed_points(&self) -> Option<usize> {
-        match self {
-            ElementMap::Mutable(_) => None,
-            ElementMap::Immutable(map) => Some(map.indexed_points()),
         }
     }
 
@@ -292,22 +222,117 @@ impl ElementMap {
             ElementMap::Immutable(map) => map.wipe(),
         }
     }
+}
 
-    pub fn ram_usage_bytes(&self) -> usize {
+/// Read access to the point ↔ element mapping of one per-element index.
+///
+/// See the [module docs](self).
+pub trait ElementMapRead {
+    /// Element offsets of `point` in array order, empty if it has no elements.
+    fn point_elements(&self, point: PointOffsetType) -> PointElements<'_>;
+
+    /// The point that owns `element`, `None` if no point does.
+    fn element_point(&self, element: ElementOffsetType) -> Option<PointOffsetType>;
+
+    /// Upper bound of the point offsets with elements.
+    fn points_upper_bound(&self) -> usize;
+
+    /// Number of elements owned by a point.
+    fn elements_count(&self) -> usize;
+
+    /// Largest number of elements of a point, at least 1. For a mutable map, the largest
+    /// since it was opened.
+    fn max_elements_per_point(&self) -> usize;
+
+    /// Build-time upper bound on indexed points for an immutable map, without
+    /// subtracting subsequent deletions. `None` for a mutable map.
+    fn indexed_points(&self) -> Option<usize>;
+
+    fn ram_usage_bytes(&self) -> usize;
+
+    fn populate(&self) -> OperationResult<()>;
+
+    fn clear_cache(&self) -> OperationResult<()>;
+
+    /// The point that owns `element` and the position of the element among the point's
+    /// elements, `None` if no point owns it.
+    ///
+    /// Unlike the offset, the pair identifies the element in every map of the array, see
+    /// [`Self::element_at`].
+    fn element_position(&self, element: ElementOffsetType) -> Option<(PointOffsetType, usize)> {
+        let point = self.element_point(element)?;
+        let position = self
+            .point_elements(point)
+            .position(|owned| owned == element)?;
+        Some((point, position))
+    }
+
+    /// Offset of the element at `position` among the elements of `point`, `None` if the
+    /// point has fewer elements.
+    fn element_at(&self, point: PointOffsetType, position: usize) -> Option<ElementOffsetType> {
+        self.point_elements(point).nth(position)
+    }
+}
+
+impl ElementMapRead for ElementMap {
+    fn point_elements(&self, point: PointOffsetType) -> PointElements<'_> {
+        match self {
+            ElementMap::Mutable(map) => Either::Right(map.point_elements(point).iter().copied()),
+            ElementMap::Immutable(map) => Either::Left(map.point_elements(point)),
+        }
+    }
+
+    fn element_point(&self, element: ElementOffsetType) -> Option<PointOffsetType> {
+        match self {
+            ElementMap::Mutable(map) => map.element_point(element),
+            ElementMap::Immutable(map) => map.element_point(element),
+        }
+    }
+
+    fn points_upper_bound(&self) -> usize {
+        match self {
+            ElementMap::Mutable(map) => map.points_upper_bound(),
+            ElementMap::Immutable(map) => map.points_upper_bound(),
+        }
+    }
+
+    fn elements_count(&self) -> usize {
+        match self {
+            ElementMap::Mutable(map) => map.elements_count(),
+            ElementMap::Immutable(map) => map.elements_count(),
+        }
+    }
+
+    fn max_elements_per_point(&self) -> usize {
+        let max = match self {
+            ElementMap::Mutable(map) => map.max_elements_per_point(),
+            ElementMap::Immutable(map) => map.max_elements_per_point(),
+        };
+        max.max(1)
+    }
+
+    fn indexed_points(&self) -> Option<usize> {
+        match self {
+            ElementMap::Mutable(_) => None,
+            ElementMap::Immutable(map) => Some(map.indexed_points()),
+        }
+    }
+
+    fn ram_usage_bytes(&self) -> usize {
         match self {
             ElementMap::Mutable(map) => map.ram_usage_bytes(),
             ElementMap::Immutable(map) => map.ram_usage_bytes(),
         }
     }
 
-    pub fn populate(&self) -> OperationResult<()> {
+    fn populate(&self) -> OperationResult<()> {
         match self {
             ElementMap::Mutable(map) => map.populate(),
             ElementMap::Immutable(_) => Ok(()),
         }
     }
 
-    pub fn clear_cache(&self) -> OperationResult<()> {
+    fn clear_cache(&self) -> OperationResult<()> {
         match self {
             ElementMap::Mutable(map) => map.clear_cache(),
             ElementMap::Immutable(_) => Ok(()),
