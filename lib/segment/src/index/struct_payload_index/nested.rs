@@ -43,7 +43,8 @@ impl StructPayloadIndex {
             payload_schema,
             index_type,
             create_if_missing,
-            id_tracker,
+            // The inner index is keyed by elements, `deleted_elements` covers all of them
+            deleted_elements.len(),
             &deleted_elements,
         )?
         else {

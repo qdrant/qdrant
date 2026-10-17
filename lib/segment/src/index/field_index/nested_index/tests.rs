@@ -11,12 +11,14 @@ use common::ambient;
 use common::condition_checker::ConditionChecker as _;
 use common::flags::FeatureFlags;
 use common::types::{DeferredBehavior, PointOffsetType};
+use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use serde_json::{Value, json};
 use tempfile::Builder;
 use uuid::Uuid;
 
+use crate::common::utils::{check_is_empty, check_is_null};
 use crate::data_types::facets::FacetParams;
 use crate::data_types::order_by::{Direction, OrderBy};
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
@@ -131,7 +133,8 @@ fn filters() -> Vec<Filter> {
         json!({"key": "offers[].location", "geo_radius": {
             "center": {"lon": 0.5, "lat": 0.5}, "radius": 30000.0
         }}),
-        json!({"is_empty": {"key": "offers[].price"}}),
+        // Matches a point if any value is null, so the same whether elements are
+        // indexed on their own or not
         json!({"is_null": {"key": "offers[].shop"}}),
     ];
 
@@ -326,9 +329,11 @@ fn assert_field_indexes_equal(flat: &Segment, nested: &Segment, field: &JsonPath
     );
 
     for (flat_field_index, nested_field_index) in flat_indexes.iter().zip(nested_indexes) {
+        let is_null_index =
+            flat_field_index.get_full_index_type().index_type == PayloadIndexType::NullIndex;
         assert_eq!(
             nested_field_index.get_full_index_type().index_type == PayloadIndexType::NullIndex,
-            flat_field_index.get_full_index_type().index_type == PayloadIndexType::NullIndex,
+            is_null_index,
         );
         let flat_count = flat_field_index.count_indexed_points().unwrap();
         let nested_count = nested_field_index.count_indexed_points().unwrap();
@@ -336,6 +341,8 @@ fn assert_field_indexes_equal(flat: &Segment, nested: &Segment, field: &JsonPath
             .as_nested()
             .map(|nested| nested.element_map());
         match element_map {
+            // A flattened null index counts every point it covers, with or without values
+            Some(_) if is_null_index => {}
             // Opening restores the build-time count without subtracting deletions
             Some(crate::index::field_index::nested_index::ElementMap::Immutable(_)) => {
                 let deleted = nested.id_tracker.borrow().deleted_point_count();
@@ -394,6 +401,9 @@ fn assert_field_indexes_equal(flat: &Segment, nested: &Segment, field: &JsonPath
     }
 }
 
+/// Whether the values of a field in one element match a condition.
+type ValuesCheck = fn(&[&Value]) -> bool;
+
 fn assert_equal(flat: &Segment, nested: &Segment) {
     let stopped = AtomicBool::new(false);
     let _scope = ambient::test_guard();
@@ -418,6 +428,50 @@ fn assert_equal(flat: &Segment, nested: &Segment) {
         assert_eq!(flat_points, read(nested), "filter {filter:?}");
     }
     assert!(matched_any, "filters must select something to compare");
+
+    // A per-element null index treats each element as its own entry: a condition matches
+    // a point if one of its elements matches it, checked here on the payload
+    let all_points = flat
+        .read_filtered(None, None, None, &stopped, DeferredBehavior::WithDeferred)
+        .unwrap();
+    for field in ["price", "tags"] {
+        let relative = JsonPath::from_str(field).unwrap();
+        let checks: [(&str, ValuesCheck); 2] = [
+            ("is_empty", |values| check_is_empty(values.iter().copied())),
+            ("is_null", |values| check_is_null(values.iter().copied())),
+        ];
+        for (condition, check) in checks {
+            let expected: Vec<_> = all_points
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    let payload = flat.payload(id).unwrap();
+                    payload
+                        .0
+                        .get("offers")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_object)
+                        .any(|element| check(&relative.value_get(element)))
+                })
+                .collect();
+            let filter: Filter = serde_json::from_value(json!({
+                "must": [{condition: {"key": format!("offers[].{field}")}}],
+            }))
+            .unwrap();
+            let points = nested
+                .read_filtered(
+                    None,
+                    None,
+                    Some(&filter),
+                    &stopped,
+                    DeferredBehavior::WithDeferred,
+                )
+                .unwrap();
+            assert_eq!(expected, points, "filter {filter:?}");
+        }
+    }
 
     for &(field, _) in FIELDS {
         assert_field_indexes_equal(flat, nested, &JsonPath::from_str(field).unwrap());
@@ -791,11 +845,11 @@ fn element_map_lifecycle() {
     pair.create_indexes(None);
     pair.mutate(&mut rng, NUM_POINTS as usize);
 
-    // Integers have a lookup and a range index, each with its own map
+    // Integers have a lookup, a range and a null index, each with its own map
     let (price, _) = FIELDS[0];
     let price_maps = element_map_dirs(&pair.nested, price);
-    assert_eq!(price_maps.len(), 2);
-    assert_ne!(price_maps[0], price_maps[1]);
+    assert_eq!(price_maps.len(), 3);
+    assert!(price_maps.iter().all_unique());
     assert!(price_maps.iter().all(|map_dir| map_dir.exists()));
 
     // A lost map rebuilds the field from payload

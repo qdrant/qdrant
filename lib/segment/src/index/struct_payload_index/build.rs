@@ -39,7 +39,7 @@ impl StructPayloadIndex {
         // storage (e.g. after `clear_payload`), matching the regular "no value" points.
         // Bug: <https://github.com/qdrant/qdrant/issues/8723>
         let total_point_count = id_tracker_borrow.total_point_count();
-        builders.push(selector.null_builder(field, total_point_count)?);
+        builders.push(selector.null_builder(field, payload_schema, total_point_count)?);
 
         for index in &mut builders {
             index.init()?;
@@ -91,7 +91,8 @@ impl StructPayloadIndex {
                     if let Some(null_index) = selector.new_null_index(
                         field,
                         false,
-                        &id_tracker,
+                        id_tracker.total_point_count(),
+                        deleted_points,
                         selector.default_mutability(),
                     )? {
                         indexes.push(null_index);
