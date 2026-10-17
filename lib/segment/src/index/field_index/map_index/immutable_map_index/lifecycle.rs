@@ -94,6 +94,11 @@ where
         if let Err(err) = index.clear_cache() {
             log::warn!("Failed to clear mmap cache of immutable map index: {err}");
         }
+        // ...except for the regex index, which is served from its file: keep
+        // it in RAM like the rest of this variant.
+        if let Some(regex_index) = index.regex_index() {
+            regex_index.populate()?;
+        }
 
         // In-RAM counterpart of the storage's prefix index: `Owned` ordering
         // is required to match the byte order of the on-disk dictionary.

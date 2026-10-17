@@ -14,6 +14,7 @@ use fs_err as fs;
 
 use super::super::MapIndexKey;
 use super::super::prefix_index::{PREFIX_INDEX_PATH, PrefixIndex, build_prefix_index};
+use super::super::regex_index::{REGEX_INDEX_PATH, RegexIndex, build_regex_index};
 use super::{
     CONFIG_PATH, DELETED_PATH, HASHMAP_PATH, OnDiskMapIndex, Storage, UniversalMapIndexConfig,
 };
@@ -65,6 +66,9 @@ where
         // Prefix index
         PrefixIndex::preopen(fs, path, populate)?;
 
+        // Regex index
+        RegexIndex::preopen(fs, path, populate)?;
+
         // "No values" mask
         preopen_deleted_mask(
             fs,
@@ -101,6 +105,7 @@ where
         )?;
         let point_to_values = OnDiskPointToValues::open(fs, path, populate)?;
         let prefix_index = PrefixIndex::open(fs, path, populate)?;
+        let regex_index = RegexIndex::open(fs, path, populate)?;
 
         let mut deleted = deleted_points.to_owned();
 
@@ -125,6 +130,7 @@ where
                 point_to_values,
                 deleted: DeletedBitVec::new(deleted),
                 prefix_index,
+                regex_index,
             },
             total_key_value_pairs: config.total_key_value_pairs,
             compact_deleted_mask,
@@ -149,6 +155,9 @@ where
         if self.storage.prefix_index.is_some() {
             files.push(self.path.join(PREFIX_INDEX_PATH));
         }
+        if self.storage.regex_index.is_some() {
+            files.push(self.path.join(REGEX_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.files());
         files
     }
@@ -162,6 +171,9 @@ where
         if self.storage.prefix_index.is_some() {
             files.push(self.path.join(PREFIX_INDEX_PATH));
         }
+        if self.storage.regex_index.is_some() {
+            files.push(self.path.join(REGEX_INDEX_PATH));
+        }
         files.extend(self.storage.point_to_values.immutable_files());
         files
     }
@@ -173,6 +185,9 @@ where
         self.storage.point_to_values.populate()?;
         if let Some(prefix_index) = &self.storage.prefix_index {
             prefix_index.populate()?;
+        }
+        if let Some(regex_index) = &self.storage.regex_index {
+            regex_index.populate()?;
         }
         Ok(())
     }
@@ -191,6 +206,7 @@ where
             point_to_values,
             deleted: _,
             prefix_index,
+            regex_index,
         } = storage;
         value_to_points.clear_ram_cache()?;
         clear_disk_cache(&deleted_mask_file(
@@ -202,6 +218,9 @@ where
         if let Some(prefix_index) = prefix_index {
             prefix_index.clear_cache()?;
         }
+        if let Some(regex_index) = regex_index {
+            regex_index.clear_cache()?;
+        }
         Ok(())
     }
 
@@ -211,11 +230,17 @@ where
         self.storage.prefix_index.is_some()
     }
 
+    /// Regex index file of this index, if it was built with the regex option.
+    pub(in super::super) fn regex_index(&self) -> Option<&RegexIndex<S>> {
+        self.storage.regex_index.as_ref()
+    }
+
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         self.storage.ram_usage_bytes()
     }
 
     /// TODO: Use Fs to create config and hashmap files?
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         fs: &S::Fs,
         path: &Path,
@@ -224,6 +249,7 @@ where
         populate: Populate,
         deleted_points: &BitSlice,
         with_prefix_index: bool,
+        with_regex_index: bool,
     ) -> OperationResult<Self> {
         fs::create_dir_all(path)?;
 
@@ -256,6 +282,20 @@ where
                 .collect();
             entries.sort_unstable_by_key(|&(key, _count)| key);
             build_prefix_index(path, entries.into_iter())?;
+        }
+
+        if with_regex_index {
+            // Like the prefix index, written even when empty: its presence
+            // signals regex support at load time.
+            let mut entries: Vec<(&str, usize)> = values_to_points
+                .iter()
+                .filter_map(|(value, ids)| {
+                    let value: &N = value.borrow();
+                    value.as_str().map(|key| (key, ids.len()))
+                })
+                .collect();
+            entries.sort_unstable_by_key(|&(key, _count)| key);
+            build_regex_index(path, entries.into_iter())?;
         }
 
         OnDiskPointToValues::<N, S>::build_from_iter(

@@ -99,29 +99,37 @@ impl<S: UniversalRead> StrMapIndexRegexRead for ReadOnlyAppendableMapIndex<str, 
     }
 }
 
+/// Served by the regex index file of the backing storage, kept populated.
 impl<S: UniversalRead> StrMapIndexRegexRead for ImmutableMapIndex<str, S> {
-    fn regex_keys(&self, _matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
-        Ok(None)
+    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
+        self.storage.regex_keys(matcher)
     }
 
     fn regex_candidate_stats(
         &self,
-        _query: &TrigramQuery,
+        query: &TrigramQuery,
     ) -> OperationResult<Option<RegexCandidateStats>> {
-        Ok(None)
+        self.storage.regex_candidate_stats(query)
     }
 }
 
+/// Postings counts are recorded at build time, so the stats include points
+/// deleted since; the keys themselves are always verified with the regex.
 impl<S: UniversalRead> StrMapIndexRegexRead for OnDiskMapIndex<str, S> {
-    fn regex_keys(&self, _matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
-        Ok(None)
+    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
+        self.regex_index()
+            .map(|regex_index| regex_index.matching_keys(matcher))
+            .transpose()
     }
 
     fn regex_candidate_stats(
         &self,
-        _query: &TrigramQuery,
+        query: &TrigramQuery,
     ) -> OperationResult<Option<RegexCandidateStats>> {
-        Ok(None)
+        Ok(match self.regex_index() {
+            Some(regex_index) => regex_index.candidate_stats(query)?,
+            None => None,
+        })
     }
 }
 

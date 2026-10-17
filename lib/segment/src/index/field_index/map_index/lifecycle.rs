@@ -67,6 +67,7 @@ where
             memory,
             deleted_points: deleted_points.to_owned(),
             prefix_index,
+            regex_index: false,
         }
     }
 
