@@ -1445,7 +1445,7 @@ pub struct CollectionConfig {
     pub metadata: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct KeywordIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "1")]
@@ -1467,6 +1467,10 @@ pub struct KeywordIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "5")]
     pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Default: disabled.
+    #[prost(string, optional, tag = "6")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Prefix matching options for the keyword index. Has no options yet:
 /// presence of this message enables prefix matching.
@@ -1474,7 +1478,7 @@ pub struct KeywordIndexParams {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct KeywordPrefixParams {}
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IntegerIndexParams {
     /// If true - support direct lookups. Default is true.
     #[prost(bool, optional, tag = "1")]
@@ -1501,9 +1505,13 @@ pub struct IntegerIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "6")]
     pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Default: disabled.
+    #[prost(string, optional, tag = "7")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FloatIndexParams {
     /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
@@ -1523,9 +1531,13 @@ pub struct FloatIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "4")]
     pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Default: disabled.
+    #[prost(string, optional, tag = "5")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GeoIndexParams {
     /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
@@ -1541,6 +1553,10 @@ pub struct GeoIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "3")]
     pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Default: disabled.
+    #[prost(string, optional, tag = "4")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1599,6 +1615,12 @@ pub struct TextIndexParams {
     /// Default: disabled.
     #[prost(message, optional, tag = "12")]
     pub scoring: ::core::option::Option<TextScoringParams>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].title`.
+    /// The field must be inside the array's elements. Every query on the field, not only nested filters,
+    /// treats each element as its own document: a condition matches a point when a single element
+    /// matches it, and BM25 scores elements separately. Default: disabled.
+    #[prost(string, optional, tag = "13")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1638,7 +1660,7 @@ pub struct SnowballParams {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DisabledStemmer {}
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BoolIndexParams {
     /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
@@ -1654,9 +1676,13 @@ pub struct BoolIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "3")]
     pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Default: disabled.
+    #[prost(string, optional, tag = "4")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DatetimeIndexParams {
     /// Deprecated: use `memory` instead.
     /// If true - store index on disk.
@@ -1676,9 +1702,13 @@ pub struct DatetimeIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "4")]
     pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Default: disabled.
+    #[prost(string, optional, tag = "5")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UuidIndexParams {
     /// If true - used for tenant optimization.
     #[prost(bool, optional, tag = "1")]
@@ -1697,6 +1727,10 @@ pub struct UuidIndexParams {
     /// Overrides the deprecated `on_disk` flag if both are set.
     #[prost(enumeration = "Memory", optional, tag = "4")]
     pub memory: ::core::option::Option<i32>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field `offers\[\].price`.
+    /// The field must be inside the array's elements. Default: disabled.
+    #[prost(string, optional, tag = "5")]
+    pub nested: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

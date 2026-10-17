@@ -141,6 +141,7 @@ impl TextIndexParamsBuilder {
             stemmer,
             enable_hnsw,
             scoring,
+            nested: None,
         }
     }
 }

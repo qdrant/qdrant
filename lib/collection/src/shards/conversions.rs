@@ -512,8 +512,12 @@ pub fn internal_create_index(
     wait_timeout: Option<u64>,
     ordering: Option<WriteOrdering>,
 ) -> CreateFieldIndexCollectionInternal {
-    let (field_type, field_index_params) = create_index
-        .field_schema
+    let CreateIndex {
+        field_name,
+        field_schema,
+    } = create_index;
+
+    let (field_type, field_index_params) = field_schema
         .map(|field_schema| match field_schema {
             PayloadFieldSchema::FieldType(field_type) => {
                 (api::grpc::qdrant::FieldType::from(field_type) as i32, None)
@@ -533,7 +537,7 @@ pub fn internal_create_index(
         create_field_index_collection: Some(CreateFieldIndexCollection {
             collection_name,
             wait: Some(wait.needs_callback()),
-            field_name: create_index.field_name.to_string(),
+            field_name: field_name.to_string(),
             field_type,
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),

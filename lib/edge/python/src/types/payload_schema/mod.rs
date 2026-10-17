@@ -228,6 +228,7 @@ impl PyKeywordIndexParams {
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
             prefix,
+            nested: None,
         })
     }
 
@@ -270,6 +271,7 @@ impl PyKeywordIndexParams {
             memory: _,
             enable_hnsw: _,
             prefix: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -300,6 +302,7 @@ impl PyIntegerIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -348,6 +351,7 @@ impl PyIntegerIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -374,6 +378,7 @@ impl PyFloatIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -410,6 +415,7 @@ impl PyFloatIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -430,6 +436,7 @@ impl PyGeoIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -460,6 +467,7 @@ impl PyGeoIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -480,6 +488,7 @@ impl PyBoolIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -510,6 +519,7 @@ impl PyBoolIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -536,6 +546,7 @@ impl PyDatetimeIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -572,6 +583,7 @@ impl PyDatetimeIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }
@@ -598,6 +610,7 @@ impl PyUuidIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -634,6 +647,7 @@ impl PyUuidIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = self.0;
     }
 }

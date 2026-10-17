@@ -30,6 +30,29 @@ use crate::tracker::ValuePointer;
 
 pub type Flusher = Box<dyn FnOnce() -> std::result::Result<(), BlobstoreError> + Send>;
 
+/// Number of point offsets read at once when iterating over all values.
+const ITER_BATCH_SIZE: PointOffset = 256;
+
+/// Pass the values of one iteration batch to `callback` in ascending order of point offsets.
+///
+/// `read` fills the batch; async backends complete its reads in any order. Returns whether
+/// iteration should continue.
+fn iter_batch_in_order<V, E>(
+    batch: &mut Vec<(PointOffset, V)>,
+    read: impl FnOnce(&mut Vec<(PointOffset, V)>) -> std::result::Result<(), E>,
+    mut callback: impl FnMut(PointOffset, V) -> std::result::Result<bool, E>,
+) -> std::result::Result<bool, E> {
+    batch.clear();
+    read(batch)?;
+    batch.sort_unstable_by_key(|&(point_offset, _)| point_offset);
+    for (point_offset, value) in batch.drain(..) {
+        if !callback(point_offset, value)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Read-write storage for values of type `V`.
 ///
 /// Operates in one of two modes, specified on creation and automatically selected when opening:
@@ -348,7 +371,8 @@ where
         }
     }
 
-    /// Iterate over all values and execute callback for each one. Missing values are skipped.
+    /// Iterate over all values in ascending order of point offsets and execute callback for each
+    /// one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
     pub fn iter<F, E>(&self, callback: F, hw_metric: HwMetric) -> Result<(), E>

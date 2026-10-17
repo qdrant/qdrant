@@ -8,6 +8,7 @@ use common::universal_io::{UniversalRead, UserData};
 use super::page::AppendOnlyPages;
 use crate::Result;
 use crate::blob::Blob;
+use crate::blobstore::iter_batch_in_order;
 use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
@@ -157,20 +158,21 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         )
     }
 
-    /// Iterate over a contiguous range of point offsets and execute callback for each existing
-    /// value. Missing values are skipped.
+    /// Iterate over a contiguous range of point offsets in ascending order and execute callback
+    /// for each existing value. Missing values are skipped.
     ///
     /// The mappings for the whole range are fetched with a single batched read, and the value
     /// data with batched reads through the backend's read pipeline, so async backends can fetch
-    /// values in parallel. The callback may therefore be invoked in a different order than the
-    /// requested point offsets.
+    /// values in parallel. The values of the range are therefore buffered and passed to the
+    /// callback once all of them are read.
     ///
     /// Return `false` from the callback to stop iteration early. Returns whether iteration should
     /// continue.
     pub(crate) fn iter_range<F, E>(
         &self,
         point_offsets: std::ops::Range<PointOffset>,
-        mut callback: F,
+        batch: &mut Vec<(PointOffset, V)>,
+        callback: F,
         hw_metric: HwMetric,
     ) -> Result<bool, E>
     where
@@ -191,14 +193,22 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
                 pointer.map(|pointer| (start + index as PointOffset, pointer))
             });
 
-        self.pages
-            .read_batch_values::<Sequential, _, _>(pointers, |point_offset, bytes| {
-                hw_metric.bump(bytes.len());
+        iter_batch_in_order(
+            batch,
+            |batch| {
+                self.pages.read_batch_values::<Sequential, _, _>(
+                    pointers,
+                    |point_offset, bytes| -> Result<_, E> {
+                        hw_metric.bump(bytes.len());
 
-                let decompressed = self.config.compression.decompress(bytes)?;
-                let value = V::from_bytes(&decompressed)?;
-
-                callback(point_offset, value)
-            })
+                        let decompressed = self.config.compression.decompress(bytes)?;
+                        batch.push((point_offset, V::from_bytes(&decompressed)?));
+                        Ok(true)
+                    },
+                )?;
+                Ok(())
+            },
+            callback,
+        )
     }
 }

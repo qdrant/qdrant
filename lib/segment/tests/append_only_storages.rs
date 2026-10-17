@@ -7,7 +7,7 @@
 //! process runs with `serverless_compatible` on from the start, the way a
 //! serverless deployment would.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -18,12 +18,16 @@ use segment::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
     StorageSegmentEntry as _,
 };
+use segment::id_tracker::IdTrackerRead as _;
+use segment::index::field_index::PayloadFieldIndexRead as _;
 use segment::payload_json;
+use segment::segment::Segment;
 use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
+use segment::types::{Distance, FieldCondition, PayloadFieldSchema, PayloadSchemaType};
 use segment::vector_storage::VectorStorage as _;
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 use uuid::Uuid;
@@ -144,6 +148,237 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
     let payload = segment.payload(6.into()).unwrap();
     assert_eq!(payload, payload_json! { "kind": "multi-step" });
     assert!(!segment.has_point(5.into(), DeferredBehavior::WithDeferred));
+}
+
+/// Element maps must follow their inner indexes into Logstore, including when
+/// an index is built over existing points and when writes resume after a reload.
+#[rstest::rstest]
+#[case(false)]
+#[case(true)]
+fn nested_indexes_use_append_only_storage(#[case] build_before_points: bool) {
+    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    init_feature_flags(flags);
+    let _scope = ambient::test_guard();
+    let dir = Builder::new()
+        .prefix("append_only_nested")
+        .tempdir()
+        .unwrap();
+    let mut segment = build_simple_segment(dir.path(), DIM, Distance::Dot).unwrap();
+    let segment_path = segment.data_path();
+
+    let create_indexes = |segment: &mut Segment, op| {
+        for (field, kind) in [("offers[].shop", "keyword"), ("offers[].price", "integer")] {
+            let schema: PayloadFieldSchema = serde_json::from_value(json!({
+                "type": kind, "nested": "offers[]",
+            }))
+            .unwrap();
+            segment
+                .create_field_index(op, &field.parse().unwrap(), Some(&schema))
+                .unwrap();
+        }
+    };
+    if build_before_points {
+        create_indexes(&mut segment, 1);
+    }
+    for (id, payload) in [
+        (
+            1u64,
+            payload_json! { "offers": [{"shop": "a", "price": 10}, {}] },
+        ),
+        (2, payload_json! { "offers": [{"shop": "b", "price": 20}] }),
+        (3, payload_json! { "offers": [{}] }),
+    ] {
+        segment
+            .upsert_point(2, id.into(), only_default_vector(&[1.0; DIM]))
+            .unwrap();
+        segment.set_full_payload(2, id.into(), &payload).unwrap();
+    }
+    // Serverless deletes leave payload behind. A later build must only assign
+    // element offsets and index values for the live points.
+    segment
+        .upsert_point(2, 99.into(), only_default_vector(&[1.0; DIM]))
+        .unwrap();
+    segment
+        .set_full_payload(
+            2,
+            99.into(),
+            &payload_json! { "offers": [{"shop": "deleted", "price": 99}] },
+        )
+        .unwrap();
+    segment.delete_point(2, 99.into()).unwrap();
+    if !build_before_points {
+        create_indexes(&mut segment, 3);
+        let condition: FieldCondition = serde_json::from_value(json!({
+            "key": "offers[].price", "match": {"value": 99},
+        }))
+        .unwrap();
+        let payload_index = segment.payload_index.borrow();
+        for index in &payload_index.field_indexes[&condition.key] {
+            if let Some(mut points) = index.filter(&condition).unwrap() {
+                assert_eq!(points.next(), None);
+            }
+        }
+    }
+    segment.flush(true).unwrap();
+
+    let map_dirs: Vec<_> = fs_err::read_dir(segment_path.join("payload_index"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with("-elements")
+        })
+        .collect();
+    // Keyword, integer lookup, and integer range each have their own map.
+    assert_eq!(map_dirs.len(), 3);
+    for path in &map_dirs {
+        assert_eq!(storage_mode(path), "append_only");
+    }
+    let snapshot = || -> Vec<(PathBuf, Vec<u8>)> {
+        map_dirs
+            .iter()
+            .flat_map(|dir| {
+                walkdir::WalkDir::new(dir)
+                    .into_iter()
+                    .map(Result::unwrap)
+                    .filter(|entry| entry.file_type().is_file())
+                    .map(|entry| (entry.path().to_owned(), fs_err::read(entry.path()).unwrap()))
+            })
+            .collect()
+    };
+    let check_queries = |segment: &Segment| {
+        let payload_index = segment.payload_index.borrow();
+        let id_tracker = segment.id_tracker.borrow();
+        for (condition, expected) in [
+            (
+                json!({"key": "offers[].shop", "match": {"value": "a"}}),
+                vec![1.into()],
+            ),
+            (
+                json!({"key": "offers[].shop", "match": {"value": "b"}}),
+                vec![],
+            ),
+            (
+                json!({"key": "offers[].price", "range": {"gte": 10, "lte": 10}}),
+                vec![1.into()],
+            ),
+        ] {
+            let condition: FieldCondition = serde_json::from_value(condition).unwrap();
+            let mut checked = false;
+            for index in &payload_index.field_indexes[&condition.key] {
+                if let Some(points) = index.filter(&condition).unwrap() {
+                    let mut matches: Vec<_> = points
+                        .filter_map(|point| id_tracker.external_id(point))
+                        .collect();
+                    matches.sort_unstable();
+                    matches.dedup();
+                    assert_eq!(matches, expected, "{condition:?}");
+                    checked = true;
+                }
+            }
+            assert!(checked, "no index supports {condition:?}");
+        }
+    };
+
+    // Repeat after reopening: old element offsets must remain owned, including
+    // those of tombstoned points, so new elements keep increasing their offsets.
+    for round in 0..2 {
+        let before = snapshot();
+        let op = 10 + round * 10;
+        let id = 4 + round;
+        segment
+            .upsert_point(op, id.into(), only_default_vector(&[2.0; DIM]))
+            .unwrap();
+        segment
+            .set_full_payload(
+                op,
+                id.into(),
+                &payload_json! {
+                    "offers": [{"shop": "a", "price": 10}],
+                },
+            )
+            .unwrap();
+        // Grow, edit one element, shrink, and remove just the indexed field.
+        segment
+            .set_full_payload(
+                op + 1,
+                1.into(),
+                &payload_json! {
+                    "offers": [{"shop": "b", "price": 20}, {}, {"shop": "b", "price": 30}],
+                },
+            )
+            .unwrap();
+        segment
+            .set_payload(
+                op + 2,
+                1.into(),
+                &payload_json! {
+                    "shop": "a", "price": 10,
+                },
+                &Some("offers[0]".parse().unwrap()),
+            )
+            .unwrap();
+        segment
+            .set_full_payload(
+                op + 3,
+                1.into(),
+                &payload_json! {
+                    "offers": [{"shop": "a", "price": 10}],
+                },
+            )
+            .unwrap();
+        segment
+            .delete_payload(op + 4, 1.into(), &"offers[].shop".parse().unwrap())
+            .unwrap();
+        segment.clear_payload(op + 5, 2.into()).unwrap();
+        segment.flush(true).unwrap();
+
+        let before_delete = snapshot();
+        segment.delete_point(op + 6, id.into()).unwrap();
+        segment.delete_point(op + 6, 3.into()).unwrap();
+        segment.flush(true).unwrap();
+        for (path, bytes) in before_delete {
+            assert_eq!(
+                fs_err::read(&path).unwrap(),
+                bytes,
+                "delete changed {}",
+                path.display()
+            );
+        }
+
+        segment
+            .set_full_payload(
+                op + 7,
+                1.into(),
+                &payload_json! {
+                    "offers": [{"shop": "a", "price": 10}, {}],
+                },
+            )
+            .unwrap();
+        segment.flush(true).unwrap();
+        check_queries(&segment);
+        for (path, bytes) in before {
+            assert!(
+                fs_err::read(&path).unwrap().starts_with(&bytes),
+                "rewrote {}",
+                path.display()
+            );
+        }
+
+        drop(segment);
+        segment = load_segment(
+            &segment_path,
+            Uuid::nil(),
+            None,
+            &AtomicBool::new(false),
+            false,
+        )
+        .unwrap();
+        segment.check_consistency_and_repair().unwrap();
+        check_queries(&segment);
+    }
 }
 
 /// The sparse vector storage created under the flag is append-only, deleting

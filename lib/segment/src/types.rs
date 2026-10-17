@@ -49,7 +49,7 @@ use crate::data_types::tiny_map::TinyMap;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
-use crate::json_path::JsonPath;
+use crate::json_path::{JsonPath, JsonPathItem};
 use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::utils::unordered_hash_unique;
@@ -2756,6 +2756,35 @@ impl PayloadSchemaParams {
         Memory::resolve(memory, on_disk.map(Memory::from_on_disk_heap)).unwrap_or(Memory::Pinned)
     }
 
+    /// Path to the array whose elements this index treats as separate entries, if any.
+    ///
+    /// Stored as the array key, e.g. `offers[]`, see [`PayloadFieldSchema::normalized`].
+    pub fn nested(&self) -> Option<&JsonPath> {
+        match self {
+            PayloadSchemaParams::Keyword(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Integer(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Float(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Datetime(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Uuid(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Geo(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Bool(params) => params.nested.as_ref(),
+            PayloadSchemaParams::Text(params) => params.nested.as_ref(),
+        }
+    }
+
+    pub(crate) fn nested_mut(&mut self) -> &mut Option<JsonPath> {
+        match self {
+            PayloadSchemaParams::Keyword(params) => &mut params.nested,
+            PayloadSchemaParams::Integer(params) => &mut params.nested,
+            PayloadSchemaParams::Float(params) => &mut params.nested,
+            PayloadSchemaParams::Datetime(params) => &mut params.nested,
+            PayloadSchemaParams::Uuid(params) => &mut params.nested,
+            PayloadSchemaParams::Geo(params) => &mut params.nested,
+            PayloadSchemaParams::Bool(params) => &mut params.nested,
+            PayloadSchemaParams::Text(params) => &mut params.nested,
+        }
+    }
+
     pub fn enable_hnsw(&self) -> bool {
         match self {
             PayloadSchemaParams::Keyword(params) => params.enable_hnsw.unwrap_or(true),
@@ -2880,18 +2909,66 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 }
 
 impl PayloadFieldSchema {
-    /// Apply what the params imply, see [`TextIndexParams::normalized`]. A
-    /// schema is normalized once, as the collection stores it, so every node
-    /// and every segment sees the same params.
+    /// Apply what the params imply, see [`TextIndexParams::normalized`], and store
+    /// `nested` as its array key, so `offers` and `offers[]` give the same schema. A
+    /// schema is normalized once, as the collection stores it, so every node and every
+    /// segment sees the same params.
     pub fn normalized(self) -> Self {
         match self {
-            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)) => {
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params.normalized()))
+            PayloadFieldSchema::FieldParams(mut params) => {
+                let nested = params.nested_mut();
+                *nested = nested.as_ref().map(JsonPath::array_key);
+                match params {
+                    PayloadSchemaParams::Text(params) => PayloadFieldSchema::FieldParams(
+                        PayloadSchemaParams::Text(params.normalized()),
+                    ),
+                    params @ (PayloadSchemaParams::Keyword(_)
+                    | PayloadSchemaParams::Integer(_)
+                    | PayloadSchemaParams::Float(_)
+                    | PayloadSchemaParams::Geo(_)
+                    | PayloadSchemaParams::Bool(_)
+                    | PayloadSchemaParams::Datetime(_)
+                    | PayloadSchemaParams::Uuid(_)) => PayloadFieldSchema::FieldParams(params),
+                }
             }
-            schema @ (PayloadFieldSchema::FieldType(_) | PayloadFieldSchema::FieldParams(_)) => {
-                schema
-            }
+            schema @ PayloadFieldSchema::FieldType(_) => schema,
         }
+    }
+
+    /// Path to the array whose elements this index treats as separate entries, if any.
+    /// See [`PayloadSchemaParams::nested`].
+    pub fn nested(&self) -> Option<&JsonPath> {
+        match self {
+            PayloadFieldSchema::FieldType(_) => None,
+            PayloadFieldSchema::FieldParams(params) => params.nested(),
+        }
+    }
+
+    /// Check that `field` can be indexed with this schema: a per-element index needs
+    /// `field` inside the elements of its single-level `nested` array, and can't be a
+    /// tenant index.
+    pub fn validate_for_field(&self, field: &JsonPath) -> Result<(), String> {
+        let Some(nested) = self.nested() else {
+            return Ok(());
+        };
+        let array_key = nested.array_key();
+        if !is_single_array_level(&array_key.rest) {
+            return Err(format!(
+                "nested `{nested}` must point to a single array level, like `offers` or `offers[]`",
+            ));
+        }
+        if field.strip_prefix(&array_key).is_none() {
+            return Err(format!(
+                "field `{field}` must be inside the elements of nested `{nested}`, \
+                 like `{array_key}.price`",
+            ));
+        }
+        if self.expand().tenant_optimization() {
+            return Err(format!(
+                "nested `{nested}` can't be combined with `is_tenant` or `is_principal`",
+            ));
+        }
+        Ok(())
     }
 
     pub fn expand(&self) -> Cow<'_, PayloadSchemaParams> {
@@ -2979,6 +3056,25 @@ impl From<PayloadSchemaType> for PayloadFieldSchema {
     fn from(payload_schema_type: PayloadSchemaType) -> Self {
         PayloadFieldSchema::FieldType(payload_schema_type)
     }
+}
+
+#[cfg(test)]
+impl PayloadFieldSchema {
+    /// This schema, normalized, as a per-element index of the `nested` array.
+    pub(crate) fn nested_in(self, nested: &str) -> Self {
+        let mut params = self.expand().into_owned();
+        *params.nested_mut() = Some(nested.parse().unwrap());
+        PayloadFieldSchema::FieldParams(params).normalized()
+    }
+}
+
+/// Whether the path `items` go through exactly one array.
+fn is_single_array_level(items: &[JsonPathItem]) -> bool {
+    let arrays = items.iter().filter(|item| match item {
+        JsonPathItem::Key(_) => false,
+        JsonPathItem::Index(_) | JsonPathItem::WildcardIndex => true,
+    });
+    arrays.count() == 1
 }
 
 impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {

@@ -1,4 +1,5 @@
 mod build;
+mod nested;
 mod payload_index;
 mod read_view;
 
@@ -22,7 +23,9 @@ use fs_err as fs;
 
 use super::field_index::FieldIndex;
 use super::field_index::index_selector::IndexSelector;
-use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
+use super::payload_config::{
+    FullPayloadIndexType, PayloadFieldSchemaWithIndexType, PayloadIndexType,
+};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
@@ -137,7 +140,13 @@ impl StructPayloadIndex {
         let mut load_error = None;
         let mut is_dirty = false;
 
-        let mut indexes = if payload_schema.types.is_empty() {
+        let nested = payload_schema.schema.nested();
+
+        let mut indexes = if nested.is_some() && payload_schema.types.is_empty() {
+            // No exact index types to open per element
+            rebuild = true;
+            vec![]
+        } else if payload_schema.types.is_empty() {
             let selector = self.selector(&payload_schema.schema);
             let indexes = selector.new_index(
                 field,
@@ -180,14 +189,27 @@ impl StructPayloadIndex {
                 // Load each index
                 .map(|index| {
                     let selector = self.selector_with_type(index, &payload_schema.schema);
-                    selector.new_index_with_type(
-                        field,
-                        &payload_schema.schema,
-                        index,
-                        create_if_missing,
-                        &id_tracker_borrow,
-                        deleted_points,
-                    )
+                    match nested {
+                        // The null index stays an index of points
+                        Some(array_key) if index.index_type != PayloadIndexType::NullIndex => self
+                            .open_nested_index(
+                                &selector,
+                                field,
+                                array_key,
+                                &payload_schema.schema,
+                                index,
+                                create_if_missing,
+                                &id_tracker_borrow,
+                            ),
+                        Some(_) | None => selector.new_index_with_type(
+                            field,
+                            &payload_schema.schema,
+                            index,
+                            create_if_missing,
+                            &id_tracker_borrow,
+                            deleted_points,
+                        ),
+                    }
                 })
                 // Interrupt loading indices if one fails to load
                 // Set rebuild flag if any index fails to load

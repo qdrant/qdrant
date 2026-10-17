@@ -11,6 +11,7 @@ use super::page::AppendOnlyPages;
 use super::view::LogstoreView;
 use crate::Result;
 use crate::blob::Blob;
+use crate::blobstore::ITER_BATCH_SIZE;
 use crate::blobstore::reader::CONFIG_FILENAME;
 use crate::config::LogstoreConfig;
 use crate::error::BlobstoreError;
@@ -197,13 +198,17 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
         let view = self.view();
 
         // Iterate in batches to bound the size of the tracker reads
-        const BATCH_SIZE: PointOffset = 256;
-
+        let mut batch = Vec::new();
         let mut current_offset = 0;
         while current_offset < max_id {
-            let end_offset = current_offset.saturating_add(BATCH_SIZE).min(max_id);
+            let end_offset = current_offset.saturating_add(ITER_BATCH_SIZE).min(max_id);
 
-            if !view.iter_range(current_offset..end_offset, &mut callback, hw_metric)? {
+            if !view.iter_range(
+                current_offset..end_offset,
+                &mut batch,
+                &mut callback,
+                hw_metric,
+            )? {
                 return Ok(());
             }
 
