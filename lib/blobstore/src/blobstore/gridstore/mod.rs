@@ -20,8 +20,8 @@ pub(super) use view::GridstoreView;
 
 use self::bitmask::Bitmask;
 use self::pages::{Pages, page_path};
-use super::Flusher;
 use super::reader::CONFIG_FILENAME;
+use super::{Flusher, ITER_BATCH_SIZE, iter_batch_in_order};
 use crate::Result;
 use crate::blob::Blob;
 use crate::config::{GridstoreConfig, StorageConfig};
@@ -530,7 +530,8 @@ where
         self.tracker.read().pointer_count()
     }
 
-    /// Iterate over all values and execute callback for each one. Missing values are skipped.
+    /// Iterate over all values in ascending order of point offsets and execute callback for each
+    /// one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
     pub(super) fn iter<F, E>(&self, mut callback: F, hw_metric: HwMetric) -> Result<(), E>
@@ -542,6 +543,7 @@ where
         let mut max_offset = PointOffset::MAX;
 
         let mut should_continue = true;
+        let mut batch = Vec::new();
 
         while current_offset < max_offset && should_continue {
             // Iterate in batches to allow releasing read locks
@@ -556,23 +558,26 @@ where
                     return Ok(());
                 }
 
-                const BATCH_SIZE: u32 = 256;
-                let end_offset = current_offset.saturating_add(BATCH_SIZE);
+                let end_offset = current_offset.saturating_add(ITER_BATCH_SIZE);
                 let end_offset = cmp::min(end_offset, max_offset);
 
                 let point_offsets =
                     (current_offset..end_offset).map(|point_offset| ((), point_offset));
 
-                should_continue = view.read_values::<Sequential, _, _>(
-                    point_offsets,
-                    |_, point_offset, value| -> Result<_, E> {
-                        let Some(value) = value else {
-                            return Ok(true);
-                        };
-
-                        callback(point_offset, value)
+                should_continue = iter_batch_in_order(
+                    &mut batch,
+                    |batch| {
+                        view.read_values::<Sequential, _, _>(
+                            point_offsets,
+                            |_, point_offset, value| -> Result<_, E> {
+                                batch.extend(value.map(|value| (point_offset, value)));
+                                Ok(true)
+                            },
+                            Some(hw_metric),
+                        )?;
+                        Ok(())
                     },
-                    Some(hw_metric),
+                    &mut callback,
                 )?;
 
                 if should_continue {

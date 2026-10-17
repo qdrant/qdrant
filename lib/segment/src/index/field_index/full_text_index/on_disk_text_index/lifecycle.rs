@@ -171,7 +171,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         ValueIndexer::add_point(self, id, payload)
     }
 

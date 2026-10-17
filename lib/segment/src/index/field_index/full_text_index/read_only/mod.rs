@@ -78,6 +78,7 @@ mod tests {
             ascii_folding: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         }
     }
 

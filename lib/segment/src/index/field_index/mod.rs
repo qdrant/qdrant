@@ -17,6 +17,7 @@ mod immutable_point_to_values;
 pub mod index_selector;
 pub mod map_index;
 mod memory_reporter;
+pub mod nested_index;
 pub mod null_index;
 pub mod numeric_index;
 mod numeric_point;

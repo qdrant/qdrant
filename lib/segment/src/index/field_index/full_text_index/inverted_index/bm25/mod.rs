@@ -25,6 +25,7 @@ pub use top_k::{ON_DISK_BLOCK, score_top_k};
 
 use super::TokenId;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::nested_index::ElementOffsetType;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 
 /// Saturation and length normalization. Request-time parameters: they are not
@@ -48,6 +49,9 @@ pub struct Bm25Accept<'a> {
     visible: &'a dyn Fn(PointOffsetType) -> bool,
     /// May read storage, and fail.
     filter: Option<&'a OptimizedFilter<'a>>,
+    /// The point that owns a scored document, when the index scores the elements
+    /// of a nested array instead of points. `filter` is checked on that point.
+    element_point: Option<&'a dyn Fn(ElementOffsetType) -> Option<PointOffsetType>>,
 }
 
 impl<'a> Bm25Accept<'a> {
@@ -55,7 +59,27 @@ impl<'a> Bm25Accept<'a> {
         visible: &'a dyn Fn(PointOffsetType) -> bool,
         filter: Option<&'a OptimizedFilter<'a>>,
     ) -> Self {
-        Self { visible, filter }
+        Self {
+            visible,
+            filter,
+            element_point: None,
+        }
+    }
+
+    /// The same filter for an index whose documents are elements of a nested array:
+    /// `element_point` gives the point that owns an element, `None` for an element
+    /// no point owns, and `visible` is the mask over elements.
+    pub fn for_elements<'b>(
+        &'b self,
+        visible: &'b dyn Fn(ElementOffsetType) -> bool,
+        element_point: &'b dyn Fn(ElementOffsetType) -> Option<PointOffsetType>,
+    ) -> Bm25Accept<'b> {
+        debug_assert!(self.element_point.is_none());
+        Bm25Accept {
+            visible,
+            filter: self.filter,
+            element_point: Some(element_point),
+        }
     }
 
     /// Whether a query sees `point_id`.
@@ -72,6 +96,18 @@ impl<'a> Bm25Accept<'a> {
         Bm25Accept {
             visible,
             filter: self.filter,
+            element_point: self.element_point,
+        }
+    }
+
+    /// Whether the outer filter allows the document `id`.
+    fn check_filter(&self, filter: &OptimizedFilter, id: PointOffsetType) -> OperationResult<bool> {
+        match self.element_point {
+            Some(element_point) => match element_point(id) {
+                Some(point_id) => filter.check(point_id),
+                None => Ok(false),
+            },
+            None => filter.check(id),
         }
     }
 }
@@ -87,7 +123,7 @@ impl ConditionChecker for Bm25Accept<'_> {
             return Ok(false);
         }
         match self.filter {
-            Some(filter) => filter.check(point_id),
+            Some(filter) => self.check_filter(filter, point_id),
             None => Ok(true),
         }
     }
@@ -103,11 +139,17 @@ impl ConditionChecker for Bm25Accept<'_> {
                 let visible = default_check_batched(items, Select::Matches, rest, |point_id| {
                     Ok::<_, OperationError>(self.is_visible(point_id))
                 })?;
-                match self.filter {
-                    Some(filter) => {
+                match (self.filter, self.element_point) {
+                    (Some(filter), None) => {
                         filter.check_batched(&mut items[..visible], Select::Matches, rest)
                     }
-                    None => Ok(visible),
+                    // Element ids are not point ids: check the owning points one by one
+                    (Some(filter), Some(_)) => {
+                        default_check_batched(&mut items[..visible], Select::Matches, rest, |id| {
+                            self.check_filter(filter, id)
+                        })
+                    }
+                    (None, _) => Ok(visible),
                 }
             }
             Select::NonMatches => {

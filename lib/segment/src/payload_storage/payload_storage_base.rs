@@ -47,6 +47,9 @@ pub trait PayloadStorageRead {
     /// Iterate over all stored payload and apply the provided callback.
     /// Stop iteration if callback returns false or error.
     ///
+    /// Points are visited in ascending order of their offsets: building a per-element
+    /// index relies on it.
+    ///
     /// Required for building payload index.
     fn iter<F>(&self, callback: F) -> OperationResult<()>
     where

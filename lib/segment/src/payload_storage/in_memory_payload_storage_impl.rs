@@ -37,7 +37,9 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        for (key, val) in &self.payload {
+        let mut points: Vec<_> = self.payload.iter().collect();
+        points.sort_unstable_by_key(|&(&point_id, _)| point_id);
+        for (key, val) in points {
             let do_continue = callback(*key, val)?;
             if !do_continue {
                 return Ok(());

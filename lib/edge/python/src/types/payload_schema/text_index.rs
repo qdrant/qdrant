@@ -53,6 +53,7 @@ impl PyTextIndexParams {
             stemmer: stemmer.map(StemmingAlgorithm::from),
             enable_hnsw,
             scoring: scoring.and_then(PyTextScoringInterface::into_params),
+            nested: None,
         })
     }
 
@@ -137,6 +138,7 @@ impl PyTextIndexParams {
             stemmer: _,
             enable_hnsw: _,
             scoring: _,
+            nested: _,
         } = self.0;
     }
 }

@@ -13,11 +13,13 @@ use crate::index::field_index::full_text_index::FullTextIndex;
 use crate::index::field_index::full_text_index::full_text_index_read::FullTextIndexRead;
 use crate::index::field_index::geo_index::{GeoIndex, GeoIndexRead};
 use crate::index::field_index::map_index::MapIndex;
+use crate::index::field_index::nested_index::NestedFieldIndex;
 use crate::index::field_index::null_index::{NullIndex, NullIndexRead};
 use crate::index::field_index::numeric_index::{NumericIndex, NumericIndexRead};
 use crate::index::payload_config::{
     FullPayloadIndexType, IndexMutability, PayloadIndexType, StorageType,
 };
+use crate::json_path::JsonPath;
 use crate::types::{
     DateTimePayloadType, FloatPayloadType, IntPayloadType, UuidIntType, UuidPayloadType,
 };
@@ -36,6 +38,8 @@ pub enum FieldIndex {
     UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
     UuidMapIndex(MapIndex<UuidIntType>),
     NullIndex(NullIndex),
+    /// Index of the elements of a nested array, see [`NestedFieldIndex`]
+    Nested(Box<NestedFieldIndex>),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -52,6 +56,7 @@ impl std::fmt::Debug for FieldIndex {
             FieldIndex::UuidIndex(_index) => write!(f, "UuidIndex"),
             FieldIndex::UuidMapIndex(_index) => write!(f, "UuidMapIndex"),
             FieldIndex::NullIndex(_index) => write!(f, "NullIndex"),
+            FieldIndex::Nested(index) => write!(f, "Nested({:?})", index.inner()),
         }
     }
 }
@@ -73,7 +78,49 @@ impl FieldIndex {
             FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
             FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index,
             FieldIndex::NullIndex(payload_field_index) => payload_field_index,
+            FieldIndex::Nested(payload_field_index) => payload_field_index.as_ref(),
         }
+    }
+
+    /// The per-element index, if this is one.
+    pub fn as_nested(&self) -> Option<&NestedFieldIndex> {
+        match self {
+            FieldIndex::Nested(index) => Some(index),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => None,
+        }
+    }
+
+    /// Payload path to extract for [`Self::add_point`] and watch for changes.
+    /// `field` is the registered field; a nested index consumes its array's elements.
+    pub fn input_path<'a>(&'a self, field: &'a JsonPath) -> &'a JsonPath {
+        match self {
+            FieldIndex::Nested(index) => index.array_key(),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_) => field,
+        }
+    }
+
+    pub fn is_nested(&self) -> bool {
+        self.as_nested().is_some()
     }
 
     pub fn wipe(self) -> OperationResult<()> {
@@ -89,6 +136,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.wipe(),
             FieldIndex::UuidMapIndex(index) => index.wipe(),
             FieldIndex::NullIndex(index) => index.wipe(),
+            FieldIndex::Nested(index) => index.wipe(),
         }
     }
 
@@ -104,7 +152,8 @@ impl FieldIndex {
         self.get_payload_field_index().immutable_files()
     }
 
-    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    /// Index values extracted at [`Self::input_path`].
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index.add_point(id, payload),
             FieldIndex::DatetimeIndex(payload_field_index) => {
@@ -135,6 +184,7 @@ impl FieldIndex {
             FieldIndex::NullIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
+            FieldIndex::Nested(index) => index.add_point(id, payload),
         }
     }
 
@@ -151,6 +201,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.remove_point(point_id),
             FieldIndex::UuidMapIndex(index) => index.remove_point(point_id),
             FieldIndex::NullIndex(index) => index.remove_point(point_id),
+            FieldIndex::Nested(index) => index.remove_point(point_id),
         }
     }
 
@@ -168,6 +219,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.inner().ram_usage_bytes(),
             FieldIndex::UuidMapIndex(index) => index.ram_usage_bytes(),
             FieldIndex::NullIndex(index) => index.ram_usage_bytes(),
+            FieldIndex::Nested(index) => index.ram_usage_bytes(),
         }
     }
 
@@ -184,6 +236,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.is_cold(),
             FieldIndex::UuidMapIndex(index) => index.is_cold(),
             FieldIndex::NullIndex(index) => index.is_cold(),
+            FieldIndex::Nested(index) => index.is_cold(),
         }
     }
 
@@ -202,6 +255,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.populate(),
             FieldIndex::UuidMapIndex(index) => index.populate(),
             FieldIndex::NullIndex(index) => index.populate(),
+            FieldIndex::Nested(index) => index.populate(),
         }
     }
 
@@ -219,6 +273,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.clear_cache(),
             FieldIndex::UuidMapIndex(index) => index.clear_cache(),
             FieldIndex::NullIndex(index) => index.clear_cache(),
+            FieldIndex::Nested(index) => index.clear_cache(),
         }
     }
 
@@ -235,6 +290,8 @@ impl FieldIndex {
             FieldIndex::UuidIndex(_) => PayloadIndexType::UuidIndex,
             FieldIndex::UuidMapIndex(_) => PayloadIndexType::UuidMapIndex,
             FieldIndex::NullIndex(_) => PayloadIndexType::NullIndex,
+            // Persisted as the inner type, the schema says the index is per element
+            FieldIndex::Nested(index) => return index.get_full_index_type(),
         };
 
         FullPayloadIndexType {
@@ -257,6 +314,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.get_mutability_type(),
             FieldIndex::UuidMapIndex(index) => index.get_mutability_type(),
             FieldIndex::NullIndex(index) => index.get_mutability_type(),
+            FieldIndex::Nested(index) => index.get_full_index_type().mutability,
         }
     }
 
@@ -273,6 +331,7 @@ impl FieldIndex {
             FieldIndex::UuidIndex(index) => index.get_storage_type(),
             FieldIndex::UuidMapIndex(index) => index.get_storage_type(),
             FieldIndex::NullIndex(index) => index.get_storage_type(),
+            FieldIndex::Nested(index) => index.get_full_index_type().storage_type,
         }
     }
 }

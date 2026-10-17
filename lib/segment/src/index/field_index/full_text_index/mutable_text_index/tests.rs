@@ -55,6 +55,7 @@ fn test_full_text_indexing() {
         ascii_folding: None,
         enable_hnsw: None,
         scoring: None,
+        nested: None,
     };
 
     {
@@ -203,6 +204,7 @@ fn length_config(phrase_matching: bool) -> TextIndexParams {
         ascii_folding: None,
         enable_hnsw: None,
         scoring: None,
+        nested: None,
     }
 }
 

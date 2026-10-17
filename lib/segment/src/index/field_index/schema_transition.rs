@@ -143,6 +143,7 @@ mod tests {
             on_disk,
             enable_hnsw,
             prefix: None,
+            nested: None,
         })
     }
 
@@ -159,6 +160,7 @@ mod tests {
             is_principal: None,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -169,6 +171,7 @@ mod tests {
             is_principal: None,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -178,6 +181,7 @@ mod tests {
             r#type: GeoIndexType::Geo,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -200,6 +204,7 @@ mod tests {
             stemmer: None,
             enable_hnsw,
             scoring: None,
+            nested: None,
         })
     }
 
@@ -209,6 +214,7 @@ mod tests {
             r#type: BoolIndexType::Bool,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -223,6 +229,7 @@ mod tests {
             is_principal,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -237,6 +244,7 @@ mod tests {
             is_tenant,
             on_disk,
             enable_hnsw,
+            nested: None,
         })
     }
 
@@ -310,6 +318,7 @@ mod tests {
             on_disk: Some(false),
             enable_hnsw: None,
             prefix: Some(true),
+            nested: None,
         }));
         assert_eq!(
             classify(&plain, &with_prefix),
@@ -535,6 +544,27 @@ mod tests {
                 metadata: false,
             }
             .metadata_only()
+        );
+    }
+
+    #[test]
+    fn nested_change_is_incompatible() {
+        let flat = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+        let nested = |path: &str| flat.clone().nested_in(path);
+
+        // Both spellings of the array are the same normalized schema
+        assert_eq!(
+            classify(&nested("offers"), &nested("offers[]")),
+            SchemaTransition::Identical,
+        );
+        // Per-element and flattened indexes have different data
+        assert_eq!(
+            classify(&flat, &nested("offers")),
+            SchemaTransition::Incompatible
+        );
+        assert_eq!(
+            classify(&nested("offers"), &flat),
+            SchemaTransition::Incompatible
         );
     }
 }

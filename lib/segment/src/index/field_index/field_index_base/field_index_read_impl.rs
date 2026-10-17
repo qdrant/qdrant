@@ -16,6 +16,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::{
 };
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
+use crate::index::field_index::nested_index::{FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -37,6 +38,7 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.count_indexed_points(),
             FieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(),
             FieldIndex::NullIndex(idx) => idx.count_indexed_points(),
+            FieldIndex::Nested(idx) => idx.count_indexed_points(),
         }
     }
 
@@ -56,6 +58,7 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.filter(condition),
             FieldIndex::UuidMapIndex(idx) => idx.filter(condition),
             FieldIndex::NullIndex(idx) => idx.filter(condition),
+            FieldIndex::Nested(idx) => idx.filter(condition),
         }
     }
 
@@ -75,6 +78,7 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.estimate_cardinality(condition),
             FieldIndex::UuidMapIndex(idx) => idx.estimate_cardinality(condition),
             FieldIndex::NullIndex(idx) => idx.estimate_cardinality(condition),
+            FieldIndex::Nested(idx) => idx.estimate_cardinality(condition),
         }
     }
 
@@ -96,6 +100,7 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             FieldIndex::UuidMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             FieldIndex::NullIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            FieldIndex::Nested(idx) => idx.for_each_payload_block(threshold, key, f),
         }
     }
 
@@ -115,6 +120,7 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.condition_checker(condition),
             FieldIndex::UuidMapIndex(idx) => idx.condition_checker(condition),
             FieldIndex::NullIndex(idx) => idx.condition_checker(condition),
+            FieldIndex::Nested(idx) => idx.condition_checker(condition),
         }
     }
 
@@ -135,6 +141,7 @@ impl PayloadFieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(idx) => idx.special_check_condition(condition, payload_value),
             FieldIndex::UuidMapIndex(idx) => idx.special_check_condition(condition, payload_value),
             FieldIndex::NullIndex(idx) => idx.special_check_condition(condition, payload_value),
+            FieldIndex::Nested(idx) => idx.special_check_condition(condition, payload_value),
         }
     }
 }
@@ -153,6 +160,7 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidMapIndex(index) => index.get_telemetry_data(),
             FieldIndex::NullIndex(index) => index.get_telemetry_data(),
+            FieldIndex::Nested(index) => index.get_telemetry_data()?,
         })
     }
 
@@ -169,6 +177,7 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.values_count(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_count(point_id),
             FieldIndex::NullIndex(index) => index.values_count(point_id)?,
+            FieldIndex::Nested(index) => index.values_count(point_id)?,
         })
     }
 
@@ -185,6 +194,7 @@ impl FieldIndexRead for FieldIndex {
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::NullIndex(index) => index.values_is_empty(point_id)?,
+            FieldIndex::Nested(index) => index.values_is_empty(point_id)?,
         })
     }
 
@@ -214,22 +224,24 @@ impl FieldIndexRead for FieldIndex {
             // NullIndex: no underlying values to return; another index
             // on the same field is expected to provide them.
             FieldIndex::NullIndex(_) => None,
+            FieldIndex::Nested(index) => index.value_retriever()?,
         })
     }
 
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_> {
         match self {
-            FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
-            FieldIndex::DatetimeIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
-            FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index.inner())),
-            FieldIndex::IntMapIndex(_)
+            FieldIndex::Nested(index) => index.numeric_view().map(NumericView::Nested),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::IntMapIndex(_)
             | FieldIndex::KeywordIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::BoolIndex(_)
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::FullTextIndex(_)
-            | FieldIndex::NullIndex(_) => None,
+            | FieldIndex::NullIndex(_) => self.numeric_view().map(NumericView::Plain),
         }
     }
 
@@ -254,6 +266,7 @@ impl FieldIndexRead for FieldIndex {
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::NullIndex(_) => Ok(false),
+            FieldIndex::Nested(index) => index.fill_text_statistics(stats, corpus, is_stopped),
         }
     }
 
@@ -286,26 +299,64 @@ impl FieldIndexRead for FieldIndex {
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
             | FieldIndex::NullIndex(_) => Ok(None),
+            FieldIndex::Nested(index) => index.score_bm25(terms, context, params, accept, limit),
         }
     }
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
-        // None of these variants carry the `S` storage parameter; pin the
-        // returned `FacetIndexEnum`'s `S` to `MmapFile` (the default) so
-        // inference doesn't choke on the unconstrained generic.
-        use common::universal_io::MmapFile;
         match self {
-            FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::<MmapFile>::Keyword(index)),
-            FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::<MmapFile>::Int(index)),
-            FieldIndex::UuidMapIndex(index) => Some(FacetIndexEnum::<MmapFile>::Uuid(index)),
-            FieldIndex::BoolIndex(index) => Some(FacetIndexEnum::<MmapFile>::Bool(index)),
+            FieldIndex::Nested(index) => index.facet_view().map(FacetView::Nested),
+            FieldIndex::KeywordIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::NullIndex(_) => self.facet_view().map(FacetView::Plain),
+        }
+    }
+}
+
+impl FieldIndex {
+    /// Order-by view of a flattened numeric index; `None` for other indexes, including
+    /// per-element ones.
+    pub(crate) fn numeric_view(&self) -> Option<NumericFieldIndex<'_>> {
+        match self {
+            FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
+            FieldIndex::DatetimeIndex(index) => Some(NumericFieldIndex::IntIndex(index.inner())),
+            FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index.inner())),
+            FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => None,
+        }
+    }
+
+    /// Facet view of a flattened index that supports faceting; `None` for other indexes,
+    /// including per-element ones.
+    pub(crate) fn facet_view(&self) -> Option<FacetIndexEnum<'_>> {
+        match self {
+            FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::Keyword(index)),
+            FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::Int(index)),
+            FieldIndex::UuidMapIndex(index) => Some(FacetIndexEnum::Uuid(index)),
+            FieldIndex::BoolIndex(index) => Some(FacetIndexEnum::Bool(index)),
             FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::FloatIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::FullTextIndex(_)
-            | FieldIndex::NullIndex(_) => None,
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => None,
         }
     }
 }

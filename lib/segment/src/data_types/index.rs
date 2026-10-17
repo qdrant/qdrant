@@ -10,6 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
 
+use crate::json_path::JsonPath;
 use crate::types::Memory;
 
 // Keyword
@@ -52,6 +53,11 @@ pub struct KeywordIndexParams {
     /// field. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix: Option<bool>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 // Integer
@@ -98,6 +104,11 @@ pub struct IntegerIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 impl Validate for IntegerIndexParams {
@@ -110,6 +121,7 @@ impl Validate for IntegerIndexParams {
             on_disk: _,
             memory: _,
             enable_hnsw: _,
+            nested: _,
         } = &self;
         validate_integer_index_params(lookup, range)
     }
@@ -185,6 +197,11 @@ pub struct UuidIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 // Float
@@ -222,6 +239,11 @@ pub struct FloatIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 // Geo
@@ -255,6 +277,11 @@ pub struct GeoIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 // Text
@@ -340,6 +367,14 @@ pub struct TextIndexParams {
     )]
     #[schemars(with = "Option<TextScoringInterface>")]
     pub scoring: Option<TextScoringParams>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].title`. The field must be inside the array's elements. Every query on the
+    /// field, not only nested filters, treats each element as its own document: a
+    /// condition matches a point when a single element matches it, and BM25 scores
+    /// elements separately. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 /// How a text index ranks documents.
@@ -398,6 +433,7 @@ impl Validate for TextIndexParams {
             stemmer: _,
             enable_hnsw: _,
             scoring: _,
+            nested: _,
         } = &self;
         validate_text_index_params(min_token_len, max_token_len)
     }
@@ -738,6 +774,11 @@ pub struct BoolIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 // Datetime
@@ -775,6 +816,11 @@ pub struct DatetimeIndexParams {
     /// Default: true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_hnsw: Option<bool>,
+
+    /// Index every object of this array as a separate entry, e.g. `offers` for the field
+    /// `offers[].price`. The field must be inside the array's elements. Default: disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nested: Option<JsonPath>,
 }
 
 #[cfg(test)]
