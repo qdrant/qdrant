@@ -269,7 +269,7 @@ pub struct FieldCondition {
 pub struct Match {
     #[prost(
         oneof = "r#match::MatchValue",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
     )]
     pub match_value: ::core::option::Option<r#match::MatchValue>,
 }
@@ -314,6 +314,12 @@ pub mod r#match {
         /// Match keywords containing the given substring
         #[prost(string, tag = "12")]
         Substring(::prost::alloc::string::String),
+        /// Match keywords the given regular expression matches, anywhere in the
+        /// value unless anchored with `^` / `$`. RE2 syntax
+        /// (<https://github.com/google/re2/wiki/Syntax>), except `\C`, `\Q...\E` and
+        /// octal escapes.
+        #[prost(string, tag = "13")]
+        Regex(::prost::alloc::string::String),
     }
 }
 #[derive(serde::Serialize)]

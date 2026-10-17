@@ -2834,10 +2834,13 @@ impl Display for PayloadFieldSchema {
                 | PayloadSchemaParams::Datetime(_)
                 | PayloadSchemaParams::Uuid(_) => write!(f, "{}", params.name()),
                 PayloadSchemaParams::Keyword(keyword_params) => {
-                    if keyword_params.prefix.unwrap_or_default() {
-                        write!(f, "keyword (with prefix: true)")
-                    } else {
-                        write!(f, "keyword")
+                    let prefix = keyword_params.prefix.unwrap_or_default();
+                    let regex = keyword_params.regex.unwrap_or_default();
+                    match (prefix, regex) {
+                        (false, false) => write!(f, "keyword"),
+                        (true, false) => write!(f, "keyword (with prefix: true)"),
+                        (false, true) => write!(f, "keyword (with regex: true)"),
+                        (true, true) => write!(f, "keyword (with prefix: true, regex: true)"),
                     }
                 }
                 PayloadSchemaParams::Integer(integer_params) => {
@@ -3182,6 +3185,28 @@ impl<S: Into<String>> From<S> for MatchSubstring {
     }
 }
 
+/// Match keyword values that match the given regular expression.
+///
+/// RE2 syntax (https://github.com/google/re2/wiki/Syntax), except `\C`,
+/// `\Q...\E` and octal escapes. Matches anywhere in the value unless anchored
+/// with `^` / `$`, and is case-sensitive unless the pattern opts out with
+/// `(?i)`. Matching time is linear in the value length. Served by a keyword index, which selects candidate
+/// values with a trigram index when created with the `regex` option; without
+/// a keyword index, falls back to reading the payload.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MatchRegex {
+    pub regex: String,
+}
+
+impl<S: Into<String>> From<S> for MatchRegex {
+    fn from(regex: S) -> Self {
+        MatchRegex {
+            regex: regex.into(),
+        }
+    }
+}
+
 /// Exact match on any of the given values
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -3206,6 +3231,7 @@ pub enum MatchInterface {
     Phrase(MatchPhrase),
     Prefix(MatchPrefix),
     Substring(MatchSubstring),
+    Regex(MatchRegex),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -3220,6 +3246,7 @@ pub enum Match {
     Phrase(MatchPhrase),
     Prefix(MatchPrefix),
     Substring(MatchSubstring),
+    Regex(MatchRegex),
     Any(MatchAny),
     Except(MatchExcept),
 }
@@ -3245,6 +3272,12 @@ impl Match {
         })
     }
 
+    pub fn new_regex(regex: &str) -> Self {
+        Self::Regex(MatchRegex {
+            regex: regex.into(),
+        })
+    }
+
     pub fn new_any(any: AnyVariants) -> Self {
         Self::Any(MatchAny { any })
     }
@@ -3265,6 +3298,7 @@ impl Match {
             | Match::TextAny(_)
             | Match::Phrase(_)
             | Match::Prefix(_)
+            | Match::Regex(_)
             | Match::Any(_)
             | Match::Except(_) => false,
         }
@@ -3294,6 +3328,7 @@ impl From<MatchInterface> for Match {
             MatchInterface::Substring(MatchSubstring { substring }) => {
                 Self::Substring(MatchSubstring { substring })
             }
+            MatchInterface::Regex(MatchRegex { regex }) => Self::Regex(MatchRegex { regex }),
         }
     }
 }
@@ -3903,18 +3938,25 @@ impl FieldCondition {
             Match::TextAny(_) => 0,
             Match::Prefix(_) => 0,
             Match::Substring(_) => 0,
+            Match::Regex(_) => 0,
         }
     }
 }
 
 pub fn validate_field_condition(field_condition: &FieldCondition) -> Result<(), ValidationError> {
     if field_condition.all_fields_none() {
-        Err(ValidationError::new(
+        return Err(ValidationError::new(
             "At least one field condition must be specified",
-        ))
-    } else {
-        Ok(())
+        ));
     }
+    if let Some(Match::Regex(MatchRegex { regex })) = &field_condition.r#match {
+        crate::index::field_index::map_index::regex_index::compiled(regex).map_err(|err| {
+            let mut error = ValidationError::new("invalid_regex");
+            error.message = Some(err.to_string().into());
+            error
+        })?;
+    }
+    Ok(())
 }
 
 /// Payload field

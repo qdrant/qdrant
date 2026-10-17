@@ -313,7 +313,8 @@ pub(super) fn condition_checker<'a, N: BoolIndexRead>(
         | Match::TextAny(_)
         | Match::Phrase(_)
         | Match::Prefix(_)
-        | Match::Substring(_) => None,
+        | Match::Substring(_)
+        | Match::Regex(_) => None,
     }
 }
 

@@ -10,6 +10,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
 use common::ambient;
+use common::ambient::hw::{self, HwMetric};
 use common::condition_checker::ConditionChecker;
 use common::flags::FeatureFlags;
 use common::types::{DeferredBehavior, PointOffsetType};
@@ -142,7 +143,7 @@ impl TestSegments {
                         on_disk: None,
                         enable_hnsw: None,
                         prefix: Some(true),
-                        regex: None,
+                        regex: Some(true),
                     },
                 ))),
             )
@@ -310,7 +311,7 @@ impl TestSegments {
                         on_disk: Some(true),
                         enable_hnsw: None,
                         prefix: Some(true),
-                        regex: None,
+                        regex: Some(true),
                     },
                 ))),
             )
@@ -584,6 +585,7 @@ fn test_read_operations() -> Result<()> {
         test_struct_payload_geo_polygon_index,
         test_any_matcher_cardinality_estimation,
         test_prefix_match,
+        test_regex_match,
         test_struct_keyword_facet,
         test_mmap_keyword_facet,
         test_struct_keyword_facet_filtered,
@@ -1532,6 +1534,73 @@ fn test_prefix_match(test_segments: &TestSegments) -> Result<()> {
             plain_result == mmap_result,
             "prefix {prefix:?}: plain vs mmap mismatch",
         );
+        matched_something |= !plain_result.is_empty();
+    }
+    ensure!(matched_something, "test probes never matched anything");
+
+    Ok(())
+}
+
+/// Regex match must return identical results on the plain segment (payload
+/// fallback), the appendable struct segment (in-memory trigram index) and the
+/// mmap segment (on-disk trigram index); the indexed segments must not read
+/// payload to answer it.
+fn test_regex_match(test_segments: &TestSegments) -> Result<()> {
+    let read_with_regex = |segment: &Segment, regex: &str| {
+        let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+            JsonPath::new(STR_KEY),
+            Match::new_regex(regex),
+        )));
+        let mut points = segment
+            .read_filtered(
+                None,
+                None,
+                Some(&filter),
+                &Default::default(),
+                DeferredBehavior::VisibleOnly,
+            )
+            .unwrap();
+        points.sort_unstable();
+        points
+    };
+
+    let mut matched_something = false;
+    for regex in [
+        "neck",
+        "(?i)^FADED",
+        "cap$",
+        "^(jobless|rightful) (jam|kiss)$",
+        "ss$",
+        r"\w+ble \w+",
+        "^.{6} ",
+        "nonexistent",
+        "",
+    ] {
+        let plain_result = {
+            let _scope = ambient::test_guard();
+            let result = read_with_regex(&test_segments.plain_segment, regex);
+            // Sanity check: the counter does see the payload fallback.
+            ensure!(
+                hw::pending()[HwMetric::PayloadIoRead] > 0,
+                "regex {regex:?}: plain segment didn't count payload reads",
+            );
+            result
+        };
+        for (name, segment) in [
+            ("struct", &test_segments.struct_segment),
+            ("mmap", &test_segments.mmap_segment),
+        ] {
+            let _scope = ambient::test_guard();
+            let result = read_with_regex(segment, regex);
+            ensure!(
+                plain_result == result,
+                "regex {regex:?}: plain vs {name} mismatch",
+            );
+            ensure!(
+                hw::pending()[HwMetric::PayloadIoRead] == 0,
+                "regex {regex:?}: {name} segment read payload",
+            );
+        }
         matched_something |= !plain_result.is_empty();
     }
     ensure!(matched_something, "test probes never matched anything");

@@ -673,3 +673,125 @@ mod index_option {
         assert_eq!(has_regex_index(&reopened.pop().unwrap()), expected);
     }
 }
+
+/// `match: { regex }` served by the keyword index: filter, estimation and
+/// per-point checks, with and without the regex index.
+mod condition {
+    use std::collections::BTreeSet;
+
+    use common::ambient;
+    use common::bitvec::BitVec;
+    use common::condition_checker::ConditionChecker;
+    use common::types::PointOffsetType;
+    use rstest::rstest;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    use super::super::RegexMatcher;
+    use super::map_index::{PATTERNS, data};
+    use crate::index::field_index::map_index::MapIndex;
+    use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndexRead};
+    use crate::json_path::JsonPath;
+    use crate::types::{FieldCondition, Match, Memory};
+
+    #[derive(Debug, Clone, Copy)]
+    enum Variant {
+        Mutable,
+        InRam,
+        OnDisk,
+    }
+
+    fn build(dir: &TempDir, data: &[Vec<String>], variant: Variant, regex: bool) -> MapIndex<str> {
+        let _scope = ambient::test_guard();
+        let deleted = BitVec::repeat(false, 1024);
+        let values: Vec<Vec<Value>> = data
+            .iter()
+            .map(|values| values.iter().map(|v| Value::from(v.as_str())).collect())
+            .collect();
+        match variant {
+            Variant::Mutable => {
+                let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf(), false);
+                if regex {
+                    builder.enable_regex_index();
+                }
+                builder.init().unwrap();
+                for (idx, values) in values.iter().enumerate() {
+                    let values: Vec<&Value> = values.iter().collect();
+                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                }
+                builder.finalize().unwrap()
+            }
+            Variant::InRam | Variant::OnDisk => {
+                let memory = match variant {
+                    Variant::InRam => Memory::Pinned,
+                    Variant::Mutable | Variant::OnDisk => Memory::Cold,
+                };
+                let mut builder =
+                    MapIndex::<str>::builder_immutable(dir.path(), memory, &deleted, false);
+                if regex {
+                    builder.enable_regex_index();
+                }
+                builder.init().unwrap();
+                for (idx, values) in values.iter().enumerate() {
+                    let values: Vec<&Value> = values.iter().collect();
+                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                }
+                builder.finalize().unwrap()
+            }
+        }
+    }
+
+    #[rstest]
+    fn served_by_the_keyword_index(
+        #[values(Variant::Mutable, Variant::InRam, Variant::OnDisk)] variant: Variant,
+        #[values(true, false)] regex: bool,
+    ) {
+        let dir = TempDir::with_prefix("regex_condition").unwrap();
+        let data = data();
+        let index = build(&dir, &data, variant, regex);
+
+        let _scope = ambient::test_guard();
+        for pattern in PATTERNS {
+            let matcher = RegexMatcher::new(pattern).unwrap();
+            let expected: BTreeSet<PointOffsetType> = data
+                .iter()
+                .enumerate()
+                .filter(|(_, values)| values.iter().any(|value| matcher.is_match(value)))
+                .map(|(idx, _)| idx as PointOffsetType)
+                .collect();
+
+            let condition =
+                FieldCondition::new_match(JsonPath::new("key"), Match::new_regex(pattern));
+
+            let filtered: BTreeSet<_> = index.filter(&condition).unwrap().unwrap().collect();
+            assert_eq!(filtered, expected, "{variant:?} {pattern}");
+
+            let estimation = index.estimate_cardinality(&condition).unwrap().unwrap();
+            assert!(!estimation.primary_clauses.is_empty(), "{pattern}");
+            assert!(
+                estimation.min <= expected.len() && expected.len() <= estimation.max,
+                "{variant:?} {pattern}: {} not within {estimation:?}",
+                expected.len(),
+            );
+
+            let checker = index.condition_checker(&condition).unwrap().unwrap();
+            for idx in 0..data.len() as PointOffsetType {
+                assert_eq!(
+                    checker.check(idx).unwrap(),
+                    expected.contains(&idx),
+                    "{variant:?} {pattern} point {idx}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_pattern_is_an_error() {
+        let dir = TempDir::with_prefix("regex_condition_invalid").unwrap();
+        let index = build(&dir, &data(), Variant::Mutable, true);
+        let condition = FieldCondition::new_match(JsonPath::new("key"), Match::new_regex("(ab"));
+        let _scope = ambient::test_guard();
+        assert!(index.filter(&condition).is_err());
+        assert!(index.estimate_cardinality(&condition).is_err());
+    }
+}
