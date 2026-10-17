@@ -33,6 +33,9 @@ mod read_ops;
 pub struct ReadOnlyBoolIndex<S: UniversalReadExt> {
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage<S>,
+    /// Deleted points of the segment, whose flags are cleared in RAM like the writable
+    /// immutable index does. The files keep them, so a reload clears them again.
+    pub(super) deleted: RoaringBitmap,
     /// Counts derived from both bitmaps, computed on first use and cached.
     ///
     /// Deriving them eagerly would force both bitmaps to materialize at open,
@@ -118,6 +121,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
 #[cfg(test)]
 mod tests {
     use common::ambient;
+    use common::bitvec::BitSlice;
     use common::sorted_slice::SortedSlice;
     use common::universal_io::{
         CachedFs, CachedReadFs, MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs,
@@ -184,9 +188,10 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
-            .unwrap()
-            .unwrap();
+        let index =
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), BitSlice::empty())
+                .unwrap()
+                .unwrap();
 
         let _scope = ambient::test_guard();
 
@@ -261,9 +266,10 @@ mod tests {
         let fs = RoFs::from_context(Default::default()).unwrap();
 
         // Read-only view of points 0..=5, taken before the writer continues.
-        let mut reloaded = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
-            .unwrap()
-            .unwrap();
+        let mut reloaded =
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), BitSlice::empty())
+                .unwrap()
+                .unwrap();
 
         if materialize_before_reload {
             // Pull both bitmaps into memory, so the reload below takes its
@@ -305,9 +311,10 @@ mod tests {
         // counts never computed stay that way, so the reload forced no scan.
         assert_eq!(reloaded.counts.get().is_some(), materialize_before_reload);
 
-        let fresh = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
-            .unwrap()
-            .unwrap();
+        let fresh =
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), BitSlice::empty())
+                .unwrap()
+                .unwrap();
 
         let _scope = ambient::test_guard();
 
@@ -364,6 +371,81 @@ mod tests {
     /// A partial on-disk layout — exactly one of the `trues` / `falses` flag
     /// directories present — is corrupt storage: `open` surfaces an error in
     /// either direction, rather than silently reporting a missing index.
+    /// Deleted points are cleared like in the writable immutable index: when the index
+    /// opens, and on live reload.
+    #[test]
+    fn deleted_points_are_cleared_like_immutable_index() {
+        use common::bitvec::BitVec;
+
+        use super::super::immutable_bool_index::ImmutableBoolIndex;
+
+        let dir = TempDir::with_prefix("read_only_bool_index_deleted").unwrap();
+        let fixture = [json!(true), json!(false), json!([true, false]), json!(true)];
+        let mut builder = ImmutableBoolIndex::builder(dir.path()).unwrap();
+        for (i, value) in fixture.iter().enumerate() {
+            builder.add_point(i as u32, &[value]).unwrap();
+        }
+        drop(builder.finalize().unwrap());
+
+        let mut deleted = BitVec::repeat(false, fixture.len());
+        deleted.set(2, true);
+        type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
+        let fs = RoFs::from_context(Default::default()).unwrap();
+        let mut writable = ImmutableBoolIndex::open(dir.path(), &deleted)
+            .unwrap()
+            .unwrap();
+        let mut read_only =
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), &deleted)
+                .unwrap()
+                .unwrap();
+
+        let _scope = ambient::test_guard();
+        let reads = |index: &dyn Fn(bool) -> Vec<u32>, counts: (usize, usize, usize)| {
+            (index(true), index(false), counts)
+        };
+        let assert_same = |writable: &ImmutableBoolIndex, read_only: &ReadOnlyBoolIndex<_>| {
+            assert_eq!(
+                reads(
+                    &|value| writable
+                        .filter(&match_bool(value))
+                        .unwrap()
+                        .unwrap()
+                        .collect(),
+                    (
+                        writable.count_indexed_points().unwrap(),
+                        writable.trues_count().unwrap(),
+                        writable.falses_count().unwrap(),
+                    ),
+                ),
+                reads(
+                    &|value| read_only
+                        .filter(&match_bool(value))
+                        .unwrap()
+                        .unwrap()
+                        .collect(),
+                    (
+                        read_only.count_indexed_points().unwrap(),
+                        read_only.trues_count().unwrap(),
+                        read_only.falses_count().unwrap(),
+                    ),
+                ),
+            );
+        };
+        assert_same(&writable, &read_only);
+        assert_eq!(read_only.count_indexed_points().unwrap(), 3);
+
+        writable.remove_point(0).unwrap();
+        read_only
+            .live_reload(
+                &fs,
+                &SortedSlice::new(&[0]).unwrap(),
+                &SortedSlice::new(&[]).unwrap(),
+            )
+            .unwrap();
+        assert_same(&writable, &read_only);
+        assert_eq!(read_only.count_indexed_points().unwrap(), 2);
+    }
+
     #[test]
     fn open_inconsistent_storage_errors() {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
@@ -382,12 +464,18 @@ mod tests {
         // `trues` present, `falses` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
-        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
+        assert!(
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), BitSlice::empty())
+                .is_err()
+        );
 
         // `falses` present, `trues` removed.
         let dir = build();
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
-        assert!(ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path()).is_err());
+        assert!(
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), BitSlice::empty())
+                .is_err()
+        );
     }
 
     /// Opening must not read the flags files — that whole-file scan is the cost
@@ -410,9 +498,10 @@ mod tests {
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
 
-        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path())
-            .unwrap()
-            .unwrap();
+        let index =
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), BitSlice::empty())
+                .unwrap()
+                .unwrap();
 
         // Neither bitmap is in RAM, and the derived counts are not computed.
         assert!(index.storage.trues_flags.bitmap_if_materialized().is_none());
@@ -482,9 +571,13 @@ mod tests {
         fs_err::remove_dir_all(dir.path().join(TRUES_DIRNAME)).unwrap();
         fs_err::remove_dir_all(dir.path().join(FALSES_DIRNAME)).unwrap();
 
-        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&cached_fs, dir.path())
-            .unwrap()
-            .unwrap();
+        let index = ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
+            &cached_fs,
+            dir.path(),
+            BitSlice::empty(),
+        )
+        .unwrap()
+        .unwrap();
 
         let _scope = ambient::test_guard();
         assert_eq!(
@@ -519,9 +612,13 @@ mod tests {
             .unwrap()
         );
         assert!(
-            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&empty_fs, empty.path())
-                .unwrap()
-                .is_none()
+            ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(
+                &empty_fs,
+                empty.path(),
+                BitSlice::empty()
+            )
+            .unwrap()
+            .is_none()
         );
     }
 }
