@@ -169,12 +169,19 @@ where
                     converted.push(ConditionCheckerEnum::Filter(filter));
                     continue;
                 }
-                // Ids, vectors and deeper nesting have no per-element index
+                // Never match an element: the payload check of a nested filter has no ids
+                // or vectors to check them against
                 Condition::HasId(_)
                 | Condition::HasVector(_)
                 | Condition::Slice(_)
-                | Condition::Nested(_)
-                | Condition::CustomIdChecker(_) => return Ok(None),
+                | Condition::CustomIdChecker(_) => {
+                    converted.push(ConditionCheckerEnum::Constant(
+                        ConstantConditionChecker::MATCH_NONE,
+                    ));
+                    continue;
+                }
+                // Deeper nesting has no per-element index
+                Condition::Nested(_) => return Ok(None),
             };
             let Some(checker) = self.element_field_checker(array_key, &field_condition)? else {
                 return Ok(None);

@@ -192,6 +192,10 @@ fn nested_filters() -> Vec<(Filter, bool)> {
         nested(json!({"must": [{"should": [shop, shops]}, {"must_not": [cheap]}]})),
         // An empty `should` matches no element
         nested(json!({"should": [], "must": [shop]})),
+        // Ids, vectors and slices never match an element
+        nested(json!({"should": [shop, {"has_id": [1, 2, 3]}]})),
+        nested(json!({"must": [price], "must_not": [{"has_vector": ""}]})),
+        nested(json!({"must": [cheap, {"slice": {"total": 2, "index": 0}}]})),
     ];
     let not_covered = [
         // Values counts, emptiness and unindexed fields are checked in the payload
