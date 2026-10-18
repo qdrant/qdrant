@@ -28,7 +28,7 @@ use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
 };
-use super::term_frequencies::{self, OnDiskTermFrequencies, TermFrequencyList};
+use super::term_frequencies::{OnDiskTermFrequencies, TermFrequencyList};
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -217,20 +217,18 @@ impl OnDiskInvertedIndex<MmapFile> {
             // previous build's lengths as this build's, at offsets that now
             // belong to different documents. `save_deleted_mask` unlinks its
             // own stale file for the same reason.
-            None => match fs_err::remove_file(&point_to_doc_len_path) {
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
-                result => result?,
-            },
+            None => {
+                fs.remove(&point_to_doc_len_path).ok_not_found()?;
+            }
         }
 
         // Unlinked when absent for the same reason as the length sidecar.
         let term_frequencies_path = path.join(TERM_FREQUENCIES_FILE);
         match term_frequencies {
-            Some(bytes) => term_frequencies::write(&term_frequencies_path, bytes)?,
-            None => match fs_err::remove_file(&term_frequencies_path) {
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => (),
-                result => result?,
-            },
+            Some(bytes) => fs.atomic_save(&term_frequencies_path, bytes)?,
+            None => {
+                fs.remove(&term_frequencies_path).ok_not_found()?;
+            }
         }
 
         Ok(())

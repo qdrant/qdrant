@@ -24,8 +24,6 @@
 //! the way the sparse index derives its chunk sizes, so it is not stored.
 
 use std::borrow::Cow;
-use std::io::Write as _;
-use std::path::Path;
 
 use bitpacking::{BitPacker as _, BitPacker4x};
 use common::ambient::hw::HwMetric;
@@ -82,24 +80,6 @@ pub fn encode<'a>(lists: impl ExactSizeIterator<Item = &'a [u32]>) -> Vec<u8> {
     bytes.extend_from_slice(headers.as_bytes());
     bytes.extend_from_slice(&data);
     bytes
-}
-
-/// Write `bytes`, from [`encode`], to `path` atomically: a reader never sees
-/// a partial file, as for the postings.
-pub fn write(path: &Path, bytes: &[u8]) -> OperationResult<()> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| OperationError::service_error("term frequencies path has no parent"))?;
-    let (file, temp_path) = tempfile::Builder::new()
-        .prefix("term_frequencies")
-        .tempfile_in(dir)?
-        .into_parts();
-    let mut file = fs_err::File::from_parts::<&Path>(file, temp_path.as_ref());
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
-    temp_path.persist(path).map_err(|err| err.error)?;
-    Ok(())
 }
 
 fn encode_term(frequencies: &[u32], out: &mut Vec<u8>) {
@@ -459,11 +439,11 @@ mod tests {
     /// The on-disk reader, which reads only the requested terms, answers
     /// what the in-RAM one does: every term including the last, whose data
     /// ends with the file, and ids out of order, repeated and past the
-    /// vocabulary. Written through `write`, read through mmap.
+    /// vocabulary. Read through mmap.
     #[test]
     fn on_disk_terms_match_the_whole_file() {
         use common::mmap::AdviceSetting;
-        use common::universal_io::{MmapFs, OpenOptions, Populate};
+        use common::universal_io::{MmapFs, OpenOptions, Populate, UniversalWriteFs as _};
 
         let _scope = common::ambient::test_guard();
         let mut rng = SmallRng::seed_from_u64(7);
@@ -474,7 +454,7 @@ mod tests {
         let bytes = encode(lists.iter().map(Vec::as_slice));
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("term_frequencies.dat");
-        write(&path, &bytes).unwrap();
+        MmapFs.atomic_save(&path, &bytes).unwrap();
 
         let storage = TypedStorage::open(
             &MmapFs,
