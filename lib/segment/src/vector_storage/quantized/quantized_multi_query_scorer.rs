@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use common::ambient::hw::HwScale;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, MultiQuery};
 
 use super::quantized_query_scorer::InternalScorerUnsupported;
 use crate::common::operation_error::OperationResult;
@@ -22,7 +22,7 @@ where
     OffsetStorage: MultivectorOffsetsStorage,
 {
     hw: HwScale,
-    query: Vec<QuantizedStorage::EncodedQuery>,
+    query: MultiQuery<QuantizedStorage::EncodedQuery>,
     quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
 }
 

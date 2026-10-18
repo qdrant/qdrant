@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use common::ambient::hw::{self, HwScale};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, MultiQuery};
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
@@ -21,7 +21,7 @@ pub struct QuantizedMultiCustomQueryScorer<'a, QuantizedStorage, OffsetStorage, 
 where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
-    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
+    TQuery: Query<MultiQuery<QuantizedStorage::EncodedQuery>>,
 {
     hw: HwScale,
     query: TQuery,
@@ -33,7 +33,7 @@ impl<'a, QuantizedStorage, OffsetStorage, TQuery>
 where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
-    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
+    TQuery: Query<MultiQuery<QuantizedStorage::EncodedQuery>>,
 {
     pub fn new_multi<TElement, TMetric, TOriginalQuery, TInputQuery>(
         raw_query: TInputQuery,
@@ -50,7 +50,7 @@ where
             + TransformInto<
                 TQuery,
                 TypedMultiDenseVector<TElement>,
-                Vec<QuantizedStorage::EncodedQuery>,
+                MultiQuery<QuantizedStorage::EncodedQuery>,
             > + Clone,
         TInputQuery: Query<MultiDenseVectorInternal>
             + TransformInto<TOriginalQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
@@ -96,7 +96,7 @@ impl<QuantizedStorage, OffsetStorage, TQuery> QueryScorer
 where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
-    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
+    TQuery: Query<MultiQuery<QuantizedStorage::EncodedQuery>>,
 {
     fn score_stored_batch(
         &self,

@@ -4,7 +4,7 @@ use common::ambient::hw::HwScale;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
-use super::score_multi;
+use super::MultiDenseQuery;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -12,6 +12,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
+use crate::types::MultiVectorComparator;
 use crate::vector_storage::MultiVectorStorageRead;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -21,7 +22,7 @@ pub struct MultiCustomQueryScorer<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorageRead<TElement>,
-    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TQuery: Query<MultiDenseQuery<TElement, TMetric>>,
 > {
     hw: HwScale,
     vector_storage: &'a TVectorStorage,
@@ -35,13 +36,13 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorageRead<TElement>,
-    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TQuery: Query<MultiDenseQuery<TElement, TMetric>>,
 > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery>
 {
     pub fn new<TInputQuery>(query: TInputQuery, vector_storage: &'a TVectorStorage) -> Self
     where
         TInputQuery: Query<MultiDenseVectorInternal>
-            + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
+            + TransformInto<TQuery, MultiDenseVectorInternal, MultiDenseQuery<TElement, TMetric>>,
     {
         let query = query
             .transform(&|vector| {
@@ -50,10 +51,10 @@ impl<
                     preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
                 }
                 let preprocessed = MultiDenseVectorInternal::new(preprocessed, vector.dim);
-                let converted =
+                let converted: TypedMultiDenseVector<TElement> =
                     TElement::from_float_multivector(CowMultiVector::Owned(preprocessed))
                         .to_owned();
-                Ok(converted)
+                Ok(MultiDenseQuery::new(converted))
             })
             .unwrap();
 
@@ -80,7 +81,7 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorageRead<TElement>,
-    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TQuery: Query<MultiDenseQuery<TElement, TMetric>>,
 > MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
@@ -90,11 +91,9 @@ impl<
         self.query.score_by(|example| {
             self.hw.cpu(example.vectors_count() * against_vector_count);
 
-            score_multi::<TElement, TMetric>(
-                self.vector_storage.multi_vector_config(),
-                TypedMultiDenseVectorRef::from(example),
-                against,
-            )
+            match self.vector_storage.multi_vector_config().comparator {
+                MultiVectorComparator::MaxSim => example.score_max_similarity(against),
+            }
         })
     }
 }
@@ -103,7 +102,7 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorageRead<TElement>,
-    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TQuery: Query<MultiDenseQuery<TElement, TMetric>>,
 > QueryScorer for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
     fn score_stored_batch(

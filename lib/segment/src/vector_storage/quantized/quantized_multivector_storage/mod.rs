@@ -8,7 +8,7 @@ use common::ambient::hw::HwMetric;
 use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, MultiQuery};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -84,7 +84,7 @@ where
     multi_vector_config: MultiVectorConfig,
 }
 
-pub type DynScore<'a, Query> = dyn Fn(&Vec<Query>) -> ScoreType + 'a;
+pub type DynScore<'a, Query> = dyn Fn(&MultiQuery<Query>) -> ScoreType + 'a;
 
 impl<QuantizedStorage, TMultivectorOffsetsStorage>
     QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
@@ -299,35 +299,22 @@ where
     /// Efficient for io_uring storage implementation.
     fn score_vector_max_similarity(
         &self,
-        query: &[QuantizedStorage::EncodedQuery],
+        query: &MultiQuery<QuantizedStorage::EncodedQuery>,
         multi_vector: &[Cow<'_, [u8]>],
     ) -> ScoreType {
-        let mut sum = 0.0;
-
-        for inner_query in query {
-            let mut max_sim = ScoreType::NEG_INFINITY;
-
-            // manual `max_by` for performance
-            for vector in multi_vector {
-                let sim = self.quantized_storage.score(inner_query, vector);
-
-                if max_sim < sim {
-                    max_sim = sim;
-                }
-            }
-
-            // sum of max similarity
-            sum += max_sim;
+        let mut max_sim =
+            query.max_sim(|inner_query, vector| self.quantized_storage.score(inner_query, vector));
+        for vector in multi_vector {
+            max_sim.push(vector);
         }
-
-        sum
+        max_sim.finish()
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors.
     /// Efficient for in-RAM and mmap storage implementations.
     fn score_point_max_similarity(
         &self,
-        query: &[QuantizedStorage::EncodedQuery],
+        query: &MultiQuery<QuantizedStorage::EncodedQuery>,
         point_id: PointOffsetType,
     ) -> OperationResult<ScoreType> {
         let mut offset = MultivectorOffset::default();
@@ -335,21 +322,11 @@ where
             .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
         let offsets: SmallVec<[_; 8]> = (offset.start..offset.start + offset.count).collect();
 
-        let mut max_sim: SmallVec<[_; 8]> = SmallVec::new();
-        max_sim.resize(query.len(), ScoreType::NEG_INFINITY);
-
+        let mut max_sim =
+            query.max_sim(|inner_query, vector| self.quantized_storage.score(inner_query, vector));
         self.quantized_storage
-            .for_each_batch(&offsets, |_, vector| {
-                for (query_idx, query) in query.iter().enumerate() {
-                    let sim = self.quantized_storage.score(query, &vector);
-
-                    if max_sim[query_idx] < sim {
-                        max_sim[query_idx] = sim;
-                    }
-                }
-            })?;
-
-        Ok(max_sim.into_iter().sum())
+            .for_each_batch(&offsets, |_, vector| max_sim.push(&vector))?;
+        Ok(max_sim.finish())
     }
 
     /// Custom `score_max_similarity` implementation for quantized vectors
@@ -360,22 +337,10 @@ where
     ) -> ScoreType {
         let offset_a = self.offsets.get_offset(vector_a_index);
         let offset_b = self.offsets.get_offset(vector_b_index);
-        let mut sum = 0.0;
-        for a in 0..offset_a.count {
-            let mut max_sim = ScoreType::NEG_INFINITY;
-            // manual `max_by` for performance
-            for b in 0..offset_b.count {
-                let sim = self
-                    .quantized_storage
-                    .score_internal(offset_a.start + a, offset_b.start + b);
-                if sim > max_sim {
-                    max_sim = sim;
-                }
-            }
-            // sum of max similarity
-            sum += max_sim;
-        }
-        sum
+        self.quantized_storage.score_internal_max_sim(
+            offset_a.start..offset_a.start + offset_a.count,
+            offset_b.start..offset_b.start + offset_b.count,
+        )
     }
 
     pub fn inner_storage(&self) -> &QuantizedStorage {
@@ -398,7 +363,7 @@ where
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
-    type EncodedQuery = Vec<QuantizedStorage::EncodedQuery>;
+    type EncodedQuery = MultiQuery<QuantizedStorage::EncodedQuery>;
 
     fn is_in_ram_or_mmap() -> bool {
         QuantizedStorage::is_in_ram_or_mmap()
@@ -408,15 +373,19 @@ where
         self.quantized_storage.is_cold()
     }
 
-    fn encode_query(&self, query: &[VectorElementType]) -> Vec<QuantizedStorage::EncodedQuery> {
+    fn encode_query(
+        &self,
+        query: &[VectorElementType],
+    ) -> MultiQuery<QuantizedStorage::EncodedQuery> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
             flattened_vectors: query,
         };
-        multi_vector
+        let query = multi_vector
             .multi_vectors()
             .map(|inner_vector| self.quantized_storage.encode_query(inner_vector))
-            .collect()
+            .collect();
+        self.quantized_storage.encode_multi_query(query)
     }
 
     fn for_each_batch(
@@ -433,7 +402,7 @@ where
 
     fn score_points(
         &self,
-        query: &Vec<QuantizedStorage::EncodedQuery>,
+        query: &MultiQuery<QuantizedStorage::EncodedQuery>,
         offsets: &[PointOffsetType],
         scores: &mut [ScoreType],
     ) -> std::io::Result<()> {
@@ -454,14 +423,14 @@ where
     fn encode_internal_vector(
         &self,
         id: PointOffsetType,
-    ) -> Option<Vec<QuantizedStorage::EncodedQuery>> {
+    ) -> Option<MultiQuery<QuantizedStorage::EncodedQuery>> {
         let offset = self.offsets.get_offset(id);
         let mut query = Vec::with_capacity(offset.count as usize);
         for i in 0..offset.count {
             let internal_id = offset.start + i;
             query.push(self.quantized_storage.encode_internal_vector(internal_id)?)
         }
-        Some(query)
+        Some(self.quantized_storage.encode_multi_query(query))
     }
 
     fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {

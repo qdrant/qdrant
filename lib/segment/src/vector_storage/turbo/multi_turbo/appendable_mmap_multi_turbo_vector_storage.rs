@@ -22,12 +22,12 @@ use common::mmap::AdviceSetting;
 use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
+use quantization::turboquant::TQBits;
 use quantization::turboquant::quantization::TurboQuantizer;
-use quantization::turboquant::{EncodedQueryTQ, TQBits};
 use quantization::{EncodedStorage, EncodedStorageWrite};
-use smallvec::{SmallVec, smallvec};
 
 use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
+use super::TurboMultiQuery;
 use crate::common::Flusher;
 use crate::common::flags::FlagsMode;
 use crate::common::flags::bitvec_flags::BitvecFlags;
@@ -385,16 +385,11 @@ impl AppendableMmapMultiTurboVectorStorage {
         matches!(self.distance, Distance::Euclid | Distance::Manhattan)
     }
 
-    /// Apply the metric sign convention to a raw TurboQuant score.
-    fn signed(&self, score: f32) -> ScoreType {
-        if self.invert_score() { -score } else { score }
-    }
-
     /// Preprocess (per distance) and precompute every inner vector of a
     /// multivector query, ready for asymmetric MaxSim scoring. The rotation runs
     /// once here, not per scored point.
-    pub fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
-        query
+    pub fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> TurboMultiQuery {
+        let vectors = query
             .multi_vectors()
             .map(|inner| {
                 let preprocessed = match self.distance {
@@ -413,26 +408,18 @@ impl AppendableMmapMultiTurboVectorStorage {
                 };
                 self.quantizer.precompute_query(&preprocessed)
             })
-            .collect()
+            .collect();
+        TurboMultiQuery::PerPair(vectors)
     }
 
     /// Score query directly against records directly, without fetching from storage.
     pub fn score_records_max_similarity(
         &self,
-        query: &[EncodedQueryTQ],
+        query: &TurboMultiQuery,
         records: &[u8],
     ) -> ScoreType {
-        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
-
-        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
-            for (qi, inner_query) in query.iter().enumerate() {
-                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
-                if max_sim[qi] < sim {
-                    max_sim[qi] = sim;
-                }
-            }
-        }
-        max_sim.into_iter().sum()
+        self.quantizer
+            .score_multi_query(query, self.invert_score(), records)
     }
 
     /// Symmetric MaxSim score between two stored points. Reads both points'
@@ -464,19 +451,8 @@ impl AppendableMmapMultiTurboVectorStorage {
         let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
-        let quantized_size = self.quantizer.quantized_size();
-        let mut sum = 0.0;
-        for bytes_a in records_a.chunks_exact(quantized_size) {
-            let mut max_sim = ScoreType::NEG_INFINITY;
-            for bytes_b in records_b.chunks_exact(quantized_size) {
-                let sim = self.signed(self.quantizer.score_symmetric(bytes_a, bytes_b));
-                if sim > max_sim {
-                    max_sim = sim;
-                }
-            }
-            sum += max_sim;
-        }
-        sum
+        self.quantizer
+            .score_symmetric_max_sim(&records_a, &records_b, self.invert_score())
     }
 }
 
@@ -587,7 +563,7 @@ impl VectorStorage for AppendableMmapMultiTurboVectorStorage {
 }
 
 impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
-    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
+    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> TurboMultiQuery {
         AppendableMmapMultiTurboVectorStorage::preprocess_query(self, query)
     }
 
@@ -599,7 +575,7 @@ impl TurboMultiScoring for AppendableMmapMultiTurboVectorStorage {
         AppendableMmapMultiTurboVectorStorage::score_internal_max_similarity(self, point_a, point_b)
     }
 
-    fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType {
+    fn score_records_max_similarity(&self, query: &TurboMultiQuery, records: &[u8]) -> ScoreType {
         AppendableMmapMultiTurboVectorStorage::score_records_max_similarity(self, query, records)
     }
 
