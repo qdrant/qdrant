@@ -175,19 +175,17 @@ impl FullTextIndex {
 
     /// Encode a point's tokens as the document the storage holds.
     ///
-    /// Phrase matching needs them in the order they were written. Without it,
-    /// an index that scores (records lengths) needs how often each occurs, so
-    /// they are stored sorted with their repeats; otherwise only membership
-    /// matters, and they are stored sorted and deduplicated.
+    /// Phrase matching needs them in the order they were written, and an
+    /// index that scores (records lengths) needs their repeats, so both keep
+    /// them as written. Otherwise only membership matters, and they are stored
+    /// sorted and deduplicated.
     pub(super) fn serialize_stored_document(
         str_tokens: Vec<Cow<str>>,
         phrase_matching: bool,
         doc_len: Option<u32>,
     ) -> OperationResult<Vec<u8>> {
-        let tokens = if phrase_matching {
+        let tokens = if phrase_matching || doc_len.is_some() {
             str_tokens
-        } else if doc_len.is_some() {
-            str_tokens.into_iter().sorted().collect()
         } else {
             str_tokens.into_iter().sorted().dedup().collect()
         };

@@ -7,18 +7,12 @@ use crate::index::field_index::full_text_index::inverted_index::{Document, Token
 
 pub struct MutableInvertedIndexBuilder {
     index: MutableInvertedIndex,
-    /// Term frequencies of each point's token set, counted at `add` from the
-    /// stream when the postings carry them.
-    frequencies: Vec<Option<Vec<u32>>>,
 }
 
 impl MutableInvertedIndexBuilder {
     pub fn new(phrase_matching: bool, with_doc_len: bool) -> Self {
         let index = MutableInvertedIndex::new(phrase_matching, with_doc_len);
-        Self {
-            index,
-            frequencies: Vec::new(),
-        }
+        Self { index }
     }
 
     /// Add a vector to the inverted index builder. `doc_len` comes from the
@@ -46,13 +40,19 @@ impl MutableInvertedIndexBuilder {
 
         // Counted from the stream, which holds every repeat with or without
         // positions.
-        if self.index.stores_frequencies() {
-            if self.frequencies.len() <= idx as usize {
-                self.frequencies
-                    .resize_with(idx as usize + 1, Default::default);
+        let with_frequencies = self.index.stores_frequencies();
+        let frequencies =
+            with_frequencies.then(|| MutableInvertedIndex::term_frequencies(&tokens, &tokens_set));
+        for (at, &token_id) in tokens_set.tokens().iter().enumerate() {
+            if self.index.postings.len() <= token_id as usize {
+                self.index
+                    .postings
+                    .resize_with(token_id as usize + 1, || PostingList::new(with_frequencies));
             }
-            self.frequencies[idx as usize] =
-                Some(MutableInvertedIndex::term_frequencies(&tokens, &tokens_set));
+            let tf = frequencies
+                .as_ref()
+                .map_or(1, |frequencies| frequencies[at]);
+            self.index.postings[token_id as usize].insert(idx, tf);
         }
 
         // insert as whole document
@@ -70,33 +70,7 @@ impl MutableInvertedIndexBuilder {
     }
 
     /// Consumes the builder and returns a MutableInvertedIndex
-    pub fn build(mut self) -> MutableInvertedIndex {
-        // build postings from point_to_tokens
-        // build in order to increase point id
-        let with_frequencies = self.index.stores_frequencies();
-        for (idx, tokenset) in self.index.point_to_tokens.iter().enumerate() {
-            if let Some(tokenset) = tokenset {
-                let frequencies = self.frequencies.get(idx).and_then(Option::as_ref);
-                for (at, token_idx) in tokenset.tokens().iter().enumerate() {
-                    if self.index.postings.len() <= *token_idx as usize {
-                        self.index
-                            .postings
-                            .resize_with(*token_idx as usize + 1, || {
-                                PostingList::new(with_frequencies)
-                            });
-                    }
-                    let tf = frequencies
-                        .as_ref()
-                        .map_or(1, |frequencies| frequencies[at]);
-                    self.index
-                        .postings
-                        .get_mut(*token_idx as usize)
-                        .expect("posting must exist")
-                        .insert(idx as PointOffsetType, tf);
-                }
-            }
-        }
-
+    pub fn build(self) -> MutableInvertedIndex {
         self.index
     }
 }
