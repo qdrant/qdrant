@@ -716,7 +716,7 @@ impl ImmutableInvertedIndex {
         let point_to_tokens_count = open_point_to_tokens_count(fs, path, options)?;
         let total_count = point_to_tokens_count.len()? as usize;
         let point_to_doc_len = read_doc_len_codes(fs, path, total_count)?;
-        let term_frequencies = open_term_frequencies(fs, path, postings.posting_count())?;
+        let term_frequencies = open_term_frequencies(fs, path, postings.posting_count(), options)?;
         let term_frequency_bytes = term_frequencies
             .as_ref()
             .map(|frequencies| frequencies.storage().read_whole().map(Cow::into_owned))

@@ -279,12 +279,12 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // placement, as in `open`.
         OneshotFile::<S>::preopen(fs, path.join(POINT_TO_DOC_LEN_FILE));
 
-        // Populated whatever the placement, as in `open`.
+        // Term frequencies, opened like the postings they belong to.
         fs.schedule_open(
             &path.join(TERM_FREQUENCIES_FILE),
             Some(open_options(
-                Populate::PreferBackground,
-                AdviceSetting::Global,
+                populate,
+                AdviceSetting::Advice(Advice::Normal),
             )),
             None,
         );
@@ -322,8 +322,13 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             open_point_to_tokens_count(fs, &path, open_options(populate, AdviceSetting::Global))?;
         let total_count = point_to_tokens_count.len()? as usize;
         let point_to_doc_len = read_doc_len_codes(fs, &path, total_count)?;
-        let term_frequencies =
-            open_term_frequencies(fs, &path, postings.posting_count())?.map(Box::new);
+        let term_frequencies = open_term_frequencies(
+            fs,
+            &path,
+            postings.posting_count(),
+            open_options(populate, AdviceSetting::Advice(Advice::Normal)),
+        )?
+        .map(Box::new);
         let (deleted, compact_deleted_mask) = read_deleted_points(
             fs,
             &path,
@@ -924,19 +929,16 @@ pub(super) fn read_deleted_points<S: UniversalRead>(
 /// is the caller's call, as for the length sidecar. One that does not hold a
 /// list per posting list is from another build and is treated as absent, like
 /// a sidecar of the wrong length. A malformed file is the same.
-///
-/// Populated whatever the placement: a fraction of the postings' size, and a
-/// cold query would otherwise fault in each query term's frequencies a page at
-/// a time, while the postings come in with readahead.
 pub(super) fn open_term_frequencies<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     path: &Path,
     posting_count: usize,
+    options: OpenOptions,
 ) -> OperationResult<Option<OnDiskTermFrequencies<S>>> {
     let Some(file) = fs
         .open(
             path.join(TERM_FREQUENCIES_FILE),
-            open_options(Populate::PreferBackground, AdviceSetting::Global),
+            options,
             Default::default(),
         )
         .ok_not_found()?
