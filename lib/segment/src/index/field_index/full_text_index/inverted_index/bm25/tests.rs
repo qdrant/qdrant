@@ -868,6 +868,84 @@ fn parameters_outside_the_bound_domain_are_rejected() {
     assert!(Bm25Query::new(term, Bm25Params { k1: 1.2, b: 1.0 }, Some(1.0)).is_ok());
 }
 
+/// Cursors over `immutable`'s postings with the frequencies from its frequency
+/// file, for calling the scorer directly.
+fn frequency_cursors<'a>(
+    immutable: &'a ImmutableInvertedIndex,
+    query: &Bm25Query,
+) -> impl TermCursors + 'a {
+    let ImmutablePostings::WithPositions(postings) = &immutable.postings else {
+        panic!("the fixture stores positions");
+    };
+    let frequencies = TermFrequencies::new(immutable.term_frequencies.as_deref().unwrap()).unwrap();
+    let views = query
+        .terms()
+        .iter()
+        .map(|term| {
+            let posting = postings.get(term.token_id as usize)?;
+            Some((posting.view(), frequencies.term(term.token_id).unwrap()))
+        })
+        .collect();
+    FrequencyCursors::new(views)
+}
+
+/// A filter that only answers in batches, recording their sizes.
+struct BatchOnlyFilter(std::cell::RefCell<Vec<usize>>);
+
+impl ConditionChecker for BatchOnlyFilter {
+    type Error = OperationError;
+
+    fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
+        panic!("point {point_id} checked on its own, not in a batch");
+    }
+
+    fn check_batched<K: CheckItem>(
+        &self,
+        ids: &mut [K],
+        select: Select,
+        rest: Rest,
+    ) -> OperationResult<usize> {
+        self.0.borrow_mut().push(ids.len());
+        default_check_batched(ids, select, rest, |id| Ok(id % 5 != 2))
+    }
+}
+
+/// The dense pass checks the filter in batches of up to the block size, never
+/// one point at a time, so a filter reading storage issues its reads together.
+#[test]
+fn dense_checks_the_filter_in_batches() {
+    let mutable = fixture(41, 500, &[1, 10, 100]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let lengths = mutable.point_to_doc_len.as_deref().unwrap();
+    let filter = BatchOnlyFilter(Default::default());
+    for terms in queries() {
+        let query = query(&mutable, &terms, Bm25Params::default());
+        score_top_k_with::<_, 7>(
+            &query,
+            &mut frequency_cursors(&immutable, &query),
+            lengths.len(),
+            |point_ids, out| {
+                for (point_id, doc_len) in point_ids.iter().zip(out) {
+                    *doc_len = lengths.get(*point_id as usize).copied();
+                }
+                Ok(())
+            },
+            &filter,
+            1000,
+            &AtomicBool::new(false),
+            Strategy {
+                heap_min_essential: HEAP_MIN_ESSENTIAL,
+                dense_min_postings_per_doc: 0.0,
+                dense_window: usize::MAX,
+            },
+        )
+        .unwrap();
+    }
+    let batches = filter.0.borrow();
+    assert!(batches.iter().all(|&len| len <= 7), "{batches:?}");
+    assert!(batches.iter().any(|&len| len > 1), "{batches:?}");
+}
+
 /// Term at a time over a dense array ranks as document at a time does, on
 /// the shapes that allow it: the same top `limit` within float rounding, and
 /// bit for bit when nothing is pruned, since a document's terms are then summed
@@ -883,21 +961,9 @@ fn dense_matches_document_at_a_time(
     let dir = tempfile::tempdir().unwrap();
     let on_disk = on_disk(dir.path(), &mutable, &BitVec::repeat(false, 500));
     let lengths = mutable.point_to_doc_len.as_deref().unwrap();
-    let ImmutablePostings::WithPositions(postings) = &immutable.postings else {
-        panic!("the fixture stores positions");
-    };
-    let frequencies = TermFrequencies::new(immutable.term_frequencies.as_deref().unwrap()).unwrap();
     let accept = Bm25Accept::new(&|idx| idx % 5 != 2, None);
     let rank = |query: &Bm25Query, dense: f32| {
-        let views = query
-            .terms()
-            .iter()
-            .map(|term| {
-                let posting = postings.get(term.token_id as usize)?;
-                Some((posting.view(), frequencies.term(term.token_id).unwrap()))
-            })
-            .collect();
-        let mut cursors = FrequencyCursors::new(views);
+        let mut cursors = frequency_cursors(&immutable, query);
         let mut asked: Vec<PointOffsetType> = Vec::new();
         let ranking = score_top_k_with::<_, 7>(
             query,

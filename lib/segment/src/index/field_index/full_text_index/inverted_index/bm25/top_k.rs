@@ -394,6 +394,8 @@ fn score_dense<C: TermCursors, const BLOCK: usize>(
         BinaryHeap::with_capacity(limit.min(1024) + 1);
     let mut threshold = ScoreType::NEG_INFINITY;
     let mut ids: [PointOffsetType; BLOCK] = [0; BLOCK];
+    // Documents above the threshold, waiting for one batched filter check.
+    let mut gathered: [PointOffsetType; BLOCK] = [0; BLOCK];
     let mut lengths: [Option<u32>; BLOCK] = [None; BLOCK];
 
     for base in (0..doc_count).step_by(window.max(1)) {
@@ -424,25 +426,35 @@ fn score_dense<C: TermCursors, const BLOCK: usize>(
             });
         }
 
+        let mut count = 0;
         for (at, &score) in scores.iter().enumerate() {
             if score.is_sign_negative() || score <= threshold {
                 continue;
             }
-            let doc = (base + at) as PointOffsetType;
-            if !accept.check(doc)? {
-                continue;
-            }
-            heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
-            if heap.len() > limit {
-                heap.pop();
-            }
-            if heap.len() == limit {
-                threshold = heap
-                    .peek()
-                    .map(|Reverse(min)| min.score)
-                    .unwrap_or(threshold);
+            gathered[count] = (base + at) as PointOffsetType;
+            count += 1;
+            if count == BLOCK {
+                offer_dense_block(
+                    &mut gathered,
+                    scores,
+                    base,
+                    accept,
+                    limit,
+                    &mut heap,
+                    &mut threshold,
+                )?;
+                count = 0;
             }
         }
+        offer_dense_block(
+            &mut gathered[..count],
+            scores,
+            base,
+            accept,
+            limit,
+            &mut heap,
+            &mut threshold,
+        )?;
     }
 
     // A posting past `doc_count`: the caller bounds its own offsets, so none
@@ -453,6 +465,47 @@ fn score_dense<C: TermCursors, const BLOCK: usize>(
         ));
     }
     Ok(into_ranking(heap))
+}
+
+/// Check the filter on `docs`, documents of the dense window starting at `base`,
+/// in one batch, so that a filter reading storage issues its reads together,
+/// and offer the accepted ones to the top `limit` in `heap`.
+///
+/// They are offered in document order and against the current `threshold`, as
+/// one at a time would, so equal scores are broken the same way.
+fn offer_dense_block(
+    docs: &mut [PointOffsetType],
+    scores: &[ScoreType],
+    base: usize,
+    accept: &impl ConditionChecker<Error = OperationError>,
+    limit: usize,
+    heap: &mut BinaryHeap<Reverse<ScoredPointOffset>>,
+    threshold: &mut ScoreType,
+) -> OperationResult<()> {
+    if docs.is_empty() {
+        return Ok(());
+    }
+    let kept = accept.check_batched(docs, Select::Matches, Rest::Discard)?;
+    let kept = &mut docs[..kept];
+    kept.sort_unstable();
+    for &doc in kept.iter() {
+        let score = scores[doc as usize - base];
+        // The threshold may have risen since the document was gathered.
+        if score <= *threshold {
+            continue;
+        }
+        heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
+        if heap.len() > limit {
+            heap.pop();
+        }
+        if heap.len() == limit {
+            *threshold = heap
+                .peek()
+                .map(|Reverse(min)| min.score)
+                .unwrap_or(*threshold);
+        }
+    }
+    Ok(())
 }
 
 /// Highest first, and a fixed order among equal scores so the output does not
