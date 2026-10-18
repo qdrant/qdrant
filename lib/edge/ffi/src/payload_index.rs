@@ -15,7 +15,10 @@
 //!   no information and do not cross the boundary; the index type is the
 //!   [`PayloadIndexParams`] variant itself.
 
+use std::str::FromStr as _;
+
 use segment::data_types::index as segment_index;
+use segment::json_path::JsonPath;
 use segment::types::{
     Memory as SegmentMemory, PayloadIndexInfo as SegmentPayloadIndexInfo, PayloadSchemaParams,
 };
@@ -103,6 +106,12 @@ pub struct KeywordIndexParams {
     /// If true, enable prefix matching on this field. Default: false.
     #[uniffi(default = None)]
     pub prefix: Option<bool>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].price`. The field must be inside the array's elements, and
+    /// `is_empty` on it matches a point when one of its elements lacks the field.
+    /// `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 /// Parameters of an integer payload index.
@@ -129,6 +138,12 @@ pub struct IntegerIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].price`. The field must be inside the array's elements, and
+    /// `is_empty` on it matches a point when one of its elements lacks the field.
+    /// `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 /// Parameters of a float payload index.
@@ -146,6 +161,12 @@ pub struct FloatIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].price`. The field must be inside the array's elements, and
+    /// `is_empty` on it matches a point when one of its elements lacks the field.
+    /// `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 /// Parameters of a geo payload index.
@@ -159,6 +180,12 @@ pub struct GeoIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].price`. The field must be inside the array's elements, and
+    /// `is_empty` on it matches a point when one of its elements lacks the field.
+    /// `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 /// Parameters of a full-text payload index.
@@ -206,6 +233,13 @@ pub struct TextIndexParams {
     /// [`ScoringQuery::Text`]: crate::ScoringQuery::Text
     #[uniffi(default = None)]
     pub scoring: Option<TextScoringParams>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].title`. The field must be inside the array's elements. Every
+    /// query on the field treats each element as its own document: a condition
+    /// matches a point when a single element matches it, and BM25 scores elements
+    /// separately. `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 /// Parameters of a bool payload index.
@@ -219,6 +253,12 @@ pub struct BoolIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].price`. The field must be inside the array's elements, and
+    /// `is_empty` on it matches a point when one of its elements lacks the field.
+    /// `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 /// Parameters of a datetime payload index.
@@ -236,6 +276,12 @@ pub struct DatetimeIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].price`. The field must be inside the array's elements, and
+    /// `is_empty` on it matches a point when one of its elements lacks the field.
+    /// `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 /// Parameters of a UUID payload index.
@@ -254,6 +300,12 @@ pub struct UuidIndexParams {
     /// `payload_m > 0` in the HNSW config). Default: true.
     #[uniffi(default = None)]
     pub enable_hnsw: Option<bool>,
+    /// Index every object of this array as a separate entry, e.g. `offers` for the
+    /// field `offers[].price`. The field must be inside the array's elements, and
+    /// `is_empty` on it matches a point when one of its elements lacks the field.
+    /// `None`/`null` indexes the field per point.
+    #[uniffi(default = None)]
+    pub nested: Option<String>,
 }
 
 // ── Full-text options ───────────────────────────────────────────────────────
@@ -646,6 +698,16 @@ fn token_len(name: &str, len: Option<u64>) -> Result<Option<usize>, EdgeError> {
     .transpose()
 }
 
+/// Parses the array path of a per-element index.
+fn nested_path(nested: Option<String>) -> Result<Option<JsonPath>, EdgeError> {
+    nested
+        .map(|nested| {
+            JsonPath::from_str(&nested)
+                .map_err(|()| EdgeError::invalid_argument(format!("invalid nested path: {nested}")))
+        })
+        .transpose()
+}
+
 // The deprecated `on_disk` flags exist solely because the internal structs
 // still declare them; the FFI surface only carries the `memory` placement, so
 // they are always written as `None`.
@@ -661,6 +723,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     memory,
                     enable_hnsw,
                     prefix,
+                    nested,
                 } = config;
                 Ok(PayloadSchemaParams::Keyword(
                     segment_index::KeywordIndexParams {
@@ -670,7 +733,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
                         prefix,
-                        nested: None,
+                        nested: nested_path(nested)?,
                     },
                 ))
             }
@@ -681,6 +744,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     is_principal,
                     memory,
                     enable_hnsw,
+                    nested,
                 } = config;
                 // Same rule the server enforces on its API: an integer index
                 // with both capabilities disabled would index nothing.
@@ -699,7 +763,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         on_disk: None,
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
-                        nested: None,
+                        nested: nested_path(nested)?,
                     },
                 ))
             }
@@ -708,6 +772,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     is_principal,
                     memory,
                     enable_hnsw,
+                    nested,
                 } = config;
                 Ok(PayloadSchemaParams::Float(
                     segment_index::FloatIndexParams {
@@ -716,7 +781,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         on_disk: None,
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
-                        nested: None,
+                        nested: nested_path(nested)?,
                     },
                 ))
             }
@@ -724,13 +789,14 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                 let GeoIndexParams {
                     memory,
                     enable_hnsw,
+                    nested,
                 } = config;
                 Ok(PayloadSchemaParams::Geo(segment_index::GeoIndexParams {
                     r#type: segment_index::GeoIndexType::Geo,
                     on_disk: None,
                     memory: memory.map(SegmentMemory::from),
                     enable_hnsw,
-                    nested: None,
+                    nested: nested_path(nested)?,
                 }))
             }
             PayloadIndexParams::Text { config } => {
@@ -746,6 +812,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     stemmer,
                     enable_hnsw,
                     scoring,
+                    nested,
                 } = config;
                 let min_token_len = token_len("min_token_len", min_token_len)?;
                 let max_token_len = token_len("max_token_len", max_token_len)?;
@@ -774,20 +841,21 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     stemmer: stemmer.map(segment_index::StemmingAlgorithm::from),
                     enable_hnsw,
                     scoring: scoring.map(segment_index::TextScoringParams::from),
-                    nested: None,
+                    nested: nested_path(nested)?,
                 }))
             }
             PayloadIndexParams::Bool { config } => {
                 let BoolIndexParams {
                     memory,
                     enable_hnsw,
+                    nested,
                 } = config;
                 Ok(PayloadSchemaParams::Bool(segment_index::BoolIndexParams {
                     r#type: segment_index::BoolIndexType::Bool,
                     on_disk: None,
                     memory: memory.map(SegmentMemory::from),
                     enable_hnsw,
-                    nested: None,
+                    nested: nested_path(nested)?,
                 }))
             }
             PayloadIndexParams::Datetime { config } => {
@@ -795,6 +863,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     is_principal,
                     memory,
                     enable_hnsw,
+                    nested,
                 } = config;
                 Ok(PayloadSchemaParams::Datetime(
                     segment_index::DatetimeIndexParams {
@@ -803,7 +872,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                         on_disk: None,
                         memory: memory.map(SegmentMemory::from),
                         enable_hnsw,
-                        nested: None,
+                        nested: nested_path(nested)?,
                     },
                 ))
             }
@@ -812,6 +881,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     is_tenant,
                     memory,
                     enable_hnsw,
+                    nested,
                 } = config;
                 Ok(PayloadSchemaParams::Uuid(segment_index::UuidIndexParams {
                     r#type: segment_index::UuidIndexType::Uuid,
@@ -819,7 +889,7 @@ impl TryFrom<PayloadIndexParams> for PayloadSchemaParams {
                     on_disk: None,
                     memory: memory.map(SegmentMemory::from),
                     enable_hnsw,
-                    nested: None,
+                    nested: nested_path(nested)?,
                 }))
             }
         }
@@ -852,7 +922,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     memory: _,
                     enable_hnsw,
                     prefix,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Keyword {
                     config: KeywordIndexParams {
@@ -860,6 +930,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                         memory,
                         enable_hnsw,
                         prefix,
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }
@@ -873,7 +944,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Integer {
                     config: IntegerIndexParams {
@@ -882,6 +953,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                         is_principal,
                         memory,
                         enable_hnsw,
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }
@@ -893,13 +965,14 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Float {
                     config: FloatIndexParams {
                         is_principal,
                         memory,
                         enable_hnsw,
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }
@@ -910,12 +983,13 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Geo {
                     config: GeoIndexParams {
                         memory,
                         enable_hnsw,
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }
@@ -935,7 +1009,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     stemmer,
                     enable_hnsw,
                     scoring,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Text {
                     config: TextIndexParams {
@@ -950,6 +1024,7 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                         stemmer: stemmer.map(Stemmer::from),
                         enable_hnsw,
                         scoring: scoring.map(TextScoringParams::from),
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }
@@ -960,12 +1035,13 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Bool {
                     config: BoolIndexParams {
                         memory,
                         enable_hnsw,
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }
@@ -977,13 +1053,14 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Datetime {
                     config: DatetimeIndexParams {
                         is_principal,
                         memory,
                         enable_hnsw,
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }
@@ -995,13 +1072,14 @@ impl From<PayloadSchemaParams> for PayloadIndexParams {
                     on_disk: _,
                     memory: _,
                     enable_hnsw,
-                    nested: _,
+                    nested,
                 } = params;
                 PayloadIndexParams::Uuid {
                     config: UuidIndexParams {
                         is_tenant,
                         memory,
                         enable_hnsw,
+                        nested: nested.map(|nested| nested.to_string()),
                     },
                 }
             }

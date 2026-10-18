@@ -18,10 +18,12 @@ pub use types::*;
 mod test_helpers;
 
 pub use builders::{
-    Bm25ParamsBuilder, CountRequestBuilder, EdgeConfigBuilder, EdgeSparseVectorParamsBuilder,
-    EdgeVectorParamsBuilder, FacetRequestBuilder, GroupRequestBuilder, PrefetchBuilder,
-    QueryRequestBuilder, RetrieveRequestBuilder, ScrollRequestBuilder, SearchMatrixRequestBuilder,
-    SearchRequestBuilder, TextIndexParamsBuilder, TextQueryBuilder,
+    Bm25ParamsBuilder, BoolIndexParamsBuilder, CountRequestBuilder, DatetimeIndexParamsBuilder,
+    EdgeConfigBuilder, EdgeSparseVectorParamsBuilder, EdgeVectorParamsBuilder, FacetRequestBuilder,
+    FloatIndexParamsBuilder, GeoIndexParamsBuilder, GroupRequestBuilder, IntegerIndexParamsBuilder,
+    KeywordIndexParamsBuilder, PrefetchBuilder, QueryRequestBuilder, RetrieveRequestBuilder,
+    ScrollRequestBuilder, SearchMatrixRequestBuilder, SearchRequestBuilder, TextIndexParamsBuilder,
+    TextQueryBuilder, UuidIndexParamsBuilder,
 };
 pub use config::optimizers::EdgeOptimizersConfig;
 pub use config::shard::EdgeConfig;

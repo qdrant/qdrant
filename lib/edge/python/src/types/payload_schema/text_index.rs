@@ -13,6 +13,7 @@ use segment::data_types::index::*;
 
 use crate::config::vector_data::PyMemory;
 use crate::repr::*;
+use crate::types::json_path::PyJsonPath;
 
 #[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
@@ -24,7 +25,7 @@ pub struct PyTextIndexParams(pub TextIndexParams);
 impl PyTextIndexParams {
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None, memory = None, scoring = None))]
+    #[pyo3(signature = (tokenizer = None, min_token_len = None, max_token_len = None, lowercase = None, ascii_folding = None, phrase_matching = None, stopwords = None, on_disk = None, stemmer = None, enable_hnsw = None, memory = None, scoring = None, nested = None))]
     pub fn new(
         tokenizer: Option<PyTokenizerType>,
         min_token_len: Option<usize>,
@@ -38,6 +39,7 @@ impl PyTextIndexParams {
         enable_hnsw: Option<bool>,
         memory: Option<PyMemory>,
         scoring: Option<PyTextScoringInterface>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(TextIndexParams {
             r#type: Default::default(),
@@ -53,7 +55,7 @@ impl PyTextIndexParams {
             stemmer: stemmer.map(StemmingAlgorithm::from),
             enable_hnsw,
             scoring: scoring.and_then(PyTextScoringInterface::into_params),
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -118,6 +120,11 @@ impl PyTextIndexParams {
     #[getter]
     pub fn scoring(&self) -> Option<PyTextScoringParams> {
         self.0.scoring.clone().map(PyTextScoringParams)
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
