@@ -7,7 +7,10 @@ use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::types::{SeqNumberType, VectorNameBuf};
 use shard::operations::vector_name_ops::VectorNameConfig;
-use shard::operations::{CollectionUpdateOperations, OperationWithClockTag, VectorNameOperations};
+use shard::operations::{
+    CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
+    VectorNameOperations,
+};
 use shard::update::*;
 
 use super::update_log::UpdateLog;
@@ -15,7 +18,7 @@ use crate::EdgeShard;
 use crate::config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 
 impl EdgeShard {
-    pub fn update(&self, operation: CollectionUpdateOperations) -> OperationResult<()> {
+    pub fn update(&self, mut operation: CollectionUpdateOperations) -> OperationResult<()> {
         // Reject a conflicting vector-name re-create before it reaches the WAL:
         // the segment-level create is idempotent, so re-creating an existing
         // name with different params silently no-ops storage. Failing loudly up
@@ -26,6 +29,22 @@ impl EdgeShard {
         ) = &operation
         {
             self.check_vector_name_create_compatible(&create.vector_name, &create.config)?;
+        }
+
+        // Store a new index schema like the server does: normalized, so that `nested:
+        // "offers"` and `nested: "offers[]"` give the same index, and checked against the
+        // field it indexes
+        if let CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
+            CreateIndex {
+                field_name,
+                field_schema: Some(field_schema),
+            },
+        )) = &mut operation
+        {
+            *field_schema = field_schema.clone().normalized();
+            field_schema
+                .validate_for_field(field_name)
+                .map_err(OperationError::validation_error)?;
         }
 
         let record = OperationWithClockTag::new(operation, None);

@@ -16,6 +16,7 @@ use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType}
 pub use self::text_index::*;
 use crate::config::vector_data::PyMemory;
 use crate::repr::*;
+use crate::types::json_path::PyJsonPath;
 
 #[derive(Clone, Debug, Into)]
 pub struct PyPayloadFieldSchema(PayloadFieldSchema);
@@ -213,13 +214,14 @@ pub struct PyKeywordIndexParams(KeywordIndexParams);
 #[pymethods]
 impl PyKeywordIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, prefix = None, memory = None))]
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, prefix = None, memory = None, nested = None))]
     pub fn new(
         is_tenant: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
         prefix: Option<bool>,
         memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(KeywordIndexParams {
             r#type: Default::default(),
@@ -228,7 +230,7 @@ impl PyKeywordIndexParams {
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
             prefix,
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -259,6 +261,11 @@ impl PyKeywordIndexParams {
     pub fn prefix(&self) -> Option<bool> {
         self.0.prefix
     }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
+    }
 }
 
 impl PyKeywordIndexParams {
@@ -285,7 +292,7 @@ pub struct PyIntegerIndexParams(IntegerIndexParams);
 #[pymethods]
 impl PyIntegerIndexParams {
     #[new]
-    #[pyo3(signature = (lookup = None, range = None, is_principal = None, on_disk = None, enable_hnsw = None, memory = None))]
+    #[pyo3(signature = (lookup = None, range = None, is_principal = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
     pub fn new(
         lookup: Option<bool>,
         range: Option<bool>,
@@ -293,6 +300,7 @@ impl PyIntegerIndexParams {
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
         memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(IntegerIndexParams {
             r#type: Default::default(),
@@ -302,7 +310,7 @@ impl PyIntegerIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -338,6 +346,11 @@ impl PyIntegerIndexParams {
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
+    }
 }
 
 impl PyIntegerIndexParams {
@@ -365,12 +378,13 @@ pub struct PyFloatIndexParams(FloatIndexParams);
 #[pymethods]
 impl PyFloatIndexParams {
     #[new]
-    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None))]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
     pub fn new(
         is_principal: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
         memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(FloatIndexParams {
             r#type: Default::default(),
@@ -378,7 +392,7 @@ impl PyFloatIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -403,6 +417,11 @@ impl PyFloatIndexParams {
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -429,14 +448,19 @@ pub struct PyGeoIndexParams(GeoIndexParams);
 #[pymethods]
 impl PyGeoIndexParams {
     #[new]
-    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None))]
-    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>, memory: Option<PyMemory>) -> Self {
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None, nested = None))]
+    pub fn new(
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
+    ) -> Self {
         Self(GeoIndexParams {
             r#type: Default::default(),
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -456,6 +480,11 @@ impl PyGeoIndexParams {
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -481,14 +510,19 @@ pub struct PyBoolIndexParams(BoolIndexParams);
 #[pymethods]
 impl PyBoolIndexParams {
     #[new]
-    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None))]
-    pub fn new(on_disk: Option<bool>, enable_hnsw: Option<bool>, memory: Option<PyMemory>) -> Self {
+    #[pyo3(signature = (on_disk = None, enable_hnsw = None, memory = None, nested = None))]
+    pub fn new(
+        on_disk: Option<bool>,
+        enable_hnsw: Option<bool>,
+        memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
+    ) -> Self {
         Self(BoolIndexParams {
             r#type: Default::default(),
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -508,6 +542,11 @@ impl PyBoolIndexParams {
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -533,12 +572,13 @@ pub struct PyDatetimeIndexParams(DatetimeIndexParams);
 #[pymethods]
 impl PyDatetimeIndexParams {
     #[new]
-    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None))]
+    #[pyo3(signature = (is_principal = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
     pub fn new(
         is_principal: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
         memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(DatetimeIndexParams {
             r#type: Default::default(),
@@ -546,7 +586,7 @@ impl PyDatetimeIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -571,6 +611,11 @@ impl PyDatetimeIndexParams {
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
@@ -597,12 +642,13 @@ pub struct PyUuidIndexParams(UuidIndexParams);
 #[pymethods]
 impl PyUuidIndexParams {
     #[new]
-    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, memory = None))]
+    #[pyo3(signature = (is_tenant = None, on_disk = None, enable_hnsw = None, memory = None, nested = None))]
     pub fn new(
         is_tenant: Option<bool>,
         on_disk: Option<bool>,
         enable_hnsw: Option<bool>,
         memory: Option<PyMemory>,
+        nested: Option<PyJsonPath>,
     ) -> Self {
         Self(UuidIndexParams {
             r#type: Default::default(),
@@ -610,7 +656,7 @@ impl PyUuidIndexParams {
             on_disk,
             memory: memory.map(segment::types::Memory::from),
             enable_hnsw,
-            nested: None,
+            nested: nested.map(|nested| nested.0),
         })
     }
 
@@ -635,6 +681,11 @@ impl PyUuidIndexParams {
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
+    }
+
+    #[getter]
+    pub fn nested(&self) -> Option<PyJsonPath> {
+        self.0.nested.clone().map(PyJsonPath)
     }
 }
 
