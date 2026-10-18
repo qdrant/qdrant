@@ -23,7 +23,7 @@ const CENTROID_ABS: f32 = 0.797_884_6;
 
 /// `c²` — converts the signed-agreement count into a centroid dot product:
 /// each lane contributes `(±c)·(±c) = ±c²`, summing to `c² · sign_sum`.
-const CENTROID_SQ: f32 = CENTROID_ABS * CENTROID_ABS;
+pub(crate) const CENTROID_SQ: f32 = CENTROID_ABS * CENTROID_ABS;
 
 /// Integer encoding of the 1-bit width for the shared asymmetric kernels
 /// ([`super::query::QuerySimd`]).  Both codebook entries are `∓c`, so any

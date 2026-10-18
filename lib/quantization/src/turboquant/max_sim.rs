@@ -4,13 +4,32 @@
 //!
 //! [`EncodedVectors`]: crate::EncodedVectors
 
+use std::convert::Infallible;
+
 use crate::max_sim::MultiQuery;
+use crate::packed_multi_query::PackedMultiQuery;
 use crate::turboquant::EncodedQueryTQ;
 use crate::turboquant::quantization::TurboQuantizer;
 
 impl TurboQuantizer {
-    /// MaxSim of a multi-vector query of precomputed queries against one point's
-    /// concatenated records. `invert` negates scores, as storages do for distances.
+    /// Prepare a multi-vector query, one precomputed query per inner vector, for
+    /// [`Self::score_multi_query`]: packed when the batched kernel is faster,
+    /// else scored pair by pair with [`Self::score_precomputed`].
+    ///
+    /// `invert` negates scores, as storages do for distances.
+    pub fn encode_multi_query(
+        &self,
+        query: Vec<EncodedQueryTQ>,
+        invert: bool,
+    ) -> MultiQuery<EncodedQueryTQ> {
+        match self.pack_multi_query_if_faster(&query, invert, false) {
+            Some(packed) => MultiQuery::Packed(PackedMultiQuery::TQ(packed)),
+            None => MultiQuery::PerPair(query),
+        }
+    }
+
+    /// MaxSim of a query from [`Self::encode_multi_query`] against one point's
+    /// concatenated records. `invert` as there.
     pub fn score_multi_query(
         &self,
         query: &MultiQuery<EncodedQueryTQ>,
@@ -27,9 +46,21 @@ impl TurboQuantizer {
 
     /// Symmetric MaxSim between two points' concatenated records: for each record
     /// of `a`, its best [`Self::score_symmetric`] against the records of `b`,
-    /// summed. `invert` negates scores.
+    /// summed. The records of `a` are packed when the batched kernel is faster.
+    /// `invert` negates scores.
     pub fn score_symmetric_max_sim(&self, records_a: &[u8], records_b: &[u8], invert: bool) -> f32 {
         let size = self.quantized_size();
+        if let Some(packed) = self.pack_multi_stored_if_faster(records_a.chunks_exact(size), invert)
+        {
+            // Packed, so it never scores a pair: no encoded queries to score.
+            let query = MultiQuery::<Infallible>::Packed(PackedMultiQuery::TQ(packed));
+            let mut max_sim = query.max_sim(|never, _| match *never {});
+            for record in records_b.chunks_exact(size) {
+                max_sim.push(record);
+            }
+            return max_sim.finish();
+        }
+
         let mut sum = 0.0;
         for record_a in records_a.chunks_exact(size) {
             let mut max_sim = f32::NEG_INFINITY;

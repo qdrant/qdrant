@@ -5,10 +5,12 @@ use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::encoded_storage::TestEncodedStorageBuilder;
+use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
-use quantization::{MultiQuery, encoded_vectors_u8};
+use quantization::turboquant::{TQBits, TQMode, TQRotation};
+use quantization::{MultiQuery, encoded_vectors_tq, encoded_vectors_u8};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -181,5 +183,37 @@ fn packed_scalar_matches_pairwise() {
         )
         .unwrap();
         check(encoded, true, &format!("scalar {distance:?}"));
+    }
+}
+
+#[test]
+fn packed_turbo_matches_pairwise() {
+    let mut rng = StdRng::seed_from_u64(42);
+    let vectors = random_vectors(&mut rng, VECTORS);
+    for (bits, mode) in [
+        (TQBits::Bits4, TQMode::Plus),
+        (TQBits::Bits2, TQMode::Plus),
+        (TQBits::Bits1, TQMode::Plus),
+        (TQBits::Bits8, TQMode::Normal),
+    ] {
+        let params = parameters(DistanceType::Cosine);
+        let encoded: EncodedVectorsTQ<TestEncodedStorage> = EncodedVectorsTQ::encode(
+            vectors.iter(),
+            std::iter::repeat_n(true, VECTORS),
+            TestEncodedStorageBuilder::new(
+                None,
+                encoded_vectors_tq::get_quantized_vector_size(&params, bits, mode),
+            ),
+            &params,
+            bits,
+            mode,
+            TQRotation::Padded,
+            false,
+            1,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        check(encoded, true, &format!("turbo {bits:?} {mode:?}"));
     }
 }

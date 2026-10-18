@@ -409,7 +409,8 @@ impl AppendableMmapMultiTurboVectorStorage {
                 self.quantizer.precompute_query(&preprocessed)
             })
             .collect();
-        TurboMultiQuery::PerPair(vectors)
+        self.quantizer
+            .encode_multi_query(vectors, self.invert_score())
     }
 
     /// Score query directly against records directly, without fetching from storage.

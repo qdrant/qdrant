@@ -8,6 +8,7 @@ pub mod encoding;
 pub mod lloyd_max;
 pub mod math;
 mod max_sim;
+pub(crate) mod packed;
 mod permutation;
 pub mod quantization;
 pub mod rotation;
