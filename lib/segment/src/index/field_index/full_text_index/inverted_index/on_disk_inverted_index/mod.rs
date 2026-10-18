@@ -1049,7 +1049,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             token_ids: &[TokenId],
             views: Vec<(TokenId, PostingListView<'a, V>)>,
             frequencies: Vec<Option<TermFrequencyList<'a>>>,
-        ) -> OperationResult<FrequencyCursors<'a, V>> {
+        ) -> FrequencyCursors<'a, V> {
             let mut by_term = vec![None; token_ids.len()];
             for (token_id, view) in views {
                 let term = token_ids
@@ -1071,7 +1071,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                 postings.with_existing_postings(&token_ids, |views| {
                     score_top_k::<_, ON_DISK_BLOCK>(
                         query,
-                        &mut cursors(&token_ids, views, frequencies)?,
+                        &mut cursors(&token_ids, views, frequencies),
                         lengths,
                         &accept,
                         limit,
@@ -1083,7 +1083,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                 postings.with_existing_postings(&token_ids, |views| {
                     score_top_k::<_, ON_DISK_BLOCK>(
                         query,
-                        &mut cursors(&token_ids, views, frequencies)?,
+                        &mut cursors(&token_ids, views, frequencies),
                         lengths,
                         &accept,
                         limit,

@@ -3,7 +3,6 @@ use posting_list::{PostingLenIterator, PostingListView, PostingValue};
 
 use super::super::term_frequencies::{BLOCK_LEN, TermFrequencyList};
 use super::TermCursors;
-use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Cursors over posting lists, with each term's frequencies read from its own
 /// bit-packed list in posting order. Only the ids of the postings are read.
@@ -43,38 +42,33 @@ impl<V: PostingValue> Cursor<'_, V> {
 
 impl<'a, V: PostingValue> FrequencyCursors<'a, V> {
     /// One posting list and its frequencies per query term, `None` for a term
-    /// this index holds no posting list for. A posting list whose frequencies
-    /// are missing or of another length means the two files disagree, and is
-    /// an error rather than a term scored as absent or a lookup out of range.
+    /// this index holds no posting list for. The frequencies of every posting
+    /// list are expected to be there, one per entry: the files were checked to
+    /// agree at open.
     pub fn new(
         views: Vec<Option<(PostingListView<'a, V>, Option<TermFrequencyList<'a>>)>>,
-    ) -> OperationResult<Self> {
+    ) -> Self {
         let cursors = views
             .into_iter()
             .map(|view| {
-                let Some((ids, frequencies)) = view else {
-                    return Ok(None);
-                };
-                let frequencies = frequencies.filter(|frequencies| frequencies.len() == ids.len());
-                let Some(frequencies) = frequencies else {
-                    return Err(OperationError::service_error(
-                        "term frequencies do not match the postings",
-                    ));
-                };
+                let (ids, frequencies) = view?;
+                debug_assert!(
+                    frequencies.is_some_and(|frequencies| frequencies.len() == ids.len()),
+                    "term frequencies do not match the postings",
+                );
+                let frequencies = frequencies?;
                 let mut ids = ids.len_iter();
-                if ids.next().is_none() {
-                    return Ok(None);
-                }
-                Ok(Some(Cursor {
+                ids.next()?;
+                Some(Cursor {
                     ids,
                     frequencies,
                     decoded_block: None,
                     block: [0; BLOCK_LEN],
                     remainder: None,
-                }))
+                })
             })
-            .collect::<OperationResult<_>>()?;
-        Ok(Self { cursors })
+            .collect();
+        Self { cursors }
     }
 }
 

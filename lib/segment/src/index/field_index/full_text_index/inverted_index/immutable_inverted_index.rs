@@ -385,7 +385,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
                     Ok(Some((posting.view(), frequencies.term(term.token_id)?)))
                 })
                 .collect::<OperationResult<_>>()?;
-            FrequencyCursors::new(views)
+            Ok(FrequencyCursors::new(views))
         }
         let accept = accept.with_visible(&visible);
         match &self.postings {

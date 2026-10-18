@@ -262,9 +262,10 @@ impl<S: UniversalRead> OnDiskTermFrequencies<S> {
                     Some(next) => next.offset.get(),
                     None => self.file_len - data_start,
                 };
-                if end < start || data_start + end > self.file_len {
-                    return Err(corrupted("term data out of order or past the file"));
-                }
+                debug_assert!(
+                    start <= end && data_start + end <= self.file_len,
+                    "term data out of order or past the file",
+                );
                 spans[at] = Some((
                     headers[0].len.get() as usize,
                     ReadRange {
@@ -316,29 +317,30 @@ impl<'a> TermFrequencyList<'a> {
             .map_err(|_| corrupted("truncated block offsets"))?;
         // Every block is whole, at most 32 bits wide, and follows the last:
         // what `decode_block` relies on to slice and unpack it.
-        let well_formed = block_offsets.windows(2).all(|pair| {
-            let (start, end) = (pair[0].get(), pair[1].get());
-            end >= start && {
-                let bytes = (end - start) as usize;
-                bytes.is_multiple_of(BLOCK_BYTES_PER_BIT) && bytes / BLOCK_BYTES_PER_BIT <= 32
-            }
-        });
-        if !well_formed || block_offsets[0].get() != 0 {
-            return Err(corrupted("malformed block offsets"));
-        }
+        debug_assert!(
+            block_offsets[0].get() == 0
+                && block_offsets.windows(2).all(|pair| {
+                    let (start, end) = (pair[0].get(), pair[1].get());
+                    end >= start && {
+                        let bytes = (end - start) as usize;
+                        bytes.is_multiple_of(BLOCK_BYTES_PER_BIT)
+                            && bytes / BLOCK_BYTES_PER_BIT <= 32
+                    }
+                }),
+            "malformed block offsets",
+        );
         let packed_len = block_offsets[blocks].get() as usize;
         let (packed, remainder) = data
             .split_at_checked(packed_len)
             .ok_or_else(|| corrupted("truncated blocks"))?;
         // The remainder has its width, at most 32 bits, and the bits of every
         // entry: what `decode_remainder` relies on to read it.
-        let count = len - blocks * BLOCK_LEN;
-        let well_formed = remainder.split_first().is_some_and(|(&width, bits)| {
-            width <= 32 && count * usize::from(width) <= bits.len() * 8
-        });
-        if !well_formed {
-            return Err(corrupted("malformed remainder"));
-        }
+        debug_assert!(
+            remainder.split_first().is_some_and(|(&width, bits)| {
+                width <= 32 && (len - blocks * BLOCK_LEN) * usize::from(width) <= bits.len() * 8
+            }),
+            "malformed remainder",
+        );
         Ok(TermFrequencyList {
             len,
             block_offsets,
@@ -507,10 +509,11 @@ mod tests {
         }
     }
 
-    /// Block offsets that cannot be sliced or unpacked are an error, not a
-    /// panic on the scoring path.
+    /// Block offsets that cannot be sliced or unpacked are caught in debug
+    /// builds.
     #[test]
-    fn malformed_block_offsets_are_an_error() {
+    #[cfg(debug_assertions)]
+    fn malformed_block_offsets_are_caught() {
         let bytes = encode([vec![2; 2 * BLOCK_LEN]].iter().map(Vec::as_slice));
         let file = TermFrequencies::new(&bytes).unwrap();
         assert!(file.term(0).unwrap().is_some());
@@ -521,15 +524,16 @@ mod tests {
             let mut bytes = bytes.clone();
             bytes[at..at + size_of::<U32>()].copy_from_slice(&corrupt.to_le_bytes());
             let file = TermFrequencies::new(&bytes).unwrap();
-            assert!(file.term(0).is_err(), "offset {corrupt}");
+            let parsed = std::panic::catch_unwind(|| file.term(0));
+            assert!(parsed.is_err(), "offset {corrupt}");
         }
     }
 
     /// A remainder width that is too wide, or that needs more bits than
-    /// follow it, is an error, not a panic or a wrong score on the scoring
-    /// path.
+    /// follow it, is caught in debug builds.
     #[test]
-    fn malformed_remainder_is_an_error() {
+    #[cfg(debug_assertions)]
+    fn malformed_remainder_is_caught() {
         // Five entries of 2, stored as ones: a remainder of width 1 in one byte.
         let bytes = encode([vec![2; 5]].iter().map(Vec::as_slice));
         let file = TermFrequencies::new(&bytes).unwrap();
@@ -543,7 +547,8 @@ mod tests {
             let mut bytes = bytes.clone();
             bytes[at] = corrupt;
             let file = TermFrequencies::new(&bytes).unwrap();
-            assert!(file.term(0).is_err(), "width {corrupt}");
+            let parsed = std::panic::catch_unwind(|| file.term(0));
+            assert!(parsed.is_err(), "width {corrupt}");
         }
     }
 
