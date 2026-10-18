@@ -17,6 +17,7 @@ use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder, validate_sto
 use crate::encoded_vectors::{
     DistanceType, EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
+use crate::packed_multi_query::{PackedMultiQuery, PackedMultiQueryU8, crossover};
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 
 pub const ALIGNMENT: usize = 16;
@@ -761,6 +762,48 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
         self.score_bytes(True, query, encoded_vector)
+    }
+
+    fn packed_pays(&self, vectors_count: usize, stored: bool) -> bool {
+        let Metadata::Int8(metadata) = &self.metadata;
+        let l1 = metadata.vector_parameters.distance_type == DistanceType::L1;
+        let table = match (l1, stored) {
+            (false, false) => crossover::SCALAR_QUERY,
+            (false, true) => crossover::SCALAR_STORED,
+            (true, false) => crossover::SCALAR_L1_QUERY,
+            (true, true) => crossover::SCALAR_L1_STORED,
+        };
+        crossover::pays(table, metadata.vector_parameters.dim, vectors_count)
+    }
+
+    fn pack_multi_query(&self, query: &[EncodedQueryU8]) -> Option<PackedMultiQuery> {
+        let Metadata::Int8(metadata) = &self.metadata;
+        Some(PackedMultiQuery::U8(PackedMultiQueryU8::new(
+            query.iter().map(|q| (q.encoded_query.as_slice(), q.offset)),
+            metadata.actual_dim,
+            metadata.multiplier,
+            metadata.vector_parameters.distance_type == DistanceType::L1,
+            metadata.vector_parameters.dim,
+        )))
+    }
+
+    fn pack_multi_stored<'a>(
+        &self,
+        vectors: impl ExactSizeIterator<Item = &'a [u8]>,
+    ) -> Option<PackedMultiQuery> {
+        let Metadata::Int8(metadata) = &self.metadata;
+        // `postprocess_internal_score` is `postprocess_score` with the first offset shifted.
+        let shift = metadata.get_shift();
+        Some(PackedMultiQuery::U8(PackedMultiQueryU8::new(
+            vectors.map(|vector| {
+                let (offset, codes) = Self::parse_vec_data(vector);
+                (codes, offset - shift)
+            }),
+            metadata.actual_dim,
+            metadata.multiplier,
+            metadata.vector_parameters.distance_type == DistanceType::L1,
+            metadata.vector_parameters.dim,
+        )))
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {

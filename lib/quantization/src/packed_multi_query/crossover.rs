@@ -37,6 +37,38 @@ fn measured_cpu() -> bool {
     }
 }
 
+// Fewest vectors worth packing, from a sweep of the packed against the
+// per-pair kernels on AMD Genoa (AVX-512) and AMD Milan (AVX2): 1 to 64 vectors
+// against stored multi-vectors of 128, the smallest size from which every
+// larger one is 1.05x faster on both.
+
+/// Scalar int8, Dot, Cosine and L2.
+pub const SCALAR_QUERY: Crossover = &[
+    (128, Some(4)),
+    (384, Some(6)),
+    (768, Some(8)),
+    (1024, Some(8)),
+];
+pub const SCALAR_STORED: Crossover = &[
+    (128, Some(2)),
+    (384, Some(4)),
+    (768, Some(6)),
+    (1024, Some(6)),
+];
+/// Scalar int8, L1.
+pub const SCALAR_L1_QUERY: Crossover = &[
+    (128, Some(3)),
+    (384, Some(6)),
+    (768, Some(12)),
+    (1024, Some(12)),
+];
+pub const SCALAR_L1_STORED: Crossover = &[
+    (128, Some(3)),
+    (384, Some(4)),
+    (768, Some(6)),
+    (1024, Some(12)),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
