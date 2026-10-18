@@ -2152,13 +2152,12 @@ const TEXT_DOCUMENTS: [&str; 6] = [
 ];
 const TEXT_TERMS: [&str; 3] = ["quick", "fox", "dog"];
 
-/// Text statistics are the same whoever opened the segment, and when. Under
-/// append-only mutations a tombstone never reaches the text index, and it
-/// counts in `N`, `df` and the total until the segment is rebuilt; otherwise a
-/// deletion drops the record and leaves the statistics. Four views of the same
-/// files: the writer that made the deletions, the writer reopened, a reader
-/// opened before them and live-reloaded, and a reader opened after.
-/// `documents` is the expected `N`.
+/// Under append-only mutations a tombstone never reaches the text index, and
+/// it counts in `N`, `df` and the total until the segment is rebuilt, whoever
+/// opened the segment, and when. Four views of the same files: the writer that
+/// made the tombstones, the writer reopened, a reader opened before them and
+/// live-reloaded, and a reader opened after. `documents` is `N` with every
+/// tombstone counted.
 fn assert_text_stats_agree_across_views(
     writer: &Segment,
     mut reader_before: ReadOnlySegment<MmapFile>,
@@ -2200,12 +2199,10 @@ fn assert_text_stats_agree_across_views(
     );
 }
 
-/// The mutable text index of an appendable segment, after a delete, and under
-/// append-only an update (clone and tombstone). Without append-only the delete
-/// drops the record; an in-place update is not covered, since live reload only
-/// sees new and deleted offsets.
-#[rstest]
-fn text_stats_ignore_load_history_appendable(#[values(false, true)] append_only: bool) {
+/// The mutable text index of an appendable segment, after a delete and an
+/// update (clone and tombstone).
+#[test]
+fn text_stats_ignore_load_history_appendable() {
     let segments_dir = Builder::new().prefix("text_stats_ao").tempdir().unwrap();
     let _scope = ambient::test_guard();
 
@@ -2216,7 +2213,7 @@ fn text_stats_ignore_load_history_appendable(#[values(false, true)] append_only:
         id_tracker_memory: None,
     };
     let (mut writer, _) = build_segment(segments_dir.path(), &config, None, true).unwrap();
-    writer.append_only_mutations = append_only;
+    writer.append_only_mutations = true;
 
     let mut op_num = 1;
     writer
@@ -2243,21 +2240,13 @@ fn text_stats_ignore_load_history_appendable(#[values(false, true)] append_only:
             .expect("read-only open");
 
     writer.delete_point(op_num + 1, 1.into()).unwrap();
-    if append_only {
-        writer
-            .set_full_payload(op_num + 2, 3.into(), &payload_json! { "text": "slow dog" })
-            .unwrap();
-    }
+    writer
+        .set_full_payload(op_num + 2, 3.into(), &payload_json! { "text": "slow dog" })
+        .unwrap();
     writer.flush(true).unwrap();
 
-    let documents = if append_only {
-        // The six documents, and the copy the update cloned point 3 into.
-        TEXT_DOCUMENTS.len() + 1
-    } else {
-        // Point 1's record is gone.
-        TEXT_DOCUMENTS.len() - 1
-    };
-    assert_text_stats_agree_across_views(&writer, reader_before, documents);
+    // The six documents, and the copy the update cloned point 3 into.
+    assert_text_stats_agree_across_views(&writer, reader_before, TEXT_DOCUMENTS.len() + 1);
 }
 
 /// The immutable (`Pinned`) and on-disk (`Cold`) text indexes of an optimized

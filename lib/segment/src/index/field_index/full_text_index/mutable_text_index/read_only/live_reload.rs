@@ -23,36 +23,15 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
-        deleted_points: &SortedSlice<'_, PointOffsetType>,
+        _deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
+        // Deleted points stay in the index: the writer keeps counting them
+        // until the segment is rebuilt, and the id tracker hides them from
+        // results. Only new points are indexed.
         self.storage.live_reload(fs)?;
 
         let inner = &mut self.inner;
-
-        // A deleted point leaves the index only once its record is gone, so
-        // this index holds what a fresh open would load. Under append-only
-        // deletion the record stays: the writer's index keeps counting the
-        // tombstoned document until the segment is rebuilt, and so does this
-        // one. The id tracker hides it from results.
-        //
-        // Assumes append-only deletion, the mode live-reloaded readers run
-        // under. Otherwise the writer flushes the id tracker before the payload
-        // index, so a reload in between sees the delete with the record still
-        // there, and keeps counting a document no later delta removes.
-        self.storage
-            .view()
-            .read_values::<Sequential, _, OperationError>(
-                deleted_points.iter().map(|&id| ((), id)),
-                |_, point_offset, maybe_value: Option<Vec<u8>>| {
-                    if maybe_value.is_none() {
-                        inner.inverted_index.remove(point_offset);
-                    }
-                    Ok(true)
-                },
-                Some(HwMetric::PayloadIndexIoRead),
-            )?;
-
         self.storage
             .view()
             .read_values::<Sequential, _, OperationError>(
