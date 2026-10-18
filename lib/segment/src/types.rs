@@ -2909,27 +2909,15 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 }
 
 impl PayloadFieldSchema {
-    /// Apply what the params imply, see [`TextIndexParams::normalized`], and store
-    /// `nested` as its array key, so `offers` and `offers[]` give the same schema. A
-    /// schema is normalized once, as the collection stores it, so every node and every
-    /// segment sees the same params.
+    /// Store `nested` as its array key, so `offers` and `offers[]` give the same
+    /// schema. A schema is normalized once, as the collection stores it, so every node
+    /// and every segment sees the same params.
     pub fn normalized(self) -> Self {
         match self {
             PayloadFieldSchema::FieldParams(mut params) => {
                 let nested = params.nested_mut();
                 *nested = nested.as_ref().map(JsonPath::array_key);
-                match params {
-                    PayloadSchemaParams::Text(params) => PayloadFieldSchema::FieldParams(
-                        PayloadSchemaParams::Text(params.normalized()),
-                    ),
-                    params @ (PayloadSchemaParams::Keyword(_)
-                    | PayloadSchemaParams::Integer(_)
-                    | PayloadSchemaParams::Float(_)
-                    | PayloadSchemaParams::Geo(_)
-                    | PayloadSchemaParams::Bool(_)
-                    | PayloadSchemaParams::Datetime(_)
-                    | PayloadSchemaParams::Uuid(_)) => PayloadFieldSchema::FieldParams(params),
-                }
+                PayloadFieldSchema::FieldParams(params)
             }
             schema @ PayloadFieldSchema::FieldType(_) => schema,
         }

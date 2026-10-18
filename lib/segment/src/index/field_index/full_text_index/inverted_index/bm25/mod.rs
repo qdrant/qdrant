@@ -2,25 +2,24 @@
 //!
 //! The formula and the top-k driver live here once; what differs per backend
 //! is how a posting list is walked and where a term frequency comes from, and
-//! that is behind [`TermCursors`]. The immutable and on-disk indexes store
-//! positions per (term, document) and read `tf` as a value length, without
-//! touching the positions themselves. The mutable index stores documents as
+//! that is behind [`TermCursors`]. The immutable and on-disk indexes read `tf`
+//! from `term_frequencies.dat`, in posting order. The mutable index stores documents as
 //! ordered token ids and counts a candidate document once for every query term.
 //!
 //! Corpus statistics are inputs, not something computed here: `IDF` and the
 //! average document length are gathered across the shard before any segment
 //! scores, so the same document scores the same wherever it lives.
 
+mod frequency_cursors;
 mod mutable_cursors;
-mod positional_cursors;
 #[cfg(test)]
 mod tests;
 mod top_k;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::{PointOffsetType, ScoreType};
+pub use frequency_cursors::FrequencyCursors;
 pub use mutable_cursors::MutableCursors;
-pub use positional_cursors::PositionalCursors;
 pub use top_k::{ON_DISK_BLOCK, score_top_k};
 
 use super::TokenId;

@@ -43,7 +43,7 @@ impl MutableCursor<'_> {
 }
 
 /// Cursors over the mutable index. The term frequency is read next to the
-/// posting, the same shape as [`PositionalCursors`](super::PositionalCursors).
+/// posting.
 pub struct MutableCursors<'a> {
     cursors: Vec<Option<MutableCursor<'a>>>,
 }
