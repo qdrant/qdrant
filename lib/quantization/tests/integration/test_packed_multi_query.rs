@@ -8,6 +8,9 @@ mod tests {
     use quantization::MultiQuery;
     use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+    use quantization::encoded_vectors_binary::{
+        self, BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
+    };
     use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
     use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
     use quantization::turboquant::{TQBits, TQMode, TQRotation};
@@ -417,5 +420,106 @@ mod tests {
                 .pack_multi_stored_if_faster(records.iter().map(Vec::as_slice))
                 .is_none()
         );
+    }
+
+    // Binary.
+
+    fn check_binary<TBitsStoreType: BitsStoreType>(
+        encoding: Encoding,
+        query_encoding: QueryEncoding,
+        distance_type: DistanceType,
+        invert: bool,
+        dim: usize,
+    ) {
+        let mut rng = StdRng::seed_from_u64(42);
+        let vectors = random_vectors(&mut rng, VECTORS, dim);
+        let encoded = EncodedVectorsBin::<TBitsStoreType, _>::encode(
+            vectors.iter(),
+            std::iter::repeat_n(true, VECTORS),
+            TestEncodedStorageBuilder::new(
+                None,
+                encoded_vectors_binary::get_quantized_vector_size_from_params::<TBitsStoreType>(
+                    dim, encoding,
+                ),
+            ),
+            &parameters(dim, distance_type, invert),
+            encoding,
+            query_encoding,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let label = format!(
+            "bq {}B {encoding:?} {query_encoding:?} {distance_type:?} invert={invert} dim={dim}",
+            size_of::<TBitsStoreType>(),
+        );
+        let multi_vectors = stored_multi_vectors(|i| encoded.get_quantized_vector(i).to_vec());
+        check_query(
+            &encoded,
+            &multi_vectors,
+            &mut rng,
+            dim,
+            Match::Exact,
+            &label,
+        );
+        check_stored(&encoded, &multi_vectors, dim, Match::Exact, &label);
+    }
+
+    #[rstest]
+    fn packed_binary_matches_pairwise(
+        #[values(Encoding::OneBit, Encoding::TwoBits, Encoding::OneAndHalfBits)] encoding: Encoding,
+        #[values(
+            QueryEncoding::SameAsStorage,
+            QueryEncoding::Scalar4bits,
+            QueryEncoding::Scalar8bits
+        )]
+        query_encoding: QueryEncoding,
+        #[values(DistanceType::Dot, DistanceType::L2)] distance_type: DistanceType,
+        #[values(false, true)] invert: bool,
+        #[values(7, 64, 100, 300)] dim: usize,
+    ) {
+        let _scope = ambient::test_guard();
+        check_binary::<u8>(encoding, query_encoding, distance_type, invert, dim);
+        check_binary::<u128>(encoding, query_encoding, distance_type, invert, dim);
+    }
+
+    /// Binary packs past the crossover only.
+    #[test]
+    fn binary_packs_past_the_crossover() {
+        let _scope = ambient::test_guard();
+        let mut rng = StdRng::seed_from_u64(42);
+        let dim = 128;
+        let vectors = random_vectors(&mut rng, VECTORS, dim);
+        let vector_parameters = parameters(dim, DistanceType::Dot, false);
+        for (encoding, query_encoding) in [
+            (Encoding::OneBit, QueryEncoding::SameAsStorage),
+            (Encoding::OneAndHalfBits, QueryEncoding::SameAsStorage),
+            (Encoding::TwoBits, QueryEncoding::SameAsStorage),
+            (Encoding::OneBit, QueryEncoding::Scalar8bits),
+        ] {
+            let encoded = EncodedVectorsBin::<u128, _>::encode(
+                vectors.iter(),
+                std::iter::repeat_n(true, VECTORS),
+                TestEncodedStorageBuilder::new(
+                    None,
+                    encoded_vectors_binary::get_quantized_vector_size_from_params::<u128>(
+                        dim, encoding,
+                    ),
+                ),
+                &vector_parameters,
+                encoding,
+                query_encoding,
+                None,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            check_gate(
+                &encoded,
+                |i| encoded.get_quantized_vector(i).to_vec(),
+                &mut rng,
+                dim,
+                true,
+            );
+        }
     }
 }

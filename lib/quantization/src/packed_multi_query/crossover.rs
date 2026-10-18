@@ -70,6 +70,50 @@ pub const SCALAR_L1_STORED: Crossover = &[
     (768, Some(6)),
     (1024, Some(12)),
 ];
+/// Binary, by storage encoding: 1, 1.5 and 2 bits.
+pub const BINARY_1BIT_QUERY: Crossover = &[
+    (128, Some(6)),
+    (384, Some(12)),
+    (768, Some(16)),
+    (1024, Some(32)),
+];
+pub const BINARY_1BIT_STORED: Crossover = &[
+    (128, Some(4)),
+    (384, Some(8)),
+    (768, Some(10)),
+    (1024, Some(10)),
+];
+pub const BINARY_1_5BIT_QUERY: Crossover = &[
+    (128, Some(10)),
+    (384, Some(32)),
+    (768, Some(32)),
+    (1024, Some(32)),
+];
+pub const BINARY_1_5BIT_STORED: Crossover = &[
+    (128, Some(8)),
+    (384, Some(8)),
+    (768, Some(12)),
+    (1024, Some(12)),
+];
+pub const BINARY_2BIT_QUERY: Crossover = &[
+    (128, Some(10)),
+    (384, Some(16)),
+    (768, Some(32)),
+    (1024, Some(32)),
+];
+pub const BINARY_2BIT_STORED: Crossover = &[
+    (128, Some(8)),
+    (384, Some(10)),
+    (768, Some(12)),
+    (1024, Some(12)),
+];
+/// Binary with a 4- or 8-bit scalar query.
+pub const BINARY_SCALAR_QUERY: Crossover = &[
+    (128, Some(8)),
+    (384, Some(16)),
+    (768, Some(32)),
+    (1024, Some(32)),
+];
 
 /// TurboQuant, by padded dim (1.5-bit codes pad to 1.5 values per dim). The
 /// per-pair kernels of the narrow codes read several dims per byte, so the
