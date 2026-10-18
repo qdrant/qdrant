@@ -226,8 +226,8 @@ pub trait FullTextIndexRead {
     }
 
     fn points_count(&self) -> usize;
-    /// `N` for BM25: the documents holding a token, deleted ones included
-    /// until the segment is rebuilt.
+    /// `N` for BM25: the documents holding a token. An immutable index counts
+    /// its build, deleted documents included, until the segment is rebuilt.
     fn document_count(&self) -> usize;
     fn values_count(&self, point_id: PointOffsetType) -> usize;
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;

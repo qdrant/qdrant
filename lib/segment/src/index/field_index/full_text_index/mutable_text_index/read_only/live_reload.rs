@@ -23,15 +23,17 @@ impl<S: UniversalRead> LiveReload for ReadOnlyAppendableFullTextIndex<S> {
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
-        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
-        // Deleted points stay in the index: the writer keeps counting them
-        // until the segment is rebuilt, and the id tracker hides them from
-        // results. Only new points are indexed.
         self.storage.live_reload(fs)?;
 
         let inner = &mut self.inner;
+
+        for &deleted_point in deleted_points {
+            inner.inverted_index.remove(deleted_point);
+        }
+
         self.storage
             .view()
             .read_values::<Sequential, _, OperationError>(

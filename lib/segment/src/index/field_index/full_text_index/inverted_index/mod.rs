@@ -389,11 +389,11 @@ pub trait InvertedIndex {
 
     fn points_count(&self) -> usize;
 
-    /// Documents the BM25 statistics count, `N`: those holding a token,
-    /// deleted ones included until the segment is rebuilt, as `posting_len`
-    /// and [`Self::total_tokens`] count them. Unlike [`Self::points_count`],
-    /// a deletion does not lower it, so the writer, a restarted writer and
-    /// every reader count the same documents.
+    /// Documents the BM25 statistics count, `N`: those holding a token, as
+    /// `posting_len` and [`Self::total_tokens`] count them. An immutable index
+    /// counts its build, deleted documents included, so a deletion never
+    /// changes its statistics, unlike [`Self::points_count`]. A mutable index
+    /// counts the documents it holds.
     fn document_count(&self) -> usize {
         self.points_count()
     }

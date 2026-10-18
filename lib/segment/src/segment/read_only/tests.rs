@@ -2119,7 +2119,7 @@ fn appendable_indexes_drop_tombstoned_points_at_open_and_reload() {
 
 /// Text statistics as a scored query sees them on one segment: `N`, the `df` of
 /// each term, and the average document length.
-fn text_stats(segment: &impl ReadSegmentEntry, terms: &[&str]) -> (usize, Vec<usize>, Option<f32>) {
+fn text_stats(segment: &impl ReadSegmentEntry, terms: &[&str]) -> TextStats {
     let field = JsonPath::new("text");
     let mut query_context = QueryContext::default();
     query_context.init_text_stats(&field, None, terms.iter().map(|term| term.to_string()));
@@ -2152,17 +2152,27 @@ const TEXT_DOCUMENTS: [&str; 6] = [
 ];
 const TEXT_TERMS: [&str; 3] = ["quick", "fox", "dog"];
 
-/// Under append-only mutations a tombstone never reaches the text index, and
-/// it counts in `N`, `df` and the total until the segment is rebuilt, whoever
-/// opened the segment, and when. Four views of the same files: the writer that
-/// made the tombstones, the writer reopened, a reader opened before them and
-/// live-reloaded, and a reader opened after. `documents` is `N` with every
-/// tombstone counted.
-fn assert_text_stats_agree_across_views(
+/// `N`, the `df` of each of [`TEXT_TERMS`], and the average document length.
+type TextStats = (usize, Vec<usize>, Option<f32>);
+
+/// Text statistics of four views of the same files, after the writer deleted
+/// points.
+#[derive(Debug)]
+struct TextStatsViews {
+    /// The writer that made the deletions.
+    writer: TextStats,
+    /// The writer, loaded again from its files.
+    writer_reopened: TextStats,
+    /// A reader opened before the deletions, then live-reloaded.
+    reader_reloaded: TextStats,
+    /// A reader opened after the deletions.
+    reader_opened: TextStats,
+}
+
+fn text_stats_views(
     writer: &Segment,
     mut reader_before: ReadOnlySegment<MmapFile>,
-    documents: usize,
-) {
+) -> TextStatsViews {
     preload_then_reload(&mut reader_before).expect("live reload");
     let reader_after =
         ReadOnlySegment::<MmapFile>::open(&MmapFs, &writer.data_path(), writer.uuid, None, None)
@@ -2176,31 +2186,19 @@ fn assert_text_stats_agree_across_views(
     )
     .expect("reopen");
 
-    let views = [
-        ("writer", text_stats(writer, &TEXT_TERMS)),
-        ("writer reopened", text_stats(&reopened, &TEXT_TERMS)),
-        (
-            "reader live-reloaded",
-            text_stats(&reader_before, &TEXT_TERMS),
-        ),
-        (
-            "reader opened after",
-            text_stats(&reader_after, &TEXT_TERMS),
-        ),
-    ];
-    let (_, first) = &views[0];
-    assert!(
-        views.iter().all(|(_, stats)| stats == first),
-        "(N, df of {TEXT_TERMS:?}, avgdl) differ between views: {views:?}",
-    );
-    assert_eq!(
-        first.0, documents,
-        "tombstones count until the segment is rebuilt"
-    );
+    TextStatsViews {
+        writer: text_stats(writer, &TEXT_TERMS),
+        writer_reopened: text_stats(&reopened, &TEXT_TERMS),
+        reader_reloaded: text_stats(&reader_before, &TEXT_TERMS),
+        reader_opened: text_stats(&reader_after, &TEXT_TERMS),
+    }
 }
 
 /// The mutable text index of an appendable segment, after a delete and an
-/// update (clone and tombstone).
+/// update (clone and tombstone). Its statistics follow the deletes that reach
+/// the index: a reader drops deleted points at open and on reload alike. The
+/// append-only writer never sees its tombstones, so it is only compared with
+/// itself reopened.
 #[test]
 fn text_stats_ignore_load_history_appendable() {
     let segments_dir = Builder::new().prefix("text_stats_ao").tempdir().unwrap();
@@ -2245,12 +2243,15 @@ fn text_stats_ignore_load_history_appendable() {
         .unwrap();
     writer.flush(true).unwrap();
 
-    // The six documents, and the copy the update cloned point 3 into.
-    assert_text_stats_agree_across_views(&writer, reader_before, TEXT_DOCUMENTS.len() + 1);
+    let views = text_stats_views(&writer, reader_before);
+    assert_eq!(views.writer, views.writer_reopened, "{views:?}");
+    assert_eq!(views.reader_reloaded, views.reader_opened, "{views:?}");
+    // Six documents, less the deleted point 1 and the old copy of point 3.
+    assert_eq!(views.reader_opened.0, TEXT_DOCUMENTS.len() - 1, "{views:?}");
 }
 
 /// The immutable (`Pinned`) and on-disk (`Cold`) text indexes of an optimized
-/// segment, after a delete.
+/// segment, after a delete: every view keeps the build-time statistics.
 #[rstest]
 fn text_stats_ignore_load_history_optimized(
     #[values(Memory::Pinned, Memory::Cold)] memory: Memory,
@@ -2323,5 +2324,19 @@ fn text_stats_ignore_load_history_optimized(
         .unwrap();
     writer.flush(true).unwrap();
 
-    assert_text_stats_agree_across_views(&writer, reader_before, TEXT_DOCUMENTS.len());
+    let views = text_stats_views(&writer, reader_before);
+    let TextStatsViews {
+        writer,
+        writer_reopened,
+        reader_reloaded,
+        reader_opened,
+    } = &views;
+    assert!(
+        [writer_reopened, reader_reloaded, reader_opened]
+            .iter()
+            .all(|stats| *stats == writer),
+        "{views:?}",
+    );
+    // Deletes don't change the statistics of an immutable segment.
+    assert_eq!(writer.0, TEXT_DOCUMENTS.len(), "{views:?}");
 }

@@ -47,6 +47,7 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::ambient;
+    use common::bitvec::BitSlice;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
@@ -112,6 +113,7 @@ mod tests {
             &fs,
             dir.path().to_path_buf(),
             PointOffsetType::MAX,
+            BitSlice::empty(),
             config.clone(),
             false,
         )
@@ -126,6 +128,7 @@ mod tests {
             &fs,
             dir.path().to_path_buf(),
             PointOffsetType::MAX,
+            BitSlice::empty(),
             config,
             true,
         )
@@ -234,6 +237,7 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
+                BitSlice::empty(),
                 config,
             )
             .unwrap()
@@ -262,9 +266,7 @@ mod tests {
     /// a fresh `open_appendable` over the post-write gridstore.
     ///
     /// A writer keeps mutating after the read-only view is open: one point is
-    /// deleted and two are appended. The deletion is a tombstone, as under
-    /// append-only mutations: the writer keeps the record, so both views keep
-    /// the point, and the id tracker hides it. `live_reload` is handed only that delta and
+    /// deleted and two are appended. `live_reload` is handed only that delta and
     /// replays the stored documents itself, so it re-runs the same
     /// post-tokenization indexing the write path runs. Both token-set matching
     /// and phrase matching are checked, because the phrase leg is the one that
@@ -306,13 +308,14 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
+                BitSlice::empty(),
                 config.clone(),
             )
             .unwrap()
             .unwrap();
 
-        // Writer's delta: tombstone point 1 (its record stays), append points
-        // 3 and 4.
+        // Writer's delta: drop point 1, append points 3 and 4.
+        writer.remove_point(1).unwrap();
         for (offset, payload) in appended.iter().enumerate() {
             writer.add_point((3 + offset) as u32, &[payload]).unwrap();
         }
@@ -333,6 +336,7 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
+                BitSlice::empty(),
                 config,
             )
             .unwrap()
@@ -347,7 +351,7 @@ mod tests {
         let mut conditions = vec![
             // Spans deleted, surviving and appended points.
             FieldCondition::new_match(key.clone(), Match::new_text("brown")),
-            // Only ever present on the tombstoned point.
+            // Only ever present on the deleted point.
             FieldCondition::new_match(key.clone(), Match::new_text("dog")),
             // Only on appended points.
             FieldCondition::new_match(key.clone(), Match::new_text("moth")),
@@ -373,6 +377,11 @@ mod tests {
             let from_reload = reloaded.filter(condition).unwrap().unwrap().collect_vec();
             let from_fresh = fresh.filter(condition).unwrap().unwrap().collect_vec();
             assert_eq!(from_reload, from_fresh, "diverged for {condition:?}");
+            // The deleted point must not survive in either.
+            assert!(
+                !from_reload.contains(&1),
+                "point 1 resurrected by {condition:?}"
+            );
         }
 
         // Guard the fixture: the comparisons above hold vacuously if nothing
@@ -393,10 +402,10 @@ mod tests {
             &FieldCondition::new_match(key.clone(), Match::new_text("fox")),
             vec![0, 4],
         );
-        // The tombstoned point stays in the index, as on the writer.
+        // The deleted point was the only holder of this term.
         expect(
             &FieldCondition::new_match(key.clone(), Match::new_text("dog")),
-            vec![1],
+            vec![],
         );
 
         if phrase_matching {
