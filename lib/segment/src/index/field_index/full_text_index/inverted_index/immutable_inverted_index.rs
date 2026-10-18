@@ -13,7 +13,7 @@ use common::universal_io::{Populate, TypedStorage, UniversalRead, UniversalReadF
 use itertools::Either;
 use posting_list::{PostingBuilder, PostingList, PostingListView, PostingValue};
 
-use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, PositionalCursors, score_top_k};
+use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, score_top_k};
 use super::doc_len::{decode_doc_len, encode_doc_len};
 use super::immutable_postings_enum::ImmutablePostings;
 use super::mutable_inverted_index::MutableInvertedIndex;
@@ -73,17 +73,14 @@ pub struct ImmutableInvertedIndex {
     pub(super) total_tokens: u64,
     pub(super) points_count: usize,
     /// The bytes of `term_frequencies.dat`: how often each term occurs in each
-    /// document of its posting list. Present when the index scores without
-    /// positions, where the postings carry ids only.
+    /// document of its posting list. Present when the index scores.
     pub(super) term_frequencies: Option<Vec<u8>>,
 }
 
 impl ImmutableInvertedIndex {
-    /// Lengths, and term frequencies from either positions or `term_frequencies.dat`.
+    /// Lengths, and term frequencies from `term_frequencies.dat`.
     pub fn can_score(&self) -> bool {
-        self.point_to_doc_len.is_some()
-            && (matches!(self.postings, ImmutablePostings::WithPositions(_))
-                || self.term_frequencies.is_some())
+        self.point_to_doc_len.is_some() && self.term_frequencies.is_some()
     }
 
     /// Document lengths by point offset, `None` when this index does not
@@ -349,11 +346,15 @@ impl InvertedIndex for ImmutableInvertedIndex {
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        let Some(lengths) = self.point_to_doc_len.as_deref() else {
+        let (Some(lengths), Some(frequencies)) = (
+            self.point_to_doc_len.as_deref(),
+            self.term_frequencies.as_deref(),
+        ) else {
             return Err(OperationError::service_error(
                 "text index does not score: BM25 needs term frequencies and document lengths",
             ));
         };
+        let frequencies = TermFrequencies::new(frequencies)?;
         // Deleted points stay in these postings and are masked here, as the
         // filter path does.
         let visible = |point_id: PointOffsetType| {
@@ -369,46 +370,41 @@ impl InvertedIndex for ImmutableInvertedIndex {
             }
             Ok(())
         };
-        match (&self.postings, self.term_frequencies.as_deref()) {
-            (ImmutablePostings::WithPositions(postings), _) => {
-                let views = query
-                    .terms()
-                    .iter()
-                    .map(|term| postings.get(term.token_id as usize).map(PostingList::view))
-                    .collect();
-                score_top_k::<_, 1>(
-                    query,
-                    &mut PositionalCursors::new(views),
-                    lengths,
-                    &accept.with_visible(&visible),
-                    limit,
-                    is_stopped,
-                )
-            }
-            (ImmutablePostings::Ids(postings), Some(frequencies)) => {
-                let frequencies = TermFrequencies::new(frequencies)?;
-                let views = query
-                    .terms()
-                    .iter()
-                    .map(|term| {
-                        let Some(ids) = postings.get(term.token_id as usize) else {
-                            return Ok(None);
-                        };
-                        Ok(Some((ids.view(), frequencies.term(term.token_id)?)))
-                    })
-                    .collect::<OperationResult<_>>()?;
-                score_top_k::<_, 1>(
-                    query,
-                    &mut FrequencyCursors::new(views)?,
-                    lengths,
-                    &accept.with_visible(&visible),
-                    limit,
-                    is_stopped,
-                )
-            }
-            (ImmutablePostings::Ids(_), None) => Err(OperationError::service_error(
-                "text index does not score: BM25 needs term frequencies and document lengths",
-            )),
+        fn cursors<'a, V: PostingValue>(
+            postings: &'a [PostingList<V>],
+            frequencies: &TermFrequencies<'a>,
+            query: &Bm25Query,
+        ) -> OperationResult<FrequencyCursors<'a, V>> {
+            let views = query
+                .terms()
+                .iter()
+                .map(|term| {
+                    let Some(posting) = postings.get(term.token_id as usize) else {
+                        return Ok(None);
+                    };
+                    Ok(Some((posting.view(), frequencies.term(term.token_id)?)))
+                })
+                .collect::<OperationResult<_>>()?;
+            FrequencyCursors::new(views)
+        }
+        let accept = accept.with_visible(&visible);
+        match &self.postings {
+            ImmutablePostings::Ids(postings) => score_top_k::<_, 1>(
+                query,
+                &mut cursors(postings, &frequencies, query)?,
+                lengths,
+                &accept,
+                limit,
+                is_stopped,
+            ),
+            ImmutablePostings::WithPositions(postings) => score_top_k::<_, 1>(
+                query,
+                &mut cursors(postings, &frequencies, query)?,
+                lengths,
+                &accept,
+                limit,
+                is_stopped,
+            ),
         }
     }
 
@@ -517,9 +513,8 @@ impl ImmutableInvertedIndex {
 
         let (postings, vocab, orig_to_new_token) = optimized_postings_and_vocab(postings, vocab);
 
-        // Without positions, an index that scores keeps its frequencies apart
-        // from the ids-only postings.
-        let term_frequencies = (point_to_doc.is_none() && point_to_doc_len.is_some()).then(|| {
+        // An index that scores keeps its frequencies apart from the postings
+        let term_frequencies = point_to_doc_len.is_some().then(|| {
             term_frequencies::encode(postings.iter().map(|posting| {
                 posting
                     .frequencies()

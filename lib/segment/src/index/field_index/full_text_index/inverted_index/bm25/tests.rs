@@ -467,9 +467,8 @@ fn missing_average_length_degrades_to_b_zero() {
     );
 }
 
-/// An index that scores without positions ranks exactly as one with them:
-/// every shape, frequencies from `term_frequencies.dat` on the immutable and
-/// on-disk ones, deletions before and after the conversion, and a term
+/// An index without positions ranks exactly as one with them: every shape,
+/// frequencies from `term_frequencies.dat` on the immutable and on-disk ones, deletions before and after the conversion, and a term
 /// repeated far past a block's width in one document.
 #[rstest]
 fn counts_only_shapes_match_the_positional_reference(#[values(1, 10, 1000)] limit: usize) {

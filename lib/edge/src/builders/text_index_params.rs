@@ -104,9 +104,7 @@ impl TextIndexParamsBuilder {
         self
     }
 
-    /// Enable ranking points by BM25 over this field. Term frequencies come
-    /// from the positions when phrase matching is on, and from their own file
-    /// otherwise.
+    /// Enable ranking points by BM25 over this field.
     /// Default: disabled.
     pub fn scoring(mut self, scoring: TextScoringParams) -> Self {
         self.scoring = Some(scoring);

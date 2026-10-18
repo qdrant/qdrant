@@ -59,8 +59,8 @@ impl FullTextIndex {
             return Ok(None);
         };
 
-        // Lengths cannot be recovered from anything else on disk, and term
-        // frequencies cannot be recovered from ids-only postings, so report the
+        // Lengths and term frequencies cannot be recovered from anything else
+        // on disk, so report the
         // index absent and let the caller rebuild it from payload. The decision
         // belongs here rather than in `OnDiskInvertedIndex::open`: the read-only
         // stack never builds, and would drop the field instead.

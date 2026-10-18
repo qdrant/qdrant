@@ -14,12 +14,11 @@ use common::universal_io::{
     TypedStorage, UioResult, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
 };
 use on_disk_postings::OnDiskPostings;
+use posting_list::{PostingListView, PostingValue};
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
-use super::bm25::{
-    Bm25Accept, Bm25Query, FrequencyCursors, ON_DISK_BLOCK, PositionalCursors, score_top_k,
-};
+use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, ON_DISK_BLOCK, score_top_k};
 use super::doc_len::decode_doc_len;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
 use super::immutable_postings_enum::ImmutablePostings;
@@ -29,7 +28,7 @@ use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
 };
-use super::term_frequencies::{self, OnDiskTermFrequencies};
+use super::term_frequencies::{self, OnDiskTermFrequencies, TermFrequencyList};
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -52,8 +51,8 @@ pub(super) const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
-/// Term frequencies of an index that scores without positions, apart from its
-/// ids-only postings. See [`super::term_frequencies`].
+/// Term frequencies of an index that scores, apart from its postings. See
+/// [`super::term_frequencies`].
 pub(in super::super) const TERM_FREQUENCIES_FILE: &str = "term_frequencies.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
@@ -112,7 +111,7 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// spread over the whole point space, so [`OnDiskInvertedIndex::open`]
     /// decodes it once.
     pub point_to_doc_len: Option<Vec<u16>>,
-    /// `term_frequencies.dat`, when the index scores without positions.
+    /// `term_frequencies.dat`, when the index scores.
     /// Boxed: most text indexes have none, and it would widen every one.
     pub term_frequencies: Option<Box<OnDiskTermFrequencies<S>>>,
     pub deleted_points: DeletedBitVec,
@@ -367,11 +366,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
     }
 
     /// Whether this index holds what BM25 needs: lengths, and term
-    /// frequencies from either positions or `term_frequencies.dat`.
+    /// frequencies from `term_frequencies.dat`.
     pub fn can_score(&self) -> bool {
-        self.records_doc_len()
-            && (matches!(self.storage.postings, OnDiskPostingsEnum::WithPositions(_))
-                || self.storage.term_frequencies.is_some())
+        self.records_doc_len() && self.storage.term_frequencies.is_some()
     }
 
     /// Returns whether the point id is valid and active.
@@ -923,7 +920,7 @@ pub(super) fn read_deleted_points<S: UniversalRead>(
 
 /// `term_frequencies.dat` when it holds one list per posting list.
 ///
-/// Absent unless the index scores without positions; whether that is expected
+/// Absent unless the index scores; whether that is expected
 /// is the caller's call, as for the length sidecar. One that does not hold a
 /// list per posting list is from another build and is treated as absent, like
 /// a sidecar of the wrong length. A malformed file is the same.
@@ -1028,11 +1025,12 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         limit: usize,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        if !self.records_doc_len() {
+        let (true, Some(frequencies)) = (self.records_doc_len(), &self.storage.term_frequencies)
+        else {
             return Err(OperationError::service_error(
                 "text index does not score: BM25 needs term frequencies and document lengths",
             ));
-        }
+        };
         let terms = query.terms();
         let token_ids: Vec<TokenId> = terms.iter().map(|term| term.token_id).collect();
         // Deleted points stay in these postings and are masked here, as the
@@ -1044,9 +1042,14 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                 lengths[index] = doc_len;
             })
         };
+        let accept = accept.with_visible(&visible);
         // A term without a posting list contributes nothing, so only the
         // existing ones are read, and handed back in the query's term order.
-        fn by_term<V: Clone>(token_ids: &[TokenId], views: Vec<(TokenId, V)>) -> Vec<Option<V>> {
+        fn cursors<'a, V: PostingValue>(
+            token_ids: &[TokenId],
+            views: Vec<(TokenId, PostingListView<'a, V>)>,
+            frequencies: Vec<Option<TermFrequencyList<'a>>>,
+        ) -> OperationResult<FrequencyCursors<'a, V>> {
             let mut by_term = vec![None; token_ids.len()];
             for (token_id, view) in views {
                 let term = token_ids
@@ -1055,45 +1058,40 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                     .expect("a returned posting list belongs to a requested term");
                 by_term[term] = Some(view);
             }
-            by_term
+            let views = by_term
+                .into_iter()
+                .zip(frequencies)
+                .map(|(view, frequencies)| view.map(|view| (view, frequencies)))
+                .collect();
+            FrequencyCursors::new(views)
         }
-        match (&self.storage.postings, &self.storage.term_frequencies) {
-            (OnDiskPostingsEnum::WithPositions(postings), _) => {
+        // Only the query terms' frequencies, in two batched reads.
+        frequencies.with_terms(&token_ids, |frequencies| match &self.storage.postings {
+            OnDiskPostingsEnum::Ids(postings) => {
                 postings.with_existing_postings(&token_ids, |views| {
                     score_top_k::<_, ON_DISK_BLOCK>(
                         query,
-                        &mut PositionalCursors::new(by_term(&token_ids, views)),
+                        &mut cursors(&token_ids, views, frequencies)?,
                         lengths,
-                        &accept.with_visible(&visible),
+                        &accept,
                         limit,
                         is_stopped,
                     )
                 })
             }
-            (OnDiskPostingsEnum::Ids(postings), Some(frequencies)) => {
-                // Only the query terms' frequencies, in two batched reads.
-                frequencies.with_terms(&token_ids, |frequencies| {
-                    postings.with_existing_postings(&token_ids, |views| {
-                        let views = by_term(&token_ids, views)
-                            .into_iter()
-                            .zip(frequencies)
-                            .map(|(view, frequencies)| view.map(|view| (view, frequencies)))
-                            .collect();
-                        score_top_k::<_, ON_DISK_BLOCK>(
-                            query,
-                            &mut FrequencyCursors::new(views)?,
-                            lengths,
-                            &accept.with_visible(&visible),
-                            limit,
-                            is_stopped,
-                        )
-                    })
+            OnDiskPostingsEnum::WithPositions(postings) => {
+                postings.with_existing_postings(&token_ids, |views| {
+                    score_top_k::<_, ON_DISK_BLOCK>(
+                        query,
+                        &mut cursors(&token_ids, views, frequencies)?,
+                        lengths,
+                        &accept,
+                        limit,
+                        is_stopped,
+                    )
                 })
             }
-            (OnDiskPostingsEnum::Ids(_), None) => Err(OperationError::service_error(
-                "text index does not score: BM25 needs term frequencies and document lengths",
-            )),
-        }
+        })
     }
 
     fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {

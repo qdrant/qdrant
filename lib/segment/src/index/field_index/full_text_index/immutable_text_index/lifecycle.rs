@@ -45,7 +45,7 @@ impl<S: UniversalRead> ImmutableFullTextIndex<S> {
         self.inverted_index.total_tokens().is_some()
     }
 
-    /// Lengths, and term frequencies from either positions or the frequency file.
+    /// Lengths, and term frequencies from the frequency file.
     pub fn can_score(&self) -> bool {
         self.inverted_index.can_score()
     }

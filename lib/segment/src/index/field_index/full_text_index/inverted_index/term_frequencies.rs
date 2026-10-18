@@ -1,5 +1,5 @@
-//! Term frequencies of a text index that scores without positions, kept apart
-//! from the ids-only postings in `term_frequencies.dat`.
+//! Term frequencies of a text index that scores, kept apart from the postings
+//! in `term_frequencies.dat`.
 //!
 //! Each posting list's frequencies are stored in posting order, in blocks of
 //! [`BLOCK_LEN`] aligned with the posting list's chunks: block `k` holds the

@@ -1,19 +1,18 @@
 use common::types::PointOffsetType;
-use posting_list::{PostingLenIterator, PostingListView};
+use posting_list::{PostingLenIterator, PostingListView, PostingValue};
 
 use super::super::term_frequencies::{BLOCK_LEN, TermFrequencyList};
 use super::TermCursors;
 use crate::common::operation_error::{OperationError, OperationResult};
 
-/// Cursors over ids-only posting lists, with each term's frequencies read from
-/// its own bit-packed list in posting order: an index that scores without
-/// positions.
-pub struct FrequencyCursors<'a> {
-    cursors: Vec<Option<Cursor<'a>>>,
+/// Cursors over posting lists, with each term's frequencies read from its own
+/// bit-packed list in posting order. Only the ids of the postings are read.
+pub struct FrequencyCursors<'a, V: PostingValue> {
+    cursors: Vec<Option<Cursor<'a, V>>>,
 }
 
-struct Cursor<'a> {
-    ids: PostingLenIterator<'a, ()>,
+struct Cursor<'a, V: PostingValue> {
+    ids: PostingLenIterator<'a, V>,
     frequencies: TermFrequencyList<'a>,
     /// The block decoded into `block`, if any.
     decoded_block: Option<usize>,
@@ -22,7 +21,7 @@ struct Cursor<'a> {
     remainder: Option<Vec<u32>>,
 }
 
-impl Cursor<'_> {
+impl<V: PostingValue> Cursor<'_, V> {
     fn tf(&mut self, offset: usize) -> u32 {
         let block = offset / BLOCK_LEN;
         let blocks = self.frequencies.blocks();
@@ -42,13 +41,13 @@ impl Cursor<'_> {
     }
 }
 
-impl<'a> FrequencyCursors<'a> {
+impl<'a, V: PostingValue> FrequencyCursors<'a, V> {
     /// One posting list and its frequencies per query term, `None` for a term
     /// this index holds no posting list for. A posting list whose frequencies
     /// are missing or of another length means the two files disagree, and is
     /// an error rather than a term scored as absent or a lookup out of range.
     pub fn new(
-        views: Vec<Option<(PostingListView<'a, ()>, Option<TermFrequencyList<'a>>)>>,
+        views: Vec<Option<(PostingListView<'a, V>, Option<TermFrequencyList<'a>>)>>,
     ) -> OperationResult<Self> {
         let cursors = views
             .into_iter()
@@ -79,7 +78,7 @@ impl<'a> FrequencyCursors<'a> {
     }
 }
 
-impl TermCursors for FrequencyCursors<'_> {
+impl<V: PostingValue> TermCursors for FrequencyCursors<'_, V> {
     fn current(&self, term: usize) -> Option<PointOffsetType> {
         self.cursors[term]
             .as_ref()?

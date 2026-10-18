@@ -368,8 +368,7 @@ pub struct TextIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Enable ranking points by BM25 over this field; `true` for the defaults.
-    /// Term frequencies come from the positions when `phrase_matching` is on,
-    /// and from their own file otherwise. Changing it rebuilds the index.
+    /// Changing it rebuilds the index.
     /// Default: disabled.
     #[serde(
         default,
@@ -603,10 +602,8 @@ impl Drop for TextIndexScoringOverride {
 }
 
 impl TextIndexParams {
-    /// Whether an index built from these params records document lengths.
-    ///
-    /// Term frequencies come from positions with `phrase_matching`, and from
-    /// their own file without it.
+    /// Whether an index built from these params records document lengths
+    /// and term frequencies.
     pub fn scoring(&self) -> bool {
         #[cfg(feature = "testing")]
         if let Some(scoring) = TEXT_INDEX_SCORING_OVERRIDE.get() {

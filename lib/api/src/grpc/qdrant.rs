@@ -1615,8 +1615,7 @@ pub struct TextIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "11")]
     pub memory: ::core::option::Option<i32>,
     /// Enable ranking points by BM25 over this field.
-    /// Term frequencies come from the positions when `phrase_matching` is on,
-    /// and from their own file otherwise. Changing it rebuilds the index.
+    /// Changing it rebuilds the index.
     /// Default: disabled.
     #[prost(message, optional, tag = "12")]
     pub scoring: ::core::option::Option<TextScoringParams>,
