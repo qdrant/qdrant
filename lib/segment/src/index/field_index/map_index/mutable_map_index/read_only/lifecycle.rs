@@ -4,6 +4,7 @@ use blobstore::error::BlobstoreError;
 use blobstore::{Blob, BlobstoreReader};
 use common::ambient;
 use common::ambient::hw::HwMetric;
+use common::bitvec::BitSlice;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
@@ -52,6 +53,7 @@ where
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         let Some(storage) = BlobstoreReader::<Vec<<N as MapIndexKey>::Owned>, S>::open(
             fs,
@@ -72,6 +74,9 @@ where
         storage.iter::<_, BlobstoreError>(
             storage.max_point_offset()?.min(max_point_offset),
             |idx, values: Vec<_>| {
+                if deleted.get(idx as usize).is_some_and(|deleted| *deleted) {
+                    return Ok(true);
+                }
                 in_memory_index.add_many_to_map(idx, values);
                 Ok(true)
             },

@@ -51,8 +51,12 @@ impl<S: UniversalRead> ReadOnlyGeoIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
-        Ok(ReadOnlyAppendableGeoIndex::open(fs, dir, max_point_offset)?.map(Self::Appendable))
+        Ok(
+            ReadOnlyAppendableGeoIndex::open(fs, dir, max_point_offset, deleted)?
+                .map(Self::Appendable),
+        )
     }
 
     /// Read-only mirror of [`GeoIndex::new_immutable`][1]: open the immutable
