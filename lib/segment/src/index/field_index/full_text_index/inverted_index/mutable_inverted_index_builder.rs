@@ -36,15 +36,31 @@ impl MutableInvertedIndexBuilder {
         self.index.set_doc_len(idx, doc_len);
 
         let tokens = self.index.register_tokens(str_tokens);
+        let tokens_set = TokenSet::from_iter(tokens.iter().copied());
+
+        // Counted from the stream, which holds every repeat with or without
+        // positions.
+        let with_frequencies = self.index.stores_frequencies();
+        let frequencies =
+            with_frequencies.then(|| MutableInvertedIndex::term_frequencies(&tokens, &tokens_set));
+        for (at, &token_id) in tokens_set.tokens().iter().enumerate() {
+            if self.index.postings.len() <= token_id as usize {
+                self.index
+                    .postings
+                    .resize_with(token_id as usize + 1, || PostingList::new(with_frequencies));
+            }
+            let tf = frequencies
+                .as_ref()
+                .map_or(1, |frequencies| frequencies[at]);
+            self.index.postings[token_id as usize].insert(idx, tf);
+        }
 
         // insert as whole document
         if let Some(point_to_doc) = self.index.point_to_doc.as_mut() {
-            point_to_doc[idx as usize] = Some(Document::new(tokens.clone()));
+            point_to_doc[idx as usize] = Some(Document::new(tokens));
         }
 
-        // insert as tokenset
-        let tokens_set = TokenSet::from_iter(tokens);
-        // Same definition as `index_tokens`: a value that tokenizes to nothing
+        // Same definition as `index_token_set`: a value that tokenizes to nothing
         // is not a document. The builder visits each point once, so no
         // transition tracking is needed here.
         if !tokens_set.is_empty() {
@@ -54,41 +70,7 @@ impl MutableInvertedIndexBuilder {
     }
 
     /// Consumes the builder and returns a MutableInvertedIndex
-    pub fn build(mut self) -> MutableInvertedIndex {
-        // build postings from point_to_tokens
-        // build in order to increase point id
-        let with_frequencies = self.index.stores_frequencies();
-        for (idx, tokenset) in self.index.point_to_tokens.iter().enumerate() {
-            if let Some(tokenset) = tokenset {
-                let frequencies = with_frequencies.then(|| {
-                    let document = self
-                        .index
-                        .point_to_doc
-                        .as_ref()
-                        .and_then(|docs| docs.get(idx))
-                        .and_then(Option::as_ref);
-                    MutableInvertedIndex::term_frequencies(document, tokenset)
-                });
-                for (at, token_idx) in tokenset.tokens().iter().enumerate() {
-                    if self.index.postings.len() <= *token_idx as usize {
-                        self.index
-                            .postings
-                            .resize_with(*token_idx as usize + 1, || {
-                                PostingList::new(with_frequencies)
-                            });
-                    }
-                    let tf = frequencies
-                        .as_ref()
-                        .map_or(1, |frequencies| frequencies[at]);
-                    self.index
-                        .postings
-                        .get_mut(*token_idx as usize)
-                        .expect("posting must exist")
-                        .insert(idx as PointOffsetType, tf);
-                }
-            }
-        }
-
+    pub fn build(self) -> MutableInvertedIndex {
         self.index
     }
 }

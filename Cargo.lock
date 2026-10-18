@@ -7153,6 +7153,7 @@ dependencies = [
  "atomic_refcell",
  "atomicwrites",
  "bincode 1.3.3",
+ "bitpacking",
  "bitvec",
  "blink-alloc",
  "blobstore",

@@ -368,8 +368,8 @@ pub struct TextIndexParams {
     pub enable_hnsw: Option<bool>,
 
     /// Enable ranking points by BM25 over this field; `true` for the defaults.
-    /// Implies `phrase_matching: true`, since term frequencies come from the
-    /// positions it stores. Changing it rebuilds the index. Default: disabled.
+    /// Changing it rebuilds the index.
+    /// Default: disabled.
     #[serde(
         default,
         deserialize_with = "deserialize_text_scoring",
@@ -602,28 +602,14 @@ impl Drop for TextIndexScoringOverride {
 }
 
 impl TextIndexParams {
-    /// Whether an index built from these params records document lengths.
-    ///
-    /// Scoring also needs positions, which only `phrase_matching` stores: see
-    /// [`Self::normalized`], which every text index is built through.
+    /// Whether an index built from these params records document lengths
+    /// and term frequencies.
     pub fn scoring(&self) -> bool {
         #[cfg(feature = "testing")]
         if let Some(scoring) = TEXT_INDEX_SCORING_OVERRIDE.get() {
             return scoring;
         }
         self.scoring.is_some()
-    }
-
-    /// Apply what `scoring` implies: `phrase_matching`, for the positions term
-    /// frequencies come from. Every site derives positions from that flag, so
-    /// setting it is the whole of it. Without it a scoring index would hold no
-    /// positions, and term frequencies would not be slow to compute but
-    /// impossible.
-    pub fn normalized(mut self) -> Self {
-        if self.scoring() {
-            self.phrase_matching = Some(true);
-        }
-        self
     }
 
     /// Make [`Self::scoring`] answer `scoring` on this thread until the guard
@@ -1052,21 +1038,5 @@ mod tests {
         let invalid: Result<TextIndexParams, _> =
             serde_json::from_value(serde_json::json!({ "type": "text", "scoring": "bm25" }));
         assert!(invalid.is_err());
-    }
-
-    /// Term frequencies come from positions, which only `phrase_matching`
-    /// stores, so scoring turns it on.
-    #[test]
-    fn scoring_normalizes_phrase_matching_on() {
-        let scoring = text_params(serde_json::json!({ "scoring": true, "phrase_matching": false }));
-        assert_eq!(scoring.normalized().phrase_matching, Some(true));
-        let plain = text_params(serde_json::json!({ "phrase_matching": false }));
-        assert_eq!(plain.normalized().phrase_matching, Some(false));
-        assert_eq!(
-            text_params(serde_json::json!({}))
-                .normalized()
-                .phrase_matching,
-            None
-        );
     }
 }

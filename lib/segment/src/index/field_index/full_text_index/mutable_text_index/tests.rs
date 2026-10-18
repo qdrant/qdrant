@@ -184,11 +184,10 @@ fn doc_lens(index: &FullTextIndex) -> (Vec<u32>, u64) {
 /// Params with `phrase_matching` as given and `scoring` unset: the tests pass
 /// the recording flag to [`gridstore_index`] themselves.
 ///
-/// `length_config(false)` with recording on is **positions off, lengths on**, a
-/// shape params cannot produce any more, since `scoring` implies
-/// `phrase_matching`. The tests that build it are kept on purpose, as guards
-/// for a TF-only tier: lengths recorded without positions, which would bring
-/// back the deduplicated gridstore records these tests were written against.
+/// `length_config(false)` with recording on is **positions off, lengths on**:
+/// `scoring` without `phrase_matching`, which counts term frequencies without
+/// positions. Its gridstore records keep repeated tokens, where an index
+/// without scoring stores them deduplicated.
 fn length_config(phrase_matching: bool) -> TextIndexParams {
     TextIndexParams {
         r#type: TextIndexType::Text,
@@ -208,10 +207,10 @@ fn length_config(phrase_matching: bool) -> TextIndexParams {
     }
 }
 
-/// `phrase_matching: false` is the case at risk: those tokens are deduplicated
-/// on the way to the gridstore, so a length derived from them after reopening
-/// would count distinct terms rather than all of them. That case is a TF-only
-/// tier guard, see [`length_config`].
+/// `phrase_matching: false` is the case at risk: without positions, the
+/// gridstore record is the only place repeated tokens survive, so a record
+/// stored deduplicated would reopen with distinct-term lengths and every term
+/// frequency at 1. See [`length_config`].
 #[rstest]
 fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: bool) {
     let temp_dir = Builder::new().prefix("doc_len_reload").tempdir().unwrap();
@@ -235,6 +234,7 @@ fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: boo
         let (lens, total) = doc_lens(&index);
         assert_eq!(lens, expected, "lengths wrong before reload");
         assert_eq!(total, 10);
+        assert_eq!(the_frequency(&index), Some(3));
         index.flusher()().unwrap();
     }
 
@@ -244,6 +244,19 @@ fn doc_len_survives_gridstore_reload(#[values(false, true)] phrase_matching: boo
     let (lens, total) = doc_lens(&reopened);
     assert_eq!(lens, expected, "lengths lost across reload");
     assert_eq!(total, 10);
+    assert_eq!(
+        the_frequency(&reopened),
+        Some(3),
+        "term frequency lost across reload",
+    );
+}
+
+/// The term frequency of "the" in point 1 of [`doc_len_survives_gridstore_reload`].
+fn the_frequency(index: &FullTextIndex) -> Option<u32> {
+    let FullTextIndex::Mutable(index) = index else {
+        panic!("expected a mutable (gridstore) index");
+    };
+    index.inner.inverted_index.term_frequency("the", 1)
 }
 
 /// Array boundary sentinels hold a position so phrases cannot match across two

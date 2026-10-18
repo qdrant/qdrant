@@ -104,7 +104,7 @@ impl TextIndexParamsBuilder {
         self
     }
 
-    /// Enable ranking points by BM25 over this field. Implies phrase matching.
+    /// Enable ranking points by BM25 over this field.
     /// Default: disabled.
     pub fn scoring(mut self, scoring: TextScoringParams) -> Self {
         self.scoring = Some(scoring);
