@@ -31,9 +31,10 @@ pub struct UpdateOnlyElementMap<S: UniversalAppend + 'static> {
 impl<S: UniversalAppend + 'static> UpdateOnlyElementMap<S> {
     /// Open the map stored at `path` for appending, creating it if it isn't there yet.
     ///
-    /// New elements get offsets from `min_next_element` up, and above every offset the
-    /// map has given out: the index the map belongs to may already hold values up to
-    /// there, that the map doesn't know of.
+    /// New elements get offsets above every offset the map has given out, and from
+    /// `min_next_element` up, if given: the lowest offset the index the map belongs to
+    /// accepts values at. An index that only appends may already hold values the map
+    /// doesn't know of, see `inner_next_element` in `nested_index::update_only`.
     ///
     /// Offsets of an append-only map increase with the points: this writer gives out the
     /// next ones, and the writable map never frees any, as it updates and deletes points
@@ -42,9 +43,9 @@ impl<S: UniversalAppend + 'static> UpdateOnlyElementMap<S> {
     pub fn open(
         fs: &impl UniversalAppendFs<AppendFile = S>,
         path: &Path,
-        min_next_element: ElementOffsetType,
+        min_next_element: Option<ElementOffsetType>,
     ) -> OperationResult<Self> {
-        let mut next_element = min_next_element;
+        let mut next_element = min_next_element.unwrap_or(0);
         if let Some(reader) =
             BlobstoreReader::<StoredElements, _>::open(fs, path.to_path_buf(), Populate::No)
                 .ok_not_found()?

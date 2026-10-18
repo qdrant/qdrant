@@ -85,15 +85,22 @@ impl<S: UniversalAppend + 'static> UpdateOnlyNestedFieldIndex<S> {
     }
 }
 
-/// The lowest element offset the inner index stored in `index_dir` accepts values at.
+/// The lowest element offset the inner index stored in `index_dir` accepts values at, if
+/// it has one.
 ///
-/// Values are appended at increasing offsets, so after a crash between flushing the index
-/// and its map, the index can hold values at offsets the map never gave out.
+/// Value indexes only append, at increasing offsets. After a crash between flushing the
+/// index and its map, the index holds values at offsets the map never gave out, and refuses
+/// values at them again.
+///
+/// Bool and null indexes take values at any offset: they set flags in a mask they rewrite
+/// whole. Offsets with stale flags can be given out again, since the writer sets the flags
+/// of every element it adds, and readers never resolve an offset the map doesn't give to a
+/// point.
 fn inner_next_element(
     fs: &impl UniversalAppendFs,
     index_dir: &Path,
     index_type: &PayloadIndexType,
-) -> OperationResult<ElementOffsetType> {
+) -> OperationResult<Option<ElementOffsetType>> {
     match index_type {
         PayloadIndexType::IntIndex
         | PayloadIndexType::DatetimeIndex
@@ -108,12 +115,11 @@ fn inner_next_element(
                 BlobstoreReader::<Vec<u8>, _>::open(fs, index_dir.to_path_buf(), Populate::No)
                     .ok_not_found()?;
             match reader {
-                Some(reader) => Ok(reader.max_point_offset()?),
-                None => Ok(0),
+                Some(reader) => Ok(Some(reader.max_point_offset()?)),
+                None => Ok(Some(0)),
             }
         }
-        // Flags are set at any offset, not appended
-        PayloadIndexType::BoolIndex | PayloadIndexType::NullIndex => Ok(0),
+        PayloadIndexType::BoolIndex | PayloadIndexType::NullIndex => Ok(None),
     }
 }
 
