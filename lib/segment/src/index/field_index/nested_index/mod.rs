@@ -19,6 +19,7 @@ mod point_runs;
 mod read_only;
 #[cfg(test)]
 mod tests;
+mod update_only;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -37,6 +38,7 @@ pub use self::element_map::{
 };
 pub use self::facet::{FacetView, NestedFacetView};
 pub use self::numeric::{NestedNumericView, NumericView};
+pub use self::update_only::UpdateOnlyNestedFieldIndex;
 use super::facet_index::FacetIndexEnum;
 use super::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use super::stat_tools::estimate_multi_value_selection_cardinality;
