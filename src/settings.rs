@@ -100,6 +100,12 @@ pub struct ServiceConfig {
     #[validate(custom(function = validate_metrics_prefix))]
     pub metrics_prefix: Option<String>,
 
+    /// URL path prefix under which the REST API and Web UI are also served, such as `/qdrant`.
+    /// For reverse proxies that forward requests without stripping the prefix.
+    #[serde(default)]
+    #[validate(custom(function = validate_path_prefix))]
+    pub path_prefix: Option<String>,
+
     /// Whether to allow snapshot recovery from remote URLs (http/https).
     /// If disabled, snapshot recovery will only work with local files and uploads.
     /// Disabling this can mitigate SSRF risks in environments where the Qdrant node
@@ -111,6 +117,13 @@ pub struct ServiceConfig {
 impl ServiceConfig {
     pub fn hardware_reporting(&self) -> bool {
         self.hardware_reporting.unwrap_or_default()
+    }
+
+    /// The configured path prefix without a trailing `/`, if it is set and valid.
+    pub fn path_prefix(&self) -> Option<&str> {
+        let prefix = self.path_prefix.as_deref()?;
+        let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
+        (!prefix.is_empty() && validate_path_prefix(prefix).is_ok()).then_some(prefix)
     }
 }
 
@@ -623,6 +636,34 @@ fn validate_metrics_prefix(prefix: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Custom validation function for URL path prefixes.
+fn validate_path_prefix(prefix: &str) -> Result<(), ValidationError> {
+    // Prefix is not required, and a trailing `/` is ignored
+    let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
+    if prefix.is_empty() {
+        return Ok(());
+    }
+
+    // Only allow `/`-separated segments of unreserved URL characters, without `.` and `..`
+    let is_valid = prefix.strip_prefix('/').is_some_and(|path| {
+        path.split('/').all(|segment| {
+            !matches!(segment, "" | "." | "..")
+                && segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~'))
+        })
+    });
+    if !is_valid {
+        return Err(
+            ValidationError::new("invalid_path_prefix").with_message(Cow::Borrowed(
+                "Path prefix must start with '/', and its segments must be of all alphanumeric characters, with an exception for '-', '.', '_' and '~'",
+            )),
+        );
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;
@@ -698,6 +739,54 @@ mod tests {
             settings.cluster.consensus.shadow_state_machine,
             ShadowMode::Panic,
         );
+    }
+
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn path_prefix_from_env() {
+        unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", "/qdrant/") };
+
+        let settings = Settings::new(None).expect("failed to load config");
+
+        assert_eq!(settings.service.path_prefix(), Some("/qdrant"));
+    }
+
+    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[sealed_test]
+    fn invalid_path_prefix_from_env_is_ignored() {
+        unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", "qdrant") };
+
+        let settings = Settings::new(None).expect("failed to load config");
+
+        assert!(settings.validate().is_err());
+        assert_eq!(settings.service.path_prefix(), None);
+    }
+
+    #[test]
+    fn test_validate_path_prefix() {
+        for prefix in [
+            "",
+            "/",
+            "/qdrant",
+            "/qdrant/",
+            "/apps/qdrant",
+            "/q-d_r.a~nt",
+        ] {
+            assert!(validate_path_prefix(prefix).is_ok(), "{prefix:?}");
+        }
+        for prefix in [
+            "qdrant",
+            "//",
+            "/qdrant//",
+            "//qdrant",
+            "/./qdrant",
+            "/qdrant/..",
+            "/qdrant?a=b",
+            "/qdrant%2f",
+            "/qd rant",
+        ] {
+            assert!(validate_path_prefix(prefix).is_err(), "{prefix:?}");
+        }
     }
 
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]

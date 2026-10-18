@@ -5,6 +5,7 @@ mod certificate_helpers;
 mod forwarded;
 pub mod helpers;
 pub mod metrics_service;
+mod path_prefix;
 pub mod web_ui;
 
 use std::io;
@@ -16,7 +17,7 @@ use actix_cors::Cors;
 use actix_multipart::form::MultipartFormConfig;
 use actix_multipart::form::tempfile::TempFileConfig;
 use actix_web::http::KeepAlive;
-use actix_web::middleware::{Compress, Condition, Logger, NormalizePath};
+use actix_web::middleware::{Compress, Condition, Logger, Next, NormalizePath, from_fn};
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, error, get, web};
 use actix_web_extras::middleware::Condition as ConditionEx;
 use api::facet_api::config_facet_api;
@@ -45,6 +46,7 @@ use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::api::vector_name_api::config_vector_name_api;
 use crate::actix::auth::{AuthTransform, WhitelistItem};
+use crate::actix::path_prefix::strip_path_prefix;
 use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
 use crate::common::debugger::DebuggerState;
@@ -85,6 +87,10 @@ pub fn init(
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
         let web_ui_available = web_ui_folder(&settings);
+        let path_prefix = settings.service.path_prefix().map(str::to_string);
+        if let Some(prefix) = &path_prefix {
+            log::info!("REST API is also served under path prefix {prefix}");
+        }
         let service_config = web::Data::new(settings.service.clone());
         let audit_config_data = web::Data::new(settings.audit.clone());
 
@@ -134,6 +140,13 @@ pub fn init(
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
                     actix_telemetry_collector.clone(),
                 ))
+                // Strip path prefix before any other middleware, they all read the path on entry
+                .wrap(ConditionEx::from_option(path_prefix.clone().map(|prefix| {
+                    from_fn(move |mut req, next: Next<_>| {
+                        strip_path_prefix(&mut req, &prefix);
+                        async move { next.call(req).await }
+                    })
+                })))
                 .app_data(dispatcher_data.clone())
                 .app_data(telemetry_collector_data.clone())
                 .app_data(logger_handle_data.clone())
