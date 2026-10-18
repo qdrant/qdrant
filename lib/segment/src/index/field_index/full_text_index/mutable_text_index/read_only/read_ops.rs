@@ -26,6 +26,10 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyAppendableFullTextIndex<S> 
         self.inner.points_count()
     }
 
+    fn document_count(&self) -> usize {
+        self.inner.document_count()
+    }
+
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.inner.values_count(point_id)
     }

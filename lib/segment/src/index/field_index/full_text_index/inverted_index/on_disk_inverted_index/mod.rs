@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::ambient::hw::HwMetric;
-use common::bitvec::{BitSlice, DeletedBitVec};
+use common::bitvec::{BitSlice, BitVec, DeletedBitVec};
 use common::fs::clear_disk_cache;
 use common::generic_consts::Random;
 use common::mmap::{Advice, AdviceSetting, MmapSlice};
@@ -102,8 +102,9 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// index does not record lengths.
     ///
     /// Written once at build time and never masked, like
-    /// `point_to_tokens_count`, so anything summing these must filter through
-    /// `deleted_points` first.
+    /// `point_to_tokens_count`, so a read must filter through `deleted_points`
+    /// first. The statistics sum them unmasked: they count deleted documents
+    /// until the next build.
     ///
     /// Held in RAM as the codes of
     /// [`encode_doc_len`](super::doc_len::encode_doc_len), 2 bytes a point:
@@ -115,6 +116,9 @@ pub struct Storage<S: UniversalRead = MmapFile> {
     /// Boxed: most text indexes have none, and it would widen every one.
     pub term_frequencies: Option<Box<OnDiskTermFrequencies<S>>>,
     pub deleted_points: DeletedBitVec,
+    /// Points holding a token at build time: `N` for BM25, deleted ones
+    /// included until the next build.
+    pub documents: usize,
 }
 
 impl<S: UniversalRead> Storage<S> {
@@ -127,6 +131,7 @@ impl<S: UniversalRead> Storage<S> {
             // Mmap-backed, like the postings: not part of the resident set.
             term_frequencies: _,
             deleted_points,
+            documents: _,
         } = self;
 
         let doc_len_bytes = point_to_doc_len
@@ -166,6 +171,7 @@ impl OnDiskInvertedIndex<MmapFile> {
             total_tokens,
             points_count: _,
             term_frequencies,
+            documents: _,
         } = inverted_index;
 
         debug_assert_eq!(vocab.len(), postings.len());
@@ -327,7 +333,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             open_options(populate, AdviceSetting::Advice(Advice::Normal)),
         )?
         .map(Box::new);
-        let (deleted, compact_deleted_mask) = read_deleted_points(
+        let (deleted, compact_deleted_mask, documents) = read_deleted_points(
             fs,
             &path,
             open_options(populate, AdviceSetting::Global),
@@ -344,6 +350,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
                 point_to_doc_len,
                 term_frequencies,
                 deleted_points: deleted,
+                documents,
             },
             compact_deleted_mask,
         }))
@@ -769,6 +776,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             point_to_doc_len: _,
             term_frequencies,
             deleted_points: _,
+            documents: _,
         } = storage;
         clear_files_cache(
             path,
@@ -900,25 +908,34 @@ pub(super) fn read_doc_len_codes<S: UniversalRead>(
 }
 
 /// The id-tracker's `deleted_points` combined with the index's own "no values"
-/// mask, and whether that mask was the compact one.
+/// mask, whether that mask was the compact one, and how many documents the
+/// build counted.
 ///
-/// The result covers exactly the index's `total_count` points, because the
-/// mask only tracks the index's contents. The id-tracker's mask can be shorter
-/// or longer; if shorter, the missing entries default to live (the id-tracker
-/// is the source of truth for deletions, and a shorter mask just means it
-/// doesn't yet know about those higher offsets).
+/// The mask covers exactly the index's `total_count` points, because it only
+/// tracks the index's contents. The id-tracker's mask can be shorter or
+/// longer; if shorter, the missing entries default to live (the id-tracker is
+/// the source of truth for deletions, and a shorter mask just means it doesn't
+/// yet know about those higher offsets).
+///
+/// Documents are the zeros of the build's own mask, counted before the id
+/// tracker is applied: a deletion since the build still counts until the next
+/// one.
 pub(super) fn read_deleted_points<S: UniversalRead>(
     fs: &impl UniversalReadFs<File = S>,
     path: &Path,
     options: OpenOptions,
     deleted_points: &BitSlice,
     total_count: usize,
-) -> OperationResult<(DeletedBitVec, bool)> {
-    let mut deleted = deleted_points.to_owned();
-    deleted.resize(total_count, false);
+) -> OperationResult<(DeletedBitVec, bool, usize)> {
+    // The build's own mask first: what it leaves out are the documents the
+    // statistics count, whatever the id tracker deleted since.
+    let mut deleted = BitVec::repeat(false, total_count);
     let compact_deleted_mask =
         bitor_deleted_mask(fs, path, DELETED_POINTS_FILE, options, &mut deleted)?;
-    Ok((DeletedBitVec::new(deleted), compact_deleted_mask))
+    let documents = deleted.count_zeros();
+    let tracked = deleted_points.len().min(total_count);
+    deleted[..tracked] |= &deleted_points[..tracked];
+    Ok((DeletedBitVec::new(deleted), compact_deleted_mask, documents))
 }
 
 /// `term_frequencies.dat` when it holds one list per posting list.
@@ -1149,6 +1166,10 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         self.storage.deleted_points.active_count()
     }
 
+    fn document_count(&self) -> usize {
+        self.storage.documents
+    }
+
     fn doc_len_batch(
         &self,
         point_ids: &[PointOffsetType],
@@ -1183,9 +1204,9 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             .point_to_doc_len
             .is_some()
             .then(|| self.storage.postings.total_tokens())
-            // Zero over live documents is a header written before it carried
-            // the total: report no lengths rather than a wrong average.
-            .filter(|&total| total > 0 || self.points_count() == 0)
+            // Zero over a build with documents is a header written before it
+            // carried the total: report no lengths rather than a wrong average.
+            .filter(|&total| total > 0 || self.storage.documents == 0)
     }
 
     fn for_each_token_id<'a, U: UserData>(
