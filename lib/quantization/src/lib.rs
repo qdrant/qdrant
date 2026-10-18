@@ -6,6 +6,7 @@ pub mod encoded_vectors_tq;
 pub mod encoded_vectors_u8;
 pub mod kmeans;
 pub mod p_square;
+pub mod packed_multi_query;
 pub mod quantile;
 pub mod turboquant;
 pub mod vector_stats;
@@ -17,6 +18,7 @@ pub use encoded_storage::{EncodedStorage, EncodedStorageBuilder, EncodedStorageW
 pub use encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 pub use encoded_vectors_pq::{EncodedQueryPQ, EncodedVectorsPQ};
 pub use encoded_vectors_u8::{EncodedQueryU8, EncodedVectorsU8};
+pub use packed_multi_query::{MaxSim, PackedMultiQuery};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EncodingError {

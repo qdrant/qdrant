@@ -5,6 +5,7 @@ use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
+use super::packed_max_sim::PackedMultiQuery;
 use super::score_multi;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
@@ -13,6 +14,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
+use crate::types::MultiVectorComparator;
 use crate::vector_storage::MultiVectorStorageRead;
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -25,6 +27,8 @@ pub struct MultiMetricQueryScorer<
     hw: HwScale,
     vector_storage: &'a TVectorStorage,
     query: TypedMultiDenseVector<TElement>,
+    /// `query` packed for the batched MaxSim kernel, when it applies.
+    packed: Option<PackedMultiQuery>,
     metric: PhantomData<TMetric>,
 }
 
@@ -41,6 +45,14 @@ impl<
             preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
         }
         let preprocessed = MultiDenseVectorInternal::new(preprocessed, query.dim);
+        let query =
+            TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned();
+        let packed = match vector_storage.multi_vector_config().comparator {
+            MultiVectorComparator::MaxSim => PackedMultiQuery::new_if_faster(
+                TypedMultiDenseVectorRef::from(&query),
+                TMetric::distance(),
+            ),
+        };
 
         Self {
             hw: HwScale {
@@ -51,7 +63,8 @@ impl<
                     0
                 },
             },
-            query: TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),
+            query,
+            packed,
             vector_storage,
             metric: PhantomData,
         }
@@ -74,6 +87,10 @@ impl<
     }
 
     fn score_ref(&self, v2: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
+        if let Some(packed) = &self.packed {
+            self.hw.cpu(self.query.vectors_count() * v2.vectors_count());
+            return packed.score_max_similarity(v2);
+        }
         self.score_multi(TypedMultiDenseVectorRef::from(&self.query), v2)
     }
 }
