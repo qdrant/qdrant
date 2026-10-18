@@ -242,7 +242,8 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// values for offsets the id tracker does not cover yet.
     /// `deleted_points` reaches the immutable, appendable and bool leaves, which don't
     /// report the values of deleted points, as a live reload drops them too. The
-    /// roaring-flag null leaf ignores it.
+    /// appendable full-text leaf loads them, since its statistics count deleted documents
+    /// until the segment is rebuilt, and the roaring-flag null leaf ignores it.
     ///
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
     /// `populate_override` mirrors [`preopen`](Self::preopen): it re-decides
@@ -459,7 +460,6 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
                         fs,
                         text_dir(dir, field),
                         max_point_offset,
-                        deleted_points,
                         config,
                     )?,
                     ReadMode::Immutable { memory } => ReadOnlyFullTextIndex::open_immutable(

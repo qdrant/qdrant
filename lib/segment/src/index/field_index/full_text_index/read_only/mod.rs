@@ -47,7 +47,6 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::ambient;
-    use common::bitvec::BitSlice;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
@@ -113,7 +112,6 @@ mod tests {
             &fs,
             dir.path().to_path_buf(),
             PointOffsetType::MAX,
-            BitSlice::empty(),
             config.clone(),
             false,
         )
@@ -128,7 +126,6 @@ mod tests {
             &fs,
             dir.path().to_path_buf(),
             PointOffsetType::MAX,
-            BitSlice::empty(),
             config,
             true,
         )
@@ -237,7 +234,6 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
-                BitSlice::empty(),
                 config,
             )
             .unwrap()
@@ -308,7 +304,6 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
-                BitSlice::empty(),
                 config.clone(),
             )
             .unwrap()
@@ -336,7 +331,6 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
-                BitSlice::empty(),
                 config,
             )
             .unwrap()

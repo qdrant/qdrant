@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use blobstore::BlobstoreReader;
 use common::ambient;
 use common::ambient::hw::HwMetric;
-use common::bitvec::BitSlice;
 use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
@@ -46,14 +45,15 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
     /// the read path never creates.
     ///
     /// Values at or past `max_point_offset` are skipped, as the id tracker may
-    /// not yet cover them.
+    /// not yet cover them. Deleted points are loaded: the id tracker hides
+    /// them, and the statistics count them until the segment is rebuilt, as
+    /// on the writer and after a live reload.
     ///
     /// [1]: super::super::MutableFullTextIndex::open_gridstore
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: PathBuf,
         max_point_offset: PointOffsetType,
-        deleted: &BitSlice,
         config: TextIndexParams,
         scoring: bool,
     ) -> OperationResult<Option<Self>> {
@@ -75,9 +75,6 @@ impl<S: UniversalRead> ReadOnlyAppendableFullTextIndex<S> {
             .iter::<_, OperationError>(
                 storage.max_point_offset()?.min(max_point_offset),
                 |idx, value: Vec<u8>| {
-                    if deleted.get(idx as usize).is_some_and(|deleted| *deleted) {
-                        return Ok(true);
-                    }
                     let doc = FullTextIndex::deserialize_document(&value)?;
                     if scoring && doc.doc_len.is_none() {
                         records_without_length += 1;

@@ -40,19 +40,13 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         max_point_offset: PointOffsetType,
-        deleted: &BitSlice,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
         let scoring = config.scoring();
-        Ok(ReadOnlyAppendableFullTextIndex::open(
-            fs,
-            dir,
-            max_point_offset,
-            deleted,
-            config,
-            scoring,
-        )?
-        .map(|index| Self::Appendable(Box::new(index))))
+        Ok(
+            ReadOnlyAppendableFullTextIndex::open(fs, dir, max_point_offset, config, scoring)?
+                .map(|index| Self::Appendable(Box::new(index))),
+        )
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.
