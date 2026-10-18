@@ -392,6 +392,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             ImmutablePostings::Ids(postings) => score_top_k::<_, 1>(
                 query,
                 &mut cursors(postings, &frequencies, query)?,
+                self.point_to_tokens_count.len(),
                 lengths,
                 &accept,
                 limit,
@@ -400,6 +401,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             ImmutablePostings::WithPositions(postings) => score_top_k::<_, 1>(
                 query,
                 &mut cursors(postings, &frequencies, query)?,
+                self.point_to_tokens_count.len(),
                 lengths,
                 &accept,
                 limit,

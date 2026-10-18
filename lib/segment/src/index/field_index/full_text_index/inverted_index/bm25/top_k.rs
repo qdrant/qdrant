@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::collections::binary_heap::PeekMut;
 use std::sync::atomic::AtomicBool;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
@@ -13,6 +14,41 @@ use crate::common::operation_error::{OperationError, OperationResult, check_proc
 /// others in flight, small enough that the essential terms a block starts with
 /// do not go stale for long.
 pub const ON_DISK_BLOCK: usize = 128;
+
+/// Candidates document at a time visits between two checks of `is_stopped`.
+/// The dense pass checks once per [`DENSE_WINDOW`].
+const STOP_CHECK_INTERVAL: usize = 1024;
+
+/// Point offsets the dense pass scores at a time: its scores and norms take 8
+/// bytes per offset, 128 KiB here, which stays in L2. Forced dense on Quora
+/// (523k points), 2048 took 8% more cycles per query, paying more per window.
+const DENSE_WINDOW: usize = 1 << 14;
+
+/// From this many essential terms on, a block finds its next candidate with a
+/// min-heap of their cursors keyed by current document, which costs
+/// `O(hits * log terms)` a candidate. Below it, scanning every essential
+/// cursor twice is cheaper than keeping the heap.
+pub(super) const HEAP_MIN_ESSENTIAL: usize = 16;
+
+/// Posting entries per document of the segment from which a query is scored
+/// term at a time into a dense array ([`score_dense`]) instead of document at
+/// a time. The dense pass pays per document of the segment and saves per
+/// posting entry. Swept over 0.25, 0.5 and 1 on BEIR scifact, ArguAna and
+/// FiQA, 0.5 was best overall: 9% fewer cycles per query than 1 on FiQA,
+/// where 0.25 already lost to 0.5. Quora's short queries stay well below it.
+const DENSE_MIN_POSTINGS_PER_DOC: f32 = 0.5;
+
+/// How [`score_top_k_with`] finds its candidates.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Strategy {
+    /// Essential terms from which the cursor heap finds candidates.
+    pub heap_min_essential: usize,
+    /// Posting entries per document from which the query is scored densely,
+    /// when the cursors allow it.
+    pub dense_min_postings_per_doc: f32,
+    /// Point offsets the dense pass scores at a time.
+    pub dense_window: usize,
+}
 
 /// Score every document that contains at least one query term and keep the
 /// `limit` best, highest first.
@@ -42,13 +78,49 @@ pub const ON_DISK_BLOCK: usize = 128;
 /// block's worth of extra candidates and never a result, since the threshold
 /// only rises and only prunes. A `BLOCK` of 1 is plain document-at-a-time,
 /// and a constant so that it compiles to it, without the block bookkeeping.
+///
+/// `doc_count` bounds the segment's point offsets. A query whose posting lists
+/// together hold many entries per document is scored term at a time instead
+/// ([`score_dense`]), which needs no cursor work and no pruning.
+#[allow(clippy::too_many_arguments)]
 pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     query: &Bm25Query,
     cursors: &mut C,
+    doc_count: usize,
+    doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
+    accept: &impl ConditionChecker<Error = OperationError>,
+    limit: usize,
+    is_stopped: &AtomicBool,
+) -> OperationResult<Vec<ScoredPointOffset>> {
+    score_top_k_with::<C, BLOCK>(
+        query,
+        cursors,
+        doc_count,
+        doc_lens,
+        accept,
+        limit,
+        is_stopped,
+        Strategy {
+            heap_min_essential: HEAP_MIN_ESSENTIAL,
+            dense_min_postings_per_doc: DENSE_MIN_POSTINGS_PER_DOC,
+            dense_window: DENSE_WINDOW,
+        },
+    )
+}
+
+/// [`score_top_k`] with its [`Strategy`] given. The cursor heap and the scan
+/// find the same candidates with the same hits in the same order, so the
+/// result is identical whichever is used.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
+    query: &Bm25Query,
+    cursors: &mut C,
+    doc_count: usize,
     mut doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
     accept: &impl ConditionChecker<Error = OperationError>,
     limit: usize,
     is_stopped: &AtomicBool,
+    strategy: Strategy,
 ) -> OperationResult<Vec<ScoredPointOffset>> {
     let terms = query.terms();
     let term_count = terms.len();
@@ -56,6 +128,23 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
         return Ok(Vec::new());
     }
     const { assert!(BLOCK > 0) };
+
+    if cursors.term_at_a_time() && doc_count > 0 {
+        let postings: usize = (0..term_count).map(|term| cursors.posting_len(term)).sum();
+        if postings as f32 >= strategy.dense_min_postings_per_doc * doc_count as f32 {
+            return score_dense::<C, BLOCK>(
+                query,
+                cursors,
+                doc_count,
+                doc_lens,
+                accept,
+                limit,
+                is_stopped,
+                strategy.dense_window,
+            );
+        }
+    }
+    let heap_min_essential = strategy.heap_min_essential;
 
     // `prefix[i]` bounds what terms `0..=i` together can add to a score.
     let mut prefix = Vec::with_capacity(term_count);
@@ -84,6 +173,14 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
     let mut lengths: [Option<u32>; BLOCK] = [None; BLOCK];
     let mut hits: Vec<(usize, u32)> = Vec::with_capacity(term_count * BLOCK);
 
+    // The essential cursors by `(current document, term)`, smallest first,
+    // packed into one integer (`heap_key`) so that comparing two is a single
+    // comparison, and the first essential term it was built for. Only the candidate loop
+    // moves essential cursors, through the heap while it is in use, so the
+    // heap stays valid for as long as the essential terms do not change.
+    let mut cursor_heap: BinaryHeap<Reverse<u64>> = BinaryHeap::new();
+    let mut heap_essential = None;
+
     while first_essential < term_count {
         // The essential terms of this block. Those below it are consulted by
         // seeking; `first_essential` only rises, so none of them turns
@@ -92,30 +189,69 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
         let mut count = 0;
         hits.clear();
 
+        let use_heap = term_count - block_essential >= heap_min_essential;
+        if !use_heap {
+            heap_essential = None;
+        } else if heap_essential != Some(block_essential) {
+            cursor_heap.clear();
+            cursor_heap.extend((block_essential..term_count).filter_map(|term| {
+                cursors
+                    .current(term)
+                    .map(|doc| Reverse(heap_key(doc, term)))
+            }));
+            heap_essential = Some(block_essential);
+        }
+
         while count < BLOCK {
             visited += 1;
-            if visited.is_multiple_of(1024) {
+            if visited.is_multiple_of(STOP_CHECK_INTERVAL) {
                 check_process_stopped(is_stopped)?;
             }
 
-            let Some(doc) = (block_essential..term_count)
-                .filter_map(|term| cursors.current(term))
-                .min()
-            else {
+            let next = if use_heap {
+                cursor_heap.peek().map(|&Reverse(key)| key_doc(key))
+            } else {
+                (block_essential..term_count)
+                    .filter_map(|term| cursors.current(term))
+                    .min()
+            };
+            let Some(doc) = next else {
                 break;
             };
 
             // Move every essential cursor standing on this document, whether
             // or not it gets scored, keeping its frequency if it may be. In
-            // blocks, the check waits for the whole block.
+            // blocks, the check waits for the whole block. The heap yields
+            // hits in term order, as the scan does, so they are summed in the
+            // same order either way.
             let accepted = BLOCK > 1 || accept.check(doc)?;
             let hits_start = hits.len();
-            for term in block_essential..term_count {
-                if cursors.current(term) == Some(doc) {
+            if use_heap {
+                while let Some(mut top) = cursor_heap.peek_mut() {
+                    let Reverse(key) = *top;
+                    let term = key as u32 as usize;
+                    if key_doc(key) != doc {
+                        break;
+                    }
                     if accepted {
                         hits.push((term, cursors.tf(term, doc)));
                     }
                     cursors.advance(term);
+                    match cursors.current(term) {
+                        Some(next) => *top = Reverse(heap_key(next, term)),
+                        None => {
+                            PeekMut::pop(top);
+                        }
+                    }
+                }
+            } else {
+                for term in block_essential..term_count {
+                    if cursors.current(term) == Some(doc) {
+                        if accepted {
+                            hits.push((term, cursors.tf(term, doc)));
+                        }
+                        cursors.advance(term);
+                    }
                 }
             }
             if accepted {
@@ -176,9 +312,11 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
             .zip(lengths.iter())
             .zip(&hits_end[..count])
         {
+            // The document's length norm once, for all its terms.
+            let norm = query.doc_norm(len);
             let mut score = 0.0;
             for &(term, tf) in &hits[hits_start..end] {
-                score += query.term_score(terms[term].idf, tf, len);
+                score += query.term_score_with_norm(terms[term].idf, tf, norm);
             }
             hits_start = end;
 
@@ -190,7 +328,7 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
                 }
                 if cursors.seek(term, doc) == Some(doc) {
                     let tf = cursors.tf(term, doc);
-                    score += query.term_score(weight.idf, tf, len);
+                    score += query.term_score_with_norm(weight.idf, tf, norm);
                 }
             }
 
@@ -212,11 +350,128 @@ pub fn score_top_k<C: TermCursors, const BLOCK: usize>(
         }
     }
 
+    Ok(into_ranking(heap))
+}
+
+/// Score every document term at a time into a dense array, one `window` of
+/// point offsets at a time, then keep the `limit` best.
+///
+/// Each posting list is read once, in order, with no cursor heap, no seeks and
+/// no pruning: `O(postings + doc_count)`. When a query's postings cover most of
+/// the segment, as long queries do, MaxScore keeps nearly every term essential
+/// and prunes little, so reading everything is the cheaper way to the same
+/// ranking. The window bounds the scratch memory whatever the segment's size
+/// and keeps it in cache; each list resumes where the previous window left it.
+/// Documents are offered to the selection in increasing order, and one enters
+/// only above the current `limit`-th score, as in [`score_top_k_with`], so
+/// equal scores are broken the same way. A document's terms are summed in term
+/// order, as document at a time does while nothing is pruned.
+#[allow(clippy::too_many_arguments)]
+fn score_dense<C: TermCursors, const BLOCK: usize>(
+    query: &Bm25Query,
+    cursors: &mut C,
+    doc_count: usize,
+    mut doc_lens: impl FnMut(&[PointOffsetType], &mut [Option<u32>]) -> OperationResult<()>,
+    accept: &impl ConditionChecker<Error = OperationError>,
+    limit: usize,
+    is_stopped: &AtomicBool,
+    window: usize,
+) -> OperationResult<Vec<ScoredPointOffset>> {
+    let window = window.min(doc_count);
+    // Each document's length norm, once: the same value `term_score` would
+    // compute from its length, so the scores are unchanged.
+    let mut norms: Vec<ScoreType> = vec![query.doc_norm(None); window];
+    // A document no term hits keeps `-0.0`. Every contribution is `+0.0` or
+    // positive, and adding one clears the sign, so the sign bit tells the
+    // documents a term hit from the others. `-0.0 + x` is `x` exactly, so the
+    // sums match document at a time, which starts from `0.0`.
+    let mut scores: Vec<ScoreType> = vec![-0.0; window];
+    // Validation admits an idf of `-0.0`, whose contributions would leave the
+    // sign set. `abs` makes it `+0.0` and changes no other idf.
+    let idfs: Vec<ScoreType> = query.terms().iter().map(|term| term.idf.abs()).collect();
+
+    let mut heap: BinaryHeap<Reverse<ScoredPointOffset>> =
+        BinaryHeap::with_capacity(limit.min(1024) + 1);
+    let mut threshold = ScoreType::NEG_INFINITY;
+    let mut ids: [PointOffsetType; BLOCK] = [0; BLOCK];
+    let mut lengths: [Option<u32>; BLOCK] = [None; BLOCK];
+
+    for base in (0..doc_count).step_by(window.max(1)) {
+        check_process_stopped(is_stopped)?;
+        let n = window.min(doc_count - base);
+        let end = (base + n) as PointOffsetType;
+        let norms = &mut norms[..n];
+        let scores = &mut scores[..n];
+
+        if query.normalizes_length() {
+            for (start, out) in (base..base + n).step_by(BLOCK).zip(norms.chunks_mut(BLOCK)) {
+                let m = out.len();
+                for (offset, id) in ids[..m].iter_mut().enumerate() {
+                    *id = (start + offset) as PointOffsetType;
+                }
+                doc_lens(&ids[..m], &mut lengths[..m])?;
+                for (norm, &len) in out.iter_mut().zip(&lengths[..m]) {
+                    *norm = query.doc_norm(len);
+                }
+            }
+        }
+
+        scores.fill(-0.0);
+        for (term, &idf) in idfs.iter().enumerate() {
+            cursors.for_each_posting_below(term, end, |doc, tf| {
+                let at = doc as usize - base;
+                scores[at] += query.term_score_with_norm(idf, tf, norms[at]);
+            });
+        }
+
+        for (at, &score) in scores.iter().enumerate() {
+            if score.is_sign_negative() || score <= threshold {
+                continue;
+            }
+            let doc = (base + at) as PointOffsetType;
+            if !accept.check(doc)? {
+                continue;
+            }
+            heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
+            if heap.len() > limit {
+                heap.pop();
+            }
+            if heap.len() == limit {
+                threshold = heap
+                    .peek()
+                    .map(|Reverse(min)| min.score)
+                    .unwrap_or(threshold);
+            }
+        }
+    }
+
+    // A posting past `doc_count`: the caller bounds its own offsets, so none
+    // is expected, and one is a broken invariant rather than a result to drop.
+    if (0..idfs.len()).any(|term| cursors.current(term).is_some()) {
+        return Err(OperationError::service_error(
+            "BM25 posting beyond the segment's point offsets",
+        ));
+    }
+    Ok(into_ranking(heap))
+}
+
+/// Highest first, and a fixed order among equal scores so the output does not
+/// depend on heap internals.
+fn into_ranking(heap: BinaryHeap<Reverse<ScoredPointOffset>>) -> Vec<ScoredPointOffset> {
     let mut result: Vec<ScoredPointOffset> = heap.into_iter().map(|Reverse(hit)| hit).collect();
-    // Highest first, and a fixed order among equal scores so the output does
-    // not depend on heap internals.
     result.sort_unstable_by(|a, b| b.score.total_cmp(&a.score).then(a.idx.cmp(&b.idx)));
-    Ok(result)
+    result
+}
+
+/// A cursor's place in the heap: its current document, then its term.
+#[inline]
+fn heap_key(doc: PointOffsetType, term: usize) -> u64 {
+    (u64::from(doc) << 32) | term as u64
+}
+
+#[inline]
+fn key_doc(key: u64) -> PointOffsetType {
+    (key >> 32) as PointOffsetType
 }
 
 /// A gathered candidate as the batched check moves it around: the document,

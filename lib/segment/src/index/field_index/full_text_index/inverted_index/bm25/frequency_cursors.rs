@@ -8,11 +8,18 @@ use super::TermCursors;
 /// bit-packed list in posting order. Only the ids of the postings are read.
 pub struct FrequencyCursors<'a, V: PostingValue> {
     cursors: Vec<Option<Cursor<'a, V>>>,
+    /// Entries in each term's posting list, 0 for a term without one.
+    lens: Vec<usize>,
 }
 
 struct Cursor<'a, V: PostingValue> {
     ids: PostingLenIterator<'a, V>,
-    frequencies: TermFrequencyList<'a>,
+    frequencies: Frequencies<'a>,
+}
+
+/// One posting list's frequencies, decoded a block at a time.
+struct Frequencies<'a> {
+    list: TermFrequencyList<'a>,
     /// The block decoded into `block`, if any.
     decoded_block: Option<usize>,
     block: [u32; BLOCK_LEN],
@@ -20,20 +27,21 @@ struct Cursor<'a, V: PostingValue> {
     remainder: Option<Vec<u32>>,
 }
 
-impl<V: PostingValue> Cursor<'_, V> {
-    fn tf(&mut self, offset: usize) -> u32 {
+impl Frequencies<'_> {
+    /// The frequency of the entry at `offset` in the posting list.
+    fn at(&mut self, offset: usize) -> u32 {
         let block = offset / BLOCK_LEN;
-        let blocks = self.frequencies.blocks();
+        let blocks = self.list.blocks();
         if block < blocks {
             if self.decoded_block != Some(block) {
-                self.frequencies.decode_block(block, &mut self.block);
+                self.list.decode_block(block, &mut self.block);
                 self.decoded_block = Some(block);
             }
             return self.block[offset % BLOCK_LEN];
         }
         let remainder = self.remainder.get_or_insert_with(|| {
             let mut remainder = Vec::with_capacity(BLOCK_LEN);
-            self.frequencies.decode_remainder(&mut remainder);
+            self.list.decode_remainder(&mut remainder);
             remainder
         });
         remainder[offset - blocks * BLOCK_LEN]
@@ -48,6 +56,10 @@ impl<'a, V: PostingValue> FrequencyCursors<'a, V> {
     pub fn new(
         views: Vec<Option<(PostingListView<'a, V>, Option<TermFrequencyList<'a>>)>>,
     ) -> Self {
+        let lens = views
+            .iter()
+            .map(|view| view.as_ref().map_or(0, |(ids, _)| ids.len()))
+            .collect();
         let cursors = views
             .into_iter()
             .map(|view| {
@@ -56,19 +68,21 @@ impl<'a, V: PostingValue> FrequencyCursors<'a, V> {
                     frequencies.is_some_and(|frequencies| frequencies.len() == ids.len()),
                     "term frequencies do not match the postings",
                 );
-                let frequencies = frequencies?;
+                let list = frequencies?;
                 let mut ids = ids.len_iter();
                 ids.next()?;
                 Some(Cursor {
                     ids,
-                    frequencies,
-                    decoded_block: None,
-                    block: [0; BLOCK_LEN],
-                    remainder: None,
+                    frequencies: Frequencies {
+                        list,
+                        decoded_block: None,
+                        block: [0; BLOCK_LEN],
+                        remainder: None,
+                    },
                 })
             })
             .collect();
-        Self { cursors }
+        Self { cursors, lens }
     }
 }
 
@@ -87,6 +101,38 @@ impl<V: PostingValue> TermCursors for FrequencyCursors<'_, V> {
         {
             self.cursors[term] = None;
         }
+    }
+
+    fn posting_len(&self, term: usize) -> usize {
+        self.lens[term]
+    }
+
+    /// A chunk of ids at a time; the frequencies follow by offset, a block at
+    /// a time.
+    fn for_each_posting_below(
+        &mut self,
+        term: usize,
+        end: PointOffsetType,
+        mut f: impl FnMut(PointOffsetType, u32),
+    ) {
+        let Some(Cursor { ids, frequencies }) = self.cursors[term].as_mut() else {
+            return;
+        };
+        let Some(mut offset) = ids.current_offset() else {
+            return;
+        };
+        let more = ids.for_each_below(end, |elem| {
+            f(elem.id, frequencies.at(offset));
+            offset += 1;
+        });
+        if !more {
+            self.cursors[term] = None;
+        }
+    }
+
+    /// A block of frequencies decodes once for all its entries.
+    fn term_at_a_time(&self) -> bool {
+        true
     }
 
     fn seek(&mut self, term: usize, target: PointOffsetType) -> Option<PointOffsetType> {
@@ -109,6 +155,6 @@ impl<V: PostingValue> TermCursors for FrequencyCursors<'_, V> {
             .ids
             .current_offset()
             .expect("tf is only asked for the current document");
-        cursor.tf(offset)
+        cursor.frequencies.at(offset)
     }
 }

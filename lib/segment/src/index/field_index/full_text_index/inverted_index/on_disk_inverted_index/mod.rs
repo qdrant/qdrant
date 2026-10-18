@@ -1043,6 +1043,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
             })
         };
         let accept = accept.with_visible(&visible);
+        let doc_count = self.storage.point_to_tokens_count.len()? as usize;
         // A term without a posting list contributes nothing, so only the
         // existing ones are read, and handed back in the query's term order.
         fn cursors<'a, V: PostingValue>(
@@ -1072,6 +1073,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                     score_top_k::<_, ON_DISK_BLOCK>(
                         query,
                         &mut cursors(&token_ids, views, frequencies),
+                        doc_count,
                         lengths,
                         &accept,
                         limit,
@@ -1084,6 +1086,7 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
                     score_top_k::<_, ON_DISK_BLOCK>(
                         query,
                         &mut cursors(&token_ids, views, frequencies),
+                        doc_count,
                         lengths,
                         &accept,
                         limit,
