@@ -4,7 +4,9 @@
 //! and differ only in how they read and write the storage.
 
 use blobstore::Blob;
-use blobstore::config::{CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, StorageConfig};
+use blobstore::config::{
+    Compression, CreateOptions, DEFAULT_REGION_SIZE_BLOCKS, LogstoreConfig, StorageConfig,
+};
 use blobstore::error::BlobstoreError;
 use common::bitvec::{BitSlice, BitVec};
 use common::types::PointOffsetType;
@@ -14,16 +16,25 @@ use super::{ElementOffsetType, NO_POINT};
 /// Block size of the stored element lists: four offsets.
 const BLOCK_SIZE: usize = 4 * size_of::<ElementOffsetType>();
 
+/// Page size of the stored element lists.
+const PAGE_SIZE: usize = BLOCK_SIZE * DEFAULT_REGION_SIZE_BLOCKS * 32;
+
 /// Storage options of the per-point element lists.
 pub(super) fn storage_options() -> StorageConfig {
     // Append-only segments give updated points fresh offsets and keep deleted
     // points' elements, so their mappings can use Logstore like the inner index.
     crate::common::blobstore_config::storage_config(CreateOptions {
-        page_size_bytes: BLOCK_SIZE * DEFAULT_REGION_SIZE_BLOCKS * 32,
+        page_size_bytes: PAGE_SIZE,
         block_size_bytes: BLOCK_SIZE,
-        compression: blobstore::config::Compression::None,
+        compression: Compression::None,
     })
 }
+
+/// Storage config of element lists that an update-only writer creates.
+pub(super) const LOGSTORE_CONFIG: LogstoreConfig = LogstoreConfig {
+    page_capacity_bytes: PAGE_SIZE,
+    compression: Compression::None,
+};
 
 /// The element offsets of one point, as stored per point.
 #[derive(Debug, Default)]
