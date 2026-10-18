@@ -174,17 +174,45 @@ fn run_read_only(seed: u64, memory: Option<Memory>) {
     // Immutable element maps, with deleted points
     let mut flat = optimize(&pair.flat, &dir.path().join("flat_optimized"));
     let mut nested = optimize(&pair.nested, &dir.path().join("nested_optimized"));
+    let mut reloaded = open_read_only(&nested);
+    let mut reloaded_flat = open_read_only(&flat);
     for id in (0..NUM_POINTS).step_by(7) {
         pair.op_num += 1;
         flat.delete_point(pair.op_num, id.into()).unwrap();
         nested.delete_point(pair.op_num, id.into()).unwrap();
     }
+    let fresh = open_read_only(&nested);
     assert_read_only_matches(ReadOnlyPair {
         writable: &nested,
-        nested: &open_read_only(&nested),
+        nested: &fresh,
         flat: &open_read_only(&flat),
         skip_facets: &[],
     });
+
+    // Deletions reach a reloaded segment like a fresh one
+    reload(&mut reloaded, &nested);
+    reload(&mut reloaded_flat, &flat);
+    assert_read_only_matches(ReadOnlyPair {
+        writable: &nested,
+        nested: &reloaded,
+        flat: &reloaded_flat,
+        skip_facets: &[],
+    });
+    let indexed_points = |segment: &ReadOnlySegment<MmapFile>| {
+        let payload_index = segment.payload_index.borrow();
+        let mut counts: Vec<_> = payload_index
+            .field_indexes
+            .iter()
+            .flat_map(|(field, indexes)| {
+                indexes
+                    .iter()
+                    .map(move |index| (field.to_string(), index.count_indexed_points().unwrap()))
+            })
+            .collect();
+        counts.sort();
+        counts
+    };
+    assert_eq!(indexed_points(&fresh), indexed_points(&reloaded));
 }
 
 #[test]

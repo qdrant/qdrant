@@ -84,13 +84,15 @@ impl<S: UniversalReadExt> NestedFieldIndex<ReadOnlyFieldIndex<S>, ReadOnlyElemen
         deleted_points: &SortedSlice<'_, PointOffsetType>,
         new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
-        let mut changed_points: Vec<PointOffsetType> = deleted_points
-            .iter()
-            .chain(new_points.iter())
-            .copied()
-            .collect();
-        changed_points.sort_unstable();
-        changed_points.dedup();
+        // An immutable map keeps its build-time upper bound of indexed points, like a
+        // fresh open: recounting would read the inner index for every deleted element
+        let recount = self.element_map.indexed_points().is_none();
+        let mut changed_points: Vec<PointOffsetType> = Vec::new();
+        if recount {
+            changed_points.extend(deleted_points.iter().chain(new_points.iter()));
+            changed_points.sort_unstable();
+            changed_points.dedup();
+        }
 
         let indexed_count = |index: &Self| -> OperationResult<usize> {
             let mut count = 0;
