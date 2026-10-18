@@ -1988,3 +1988,129 @@ fn test_retried_live_reload_matches_fresh_open(#[case] applied: Option<&'static 
         "sparse IDF search mismatch"
     );
 }
+
+/// Points deleted by a tombstone-only writer keep their values in the appendable
+/// indexes. A read-only segment drops them from its indexes both when it opens and when
+/// it reloads, so facets count only live points, and a fresh open agrees with a reload.
+#[test]
+fn appendable_indexes_drop_tombstoned_points_at_open_and_reload() {
+    use crate::data_types::facets::{FacetParams, FacetValue};
+
+    let segments_dir = Builder::new()
+        .prefix("appendable_tombstones")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let (mut mutable, _) = build_segment(
+        segments_dir.path(),
+        &SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: DIM,
+                    distance: Distance::Cosine,
+                    storage_type: VectorStorageType::ChunkedMmap,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multivector_config: None,
+                    datatype: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+            id_tracker_memory: None,
+        },
+        None,
+        true,
+    )
+    .unwrap();
+    mutable.append_only_mutations = true;
+
+    let mut op_num = 0u64;
+    let mut next_op = || {
+        op_num += 1;
+        op_num
+    };
+    for (field, schema) in [
+        ("kw", PayloadSchemaType::Keyword),
+        ("num", PayloadSchemaType::Integer),
+    ] {
+        mutable
+            .create_field_index(
+                next_op(),
+                &JsonPath::new(field),
+                Some(&PayloadFieldSchema::FieldType(schema)),
+            )
+            .unwrap();
+    }
+
+    let write = |segment: &mut Segment, op: u64, i: usize, round: usize| {
+        let vector: Vec<f32> = (0..DIM).map(|j| ((i + j) % 13) as f32 + 0.5).collect();
+        let vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vector.as_slice().into());
+        let point_id = (i as u64 + 1).into();
+        segment.upsert_point(op, point_id, vectors).unwrap();
+        let kw = ["red", "green", "blue"][(i + round) % 3];
+        let payload = serde_json::from_value(serde_json::json!({
+            "kw": kw,
+            "num": (i % 7 + round * 10) as i64,
+        }))
+        .unwrap();
+        segment.set_full_payload(op, point_id, &payload).unwrap();
+    };
+    for i in 0..NUM_POINTS {
+        let op = next_op();
+        write(&mut mutable, op, i, 0);
+    }
+    mutable.flush(true).unwrap();
+
+    let mut reloaded =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .unwrap();
+
+    // Overwrites move points to new offsets, deletes only tombstone them
+    for i in (0..NUM_POINTS).step_by(3) {
+        let op = next_op();
+        write(&mut mutable, op, i, 1);
+    }
+    for i in (5..NUM_POINTS).step_by(7) {
+        let op = next_op();
+        mutable.delete_point(op, (i as u64 + 1).into()).unwrap();
+    }
+    mutable.flush(true).unwrap();
+    preload_then_reload(&mut reloaded).unwrap();
+
+    let fresh =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .unwrap();
+
+    let stopped = AtomicBool::new(false);
+    let request = FacetParams {
+        key: JsonPath::new("kw"),
+        limit: 10,
+        filter: None,
+        exact: true,
+    };
+    let expected: HashMap<FacetValue, usize> = ["red", "green", "blue"]
+        .into_iter()
+        .map(|value| {
+            let count = sorted_filtered(&mutable, &keyword_filter(value)).len();
+            (FacetValue::Keyword(value.to_owned()), count)
+        })
+        // Facets leave out values without points
+        .filter(|&(_, count)| count > 0)
+        .collect();
+    assert_eq!(reloaded.facet(&request, &stopped).unwrap(), expected);
+    assert_eq!(fresh.facet(&request, &stopped).unwrap(), expected);
+
+    let request = FacetParams {
+        key: JsonPath::new("num"),
+        limit: 100,
+        filter: None,
+        exact: true,
+    };
+    assert_eq!(
+        fresh.facet(&request, &stopped).unwrap(),
+        reloaded.facet(&request, &stopped).unwrap(),
+    );
+}

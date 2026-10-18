@@ -42,6 +42,7 @@ where
 #[cfg(test)]
 mod tests {
     use common::ambient;
+    use common::bitvec::BitSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
     use itertools::Itertools as _;
@@ -87,10 +88,14 @@ mod tests {
         // The read-only filesystem context is `Default`.
         type RoFs = <ReadOnly<MmapFile> as UniversalRead>::Fs;
         let fs = RoFs::from_context(Default::default()).unwrap();
-        let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> =
-            ReadOnlyMapIndex::open_appendable(&fs, dir.path().to_path_buf(), PointOffsetType::MAX)
-                .unwrap()
-                .unwrap();
+        let index: ReadOnlyMapIndex<str, ReadOnly<MmapFile>> = ReadOnlyMapIndex::open_appendable(
+            &fs,
+            dir.path().to_path_buf(),
+            PointOffsetType::MAX,
+            BitSlice::empty(),
+        )
+        .unwrap()
+        .unwrap();
 
         // Dispatcher wraps the leaf into the right variant.
         assert!(matches!(index, ReadOnlyMapIndex::Appendable(_)));
