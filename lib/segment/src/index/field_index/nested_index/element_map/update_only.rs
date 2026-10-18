@@ -5,14 +5,14 @@
 //! and appends their list. What it writes is the mutable map's storage in its append-only
 //! mode, which the writable and read-only maps open as usual.
 
+use std::iter;
 use std::ops::Range;
 use std::path::Path;
 
 use blobstore::BlobstoreReader;
-use common::ambient;
+use blobstore::error::BlobstoreError;
 use common::ambient::hw::HwMetric;
 use common::generic_consts::Random;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{OkNotFound, Populate, UniversalAppend, UniversalAppendFs};
 
@@ -49,12 +49,17 @@ impl<S: UniversalAppend + 'static> UpdateOnlyElementMap<S> {
             BlobstoreReader::<StoredElements, _>::open(fs, path.to_path_buf(), Populate::No)
                 .ok_not_found()?
         {
-            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
             for point in (0..reader.max_point_offset()?).rev() {
-                let Some(elements) = reader.get_value::<Random>(point)? else {
-                    continue;
-                };
-                if let Some(&max_element) = elements.0.iter().max() {
+                let mut max_element = None;
+                reader.read_values::<Random, _, BlobstoreError>(
+                    iter::once(((), point)),
+                    |_, _, elements: Option<StoredElements>| {
+                        max_element = elements.and_then(|elements| elements.0.into_iter().max());
+                        Ok(())
+                    },
+                    Some(HwMetric::PayloadIndexIoRead),
+                )?;
+                if let Some(max_element) = max_element {
                     next_element = next_element.max(max_element.saturating_add(1));
                     break;
                 }
