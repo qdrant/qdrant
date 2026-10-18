@@ -7,6 +7,7 @@ use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
+use crate::packed_multi_query::PackedMultiQuery;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DistanceType {
@@ -58,6 +59,60 @@ pub trait EncodedVectors: Sized {
     ) -> std::io::Result<()>;
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32;
+
+    /// Pack a multi-vector query, one encoded query per inner vector, for batched
+    /// MaxSim over this storage's vectors with [`PackedMultiQuery::max_sim`].
+    /// Scores are those of [`Self::score`].
+    ///
+    /// `None` when there is no batched kernel for this storage; callers then
+    /// score pair by pair.
+    fn pack_multi_query(&self, _query: &[Self::EncodedQuery]) -> Option<PackedMultiQuery> {
+        None
+    }
+
+    /// Pack the stored vectors of one multi-vector, as [`EncodedStorage`] holds
+    /// them, as the query side of a batched MaxSim against other stored vectors.
+    /// Scores are those of [`Self::score_internal`].
+    ///
+    /// `None` when there is no batched kernel for this storage.
+    ///
+    /// [`EncodedStorage`]: crate::encoded_storage::EncodedStorage
+    fn pack_multi_stored<'a>(
+        &self,
+        _vectors: impl ExactSizeIterator<Item = &'a [u8]>,
+    ) -> Option<PackedMultiQuery> {
+        None
+    }
+
+    /// Whether the packed kernels score a multi-vector of `vectors_count`
+    /// vectors, packed as a query or (`stored`) as stored vectors, faster than
+    /// pair by pair on this CPU. See [`crossover`].
+    ///
+    /// [`crossover`]: crate::packed_multi_query::crossover
+    fn packed_pays(&self, _vectors_count: usize, _stored: bool) -> bool {
+        false
+    }
+
+    /// [`Self::pack_multi_query`] when it is faster than scoring pair by pair.
+    fn pack_multi_query_if_faster(&self, query: &[Self::EncodedQuery]) -> Option<PackedMultiQuery> {
+        if !self.packed_pays(query.len(), false) {
+            return None;
+        }
+        self.pack_multi_query(query)
+            .filter(|packed| !packed.is_slow())
+    }
+
+    /// [`Self::pack_multi_stored`] when it is faster than scoring pair by pair.
+    fn pack_multi_stored_if_faster<'a>(
+        &self,
+        vectors: impl ExactSizeIterator<Item = &'a [u8]>,
+    ) -> Option<PackedMultiQuery> {
+        if !self.packed_pays(vectors.len(), true) {
+            return None;
+        }
+        self.pack_multi_stored(vectors)
+            .filter(|packed| !packed.is_slow())
+    }
 
     /// Score a batch: `scores[i]` ← score of `query` against point
     /// `offsets[i]`.

@@ -105,6 +105,14 @@ fn code_value<const PLANES: usize>(byte: u8, k: usize) -> Code {
     encoding(PLANES).codebook[code as usize]
 }
 
+/// `c_signed` of code `k` of the packed data `byte`: the value a kernel
+/// multiplies minus the encoding's offset, so that `Σ q_signed · c_signed`
+/// equals `dot_raw − bias_correction`.
+#[inline]
+pub(crate) fn signed_code_value<const PLANES: usize>(byte: u8, k: usize) -> i16 {
+    (i64::from(code_value::<PLANES>(byte, k)) - encoding(PLANES).offset) as i16
+}
+
 /// Longest 8-bit vector (bytes) the AVX2 batch kernel scores; longer ones go
 /// through the per-vector kernel (see `QuerySimd::dotprod_batch`).
 #[cfg(target_arch = "x86_64")]
@@ -303,6 +311,22 @@ impl<const PLANES: usize, const QUERY_BYTES: usize> QuerySimd<PLANES, QUERY_BYTE
     #[inline]
     pub fn vector_bytes(&self) -> usize {
         self.vector_bytes
+    }
+
+    /// The integer query `q_signed` of every dim and the scale of the raw
+    /// dot product, for kernels with their own query layout: the score's
+    /// dot term is `scale · (Σ q_signed · c_signed) as f32`, with `c_signed`
+    /// from [`signed_code_value`].
+    pub(crate) fn signed_query(&self) -> (Vec<i32>, f32) {
+        let values = (0..self.vector_bytes * PLANES)
+            .map(|i| {
+                let (j, k) = (i / PLANES, i % PLANES);
+                (0..QUERY_BYTES).rev().fold(0i64, |q, b| {
+                    q * Self::RADIX + i64::from(self.planes.plane(b, k)[j])
+                }) as i32
+            })
+            .collect();
+        (values, self.postprocess_scale)
     }
 
     /// Score the encoded query against a `vector` of packed codes (`PLANES`
