@@ -108,13 +108,16 @@ impl<F: FacetIndex, M: ElementMapRead> FacetIndex for NestedFacetView<'_, F, M> 
     }
 }
 
-/// Facet view of any writable field index: a flattened one, or a per-element one.
-pub enum FacetView<'a> {
-    Plain(FacetIndexEnum<'a>),
-    Nested(NestedFacetView<'a, FacetIndexEnum<'a>, ElementMap>),
+/// Facet view of any field index: a flattened one, or a per-element one.
+///
+/// `F` is the facet view of a flattened index, `M` the element map of a per-element one.
+/// The defaults are those of writable segments.
+pub enum FacetView<'a, F = FacetIndexEnum<'a>, M = ElementMap> {
+    Plain(F),
+    Nested(NestedFacetView<'a, F, M>),
 }
 
-impl FacetIndex for FacetView<'_> {
+impl<F: FacetIndex, M: ElementMapRead> FacetIndex for FacetView<'_, F, M> {
     fn unique_values_count(&self) -> usize {
         match self {
             FacetView::Plain(index) => index.unique_values_count(),

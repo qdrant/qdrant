@@ -45,6 +45,8 @@ use crate::types::{
     VectorDataConfig, VectorStorageType,
 };
 
+mod read_only;
+
 const NUM_POINTS: u64 = 200;
 
 /// Indexed fields inside the `offers` array, with their type.

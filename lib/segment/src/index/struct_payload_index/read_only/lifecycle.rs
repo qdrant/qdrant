@@ -37,12 +37,6 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
 
         // Payload indexes
         for (field, indexed) in config.indices.iter() {
-            if let Some(nested) = indexed.schema.nested() {
-                return Err(OperationError::service_error(format!(
-                    "Read-only payload index doesn't support per-element index of field `{field}` \
-                     (nested `{nested}`)",
-                )));
-            }
             let populate_override =
                 load_profile.and_then(|profile| profile.payload_index_placement(field));
             for index_type in &indexed.types {
