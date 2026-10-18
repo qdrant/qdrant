@@ -11,7 +11,9 @@
 //! contiguous range in an immutable map, any offsets in a mutable one.
 
 mod immutable;
+mod lists;
 mod mutable;
+mod read_only;
 #[cfg(test)]
 mod tests;
 
@@ -27,6 +29,7 @@ use serde_json::{Map, Value};
 
 use self::immutable::ImmutableElementMap;
 use self::mutable::MutableElementMap;
+pub use self::read_only::{ElementChanges, ReadOnlyElementMap};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::payload_config::IndexMutability;

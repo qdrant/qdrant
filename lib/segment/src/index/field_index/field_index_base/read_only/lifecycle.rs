@@ -15,6 +15,9 @@ use crate::index::field_index::index_selector::{
     bool_dir, map_dir, null_dir, numeric_dir, text_dir,
 };
 use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
+use crate::index::field_index::nested_index::{
+    ElementMap, ElementMapRead as _, NestedFieldIndex, ReadOnlyElementMap,
+};
 use crate::index::field_index::null_index::ReadOnlyNullIndex;
 use crate::index::field_index::numeric_index::ReadOnlyNumericIndex;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType, StorageType};
@@ -59,7 +62,34 @@ impl ReadMode {
 }
 
 impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
+    /// Schedule background prefetch of the files [`Self::open`] reads. Returns whether the
+    /// index exists.
     pub fn preopen(
+        fs: &impl CachedReadFs<File = S>,
+        dir: &Path,
+        field: &JsonPath,
+        payload_schema: &PayloadFieldSchema,
+        index_type: &FullPayloadIndexType,
+        populate_override: Option<Populate>,
+    ) -> OperationResult<bool> {
+        if payload_schema.nested().is_some() {
+            let map_dir = ElementMap::storage_dir(&index_type.index_type.storage_dir(dir, field));
+            if !ReadOnlyElementMap::<S>::preopen(fs, map_dir, index_type.mutability)? {
+                return Ok(false);
+            }
+        }
+        Self::preopen_flat(
+            fs,
+            dir,
+            field,
+            payload_schema,
+            index_type,
+            populate_override,
+        )
+    }
+
+    /// Like [`Self::preopen`], for the index itself, keyed by points or by elements.
+    fn preopen_flat(
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         field: &JsonPath,
@@ -216,8 +246,72 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
     /// [1]: crate::index::field_index::index_selector::IndexSelector::new_index_with_type
     /// `populate_override` mirrors [`preopen`](Self::preopen): it re-decides
     /// the immutable mode's placement.
+    ///
+    /// A per-element index (a `nested` schema) is opened with its element map: the inner
+    /// index is keyed by the map's element offsets, and `deleted_points` translate to the
+    /// elements of those points.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
+        fs: &impl UniversalReadFs<File = S>,
+        dir: &Path,
+        field: &JsonPath,
+        payload_schema: &PayloadFieldSchema,
+        index_type: &FullPayloadIndexType,
+        total_point_count: usize,
+        deleted_points: &BitSlice,
+        populate_override: Option<Populate>,
+    ) -> OperationResult<Option<Self>> {
+        let Some(array_key) = payload_schema.nested() else {
+            return Self::open_flat(
+                fs,
+                dir,
+                field,
+                payload_schema,
+                index_type,
+                total_point_count,
+                deleted_points,
+                populate_override,
+            );
+        };
+
+        let map_dir = ElementMap::storage_dir(&index_type.index_type.storage_dir(dir, field));
+        let Some(element_map) = ReadOnlyElementMap::open(
+            fs,
+            map_dir,
+            index_type.mutability,
+            total_point_count as PointOffsetType,
+        )?
+        else {
+            return Ok(None);
+        };
+        let deleted_elements = element_map.deleted_elements(deleted_points);
+        let Some(inner) = Self::open_flat(
+            fs,
+            dir,
+            field,
+            payload_schema,
+            index_type,
+            // The inner index is keyed by elements, `deleted_elements` covers all of them
+            deleted_elements.len(),
+            &deleted_elements,
+            populate_override,
+        )?
+        else {
+            return Ok(None);
+        };
+        let indexed_points = element_map.indexed_points();
+        Ok(Some(Self::Nested(Box::new(NestedFieldIndex::new(
+            field,
+            array_key.clone(),
+            element_map,
+            inner,
+            indexed_points,
+        )?))))
+    }
+
+    /// Like [`Self::open`], for the index itself, keyed by points or by elements.
+    #[allow(clippy::too_many_arguments)]
+    fn open_flat(
         fs: &impl UniversalReadFs<File = S>,
         dir: &Path,
         field: &JsonPath,

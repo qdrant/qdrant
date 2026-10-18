@@ -8,6 +8,7 @@ use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::bool_index::BoolIndexRead;
+use crate::index::field_index::facet_index::FacetIndexEnum;
 use crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex;
 use crate::index::field_index::full_text_index::full_text_index_read::{
     FullTextIndexRead, fill_text_statistics, score_bm25,
@@ -15,7 +16,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::{
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::map_index::read_ops::MapIndexRead;
-use crate::index::field_index::nested_index::ElementConditionChecker;
+use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{
     NumericFieldIndexRead, NumericIndexRead, ReadOnlyNumericFieldIndex,
@@ -42,6 +43,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(idx) => idx.count_indexed_points(),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.count_indexed_points(),
             ReadOnlyFieldIndex::NullIndex(idx) => idx.count_indexed_points(),
+            ReadOnlyFieldIndex::Nested(idx) => idx.count_indexed_points(),
         }
     }
 
@@ -61,6 +63,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(idx) => idx.filter(condition),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.filter(condition),
             ReadOnlyFieldIndex::NullIndex(idx) => idx.filter(condition),
+            ReadOnlyFieldIndex::Nested(idx) => idx.filter(condition),
         }
     }
 
@@ -80,6 +83,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(idx) => idx.estimate_cardinality(condition),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.estimate_cardinality(condition),
             ReadOnlyFieldIndex::NullIndex(idx) => idx.estimate_cardinality(condition),
+            ReadOnlyFieldIndex::Nested(idx) => idx.estimate_cardinality(condition),
         }
     }
 
@@ -101,6 +105,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.for_each_payload_block(threshold, key, f),
             ReadOnlyFieldIndex::NullIndex(idx) => idx.for_each_payload_block(threshold, key, f),
+            ReadOnlyFieldIndex::Nested(idx) => idx.for_each_payload_block(threshold, key, f),
         }
     }
 
@@ -120,6 +125,7 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(idx) => idx.condition_checker(condition),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.condition_checker(condition),
             ReadOnlyFieldIndex::NullIndex(idx) => idx.condition_checker(condition),
+            ReadOnlyFieldIndex::Nested(idx) => idx.condition_checker(condition),
         }
     }
 
@@ -162,6 +168,9 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::NullIndex(idx) => {
                 idx.special_check_condition(condition, payload_value)
             }
+            ReadOnlyFieldIndex::Nested(idx) => {
+                idx.special_check_condition(condition, payload_value)
+            }
         }
     }
 }
@@ -180,6 +189,7 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::FullTextIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => idx.get_telemetry_data(),
             ReadOnlyFieldIndex::NullIndex(idx) => idx.get_telemetry_data(),
+            ReadOnlyFieldIndex::Nested(idx) => idx.get_telemetry_data()?,
         })
     }
 
@@ -212,6 +222,7 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
                 MapIndexRead::values_count(idx, point_id).unwrap_or(0)
             }
             ReadOnlyFieldIndex::NullIndex(idx) => NullIndexRead::values_count(idx, point_id)?,
+            ReadOnlyFieldIndex::Nested(idx) => idx.values_count(point_id)?,
         })
     }
 
@@ -232,6 +243,7 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             }
             ReadOnlyFieldIndex::UuidMapIndex(idx) => MapIndexRead::values_is_empty(idx, point_id),
             ReadOnlyFieldIndex::NullIndex(idx) => NullIndexRead::values_is_empty(idx, point_id)?,
+            ReadOnlyFieldIndex::Nested(idx) => idx.values_is_empty(point_id)?,
         })
     }
 
@@ -255,30 +267,24 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(idx) => Some(idx.value_retriever()),
             ReadOnlyFieldIndex::UuidMapIndex(idx) => Some(idx.value_retriever()),
             ReadOnlyFieldIndex::FullTextIndex(_) | ReadOnlyFieldIndex::NullIndex(_) => None,
+            ReadOnlyFieldIndex::Nested(idx) => idx.value_retriever()?,
         })
     }
 
     fn as_numeric(&self) -> Option<impl NumericFieldIndexRead + '_> {
         match self {
-            ReadOnlyFieldIndex::IntIndex(index) => {
-                Some(ReadOnlyNumericFieldIndex::IntIndex(index.inner()))
-            }
-            ReadOnlyFieldIndex::DatetimeIndex(index) => {
-                Some(ReadOnlyNumericFieldIndex::IntIndex(index.inner()))
-            }
-            ReadOnlyFieldIndex::FloatIndex(index) => {
-                Some(ReadOnlyNumericFieldIndex::FloatIndex(index.inner()))
-            }
-            // UUIDs aren't meaningfully order-by-able as numbers, matching
-            // `FieldIndex::as_numeric`.
-            ReadOnlyFieldIndex::UuidIndex(_)
+            ReadOnlyFieldIndex::Nested(index) => index.numeric_view().map(NumericView::Nested),
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
             | ReadOnlyFieldIndex::IntMapIndex(_)
             | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
             | ReadOnlyFieldIndex::GeoIndex(_)
             | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
             | ReadOnlyFieldIndex::UuidMapIndex(_)
-            | ReadOnlyFieldIndex::NullIndex(_) => None::<ReadOnlyNumericFieldIndex<'_, S>>,
+            | ReadOnlyFieldIndex::NullIndex(_) => self.numeric_view().map(NumericView::Plain),
         }
     }
 
@@ -303,6 +309,9 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             | ReadOnlyFieldIndex::UuidMapIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_)
             | ReadOnlyFieldIndex::NullIndex(_) => Ok(false),
+            ReadOnlyFieldIndex::Nested(index) => {
+                index.fill_text_statistics(stats, corpus, is_stopped)
+            }
         }
     }
 
@@ -335,11 +344,82 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             | ReadOnlyFieldIndex::UuidMapIndex(_)
             | ReadOnlyFieldIndex::UuidIndex(_)
             | ReadOnlyFieldIndex::NullIndex(_) => Ok(None),
+            ReadOnlyFieldIndex::Nested(index) => {
+                index.score_bm25(terms, context, params, accept, limit)
+            }
         }
     }
 
     fn as_facet_index(&self) -> Option<impl FacetIndex + '_> {
-        use crate::index::field_index::facet_index::FacetIndexEnum;
+        match self {
+            ReadOnlyFieldIndex::Nested(index) => index.facet_view().map(FacetView::Nested),
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_) => self.facet_view().map(FacetView::Plain),
+        }
+    }
+
+    fn element_condition_checker<'a>(
+        &'a self,
+        array_key: &JsonPath,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
+        match self {
+            ReadOnlyFieldIndex::Nested(index) => {
+                index.element_condition_checker(array_key, condition)
+            }
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_) => Ok(None),
+        }
+    }
+}
+
+impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
+    /// Order-by view of a flattened numeric index.
+    pub fn numeric_view(&self) -> Option<ReadOnlyNumericFieldIndex<'_, S>> {
+        match self {
+            ReadOnlyFieldIndex::IntIndex(index) => {
+                Some(ReadOnlyNumericFieldIndex::IntIndex(index.inner()))
+            }
+            ReadOnlyFieldIndex::DatetimeIndex(index) => {
+                Some(ReadOnlyNumericFieldIndex::IntIndex(index.inner()))
+            }
+            ReadOnlyFieldIndex::FloatIndex(index) => {
+                Some(ReadOnlyNumericFieldIndex::FloatIndex(index.inner()))
+            }
+            // UUIDs aren't meaningfully order-by-able as numbers, matching
+            // `FieldIndex::as_numeric`.
+            ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::GeoIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_)
+            | ReadOnlyFieldIndex::Nested(_) => None,
+        }
+    }
+
+    /// Facet view of a flattened index.
+    pub fn facet_view(&self) -> Option<FacetIndexEnum<'_, S>> {
         match self {
             ReadOnlyFieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::IntReadOnly(index)),
             ReadOnlyFieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::KeywordReadOnly(index)),
@@ -353,28 +433,8 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
             | ReadOnlyFieldIndex::UuidIndex(_)
             | ReadOnlyFieldIndex::GeoIndex(_)
             | ReadOnlyFieldIndex::FullTextIndex(_)
-            | ReadOnlyFieldIndex::NullIndex(_) => None,
-        }
-    }
-
-    // Read-only segments have no per-element indexes yet
-    fn element_condition_checker<'a>(
-        &'a self,
-        _array_key: &JsonPath,
-        _condition: &FieldCondition,
-    ) -> OperationResult<Option<ElementConditionChecker<'a>>> {
-        match self {
-            ReadOnlyFieldIndex::IntIndex(_)
-            | ReadOnlyFieldIndex::DatetimeIndex(_)
-            | ReadOnlyFieldIndex::IntMapIndex(_)
-            | ReadOnlyFieldIndex::KeywordIndex(_)
-            | ReadOnlyFieldIndex::FloatIndex(_)
-            | ReadOnlyFieldIndex::GeoIndex(_)
-            | ReadOnlyFieldIndex::FullTextIndex(_)
-            | ReadOnlyFieldIndex::BoolIndex(_)
-            | ReadOnlyFieldIndex::UuidIndex(_)
-            | ReadOnlyFieldIndex::UuidMapIndex(_)
-            | ReadOnlyFieldIndex::NullIndex(_) => Ok(None),
+            | ReadOnlyFieldIndex::NullIndex(_)
+            | ReadOnlyFieldIndex::Nested(_) => None,
         }
     }
 }
