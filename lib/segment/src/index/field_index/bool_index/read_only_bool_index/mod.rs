@@ -33,9 +33,6 @@ mod read_ops;
 pub struct ReadOnlyBoolIndex<S: UniversalReadExt> {
     pub(super) _base_dir: PathBuf,
     pub(super) storage: ReadOnlyStorage<S>,
-    /// Deleted points of the segment, whose flags are cleared in RAM like the writable
-    /// immutable index does. The files keep them, so a reload clears them again.
-    pub(super) deleted: RoaringBitmap,
     /// Counts derived from both bitmaps, computed on first use and cached.
     ///
     /// Deriving them eagerly would force both bitmaps to materialize at open,
@@ -398,6 +395,22 @@ mod tests {
             ReadOnlyBoolIndex::<ReadOnly<MmapFile>>::open(&fs, dir.path(), &deleted)
                 .unwrap()
                 .unwrap();
+
+        // Deleted points don't make the open read the flags
+        assert!(
+            read_only
+                .storage
+                .trues_flags
+                .bitmap_if_materialized()
+                .is_none()
+        );
+        assert!(
+            read_only
+                .storage
+                .falses_flags
+                .bitmap_if_materialized()
+                .is_none()
+        );
 
         let _scope = ambient::test_guard();
         let reads = |index: &dyn Fn(bool) -> Vec<u32>, counts: (usize, usize, usize)| {

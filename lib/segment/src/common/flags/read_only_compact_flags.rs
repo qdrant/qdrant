@@ -37,6 +37,9 @@ pub struct ReadOnlyCompactFlags<S: UniversalRead> {
     /// through `&self` from many threads. On a race both threads may build a
     /// bitmap; the first to finish wins and the loser's copy is dropped.
     bitmap: OnceLock<RoaringBitmap>,
+    /// Points whose flags are cleared in RAM, though the file keeps them: taken off the
+    /// bitmap whenever it is materialized or resynced, see [`Self::remove`].
+    removed: RoaringBitmap,
     /// Backing bitmask, used by the lazy [`Self::bitmap`] read. Replaced with
     /// a freshly opened handle on every [`Self::live_reload`].
     storage: StoredBitmask<S>,
@@ -109,6 +112,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
 
         Ok(Some(Self {
             bitmap: OnceLock::new(),
+            removed: RoaringBitmap::new(),
             len: storage.bit_len() as usize,
             storage,
             directory: directory.to_path_buf(),
@@ -130,20 +134,16 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         }
 
         let bitmap = self.storage.read_ones()?;
-        Ok(self.bitmap.get_or_init(|| bitmap))
+        Ok(self.bitmap.get_or_init(|| bitmap - &self.removed))
     }
 
-    /// Clear the flags of `points` in RAM, materializing the bitmap.
-    pub fn remove(
-        &mut self,
-        points: impl IntoIterator<Item = PointOffsetType>,
-    ) -> OperationResult<()> {
-        self.bitmap()?;
-        let bitmap = self.bitmap.get_mut().expect("materialized just above");
-        for point in points {
-            bitmap.remove(point);
+    /// Clear the flags of `points` in RAM, now if the bitmap is materialized, or when it
+    /// is. They stay cleared through [`Self::live_reload`].
+    pub fn remove(&mut self, points: impl IntoIterator<Item = PointOffsetType>) {
+        self.removed.extend(points);
+        if let Some(bitmap) = self.bitmap.get_mut() {
+            *bitmap -= &self.removed;
         }
-        Ok(())
     }
 
     pub fn live_preload<Fs: CachedReadFs<File = S>>(&self, cached_fs: &Fs) {
@@ -185,7 +185,7 @@ impl<S: UniversalRead> ReadOnlyCompactFlags<S> {
         };
 
         if let Some(bitmap) = self.bitmap.get_mut() {
-            *bitmap = storage.read_ones()?;
+            *bitmap = storage.read_ones()? - &self.removed;
         }
 
         // The logical length grows as points are appended; refresh it so

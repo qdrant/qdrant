@@ -47,7 +47,7 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
     /// [1]: super::super::mutable_bool_index::MutableBoolIndex::open
     ///
     /// The flags of `deleted` points are cleared, like the writable immutable index does,
-    /// which materializes the bitmaps when there are any.
+    /// when the bitmaps are materialized.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         path: &Path,
@@ -61,21 +61,18 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
         match (trues_flags, falses_flags) {
             // Neither directory exists: the index isn't present on disk.
             (None, None) => Ok(None),
-            (Some(trues_flags), Some(falses_flags)) => {
-                let mut index = Self {
+            (Some(mut trues_flags), Some(mut falses_flags)) => {
+                let deleted = deleted.iter_ones().map(|point| point as PointOffsetType);
+                trues_flags.remove(deleted.clone());
+                falses_flags.remove(deleted);
+                Ok(Some(Self {
                     _base_dir: path.to_path_buf(),
                     storage: ReadOnlyStorage {
                         trues_flags,
                         falses_flags,
                     },
-                    deleted: deleted
-                        .iter_ones()
-                        .map(|point| point as PointOffsetType)
-                        .collect(),
                     counts: OnceLock::new(),
-                };
-                index.clear_deleted()?;
-                Ok(Some(index))
+                }))
             }
             // Exactly one directory exists: partial/corrupt storage.
             (trues, falses) => Err(OperationError::service_error(format!(
@@ -85,16 +82,5 @@ impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
                 falses.is_some(),
             ))),
         }
-    }
-}
-
-impl<S: UniversalReadExt> ReadOnlyBoolIndex<S> {
-    /// Clear the flags of the deleted points, materializing the bitmaps if there are any.
-    pub(super) fn clear_deleted(&mut self) -> OperationResult<()> {
-        if self.deleted.is_empty() {
-            return Ok(());
-        }
-        self.storage.trues_flags.remove(self.deleted.iter())?;
-        self.storage.falses_flags.remove(self.deleted.iter())
     }
 }
