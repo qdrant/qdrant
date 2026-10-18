@@ -114,6 +114,8 @@ pub const BINARY_SCALAR_QUERY: Crossover = &[
     (768, Some(32)),
     (1024, Some(32)),
 ];
+/// Product quantization; it packs queries only.
+pub const PRODUCT_QUERY: Crossover = &[(128, Some(10))];
 
 /// TurboQuant, by padded dim (1.5-bit codes pad to 1.5 values per dim). The
 /// per-pair kernels of the narrow codes read several dims per byte, so the

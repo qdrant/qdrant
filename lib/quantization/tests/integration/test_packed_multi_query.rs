@@ -11,6 +11,7 @@ mod tests {
     use quantization::encoded_vectors_binary::{
         self, BitsStoreType, EncodedVectorsBin, Encoding, QueryEncoding,
     };
+    use quantization::encoded_vectors_pq::{self, EncodedVectorsPQ};
     use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ};
     use quantization::encoded_vectors_u8::{self, EncodedVectorsU8, ScalarQuantizationMethod};
     use quantization::turboquant::{TQBits, TQMode, TQRotation};
@@ -521,5 +522,82 @@ mod tests {
                 true,
             );
         }
+    }
+
+    // Product quantization.
+
+    #[rstest]
+    fn packed_pq_query_matches_pairwise(
+        #[values(DistanceType::Dot, DistanceType::L2)] distance_type: DistanceType,
+        #[values(false, true)] invert: bool,
+        #[values(1, 2, 3)] chunk_size: usize,
+        #[values(13, 64)] dim: usize,
+    ) {
+        let _scope = ambient::test_guard();
+        let mut rng = StdRng::seed_from_u64(42);
+        let vectors = random_vectors(&mut rng, VECTORS, dim);
+        let vector_parameters = parameters(dim, distance_type, invert);
+        let encoded = EncodedVectorsPQ::encode(
+            vectors.iter(),
+            std::iter::repeat_n(true, VECTORS),
+            TestEncodedStorageBuilder::new(
+                None,
+                encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, chunk_size),
+            ),
+            &vector_parameters,
+            chunk_size,
+            1,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let label = format!("pq {distance_type:?} invert={invert} chunk={chunk_size} dim={dim}");
+        let multi_vectors = stored_multi_vectors(|i| encoded.get_quantized_vector(i).to_vec());
+        check_query(
+            &encoded,
+            &multi_vectors,
+            &mut rng,
+            dim,
+            Match::Exact,
+            &label,
+        );
+        // PQ has no batched symmetric kernel.
+        assert!(
+            encoded
+                .pack_multi_stored(std::iter::once(multi_vectors[0][0].as_slice()))
+                .is_none()
+        );
+    }
+
+    /// Product quantization packs queries past the crossover only.
+    #[test]
+    fn product_packs_past_the_crossover() {
+        let _scope = ambient::test_guard();
+        let mut rng = StdRng::seed_from_u64(42);
+        let dim = 128;
+        let vectors = random_vectors(&mut rng, VECTORS, dim);
+        let vector_parameters = parameters(dim, DistanceType::Dot, false);
+        let encoded = EncodedVectorsPQ::encode(
+            vectors.iter(),
+            std::iter::repeat_n(true, VECTORS),
+            TestEncodedStorageBuilder::new(
+                None,
+                encoded_vectors_pq::get_quantized_vector_size(&vector_parameters, 2),
+            ),
+            &vector_parameters,
+            2,
+            1,
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        // No packed stored vectors.
+        check_gate(
+            &encoded,
+            |i| encoded.get_quantized_vector(i).to_vec(),
+            &mut rng,
+            dim,
+            false,
+        );
     }
 }
