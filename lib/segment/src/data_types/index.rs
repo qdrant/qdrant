@@ -612,13 +612,6 @@ impl TextIndexParams {
         self.scoring.is_some()
     }
 
-    /// The params as an index is built from them. Nothing to apply any more:
-    /// `scoring` no longer implies `phrase_matching`, since an index without
-    /// positions keeps its term frequencies in their own file.
-    pub fn normalized(self) -> Self {
-        self
-    }
-
     /// Make [`Self::scoring`] answer `scoring` on this thread until the guard
     /// is dropped, so a test can build a recording index through the same
     /// constructors production uses while the const stays `false`.
@@ -1045,21 +1038,5 @@ mod tests {
         let invalid: Result<TextIndexParams, _> =
             serde_json::from_value(serde_json::json!({ "type": "text", "scoring": "bm25" }));
         assert!(invalid.is_err());
-    }
-
-    /// Scoring does not turn positions on: without `phrase_matching`, term
-    /// frequencies have their own file.
-    #[test]
-    fn scoring_leaves_phrase_matching_as_set() {
-        let scoring = text_params(serde_json::json!({ "scoring": true, "phrase_matching": false }));
-        assert_eq!(scoring.normalized().phrase_matching, Some(false));
-        let plain = text_params(serde_json::json!({ "phrase_matching": false }));
-        assert_eq!(plain.normalized().phrase_matching, Some(false));
-        assert_eq!(
-            text_params(serde_json::json!({}))
-                .normalized()
-                .phrase_matching,
-            None
-        );
     }
 }

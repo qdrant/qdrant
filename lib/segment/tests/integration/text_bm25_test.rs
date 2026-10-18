@@ -42,8 +42,8 @@ fn field() -> JsonPath {
     JsonPath::new("text")
 }
 
-/// Scoring with positions: term frequencies come from them. The tests turn
-/// scoring on with `override_scoring`.
+/// Text params with phrase matching. The tests turn scoring on with
+/// `override_scoring`.
 fn text_params() -> TextIndexParams {
     TextIndexParams {
         phrase_matching: Some(true),
