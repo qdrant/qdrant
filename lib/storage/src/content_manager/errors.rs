@@ -379,3 +379,30 @@ impl From<cancel::Error> for StorageError {
         CollectionError::from(err).into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use collection::operations::types::CollectionError;
+
+    use super::*;
+
+    #[test]
+    fn test_collection_error_timeout_preserved_in_storage_error() {
+        let timeout_err = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let storage_err = StorageError::from(timeout_err);
+        assert!(
+            matches!(storage_err, StorageError::Timeout { .. }),
+            "Expected StorageError::Timeout, got {storage_err:?}"
+        );
+
+        // Negative control: genuine cancellation maps to StorageError::ServiceError
+        let cancel_err = CollectionError::cancelled("client aborted");
+        let storage_err = StorageError::from(cancel_err);
+        assert!(
+            matches!(storage_err, StorageError::ServiceError { .. }),
+            "Expected StorageError::ServiceError, got {storage_err:?}"
+        );
+    }
+}
