@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, PreloadFuture, UniversalRead, UniversalReadFs};
 use roaring::RoaringBitmap;
 
@@ -57,6 +58,15 @@ impl<S: UniversalRead> ReadOnlyFlags<S> {
             Some(FlagsMode::Compact) => {
                 Ok(ReadOnlyCompactFlags::open(fs, directory)?.map(Self::Compact))
             }
+        }
+    }
+
+    /// Clear the flags of `points` in RAM, now if the bitmap is materialized, or when it
+    /// is. They stay cleared through [`Self::live_reload`].
+    pub fn remove(&mut self, points: impl IntoIterator<Item = PointOffsetType>) {
+        match self {
+            Self::Dynamic(flags) => flags.remove(points),
+            Self::Compact(flags) => flags.remove(points),
         }
     }
 

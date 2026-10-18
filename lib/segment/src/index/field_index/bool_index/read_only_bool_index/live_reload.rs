@@ -22,13 +22,19 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyBoolIndex<S> {
     fn live_reload<Fs: UniversalReadFs<File = S>>(
         &mut self,
         fs: &Fs,
-        _deleted_points: &SortedSlice<'_, PointOffsetType>,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
         _new_points: &SortedSlice<'_, PointOffsetType>,
     ) -> OperationResult<()> {
-        // Resync each flag set from its on-disk state; the point deltas are
-        // irrelevant, the flag files are the source of truth.
+        // Resync each flag set from its on-disk state, and clear the newly deleted
+        // points: the files keep their flags
         self.storage.trues_flags.live_reload(fs)?;
         self.storage.falses_flags.live_reload(fs)?;
+        self.storage
+            .trues_flags
+            .remove(deleted_points.iter().copied());
+        self.storage
+            .falses_flags
+            .remove(deleted_points.iter().copied());
 
         // Re-derive the counts from the just-resynced bitmaps, but only if they
         // were computed before: an untouched index must not pay for the bitmap
