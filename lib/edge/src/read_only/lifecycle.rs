@@ -193,9 +193,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             load_pool,
             load_profile,
             live_reload_lock: Default::default(),
+            superseded_to_delete: Default::default(),
             gone_segments: Default::default(),
         };
         shard.live_reload_cancellable(is_stopped)?;
+        // No read can have started before the shard is returned
+        shard.delete_superseded_now()?;
 
         // Open-only config overlay: caller-provided tunables win over the segment-derived ones
         // (`live_reload` re-derives from the segments alone — see the `config` field docs). For an

@@ -104,26 +104,33 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         let _live_reload_guard = self.live_reload_lock.lock();
         check_process_stopped(is_stopped)?;
 
+        let reloaded = self.live_reload_attempts(is_stopped);
+
+        // With the feature flag, reloads keep the move records they read, and point moves are
+        // resolved once the reload installed all its new data. Even after a failed reload: a
+        // segment that keeps failing must not keep the old copies of every other segment
+        if PointMovesMode::for_follower().is_resolve() {
+            let resolved = self.resolve_point_moves(reloaded.is_ok(), is_stopped);
+            let outcome = reloaded?;
+            resolved?;
+            return Ok(outcome);
+        }
+        reloaded
+    }
+
+    /// Run [`live_reload_attempt`](Self::live_reload_attempt)s until one converges on its manifest
+    /// snapshot, or the attempts run out.
+    fn live_reload_attempts(&self, is_stopped: &AtomicBool) -> OperationResult<LiveReloadOutcome>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
         // A benign mid-attempt segment removal re-runs the attempt against the fresh manifest;
         // bound the re-runs so a leader churning segments faster than the follower converges
         // cannot spin this loop forever.
         const MAX_ATTEMPTS: usize = 3;
 
-        // With the feature flag, reloads keep the move records they read, and point moves are
-        // resolved after each attempt, once all its new data is installed
-        let resolve_point_moves = PointMovesMode::for_follower().is_resolve();
         for _ in 0..MAX_ATTEMPTS {
-            let attempt = self.live_reload_attempt(is_stopped);
-            // Even after a failed attempt: a segment that keeps failing must not keep the old
-            // copies of every other segment
-            let resolved = if resolve_point_moves {
-                self.resolve_point_moves(attempt.is_ok(), is_stopped)
-            } else {
-                Ok(())
-            };
-            let outcome = attempt?;
-            resolved?;
-            match outcome {
+            match self.live_reload_attempt(is_stopped)? {
                 LiveReloadOutcome::Complete => return Ok(LiveReloadOutcome::Complete),
                 LiveReloadOutcome::ManifestChanged => {}
             }
