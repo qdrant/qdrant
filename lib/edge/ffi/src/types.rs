@@ -531,6 +531,8 @@ impl From<SegmentScoredPoint> for ScoredPoint {
             // Edge is single-shard, so the multi-shard routing key is not
             // surfaced.
             shard_key: _,
+            // Only meaningful inside the shard that searched the segment.
+            location: _,
         } = p;
         ScoredPoint {
             id: PointId::from(id),

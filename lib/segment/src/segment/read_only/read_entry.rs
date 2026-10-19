@@ -150,6 +150,16 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         })
     }
 
+    fn retrieve_at(
+        &self,
+        points: &[&ScoredPoint],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        self.with_view(|view| view.retrieve_at(points, with_payload, with_vector, is_stopped))
+    }
+
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],

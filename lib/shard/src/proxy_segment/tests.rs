@@ -1515,3 +1515,60 @@ fn test_batched_lookups_match_single() {
             .contains_key(&5.into())
     );
 }
+
+/// Reading located points through a proxy leaves out the points it has marked
+/// for deletion, as `retrieve` does.
+#[test]
+fn test_retrieve_at_skips_pending_deletes() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+
+    let _scope = ambient::test_guard();
+
+    let query_context = QueryContext::default();
+    let found = original_segment
+        .get()
+        .read()
+        .search_batch(
+            DEFAULT_VECTOR_NAME,
+            &[&QueryVector::from(vec![1.0, 1.0, 1.0, 1.0])],
+            &WithPayload::from(false),
+            &false.into(),
+            None,
+            10,
+            None,
+            &query_context.get_segment_query_context(),
+        )
+        .unwrap();
+    let points: Vec<_> = found[0].iter().collect();
+
+    let mut proxy_segment = wrap_proxy(original_segment);
+    proxy_segment.delete_point(100, 2.into()).unwrap();
+
+    let is_stopped = AtomicBool::new(false);
+    let mut by_offset: Vec<_> = proxy_segment
+        .retrieve_at(
+            &points,
+            &WithPayload::from(true),
+            &false.into(),
+            &is_stopped,
+        )
+        .unwrap()
+        .into_keys()
+        .collect();
+    by_offset.sort();
+    let mut by_id: Vec<_> = proxy_segment
+        .retrieve(
+            &found[0].iter().map(|point| point.id).collect::<Vec<_>>(),
+            &WithPayload::from(true),
+            &false.into(),
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap()
+        .into_keys()
+        .collect();
+    by_id.sort();
+    assert!(!by_offset.contains(&2.into()));
+    assert_eq!(by_offset, by_id);
+}

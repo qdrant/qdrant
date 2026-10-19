@@ -450,6 +450,37 @@ impl ReadSegmentEntry for ProxySegment {
         )
     }
 
+    /// Like [`Self::retrieve`]: the wrapped segment's records, with the vectors
+    /// redacted and without the points marked for deletion here.
+    fn retrieve_at(
+        &self,
+        points: &[&ScoredPoint],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        let with_vector = self
+            .pending_changes
+            .vector_name_changes()
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let points: Vec<_> = points
+            .iter()
+            .copied()
+            .filter(|point| {
+                !self
+                    .pending_changes
+                    .deleted_points()
+                    .contains_key(&point.id)
+            })
+            .collect();
+        self.wrapped_segment.get().read().retrieve_at(
+            &points,
+            with_payload,
+            with_vector.as_ref(),
+            is_stopped,
+        )
+    }
+
     fn retrieve_raw(
         &self,
         point_ids: &[PointIdType],

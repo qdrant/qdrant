@@ -14,6 +14,7 @@ use std::collections::HashMap;
 
 use ahash::{AHashMap, AHashSet};
 use common::types::DeferredBehavior;
+use uuid::Uuid;
 
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
@@ -45,6 +46,8 @@ where
     pub(crate) vector_data: &'s HashMap<VectorNameBuf, TVectorData>,
     pub(crate) segment_config: &'s SegmentConfig,
     pub(crate) appendable_flag: bool,
+    /// The segment's uuid, for the locations of the points its searches return.
+    pub(crate) segment_uuid: Uuid,
 }
 
 /// Concrete `SegmentReadView` instantiation that wraps a regular [`Segment`].

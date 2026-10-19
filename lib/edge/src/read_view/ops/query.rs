@@ -1,7 +1,7 @@
 use std::mem;
 use std::sync::Arc;
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use common::ambient;
 use common::reason::Reason;
 use common::types::{DeferredBehavior, ScoreType};
@@ -13,12 +13,13 @@ use segment::data_types::query_context::FormulaContext;
 use segment::entry::ReadSegmentEntry;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
-    Filter, HasIdCondition, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use shard::query::mmr::mmr_from_points_with_vector;
 use shard::query::planned_query::*;
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 use shard::query::*;
+use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_over;
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
@@ -404,6 +405,9 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     }
 
     /// This function always filters deferred points.
+    ///
+    /// A point a search of this view located is read by offset from the segment
+    /// that holds it (see [`ScoredPoint::location`]); the rest are looked up by id.
     pub(super) fn fill_with_payload_or_vectors(
         &self,
         query_response: ShardQueryResponse,
@@ -414,23 +418,29 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         if !with_payload.is_required() && !with_vector.is_enabled() {
             return Ok(query_response);
         }
+        let with_payload = WithPayload::from(with_payload);
+
+        let mut records_map =
+            self.retrieve_located(&query_response, &with_payload, &with_vector)?;
 
         // ids to retrieve (deduplication happens in the searcher)
         let point_ids: Vec<_> = query_response
             .iter()
             .flatten()
             .map(|scored_point| scored_point.id)
+            .filter(|point_id| !records_map.contains_key(point_id))
             .collect();
-
-        let records_map = retrieve_over(
-            self.segment_arcs(),
-            &point_ids,
-            &WithPayload::from(with_payload),
-            &with_vector,
-            &self.is_stopped,
-            DeferredBehavior::VisibleOnly,
-        )?;
-        self.check_stopped()?;
+        if !point_ids.is_empty() {
+            records_map.extend(retrieve_over(
+                self.segment_arcs(),
+                &point_ids,
+                &with_payload,
+                &with_vector,
+                &self.is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )?);
+            self.check_stopped()?;
+        }
 
         // It might be possible, that we won't find all records,
         // so we need to re-collect the results
@@ -451,6 +461,41 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .collect();
 
         Ok(query_response)
+    }
+
+    /// The records of the points in `query_response` that a search of this view
+    /// located, read by offset from each segment. A point left out is for the
+    /// caller to read by id.
+    fn retrieve_located(
+        &self,
+        query_response: &ShardQueryResponse,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+    ) -> OperationResult<AHashMap<PointIdType, RecordInternal>> {
+        let mut records = AHashMap::new();
+        for segment in &self.segments {
+            let segment = segment.read_segment();
+            let uuid = segment.segment_uuid();
+            let points: Vec<_> = query_response
+                .iter()
+                .flatten()
+                .filter(|point| {
+                    point
+                        .location
+                        .is_some_and(|location| location.segment == uuid)
+                })
+                .collect();
+            if points.is_empty() {
+                continue;
+            }
+            for (point_id, record) in
+                segment.retrieve_at(&points, with_payload, with_vector, &self.is_stopped)?
+            {
+                records.insert(point_id, RecordInternal::from(record));
+            }
+        }
+        self.check_stopped()?;
+        Ok(records)
     }
 }
 
@@ -705,6 +750,92 @@ mod tests {
         assert!(batches[0].iter().all(|point| point.payload.is_none()));
         assert!(batches[1].iter().all(|point| point.payload.is_some()));
         assert!(batches[2].iter().all(|point| point.vector.is_some()));
+    }
+
+    /// Payloads and vectors are read from the copy each point was scored at, by the offset its
+    /// search located it at, and match a retrieve by id: across an immutable segment and the
+    /// appendable one, for a point rewritten after the optimizer moved it, and through
+    /// fusion and MMR.
+    #[test]
+    fn query_payloads_match_retrieve() {
+        use segment::types::{PointIdType, WithVector};
+
+        use crate::{EdgeConfig, EdgeOptimizersConfig, RetrieveRequest};
+
+        let dir = tempfile::tempdir().unwrap();
+        let config = EdgeConfig {
+            optimizers: Some(EdgeOptimizersConfig {
+                indexing_threshold: Some(1),
+                ..EdgeOptimizersConfig::default()
+            }),
+            ..test_config()
+        };
+        let shard = EdgeShard::new(dir.path(), config).unwrap();
+        upsert(
+            &shard,
+            (1..=6).map(|id| point_with_group(id, "original")).collect(),
+        );
+        upsert(&shard, (1000..1300).map(point).collect());
+        assert!(shard.optimize().unwrap(), "expected an optimization to run");
+        upsert(&shard, vec![point_with_group(1, "rewritten")]);
+
+        let with_all = |builder: QueryRequestBuilder| {
+            builder
+                .with_payload(WithPayloadInterface::Bool(true))
+                .with_vector(WithVector::Bool(true))
+                .build()
+        };
+        // The rewritten point 1 ranks first against `-1.0`.
+        let requests = [
+            with_all(QueryRequestBuilder::new(10).query(nearest_query(1.0))),
+            with_all(QueryRequestBuilder::new(3).query(nearest_query(-1.0))),
+            with_all(
+                QueryRequestBuilder::new(5)
+                    .add_prefetch(PrefetchBuilder::new(8).query(nearest_query(1.0)).build())
+                    .add_prefetch(PrefetchBuilder::new(8).query(nearest_query(-1.0)).build())
+                    .query(ScoringQuery::Fusion(FusionInternal::Rrf {
+                        k: 2,
+                        weights: None,
+                    })),
+            ),
+            with_all(
+                QueryRequestBuilder::new(4)
+                    .add_prefetch(PrefetchBuilder::new(8).query(nearest_query(1.0)).build())
+                    .query(ScoringQuery::Mmr(MmrInternal {
+                        vector: VectorInternal::from(vec![1.0]),
+                        using: VECTOR_NAME.to_string(),
+                        lambda: OrderedFloat(0.5),
+                        candidates_limit: 8,
+                    })),
+            ),
+        ];
+
+        let mut saw_rewritten = false;
+        for request in requests {
+            let points = shard.query(request).unwrap();
+            assert!(!points.is_empty());
+            let ids: Vec<PointIdType> = points.iter().map(|point| point.id).collect();
+            let records = shard
+                .retrieve(RetrieveRequest {
+                    point_ids: ids,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: Some(WithVector::Bool(true)),
+                })
+                .unwrap();
+            for point in &points {
+                let record = records
+                    .iter()
+                    .find(|record| record.id == point.id)
+                    .expect("every result is retrievable");
+                assert_eq!(point.payload, record.payload, "point {}", point.id);
+                assert_eq!(point.vector, record.vector, "point {}", point.id);
+                saw_rewritten |= point.id == PointIdType::from(1)
+                    && point.payload.as_ref().is_some_and(|payload| {
+                        payload.0.get("group") == Some(&serde_json::json!("rewritten"))
+                    });
+            }
+        }
+        assert!(saw_rewritten, "the rewritten point is in the results");
     }
 
     /// An empty shard has no segments to search, so every request gets an empty list — not a

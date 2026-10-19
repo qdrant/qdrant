@@ -415,6 +415,17 @@ pub struct ScoredPoint {
     pub shard_key: Option<ShardKey>,
     /// Order-by value
     pub order_value: Option<OrderValue>,
+    /// Where the segment that scored this point holds it, if a search of
+    /// this process found it there.
+    pub location: Option<ScoredPointLocation>,
+}
+
+/// Where a segment holds a point its search returned: valid only in the
+/// process that searched it, for reading the point back by offset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScoredPointLocation {
+    pub segment: Uuid,
+    pub offset: PointOffsetType,
 }
 
 impl Eq for ScoredPoint {}

@@ -114,6 +114,18 @@ pub trait ReadSegmentEntry {
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
+    /// Records of those of `points` a search of this segment located (see
+    /// [`ScoredPoint::location`]), read by offset without looking their ids up.
+    /// A point located elsewhere, or that the segment no longer holds as
+    /// scored, is left out, for the caller to read by id.
+    fn retrieve_at(
+        &self,
+        points: &[&ScoredPoint],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
+
     /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors and
     /// payload as stored ([`SegmentRecordRaw`]), to avoid a lossy round-trip and
     /// a needless parse when relocating points (copy-on-write moves, shard
