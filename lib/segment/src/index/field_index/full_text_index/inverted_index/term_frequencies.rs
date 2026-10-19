@@ -24,12 +24,13 @@
 //! the way the sparse index derives its chunk sizes, so it is not stored.
 
 use std::borrow::Cow;
+use std::path::Path;
 
 use bitpacking::{BitPacker as _, BitPacker4x};
 use common::ambient::hw::HwMetric;
 use common::bitpacking::{BitReader, BitWriter, packed_bits};
 use common::generic_consts::{Random, Sequential};
-use common::universal_io::{ReadRange, TypedStorage, UniversalRead};
+use common::universal_io::{CachedReadFs, OpenOptions, ReadRange, TypedStorage, UniversalRead};
 use zerocopy::little_endian::{U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
@@ -173,6 +174,16 @@ pub struct OnDiskTermFrequencies<S: UniversalRead> {
 }
 
 impl<S: UniversalRead> OnDiskTermFrequencies<S> {
+    /// Schedule background prefetch of the file at `path` ahead of
+    /// [`Self::open`]. An open that populates nothing still prefetches the
+    /// header `open` reads, so it does not wait on a read of its own.
+    pub fn preopen<Fs: CachedReadFs<File = S>>(fs: &Fs, path: &Path, mut options: OpenOptions) {
+        options.populate = options
+            .populate
+            .or_partial(0..size_of::<TermFrequenciesHeader>() as u64);
+        fs.schedule_open(path, Some(options), None);
+    }
+
     pub fn open(storage: TypedStorage<S, u8>) -> OperationResult<Self> {
         let header = storage.read(
             ReadRange {
