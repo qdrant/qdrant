@@ -4,6 +4,7 @@
 
 use common::types::PointOffsetType;
 
+use crate::combine::Combine as _;
 use crate::operands::{KernelElem, MatrixOperands};
 use crate::{Cols, TopK};
 

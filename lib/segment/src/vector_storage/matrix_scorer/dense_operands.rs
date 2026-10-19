@@ -7,17 +7,41 @@ use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, Vecto
 use crate::types::Distance;
 use crate::vector_storage::DenseVectorStorageRead;
 
+/// How the inner product of two original vectors and their values become the score of
+/// `score_internal`. Unlike the quantized storages', these are matrix forms of the metrics, not
+/// their own formulas: Euclid expands the squared distance around the inner product.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum DenseCombine {
+    /// `dot`
+    Plain,
+    /// `2·dot − aux_a − aux_b`, with the squared norm as `aux`.
+    Euclid,
+    /// `dot · aux_a · aux_b`, with the inverse norm as `aux`.
+    Cos,
+}
+
+impl Combine for DenseCombine {
+    #[inline(always)]
+    fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32 {
+        match self {
+            DenseCombine::Plain => dot,
+            DenseCombine::Euclid => 2.0 * dot - aux_a - aux_b,
+            DenseCombine::Cos => dot * aux_a * aux_b,
+        }
+    }
+}
+
 /// A stored element of a dense vector, decoded to an f32 operand.
 pub(super) trait MatrixElement: PrimitiveVectorElement {
     /// How Cosine scores vectors of this type.
-    const COSINE: Combine;
+    const COSINE: DenseCombine;
 
     fn to_f32(self) -> f32;
 }
 
 /// Float vectors are stored normalized, so Cosine is their dot product.
 impl MatrixElement for VectorElementType {
-    const COSINE: Combine = Combine::Plain;
+    const COSINE: DenseCombine = DenseCombine::Plain;
 
     fn to_f32(self) -> f32 {
         self
@@ -25,7 +49,7 @@ impl MatrixElement for VectorElementType {
 }
 
 impl MatrixElement for VectorElementTypeHalf {
-    const COSINE: Combine = Combine::Plain;
+    const COSINE: DenseCombine = DenseCombine::Plain;
 
     fn to_f32(self) -> f32 {
         VectorElementTypeHalf::to_f32(self)
@@ -34,7 +58,7 @@ impl MatrixElement for VectorElementTypeHalf {
 
 /// Byte vectors are stored as they are, so Cosine divides by both norms.
 impl MatrixElement for VectorElementTypeByte {
-    const COSINE: Combine = Combine::Cos;
+    const COSINE: DenseCombine = DenseCombine::Cos;
 
     fn to_f32(self) -> f32 {
         f32::from(self)
@@ -44,7 +68,7 @@ impl MatrixElement for VectorElementTypeByte {
 /// Original dense vectors as f32 operands.
 pub(super) struct DenseOperands<'a, T, S> {
     storage: &'a S,
-    combine: Combine,
+    combine: DenseCombine,
     _element: std::marker::PhantomData<fn() -> T>,
 }
 
@@ -52,9 +76,9 @@ impl<'a, T: MatrixElement, S> DenseOperands<'a, T, S> {
     /// `None` for Manhattan, which has no matrix operands.
     pub fn new(storage: &'a S, distance: Distance) -> Option<Self> {
         let combine = match distance {
-            Distance::Dot => Combine::Plain,
+            Distance::Dot => DenseCombine::Plain,
             Distance::Cosine => T::COSINE,
-            Distance::Euclid => Combine::Euclid,
+            Distance::Euclid => DenseCombine::Euclid,
             Distance::Manhattan => return None,
         };
         Some(Self {
@@ -71,13 +95,14 @@ where
     S: DenseVectorStorageRead<T> + Sync,
 {
     type Elem = f32;
+    type Combine = DenseCombine;
     type Error = OperationError;
 
     fn depth(&self) -> usize {
         self.storage.vector_dim()
     }
 
-    fn combine(&self) -> Combine {
+    fn combine(&self) -> DenseCombine {
         self.combine
     }
 
@@ -94,13 +119,13 @@ where
                 *o = x.to_f32();
             }
             aux[i] = match self.combine {
-                Combine::Euclid => squared_norm(decoded),
-                Combine::Cos => match squared_norm(decoded) {
+                DenseCombine::Euclid => squared_norm(decoded),
+                DenseCombine::Cos => match squared_norm(decoded) {
                     // A zero vector scores 0, as in `cosine_similarity_bytes`
                     0.0 => 0.0,
                     norm => 1.0 / norm.sqrt(),
                 },
-                Combine::Plain | Combine::Affine { .. } | Combine::Hamming { .. } => 0.0,
+                DenseCombine::Plain => 0.0,
             };
         })
     }

@@ -1,10 +1,10 @@
 //! Pairwise scoring of stored vectors as matrix products, for index building.
 //!
-//! The crate knows nothing about storages. A storage describes its vectors through
-//! [`MatrixOperands`]: how to decode them into a kernel element type, which value per vector
-//! they carry, and how an inner product and those values combine into the score of
-//! `score_internal`. [`top_k`] then returns the best columns of each row, without
-//! materializing the score matrix.
+//! The crate knows nothing about storages or their scores: the kernels compute inner products.
+//! A storage describes its vectors through [`MatrixOperands`]: how to decode them into a
+//! kernel element type, which value per vector they carry, and its [`Combine`], which turns an
+//! inner product and those values into the score of `score_internal`. [`top_k`] then returns
+//! the best columns of each row, without materializing the score matrix.
 
 mod combine;
 mod fallback;
