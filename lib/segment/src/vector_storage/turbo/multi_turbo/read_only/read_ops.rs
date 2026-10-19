@@ -214,7 +214,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
                 self.quantizer.precompute_query(&preprocessed)
             })
             .collect();
-        TurboMultiQuery::PerPair(vectors)
+        self.quantizer
+            .encode_multi_query(vectors, self.invert_score())
     }
 
     fn score_internal_max_similarity(

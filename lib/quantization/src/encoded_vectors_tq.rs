@@ -19,6 +19,7 @@ use crate::encoded_storage::{
 use crate::encoded_vectors::{
     EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
+use crate::packed_multi_query::PackedMultiQuery;
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
@@ -428,6 +429,25 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
         self.score_bytes(True, query, encoded_vector)
+    }
+
+    fn packed_pays(&self, vectors_count: usize, stored: bool) -> bool {
+        self.quantizer.packed_pays(vectors_count, stored)
+    }
+
+    fn pack_multi_query(&self, query: &[EncodedQueryTQ]) -> Option<PackedMultiQuery> {
+        self.quantizer
+            .pack_multi_query(query, self.metadata.vector_parameters.invert, true)
+            .map(PackedMultiQuery::TQ)
+    }
+
+    fn pack_multi_stored<'a>(
+        &self,
+        vectors: impl ExactSizeIterator<Item = &'a [u8]>,
+    ) -> Option<PackedMultiQuery> {
+        self.quantizer
+            .pack_multi_stored(vectors, self.metadata.vector_parameters.invert)
+            .map(PackedMultiQuery::TQ)
     }
 
     fn score_points(
