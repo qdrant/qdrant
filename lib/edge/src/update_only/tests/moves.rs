@@ -481,8 +481,8 @@ fn every_torn_view_serves_the_point_once() {
 }
 
 /// A move into a write target the manifest does not list yet: the target's directory exists, so the
-/// follower keeps the old copy instead of taking the target for superseded, and masks it once the
-/// manifest lists the target.
+/// follower keeps the old copy instead of taking the target for superseded, and masks it the
+/// live_reload after the one that loads the listed target.
 #[test]
 fn move_into_an_unlisted_target_waits_for_its_listing() {
     let fixture = MoveFixture::new();
@@ -519,5 +519,86 @@ fn move_into_an_unlisted_target_waits_for_its_listing() {
     fs_err::write(&manifest_path, serde_json::to_vec(&listed).unwrap()).unwrap();
     follower.live_reload().unwrap();
     assert_eq!(served_vector(&follower, MOVED), Some(NEW_VECTOR));
+    assert_eq!(exact_count(&follower), POINTS);
+    assert_eq!(
+        approximate_count(&follower),
+        POINTS + 1,
+        "the old copy serves until the next live_reload",
+    );
+
+    follower.live_reload().unwrap();
+    assert_eq!(served_vector(&follower, MOVED), Some(NEW_VECTOR));
     assert_eq!(approximate_count(&follower), POINTS);
+}
+
+/// A follower whose source view was fresher keeps serving the old copy its moved-out record names,
+/// and masks it a live_reload after the target caught up.
+#[test]
+fn moved_out_copy_is_masked_a_live_reload_after_the_target_catches_up() {
+    let fixture = MoveFixture::new();
+    let view = fixture.compose(
+        "catching-up",
+        &fixture.after.clone(),
+        &fixture.before.clone(),
+        |_, _| {},
+    );
+    let follower = open_follower(&view);
+    assert_serves(&follower, Some(MOVED as f32), POINTS, "source fresher");
+
+    advance_segment(&view, fixture.target, &fixture.after);
+    assert_old_copy_goes_a_live_reload_later(&follower);
+}
+
+/// A follower that saw neither side of the move serves the old copy. The target's moved-in record
+/// masks it a live_reload after the target caught up.
+#[test]
+fn old_copy_is_masked_a_live_reload_after_the_target_catches_up() {
+    let fixture = MoveFixture::new();
+    let view = fixture.compose(
+        "masking",
+        &fixture.before.clone(),
+        &fixture.before.clone(),
+        |_, _| {},
+    );
+    let follower = open_follower(&view);
+    assert_serves(&follower, Some(MOVED as f32), POINTS, "both before");
+
+    advance_segment(&view, fixture.target, &fixture.after);
+    assert_old_copy_goes_a_live_reload_later(&follower);
+}
+
+/// Once the target caught up, the live_reload that installs the new copy keeps the old one too,
+/// which only the approximate count notices, and the next live_reload deletes it.
+fn assert_old_copy_goes_a_live_reload_later(follower: &ReadOnlyEdgeShard<MmapFile>) {
+    follower.live_reload().unwrap();
+    assert_eq!(served_vector(follower, MOVED), Some(NEW_VECTOR));
+    assert_eq!(exact_count(follower), POINTS);
+    assert_eq!(
+        approximate_count(follower),
+        POINTS + 1,
+        "the old copy serves until the next live_reload",
+    );
+
+    follower.live_reload().unwrap();
+    assert_serves(follower, Some(NEW_VECTOR), POINTS, "a live_reload later");
+}
+
+/// Move segment `uuid` of `view` forward to its state in the `from` snapshot, the way the writer
+/// changes it: append-only files grow in place, the deleted mask is replaced whole.
+fn advance_segment(view: &Path, uuid: Uuid, from: &Path) {
+    let from = segment_path(from, uuid);
+    let to = segment_path(view, uuid);
+    for entry in walkdir::WalkDir::new(&from) {
+        let entry = entry.unwrap();
+        let destination = to.join(entry.path().strip_prefix(&from).unwrap());
+        if entry.file_type().is_dir() {
+            fs_err::create_dir_all(&destination).unwrap();
+        } else if entry.file_name() == "id_tracker.deleted" {
+            let staged = destination.with_extension("staged");
+            fs_err::copy(entry.path(), &staged).unwrap();
+            fs_err::rename(&staged, &destination).unwrap();
+        } else {
+            fs_err::copy(entry.path(), &destination).unwrap();
+        }
+    }
 }
