@@ -32,6 +32,7 @@ pub use shard::optimizers::merge_optimizer::MergeOptimizer;
 mod tests {
     use std::collections::HashMap;
     use std::path::Path;
+    use std::sync::Arc;
 
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -42,9 +43,12 @@ mod tests {
     use shard::locked_segment::LockedSegment;
     use shard::operations::optimization::OptimizerThresholds;
     use shard::optimizers::config::{DenseVectorOptimizerConfig, SegmentOptimizerConfig};
-    use shard::optimizers::segment_optimizer::SegmentOptimizer;
-    use shard::segment_holder::FlushMode;
+    use shard::optimizers::segment_optimizer::{
+        Optimizer, RESERVED_APPENDABLE_SEGMENT_THRESHOLD, SegmentOptimizer, plan_optimizations,
+    };
+    use shard::proxy_segment::UnsyncedProxySegment;
     use shard::segment_holder::locked::LockedSegmentHolder;
+    use shard::segment_holder::{FlushMode, SegmentId};
     use tempfile::Builder;
 
     use super::*;
@@ -288,5 +292,66 @@ mod tests {
                 "Failed on ({default_segment_number}, {max_segment_size})"
             );
         }
+    }
+
+    /// Plan with the merge optimizer over `1 + others` appendable segments, the first one smallest,
+    /// with `proxied` of the others wrapped in proxies, as if under optimization.
+    /// Returns the smallest segment ID and all planned segment IDs.
+    fn plan_over_appendable_segments(others: usize, proxied: usize) -> (SegmentId, Vec<SegmentId>) {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+        let dim = 256;
+
+        let mut holder = SegmentHolder::default();
+        let smallest = holder.add_new(random_segment(dir.path(), 100, 1, dim));
+        let other_ids = (0..others)
+            .map(|_| holder.add_new(random_segment(dir.path(), 100, 3, dim)))
+            .collect_vec();
+        for &segment_id in &other_ids[..proxied] {
+            let wrapped = holder.get(segment_id).unwrap().clone();
+            let proxy = UnsyncedProxySegment::new(wrapped).unwrap().finalize();
+            holder.replace(segment_id, proxy).unwrap();
+        }
+
+        let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
+        merge_optimizer.set_default_segments_number_for_test(1);
+        let optimizers: Vec<Arc<Optimizer>> = vec![Arc::new(merge_optimizer)];
+
+        let planned = plan_optimizations(&holder, &optimizers)
+            .into_iter()
+            .flat_map(|(_, batch)| batch)
+            .collect_vec();
+        (smallest, planned)
+    }
+
+    #[test]
+    fn test_reserve_appendable_segment() {
+        // One past the threshold: the smallest appendable segment stays out of the plan
+        let (smallest, planned) =
+            plan_over_appendable_segments(RESERVED_APPENDABLE_SEGMENT_THRESHOLD, 0);
+        assert_eq!(planned.len(), RESERVED_APPENDABLE_SEGMENT_THRESHOLD);
+        assert!(!planned.contains(&smallest));
+    }
+
+    #[test]
+    fn test_reserve_appendable_segment_counts_proxied() {
+        // Segments under optimization count too, a cancellation puts them back
+        let proxied = RESERVED_APPENDABLE_SEGMENT_THRESHOLD / 2;
+        let (smallest, planned) =
+            plan_over_appendable_segments(RESERVED_APPENDABLE_SEGMENT_THRESHOLD, proxied);
+        assert_eq!(
+            planned.len(),
+            RESERVED_APPENDABLE_SEGMENT_THRESHOLD - proxied
+        );
+        assert!(!planned.contains(&smallest));
+    }
+
+    #[test]
+    fn test_no_reserved_appendable_segment_at_threshold() {
+        // At the threshold planning is unchanged, all segments are merged
+        let (smallest, planned) =
+            plan_over_appendable_segments(RESERVED_APPENDABLE_SEGMENT_THRESHOLD - 1, 0);
+        assert_eq!(planned.len(), RESERVED_APPENDABLE_SEGMENT_THRESHOLD);
+        assert!(planned.contains(&smallest));
     }
 }
