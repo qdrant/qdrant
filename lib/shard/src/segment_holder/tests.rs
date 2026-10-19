@@ -3179,3 +3179,76 @@ fn test_unproxy_keeps_proxy_when_dependency_is_past_flush_waterline() {
         1
     );
 }
+
+/// The bulk flush must allow updates to proceed, but dependencies added after it
+/// must still be persisted before restoring an appendable destination.
+#[test]
+fn test_unproxy_preflush_allows_updates_and_flushes_late_dependencies() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    let dir = Builder::new().prefix("cow_preflush").tempdir().unwrap();
+    let mut segments = SegmentHolder::default();
+    let wrapped = LockedSegment::new(empty_segment(dir.path()));
+    let proxy_id = segments.add_new_locked(LockedSegment::from(ProxySegment::new(wrapped)));
+    let destination = segments.add_new(empty_segment(dir.path()));
+    segments
+        .flush_dependency
+        .lock()
+        .add_dependency(proxy_id, destination, 0);
+    let holder = LockedSegmentHolder::new(segments);
+
+    let updates = holder.clone();
+    holder.write().register_post_flush_action(0, 0, move || {
+        let (tx, rx) = mpsc::channel();
+        let updates = updates.clone();
+        let update = std::thread::spawn(move || {
+            let _guard = updates.acquire_updates_lock();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(5)).map_err(|err| {
+            OperationError::service_error(format!("bulk flush blocked updates: {err}"))
+        })?;
+        update.join().unwrap();
+        Ok(PostFlushOutcome::Done)
+    });
+
+    let delta_flushed = Arc::new(AtomicBool::new(false));
+    let flushed = delta_flushed.clone();
+    let hook_holder = holder.clone();
+    BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            let segments = hook_holder.read();
+            segments
+                .flush_dependency
+                .lock()
+                .add_dependency(proxy_id, destination, 0);
+            let flushed = flushed.clone();
+            segments.register_post_flush_action(0, 0, move || {
+                flushed.store(true, Ordering::Relaxed);
+                Ok(PostFlushOutcome::Done)
+            });
+        }));
+    });
+    let result = unwrap_proxy(&holder, &[proxy_id]);
+    BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| *hook.borrow_mut() = None);
+    result.unwrap();
+
+    assert!(delta_flushed.load(Ordering::Relaxed));
+    assert_eq!(
+        holder
+            .read()
+            .flush_dependency
+            .lock()
+            .dependencies_of(&proxy_id)
+            .count(),
+        0
+    );
+    assert!(matches!(
+        holder.read().get(proxy_id),
+        Some(LockedSegment::Original(_))
+    ));
+}
