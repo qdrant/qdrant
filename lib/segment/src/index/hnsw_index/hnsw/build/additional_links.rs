@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
-use common::bitvec::{BitSliceExt as _, BitVec};
+use common::bitvec::BitSliceExt as _;
 use common::progress_tracker::ProgressTracker;
 use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
@@ -83,8 +83,6 @@ fn in_build_order(
 ///
 /// With an `old_index` (whose payload links have the same `m`), each block starts from the
 /// links its points had to each other in the old graph; see [`BlockSeeds`].
-///
-/// Returns the number of vectors that got indexed through these subgraphs.
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(
     not(feature = "gpu"),
@@ -95,7 +93,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
     payload_index: &StructPayloadIndex,
-    gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
+    gpu_insert_context: &mut Option<GpuInsertContext>,
     graph_layers_builder: &mut GraphLayersBuilder,
     config: &HnswGraphConfig,
     payload_m: HnswM,
@@ -105,7 +103,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     pool: &ThreadPool,
     rng: &mut R,
     stopped: &AtomicBool,
-) -> OperationResult<usize> {
+) -> OperationResult<()> {
     let total_vector_count = vector_storage.total_vector_count();
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
@@ -155,13 +153,6 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         old_index.map(|old_index| BlockSeeds::new(old_index, payload_m, total_vector_count));
     let mut seeded_points = 0;
     let mut block_points = 0;
-
-    let mut indexed_vectors_set = if config.m != 0 {
-        // Every vector is already indexed in the main graph, so skip counting.
-        BitVec::new()
-    } else {
-        BitVec::repeat(false, total_vector_count)
-    };
 
     // The GPU stores vectors and links by segment id, so it builds blocks in a segment-sized
     // builder. This one only carries the block graph's settings: `payload_m`, `ef_construct`
@@ -245,12 +236,6 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
                 trace!("graph connectivity: {graph_connectivity} for {field}");
             }
 
-            if !indexed_vectors_set.is_empty() {
-                for &point_id in &points_to_index {
-                    indexed_vectors_set.set(point_id as usize, true);
-                }
-            }
-
             #[cfg(feature = "gpu")]
             if let (Some(gpu_insert_context), Some(reference_graph)) =
                 (gpu_insert_context.as_mut(), &gpu_block_reference)
@@ -318,7 +303,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
     if seeds.is_some() {
         debug!("seeded {seeded_points} of {block_points} payload block points from the old graph");
     }
-    Ok(indexed_vectors_set.count_ones())
+    Ok(())
 }
 
 /// Get list of points for indexing, associated with payload block filtering condition

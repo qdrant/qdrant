@@ -214,7 +214,7 @@ impl HNSWIndex {
             #[cfg(not(feature = "gpu"))]
             let mut gpu_insert_context = None;
 
-            let indexed_payload_vectors = build_additional_links(
+            build_additional_links(
                 id_tracker_ref.deref(),
                 &vector_storage_ref,
                 &quantized_vectors_ref,
@@ -230,10 +230,6 @@ impl HNSWIndex {
                 rng,
                 stopped,
             )?;
-
-            debug_assert!(indexed_vectors >= indexed_payload_vectors || config.m == 0);
-            indexed_vectors = indexed_vectors.max(indexed_payload_vectors);
-            debug_assert!(indexed_payload_vectors <= total_vector_count);
         } else {
             debug!("skip building additional HNSW links");
         }
