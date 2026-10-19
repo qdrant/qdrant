@@ -907,9 +907,10 @@ impl TableOfContent {
 /// Shards per peer for an auto-sharded collection when neither the request nor the config sets
 /// a shard number.
 ///
-/// A cluster of 3 or more peers with fewer collections than peers likely holds collections that grow with it. They
-/// get spare shards, so new peers can take whole shards instead of resharding, which re-indexes
-/// the data. Clusters with many collections keep one shard per peer to bound the shard count.
+/// A cluster of 3 or more peers with fewer collections than peers likely holds collections that
+/// grow with it. They get spare shards, so new peers can take whole shards instead of resharding,
+/// which re-indexes the data. Smaller clusters and clusters with many collections keep one shard
+/// per peer.
 fn default_shard_number_per_node(
     number_of_peers: usize,
     number_of_collections: usize,
