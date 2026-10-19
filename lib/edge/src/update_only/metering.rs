@@ -7,11 +7,7 @@ pub use update_metering::UpdateBytes;
 
 use crate::EdgeConfig;
 
-/// Logical update sizes under the collection's intended indexing configuration.
-///
-/// Dense vectors with no HNSW links contribute no indexing bytes. Sparse vectors
-/// are always indexed. Payload sizes use UTF-8 JSON; indexed fields count their
-/// values, including array contents. Storage multipliers are not applied.
+/// Uses the configured indexes regardless of current segment optimization.
 pub struct UpdateMetering(update_metering::UpdateMetering);
 
 impl UpdateMetering {
@@ -26,8 +22,6 @@ impl UpdateMetering {
         Self::from_segment_config(&indexed, payload_fields)
     }
 
-    /// Use a segment's existing schema when the intended collection config is unknown.
-    /// Plain dense vectors have no indexing charge under this fallback.
     pub fn from_segment_config(
         config: &SegmentConfig,
         payload_fields: impl IntoIterator<Item = JsonPath>,

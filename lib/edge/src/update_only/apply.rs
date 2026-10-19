@@ -30,7 +30,6 @@ use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 /// named by ten operations counts once.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct UpdateBatchOutcome {
-    /// Logical bytes stored by a metered apply; zero for an unmetered apply.
     pub usage: UpdateBytes,
     /// Points written: created, or rewritten into a fresh slot.
     pub stored: usize,
@@ -128,8 +127,6 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         self.apply_batch_inner(operations, None)
     }
 
-    /// Apply a batch and measure its stored points after folding and replay filtering.
-    /// An unsuccessful apply returns no usage. Successful usage describes data already written.
     pub fn apply_batch_metered(
         self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,

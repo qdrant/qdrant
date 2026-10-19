@@ -1,5 +1,3 @@
-//! Logical data written by an update, with indexing bytes accounted separately.
-
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 use std::ops::AddAssign;
@@ -19,12 +17,11 @@ use crate::vector_storage::quantized::quantized_vectors::{
 use crate::vector_storage::sparse::StoredSparseVector;
 use crate::vector_storage::turbo::shared;
 
-/// Bytes of materialized points stored by a successful batch; deletes and skips add zero.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct UpdateBytes {
-    /// Full UTF-8 JSON payload and original vectors, excluding storage framing and indexes.
+    /// Payload JSON and stored vectors, excluding storage overhead.
     pub updated_bytes: u64,
-    /// Indexed payload values and indexed vectors, using their quantized representation when configured.
+    /// Indexed payload values and vectors, quantized when configured.
     pub indexed_bytes: u64,
 }
 
@@ -40,7 +37,6 @@ struct DenseMeter {
     indexed_row_bytes: usize,
 }
 
-/// Metering schema for the intended indexed configuration, independent of segment optimization.
 pub struct UpdateMetering {
     dense: HashMap<String, DenseMeter>,
     sparse: HashMap<String, usize>,
