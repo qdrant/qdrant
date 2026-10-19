@@ -90,4 +90,5 @@ Full rules with examples: `.github/review-rules.md`. Tests and benchmarks are ex
   - Prefer `SomeType::from(x)` over `x.into()`.
   - Match enums exhaustively instead of using a `_` arm.
   - Ignore struct fields explicitly (`field: _`) instead of using `..`.
+  - Avoid `matches!` for the same reason.
 - Don't use the `transmute_*` helpers in new code; use `bytemuck` or `zerocopy`.
