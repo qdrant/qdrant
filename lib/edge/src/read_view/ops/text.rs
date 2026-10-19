@@ -10,7 +10,6 @@ use shard::query::text::{
 };
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use super::search::fill_query_context_over;
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
@@ -45,9 +44,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             &terms,
             self.is_stopped.clone(),
         );
-        let Some(context) =
-            fill_query_context_over(query_context, &self.segments, &self.is_stopped)?
-        else {
+        let Some(context) = self.fill_query_context(query_context)? else {
             // No segments to score
             return Ok(Vec::new());
         };
@@ -168,6 +165,42 @@ mod tests {
         shard
     }
 
+    /// The documents of [`text_shard`] across two segments: the first 20 in an
+    /// immutable one the optimizer builds, the rest in the appendable one.
+    /// Points without text push the vectors over the indexing threshold; they
+    /// hold no token, so BM25 does not count them as documents.
+    fn split_text_shard(dir: &std::path::Path) -> EdgeShard {
+        use crate::read_view::ReadViewProvider as _;
+        use crate::{EdgeConfig, EdgeOptimizersConfig};
+
+        let config = EdgeConfig {
+            optimizers: Some(EdgeOptimizersConfig {
+                indexing_threshold: Some(1),
+                ..EdgeOptimizersConfig::default()
+            }),
+            max_search_threads: Some(4),
+            ..test_config()
+        };
+        let shard = EdgeShard::new(dir, config).unwrap();
+        create_index(&shard, scored_text_index());
+        upsert(&shard, (0..20).map(point_with_text).collect());
+        upsert(&shard, (1000..1300).map(point).collect());
+        assert!(shard.optimize().unwrap(), "expected an optimization to run");
+        upsert(&shard, (20..POINTS).map(point_with_text).collect());
+        let segments = shard.read_segments();
+        assert!(
+            segments
+                .iter()
+                .any(|segment| !segment.get().read().is_appendable())
+        );
+        assert!(
+            segments
+                .iter()
+                .any(|segment| segment.get().read().is_appendable())
+        );
+        shard
+    }
+
     fn text_query(text: &str, params: Bm25Params) -> ScoringQuery {
         ScoringQuery::Text(TextScoringQuery {
             field: FIELD.parse().unwrap(),
@@ -195,8 +228,18 @@ mod tests {
     #[test]
     fn scores_bm25_by_definition() {
         let dir = tempfile::tempdir().unwrap();
-        let shard = text_shard(dir.path(), scored_text_index());
+        assert_bm25_by_definition(&text_shard(dir.path(), scored_text_index()));
+    }
 
+    /// The same across an immutable segment and the appendable one: the
+    /// statistics of both, gathered in parallel, add up to the whole shard's.
+    #[test]
+    fn scores_bm25_by_definition_across_segments() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_bm25_by_definition(&split_text_shard(dir.path()));
+    }
+
+    fn assert_bm25_by_definition(shard: &EdgeShard) {
         let points = shard
             .query(query_request(
                 text_query("alpha gamma", Bm25Params::default()),
