@@ -43,6 +43,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// - a segment failed to reload and could not be reopened either, so it serves a partially
     ///   applied reload;
     /// - a segment's essential files are missing while the manifest still lists it.
+    /// - a newly listed segment failed to load for a reason other than missing files.
     ///
     /// Not cancellable; see [`live_reload_with_cancellation`](Self::live_reload_with_cancellation).
     pub fn live_reload(&self) -> OperationResult<LiveReloadOutcome>
@@ -145,8 +146,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         // 2. Load newly-appeared segments in parallel (outside the holder lock), then under the lock
         //    add them and drop removed ones, and collect the survivors to live_reload *after*
         //    releasing the lock — so reads only block during the cheap add/drop, not during load
-        //    or reload. The manifest is superset-biased, so unloadable segments are skipped by
-        //    `load_segments_parallel` and simply retried on the next live_reload.
+        //    or reload. The manifest is superset-biased, so segments whose files are not found yet are
+        //    skipped by `load_segments_parallel` and retried on the next live_reload; any other
+        //    load failure escalates.
         let new_segments: Vec<(Uuid, PathBuf)> = {
             let holder = self.segments.read();
             on_disk
