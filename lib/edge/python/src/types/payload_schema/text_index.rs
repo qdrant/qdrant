@@ -7,14 +7,39 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
-use pyo3::IntoPyObjectExt;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, PyTypeInfo};
 use segment::data_types::index::*;
 
 use crate::config::vector_data::PyMemory;
 use crate::repr::*;
+use crate::type_hint::Alias;
 use crate::types::json_path::PyJsonPath;
 
+/// Index parameters for text fields.
+///
+/// Args:
+///     tokenizer: Tokenizer type.
+///     min_token_len: Minimum token length.
+///     max_token_len: Maximum token length.
+///     lowercase: Convert to lowercase.
+///     ascii_folding: Apply ASCII folding.
+///     phrase_matching: Enable phrase matching.
+///     stopwords: Stopwords configuration.
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     stemmer: Stemming algorithm.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     scoring: Record document lengths and term frequencies, so a
+///              TextQuery can rank points over this field. `True` for
+///              BM25, or the TextScoringParams. Default: disabled.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].title". The field must be inside the array's
+///             elements. Every query on the field treats each element as its own
+///             document: a condition matches a point when a single element matches
+///             it, and BM25 scores elements separately.
 #[pyclass(name = "TextIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -59,41 +84,49 @@ impl PyTextIndexParams {
         })
     }
 
+    /// Tokenizer type.
     #[getter]
     pub fn tokenizer(&self) -> PyTokenizerType {
         PyTokenizerType::from(self.0.tokenizer)
     }
 
+    /// Minimum token length.
     #[getter]
     pub fn min_token_len(&self) -> Option<usize> {
         self.0.min_token_len
     }
 
+    /// Maximum token length.
     #[getter]
     pub fn max_token_len(&self) -> Option<usize> {
         self.0.max_token_len
     }
 
+    /// Convert to lowercase.
     #[getter]
     pub fn lowercase(&self) -> Option<bool> {
         self.0.lowercase
     }
 
+    /// Apply ASCII folding.
     #[getter]
     pub fn ascii_folding(&self) -> Option<bool> {
         self.0.ascii_folding
     }
 
+    /// Enable phrase matching.
     #[getter]
     pub fn phrase_matching(&self) -> Option<bool> {
         self.0.phrase_matching
     }
 
+    /// Stopwords configuration.
     #[getter]
     pub fn stopwords(&self) -> Option<&PyStopwords> {
         self.0.stopwords.as_ref().map(PyStopwords::wrap_ref)
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -102,26 +135,31 @@ impl PyTextIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Stemming algorithm.
     #[getter]
     pub fn stemmer(&self) -> Option<&PyStemmingAlgorithm> {
         self.0.stemmer.as_ref().map(PyStemmingAlgorithm::wrap_ref)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// How the index ranks documents, or None if it doesn't.
     #[getter]
     pub fn scoring(&self) -> Option<PyTextScoringParams> {
         self.0.scoring.clone().map(PyTextScoringParams)
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -166,6 +204,12 @@ impl PyTextScoringInterface {
     }
 }
 
+/// Ranking over a text index. The index records the length of each
+/// document, which ranking normalizes by. BM25's `k` and `b` are set per
+/// query, with `Bm25Params`.
+///
+/// Args:
+///     type: How documents are ranked. Default: TextScoringType.Bm25.
 #[pyclass(name = "TextScoringParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -182,6 +226,7 @@ impl PyTextScoringParams {
         })
     }
 
+    /// How documents are ranked.
     #[getter]
     pub fn r#type(&self) -> PyTextScoringType {
         PyTextScoringType::from(self.0.r#type)
@@ -195,6 +240,7 @@ impl PyTextScoringParams {
     }
 }
 
+/// How a text index ranks documents.
 #[pyclass(name = "TextScoringType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTextScoringType {
@@ -227,6 +273,7 @@ impl From<PyTextScoringType> for TextScoringType {
     }
 }
 
+/// Text tokenizer types.
 #[pyclass(name = "TokenizerType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyTokenizerType {
@@ -275,16 +322,22 @@ impl From<PyTokenizerType> for TokenizerType {
 #[repr(transparent)]
 pub struct PyStopwords(StopwordsInterface);
 
+pub const STOPWORDS: Alias = Alias {
+    name: "Stopwords",
+    definition: StopwordsHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum StopwordsHelper {
+    Language(PyLanguage),
+    Set(PyStopwordsSet),
+}
+
 impl FromPyObject<'_, '_> for PyStopwords {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = STOPWORDS.hint();
 
     fn extract(stopwords: Borrowed<'_, '_, PyAny>) -> Result<Self, Self::Error> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Language(PyLanguage),
-            Set(PyStopwordsSet),
-        }
-
         fn _variants(stopwords: StopwordsInterface) {
             match stopwords {
                 StopwordsInterface::Language(_) => {}
@@ -293,8 +346,8 @@ impl FromPyObject<'_, '_> for PyStopwords {
         }
 
         let stopwords = match stopwords.extract()? {
-            Helper::Language(lang) => StopwordsInterface::Language(lang.into()),
-            Helper::Set(set) => StopwordsInterface::Set(set.into()),
+            StopwordsHelper::Language(lang) => StopwordsInterface::Language(lang.into()),
+            StopwordsHelper::Set(set) => StopwordsInterface::Set(set.into()),
         };
 
         Ok(Self(stopwords))
@@ -305,12 +358,14 @@ impl<'py> IntoPyObject<'py> for PyStopwords {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STOPWORDS.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
-            StopwordsInterface::Language(lang) => PyLanguage::from(lang).into_bound_py_any(py),
-            StopwordsInterface::Set(set) => PyStopwordsSet(set).into_bound_py_any(py),
+            StopwordsInterface::Language(lang) => StopwordsHelper::Language(lang.into()),
+            StopwordsInterface::Set(set) => StopwordsHelper::Set(PyStopwordsSet(set)),
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -318,6 +373,7 @@ impl<'py> IntoPyObject<'py> for &PyStopwords {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STOPWORDS.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -333,6 +389,7 @@ impl Repr for PyStopwords {
     }
 }
 
+/// Predefined stopword languages.
 #[pyclass(name = "Language", from_py_object)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum PyLanguage {
@@ -481,6 +538,11 @@ impl From<PyLanguage> for Language {
     }
 }
 
+/// Custom stopwords set.
+///
+/// Args:
+///     languages: Predefined language stopwords to include.
+///     custom: Custom stopwords to add.
 #[pyclass(name = "StopwordsSet", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -498,6 +560,7 @@ impl PyStopwordsSet {
         })
     }
 
+    /// Predefined language stopwords.
     #[getter]
     pub fn languages(&self) -> Option<BTreeSet<PyLanguage>> {
         self.0
@@ -506,6 +569,7 @@ impl PyStopwordsSet {
             .map(|langs| langs.iter().copied().map(PyLanguage::from).collect())
     }
 
+    /// Custom stopwords.
     #[getter]
     pub fn custom(&self) -> Option<&BTreeSet<String>> {
         self.0.custom.as_ref()
@@ -526,6 +590,7 @@ impl<'py> IntoPyObject<'py> for &PyStopwordsSet {
     type Target = PyStopwordsSet;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyStopwordsSet::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -536,16 +601,22 @@ impl<'py> IntoPyObject<'py> for &PyStopwordsSet {
 #[repr(transparent)]
 pub struct PyStemmingAlgorithm(StemmingAlgorithm);
 
+pub const STEMMING_ALGORITHM: Alias = Alias {
+    name: "StemmingAlgorithm",
+    definition: StemmingAlgorithmHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum StemmingAlgorithmHelper {
+    Snowball(PySnowballParams),
+    Disabled(PyDisabledStemmer),
+}
+
 impl FromPyObject<'_, '_> for PyStemmingAlgorithm {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = STEMMING_ALGORITHM.hint();
 
     fn extract(algo: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Snowball(PySnowballParams),
-            Disabled(PyDisabledStemmer),
-        }
-
         fn _variants(algo: StemmingAlgorithm) {
             match algo {
                 StemmingAlgorithm::Snowball(_) => {}
@@ -554,8 +625,12 @@ impl FromPyObject<'_, '_> for PyStemmingAlgorithm {
         }
 
         let algo = match algo.extract()? {
-            Helper::Snowball(snowball) => StemmingAlgorithm::Snowball(snowball.into()),
-            Helper::Disabled(disabled) => StemmingAlgorithm::Disabled(disabled.into()),
+            StemmingAlgorithmHelper::Snowball(snowball) => {
+                StemmingAlgorithm::Snowball(snowball.into())
+            }
+            StemmingAlgorithmHelper::Disabled(disabled) => {
+                StemmingAlgorithm::Disabled(disabled.into())
+            }
         };
 
         Ok(Self(algo))
@@ -566,16 +641,18 @@ impl<'py> IntoPyObject<'py> for PyStemmingAlgorithm {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STEMMING_ALGORITHM.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             StemmingAlgorithm::Snowball(snowball) => {
-                PySnowballParams(snowball).into_bound_py_any(py)
+                StemmingAlgorithmHelper::Snowball(PySnowballParams(snowball))
             }
             StemmingAlgorithm::Disabled(disabled) => {
-                PyDisabledStemmer(disabled).into_bound_py_any(py)
+                StemmingAlgorithmHelper::Disabled(PyDisabledStemmer(disabled))
             }
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -583,6 +660,7 @@ impl<'py> IntoPyObject<'py> for &PyStemmingAlgorithm {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = STEMMING_ALGORITHM.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -598,6 +676,10 @@ impl Repr for PyStemmingAlgorithm {
     }
 }
 
+/// Snowball stemming algorithm parameters.
+///
+/// Args:
+///     language: Snowball language.
 #[pyclass(name = "SnowballParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -614,6 +696,7 @@ impl PySnowballParams {
         })
     }
 
+    /// Snowball language.
     #[getter]
     pub fn language(&self) -> PySnowballLanguage {
         PySnowballLanguage::from(self.0.language)
@@ -662,6 +745,7 @@ impl PyDisabledStemmer {
     }
 }
 
+/// Snowball stemmer languages.
 #[pyclass(name = "SnowballLanguage", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PySnowballLanguage {

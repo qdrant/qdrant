@@ -2,6 +2,8 @@ use std::fmt;
 
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
+use pyo3::PyTypeInfo;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use shard::query::formula::ExpressionInternal;
 
@@ -14,6 +16,7 @@ pub struct PyExpression(ExpressionInternal);
 
 impl FromPyObject<'_, '_> for PyExpression {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = PyExpressionInterface::TYPE_HINT;
 
     fn extract(helper: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
         let expr = match helper.extract()? {
@@ -101,6 +104,7 @@ impl<'py> IntoPyObject<'py> for PyExpression {
     type Target = PyExpressionInterface;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PyExpressionInterface::TYPE_HINT;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         let helper = match self.0 {
