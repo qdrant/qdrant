@@ -293,6 +293,7 @@ impl<S: UniversalReadExt> LiveReload for ReadOnlyFieldIndex<S> {
             ReadOnlyFieldIndex::UuidIndex(index) => index.apply_deletions(deleted_points),
             ReadOnlyFieldIndex::UuidMapIndex(index) => index.apply_deletions(deleted_points),
             ReadOnlyFieldIndex::NullIndex(index) => index.apply_deletions(deleted_points),
+            ReadOnlyFieldIndex::Nested(index) => index.apply_deletions(deleted_points),
         }
     }
 
