@@ -21,8 +21,9 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{
-    ExtendedPointId, Filter, Payload, PayloadKeyTypeRef, PointIdType, RawPayload, ScoredPoint,
-    SearchParams, VectorName, VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadKeyTypeRef, PointAtOffset, PointIdType, RawPayload,
+    ScoredPoint, ScoredPointLocation, SearchParams, VectorName, VectorNameBuf, WithPayload,
+    WithVector,
 };
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
@@ -52,6 +53,48 @@ where
                 resolved_offsets.push(offset);
             },
         )?;
+        self.retrieve_resolved(
+            &resolved_ids,
+            &resolved_offsets,
+            with_payload,
+            with_vector,
+            is_stopped,
+        )
+    }
+
+    /// Records of `points`, read by their offsets without looking their ids up.
+    /// A point the segment no longer holds there at its version (deleted,
+    /// rewritten, or deferred where `deferred_behavior` hides it) is left out.
+    pub fn retrieve_at(
+        &self,
+        points: &[PointAtOffset],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        let cutoff = deferred_behavior.apply(self.deferred_internal_id());
+        let mut versions = AHashMap::with_capacity(points.len());
+        self.id_tracker.internal_versions_batch(
+            points.iter().map(|point| point.offset),
+            |offset, version| {
+                versions.insert(offset, version);
+            },
+        )?;
+        let (resolved_ids, resolved_offsets): (Vec<_>, Vec<_>) = points
+            .iter()
+            .filter(|point| {
+                let PointAtOffset {
+                    id: _,
+                    offset,
+                    version,
+                } = **point;
+                !cutoff.is_some_and(|cutoff| offset >= cutoff)
+                    && !self.id_tracker.is_deleted_point(offset)
+                    && versions.get(&offset) == Some(&version)
+            })
+            .map(|point| (point.id, point.offset))
+            .unzip();
         self.retrieve_resolved(
             &resolved_ids,
             &resolved_offsets,
@@ -355,6 +398,10 @@ where
                 vector: vectors.map(VectorStructInternal::from),
                 shard_key: None,
                 order_value: None,
+                location: Some(ScoredPointLocation {
+                    segment: self.segment_uuid,
+                    offset: idx,
+                }),
             });
         }
 
