@@ -620,6 +620,15 @@ impl ClusterState {
             }
         }
 
+        // The shard key may have been dropped after Start was proposed
+        if let Some(shard_key) = &key.shard_key
+            && !state.shards_key_mapping.contains_key(shard_key)
+        {
+            return Err(StorageError::bad_request(format!(
+                "{shard_key} hashring does not exist"
+            )));
+        }
+
         if let Some(current) = &state.resharding
             && !current.matches(key)
         {
