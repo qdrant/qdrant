@@ -1,10 +1,10 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::generic_consts::{Random, Sequential};
 use common::universal_io::{
-    OkNotFound, OpenOptions, ReadRange, UniversalIoError, UioResult, UniversalRead,
+    CachedReadFs, OkNotFound, OpenOptions, ReadRange, UniversalIoError, UioResult, UniversalRead,
     UniversalReadFs,
 };
 use posting_list::{PostingList, PostingListView};
@@ -40,6 +40,21 @@ type HeaderResult = Result<(TokenId, PostingListHeader), UniversalIoError>;
 struct HeadersBatch {
     headers: Vec<HeaderResult>,
     missing: Vec<TokenId>,
+}
+
+/// Schedule background prefetch of the postings file at `path` ahead of
+/// [`OnDiskPostings::open`], whatever its posting values. An open that
+/// populates nothing still prefetches the header `open` reads, so it does not
+/// wait on a read of its own.
+pub fn preopen_postings<S: UniversalRead>(
+    fs: &impl CachedReadFs<File = S>,
+    path: &Path,
+    mut options: OpenOptions,
+) {
+    options.populate = options
+        .populate
+        .or_partial(0..size_of::<PostingsHeader>() as u64);
+    fs.schedule_open(path, Some(options), None);
 }
 
 impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
