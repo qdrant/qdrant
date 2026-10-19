@@ -36,12 +36,6 @@ impl Collection {
     ) -> CollectionResult<Option<UpdateResult>> {
         // This function is called from consensus, so we use `wait = false`,
         // because we can't afford to wait for the result as indexing may take a long time
-        //
-        // TODO: Bypass the user write limiter here while retaining hardware measurements.
-        //
-        // This call saves the schema, then submits index updates to local shards.
-        // Those updates share the write limiter used by point writes.
-        // An exhausted limiter can reject an index update before it reaches the shard's WAL.
         self.create_payload_index_with_wait(field_name, field_schema, false)
             .await
     }

@@ -43,6 +43,122 @@ fn payload_index_action_forward_failure() {
     }
 }
 
+#[test]
+fn payload_index_committed_updates_bypass_write_limiter() {
+    use collection::operations::point_ops::{
+        PointInsertOperationsInternal, PointStructPersisted, VectorStructPersisted,
+    };
+    use common::ambient::hw::HwMetric;
+    use storage::content_manager::consensus_state_machine::CollectionConfigDiff;
+
+    for use_applier in [false, true] {
+        for proxy in [false, true] {
+            let (_storage_dir, handle, dispatcher) = new_dispatcher();
+            create_collection(&handle, &dispatcher, "test");
+            let pass = new_unchecked_verification_pass();
+            let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+            toc.apply_action(Action::SetReplicaState {
+                collection: "test".into(),
+                shard_id: 0,
+                peer_id: 0,
+                state: ReplicaState::Active,
+            })
+            .unwrap();
+            toc.apply_action(Action::UpdateCollectionConfig {
+                collection: "test".into(),
+                diff: Box::new(CollectionConfigDiff::StrictMode(
+                    serde_json::from_value(serde_json::json!({
+                        "enabled": true, "write_rate_limit": 1,
+                    }))
+                    .unwrap(),
+                )),
+            })
+            .unwrap();
+            let collection_pass = FULL_ACCESS
+                .check_collection_access("test", AccessRequirements::new(), "test")
+                .unwrap();
+            let collection = handle
+                .block_on(toc.get_collection(&collection_pass))
+                .unwrap();
+            let replica_set = handle.block_on(async {
+                collection
+                    .shards_holder()
+                    .read()
+                    .await
+                    .get_shard(0)
+                    .unwrap()
+                    .clone()
+            });
+            let segments = handle
+                .block_on(replica_set.local_segments_for_test())
+                .unwrap();
+            let metrics = toc.get_collection_hw_metrics("test".into());
+            let point = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
+                    id: 1.into(),
+                    vector: VectorStructPersisted::Single(vec![1.0; 10]),
+                    payload: Some(
+                        serde_json::from_value(serde_json::json!({"city": "Madrid"})).unwrap(),
+                    ),
+                }]),
+            ));
+            let result = handle.block_on(
+                replica_set
+                    .update_local(point.clone().into(), WaitUntil::Visible, None, false)
+                    .measured(AmbientContext::request("test", metrics.clone())),
+            );
+            result.unwrap();
+            let before = metrics.load()[HwMetric::PayloadIndexIoWrite];
+            let _server = if proxy {
+                let (remote, server) = missing_index_target(&handle, Code::NotFound);
+                handle
+                    .block_on(replica_set.proxify_local(remote, None, None))
+                    .unwrap();
+                Some(server)
+            } else {
+                None
+            };
+            let field_name = "city".parse().unwrap();
+
+            for _ in 0..2 {
+                apply_index(toc, &field_name, true, use_applier).unwrap();
+            }
+
+            handle.block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    loop {
+                        let indexed = segments.read().iter().all(|(_, segment)| {
+                            segment
+                                .get()
+                                .read()
+                                .get_indexed_fields()
+                                .contains_key(&field_name)
+                        });
+                        if indexed && metrics.load()[HwMetric::PayloadIndexIoWrite] > before {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("committed index must reach segments and retain hardware measurements");
+            });
+            let result = handle.block_on(
+                replica_set
+                    .update_local(point.into(), WaitUntil::Wal, None, false)
+                    .measured(AmbientContext::request("test", metrics)),
+            );
+            assert!(
+                matches!(result, Err(CollectionError::RateLimitExceeded { .. })),
+                "point writes must remain rate limited: {result:?}"
+            );
+            if proxy {
+                handle.block_on(replica_set.un_proxify_local()).unwrap();
+            }
+        }
+    }
+}
+
 fn payload_index_forward_failure(use_applier: bool, code: Code) {
     let (_storage_dir, handle, dispatcher) = new_dispatcher();
     create_collection(&handle, &dispatcher, "test");
