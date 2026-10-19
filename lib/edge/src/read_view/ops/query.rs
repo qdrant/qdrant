@@ -13,7 +13,8 @@ use segment::data_types::query_context::FormulaContext;
 use segment::entry::ReadSegmentEntry;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
-    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Filter, HasIdCondition, PointAtOffset, PointIdType, ScoredPoint, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use shard::query::mmr::mmr_from_points_with_vector;
 use shard::query::planned_query::*;
@@ -423,17 +424,18 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         let mut records_map =
             self.retrieve_located(&query_response, &with_payload, &with_vector)?;
 
-        // ids to retrieve (deduplication happens in the searcher)
-        let point_ids: Vec<_> = query_response
+        // Points no search of this view located, or whose location went stale:
+        // read by id (deduplication happens in the searcher)
+        let unlocated_point_ids: Vec<_> = query_response
             .iter()
             .flatten()
             .map(|scored_point| scored_point.id)
             .filter(|point_id| !records_map.contains_key(point_id))
             .collect();
-        if !point_ids.is_empty() {
+        if !unlocated_point_ids.is_empty() {
             records_map.extend(retrieve_over(
                 self.segment_arcs(),
-                &point_ids,
+                &unlocated_point_ids,
                 &with_payload,
                 &with_vector,
                 &self.is_stopped,
@@ -472,30 +474,37 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> OperationResult<AHashMap<PointIdType, RecordInternal>> {
-        let mut records = AHashMap::new();
-        for segment in &self.segments {
+        let records_by_segment = self.par_map_segments(|segment| {
             let segment = segment.read_segment();
             let uuid = segment.segment_uuid();
             let points: Vec<_> = query_response
                 .iter()
                 .flatten()
-                .filter(|point| {
-                    point
-                        .location
-                        .is_some_and(|location| location.segment == uuid)
+                .filter_map(|point| {
+                    let location = point.location.filter(|location| location.segment == uuid)?;
+                    Some(PointAtOffset {
+                        id: point.id,
+                        offset: location.offset,
+                        version: point.version,
+                    })
                 })
                 .collect();
             if points.is_empty() {
-                continue;
+                return Ok(AHashMap::new());
             }
-            for (point_id, record) in
-                segment.retrieve_at(&points, with_payload, with_vector, &self.is_stopped)?
-            {
-                records.insert(point_id, RecordInternal::from(record));
-            }
-        }
-        self.check_stopped()?;
-        Ok(records)
+            segment.retrieve_at(
+                &points,
+                with_payload,
+                with_vector,
+                &self.is_stopped,
+                DeferredBehavior::VisibleOnly,
+            )
+        })?;
+        Ok(records_by_segment
+            .into_iter()
+            .flatten()
+            .map(|(point_id, record)| (point_id, RecordInternal::from(record)))
+            .collect())
     }
 }
 

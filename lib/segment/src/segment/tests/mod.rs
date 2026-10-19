@@ -48,7 +48,7 @@ use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, CompressionRatio,
     Condition, Distance, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Indexes, Match,
     MultiVectorConfig, Payload, PayloadContainer, PayloadFieldSchema, PayloadSchemaType,
-    PointIdType, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
+    PointAtOffset, PointIdType, ProductQuantization, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantization, ScalarQuantizationConfig, ScalarType, SearchParams, SnapshotFormat,
     SparseVectorDataConfig, SparseVectorStorageType, TurboQuantBitSize,
     TurboQuantQuantizationConfig, TurboQuantization, ValueVariants, VectorDataConfig,
@@ -3244,7 +3244,14 @@ fn test_retrieve_at_reads_located_search_results() {
     let ids: Vec<PointIdType> = found[0].iter().map(|point| point.id).collect();
     assert_eq!(ids.len(), 5);
     assert!(found[0].iter().all(|point| point.location.is_some()));
-    let points: Vec<_> = found[0].iter().collect();
+    let points: Vec<_> = found[0]
+        .iter()
+        .map(|point| PointAtOffset {
+            id: point.id,
+            offset: point.location.expect("search results are located").offset,
+            version: point.version,
+        })
+        .collect();
 
     let is_stopped = AtomicBool::new(false);
     let with_payload = WithPayload::from(true);
@@ -3259,7 +3266,13 @@ fn test_retrieve_at_reads_located_search_results() {
         )
         .unwrap();
     let by_offset = segment
-        .retrieve_at(&points, &with_payload, &with_vector, &is_stopped)
+        .retrieve_at(
+            &points,
+            &with_payload,
+            &with_vector,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
         .unwrap();
     let comparable = |records: AHashMap<PointIdType, SegmentRecord>| {
         let mut records: Vec<_> = records
@@ -3283,7 +3296,13 @@ fn test_retrieve_at_reads_located_search_results() {
         .upsert_point(11, 3.into(), only_default_vector(&[3.0, 2.0]))
         .unwrap();
     let by_offset = segment
-        .retrieve_at(&points, &with_payload, &with_vector, &is_stopped)
+        .retrieve_at(
+            &points,
+            &with_payload,
+            &with_vector,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
         .unwrap();
     let mut left: Vec<_> = by_offset.into_keys().collect();
     left.sort();

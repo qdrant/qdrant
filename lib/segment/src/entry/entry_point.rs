@@ -24,8 +24,8 @@ use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    PointAtOffset, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType,
+    SeqNumberType, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations on segment that do not require mutable access.
@@ -114,16 +114,17 @@ pub trait ReadSegmentEntry {
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
-    /// Records of those of `points` a search of this segment located (see
-    /// [`ScoredPoint::location`]), read by offset without looking their ids up.
-    /// A point located elsewhere, or that the segment no longer holds as
-    /// scored, is left out, for the caller to read by id.
+    /// Records of `points`, read by their offsets in this segment without
+    /// looking their ids up. A point the segment no longer holds there at its
+    /// version, or a deferred one `deferred_behavior` hides, is left out, for
+    /// the caller to read by id.
     fn retrieve_at(
         &self,
-        points: &[&ScoredPoint],
+        points: &[PointAtOffset],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
     /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors and

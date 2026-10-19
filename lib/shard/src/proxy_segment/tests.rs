@@ -14,7 +14,7 @@ use segment::entry::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _, SnapshotEntry as _,
     StorageSegmentEntry as _,
 };
-use segment::types::{FieldCondition, PayloadSchemaType};
+use segment::types::{FieldCondition, PayloadSchemaType, PointAtOffset};
 use tempfile::Builder;
 
 use super::*;
@@ -1540,7 +1540,14 @@ fn test_retrieve_at_skips_pending_deletes() {
             &query_context.get_segment_query_context(),
         )
         .unwrap();
-    let points: Vec<_> = found[0].iter().collect();
+    let points: Vec<_> = found[0]
+        .iter()
+        .map(|point| PointAtOffset {
+            id: point.id,
+            offset: point.location.expect("search results are located").offset,
+            version: point.version,
+        })
+        .collect();
 
     let mut proxy_segment = wrap_proxy(original_segment);
     proxy_segment.delete_point(100, 2.into()).unwrap();
@@ -1552,6 +1559,7 @@ fn test_retrieve_at_skips_pending_deletes() {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            DeferredBehavior::VisibleOnly,
         )
         .unwrap()
         .into_keys()

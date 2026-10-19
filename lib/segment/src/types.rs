@@ -428,6 +428,14 @@ pub struct ScoredPointLocation {
     pub offset: PointOffsetType,
 }
 
+/// A point to read from a segment by its offset, expected there at `version`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PointAtOffset {
+    pub id: PointIdType,
+    pub offset: PointOffsetType,
+    pub version: SeqNumberType,
+}
+
 impl Eq for ScoredPoint {}
 
 impl Ord for ScoredPoint {

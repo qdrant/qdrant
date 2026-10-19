@@ -454,10 +454,11 @@ impl ReadSegmentEntry for ProxySegment {
     /// redacted and without the points marked for deletion here.
     fn retrieve_at(
         &self,
-        points: &[&ScoredPoint],
+        points: &[PointAtOffset],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
         let with_vector = self
             .pending_changes
@@ -465,19 +466,20 @@ impl ReadSegmentEntry for ProxySegment {
             .redact_with_vector(with_vector, &self.wrapped_config);
         let points: Vec<_> = points
             .iter()
-            .copied()
             .filter(|point| {
                 !self
                     .pending_changes
                     .deleted_points()
                     .contains_key(&point.id)
             })
+            .copied()
             .collect();
         self.wrapped_segment.get().read().retrieve_at(
             &points,
             with_payload,
             with_vector.as_ref(),
             is_stopped,
+            deferred_behavior,
         )
     }
 

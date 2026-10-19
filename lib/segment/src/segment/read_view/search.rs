@@ -21,8 +21,9 @@ use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
 use crate::types::{
-    ExtendedPointId, Filter, Payload, PayloadKeyTypeRef, PointIdType, RawPayload, ScoredPoint,
-    ScoredPointLocation, SearchParams, VectorName, VectorNameBuf, WithPayload, WithVector,
+    ExtendedPointId, Filter, Payload, PayloadKeyTypeRef, PointAtOffset, PointIdType, RawPayload,
+    ScoredPoint, ScoredPointLocation, SearchParams, VectorName, VectorNameBuf, WithPayload,
+    WithVector,
 };
 
 impl<'s, TIdT, TPI, TPS, TVD> SegmentReadView<'s, TIdT, TPI, TPS, TVD>
@@ -61,44 +62,38 @@ where
         )
     }
 
-    /// Records of those of `points` a search of this segment located, read by
-    /// their offsets without looking their ids up. A point located elsewhere,
-    /// or no longer held as scored (deleted, past the deferred cutoff, or at
-    /// another version), is left out.
+    /// Records of `points`, read by their offsets without looking their ids up.
+    /// A point the segment no longer holds there at its version (deleted,
+    /// rewritten, or deferred where `deferred_behavior` hides it) is left out.
     pub fn retrieve_at(
         &self,
-        points: &[&ScoredPoint],
+        points: &[PointAtOffset],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        let located: Vec<_> = points
-            .iter()
-            .filter_map(|point| {
-                let location = point.location?;
-                (location.segment == self.segment_uuid).then_some((
-                    point.id,
-                    location.offset,
-                    point.version,
-                ))
-            })
-            .collect();
-        let cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
-        let mut versions = AHashMap::with_capacity(located.len());
+        let cutoff = deferred_behavior.apply(self.deferred_internal_id());
+        let mut versions = AHashMap::with_capacity(points.len());
         self.id_tracker.internal_versions_batch(
-            located.iter().map(|&(_, offset, _)| offset),
+            points.iter().map(|point| point.offset),
             |offset, version| {
                 versions.insert(offset, version);
             },
         )?;
-        let (resolved_ids, resolved_offsets): (Vec<_>, Vec<_>) = located
-            .into_iter()
-            .filter(|&(_, offset, version)| {
+        let (resolved_ids, resolved_offsets): (Vec<_>, Vec<_>) = points
+            .iter()
+            .filter(|point| {
+                let PointAtOffset {
+                    id: _,
+                    offset,
+                    version,
+                } = **point;
                 !cutoff.is_some_and(|cutoff| offset >= cutoff)
                     && !self.id_tracker.is_deleted_point(offset)
                     && versions.get(&offset) == Some(&version)
             })
-            .map(|(id, offset, _)| (id, offset))
+            .map(|point| (point.id, point.offset))
             .unzip();
         self.retrieve_resolved(
             &resolved_ids,

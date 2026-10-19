@@ -32,8 +32,8 @@ use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     ExtendedPointId, Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    VectorName, VectorNameBuf, WithPayload, WithVector,
+    PointAtOffset, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType,
+    SeqNumberType, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageRead};
 
@@ -158,12 +158,21 @@ impl ReadSegmentEntry for Segment {
 
     fn retrieve_at(
         &self,
-        points: &[&ScoredPoint],
+        points: &[PointAtOffset],
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
+        deferred_behavior: DeferredBehavior,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        self.with_view(|view| view.retrieve_at(points, with_payload, with_vector, is_stopped))
+        self.with_view(|view| {
+            view.retrieve_at(
+                points,
+                with_payload,
+                with_vector,
+                is_stopped,
+                deferred_behavior,
+            )
+        })
     }
 
     fn retrieve_raw(
