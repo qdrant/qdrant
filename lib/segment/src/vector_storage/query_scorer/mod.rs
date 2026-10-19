@@ -15,6 +15,7 @@ pub mod custom_query_scorer;
 pub mod metric_query_scorer;
 pub mod multi_custom_query_scorer;
 pub mod multi_metric_query_scorer;
+pub mod packed_max_sim;
 pub mod sparse_custom_query_scorer;
 pub mod sparse_metric_query_scorer;
 pub mod turbo_custom_query_scorer;
@@ -70,7 +71,30 @@ impl<TQueryScorer: QueryScorer> QueryScorerBytes for QueryScorerBytesImpl<TQuery
 /// Disclaimer: this score is not equivalent to the original Colbert metric for Euclidean space because we do not apply the post-processing step.
 /// In that case the score value will be different but the ranking will be the same.
 /// We do that because of performance reasons and complex sort ordering of the vectors when applying the post-processing step.
+///
+/// `multi_dense_a` is packed per call when the batched kernel is faster (see
+/// [`packed_max_sim`]); a query scored against many points is prepared once
+/// instead, as a [`MultiDenseQuery`].
 pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
+    multi_dense_a: TypedMultiDenseVectorRef<'_, T>,
+    multi_dense_b: TypedMultiDenseVectorRef<'_, T>,
+) -> ScoreType {
+    let distance = TMetric::distance();
+    if packed_max_sim::pays::<T>(
+        distance,
+        multi_dense_a.dim,
+        multi_dense_a.vectors_count(),
+        true,
+    ) && let Some(score) =
+        packed_max_sim::score_max_similarity_packed(multi_dense_a, multi_dense_b, distance)
+    {
+        return score;
+    }
+    score_max_similarity_pairwise::<T, TMetric>(multi_dense_a, multi_dense_b)
+}
+
+/// [`score_max_similarity`] one token pair at a time.
+pub fn score_max_similarity_pairwise<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_a: TypedMultiDenseVectorRef<'_, T>,
     multi_dense_b: TypedMultiDenseVectorRef<'_, T>,
 ) -> ScoreType {
@@ -92,21 +116,31 @@ pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     sum
 }
 
-/// A multi-dense query prepared once for MaxSim against stored multi-vectors.
+/// A multi-dense query prepared once for MaxSim against stored multi-vectors:
+/// packed when the batched kernel is faster (see [`packed_max_sim`]), else
+/// scored pair by pair as [`score_max_similarity_pairwise`] does.
 pub struct MultiDenseQuery<T: PrimitiveVectorElement, TMetric> {
     kernel: MultiDenseKernel<T>,
     metric: PhantomData<TMetric>,
 }
 
 enum MultiDenseKernel<T: PrimitiveVectorElement> {
-    /// Scored pair by pair, as [`score_max_similarity`] does.
     PerPair(TypedMultiDenseVector<T>),
+    Packed(packed_max_sim::PackedMultiQuery),
 }
 
 impl<T: PrimitiveVectorElement, TMetric: Metric<T>> MultiDenseQuery<T, TMetric> {
     pub fn new(query: TypedMultiDenseVector<T>) -> Self {
+        let packed = packed_max_sim::PackedMultiQuery::new_if_faster(
+            TypedMultiDenseVectorRef::from(&query),
+            TMetric::distance(),
+        );
+        let kernel = match packed {
+            Some(packed) => MultiDenseKernel::Packed(packed),
+            None => MultiDenseKernel::PerPair(query),
+        };
         Self {
-            kernel: MultiDenseKernel::PerPair(query),
+            kernel,
             metric: PhantomData,
         }
     }
@@ -115,15 +149,18 @@ impl<T: PrimitiveVectorElement, TMetric: Metric<T>> MultiDenseQuery<T, TMetric> 
     pub fn vectors_count(&self) -> usize {
         match &self.kernel {
             MultiDenseKernel::PerPair(query) => query.vectors_count(),
+            MultiDenseKernel::Packed(query) => query.vectors_count(),
         }
     }
 
     /// MaxSim of this query against one stored multi-vector.
     pub fn score_max_similarity(&self, stored: TypedMultiDenseVectorRef<'_, T>) -> ScoreType {
         match &self.kernel {
-            MultiDenseKernel::PerPair(query) => {
-                score_max_similarity::<T, TMetric>(TypedMultiDenseVectorRef::from(query), stored)
-            }
+            MultiDenseKernel::PerPair(query) => score_max_similarity_pairwise::<T, TMetric>(
+                TypedMultiDenseVectorRef::from(query),
+                stored,
+            ),
+            MultiDenseKernel::Packed(query) => query.score_max_similarity(stored),
         }
     }
 }
@@ -176,7 +213,41 @@ pub fn is_read_with_prefetch_efficient<O: VectorOffset>(ids: &[O]) -> bool {
 mod tests {
     use super::*;
     use crate::data_types::vectors::MultiDenseVectorInternal;
-    use crate::spaces::simple::EuclidMetric;
+    use crate::spaces::simple::{DotProductMetric, EuclidMetric};
+
+    /// A prepared query is packed past the crossover only, and scores as pair by pair.
+    #[test]
+    fn multi_dense_query_packs_past_the_crossover() {
+        let dim = 128;
+        let make = |count: usize, seed: f32| {
+            let values = (0..count * dim)
+                .map(|i| ((i as f32 + seed) * 0.37).sin())
+                .collect();
+            MultiDenseVectorInternal::new(values, dim)
+        };
+        #[cfg(target_arch = "x86_64")]
+        let simd = std::is_x86_feature_detected!("avx2");
+        #[cfg(not(target_arch = "x86_64"))]
+        let simd = false;
+        let stored = make(30, 0.5);
+        for (count, packed) in [(1, false), (40, simd)] {
+            let query = MultiDenseQuery::<f32, DotProductMetric>::new(make(count, 0.0));
+            assert_eq!(
+                matches!(query.kernel, MultiDenseKernel::Packed(_)),
+                packed,
+                "{count} vectors"
+            );
+            let want = score_max_similarity_pairwise::<f32, DotProductMetric>(
+                (&make(count, 0.0)).into(),
+                (&stored).into(),
+            );
+            let got = query.score_max_similarity((&stored).into());
+            assert!(
+                (got - want).abs() <= 1e-3,
+                "{count} vectors: {got} vs {want}"
+            );
+        }
+    }
 
     #[test]
     fn test_check_ids_rather_contiguous() {
