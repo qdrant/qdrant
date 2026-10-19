@@ -59,12 +59,13 @@ mod sealed {
 /// `combine().score(Elem::dot(decoded a, decoded b), aux a, aux b)`.
 pub trait MatrixOperands: Sync {
     type Elem: KernelElem;
+    type Combine: Combine;
     type Error;
 
     /// Length of a decoded vector.
     fn depth(&self) -> usize;
 
-    fn combine(&self) -> Combine;
+    fn combine(&self) -> Self::Combine;
 
     /// Decodes `ids` into `out`, `depth()` elements per id, and writes each vector's value for
     /// [`Combine`] to `aux`. Takes a batch, so storages can pipeline their reads.
