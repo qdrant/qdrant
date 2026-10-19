@@ -288,6 +288,8 @@ storage:
       # Overrides the deprecated `on_disk` flag if both are set.
       # memory: null
 
+    # Number of shards per node for auto-sharded collections.
+    # If unset, it is 2 while there are fewer collections than nodes, otherwise 1.
     # shard_number_per_node: 1
 
     # Default quantization configuration.

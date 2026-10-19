@@ -132,7 +132,8 @@ pub struct CreateCollection {
     pub vectors: VectorsConfig,
     /// For auto sharding:
     /// Number of shards in collection.
-    ///  - Default is 1 for standalone, otherwise equal to the number of nodes
+    ///  - Default is 1 for standalone. In a cluster, it is 2 per node while there are
+    ///    fewer collections than nodes, otherwise equal to the number of nodes
     ///  - Minimum is 1
     ///
     /// For custom sharding:

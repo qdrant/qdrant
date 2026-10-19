@@ -22,9 +22,7 @@ use std::time::Duration;
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::common::adaptive_handle::{AdaptiveSearchHandle, SearchMode};
-use collection::config::{
-    CollectionConfigInternal, default_replication_factor, default_shard_number,
-};
+use collection::config::{CollectionConfigInternal, default_replication_factor};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set::AbortShardTransfer;
@@ -547,7 +545,7 @@ impl TableOfContent {
         Ok(aliases)
     }
 
-    pub fn suggest_shard_distribution(
+    pub async fn suggest_shard_distribution(
         &self,
         op: &CreateCollectionOperation,
         collection_defaults: Option<&CollectionConfigDefaults>,
@@ -556,10 +554,14 @@ impl TableOfContent {
         let non_zero_number_of_peers =
             NonZeroU32::new(number_of_peers as u32).expect("NUmber of peers must be at least 1");
 
+        let number_of_collections = self.collections.read().await.len();
+        let shard_number_per_node =
+            default_shard_number_per_node(number_of_peers, number_of_collections);
+
         let suggested_shard_number = collection_defaults
-            .map(|cd| cd.get_shard_number(number_of_peers as u32))
+            .map(|cd| cd.get_shard_number(number_of_peers as u32, shard_number_per_node.get()))
             .map(|x| NonZeroU32::new(x).expect("Shard number must be at least 1"))
-            .unwrap_or_else(|| default_shard_number().saturating_mul(non_zero_number_of_peers));
+            .unwrap_or_else(|| shard_number_per_node.saturating_mul(non_zero_number_of_peers));
 
         let shard_number = op
             .create_collection
@@ -899,5 +901,37 @@ impl TableOfContent {
 
     pub fn general_runtime_handle(&self) -> &Handle {
         self.general_runtime.handle()
+    }
+}
+
+/// Shards per peer for an auto-sharded collection when neither the request nor the config sets
+/// a shard number.
+///
+/// A cluster with fewer collections than peers likely holds collections that grow with it. They
+/// get spare shards, so new peers can take whole shards instead of resharding, which re-indexes
+/// the data. Clusters with many collections keep one shard per peer to bound the shard count.
+fn default_shard_number_per_node(
+    number_of_peers: usize,
+    number_of_collections: usize,
+) -> NonZeroU32 {
+    let shards = if number_of_peers > 1 && number_of_collections < number_of_peers {
+        2
+    } else {
+        1
+    };
+    NonZeroU32::new(shards).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_shard_number_per_node() {
+        assert_eq!(default_shard_number_per_node(1, 0).get(), 1);
+        assert_eq!(default_shard_number_per_node(3, 0).get(), 2);
+        assert_eq!(default_shard_number_per_node(3, 2).get(), 2);
+        assert_eq!(default_shard_number_per_node(3, 3).get(), 1);
+        assert_eq!(default_shard_number_per_node(3, 1000).get(), 1);
     }
 }
