@@ -13,7 +13,7 @@ use common::universal_io::{
     CachedReadFs, MmapFile, MmapFs, OkNotFound, OneshotFile, OpenOptions, Populate, ReadRange,
     TypedStorage, UioResult, UniversalRead, UniversalReadFs, UniversalWriteFs, UserData,
 };
-use on_disk_postings::OnDiskPostings;
+use on_disk_postings::{OnDiskPostings, preopen_postings};
 use posting_list::{PostingListView, PostingValue};
 use types::ZerocopyPostingValue;
 
@@ -255,13 +255,10 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         if !fs.exists(&postings_path)? {
             return Ok(false);
         }
-        fs.schedule_open(
+        preopen_postings(
+            fs,
             &postings_path,
-            Some(open_options(
-                populate,
-                AdviceSetting::Advice(Advice::Normal),
-            )),
-            None,
+            open_options(populate, AdviceSetting::Advice(Advice::Normal)),
         );
 
         // Vocabulary
@@ -284,13 +281,10 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         OneshotFile::<S>::preopen(fs, path.join(POINT_TO_DOC_LEN_FILE));
 
         // Term frequencies, opened like the postings they belong to.
-        fs.schedule_open(
+        OnDiskTermFrequencies::<S>::preopen(
+            fs,
             &path.join(TERM_FREQUENCIES_FILE),
-            Some(open_options(
-                populate,
-                AdviceSetting::Advice(Advice::Normal),
-            )),
-            None,
+            open_options(populate, AdviceSetting::Advice(Advice::Normal)),
         );
 
         // "No tokens" mask
