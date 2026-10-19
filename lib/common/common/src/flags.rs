@@ -114,8 +114,8 @@ impl Default for FeatureFlags {
             compact_bitmask: false,
             append_only_storages: false,
             compact_logstore_tracker: false,
-            transfer_raw_points: false,
-            transfer_raw_payloads: false,
+            transfer_raw_points: true,
+            transfer_raw_payloads: true,
             persist_proxy_segments: false,
             combined_vector_storage: true,
             serverless_compatible: false,
@@ -150,10 +150,8 @@ impl FeatureFlags {
             append_only_storages: false,
             compact_logstore_tracker: false,
             compact_bitmask: true,
-            // Deliberately not enabled by `all`: a node only accepts these once it runs a
-            // version that understands them, so they can only be switched on a release later.
-            transfer_raw_points: false,
-            transfer_raw_payloads: false,
+            transfer_raw_points: true,
+            transfer_raw_payloads: true,
             persist_proxy_segments: true,
             combined_vector_storage: true,
             serverless_compatible: false,
