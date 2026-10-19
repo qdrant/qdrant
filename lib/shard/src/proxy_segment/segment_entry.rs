@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::flags::feature_flags;
 use common::types::{DeferredBehavior, TelemetryDetail};
 use segment::common::Flusher;
@@ -647,6 +647,41 @@ impl ReadSegmentEntry for ProxySegment {
                 .get()
                 .read()
                 .has_point(point_id, deferred_behavior)
+    }
+
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>> {
+        let mut held = self
+            .wrapped_segment
+            .get()
+            .read()
+            .has_points(point_ids, deferred_behavior)?;
+        let deleted_points = self.pending_changes.deleted_points();
+        held.retain(|point_id| !deleted_points.contains_key(point_id));
+        Ok(held)
+    }
+
+    /// Like [`Self::point_version`]: the wrapped segment's versions, without
+    /// those already marked for deletion at a newer version.
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>> {
+        let mut versions = self
+            .wrapped_segment
+            .get()
+            .read()
+            .point_versions(point_ids)?;
+        let deleted_points = self.pending_changes.deleted_points();
+        versions.retain(|point_id, version| {
+            !deleted_points
+                .get(point_id)
+                .is_some_and(|delete| *version <= delete.local_version)
+        });
+        Ok(versions)
     }
 
     fn is_empty(&self) -> bool {
