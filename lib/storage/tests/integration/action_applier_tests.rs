@@ -1007,6 +1007,73 @@ fn drop_named_vector_action_replay() {
 }
 
 #[test]
+fn update_collection_config_action_preserves_healthy_and_restarts_failed_optimizers() {
+    let (_storage_dir, handle, dispatcher) = new_dispatcher();
+    create_collection(&handle, &dispatcher, "test");
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&FULL_ACCESS, &pass);
+    let collection_pass = FULL_ACCESS
+        .check_collection_access("test", AccessRequirements::new(), "test")
+        .unwrap();
+    let collection = handle
+        .block_on(toc.get_collection(&collection_pass))
+        .unwrap();
+    let replica_set = handle.block_on(async {
+        collection
+            .shards_holder()
+            .read()
+            .await
+            .get_shard(0)
+            .unwrap()
+            .clone()
+    });
+    let initial = handle
+        .block_on(replica_set.local_optimizers_for_test())
+        .unwrap();
+    let m = toc.collection_state("test").unwrap().config.hnsw_config.m;
+    let unchanged = Action::UpdateCollectionConfig {
+        collection: "test".into(),
+        diff: Box::new(CollectionConfigDiff::Hnsw(HnswConfigDiff {
+            m: Some(m),
+            ..Default::default()
+        })),
+    };
+
+    toc.apply_action(unchanged.clone()).unwrap();
+    handle.block_on(async { tokio::time::sleep(Duration::from_millis(100)).await });
+
+    let current = handle
+        .block_on(replica_set.local_optimizers_for_test())
+        .unwrap();
+    assert!(
+        Arc::ptr_eq(&initial, &current),
+        "unchanged healthy config must retain optimizers"
+    );
+    let segments = handle
+        .block_on(replica_set.local_segments_for_test())
+        .unwrap();
+    segments
+        .write()
+        .report_optimizer_error("injected optimizer error");
+
+    toc.apply_action(unchanged).unwrap();
+
+    handle.block_on(async {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let current = replica_set.local_optimizers_for_test().await.unwrap();
+                if !Arc::ptr_eq(&initial, &current) && !collection.has_optimizer_errors().await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("unchanged config must restart failed optimizers");
+    });
+}
+
+#[test]
 fn update_collection_config_action_replay() {
     let (_storage_dir, handle, dispatcher) = new_dispatcher();
     create_collection(&handle, &dispatcher, "test");

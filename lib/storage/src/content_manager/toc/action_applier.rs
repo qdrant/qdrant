@@ -42,44 +42,43 @@ impl TableOfContent {
             Action::UpdateCollectionConfig { collection, diff } => {
                 let collection = self.get_collection_unchecked(collection).await?;
 
-                let recreate_optimizers = match diff.as_ref() {
+                let config_before = collection.config().await;
+                match diff.as_ref() {
                     CollectionConfigDiff::Optimizers(diff) => {
                         collection
                             .update_optimizer_params_from_diff(diff.clone())
                             .await?;
-                        true
                     }
                     CollectionConfigDiff::Params(diff) => {
                         collection.update_params_from_diff(diff.clone()).await?;
-                        true
                     }
                     CollectionConfigDiff::Hnsw(diff) => {
                         collection.update_hnsw_config_from_diff(*diff).await?;
-                        true
                     }
                     CollectionConfigDiff::Vectors(diff) => {
                         collection.update_vectors_from_diff(diff).await?;
-                        true
                     }
                     CollectionConfigDiff::Quantization(diff) => {
                         collection
                             .update_quantization_config_from_diff(diff.clone())
                             .await?;
-                        true
                     }
                     CollectionConfigDiff::SparseVectors(diff) => {
                         collection.update_sparse_vectors_from_other(diff).await?;
-                        true
                     }
                     CollectionConfigDiff::StrictMode(diff) => {
                         collection.update_strict_mode_config(diff.clone()).await?;
-                        false
                     }
                     CollectionConfigDiff::Metadata(metadata) => {
                         collection.update_metadata(metadata.clone()).await?;
-                        false
                     }
-                };
+                }
+
+                let config_after = collection.config().await;
+                // Repeating unchanged config must preserve ongoing optimizations, while
+                // repeating it after an optimizer error must restart failed optimizers.
+                let recreate_optimizers = config_before.is_core_config_updated(&config_after)
+                    || collection.has_optimizer_errors().await;
 
                 collection.print_warnings().await;
                 if recreate_optimizers {
