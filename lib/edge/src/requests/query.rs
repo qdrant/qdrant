@@ -154,13 +154,7 @@ fn stage_load_profile(
             LoadProfile::for_scroll(filter, None, with_payload)
         }
     };
-    // A vector or text query gathers its idf statistics (sparse or BM25) over
-    // its own corpus filter; the other stages ignore the params.
-    let scores_with_idf = matches!(
-        query,
-        Some(ScoringQuery::Vector(_) | ScoringQuery::Mmr(_) | ScoringQuery::Text(_)),
-    );
-    if scores_with_idf
+    if query.is_some_and(scores_with_idf)
         && let Some(corpus) = params
             .and_then(|params| params.idf.as_ref())
             .and_then(|idf| idf.corpus())
@@ -168,6 +162,18 @@ fn stage_load_profile(
         profile.merge(LoadProfile::for_scroll(Some(corpus), None, false));
     }
     profile
+}
+
+/// Whether the stage gathers idf statistics (sparse or BM25) over its own corpus
+/// filter. The other stages ignore the params.
+fn scores_with_idf(query: &ScoringQuery) -> bool {
+    match query {
+        ScoringQuery::Vector(_) | ScoringQuery::Mmr(_) | ScoringQuery::Text(_) => true,
+        ScoringQuery::Fusion(_)
+        | ScoringQuery::OrderBy(_)
+        | ScoringQuery::Formula(_)
+        | ScoringQuery::Sample(_) => false,
+    }
 }
 
 fn is_sparse(query: &QueryEnum) -> bool {
