@@ -82,6 +82,9 @@ jobs:
           # No debug info: MSVC writes a PDB per test binary, which slows linking. Panic messages
           # keep their file:line; only backtraces lose line numbers.
           echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
+        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+          # TEMP: measure the macOS build without debug info
+          echo "CARGO_PROFILE_DEV_DEBUG=0" >> "$GITHUB_ENV"
         fi
       shell: bash
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
