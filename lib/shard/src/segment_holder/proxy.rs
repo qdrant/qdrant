@@ -3,6 +3,7 @@ use parking_lot::{RwLockUpgradableReadGuard, RwLockWriteGuard};
 use segment::common::operation_error::OperationError;
 
 use crate::locked_segment::LockedSegment;
+use crate::segment_holder::flush::FlushMode;
 use crate::segment_holder::locked::{LockedSegmentHolder, UpdatesGuard};
 use crate::segment_holder::{PostFlushOutcome, SegmentHolder, SegmentId};
 
@@ -89,6 +90,53 @@ impl SegmentHolder {
                     "Propagating proxy segment {proxy_id} changes to wrapped segment failed: {err}",
                 );
                 return Err((segments_lock, err));
+            }
+        }
+
+        // Restoring an appendable segment under its old ID makes it a possible CoW
+        // destination again. Retire its outgoing dependencies first: otherwise a
+        // later move back into it can add the reverse edge and make flush ordering
+        // cyclic. Updates are frozen, so no new dependencies can appear during the
+        // synchronous pass. Flush the whole graph to honor transitive dependencies
+        // as well, and leave the proxies installed if persistence fails.
+        let appendable_ids: Vec<_> = proxies
+            .iter()
+            .filter_map(|(id, proxy)| {
+                proxy
+                    .read()
+                    .wrapped_segment
+                    .get()
+                    .read()
+                    .is_appendable()
+                    .then_some(*id)
+            })
+            .collect();
+        let has_pending_moves = {
+            let dependencies = segments_lock.flush_dependency.lock();
+            appendable_ids
+                .iter()
+                .any(|id| dependencies.dependencies_of(id).next().is_some())
+        };
+        if has_pending_moves && let Err(err) = segments_lock.flush_all(FlushMode::Sync, false) {
+            return Err((segments_lock, err));
+        }
+        if has_pending_moves {
+            // Failed updates can register an edge before advancing either segment's
+            // version. Such an edge may outlive the flush waterline; keep the proxy
+            // installed until recovery or a later pass can retire it too.
+            let unresolved = {
+                let dependencies = segments_lock.flush_dependency.lock();
+                appendable_ids
+                    .iter()
+                    .any(|id| dependencies.dependencies_of(id).next().is_some())
+            };
+            if unresolved {
+                return Err((
+                    segments_lock,
+                    OperationError::service_error(
+                        "Cannot unproxy appendable segments with unpersisted copy-on-write dependencies",
+                    ),
+                ));
             }
         }
 
