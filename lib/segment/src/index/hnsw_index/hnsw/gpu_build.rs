@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -36,12 +37,13 @@ pub(super) fn upload_and_build_main_graph(
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
     stopped: &AtomicBool,
-) -> OperationResult<(Option<GpuVectorStorage>, Option<GraphLayersBuilder>)> {
+) -> OperationResult<(Option<Arc<GpuVectorStorage>>, Option<GraphLayersBuilder>)> {
     if !(build_main_graph || has_additional_links) {
         return Ok((None, None));
     }
     let timer = std::time::Instant::now();
-    let gpu_vectors = create_gpu_vectors(gpu_device, vector_storage, quantized_vectors, stopped)?;
+    let gpu_vectors =
+        create_gpu_vectors(gpu_device, vector_storage, quantized_vectors, stopped)?.map(Arc::new);
     if !build_main_graph {
         return Ok((gpu_vectors, None));
     }
@@ -66,7 +68,7 @@ fn build_main_graph_on_gpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
-    gpu_vectors: Option<&GpuVectorStorage>,
+    gpu_vectors: Option<&Arc<GpuVectorStorage>>,
     graph_layers_builder: &GraphLayersBuilder,
     deleted_bitslice: &BitSlice,
     entry_points_num: usize,
@@ -84,7 +86,7 @@ fn build_main_graph_on_gpu(
 
     let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors {
         Some(GpuInsertContext::new(
-            gpu_vectors,
+            gpu_vectors.clone(),
             get_gpu_groups_count(),
             graph_layers_builder.hnsw_m(),
             graph_layers_builder.ef_construct(),
@@ -113,7 +115,7 @@ pub(super) fn build_block_on_gpu(
     id_tracker: &IdTrackerEnum,
     vector_storage: &VectorStorageEnum,
     quantized_vectors: &Option<QuantizedVectors>,
-    gpu_insert_context: &mut GpuInsertContext<'_>,
+    gpu_insert_context: &mut GpuInsertContext,
     reference_graph: &GraphLayersBuilder,
     points_to_index: &[PointOffsetType],
     stopped: &AtomicBool,
@@ -138,8 +140,8 @@ pub(super) fn build_block_on_gpu(
     )
 }
 
-fn build_graph_on_gpu<'a, 'b>(
-    gpu_insert_context: Option<&mut GpuInsertContext<'b>>,
+fn build_graph_on_gpu<'a>(
+    gpu_insert_context: Option<&mut GpuInsertContext>,
     graph_layers_builder: &GraphLayersBuilder,
     points_to_index: impl Iterator<Item = PointOffsetType>,
     entry_points_num: usize,
@@ -216,14 +218,14 @@ fn create_gpu_vectors(
 }
 
 pub(super) fn create_gpu_insert_context(
-    gpu_vectors: Option<&GpuVectorStorage>,
+    gpu_vectors: Option<&Arc<GpuVectorStorage>>,
     payload_m: HnswM,
     ef_construct: usize,
-) -> OperationResult<Option<GpuInsertContext<'_>>> {
+) -> OperationResult<Option<GpuInsertContext>> {
     gpu_vectors
         .map(|gpu_vectors| {
             GpuInsertContext::new(
-                gpu_vectors,
+                gpu_vectors.clone(),
                 get_gpu_groups_count(),
                 payload_m,
                 ef_construct,
