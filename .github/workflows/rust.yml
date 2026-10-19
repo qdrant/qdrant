@@ -96,17 +96,19 @@ jobs:
     - name: Install nextest
       uses: taiki-e/install-action@3a0adc33ab45d7b9b9da91822dd2b3c0151704be # nextest
     - name: Build
-      if: matrix.os != 'macos-latest'
+      if: matrix.os == 'ubuntu-latest'
       run: cargo build ${{ needs.select-packages.outputs.packages }} --tests --locked
-    # TEMP: split the macOS runners by package instead of by test
-    - name: Select macOS package group (TEMP)
-      if: matrix.os == 'macos-latest'
+    # TEMP: split the macOS and Windows runners by package instead of by test. Runner 1 takes
+    # `segment` and every workspace crate it depends on, plus `wal`; runner 2 takes the rest.
+    - name: Select package group (TEMP)
+      if: matrix.os != 'ubuntu-latest'
       shell: bash
       run: |
+        group="segment quantization common blobstore wal sparse posting_list io_bridge io_bridge_object_store bm25 dataset gpu macros"
         if [[ "${{ matrix.partition }}" == "1" ]]; then
-          echo "MAC_PACKAGES=-p segment" >> "$GITHUB_ENV"
+          echo "GROUP_PACKAGES=$(printf -- '-p %s ' $group)" >> "$GITHUB_ENV"
         else
-          echo "MAC_PACKAGES=--workspace --exclude segment" >> "$GITHUB_ENV"
+          echo "GROUP_PACKAGES=--workspace $(printf -- '--exclude %s ' $group)" >> "$GITHUB_ENV"
         fi
     # TEMP: profile the macOS build (hardware, memory pressure, per-crate timings)
     - name: Build (macOS, profiled)
@@ -120,12 +122,16 @@ jobs:
             sleep 15
           done ) > mem.log &
         sampler=$!
-        cargo build $MAC_PACKAGES --tests --locked --timings
+        cargo build $GROUP_PACKAGES --tests --locked --timings
         kill $sampler
         cat mem.log
         vm_stat | grep -E 'Pageouts|Swapouts'
+    - name: Build (Windows, package group, TEMP)
+      if: matrix.os == 'windows-latest'
+      shell: bash
+      run: cargo build $GROUP_PACKAGES --tests --locked --timings
     - name: Upload build timings (TEMP)
-      if: matrix.os == 'macos-latest'
+      if: matrix.os != 'ubuntu-latest'
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: cargo-timings-${{ matrix.os }}-${{ matrix.partition }}
@@ -138,13 +144,13 @@ jobs:
       run: echo "TMPDIR=/dev/shm" >> "$GITHUB_ENV"
       shell: bash
     - name: Run tests
-      if: matrix.os != 'macos-latest'
+      if: matrix.os == 'ubuntu-latest'
       # Profile "ci" is configured in .config/nextest.toml. A small PR can leave a partition without tests.
       run: cargo nextest run ${{ needs.select-packages.outputs.packages }} --profile ci --locked --partition count:${{ matrix.partition }}/2 --no-tests=warn
-    - name: Run tests (macOS, package group, TEMP)
-      if: matrix.os == 'macos-latest'
+    - name: Run tests (package group, TEMP)
+      if: matrix.os != 'ubuntu-latest'
       shell: bash
-      run: cargo nextest run $MAC_PACKAGES --profile ci --locked --no-tests=warn
+      run: cargo nextest run $GROUP_PACKAGES --profile ci --locked --no-tests=warn
     - name: Upload test report
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
