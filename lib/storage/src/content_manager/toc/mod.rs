@@ -907,14 +907,14 @@ impl TableOfContent {
 /// Shards per peer for an auto-sharded collection when neither the request nor the config sets
 /// a shard number.
 ///
-/// A cluster with fewer collections than peers likely holds collections that grow with it. They
+/// A cluster of 3 or more peers with fewer collections than peers likely holds collections that grow with it. They
 /// get spare shards, so new peers can take whole shards instead of resharding, which re-indexes
 /// the data. Clusters with many collections keep one shard per peer to bound the shard count.
 fn default_shard_number_per_node(
     number_of_peers: usize,
     number_of_collections: usize,
 ) -> NonZeroU32 {
-    let shards = if number_of_peers > 1 && number_of_collections < number_of_peers {
+    let shards = if number_of_peers >= 3 && number_of_collections < number_of_peers {
         2
     } else {
         1
@@ -929,6 +929,7 @@ mod tests {
     #[test]
     fn test_default_shard_number_per_node() {
         assert_eq!(default_shard_number_per_node(1, 0).get(), 1);
+        assert_eq!(default_shard_number_per_node(2, 0).get(), 1);
         assert_eq!(default_shard_number_per_node(3, 0).get(), 2);
         assert_eq!(default_shard_number_per_node(3, 2).get(), 2);
         assert_eq!(default_shard_number_per_node(3, 3).get(), 1);
