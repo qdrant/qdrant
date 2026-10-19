@@ -13,7 +13,9 @@ use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
-use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::query_context::{
+    FormulaContext, PointLocation, QueryContext, SegmentQueryContext,
+};
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vector_name_config::VectorNameConfig;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
@@ -112,6 +114,18 @@ pub trait ReadSegmentEntry {
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
+
+    /// Records of the points at `locations`, as this segment's searches
+    /// recorded them, read by offset without looking their ids up. A location
+    /// the segment no longer holds as recorded is left out, so the caller reads
+    /// those points by id instead.
+    fn retrieve_at(
+        &self,
+        locations: &[PointLocation],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>>;
 
     /// Byte-blob analogue of [`ReadSegmentEntry::retrieve`]: returns vectors and

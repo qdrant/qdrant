@@ -8,12 +8,15 @@ use common::ambient::AmbientContext;
 use common::ambient::Handoff;
 use common::bitvec::BitSlice;
 use common::cow::SimpleCow;
-use common::types::ScoreType;
+use common::types::{PointOffsetType, ScoreType};
+use parking_lot::Mutex;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::types::{Filter, PayloadKeyType, ScoredPoint, VectorName, VectorNameBuf};
+use crate::types::{
+    Filter, PayloadKeyType, PointIdType, ScoredPoint, SeqNumberType, VectorName, VectorNameBuf,
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct QueryIdfStats {
@@ -305,6 +308,7 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
+            point_locations: None,
         }
     }
 
@@ -325,6 +329,9 @@ impl Default for QueryContext {
 pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
+    /// Where the segment records the points its searches return, if the
+    /// caller reads them by offset afterwards.
+    point_locations: Option<&'a PointLocations>,
 }
 
 impl<'a> SegmentQueryContext<'a> {
@@ -373,6 +380,15 @@ impl<'a> SegmentQueryContext<'a> {
         self
     }
 
+    pub fn with_point_locations(mut self, point_locations: &'a PointLocations) -> Self {
+        self.point_locations = Some(point_locations);
+        self
+    }
+
+    pub fn point_locations(&self) -> Option<&'a PointLocations> {
+        self.point_locations
+    }
+
     pub fn is_stopped(&self) -> bool {
         self.query_context.is_stopped()
     }
@@ -381,7 +397,38 @@ impl<'a> SegmentQueryContext<'a> {
         Self {
             query_context: self.query_context,
             deleted_points: self.deleted_points,
+            point_locations: self.point_locations,
         }
+    }
+}
+
+/// Where a segment holds a point a search returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointLocation {
+    pub id: PointIdType,
+    pub offset: PointOffsetType,
+    /// The version the search saw at `offset`.
+    pub version: SeqNumberType,
+}
+
+/// The locations of the points one segment's searches returned during a query,
+/// so that the query can read their payloads and vectors by offset afterwards
+/// instead of looking their ids up again.
+#[derive(Debug, Default)]
+pub struct PointLocations {
+    locations: Mutex<AHashMap<PointIdType, PointLocation>>,
+}
+
+impl PointLocations {
+    pub fn record(&self, locations: impl IntoIterator<Item = PointLocation>) {
+        let mut recorded = self.locations.lock();
+        for location in locations {
+            recorded.insert(location.id, location);
+        }
+    }
+
+    pub fn get(&self, point_id: &PointIdType) -> Option<PointLocation> {
+        self.locations.lock().get(point_id).copied()
     }
 }
 

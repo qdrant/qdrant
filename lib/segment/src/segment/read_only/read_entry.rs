@@ -11,7 +11,9 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
-use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use crate::data_types::query_context::{
+    FormulaContext, PointLocation, QueryContext, SegmentQueryContext,
+};
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::ReadSegmentEntry;
@@ -148,6 +150,16 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
                 deferred_behavior,
             )
         })
+    }
+
+    fn retrieve_at(
+        &self,
+        locations: &[PointLocation],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        self.with_view(|view| view.retrieve_at(locations, with_payload, with_vector, is_stopped))
     }
 
     fn retrieve_raw(

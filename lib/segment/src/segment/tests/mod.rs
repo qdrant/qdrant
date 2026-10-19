@@ -6,7 +6,7 @@ use std::assert_matches;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use common::generic_consts::Random;
 use common::tar_unpack::tar_unpack_file;
 use common::types::{DeferredBehavior, PointOffsetType};
@@ -27,7 +27,8 @@ use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::OrderBy;
-use crate::data_types::query_context::QueryContext;
+use crate::data_types::query_context::{PointLocations, QueryContext};
+use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::{
     DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, VectorInternal, VectorRef,
     only_default_multi_vector, only_default_vector,
@@ -3206,4 +3207,90 @@ fn test_flush_survives_concurrent_field_index_drop() {
     // at version 3. A cancelled (aborted) flush would have left the persisted
     // version at 0.
     assert_eq!(segment.persistent_version(), 3);
+}
+
+/// A search records where it found its results, and `retrieve_at` reads them
+/// back as `retrieve` does. A location whose point was deleted or rewritten
+/// since is left out, for the caller to read by id.
+#[test]
+fn test_retrieve_at_reads_recorded_search_results() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+
+    let _scope = ambient::test_guard();
+
+    for id in 1..=5u64 {
+        segment
+            .upsert_point(id, id.into(), only_default_vector(&[id as f32, 1.0]))
+            .unwrap();
+        let payload: Payload = serde_json::from_value(serde_json::json!({ "n": id })).unwrap();
+        segment.set_full_payload(id, id.into(), &payload).unwrap();
+    }
+
+    let point_locations = PointLocations::default();
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context
+        .get_segment_query_context()
+        .with_point_locations(&point_locations);
+    let found = segment
+        .search_batch(
+            DEFAULT_VECTOR_NAME,
+            &[&[1.0, 0.0].into()],
+            &WithPayload::from(false),
+            &false.into(),
+            None,
+            10,
+            None,
+            &segment_query_context,
+        )
+        .unwrap();
+    let ids: Vec<PointIdType> = found[0].iter().map(|point| point.id).collect();
+    assert_eq!(ids.len(), 5);
+    let locations: Vec<_> = ids
+        .iter()
+        .map(|id| point_locations.get(id).expect("every result is recorded"))
+        .collect();
+
+    let is_stopped = AtomicBool::new(false);
+    let with_payload = WithPayload::from(true);
+    let with_vector = WithVector::Bool(true);
+    let by_id = segment
+        .retrieve(
+            &ids,
+            &with_payload,
+            &with_vector,
+            &is_stopped,
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap();
+    let by_offset = segment
+        .retrieve_at(&locations, &with_payload, &with_vector, &is_stopped)
+        .unwrap();
+    let comparable = |records: AHashMap<PointIdType, SegmentRecord>| {
+        let mut records: Vec<_> = records
+            .into_values()
+            .map(|record| {
+                let SegmentRecord {
+                    id,
+                    vectors,
+                    payload,
+                } = record;
+                (id, vectors.map(|vectors| vectors.into_vec()), payload)
+            })
+            .collect();
+        records.sort_by_key(|(id, _, _)| *id);
+        records
+    };
+    assert_eq!(comparable(by_offset), comparable(by_id));
+
+    segment.delete_point(10, 2.into()).unwrap();
+    segment
+        .upsert_point(11, 3.into(), only_default_vector(&[3.0, 2.0]))
+        .unwrap();
+    let by_offset = segment
+        .retrieve_at(&locations, &with_payload, &with_vector, &is_stopped)
+        .unwrap();
+    let mut left: Vec<_> = by_offset.into_keys().collect();
+    left.sort();
+    assert_eq!(left, [1, 4, 5].map(PointIdType::from));
 }

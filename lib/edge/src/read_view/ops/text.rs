@@ -10,7 +10,8 @@ use shard::query::text::{
 };
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use super::search::fill_query_context_over;
+use super::query::QueryPointLocations;
+use super::search::{fill_query_context_over, with_segment_locations};
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
@@ -19,14 +20,22 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn text_search_batch(
         &self,
         texts: &[TextSearchRequestInternal],
+        point_locations: Option<&QueryPointLocations>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        texts.iter().map(|text| self.text_search(text)).collect()
+        texts
+            .iter()
+            .map(|text| self.text_search(text, point_locations))
+            .collect()
     }
 
     /// Rank the points by BM25 over the text index of the leaf's field and
     /// return the `limit` best, highest first.
-    fn text_search(&self, text: &TextSearchRequestInternal) -> OperationResult<Vec<ScoredPoint>> {
+    fn text_search(
+        &self,
+        text: &TextSearchRequestInternal,
+        point_locations: Option<&QueryPointLocations>,
+    ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let TextSearchRequestInternal {
             query,
@@ -54,8 +63,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         let with_payload = WithPayload::from(with_payload);
         let points_by_segment = self.par_map_segments(|segment| {
-            let segment_query_context = context.get_segment_query_context();
-            segment.read_segment().score_bm25(
+            let segment = segment.read_segment();
+            let segment_query_context = with_segment_locations(
+                context.get_segment_query_context(),
+                point_locations,
+                &*segment,
+            );
+            segment.score_bm25(
                 &query.field,
                 &terms,
                 query.params,

@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
 use crate::data_types::query_context::{
-    IdfScopeStats, QueryContext, QueryIdfStats, SegmentQueryContext,
+    IdfScopeStats, PointLocation, PointLocations, QueryContext, QueryIdfStats, SegmentQueryContext,
 };
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
@@ -52,6 +52,48 @@ where
                 resolved_offsets.push(offset);
             },
         )?;
+        self.retrieve_resolved(
+            &resolved_ids,
+            &resolved_offsets,
+            with_payload,
+            with_vector,
+            is_stopped,
+        )
+    }
+
+    /// Records of the points at `locations`, read by offset without looking
+    /// their ids up. A location this segment no longer holds as recorded is
+    /// left out: its point deleted, past the deferred cutoff, or at another
+    /// version.
+    pub fn retrieve_at(
+        &self,
+        locations: &[PointLocation],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        let cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
+        let mut versions = AHashMap::with_capacity(locations.len());
+        self.id_tracker.internal_versions_batch(
+            locations.iter().map(|location| location.offset),
+            |offset, version| {
+                versions.insert(offset, version);
+            },
+        )?;
+        let (resolved_ids, resolved_offsets): (Vec<_>, Vec<_>) = locations
+            .iter()
+            .filter(|location| {
+                let PointLocation {
+                    id: _,
+                    offset,
+                    version,
+                } = **location;
+                !cutoff.is_some_and(|cutoff| offset >= cutoff)
+                    && !self.id_tracker.is_deleted_point(offset)
+                    && versions.get(&offset) == Some(&version)
+            })
+            .map(|location| (location.id, location.offset))
+            .unzip();
         self.retrieve_resolved(
             &resolved_ids,
             &resolved_offsets,
@@ -252,13 +294,15 @@ where
     }
 
     /// Converts raw `ScoredPointOffset` search results into user-facing
-    /// `ScoredPoint`s. Deferred points are filtered out.
+    /// `ScoredPoint`s. Deferred points are filtered out. Each result's location
+    /// goes to `point_locations`, if given.
     pub fn process_search_result(
         &self,
         internal_result: Vec<ScoredPointOffset>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
+        point_locations: Option<&PointLocations>,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let mut external_ids = AHashMap::with_capacity(internal_result.len());
         self.id_tracker.external_ids_batch(
@@ -313,6 +357,18 @@ where
                 versions.insert(internal_id, version);
             },
         )?;
+
+        if let Some(point_locations) = point_locations {
+            point_locations.record(point_ids.iter().zip(&scored_offsets).filter_map(
+                |(&id, scored)| {
+                    Some(PointLocation {
+                        id,
+                        offset: scored.idx,
+                        version: *versions.get(&scored.idx)?,
+                    })
+                },
+            ));
+        }
 
         let mut results = Vec::with_capacity(point_ids.len());
 
@@ -401,6 +457,7 @@ where
                     with_payload,
                     with_vector,
                     &vector_query_context.is_stopped(),
+                    query_context.point_locations(),
                 )
             })
             .collect()
@@ -458,6 +515,7 @@ where
             with_payload,
             with_vector,
             context.is_stopped(),
+            query_context.point_locations(),
         )
     }
 

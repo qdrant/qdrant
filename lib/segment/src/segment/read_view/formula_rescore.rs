@@ -131,7 +131,13 @@ where
             is_stopped,
         )?;
 
-        self.process_search_result(internal_results, &false.into(), &false.into(), is_stopped)
+        self.process_search_result(
+            internal_results,
+            &false.into(),
+            &false.into(),
+            is_stopped,
+            None,
+        )
     }
 }
 

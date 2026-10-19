@@ -5,7 +5,7 @@ use common::ambient;
 use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::modifier::Modifier;
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::entry::ReadSegmentEntry;
 use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, Distance, ScoredPoint};
 use shard::query::query_context::init_query_context_with_stopping_flag;
@@ -13,6 +13,7 @@ use shard::query::query_enum::QueryEnum;
 use shard::search::{CoreSearchRequest, group_search_batches};
 use shard::search_result_aggregator::BatchResultAggregator;
 
+use super::query::QueryPointLocations;
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
@@ -20,7 +21,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub fn search(&self, search: CoreSearchRequest) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
         let [points] =
-            self.search_batch(&[search])?
+            self.search_batch(&[search], None)?
                 .try_into()
                 .map_err(|unconverted: Vec<_>| {
                     OperationError::service_error(format!(
@@ -40,10 +41,13 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
     /// paid once per group instead of once per request. The segments are also visited (and the
     /// query context built) once for the whole batch rather than once per request.
     ///
+    /// Each segment records where it holds its results in `point_locations`, if given.
+    ///
     /// Returns one result list per request, in request order.
     pub(crate) fn search_batch(
         &self,
         searches: &[CoreSearchRequest],
+        point_locations: Option<&QueryPointLocations>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
@@ -82,8 +86,12 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         // Search every segment in parallel on the shard's search pool. Each task derives its own
         // per-segment query context from the shared `context`.
         let points_by_segment = self.par_map_segments(|segment| {
-            let segment_query_context = context.get_segment_query_context();
             let segment = segment.read_segment();
+            let segment_query_context = with_segment_locations(
+                context.get_segment_query_context(),
+                point_locations,
+                &*segment,
+            );
 
             let mut points_by_request = Vec::with_capacity(searches.len());
             for group in &groups {
@@ -169,6 +177,18 @@ fn postprocess_scores(
     }
 
     let _ = points.drain(..cmp::min(points.len(), search.offset));
+}
+
+/// `context` recording into `segment`'s share of `point_locations`, if given.
+pub(super) fn with_segment_locations<'a>(
+    context: SegmentQueryContext<'a>,
+    point_locations: Option<&'a QueryPointLocations>,
+    segment: &(impl ReadSegmentEntry + ?Sized),
+) -> SegmentQueryContext<'a> {
+    match point_locations.and_then(|locations| locations.segment(&segment.segment_uuid())) {
+        Some(locations) => context.with_point_locations(locations),
+        None => context,
+    }
 }
 
 /// Fill a [`QueryContext`] from a pre-collected snapshot of read handles.

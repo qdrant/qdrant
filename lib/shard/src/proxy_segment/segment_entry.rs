@@ -13,7 +13,9 @@ use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
-use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
+use segment::data_types::query_context::{
+    FormulaContext, PointLocation, QueryContext, SegmentQueryContext,
+};
 use segment::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use segment::data_types::vector_name_config::VectorNameConfig;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
@@ -447,6 +449,37 @@ impl ReadSegmentEntry for ProxySegment {
             with_vector.as_ref(),
             is_stopped,
             deferred_behavior,
+        )
+    }
+
+    /// Like [`Self::retrieve`]: the wrapped segment's records, with the vectors
+    /// redacted and without the points marked for deletion here.
+    fn retrieve_at(
+        &self,
+        locations: &[PointLocation],
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
+        let with_vector = self
+            .pending_changes
+            .vector_name_changes()
+            .redact_with_vector(with_vector, &self.wrapped_config);
+        let locations: Vec<_> = locations
+            .iter()
+            .filter(|location| {
+                !self
+                    .pending_changes
+                    .deleted_points()
+                    .contains_key(&location.id)
+            })
+            .copied()
+            .collect();
+        self.wrapped_segment.get().read().retrieve_at(
+            &locations,
+            with_payload,
+            with_vector.as_ref(),
+            is_stopped,
         )
     }
 

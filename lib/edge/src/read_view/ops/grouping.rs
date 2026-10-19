@@ -65,6 +65,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 vec![bare_points.into_values().collect()],
                 with_payload,
                 with_vector,
+                None,
             )?
             .try_into()
             .map_err(|unconverted: Vec<_>| {
