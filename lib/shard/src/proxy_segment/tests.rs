@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use ahash::{AHashMap, AHashSet};
 use common::ambient::hw::HwMetric;
 use common::ambient::{AmbientContext, Handoff};
 use common::flags::{FeatureFlags, init_feature_flags};
@@ -1458,5 +1459,59 @@ fn test_bm25_skips_a_stale_wrapped_text_index() {
         }),
         serving,
         "pending replacement the wrapped index already matches",
+    );
+}
+
+/// The batched lookups give what the per-id ones give, on the wrapped segment
+/// and on a proxy with pending deletes: one newer than the point, which hides
+/// it from both, and one older, which `has_point` still drops and
+/// `point_version` keeps.
+#[test]
+fn test_batched_lookups_match_single() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let original_segment = LockedSegment::new(build_segment_1(dir.path()));
+
+    let _scope = ambient::test_guard();
+
+    let mut proxy_segment = wrap_proxy(original_segment.clone());
+    proxy_segment.delete_point(100, 2.into()).unwrap();
+    proxy_segment.delete_point(3, 5.into()).unwrap();
+
+    let ids: Vec<PointIdType> = [1, 2, 3, 5, 42].map(PointIdType::from).to_vec();
+    let check = |segment: &dyn segment::entry::ReadSegmentEntry| {
+        for deferred_behavior in [
+            DeferredBehavior::VisibleOnly,
+            DeferredBehavior::WithDeferred,
+        ] {
+            let expected: AHashSet<_> = ids
+                .iter()
+                .copied()
+                .filter(|&id| segment.has_point(id, deferred_behavior))
+                .collect();
+            assert_eq!(
+                segment.has_points(&ids, deferred_behavior).unwrap(),
+                expected
+            );
+        }
+        let expected: AHashMap<_, _> = ids
+            .iter()
+            .filter_map(|&id| Some((id, segment.point_version(id)?)))
+            .collect();
+        assert_eq!(segment.point_versions(&ids).unwrap(), expected);
+    };
+
+    check(&*original_segment.get().read());
+    check(&proxy_segment);
+    assert!(
+        !proxy_segment
+            .has_points(&ids, DeferredBehavior::VisibleOnly)
+            .unwrap()
+            .contains(&5.into())
+    );
+    assert!(
+        proxy_segment
+            .point_versions(&ids)
+            .unwrap()
+            .contains_key(&5.into())
     );
 }

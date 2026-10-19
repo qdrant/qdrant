@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
@@ -191,6 +191,23 @@ pub trait ReadSegmentEntry {
     /// Soft deleted points are excluded. `deferred_behavior` selects whether a
     /// deferred-only point counts as present.
     fn has_point(&self, point_id: PointIdType, deferred_behavior: DeferredBehavior) -> bool;
+
+    /// The ids among `point_ids` that [`Self::has_point`] accepts. Segments
+    /// whose id lookups read storage resolve them in one batch and propagate
+    /// its errors.
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>>;
+
+    /// [`Self::point_version`] of each of `point_ids`; points without one are
+    /// left out. Segments whose id lookups read storage resolve them in one
+    /// batch and propagate its errors.
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>>;
 
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use ahash::{AHashMap, AHashSet};
 use common::ambient;
 use common::flags::FeatureFlags;
 use common::sorted_slice::SortedSlice;
@@ -2339,4 +2340,38 @@ fn text_stats_ignore_load_history_optimized(
     );
     // Deletes don't change the statistics of an immutable segment.
     assert_eq!(writer.0, TEXT_DOCUMENTS.len(), "{views:?}");
+}
+
+/// The batched lookups give what the per-id ones give, over the read-only
+/// opener's id tracker, for held and unknown points.
+#[test]
+fn read_only_segment_batched_lookups_match_single() {
+    let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
+    let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path(), false);
+    let read_only =
+        ReadOnlySegment::<MmapFile>::open(&MmapFs, &mutable.data_path(), mutable.uuid, None, None)
+            .expect("read-only open");
+
+    let ids: Vec<PointIdType> = [0, 1, 50, 99, 100, 12345].map(PointIdType::from).to_vec();
+    for deferred_behavior in [
+        DeferredBehavior::VisibleOnly,
+        DeferredBehavior::WithDeferred,
+    ] {
+        let expected: AHashSet<_> = ids
+            .iter()
+            .copied()
+            .filter(|&id| read_only.has_point(id, deferred_behavior))
+            .collect();
+        assert_eq!(
+            read_only.has_points(&ids, deferred_behavior).unwrap(),
+            expected
+        );
+    }
+    let expected: AHashMap<_, _> = ids
+        .iter()
+        .filter_map(|&id| Some((id, read_only.point_version(id)?)))
+        .collect();
+    assert_eq!(expected.len(), 4, "held points have versions");
+    assert_eq!(read_only.point_versions(&ids).unwrap(), expected);
 }
