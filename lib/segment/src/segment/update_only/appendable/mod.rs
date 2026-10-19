@@ -353,6 +353,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
                 if !moves.is_empty() {
                     s.spawn(|_| {
+                        let _scope = handoff.enter_guard();
                         moves_res = id_tracker.record_moves(fs, &moves);
                     });
                 }
