@@ -14,39 +14,52 @@
 //! [`MultiQuery`]: crate::max_sim::MultiQuery
 
 pub mod crossover;
+mod u8;
+
+pub use u8::PackedMultiQueryU8;
+
+/// Query tokens per packed block: two AVX registers of 8 lanes.
+pub(crate) const BLOCK: usize = 16;
 
 /// A multi-vector query packed for batched MaxSim against one quantized storage.
-///
-/// No storage has a batched kernel yet, so there is no packed query: every
-/// [`MultiQuery`] scores pair by pair.
-///
-/// [`MultiQuery`]: crate::max_sim::MultiQuery
-pub enum PackedMultiQuery {}
+pub enum PackedMultiQuery {
+    U8(PackedMultiQueryU8),
+}
 
 impl PackedMultiQuery {
     pub fn vectors_count(&self) -> usize {
-        match *self {}
+        match self {
+            PackedMultiQuery::U8(query) => query.vectors_count(),
+        }
     }
 
     /// Packed, but on a kernel slower than scoring pair by pair.
     pub fn is_slow(&self) -> bool {
-        match *self {}
+        match self {
+            PackedMultiQuery::U8(_) => false,
+        }
     }
 
     /// Running maxima a [`MaxSim`] keeps for this query: one per lane.
     ///
     /// [`MaxSim`]: crate::max_sim::MaxSim
     pub(crate) fn lanes(&self) -> usize {
-        match *self {}
+        match self {
+            PackedMultiQuery::U8(query) => query.lanes(),
+        }
     }
 
     /// Scratch space [`Self::push`] needs.
     pub(crate) fn scratch_len(&self) -> usize {
-        match *self {}
+        match self {
+            PackedMultiQuery::U8(_) => 0,
+        }
     }
 
     /// Fold one stored vector, as the storage holds it, into the per-lane maxima.
-    pub(crate) fn push(&self, _maxima: &mut [f32], _scratch: &mut [i16], _encoded_vector: &[u8]) {
-        match *self {}
+    pub(crate) fn push(&self, maxima: &mut [f32], _scratch: &mut [i16], encoded_vector: &[u8]) {
+        match self {
+            PackedMultiQuery::U8(query) => query.push(maxima, encoded_vector),
+        }
     }
 }

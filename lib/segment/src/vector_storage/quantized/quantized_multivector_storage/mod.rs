@@ -18,6 +18,8 @@ use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
 mod live_reload;
 mod offsets;
+#[cfg(test)]
+mod packed_tests;
 
 pub use offsets::{
     MultivectorOffsetsStorageChunked, MultivectorOffsetsStorageChunkedRead,
