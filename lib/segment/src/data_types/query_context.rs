@@ -8,15 +8,13 @@ use common::ambient::AmbientContext;
 use common::ambient::Handoff;
 use common::bitvec::BitSlice;
 use common::cow::SimpleCow;
-use common::types::{PointOffsetType, ScoreType};
-use parking_lot::Mutex;
+use common::types::ScoreType;
 use sparse::common::types::{DimId, DimWeight};
 
+use crate::data_types::point_locations::PointLocations;
 use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::types::{
-    Filter, PayloadKeyType, PointIdType, ScoredPoint, SeqNumberType, VectorName, VectorNameBuf,
-};
+use crate::types::{Filter, PayloadKeyType, ScoredPoint, VectorName, VectorNameBuf};
 
 #[derive(Debug, Default, Clone)]
 pub struct QueryIdfStats {
@@ -399,36 +397,6 @@ impl<'a> SegmentQueryContext<'a> {
             deleted_points: self.deleted_points,
             point_locations: self.point_locations,
         }
-    }
-}
-
-/// Where a segment holds a point a search returned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PointLocation {
-    pub id: PointIdType,
-    pub offset: PointOffsetType,
-    /// The version the search saw at `offset`.
-    pub version: SeqNumberType,
-}
-
-/// The locations of the points one segment's searches returned during a query,
-/// so that the query can read their payloads and vectors by offset afterwards
-/// instead of looking their ids up again.
-#[derive(Debug, Default)]
-pub struct PointLocations {
-    locations: Mutex<AHashMap<PointIdType, PointLocation>>,
-}
-
-impl PointLocations {
-    pub fn record(&self, locations: impl IntoIterator<Item = PointLocation>) {
-        let mut recorded = self.locations.lock();
-        for location in locations {
-            recorded.insert(location.id, location);
-        }
-    }
-
-    pub fn get(&self, point_id: &PointIdType) -> Option<PointLocation> {
-        self.locations.lock().get(point_id).copied()
     }
 }
 

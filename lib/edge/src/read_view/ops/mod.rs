@@ -6,6 +6,7 @@ mod facet;
 mod grouping;
 mod info;
 mod matrix;
+mod point_locations;
 mod query;
 mod retrieve;
 mod scroll;

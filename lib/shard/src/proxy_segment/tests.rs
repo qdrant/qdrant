@@ -1525,7 +1525,7 @@ fn test_retrieve_at_skips_pending_deletes() {
 
     let _scope = ambient::test_guard();
 
-    let point_locations = segment::data_types::query_context::PointLocations::default();
+    let point_locations = segment::data_types::point_locations::PointLocations::default();
     let query_context = QueryContext::default();
     let found = original_segment
         .get()

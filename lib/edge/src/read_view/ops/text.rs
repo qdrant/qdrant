@@ -10,8 +10,8 @@ use shard::query::text::{
 };
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use super::query::QueryPointLocations;
-use super::search::{fill_query_context_over, with_segment_locations};
+use super::point_locations::{QueryPointLocations, with_segment_locations};
+use super::search::fill_query_context_over;
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {

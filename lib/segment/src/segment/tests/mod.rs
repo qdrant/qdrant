@@ -27,7 +27,8 @@ use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::OrderBy;
-use crate::data_types::query_context::{PointLocations, QueryContext};
+use crate::data_types::point_locations::PointLocations;
+use crate::data_types::query_context::QueryContext;
 use crate::data_types::segment_record::SegmentRecord;
 use crate::data_types::vectors::{
     DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, VectorInternal, VectorRef,

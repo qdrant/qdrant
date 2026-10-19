@@ -9,7 +9,7 @@ use ordered_float::OrderedFloat;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
-use segment::data_types::query_context::{FormulaContext, PointLocations};
+use segment::data_types::query_context::FormulaContext;
 use segment::entry::ReadSegmentEntry;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::types::{
@@ -19,12 +19,11 @@ use shard::query::mmr::mmr_from_points_with_vector;
 use shard::query::planned_query::*;
 use shard::query::scroll::{QueryScrollRequestInternal, ScrollOrder};
 use shard::query::*;
-use shard::retrieve::record_internal::RecordInternal;
 use shard::retrieve::retrieve_blocking::retrieve_over;
 use shard::search::CoreSearchRequest;
 use shard::search_result_aggregator::BatchResultAggregator;
-use uuid::Uuid;
 
+use super::point_locations::QueryPointLocations;
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
@@ -442,45 +441,15 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         }
         let with_payload = WithPayload::from(with_payload);
 
-        let mut records_map = AHashMap::new();
-        if let Some(point_locations) = point_locations {
-            let mut pending: AHashMap<_, _> = query_response
-                .iter()
-                .flatten()
-                .map(|point| (point.id, point.version))
-                .collect();
-            for segment in &self.segments {
-                if pending.is_empty() {
-                    break;
-                }
-                let segment = segment.read_segment();
-                let Some(recorded) = point_locations.segment(&segment.segment_uuid()) else {
-                    continue;
-                };
-                let locations: Vec<_> = pending
-                    .iter()
-                    .filter_map(|(point_id, &version)| {
-                        recorded
-                            .get(point_id)
-                            .filter(|location| location.version == version)
-                    })
-                    .collect();
-                if locations.is_empty() {
-                    continue;
-                }
-                let records = segment.retrieve_at(
-                    &locations,
-                    &with_payload,
-                    &with_vector,
-                    &self.is_stopped,
-                )?;
-                for (point_id, record) in records {
-                    pending.remove(&point_id);
-                    records_map.insert(point_id, RecordInternal::from(record));
-                }
-            }
-            self.check_stopped()?;
-        }
+        let mut records_map = match point_locations {
+            Some(point_locations) => self.retrieve_recorded(
+                &query_response,
+                &with_payload,
+                &with_vector,
+                point_locations,
+            )?,
+            None => AHashMap::new(),
+        };
 
         // ids to retrieve (deduplication happens in the searcher)
         let point_ids: Vec<_> = query_response
@@ -520,30 +489,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .collect();
 
         Ok(query_response)
-    }
-}
-
-/// Where each segment of the read view holds the points this query's searches
-/// returned, so that their payloads and vectors are read by offset instead of
-/// by id. See [`PointLocations`].
-pub(crate) struct QueryPointLocations {
-    by_segment: AHashMap<Uuid, PointLocations>,
-}
-
-impl QueryPointLocations {
-    fn new<H: ReadSegmentHandle>(segments: &[H]) -> Self {
-        let by_segment = segments
-            .iter()
-            .map(|segment| {
-                let uuid = segment.read_segment().segment_uuid();
-                (uuid, PointLocations::default())
-            })
-            .collect();
-        Self { by_segment }
-    }
-
-    pub(super) fn segment(&self, uuid: &Uuid) -> Option<&PointLocations> {
-        self.by_segment.get(uuid)
     }
 }
 
@@ -825,7 +770,7 @@ mod tests {
         );
         upsert(&shard, (1000..1300).map(point).collect());
         assert!(shard.optimize().unwrap(), "expected an optimization to run");
-        upsert(&shard, vec![point_with_group(3, "rewritten")]);
+        upsert(&shard, vec![point_with_group(1, "rewritten")]);
 
         let with_all = |builder: QueryRequestBuilder| {
             builder
@@ -833,8 +778,10 @@ mod tests {
                 .with_vector(WithVector::Bool(true))
                 .build()
         };
+        // The rewritten point 1 ranks first against `-1.0`.
         let requests = [
             with_all(QueryRequestBuilder::new(10).query(nearest_query(1.0))),
+            with_all(QueryRequestBuilder::new(3).query(nearest_query(-1.0))),
             with_all(
                 QueryRequestBuilder::new(5)
                     .add_prefetch(PrefetchBuilder::new(8).query(nearest_query(1.0)).build())
@@ -875,7 +822,7 @@ mod tests {
                     .expect("every result is retrievable");
                 assert_eq!(point.payload, record.payload, "point {}", point.id);
                 assert_eq!(point.vector, record.vector, "point {}", point.id);
-                saw_rewritten |= point.id == PointIdType::from(3)
+                saw_rewritten |= point.id == PointIdType::from(1)
                     && point.payload.as_ref().is_some_and(|payload| {
                         payload.0.get("group") == Some(&serde_json::json!("rewritten"))
                     });

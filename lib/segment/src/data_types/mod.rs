@@ -9,6 +9,7 @@ pub mod manifest;
 pub mod modifier;
 pub mod named_vectors;
 pub mod order_by;
+pub mod point_locations;
 pub mod primitive;
 pub mod query_context;
 pub mod segment_record;

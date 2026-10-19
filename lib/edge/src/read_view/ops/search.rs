@@ -5,7 +5,7 @@ use common::ambient;
 use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::modifier::Modifier;
-use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
+use segment::data_types::query_context::QueryContext;
 use segment::entry::ReadSegmentEntry;
 use segment::types::{DEFAULT_FULL_SCAN_THRESHOLD, Distance, ScoredPoint};
 use shard::query::query_context::init_query_context_with_stopping_flag;
@@ -13,7 +13,7 @@ use shard::query::query_enum::QueryEnum;
 use shard::search::{CoreSearchRequest, group_search_batches};
 use shard::search_result_aggregator::BatchResultAggregator;
 
-use super::query::QueryPointLocations;
+use super::point_locations::{QueryPointLocations, with_segment_locations};
 use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
@@ -177,18 +177,6 @@ fn postprocess_scores(
     }
 
     let _ = points.drain(..cmp::min(points.len(), search.offset));
-}
-
-/// `context` recording into `segment`'s share of `point_locations`, if given.
-pub(super) fn with_segment_locations<'a>(
-    context: SegmentQueryContext<'a>,
-    point_locations: Option<&'a QueryPointLocations>,
-    segment: &(impl ReadSegmentEntry + ?Sized),
-) -> SegmentQueryContext<'a> {
-    match point_locations.and_then(|locations| locations.segment(&segment.segment_uuid())) {
-        Some(locations) => context.with_point_locations(locations),
-        None => context,
-    }
 }
 
 /// Fill a [`QueryContext`] from a pre-collected snapshot of read handles.

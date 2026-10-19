@@ -9,8 +9,9 @@ use smallvec::SmallVec;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::{check_query_vectors, check_stopped};
+use crate::data_types::point_locations::PointLocations;
 use crate::data_types::query_context::{
-    IdfScopeStats, PointLocation, PointLocations, QueryContext, QueryIdfStats, SegmentQueryContext,
+    IdfScopeStats, QueryContext, QueryIdfStats, SegmentQueryContext,
 };
 use crate::data_types::segment_record::{SegmentRecord, SegmentRecordRaw};
 use crate::data_types::vectors::{QueryVector, VectorStructInternal};
@@ -61,48 +62,6 @@ where
         )
     }
 
-    /// Records of the points at `locations`, read by offset without looking
-    /// their ids up. A location this segment no longer holds as recorded is
-    /// left out: its point deleted, past the deferred cutoff, or at another
-    /// version.
-    pub fn retrieve_at(
-        &self,
-        locations: &[PointLocation],
-        with_payload: &WithPayload,
-        with_vector: &WithVector,
-        is_stopped: &AtomicBool,
-    ) -> OperationResult<AHashMap<ExtendedPointId, SegmentRecord>> {
-        let cutoff = DeferredBehavior::VisibleOnly.apply(self.deferred_internal_id());
-        let mut versions = AHashMap::with_capacity(locations.len());
-        self.id_tracker.internal_versions_batch(
-            locations.iter().map(|location| location.offset),
-            |offset, version| {
-                versions.insert(offset, version);
-            },
-        )?;
-        let (resolved_ids, resolved_offsets): (Vec<_>, Vec<_>) = locations
-            .iter()
-            .filter(|location| {
-                let PointLocation {
-                    id: _,
-                    offset,
-                    version,
-                } = **location;
-                !cutoff.is_some_and(|cutoff| offset >= cutoff)
-                    && !self.id_tracker.is_deleted_point(offset)
-                    && versions.get(&offset) == Some(&version)
-            })
-            .map(|location| (location.id, location.offset))
-            .unzip();
-        self.retrieve_resolved(
-            &resolved_ids,
-            &resolved_offsets,
-            with_payload,
-            with_vector,
-            is_stopped,
-        )
-    }
-
     /// Builds the records for points whose internal offsets the caller already
     /// holds, e.g. search post-processing, where the offsets come straight from
     /// the vector index.
@@ -110,7 +69,7 @@ where
     /// `resolved_ids` and `resolved_offsets` are parallel arrays: each id is read
     /// from the offset at the same index. The caller owns visibility — every pair
     /// it passes is read as given.
-    fn retrieve_resolved(
+    pub(crate) fn retrieve_resolved(
         &self,
         resolved_ids: &[PointIdType],
         resolved_offsets: &[PointOffsetType],
@@ -359,15 +318,7 @@ where
         )?;
 
         if let Some(point_locations) = point_locations {
-            point_locations.record(point_ids.iter().zip(&scored_offsets).filter_map(
-                |(&id, scored)| {
-                    Some(PointLocation {
-                        id,
-                        offset: scored.idx,
-                        version: *versions.get(&scored.idx)?,
-                    })
-                },
-            ));
+            point_locations.record_results(&point_ids, &scored_offsets, &versions);
         }
 
         let mut results = Vec::with_capacity(point_ids.len());
