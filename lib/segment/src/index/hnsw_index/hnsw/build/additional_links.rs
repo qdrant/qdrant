@@ -11,7 +11,7 @@ use self::block::Block;
 use self::seeds::BlockSeeds;
 use super::block_filter::BlockFilter;
 use super::context::GraphBuildContext;
-use super::payload_blocks::field_payload_blocks;
+use super::payload_blocks::{field_payload_blocks, load_payload_block};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -97,7 +97,6 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
             &field,
             &payload_schema,
             payload_index,
-            vector_storage,
             old_index,
             config,
             stopped,
@@ -108,13 +107,27 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
 
         let counter = field_progress.track_progress(None);
 
-        for payload_block in &blocks {
+        for payload_block in blocks {
             check_process_stopped(stopped)?;
 
             let filter = block_filter.get_or_insert_with(|| {
                 BlockFilter::new(ctx, graph_layers_builder, &all_points, rng)
             });
-            if !filter.should_build(graph_layers_builder, payload_block, skip_if_connected, rng) {
+            // Read the points of one block at a time, and only of blocks small enough to build
+            if !filter.fits(payload_block.cardinality) {
+                continue;
+            }
+            let Some(payload_block) = load_payload_block(
+                payload_block,
+                payload_index,
+                vector_storage,
+                config,
+                stopped,
+            )?
+            else {
+                continue;
+            };
+            if !filter.should_build(graph_layers_builder, &payload_block, skip_if_connected, rng) {
                 continue;
             }
 
