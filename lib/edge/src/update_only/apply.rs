@@ -353,8 +353,10 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             jobs.push((writer, retirements));
         }
         self.pool.install(|| {
-            jobs.into_par_iter()
-                .try_for_each(|(writer, retirements)| writer.retire_points(&retirements))
+            jobs.into_par_iter().try_for_each(|(writer, retirements)| {
+                let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+                writer.retire_points(&retirements)
+            })
         })?;
         log::trace!(target: LOG_TARGET, "tombstone_points took {:?}", instant.elapsed());
 
