@@ -1,11 +1,17 @@
 //! Point move resolution of a follower with the `resolve_point_moves` feature flag, see
 //! [`point_moves`](segment::id_tracker::point_moves).
 //!
-//! It runs after each live_reload attempt, separately from it. The reload installs every segment's
-//! new data, applies the tombstones it reads, and keeps the move records; resolution then decides,
+//! It runs after each live_reload, separately from it. The reload installs every segment's new
+//! data, applies the tombstones it reads, and keeps the move records; resolution then decides,
 //! across all segments, which old copies a settled move supersedes, and masks them. So all new data
 //! of a pass is visible before any copy it supersedes is masked, and an old copy never goes before
 //! the copy that replaces it is visible.
+//!
+//! A copy that a moved point's new copy supersedes is only deleted by the next live_reload. A read
+//! visits the segments one at a time, and several times (prefetch, rescore, payload retrieval), so
+//! one that visited the move's target before the new copy was installed may still visit the
+//! source. Deleting the old copy right away would let that read miss the point. One live_reload
+//! later, only reads that outlast the time between two live_reloads can still miss it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,20 +37,21 @@ use crate::read_only::moves::{
 /// A held segment.
 type HeldSegment<S> = (Uuid, Arc<RwLock<ReadOnlySegment<S>>>);
 
-/// A held segment, and the deletes resolution applies to it.
+/// A held segment, and the copies resolution masks in it.
 type SegmentDeletes<S> = (Uuid, Arc<RwLock<ReadOnlySegment<S>>>, MoveResolution);
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
-    /// Resolve point moves across every held segment, after a live_reload attempt installed its new
-    /// data. `all_reloaded` tells whether that attempt reloaded every listed segment without error.
+    /// Resolve point moves across every held segment, after a live_reload installed its new data.
+    /// `all_reloaded` tells whether that live_reload reloaded every listed segment without error.
     ///
     /// 1. read the manifest, with the states of the segments a reader must not load;
     /// 2. reload the superseded segments the follower keeps, which live_reload skips: they may hold
-    ///    deletes the writer wrote before their replacement was listed, and a reload notices when
-    ///    their files are gone;
-    /// 3. decide every segment's deletes;
+    ///    tombstones and move records the writer wrote before their replacement was listed, and a
+    ///    reload notices when their files are gone;
+    /// 3. decide every segment's superseded copies;
     /// 4. drop the superseded segments the drop rule allows;
-    /// 5. apply every segment's deletes.
+    /// 5. mask the superseded copies the previous live_reload decided too; keep the others for the
+    ///    next one.
     ///
     /// Completes as much as possible before reporting the first error.
     pub(super) fn resolve_point_moves(
@@ -99,7 +106,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         }
         check_process_stopped(is_stopped)?;
 
-        // 3. Decide every segment's deletes
+        // 3. Decide every segment's superseded copies
         let held = self.held_segments();
         let mut resolutions = self.decide_point_moves(&held, &listing, all_listed_held);
         check_process_stopped(is_stopped)?;
@@ -135,14 +142,61 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             self.derive_config_after_drop();
         }
 
-        // 5. Apply the deletes of every segment, each under its own lock, in parallel
+        // 5. A superseded copy is masked one live_reload later, see the module docs: now if the
+        //    previous live_reload decided it too, otherwise it waits for the next one
+        let mut previous = std::mem::take(&mut *self.superseded_to_delete.lock());
+        let mut deferred = HashMap::new();
+        let deletes: HashMap<Uuid, MoveResolution> = resolutions
+            .into_iter()
+            .map(|(uuid, MoveResolution { superseded })| {
+                let previous = previous.remove(&uuid).unwrap_or_default();
+                let (now, later): (Vec<_>, Vec<_>) = superseded
+                    .into_iter()
+                    .partition(|slot| previous.binary_search(slot).is_ok());
+                if !later.is_empty() {
+                    deferred.insert(uuid, later);
+                }
+                (uuid, MoveResolution { superseded: now })
+            })
+            .collect();
+        *self.superseded_to_delete.lock() = deferred;
+        if let Err(err) = self.apply_deletes(deletes) {
+            first_error.get_or_insert(err);
+        }
+
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
+    /// Delete the superseded copies the last live_reload kept for the next one, right away. Only
+    /// for a follower no read can have started on yet.
+    pub(super) fn delete_superseded_now(&self) -> OperationResult<()>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        let deferred = std::mem::take(&mut *self.superseded_to_delete.lock());
+        let deletes = deferred
+            .into_iter()
+            .map(|(uuid, superseded)| (uuid, MoveResolution { superseded }))
+            .collect();
+        self.apply_deletes(deletes)
+    }
+
+    /// Apply `deletes` to the held segments, each under its own lock, in parallel. Applies as much
+    /// as possible before reporting the first error.
+    fn apply_deletes(&self, deletes: HashMap<Uuid, MoveResolution>) -> OperationResult<()>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
         let deletes: Vec<SegmentDeletes<S>> = {
             let holder = self.segments.read();
-            resolutions
+            deletes
                 .into_iter()
                 .filter_map(|(uuid, resolution)| {
                     let segment = holder.segment_arc(&uuid)?;
-                    Some((uuid, segment, resolution))
+                    (!resolution.is_empty()).then_some((uuid, segment, resolution))
                 })
                 .collect()
         };
@@ -154,13 +208,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
                 })
                 .collect()
         });
+        let mut first_error = None;
         for (uuid, result) in applied {
             if let Err(err) = result {
                 log::error!("applying the deletes of segment {uuid} failed: {err}");
                 first_error.get_or_insert(err);
             }
         }
-
         match first_error {
             Some(err) => Err(err),
             None => Ok(()),
