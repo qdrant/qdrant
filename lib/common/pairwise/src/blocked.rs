@@ -17,7 +17,7 @@ use crate::{Cols, TopK};
 
 /// Vectors decoded per batch before packing: a multiple of every tile and panel width (4, 6,
 /// 8, 12, 16, 32).
-pub(crate) const GROUP: usize = 48;
+pub(crate) const GROUP: usize = 96;
 
 /// A register tile: `MR` rows by `NR` columns, depth consumed `KU` elements at a time.
 pub(crate) trait Micro {
@@ -170,6 +170,7 @@ fn pack<M: Micro, F: MatrixOperands<Elem = M::E>>(
     aux: &mut [f32],
     decoded: &mut AlignedBuf,
 ) -> Result<(), F::Error> {
+    const { assert!(GROUP.is_multiple_of(M::MR) && GROUP.is_multiple_of(M::NR)) };
     let depth = operands.depth();
     let decoded = decoded.get::<M::E>(GROUP * depth);
     for (g, ids) in ids.chunks(GROUP).enumerate() {
