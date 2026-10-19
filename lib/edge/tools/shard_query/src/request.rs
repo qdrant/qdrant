@@ -1,14 +1,15 @@
 //! The prepared read request: built once from the CLI, run on every (re)load, rendered as rows.
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use edge::{
-    CountRequest, DEFAULT_VECTOR_NAME, EdgeShardRead, FacetRequest, FacetValue, JsonPath,
-    LoadProfile, NamedQuery, OrderByInterface, PointId, QueryEnum, Record, ScoredPoint,
-    ScrollRequest, SearchParams, SearchRequest, VectorInternal, WithPayloadInterface,
+    Bm25Params, CountRequest, DEFAULT_VECTOR_NAME, EdgeShardRead, FacetRequest, FacetValue,
+    IdfCorpusParams, IdfParams, JsonPath, LoadProfile, NamedQuery, OrderByInterface, PointId,
+    QueryEnum, QueryRequest, Record, ScoredPoint, ScrollRequest, SearchParams, SearchRequest,
+    TextQueryBuilder, TextQueryScoring, VectorInternal, WithPayloadInterface,
 };
 
 use crate::cli::Command;
-use crate::parse::{parse_point_id, parse_sparse_vector, parse_vector};
+use crate::parse::{parse_filter_arg, parse_point_id, parse_sparse_vector, parse_vector};
 
 /// Render a payload + (optional) vector as a single JSON line.
 ///
@@ -40,6 +41,7 @@ pub type Row = (String, serde_json::Value);
 pub enum PreparedRequest {
     Scroll(ScrollRequest),
     Search(SearchRequest),
+    Query(QueryRequest),
     Count(CountRequest),
     Facet(FacetRequest),
 }
@@ -155,6 +157,58 @@ impl PreparedRequest {
                     score_threshold: args.score_threshold,
                 }))
             }
+            Command::Text(args) => {
+                let filter = args.common.resolve_filter()?;
+                match &filter {
+                    Some(filter) => {
+                        log::info!(
+                            "text search with filter: {}",
+                            serde_json::to_string(filter)?
+                        )
+                    }
+                    None => log::info!("text search with no filter"),
+                }
+
+                let field: JsonPath = args
+                    .field
+                    .parse()
+                    .map_err(|()| anyhow!("invalid --field path: {:?}", args.field))?;
+                if args.query.trim().is_empty() {
+                    bail!("--query is empty");
+                }
+                let query = TextQueryBuilder::new(field, args.query.clone())
+                    .scoring(TextQueryScoring::Bm25(Bm25Params {
+                        k: args.k1,
+                        b: args.b,
+                    }))
+                    .build();
+
+                let params = match &args.idf_corpus {
+                    Some(raw) => {
+                        let corpus = parse_filter_arg("--idf-corpus", raw)?;
+                        log::info!(
+                            "gathering BM25 statistics over corpus: {}",
+                            serde_json::to_string(&corpus)?
+                        );
+                        Some(SearchParams {
+                            idf: Some(IdfParams::Corpus(IdfCorpusParams { corpus })),
+                            ..Default::default()
+                        })
+                    }
+                    None => None,
+                };
+
+                Ok(Self::Query(QueryRequest {
+                    query: Some(query),
+                    filter,
+                    params,
+                    score_threshold: args.score_threshold,
+                    offset: args.offset,
+                    with_payload: WithPayloadInterface::Bool(!args.no_payload),
+                    with_vector: args.common.with_vectors.into(),
+                    ..QueryRequest::new(args.common.limit)
+                }))
+            }
             Command::Count(args) => {
                 let filter = args.filter.resolve_filter()?;
                 let exact = !args.approx;
@@ -199,6 +253,7 @@ impl PreparedRequest {
         match self {
             Self::Scroll(request) => request.load_profile(),
             Self::Search(request) => request.load_profile(),
+            Self::Query(request) => request.load_profile(),
             Self::Count(request) => request.load_profile(),
             Self::Facet(request) => request.load_profile(),
         }
@@ -206,7 +261,7 @@ impl PreparedRequest {
 
     /// Replace an omitted `--vector` (the empty placeholder from
     /// [`build`](Self::build)) with a random one, its dimension read from the
-    /// now-open shard's config. No-op for scroll/count/facet and explicit vectors.
+    /// now-open shard's config. No-op for scroll/text/count/facet and explicit vectors.
     pub fn fill_random_vector<S: EdgeShardRead>(&mut self, shard: &S) -> Result<()> {
         let Self::Search(request) = self else {
             return Ok(());
@@ -254,6 +309,13 @@ impl PreparedRequest {
                 let rows = points.iter().map(scored_point_row).collect::<Result<_>>()?;
                 Ok((rows, None))
             }
+            Self::Query(request) => {
+                let points = shard
+                    .query(request.clone())
+                    .context("query request failed")?;
+                let rows = points.iter().map(scored_point_row).collect::<Result<_>>()?;
+                Ok((rows, None))
+            }
             Self::Count(request) => {
                 let count = shard
                     .count(request.clone())
@@ -288,6 +350,7 @@ impl PreparedRequest {
         match self {
             Self::Scroll(_) => println!("scroll returned {} record(s)", rows.len()),
             Self::Search(_) => println!("search returned {} result(s)", rows.len()),
+            Self::Query(_) => println!("query returned {} result(s)", rows.len()),
             Self::Count(_) => println!("count returned"),
             Self::Facet(_) => println!("facet returned {} hit(s)", rows.len()),
         }
