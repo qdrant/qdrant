@@ -79,6 +79,12 @@ impl BlockFilter {
         }
     }
 
+    /// Whether a block of estimated `cardinality` is small enough to build. Checked before its
+    /// points are read, so that blocks too large to build are not read at all.
+    pub fn fits(&self, cardinality: usize) -> bool {
+        cardinality <= self.max_block_size
+    }
+
     /// Whether `block` is worth building, given `graph` built so far. Call right before
     /// building each block: earlier blocks change the answer.
     ///
@@ -91,7 +97,7 @@ impl BlockFilter {
         skip_if_connected: bool,
         rng: &mut R,
     ) -> bool {
-        if block.cardinality > self.max_block_size {
+        if !self.fits(block.cardinality) {
             return false;
         }
 

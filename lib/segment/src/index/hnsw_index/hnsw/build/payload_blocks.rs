@@ -55,7 +55,8 @@ pub(super) fn payload_block_fields(
     fields
 }
 
-/// The payload blocks of `field`, with their non-deleted points.
+/// The payload blocks of `field`, without their points: [`load_payload_block`] reads those,
+/// one block at a time.
 ///
 /// With an `old_index`, a numeric field keeps the block ranges of the old index where it can,
 /// see [`old_range_blocks`].
@@ -63,36 +64,14 @@ pub(super) fn field_payload_blocks(
     field: &PayloadKeyType,
     schema: &PayloadFieldSchema,
     payload_index: &StructPayloadIndex,
-    vector_storage: &VectorStorageEnum,
     old_index: Option<&OldIndex<'_>>,
     config: &HnswGraphConfig,
     stopped: &AtomicBool,
-) -> OperationResult<Vec<PayloadBlock>> {
+) -> OperationResult<Vec<PayloadBlockCondition>> {
     let mut blocks = Vec::new();
     let mut add_block = |payload_block: PayloadBlockCondition| {
         check_process_stopped(stopped)?;
-
-        let points = condition_points(
-            payload_block.condition,
-            payload_index,
-            vector_storage,
-            stopped,
-        )?;
-
-        // This is a heuristic to skip building graph for mostly deleted blocks.
-        // It might be, that majority of points do not actually have vectors
-        // (vectors marked as deleted), so we can avoid building graph for such blocks.
-        //
-        // FYI: query heuristic does account
-        // for deleted vectors via [`adjust_to_available_vectors`]
-        const DELETED_POINTS_FACTOR: usize = 4; // allow block to have up to 75% of deleted points and still be indexed
-
-        if points.len() > config.full_scan_threshold / DELETED_POINTS_FACTOR {
-            blocks.push(PayloadBlock {
-                cardinality: payload_block.cardinality,
-                points,
-            });
-        }
+        blocks.push(payload_block);
         Ok(())
     };
 
@@ -123,6 +102,39 @@ pub(super) fn field_payload_blocks(
         })?,
     }
     Ok(blocks)
+}
+
+/// Read the non-deleted points of `payload_block`. `None` if the block is mostly deleted.
+pub(super) fn load_payload_block(
+    payload_block: PayloadBlockCondition,
+    payload_index: &StructPayloadIndex,
+    vector_storage: &VectorStorageEnum,
+    config: &HnswGraphConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<Option<PayloadBlock>> {
+    let points = condition_points(
+        payload_block.condition,
+        payload_index,
+        vector_storage,
+        stopped,
+    )?;
+
+    // This is a heuristic to skip building graph for mostly deleted blocks.
+    // It might be, that majority of points do not actually have vectors
+    // (vectors marked as deleted), so we can avoid building graph for such blocks.
+    //
+    // FYI: query heuristic does account
+    // for deleted vectors via [`adjust_to_available_vectors`]
+    const DELETED_POINTS_FACTOR: usize = 4; // allow block to have up to 75% of deleted points and still be indexed
+
+    if points.len() > config.full_scan_threshold / DELETED_POINTS_FACTOR {
+        Ok(Some(PayloadBlock {
+            cardinality: payload_block.cardinality,
+            points,
+        }))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Get list of points for indexing, associated with payload block filtering condition
