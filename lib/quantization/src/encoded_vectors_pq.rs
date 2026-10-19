@@ -25,6 +25,7 @@ use crate::encoded_vectors::{
     EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
 };
 use crate::kmeans::kmeans;
+use crate::packed_multi_query::{PackedMultiQuery, PackedMultiQueryPQ, crossover};
 use crate::{ConditionalVariable, EncodingError};
 
 pub const KMEANS_SAMPLE_SIZE: usize = 10_000;
@@ -551,6 +552,27 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsPQ<TStorage> {
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
         self.score_bytes(True, query, encoded_vector)
+    }
+
+    fn packed_pays(&self, vectors_count: usize, stored: bool) -> bool {
+        // No packed stored vectors.
+        !stored
+            && crossover::pays(
+                crossover::PRODUCT_QUERY,
+                self.metadata.vector_parameters.dim,
+                vectors_count,
+            )
+    }
+
+    fn pack_multi_query(&self, query: &[EncodedQueryPQ]) -> Option<PackedMultiQuery> {
+        let subvectors = self.metadata.vector_division.len();
+        Some(PackedMultiQuery::PQ(PackedMultiQueryPQ::new(
+            query.iter().map(|query| query.lut.as_slice()),
+            subvectors,
+            self.metadata.centroids.len(),
+            // `score_bytes` counts sub-vectors.
+            subvectors,
+        )))
     }
 
     /// Score two points inside endoded data by their indexes

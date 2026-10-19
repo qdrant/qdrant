@@ -15,9 +15,11 @@
 
 mod binary;
 pub mod crossover;
+mod pq;
 mod u8;
 
 pub use binary::PackedMultiQueryBinary;
+pub use pq::PackedMultiQueryPQ;
 pub use u8::PackedMultiQueryU8;
 
 pub use crate::turboquant::packed::PackedMultiQueryTQ;
@@ -30,6 +32,7 @@ pub enum PackedMultiQuery {
     U8(PackedMultiQueryU8),
     TQ(PackedMultiQueryTQ),
     Binary(PackedMultiQueryBinary),
+    PQ(PackedMultiQueryPQ),
 }
 
 impl PackedMultiQuery {
@@ -38,6 +41,7 @@ impl PackedMultiQuery {
             PackedMultiQuery::U8(query) => query.vectors_count(),
             PackedMultiQuery::TQ(query) => query.vectors_count(),
             PackedMultiQuery::Binary(query) => query.vectors_count(),
+            PackedMultiQuery::PQ(query) => query.vectors_count(),
         }
     }
 
@@ -46,7 +50,9 @@ impl PackedMultiQuery {
     pub fn is_slow(&self) -> bool {
         match self {
             PackedMultiQuery::TQ(query) => query.is_wide(),
-            PackedMultiQuery::U8(_) | PackedMultiQuery::Binary(_) => false,
+            PackedMultiQuery::U8(_) | PackedMultiQuery::Binary(_) | PackedMultiQuery::PQ(_) => {
+                false
+            }
         }
     }
 
@@ -58,6 +64,7 @@ impl PackedMultiQuery {
             PackedMultiQuery::U8(query) => query.lanes(),
             PackedMultiQuery::TQ(query) => query.lanes(),
             PackedMultiQuery::Binary(query) => query.lanes(),
+            PackedMultiQuery::PQ(query) => query.lanes(),
         }
     }
 
@@ -65,7 +72,7 @@ impl PackedMultiQuery {
     pub(crate) fn scratch_len(&self) -> usize {
         match self {
             PackedMultiQuery::TQ(query) => query.scratch_len(),
-            PackedMultiQuery::U8(_) | PackedMultiQuery::Binary(_) => 0,
+            PackedMultiQuery::U8(_) | PackedMultiQuery::Binary(_) | PackedMultiQuery::PQ(_) => 0,
         }
     }
 
@@ -75,6 +82,7 @@ impl PackedMultiQuery {
             PackedMultiQuery::U8(query) => query.push(maxima, encoded_vector),
             PackedMultiQuery::TQ(query) => query.push(maxima, scratch, encoded_vector),
             PackedMultiQuery::Binary(query) => query.push(maxima, encoded_vector),
+            PackedMultiQuery::PQ(query) => query.push(maxima, encoded_vector),
         }
     }
 }

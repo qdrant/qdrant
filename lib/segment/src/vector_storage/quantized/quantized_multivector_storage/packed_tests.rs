@@ -8,10 +8,13 @@ use common::types::{PointOffsetType, ScoreType};
 use quantization::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_binary::{EncodedVectorsBin, Encoding, QueryEncoding};
+use quantization::encoded_vectors_pq::EncodedVectorsPQ;
 use quantization::encoded_vectors_tq::EncodedVectorsTQ;
 use quantization::encoded_vectors_u8::{EncodedVectorsU8, ScalarQuantizationMethod};
 use quantization::turboquant::{TQBits, TQMode, TQRotation};
-use quantization::{MultiQuery, encoded_vectors_binary, encoded_vectors_tq, encoded_vectors_u8};
+use quantization::{
+    MultiQuery, encoded_vectors_binary, encoded_vectors_pq, encoded_vectors_tq, encoded_vectors_u8,
+};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 
@@ -249,4 +252,27 @@ fn packed_binary_matches_pairwise() {
             &format!("binary {encoding:?} {query_encoding:?}"),
         );
     }
+}
+
+#[test]
+fn packed_product_matches_pairwise() {
+    let mut rng = StdRng::seed_from_u64(42);
+    let vectors = random_vectors(&mut rng, VECTORS);
+    let params = parameters(DistanceType::Dot);
+    let encoded = EncodedVectorsPQ::encode(
+        vectors.iter(),
+        std::iter::repeat_n(true, VECTORS),
+        TestEncodedStorageBuilder::new(
+            None,
+            encoded_vectors_pq::get_quantized_vector_size(&params, 2),
+        ),
+        &params,
+        2,
+        1,
+        None,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    // No batched symmetric kernel: `score_internal` stays per pair.
+    check(encoded, true, "product");
 }
