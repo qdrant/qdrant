@@ -197,6 +197,12 @@ pub fn init_feature_flags(flags: FeatureFlags) {
     }
 }
 
+/// Initializes default feature flags only if they have not been configured yet.
+/// Embedded applications must set custom flags before opening their first shard.
+pub fn init_feature_flags_if_needed() {
+    FEATURE_FLAGS.get_or_init(FeatureFlags::default);
+}
+
 /// Returns the configured global feature flags.
 pub fn feature_flags() -> FeatureFlags {
     if let Some(flags) = FEATURE_FLAGS.get() {

@@ -14,9 +14,9 @@ use shard::operations::point_ops::PointOperations::DeletePoints;
 use tempfile::TempDir;
 
 use crate::read_only::tests::{
-    delete as leader_delete, exact_count, init_serverless_feature_flags, open_follower, point,
-    scrolled_ids, test_config, upsert,
+    delete as leader_delete, exact_count, open_follower, point, scrolled_ids, test_config, upsert,
 };
+use crate::test_helpers::init_serverless_feature_flags;
 use crate::update_only::{PointApplyKind, UpdateOnlyEdgeShard};
 use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
 
@@ -1193,7 +1193,7 @@ fn empty_manifest_shard_bootstraps_an_appendable() {
     use shard::optimizers::config::TEMP_SEGMENTS_PATH;
 
     use crate::read_only::ManifestSegmentEnumerator;
-    use crate::read_only::tests::{init_serverless_feature_flags, point, test_config};
+    use crate::read_only::tests::{point, test_config};
 
     init_serverless_feature_flags();
     let dir = tempfile::Builder::new()
