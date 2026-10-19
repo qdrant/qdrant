@@ -12,6 +12,7 @@ pub enum ACow<'a> {
 }
 
 impl<'a> ACow<'a> {
+    #[inline]
     pub fn try_cast_bytemuck<T: bytemuck::Pod>(self) -> Result<Cow<'a, [T]>, PodCastError> {
         Ok(match self {
             ACow::Borrowed([]) => Cow::Borrowed(&[]),
