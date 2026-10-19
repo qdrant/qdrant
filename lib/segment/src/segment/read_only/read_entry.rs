@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::types::{DeferredBehavior, TelemetryDetail};
 use uuid::Uuid;
 
@@ -223,6 +223,21 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
             .borrow()
             .internal_id_with_behavior(point_id, deferred_behavior)
             .is_some()
+    }
+
+    fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>> {
+        self.with_view(|view| view.has_points(point_ids, deferred_behavior))
+    }
+
+    fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>> {
+        self.with_view(|view| view.point_versions(point_ids))
     }
 
     fn estimate_point_count<'a>(
