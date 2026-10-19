@@ -1221,9 +1221,8 @@ pub struct CreateCollection {
     #[prost(message, optional, tag = "6")]
     #[validate(nested)]
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
-    /// Number of shards in the collection, default is 1 for standalone. In a
-    /// cluster, it is 2 per node while there are fewer collections than nodes,
-    /// otherwise equal to the number of nodes. Minimum is 1
+    /// Number of shards in the collection. If not specified, selected
+    /// automatically. Minimum is 1
     #[prost(uint32, optional, tag = "7")]
     #[validate(range(min = 1))]
     pub shard_number: ::core::option::Option<u32>,

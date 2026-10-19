@@ -289,7 +289,7 @@ storage:
       # memory: null
 
     # Number of shards per node for auto-sharded collections.
-    # If unset, it is 2 while there are fewer collections than nodes, otherwise 1.
+    # If not specified, selected automatically.
     # shard_number_per_node: 1
 
     # Default quantization configuration.
