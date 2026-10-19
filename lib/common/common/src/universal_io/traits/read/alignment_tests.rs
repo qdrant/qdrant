@@ -1,7 +1,5 @@
 use std::borrow::Cow;
 
-use bytemuck::PodCastError;
-
 use crate::generic_consts::Random;
 use crate::universal_io::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, OpenOptions,
@@ -48,6 +46,10 @@ impl CachedFile {
 }
 
 const BYTES: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const UNALIGNED: [u32; 2] = [
+    u32::from_ne_bytes([1, 2, 3, 4]),
+    u32::from_ne_bytes([5, 6, 7, 8]),
+];
 
 #[test]
 fn empty_cached_read_returns_typed_empty_slice() {
@@ -65,16 +67,15 @@ fn empty_cached_read_returns_typed_empty_slice() {
 }
 
 #[test]
-fn unaligned_cached_read_returns_cast_error() {
+fn unaligned_cached_read_returns_typed_values() {
     let fixture = CachedFile::new(BYTES);
     for _ in 0..2 {
-        let result = fixture.file.read::<_, u32>(ReadRange::new(1, 2), Random);
-        assert!(matches!(
-            result,
-            Err(UniversalIoError::BytemuckCast(
-                PodCastError::TargetAlignmentGreaterAndInputNotAligned
-            ))
-        ));
+        let items = fixture
+            .file
+            .read::<_, u32>(ReadRange::new(1, 2), Random)
+            .unwrap();
+        assert_eq!(&*items, &UNALIGNED);
+        assert!(matches!(items, Cow::Owned(_)));
     }
 }
 
@@ -92,30 +93,30 @@ fn aligned_cached_read_borrows_mmap() {
 }
 
 #[test]
-fn cached_batch_reports_unaligned_read_error() {
+fn cached_batch_reads_empty_and_unaligned_values() {
     let fixture = CachedFile::new(BYTES);
     let mut count = 0;
-    let result = fixture.file.read_batch(
-        [(0, ReadRange::new(1, 0)), (1, ReadRange::new(1, 2))],
-        Random,
-        |id, items: &[u32]| {
-            assert_eq!(id, 0);
-            assert!(items.is_empty());
-            count += 1;
-            UioResult::Ok(())
-        },
-    );
-    assert!(matches!(
-        result,
-        Err(UniversalIoError::BytemuckCast(
-            PodCastError::TargetAlignmentGreaterAndInputNotAligned
-        ))
-    ));
-    assert_eq!(count, 1);
+    fixture
+        .file
+        .read_batch(
+            [(0, ReadRange::new(1, 0)), (1, ReadRange::new(1, 2))],
+            Random,
+            |id, items: &[u32]| {
+                if id == 0 {
+                    assert!(items.is_empty());
+                } else {
+                    assert_eq!(items, &UNALIGNED);
+                }
+                count += 1;
+                UioResult::Ok(())
+            },
+        )
+        .unwrap();
+    assert_eq!(count, 2);
 }
 
 #[test]
-fn cached_iterator_reports_unaligned_read_error() {
+fn cached_iterator_reads_empty_and_unaligned_values() {
     let fixture = CachedFile::new(BYTES);
     let mut iter = fixture
         .file
@@ -127,29 +128,21 @@ fn cached_iterator_reports_unaligned_read_error() {
     let (id, items) = iter.next().unwrap().unwrap();
     assert_eq!(id, 0);
     assert!(items.is_empty());
-    assert!(matches!(
-        iter.next().unwrap(),
-        Err(UniversalIoError::BytemuckCast(
-            PodCastError::TargetAlignmentGreaterAndInputNotAligned
-        ))
-    ));
+    let (id, items) = iter.next().unwrap().unwrap();
+    assert_eq!(id, 1);
+    assert_eq!(&*items, &UNALIGNED);
     assert!(iter.next().is_none());
 }
 
 #[test]
-fn owned_cached_pipeline_reports_unaligned_read_error() {
+fn owned_cached_pipeline_reads_empty_and_unaligned_values() {
     let fixture = CachedFile::new(BYTES);
     let mut pipeline = OwnedPipeline::<_, ()>::new(fixture.file).unwrap();
-    pipeline.schedule::<Random>((), 1..1, 4).unwrap();
-    let ((), items) = pipeline.wait_bytemuck::<u32>().unwrap().unwrap();
-    assert!(items.is_empty());
-    pipeline.schedule::<Random>((), 1..9, 4).unwrap();
-    assert!(matches!(
-        pipeline.wait_bytemuck::<u32>(),
-        Err(UniversalIoError::BytemuckCast(
-            PodCastError::TargetAlignmentGreaterAndInputNotAligned
-        ))
-    ));
+    for (range, expected) in [(1..1, &[][..]), (1..9, &UNALIGNED[..])] {
+        pipeline.schedule::<Random>((), range, 4).unwrap();
+        let ((), items) = pipeline.wait_bytemuck::<u32>().unwrap().unwrap();
+        assert_eq!(&*items, expected);
+    }
     assert!(pipeline.wait_bytemuck::<u32>().unwrap().is_none());
 }
 
