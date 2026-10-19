@@ -1279,6 +1279,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             vector,
             shard_key,
             order_value,
+            location: _,
         } = point;
         Self {
             id: Some(PointId::from(id)),

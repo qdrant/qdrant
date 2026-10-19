@@ -110,6 +110,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
                 vector: record.vector,
                 shard_key: record.shard_key,
                 order_value: record.order_value,
+                location: None,
             })
             .collect();
 
