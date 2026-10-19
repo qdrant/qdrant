@@ -44,6 +44,8 @@ use crate::types::{
     PeerInfo, PeerMetadataById, RaftInfo,
 };
 
+mod action_applier;
+
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
 
@@ -1518,6 +1520,7 @@ mod tests {
     use std::time::Duration;
 
     use collection::shards::shard::PeerId;
+    use parking_lot::RwLock;
     use proptest::prelude::*;
     use raft::eraftpb::{
         ConfChange, ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType,
@@ -1533,6 +1536,7 @@ mod tests {
     use crate::content_manager::consensus::operation_sender::OperationSender;
     use crate::content_manager::consensus::persistent::Persistent;
     use crate::quota::QuotaConfig;
+    use crate::types::PeerAddressById;
 
     #[test]
     fn update_is_applied() {
@@ -1639,7 +1643,13 @@ mod tests {
         assert_eq!(wal.entries(4, 5, Some(0)).unwrap().len(), 1)
     }
 
-    struct NoCollections;
+    #[derive(Default)]
+    struct NoCollections {
+        this_peer_id: PeerId,
+        peer_addresses: Arc<RwLock<PeerAddressById>>,
+        peer_channel_removals: parking_lot::Mutex<Vec<PeerId>>,
+        peer_channel_error: parking_lot::Mutex<Option<crate::StorageError>>,
+    }
 
     impl CollectionContainer for NoCollections {
         fn apply_action(
@@ -1676,6 +1686,22 @@ mod tests {
 
         fn peer_has_shards(&self, _peer_id: PeerId) -> bool {
             false
+        }
+
+        fn remove_peer_channels(&self, peer_id: PeerId) -> Result<(), crate::StorageError> {
+            self.peer_channel_removals.lock().push(peer_id);
+            if let Some(error) = self.peer_channel_error.lock().clone() {
+                return Err(error);
+            }
+
+            let mut peers = self.peer_addresses.write();
+            if peer_id == self.this_peer_id {
+                peers.clear();
+            } else {
+                peers.remove(&peer_id);
+            }
+
+            Ok(())
         }
 
         fn sync_local_state(&self) -> Result<(), crate::content_manager::errors::StorageError> {
@@ -1719,6 +1745,44 @@ mod tests {
         ) -> std::collections::BTreeSet<collection::shards::CollectionId> {
             std::collections::BTreeSet::new()
         }
+    }
+
+    #[test]
+    fn remove_peer_action_channel_failure_retry() {
+        use crate::content_manager::consensus_state_machine::Action;
+        use crate::content_manager::errors::StorageError;
+
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
+        let (manager, _) = setup_storages(vec![], dir.path());
+        manager
+            .add_peer(1, "http://127.0.0.1:6335".parse().unwrap())
+            .unwrap();
+        *manager.toc.peer_channel_error.lock() = Some(StorageError::bad_request("channel failure"));
+        let action = Action::RemovePeer { peer_id: 1 };
+
+        let error = manager.apply_action(action.clone()).unwrap_err();
+
+        assert!(matches!(error, StorageError::ServiceError { .. }));
+        assert!(
+            manager
+                .persistent
+                .read()
+                .peer_address_by_id()
+                .contains_key(&1)
+        );
+        manager.toc.peer_channel_error.lock().take();
+
+        manager.apply_action(action.clone()).unwrap();
+        manager.apply_action(action).unwrap();
+
+        assert!(
+            !manager
+                .persistent
+                .read()
+                .peer_address_by_id()
+                .contains_key(&1)
+        );
+        assert_eq!(*manager.toc.peer_channel_removals.lock(), [1, 1, 1]);
     }
 
     /// Regression test for the shared awaiter slot.
@@ -1943,10 +2007,15 @@ mod tests {
         path: &std::path::Path,
     ) -> (ConsensusManager<NoCollections>, MemStorage) {
         let persistent = Persistent::load_or_init(path, true, false, None).unwrap();
+        let toc = NoCollections {
+            this_peer_id: persistent.this_peer_id,
+            peer_addresses: persistent.peer_address_by_id.clone(),
+            ..Default::default()
+        };
         let (sender, _) = mpsc::channel();
         let consensus_state = ConsensusManager::new(
             persistent,
-            Arc::new(NoCollections),
+            Arc::new(toc),
             OperationSender::new(sender),
             path,
         )
@@ -2082,7 +2151,7 @@ mod tests {
         let (sender, _) = mpsc::channel();
         let consensus = ConsensusManager::new(
             persistent,
-            Arc::new(NoCollections),
+            Arc::new(NoCollections::default()),
             OperationSender::new(sender),
             dir.path(),
         )
@@ -2160,7 +2229,7 @@ mod tests {
         let (sender, _) = mpsc::channel();
         let consensus = ConsensusManager::new(
             persistent,
-            Arc::new(NoCollections),
+            Arc::new(NoCollections::default()),
             OperationSender::new(sender),
             dir.path(),
         )
