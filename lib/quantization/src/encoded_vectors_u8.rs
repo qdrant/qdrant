@@ -82,7 +82,7 @@ impl Metadata {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 struct MetadataInt8 {
     actual_dim: usize,
     alpha: f32,
@@ -114,6 +114,7 @@ impl MetadataInt8 {
         self.postprocess_score(score, query_offset, vector_2_offset)
     }
 
+    #[inline]
     fn get_shift(&self) -> f32 {
         // Dotprod after shifting produces a number which is not related to vector and query
         // (x - a)(y - a) = xy - ax - ay + a^2
@@ -904,10 +905,23 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
 }
 
 /// Scalar quantized vectors as matrix operands: the u8 codes, with the per-vector offset as
-/// `aux`, combined as in `MetadataInt8::postprocess_internal_score`.
+/// `aux`, combined by [`ScalarCombine`].
 pub struct ScalarOperands<'a, TStorage: EncodedStorage> {
     vectors: &'a EncodedVectorsU8<TStorage>,
-    combine: Combine,
+    combine: ScalarCombine,
+}
+
+/// Combines the codes' dot product and both offsets as `score_internal` does, through the same
+/// `MetadataInt8::postprocess_internal_score`. Holds a copy of the metadata, so the shift it
+/// computes per pair is loop-invariant for the kernels.
+#[derive(Clone, Copy)]
+pub struct ScalarCombine(MetadataInt8);
+
+impl Combine for ScalarCombine {
+    #[inline(always)]
+    fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32 {
+        self.0.postprocess_internal_score(dot, aux_a, aux_b)
+    }
 }
 
 impl<'a, TStorage: EncodedStorage> ScalarOperands<'a, TStorage> {
@@ -917,10 +931,7 @@ impl<'a, TStorage: EncodedStorage> ScalarOperands<'a, TStorage> {
         match meta.vector_parameters.distance_type {
             DistanceType::Dot | DistanceType::Cosine | DistanceType::L2 => Some(Self {
                 vectors,
-                combine: Combine::Affine {
-                    mult: meta.multiplier,
-                    shift: meta.get_shift(),
-                },
+                combine: ScalarCombine(*meta),
             }),
             DistanceType::L1 => None,
         }
@@ -929,13 +940,14 @@ impl<'a, TStorage: EncodedStorage> ScalarOperands<'a, TStorage> {
 
 impl<TStorage: EncodedStorage + Sync> MatrixOperands for ScalarOperands<'_, TStorage> {
     type Elem = u8;
+    type Combine = ScalarCombine;
     type Error = std::io::Error;
 
     fn depth(&self) -> usize {
         self.vectors.metadata.actual_dim()
     }
 
-    fn combine(&self) -> Combine {
+    fn combine(&self) -> ScalarCombine {
         self.combine
     }
 
