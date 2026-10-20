@@ -37,8 +37,8 @@ pub(super) fn build_main_graph_on_cpu(
         vector_storage,
         quantized_vectors,
         main_params,
+        block_params: _,
         stopped,
-        ..
     } = ctx;
     let total_vector_count = vector_storage.total_vector_count();
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();

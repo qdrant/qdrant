@@ -7,6 +7,15 @@ use super::payload_blocks::PayloadBlock;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::vector_storage::VectorStorageRead as _;
 
+/// Which payload blocks of a field to skip, besides those too large to build.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum BlockSkip {
+    /// Blocks whose points the graph built so far already connects well.
+    IfConnected,
+    /// None: the blocks of the first field, and of tenant fields.
+    Never,
+}
+
 /// Which payload blocks the graph needs: those it does not connect well already.
 pub(super) struct BlockFilter {
     /// Larger blocks stay connected through the main graph.
@@ -87,21 +96,22 @@ impl BlockFilter {
 
     /// Whether `block` is worth building, given `graph` built so far. Call right before
     /// building each block: earlier blocks change the answer.
-    ///
-    /// With `skip_if_connected`, a block whose points the graph already connects well is
-    /// skipped.
     pub fn should_build<R: Rng + ?Sized>(
         &self,
         graph: &GraphLayersBuilder,
         block: &PayloadBlock,
-        skip_if_connected: bool,
+        skip: BlockSkip,
         rng: &mut R,
     ) -> bool {
         if !self.fits(block.cardinality) {
             return false;
         }
 
-        if skip_if_connected && let Some(required_connectivity) = self.required_connectivity {
+        let required_connectivity = match skip {
+            BlockSkip::IfConnected => self.required_connectivity,
+            BlockSkip::Never => None,
+        };
+        if let Some(required_connectivity) = required_connectivity {
             let graph_connectivity =
                 graph.subgraph_connectivity(rng, &block.points, self.percolation);
             if graph_connectivity >= required_connectivity {
