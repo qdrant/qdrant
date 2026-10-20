@@ -185,6 +185,10 @@ pub fn score_bm25<T: FullTextIndexRead>(
     index.score_bm25(&query, accept, limit, is_stopped)
 }
 
+/// Token id that no query contains, to keep detached tokens apart from their
+/// neighbours in a [`Document`] parsed from a payload value.
+const PHRASE_GAP: TokenId = TokenId::MAX;
+
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
     /// All query tokens must be present in the document (any order).
@@ -321,11 +325,25 @@ pub trait FullTextIndexRead {
 
     fn is_cold(&self) -> bool;
 
-    /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
+    /// Parse as [`TokenizerTextKind::Phrase`] and return [`ParsedQuery::Phrase`].
     /// Returns [`None`] if there are any unseen tokens.
     fn parse_phrase_query(&self, phrase: &str) -> OperationResult<Option<ParsedQuery>> {
-        let document = self.parse_document(phrase)?;
-        Ok(document.map(ParsedQuery::Phrase))
+        let mut phrase_tokens = Vec::new();
+        let token_map = self.resolve_tokens(TokenizerTextKind::Phrase, phrase)?;
+        if token_map.values().any(|token_id| token_id.is_none()) {
+            return Ok(None);
+        }
+
+        self.tokenizer()
+            .tokenize(TokenizerTextKind::Phrase, phrase, |token| {
+                let token_id = token_map
+                    .get(&token)
+                    .expect("token should be in map")
+                    .expect("token_id should be set for all tokens");
+                phrase_tokens.push(token_id);
+            });
+
+        Ok(Some(ParsedQuery::Phrase(Document::new(phrase_tokens))))
     }
 
     /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AllTokens`].
@@ -372,6 +390,9 @@ pub trait FullTextIndexRead {
 
     /// Parse as [`TokenizerTextKind::Document`] and return a [`Document`].
     /// Returns [`None`] if there are any unseen tokens.
+    ///
+    /// Like the index does, puts a gap before each detached token, so that it
+    /// only matches a phrase of itself alone.
     fn parse_document(&self, text: &str) -> OperationResult<Option<Document>> {
         let mut document_tokens = Vec::new();
         let token_map = self.resolve_tokens(TokenizerTextKind::Document, text)?;
@@ -380,7 +401,10 @@ pub trait FullTextIndexRead {
         }
 
         self.tokenizer()
-            .tokenize(TokenizerTextKind::Document, text, |token| {
+            .tokenize_doc_detached(text, |token, detached| {
+                if detached {
+                    document_tokens.push(PHRASE_GAP);
+                }
                 let token_id = token_map
                     .get(&token)
                     .expect("token should be in map")

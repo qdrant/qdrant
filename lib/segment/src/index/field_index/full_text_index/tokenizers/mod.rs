@@ -4,11 +4,13 @@
 
 use std::borrow::Cow;
 mod ascii_folding;
+mod code;
 mod japanese;
 mod multilingual;
 mod stemmer;
 pub mod tokens_processor;
 
+use code::CodeTokenizer;
 use multilingual::MultilingualTokenizer;
 pub use stemmer::Stemmer;
 pub use tokens_processor::TokensProcessor;
@@ -166,6 +168,8 @@ pub struct Tokenizer {
 pub enum TokenizerTextKind {
     Query,
     Document,
+    /// A phrase query: tokens that must appear in this order in a document.
+    Phrase,
 }
 
 impl Tokenizer {
@@ -214,7 +218,7 @@ impl Tokenizer {
         &self,
         kind: TokenizerTextKind,
         text: &'a str,
-        callback: C,
+        mut callback: C,
     ) {
         let Self {
             tokenizer_type,
@@ -225,14 +229,48 @@ impl Tokenizer {
             TokenizerType::Word => WordTokenizer::tokenize(text, tp, callback),
             TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, tp, callback),
             TokenizerType::Prefix => match kind {
-                TokenizerTextKind::Document => PrefixTokenizer::tokenize(text, tp, callback),
+                TokenizerTextKind::Document | TokenizerTextKind::Phrase => {
+                    PrefixTokenizer::tokenize(text, tp, callback)
+                }
                 TokenizerTextKind::Query => PrefixTokenizer::tokenize_query(text, tp, callback),
+            },
+            TokenizerType::Code => match kind {
+                TokenizerTextKind::Document => {
+                    CodeTokenizer::tokenize_doc(text, tp, |token, _| callback(token))
+                }
+                // Joined identifiers are not in a document's token sequence, see
+                // `tokenize_doc_detached`
+                TokenizerTextKind::Query | TokenizerTextKind::Phrase => {
+                    CodeTokenizer::tokenize_query(text, tp, callback)
+                }
             },
         }
     }
 
     pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
         self.tokenize(TokenizerTextKind::Document, text, callback);
+    }
+
+    /// Same tokens as [`Self::tokenize_doc`], each with whether it is detached: not part of the
+    /// document's token sequence, so phrase matching must not see it next to other tokens. Only
+    /// the code tokenizer has them: its joined identifiers, which stand for subwords that are in
+    /// the sequence already.
+    pub fn tokenize_doc_detached<'a, C: FnMut(Cow<'a, str>, bool)>(
+        &'a self,
+        text: &'a str,
+        mut callback: C,
+    ) {
+        match self.tokenizer_type {
+            TokenizerType::Code => {
+                CodeTokenizer::tokenize_doc(text, &self.tokens_processor, callback)
+            }
+            TokenizerType::Prefix
+            | TokenizerType::Whitespace
+            | TokenizerType::Word
+            | TokenizerType::Multilingual => {
+                self.tokenize_doc(text, |token| callback(token, false))
+            }
+        }
     }
 
     pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, mut callback: C) {
