@@ -12,7 +12,7 @@ use log::debug;
 use rand::Rng;
 use rayon::ThreadPool;
 
-use super::old_index::{OldIndexCandidate, payload_hnsw_m, payload_links_reusable};
+use super::old_index::{OldIndexCandidate, payload_hnsw_m};
 use super::telemetry::HNSWSearchesTelemetry;
 use super::{HNSWIndex, HnswIndexOpenArgs, derive_config};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -175,10 +175,10 @@ impl HNSWIndex {
 
         check_process_stopped(stopped)?;
 
-        // Blocks keep the ranges of the old index only if they can start from its links
+        // Blocks keep the ranges of the old index only if the builder starts them from its links
         let payload_seed = old_index
             .as_ref()
-            .filter(|old_index| payload_links_reusable(payload_m, &old_index.index.config));
+            .filter(|_| builder.seeds_payload_blocks());
 
         if let Some((progress_additional_links, fields)) = progress_payload_blocks {
             progress_additional_links.start();

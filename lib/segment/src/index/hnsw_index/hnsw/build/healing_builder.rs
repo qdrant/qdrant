@@ -1,8 +1,10 @@
 mod seeds;
 
 use std::ops::Deref as _;
+use std::sync::atomic::AtomicU64;
 
 use common::progress_tracker::ProgressTracker;
+use common::types::PointOffsetType;
 use log::debug;
 use rand::Rng;
 use rayon::ThreadPool;
@@ -12,7 +14,7 @@ use super::block::Block;
 use super::context::GraphBuildContext;
 use super::graph_builder::GraphBuilderMethod;
 use super::hnsw_builder::HnswBuilder;
-use super::local_builder::LocalBuilder;
+use super::local_builder::{LocalBuilder, LocalMethod};
 use super::payload_blocks::FieldBlocks;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -116,28 +118,7 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
     }
 
     fn build_field_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
-        let Self {
-            hnsw,
-            seeds,
-            block_points,
-            seeded_points,
-            ..
-        } = self;
-        let Some(seeds) = seeds else {
-            return hnsw.build_blocks(field);
-        };
-        hnsw.build_blocks_with(field, |hnsw, points, counter| {
-            let LocalBuilder {
-                ctx, pool, graph, ..
-            } = &mut hnsw.0;
-            let block = Block::new(*ctx, points);
-            let to_insert = seeds.seed_block(&block, graph, pool, counter)?;
-            *block_points += points.len();
-            *seeded_points += points.len() - to_insert.len();
-            block.insert(&to_insert, pool, counter)?;
-            block.merge_into(graph);
-            Ok(())
-        })
+        self.build_blocks(field)
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
@@ -148,5 +129,35 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
             );
         }
         self.hnsw.finalize()
+    }
+
+    fn seeds_payload_blocks(&self) -> bool {
+        self.seeds.is_some()
+    }
+}
+
+impl<'a> LocalMethod<'a> for HealingBuilder<'a> {
+    fn local(&mut self) -> &mut LocalBuilder<'a> {
+        self.hnsw.local()
+    }
+
+    /// Points that kept enough links to the block in the old graph start with them, the rest
+    /// are inserted by search.
+    fn build_block(
+        &mut self,
+        points: &[PointOffsetType],
+        counter: &AtomicU64,
+    ) -> OperationResult<()> {
+        let Some(seeds) = &mut self.seeds else {
+            return self.hnsw.build_block(points, counter);
+        };
+        let local = &mut self.hnsw.0;
+        let block = Block::new(local.ctx, points);
+        let to_insert = seeds.seed_block(&block, &local.graph, local.pool, counter)?;
+        self.block_points += points.len();
+        self.seeded_points += points.len() - to_insert.len();
+        block.insert(&to_insert, local.pool, counter)?;
+        block.merge_into(&mut local.graph);
+        Ok(())
     }
 }
