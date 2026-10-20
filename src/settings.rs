@@ -156,15 +156,9 @@ pub struct P2pConfig {
     pub connection_pool_size: usize,
     #[serde(default)]
     pub enable_tls: bool,
-    /// Interval between HTTP/2 PING / TCP keepalive probes on internal p2p gRPC
-    /// connections. Not listed in the public config docs; override via env
-    /// (`QDRANT__CLUSTER__P2P__KEEPALIVE_INTERVAL_MS`) or a custom config file.
     #[serde(default = "default_keepalive_interval_ms")]
     #[validate(range(min = 1))]
     pub keepalive_interval_ms: u64,
-    /// Timeout waiting for a keepalive ACK before treating the connection as dead.
-    /// Not listed in the public config docs; override via env
-    /// (`QDRANT__CLUSTER__P2P__KEEPALIVE_TIMEOUT_MS`) or a custom config file.
     #[serde(default = "default_keepalive_timeout_ms")]
     #[validate(range(min = 1))]
     pub keepalive_timeout_ms: u64,

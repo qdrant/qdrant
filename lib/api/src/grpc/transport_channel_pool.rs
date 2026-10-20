@@ -26,9 +26,8 @@ pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 pub const DEFAULT_POOL_SIZE: usize = 2;
 /// HTTP/2 and TCP keepalive interval for internal p2p gRPC connections.
-/// Kept well below common idle timeouts (Calico eBPF 1h, Docker Swarm IPVS 15m, AWS NLB 350s).
 pub const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
-/// How long to wait for a keepalive ACK before considering the connection dead.
+/// Timeout waiting for a keepalive ACK before considering the connection dead.
 pub const DEFAULT_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Allow a large number of connections per channel, that is close to the limit of
