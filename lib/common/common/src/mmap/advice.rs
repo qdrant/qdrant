@@ -311,46 +311,89 @@ fn populate_simple(slice: &[u8]) {
     );
 }
 
-/// Trigger readahead for a memory-mapped region by calling
-/// `madvise(MADV_WILLNEED)` on it.
+/// Call [`will_need`] unless the region fits into a single page.
 ///
 /// Use-case: the `region` is inside `MADV_RANDOM` memory map, but it spans
 /// across more than one 4KiB page. If you read it in sequence, it will cause
 /// multiple page faults, thus multiple 4KiB I/O operations. Avoid this by
 /// calling this function before reading the region. It will prefetch the whole
 /// region in a single I/O operation. (if possible)
-///
-/// Note: if the region fits within a single page, this function is a no-op.
-#[cfg(unix)]
 pub fn will_need_multiple_pages(region: &[u8]) {
-    let Some(page_mask) = page_size().map(|s| s - 1) else {
-        return;
-    };
+    cfg_select! {
+        unix => {
+            let Some(page_mask) = page_size().map(|s| s - 1) else {
+                return;
+            };
 
-    // `madvise()` requires the address to be page-aligned.
-    let addr = region.as_ptr().map_addr(|addr| addr & !page_mask);
-    let length = region.len() + (region.as_ptr().addr() & page_mask);
+            let offset_in_page = region.as_ptr().addr() & page_mask;
+            if offset_in_page + region.len() <= page_mask {
+                // Data fits within a single page, do nothing.
+                return;
+            }
 
-    if length <= page_mask {
-        // Data fits within a single page, do nothing.
-        return;
-    }
-
-    // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
-    // (not file-baked mmap or even if it is an arbitrary invalid address), it
-    // will return an error, but it won't crash or cause an undefined behavior.
-    let res = unsafe { nix::libc::madvise(addr as *mut _, length, nix::libc::MADV_WILLNEED) };
-    if res != 0 {
-        #[cfg(debug_assertions)]
-        {
-            let err = io::Error::last_os_error();
-            panic!("Failed to call madvise(MADV_WILLNEED): {err}");
+            will_need(region);
         }
+        _ => _ = region,
     }
 }
 
-#[cfg(not(unix))]
-pub fn will_need_multiple_pages(_region: &[u8]) {}
+/// Trigger readahead for a memory-mapped region by calling
+/// `madvise(MADV_WILLNEED)` on it.
+pub fn will_need(region: &[u8]) {
+    cfg_select! {
+        unix => {
+            let Some(page_mask) = page_size().map(|s| s - 1) else {
+                return;
+            };
+            // `madvise()` requires the address to be page-aligned.
+            let offset_in_page = region.as_ptr().addr() & page_mask;
+            let addr = region.as_ptr().map_addr(|addr| addr - offset_in_page);
+            let length = offset_in_page + region.len();
+
+            // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
+            // (not file-baked mmap or even if it is an arbitrary invalid address), it
+            // will return an error, but it won't crash or cause an undefined behavior.
+            let res =
+                unsafe { nix::libc::madvise(addr as *mut _, length, nix::libc::MADV_WILLNEED) };
+            if res != 0 {
+                #[cfg(debug_assertions)]
+                {
+                    let err = io::Error::last_os_error();
+                    panic!("Failed to call madvise(MADV_WILLNEED): {err}");
+                }
+            }
+        }
+        _ => _ = region,
+    }
+}
+
+/// Whether this thread had page faults since the previous call to this function.
+///
+/// It's a heuristic on whether to call [`will_need`]: it gives us parallel
+/// prefetching, but it costs a syscall. No faults since last call mean that
+/// the file is already cached.
+///
+/// `None` means unknown/not supported/first call.
+pub fn thread_faulted() -> Option<bool> {
+    cfg_select! {
+        target_os = "linux" => {
+            use std::cell::Cell;
+
+            use nix::libc;
+            use nix::sys::resource::{UsageWho, getrusage};
+
+            thread_local! {
+                static FAULTS: Cell<Option<libc::c_long>> = const { Cell::new(None) };
+            }
+            let usage = getrusage(UsageWho::RUSAGE_THREAD).ok()?; // `None` on error
+            // Minor faults count: reading a page brought in by `will_need` is one.
+            let faults = usage.major_page_faults() + usage.minor_page_faults();
+            let previous = FAULTS.replace(Some(faults))?; // `None` on the first call
+            Some(previous != faults)
+        }
+        _ => None,
+    }
+}
 
 /// Returns the system page size in bytes, or `None` if it could not be determined.
 ///
