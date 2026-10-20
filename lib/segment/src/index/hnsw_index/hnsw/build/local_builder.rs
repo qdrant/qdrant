@@ -117,11 +117,12 @@ impl<'a> LocalBuilder<'a> {
     pub fn should_build(&mut self, block: &PayloadBlock, skip: BlockSkip) -> bool {
         let Self {
             ctx,
+            pool: _,
             rng,
             points,
             graph,
+            main_graph_progress: _,
             block_filter,
-            ..
         } = self;
         block_filter
             .get_or_insert_with(|| BlockFilter::new(*ctx, graph, points, &mut **rng))
