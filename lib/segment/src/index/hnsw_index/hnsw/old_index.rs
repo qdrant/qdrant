@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use common::bitvec::BitSliceExt as _;
@@ -39,6 +39,9 @@ pub(in crate::index::hnsw_index) struct OldIndex<'a> {
     /// The same graph as `index.graph`, but opened as direct/mmap.
     /// None if `index.graph` is already direct.
     reopened_graph: Option<GraphLayers>,
+    /// Guards reading the links of `reopened_graph` into the page cache, see
+    /// [`Self::populate_links`].
+    links_populated: Once,
     /// Mapping from old index to new index.
     /// `old_to_new[old_idx] == Some(new_idx)`.
     pub old_to_new: Vec<Option<PointOffsetType>>,
@@ -211,12 +214,6 @@ impl<'a> OldIndexCandidate<'a> {
     }
 
     pub(super) fn reuse(self, total_vector_count: usize) -> OldIndex<'a> {
-        if let Some(graph) = &self.reopened_graph
-            && let Err(err) = graph.links.populate()
-        {
-            log::debug!("Failed to populate the old HNSW graph links: {err}");
-        }
-
         let mut new_to_old = vec![None; total_vector_count];
         for (old_offset, new_offset) in self.old_to_new.iter().copied().enumerate() {
             if let Some(new_offset) = new_offset {
@@ -233,6 +230,7 @@ impl<'a> OldIndexCandidate<'a> {
         OldIndex {
             index: self.index,
             reopened_graph: self.reopened_graph,
+            links_populated: Once::new(),
             old_to_new: self.old_to_new,
             new_to_old,
         }
@@ -240,6 +238,20 @@ impl<'a> OldIndexCandidate<'a> {
 }
 
 impl OldIndex<'_> {
+    /// Read the links of the old graph into the page cache, the first time it is called. Call it
+    /// before reading them in random order, as healing and seeding blocks do. Taking the levels
+    /// of points does not need it. A graph `evaluate` had to reopen is cold; a graph that was
+    /// open already is used as it is.
+    pub(super) fn populate_links(&self) {
+        self.links_populated.call_once(|| {
+            if let Some(graph) = &self.reopened_graph
+                && let Err(err) = graph.links.populate()
+            {
+                log::debug!("Failed to populate the old HNSW graph links: {err}");
+            }
+        });
+    }
+
     pub(super) fn point_level(&self, new_id: PointOffsetType) -> Option<usize> {
         let old_id = self.new_to_old[new_id as usize]?;
         Some(self.graph().links.point_level(old_id))
