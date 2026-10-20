@@ -169,12 +169,12 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     }
 
     /// Post-LIST preloading on `CachedFs`. Appendable tracker reloads its handles during
-    /// [`Self::probe_committed`] on the inner filesystem, so this is a no-op.
+    /// [`Self::probe_committed`] on the inner filesystem, so only the move log is staged here.
     pub fn live_preload(
         &self,
-        _fs: &impl CachedReadFs<File = S>,
+        fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<PreloadFuture>> {
-        Ok(Vec::new())
+        self.moves.view.live_preload(fs)
     }
 
     /// Consume mapping and version changes appended to storage since the last reload.
@@ -206,7 +206,18 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
         // deletes act on the committed mapping immediately, and cancel still-pending inserts.
+        let mappings_read_from = self.mappings_read_to;
         let changes = self.read_new_mapping_changes(fs, preloaded)?;
+
+        // Read before any change applies: should it fail, the next reload reads the same mapping
+        // changes again
+        let point_moves = match self.moves.view.read_new(fs) {
+            Ok(entries) => entries,
+            Err(err) => {
+                self.mappings_read_to = mappings_read_from;
+                return Err(err);
+            }
+        };
 
         for change in &changes {
             log::trace!(target: "live-reload", "Read mapping in {:?} change: {:?}", self.segment_path, change);
@@ -261,6 +272,11 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             }
         }
 
+        // Moves apply after the mapping changes, which they may be ahead of. Some staged inserts
+        // must not show after all.
+        self.take_point_moves(point_moves, &mut deleted);
+        self.unstage_masked_inserts(&mut deleted);
+
         // Previously staged offsets that are no longer staged were replaced or deleted by this
         // reload. Only the final state counts: an abandoned insert whose slot the writer covered
         // with a version looks complete and replaces a staged offset for a moment, until the
@@ -274,6 +290,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         inserted.sort_unstable();
         deleted.sort_unstable();
         deleted.dedup();
+
+        self.update_point_moves(&deleted);
 
         Ok(LiveReloadResult { inserted, deleted })
     }
@@ -306,6 +324,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         for (external_id, internal_id) in self.staged_inserts.drain() {
             self.mappings.set_link(external_id, internal_id);
         }
+        // A published slot can settle a move into it
+        self.update_point_moves(&[]);
     }
 
     /// Read mapping changes appended after the last consumed offset, advancing `mappings_read_to`.
