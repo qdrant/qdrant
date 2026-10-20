@@ -89,6 +89,8 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
 
         let timer = std::time::Instant::now();
 
+        old.populate_links();
+
         let mut healer =
             GraphLayersHealer::new(old.graph(), &old.old_to_new, ctx.main_params.ef_construct);
         let old_vector_storage = old.index.vector_storage.borrow();
@@ -151,6 +153,7 @@ impl<'a> LocalMethod<'a> for HealingBuilder<'a> {
         let Some(seeds) = &mut self.seeds else {
             return self.hnsw.build_block(points, counter);
         };
+        self.old.populate_links();
         let local = &mut self.hnsw.0;
         let block = Block::new(local.ctx, points);
         let to_insert = seeds.seed_block(&block, &local.graph, local.pool, counter)?;
