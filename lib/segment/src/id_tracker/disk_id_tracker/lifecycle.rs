@@ -19,6 +19,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+use crate::id_tracker::point_moves::apply_unexpected_point_moves;
 use crate::types::SeqNumberType;
 
 impl<S> DiskIdTracker<S>
@@ -58,14 +59,16 @@ where
 
         let reader = DiskMappingReader::open(fs, segment_path, populate)?;
 
-        Ok(Self {
+        let mut id_tracker = Self {
             path: segment_path.to_path_buf(),
             reader,
             deleted,
             deleted_wrapper,
             internal_to_version,
             versions_file,
-        })
+        };
+        apply_unexpected_point_moves(&mut id_tracker, segment_path)?;
+        Ok(id_tracker)
     }
 
     /// Build the tracker files at `path`, with versions in the

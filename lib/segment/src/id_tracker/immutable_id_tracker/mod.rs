@@ -36,6 +36,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+use crate::id_tracker::point_moves::apply_unexpected_point_moves;
 use crate::id_tracker::{
     DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
     default_external_ids_batch, default_internal_versions_batch,
@@ -126,13 +127,15 @@ where
         let reader = BufReader::new(File::open(mappings_path(segment_path))?);
         let mappings = load_mapping(reader, Some(deleted_bitvec))?;
 
-        Ok(Self {
+        let mut id_tracker = Self {
             path: segment_path.to_path_buf(),
             deleted_wrapper,
             internal_to_version_wrapper,
             internal_to_version,
             mappings,
-        })
+        };
+        apply_unexpected_point_moves(&mut id_tracker, segment_path)?;
+        Ok(id_tracker)
     }
 
     pub fn new(

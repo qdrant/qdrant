@@ -30,6 +30,7 @@ use self::versions_storage::{
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::id_tracker::point_moves::apply_unexpected_point_moves;
 use crate::id_tracker::{
     DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
     default_external_ids_batch, default_internal_versions_batch,
@@ -135,15 +136,17 @@ impl MutableIdTracker {
         #[cfg(debug_assertions)]
         mappings.assert_mappings();
 
-        Ok(Self {
-            segment_path,
+        let mut id_tracker = Self {
+            segment_path: segment_path.clone(),
             internal_to_version,
             mappings,
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
             is_alive_lock: IsAliveLock::new(),
             mappings_expected_len: Arc::new(AtomicU64::new(mappings_expected_len)),
-        })
+        };
+        apply_unexpected_point_moves(&mut id_tracker, &segment_path)?;
+        Ok(id_tracker)
     }
 
     /// Approximate RAM usage in bytes for in-memory data structures.
