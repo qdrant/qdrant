@@ -9,7 +9,7 @@ use rayon::ThreadPool;
 
 use self::block::Block;
 use self::seeds::BlockSeeds;
-use super::block_filter::BlockFilter;
+use super::block_filter::{BlockFilter, BlockSkip};
 use super::context::GraphBuildContext;
 use super::payload_blocks::{field_payload_blocks, load_payload_block};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
@@ -51,9 +51,9 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         id_tracker,
         vector_storage,
         quantized_vectors,
+        main_params: _,
         block_params,
         stopped,
-        ..
     } = ctx;
     let total_vector_count = vector_storage.total_vector_count();
 
@@ -103,7 +103,11 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
         )?;
 
         // Tenant blocks are always built
-        let skip_if_connected = index_pos > 0 && !payload_index.is_tenant(&field);
+        let skip = if index_pos > 0 && !payload_index.is_tenant(&field) {
+            BlockSkip::IfConnected
+        } else {
+            BlockSkip::Never
+        };
 
         let counter = field_progress.track_progress(None);
 
@@ -127,7 +131,7 @@ pub(super) fn build_additional_links<R: Rng + ?Sized>(
             else {
                 continue;
             };
-            if !filter.should_build(graph_layers_builder, &payload_block, skip_if_connected, rng) {
+            if !filter.should_build(graph_layers_builder, &payload_block, skip, rng) {
                 continue;
             }
 
