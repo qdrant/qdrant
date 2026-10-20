@@ -1,5 +1,6 @@
 //! Live-reload: pick up deletions written by the leader after open.
 
+use common::bitmap_scan::newly_set;
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -73,11 +74,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
 
             let baseline = self.deleted_full.take();
             deleted = match baseline {
-                Some(old) => new
-                    .iter_ones()
-                    .filter(|&i| !old.get(i).is_some_and(|b| *b))
-                    .map(|i| i as PointOffsetType)
-                    .collect(),
+                Some(old) => newly_set(&new, &old).collect(),
                 None => new.iter_ones().map(|i| i as PointOffsetType).collect(),
             };
             debug_assert!(deleted.is_sorted());
