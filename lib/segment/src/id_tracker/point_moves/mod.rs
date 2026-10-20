@@ -24,6 +24,8 @@ mod view;
 mod writer;
 
 #[cfg(test)]
+mod regular_tests;
+#[cfg(test)]
 mod tests;
 
 use std::path::{Path, PathBuf};
