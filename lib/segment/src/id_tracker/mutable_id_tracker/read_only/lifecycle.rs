@@ -8,6 +8,7 @@ use common::universal_io::{
 };
 use futures::lock::Mutex;
 
+use super::moves::AppendableMoves;
 use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
@@ -16,6 +17,7 @@ use crate::id_tracker::mutable_id_tracker::versions_storage::{
     VERSION_ELEMENT_SIZE, versions_path,
 };
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::id_tracker::point_moves::{PointMovesMode, PointMovesView};
 
 impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
     /// The versions file: its size is the writer's commit mark.
@@ -42,10 +44,10 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         }
     }
 
-    /// Schedule background prefetch of the mappings log and versions file that
+    /// Schedule background prefetch of the mappings log, versions file and move log that
     /// [`open`](Self::open) reads via [`live_reload`](Self::live_reload).
     ///
-    /// Either file may not exist yet — the writer only creates them once it
+    /// Any of them may not exist yet — the writer only creates them once it
     /// flushes the first point, and [`open`](Self::open) treats a missing file
     /// as an empty storage — so absence is tolerated here too.
     pub fn preopen(fs: &impl CachedReadFs<File = S>, segment_path: &Path) {
@@ -53,6 +55,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
 
         fs.schedule_open(&mappings_path(segment_path), Some(options), None);
         fs.schedule_open(&versions_path(segment_path), Some(options), None);
+        PointMovesView::<S>::preopen(fs, segment_path);
     }
 
     /// Open a read-only view over the appendable ID tracker data at `segment_path`, threading every
@@ -82,11 +85,34 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         deferred_internal_id: Option<PointOffsetType>,
         max_committed_offset: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
+        Self::open_with_moves(
+            fs,
+            segment_path,
+            deferred_internal_id,
+            max_committed_offset,
+            PointMovesMode::Apply,
+        )
+    }
+
+    /// [`open_capped`](Self::open_capped) with point moves handled per `moves`.
+    pub fn open_with_moves(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: impl Into<PathBuf>,
+        deferred_internal_id: Option<PointOffsetType>,
+        max_committed_offset: Option<PointOffsetType>,
+        moves: PointMovesMode,
+    ) -> OperationResult<Self> {
+        let segment_path = segment_path.into();
+        let moves = Box::new(AppendableMoves::new(
+            PointMovesView::new(&segment_path),
+            moves,
+        ));
+
         // The bootstrap below opens through the raw fs passed here, bypassing
         // any prefetch pool. Later reloads open through the fs their caller
         // provides instead (typically a caching wrapper with a fresh snapshot).
         let mut tracker = Self {
-            segment_path: segment_path.into(),
+            segment_path,
             internal_to_version: Vec::new(),
             mappings: PointMappings::new(
                 Default::default(),
@@ -104,6 +130,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                 mappings: None,
                 versions: None,
             }),
+            moves,
         };
 
         // Load the existing data the same way a live-reload consumes appended data. The reported
