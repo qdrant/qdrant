@@ -36,7 +36,6 @@ pub use self::delete_only::DeleteOnlySegment;
 pub use self::lookup::LookupSegment;
 pub use self::segment_enum::UpdateOnlySegmentEnum;
 pub use self::tracker_lookup::TrackerLookup;
-use crate::id_tracker::IdTrackerRead as _;
 use crate::id_tracker::mutable_id_tracker::update_only::PendingInsert;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 
@@ -59,14 +58,13 @@ impl WriterIdTrackerState {
                     mappings_end: id_tracker.mappings_read_to(),
                 })
             }
-            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => {
-                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::Immutable(Some(
-                    id_tracker.deleted_point_bitslice().to_bitvec(),
-                )))
-            }
+            // The mask as stored, which the writer rewrites: without the copies deleted for a move
+            ReadOnlyIdTrackerEnum::Immutable(id_tracker) => WriterIdTrackerState::DeleteOnly(
+                DeleteOnlyIdTrackerState::Immutable(Some(id_tracker.stored_deleted_mask())),
+            ),
             ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
                 WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::DiskResident(
-                    id_tracker.deleted_full_if_materialized().cloned(),
+                    id_tracker.stored_deleted_mask_if_materialized(),
                 ))
             }
         }

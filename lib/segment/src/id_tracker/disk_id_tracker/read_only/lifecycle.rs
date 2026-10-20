@@ -13,6 +13,7 @@ use super::versions::ReadOnlyVersions;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
+use crate::id_tracker::point_moves::{PointMovesMode, PointMovesView, SlotMoves};
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// No commit mark: the format is fully committed once present.
@@ -74,6 +75,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             Some(Self::deleted_open_options()),
             None,
         );
+        PointMovesView::<S>::preopen(fs, segment_path);
 
         Ok(true)
     }
@@ -104,6 +106,18 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         segment_path: &Path,
         populate: Populate,
     ) -> OperationResult<Option<Self>> {
+        Self::try_open_with_moves(fs, segment_path, populate, PointMovesMode::Apply)
+    }
+
+    /// [`try_open`](Self::try_open) with point moves handled per `moves`. The move log is read
+    /// along with the mask, see [`Self::try_preopen`]. A log with records to take in, or resolving
+    /// moves, materializes the full deleted set.
+    pub fn try_open_with_moves(
+        fs: &impl UniversalReadFs<File = S>,
+        segment_path: &Path,
+        populate: Populate,
+        moves: PointMovesMode,
+    ) -> OperationResult<Option<Self>> {
         let Some(reader) = DiskMappingReader::try_open(fs, segment_path, populate)? else {
             return Ok(None);
         };
@@ -117,12 +131,21 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             Default::default(),
         )?;
 
-        Ok(Some(Self {
+        let mut tracker = Self {
             path: segment_path.to_path_buf(),
             reader,
             versions,
             deleted_file,
             deleted_full: OnceLock::new(),
-        }))
+            moves: Box::new(SlotMoves::new(segment_path, moves)),
+        };
+
+        let entries = tracker.moves.view.read_new(fs)?;
+        if !entries.is_empty() || moves == PointMovesMode::Resolve {
+            tracker.deleted_full()?;
+        }
+        tracker.take_point_moves(entries);
+
+        Ok(Some(tracker))
     }
 }

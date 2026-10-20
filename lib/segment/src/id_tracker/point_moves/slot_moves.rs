@@ -117,6 +117,16 @@ impl<S: UniversalRead> SlotMoves<S> {
         }
     }
 
+    /// Mark the slots deleted for a move in `mask`, read as stored, making it the view's deleted
+    /// state.
+    pub fn mark_moved_away(&self, mask: &mut BitVec) {
+        for slot in &self.moved_away {
+            if let Some(mut bit) = mask.get_mut(slot as usize) {
+                *bit = true;
+            }
+        }
+    }
+
     /// The mask as stored, given the view's deleted state `deleted`.
     pub fn stored_mask(&self, deleted: &BitSlice) -> BitVec {
         let mut mask = deleted.to_bitvec();

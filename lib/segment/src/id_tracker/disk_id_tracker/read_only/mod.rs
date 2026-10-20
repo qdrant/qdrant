@@ -10,7 +10,8 @@
 //!   `get_bit`;
 //! - the full deleted set is materialized at most once, and only for paths
 //!   that need the whole slice (search, scroll, counts, the
-//!   [`live_reload`](ReadOnlyDiskIdTracker::live_reload) baseline).
+//!   [`live_reload`](ReadOnlyDiskIdTracker::live_reload) baseline, point
+//!   moves).
 
 mod id_tracker_read;
 mod lifecycle;
@@ -29,6 +30,7 @@ use super::on_disk_format::{e2i_path, i2e_path, is_uuid_path};
 use super::reader::DiskMappingReader;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
+use crate::id_tracker::point_moves::SlotMoves;
 
 /// Read-only id tracker backed by the on-disk format files, read lazily
 /// through a [`UniversalRead`] backend.
@@ -43,9 +45,16 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
     /// every [`Self::live_reload`].
     deleted_file: StoredBitSlice<S>,
 
-    /// Full deleted set. NOT loaded on open or by point lookups. Materialized on
-    /// the first search/scroll/count/reload and reused; invalidated by `live_reload`.
+    /// Full deleted set: the file's, and the slots deleted for a move. NOT loaded
+    /// on open or by point lookups, unless there are point moves to take in.
+    /// Materialized on the first search/scroll/count/reload and reused;
+    /// refreshed by `live_reload`.
     deleted_full: OnceLock<BitVec>,
+
+    /// The segment's move log, read with every reload, see
+    /// [`point_moves`](crate::id_tracker::point_moves). A slot deleted for a
+    /// move is deleted in [`Self::deleted_full`], but not in the file.
+    moves: Box<SlotMoves<S>>,
 }
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
@@ -69,7 +78,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         if let Some(materialized) = self.deleted_full.get() {
             return Ok(materialized);
         }
-        let materialized = self.deleted_file.read_all()?.into_owned();
+        let mut materialized = self.deleted_file.read_all()?.into_owned();
+        self.moves.mark_moved_away(&mut materialized);
         let _ = self.deleted_full.set(materialized);
         Ok(self.deleted_full.get().expect("just set"))
     }
@@ -77,5 +87,13 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     /// The full deleted set, if already materialized; never triggers the load.
     pub fn deleted_full_if_materialized(&self) -> Option<&BitVec> {
         self.deleted_full.get()
+    }
+
+    /// The deleted mask as stored, if the full deleted set is materialized: that set without the
+    /// slots deleted for a move. What a writer resumes from.
+    pub fn stored_deleted_mask_if_materialized(&self) -> Option<BitVec> {
+        self.deleted_full
+            .get()
+            .map(|deleted| self.moves.stored_mask(deleted))
     }
 }
