@@ -27,9 +27,9 @@ use uuid::Uuid;
 /// cold instead of warming them per the segment configs.
 ///
 /// The segment manifest is superset-biased, so it may list segments a read-only follower cannot
-/// load — a not-yet-finalized segment, one already deleted, or an appendable write-buffer segment
-/// that has no disk-resident id tracker. Per the manifest's reader contract these are skipped (with
-/// a warning) instead of failing the whole open.
+/// load yet — one not finalized, or one already deleted. Those surface as not-found and are
+/// skipped (at debug level) so the next live-reload can pick them up. Any other open failure
+/// fails the whole open: the shard must not serve a subset of its segments.
 ///
 /// Cooperative cancellation: `is_stopped` is checked between stages here and between components
 /// inside each segment's staging and assembly (see [`ReadOnlySegment::schedule_open`]); a set flag
@@ -93,12 +93,13 @@ where
     for (_, uuid, staged_open) in staged_opens {
         match staged_open {
             Ok(segment) => staged.push((uuid, segment)),
-            Err(err @ OperationError::Cancelled { .. }) => return Err(err),
             Err(err) => {
-                log::log!(
-                    skip_level(&err),
-                    "read-only open: skipping unloadable segment {uuid}: {err}"
-                );
+                if err.is_not_found() {
+                    // The segment might not be well-formed yet, this follower can catch up next live-reload.
+                    log::debug!("read-only open: skipping unloadable segment {uuid}: {err}");
+                } else {
+                    return Err(err);
+                }
             }
         }
     }
@@ -115,13 +116,16 @@ where
                 .into_par_iter()
                 .filter_map(|(uuid, staged)| match handoff.enter(|| staged.finish(fs)) {
                     Ok(segment) => Some(Ok((uuid, segment))),
-                    Err(err @ OperationError::Cancelled { .. }) => Some(Err(err)),
                     Err(err) => {
-                        log::log!(
-                            skip_level(&err),
-                            "read-only open: skipping unloadable segment {uuid}: {err}"
-                        );
-                        None
+                        if err.is_not_found() {
+                            // The segment might not be well-formed yet, this follower can catch up next live-reload.
+                            log::debug!(
+                                "read-only open: skipping unloadable segment {uuid}: {err}"
+                            );
+                            None
+                        } else {
+                            Some(Err(err))
+                        }
                     }
                 })
                 .collect::<OperationResult<Vec<_>>>()
@@ -129,25 +133,6 @@ where
     })?;
     check_process_stopped(is_stopped)?;
     Ok(loaded)
-}
-
-/// The level at which a segment that failed to open is reported.
-///
-/// The manifest is superset-biased, so a listed segment may be one the leader has
-/// not finalized yet or has already removed. Both surface as `FileNotFound`, both
-/// resolve themselves once the follower catches up, and both are routine enough to
-/// stay out of the log at default levels.
-///
-/// Anything else is a segment that should have loaded and did not. The shard opens
-/// and serves without it, so queries silently return results computed over a subset
-/// of the data — worth an error, and worth telling apart from the churn above, which
-/// it previously shared a log line and a level with.
-fn skip_level(err: &OperationError) -> log::Level {
-    if err.is_not_found() {
-        log::Level::Debug
-    } else {
-        log::Level::Error
-    }
 }
 
 /// Live-reload the given segments in two phases — stage every fetch under
@@ -188,6 +173,7 @@ where
             let res = segment.read().live_preload(is_stopped).await;
             if let Err(ref err) = res
                 && !matches!(err, OperationError::Cancelled { .. })
+                && !err.is_not_found()
             {
                 log::warn!("live_preload of segment {uuid} failed: {err}");
             }
