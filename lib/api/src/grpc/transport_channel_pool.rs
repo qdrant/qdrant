@@ -25,6 +25,11 @@ pub const MAX_GRPC_CHANNEL_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60)
 pub const DEFAULT_GRPC_TIMEOUT: Duration = Duration::from_secs(60);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 pub const DEFAULT_POOL_SIZE: usize = 2;
+/// HTTP/2 and TCP keepalive interval for internal p2p gRPC connections.
+/// Kept well below common idle timeouts (Calico eBPF 1h, Docker Swarm IPVS 15m, AWS NLB 350s).
+pub const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+/// How long to wait for a keepalive ACK before considering the connection dead.
+pub const DEFAULT_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Allow a large number of connections per channel, that is close to the limit of
 /// `http2_max_pending_accept_reset_streams` that we configure to minimize the chance of
@@ -121,6 +126,8 @@ pub struct TransportChannelPool {
     connection_timeout: Duration,
     tls_config: Option<ClientTlsConfig>,
     api_key: Option<String>,
+    keepalive_interval: Duration,
+    keepalive_timeout: Duration,
 }
 
 impl Default for TransportChannelPool {
@@ -132,17 +139,22 @@ impl Default for TransportChannelPool {
             connection_timeout: DEFAULT_CONNECT_TIMEOUT,
             tls_config: None,
             api_key: None,
+            keepalive_interval: DEFAULT_KEEPALIVE_INTERVAL,
+            keepalive_timeout: DEFAULT_KEEPALIVE_TIMEOUT,
         }
     }
 }
 
 impl TransportChannelPool {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         p2p_grpc_timeout: Duration,
         connection_timeout: Duration,
         pool_size: usize,
         tls_config: Option<ClientTlsConfig>,
         api_key: Option<String>,
+        keepalive_interval: Duration,
+        keepalive_timeout: Duration,
     ) -> Self {
         Self {
             uri_to_pool: Default::default(),
@@ -151,6 +163,8 @@ impl TransportChannelPool {
             pool_size: NonZeroUsize::new(pool_size).unwrap(),
             tls_config,
             api_key,
+            keepalive_interval,
+            keepalive_timeout,
         }
     }
 
@@ -162,6 +176,8 @@ impl TransportChannelPool {
             self.tls_config.clone(),
             MAX_CONNECTIONS_PER_CHANNEL,
             self.pool_size.get(),
+            self.keepalive_interval,
+            self.keepalive_timeout,
         )
         .await
     }

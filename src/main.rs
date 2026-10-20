@@ -325,6 +325,8 @@ fn init_channel_service(
             settings.cluster.p2p.connection_pool_size,
             tls_config,
             api_key,
+            Duration::from_millis(settings.cluster.p2p.keepalive_interval_ms),
+            Duration::from_millis(settings.cluster.p2p.keepalive_timeout_ms),
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
         channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
