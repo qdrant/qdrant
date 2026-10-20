@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use super::block::Block;
 use super::context::GraphBuildContext;
 use super::graph_builder::GraphBuilderMethod;
-use super::local_builder::LocalBuilder;
+use super::local_builder::{LocalBuilder, LocalMethod};
 use super::payload_blocks::FieldBlocks;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
@@ -87,9 +87,14 @@ impl HnswBuilder<'_> {
         debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
         Ok(())
     }
+}
 
-    /// Link one block in its own id space and merge it into the graph. Also the GPU fallback.
-    pub fn build_block(
+impl<'a> LocalMethod<'a> for HnswBuilder<'a> {
+    fn local(&mut self) -> &mut LocalBuilder<'a> {
+        &mut self.0
+    }
+
+    fn build_block(
         &mut self,
         points: &[PointOffsetType],
         counter: &AtomicU64,
@@ -98,41 +103,6 @@ impl HnswBuilder<'_> {
         let local_ids = (0..points.len() as PointOffsetType).collect::<Vec<_>>();
         block.insert(&local_ids, self.0.pool, counter)?;
         block.merge_into(&mut self.0.graph);
-        Ok(())
-    }
-
-    /// Build the blocks of `field` worth building with [`Self::build_block`].
-    pub fn build_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
-        self.build_blocks_with(field, Self::build_block)
-    }
-
-    /// Build the blocks of `field` worth building with `build_block`, which gets the points of
-    /// a block and the progress counter of the field.
-    pub fn build_blocks_with(
-        &mut self,
-        field: FieldBlocks<'_>,
-        mut build_block: impl FnMut(&mut Self, &[PointOffsetType], &AtomicU64) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        let FieldBlocks {
-            progress,
-            skip,
-            blocks,
-            loader,
-        } = field;
-        let counter = progress.track_progress(None);
-        for block in blocks {
-            check_process_stopped(self.0.ctx.stopped)?;
-            // Read the points of one block at a time, and only of blocks small enough to build
-            if !self.0.fits(block.cardinality) {
-                continue;
-            }
-            let Some(block) = loader.load(block)? else {
-                continue;
-            };
-            if self.0.should_build(&block, skip) {
-                build_block(self, &block.points, &counter)?;
-            }
-        }
         Ok(())
     }
 }
@@ -152,5 +122,9 @@ impl GraphBuilderMethod for HnswBuilder<'_> {
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
         Ok(self.0.finalize())
+    }
+
+    fn seeds_payload_blocks(&self) -> bool {
+        false
     }
 }

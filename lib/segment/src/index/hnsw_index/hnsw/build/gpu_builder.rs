@@ -1,13 +1,13 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
 use common::ambient;
 use common::reason::reason;
 use common::types::PointOffsetType;
 
 use super::context::{GraphBuildContext, GraphParams};
-use super::graph_builder::GraphBuilderMethod;
-use super::hnsw_builder::HnswBuilder;
+use super::graph_builder::{CpuBuilder, GraphBuilderMethod};
+use super::local_builder::{LocalBuilder, LocalMethod};
 use super::payload_blocks::FieldBlocks;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
@@ -25,8 +25,9 @@ use crate::index::hnsw_index::hnsw::{
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::VectorStorageRead as _;
 
-/// Inserts points in batches on a GPU. Whatever fails on the GPU is built with HNSW.
-pub(super) struct GpuBuilder<'a>(pub HnswBuilder<'a>, pub GpuState);
+/// Inserts points in batches on a GPU. Whatever fails on the GPU is built on the CPU, by the
+/// method `select` picks without a GPU: the old graph is healed if there is one worth healing.
+pub(super) struct GpuBuilder<'a>(pub CpuBuilder<'a>, pub GpuState);
 
 /// GPU vectors and block insert context, kept across blocks.
 pub(super) struct GpuState {
@@ -161,39 +162,60 @@ impl GpuState {
 
 impl GraphBuilderMethod for GpuBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
-        let GpuBuilder(hnsw, gpu) = self;
-        let Some(progress) = hnsw.0.main_graph_progress.take() else {
-            // No main graph when `m == 0`
+        let GpuBuilder(cpu, gpu) = self;
+        let local = cpu.local();
+        if local.ctx.main_params.hnsw_m.m == 0 {
+            // No main graph
             return Ok(());
-        };
-        progress.start();
-        match gpu.build_main(hnsw.0.ctx, &hnsw.0.graph, &hnsw.0.points)? {
+        }
+        if let Some(progress) = &local.main_graph_progress {
+            progress.start();
+        }
+        match gpu.build_main(local.ctx, &local.graph, &local.points)? {
             Some(graph) => {
-                hnsw.0.graph = graph;
+                local.graph = graph;
                 Ok(())
             }
-            None => hnsw.insert(&hnsw.0.points, progress),
+            None => cpu.build_main(),
         }
     }
 
     fn build_field_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
-        let GpuBuilder(hnsw, gpu) = self;
-        hnsw.build_blocks_with(field, |hnsw, points, counter| {
-            match gpu.build_block(hnsw.0.ctx, points)? {
-                Some(block_graph) => {
-                    hnsw.0.graph.merge_from_other(block_graph);
-                    Ok(())
-                }
-                None => hnsw.build_block(points, counter),
-            }
-        })
+        self.build_blocks(field)
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
-        let GpuBuilder(hnsw, gpu) = self;
+        let GpuBuilder(cpu, gpu) = self;
         // Release the GPU memory before the graph is saved
         drop(gpu);
-        hnsw.finalize()
+        cpu.finalize()
+    }
+
+    fn seeds_payload_blocks(&self) -> bool {
+        // The GPU does not, but the blocks it fails to build are built by the CPU method
+        self.0.seeds_payload_blocks()
+    }
+}
+
+impl<'a> LocalMethod<'a> for GpuBuilder<'a> {
+    fn local(&mut self) -> &mut LocalBuilder<'a> {
+        self.0.local()
+    }
+
+    fn build_block(
+        &mut self,
+        points: &[PointOffsetType],
+        counter: &AtomicU64,
+    ) -> OperationResult<()> {
+        let GpuBuilder(cpu, gpu) = self;
+        let local = cpu.local();
+        match gpu.build_block(local.ctx, points)? {
+            Some(block_graph) => {
+                local.graph.merge_from_other(block_graph);
+                Ok(())
+            }
+            None => cpu.build_block(points, counter),
+        }
     }
 }
 
