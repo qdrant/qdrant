@@ -34,16 +34,19 @@ impl HnswBuilder<'_> {
         points: &[PointOffsetType],
         progress: ProgressTracker,
     ) -> OperationResult<()> {
-        let LocalBuilder {
-            ctx, pool, graph, ..
-        } = &self.0;
+        // Parts of the builder, so that the inserts do not borrow the rng, which is not `Sync`
+        let local = &self.0;
+        let pool = local.pool;
+        let graph = &local.graph;
         let GraphBuildContext {
             id_tracker,
             vector_storage,
             quantized_vectors,
+            progress: _,
+            main_params: _,
+            block_params: _,
             stopped,
-            ..
-        } = *ctx;
+        } = local.ctx;
 
         let timer = std::time::Instant::now();
 

@@ -81,14 +81,7 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
             .take()
             .unwrap_or_else(|| self.hnsw.0.ctx.progress.subtask(MIGRATE_PHASE));
         let main_graph_progress = self.hnsw.0.take_main_graph_progress();
-        let local = &mut self.hnsw.0;
-        let LocalBuilder {
-            ctx,
-            pool,
-            graph,
-            points,
-            ..
-        } = local;
+        let local = &self.hnsw.0;
         let old = self.old;
 
         migrate_progress.start();
@@ -97,23 +90,27 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
 
         old.populate_links();
 
-        let mut healer =
-            GraphLayersHealer::new(old.graph(), &old.old_to_new, ctx.main_params.ef_construct);
+        let mut healer = GraphLayersHealer::new(
+            old.graph(),
+            &old.old_to_new,
+            local.ctx.main_params.ef_construct,
+        );
         let old_vector_storage = old.index.vector_storage.borrow();
         let old_quantized_vectors = old.index.quantized_vectors.borrow();
 
         let counter = migrate_progress.track_progress(Some(healer.to_heal_count() as u64));
         healer.heal(
-            pool,
+            local.pool,
             &old_vector_storage,
             old_quantized_vectors.as_ref(),
-            ctx.stopped,
+            local.ctx.stopped,
             counter.deref(),
         )?;
-        check_process_stopped(ctx.stopped)?;
-        healer.save_into_builder(graph);
+        check_process_stopped(local.ctx.stopped)?;
+        healer.save_into_builder(&local.graph);
 
-        let missing_points = points
+        let missing_points = local
+            .points
             .iter()
             .copied()
             .filter(|&point_id| old.new_to_old[point_id as usize].is_none())
