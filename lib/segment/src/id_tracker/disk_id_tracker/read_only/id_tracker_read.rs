@@ -24,6 +24,9 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
     /// full set. Out-of-range offsets count as deleted; storage errors
     /// propagate.
     fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
+        if self.moves.moved_away.contains(offset) {
+            return Ok(true);
+        }
         Ok(self
             .deleted_file
             .get_bit(u64::from(offset))?
