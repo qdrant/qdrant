@@ -30,7 +30,6 @@ struct Payload {
 #[repr(C)]
 struct PayloadHeader {
     kind: MoveKind,
-    _reserved: [u8; 3],
     peer: uuid::Bytes,
 }
 
@@ -50,7 +49,6 @@ pub(super) fn encode_entry(entry: &MoveEntry, buffer: &mut Vec<u8>) {
     let payload = buffer.len();
     let header = PayloadHeader {
         kind: entry.kind,
-        _reserved: [0; 3],
         peer: entry.peer.into_bytes(),
     };
     buffer.extend_from_slice(header.as_bytes());
