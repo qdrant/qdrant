@@ -180,6 +180,8 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         false
     }
 
+    fn will_need(&self, _byte_ranges: impl Iterator<Item = Range<u64>>) {}
+
     fn clear_ram_cache(&self) -> UioResult<()> {
         Ok(())
     }
