@@ -37,7 +37,7 @@ fn encode(entries: &[MoveEntry]) -> Vec<u8> {
     buffer
 }
 
-/// An entry is its header, 20 payload header bytes, and 8 bytes per pair.
+/// An entry is its header, 17 payload header bytes, and 8 bytes per pair.
 #[test]
 fn entry_round_trip() {
     let entries = [
@@ -45,7 +45,7 @@ fn entry_round_trip() {
         moved_in(u128::MAX - 3, &[(0, u32::MAX)]),
     ];
     let bytes = encode(&entries);
-    assert_eq!(bytes.len(), (8 + 20 + 16) + (8 + 20 + 8));
+    assert_eq!(bytes.len(), (8 + 17 + 16) + (8 + 17 + 8));
 
     let (decoded, consumed) = decode_entries(&bytes);
     assert_eq!(decoded, entries);
