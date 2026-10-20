@@ -19,6 +19,20 @@ use crate::{Cols, TopK};
 /// 8, 12, 16, 32).
 pub(crate) const GROUP: usize = 96;
 
+/// When a tile that unpacks (`UNPACK > 0`) unpacks one side.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unpacking {
+    /// Never: the tile reads that side's packed panels, as `Operand` of `E`'s size.
+    No,
+    /// A row block's panels once per depth slice, a column panel once per row block, so they
+    /// stay in L2 and L1.
+    InBlocks,
+    /// All rows once per call, and all panels of a column block once per block. Costs memory
+    /// for the unpacked values, but no repeated unpacking: for tiles that read their operands
+    /// fast enough for unpacking to show.
+    Whole,
+}
+
 /// A register tile: `MR` rows by `NR` columns, depth consumed `KU` elements at a time.
 pub(crate) trait Micro {
     type E: KernelElem + Plain;
@@ -33,6 +47,20 @@ pub(crate) trait Micro {
     /// Unpacking widens the values of a row block's panels once per depth slice, and of a
     /// column panel once per row block, so the register tile only loads and multiplies.
     const UNPACK: usize = 0;
+    /// When the rows are unpacked, if `UNPACK > 0`.
+    const UNPACK_ROWS: Unpacking = Unpacking::InBlocks;
+    /// When the columns are unpacked, if `UNPACK > 0`.
+    const UNPACK_COLS: Unpacking = Unpacking::InBlocks;
+    /// `Operand` values after each unpacked row panel, which [`Self::unpack`] writes for the
+    /// tile: per-row sums, say.
+    const ROW_EXTRA: usize = 0;
+
+    /// Values per lane of a panel of `kc` elements after [`Self::unpack`]: `kc · UNPACK`,
+    /// unless the tile rounds it up.
+    #[inline(always)]
+    fn unpacked_lane(kc: usize) -> usize {
+        kc * Self::UNPACK
+    }
 
     /// Rows of a tile.
     const MR: usize;
@@ -53,8 +81,9 @@ pub(crate) trait Micro {
     /// threads), both cost from 4x off the best value on.
     const NC: usize;
 
-    /// Writes the `kc · UNPACK` values per lane of a panel of `kc` elements, of `MR` lanes if
-    /// `rows`, else `NR`, to `dst`, 32-byte aligned.
+    /// Writes the [`Self::unpacked_lane`] values per lane of a panel of `kc` elements, of `MR`
+    /// lanes and then [`Self::ROW_EXTRA`] values if `rows`, else of `NR` lanes, to `dst`,
+    /// 32-byte aligned.
     ///
     /// # Safety
     ///
@@ -195,6 +224,66 @@ impl Panels {
     fn offset(&self, s: usize, panel: usize) -> usize {
         s * self.kc * self.panels * self.w + panel * self.slice_depth(s) * self.w
     }
+
+    /// Size of panel of slice `s` unpacked by `M`, with `extra` values after it.
+    fn unpacked_size<M: Micro>(&self, s: usize, extra: usize) -> usize {
+        self.w * M::unpacked_lane(self.slice_depth(s)) + extra
+    }
+
+    /// [`Self::offset`] in the whole unpacked side, see [`Unpacking::Whole`].
+    fn unpacked_offset<M: Micro>(&self, s: usize, panel: usize, extra: usize) -> usize {
+        // All slices before the last are full
+        s * self.panels * self.unpacked_size::<M>(0, extra)
+            + panel * self.unpacked_size::<M>(s, extra)
+    }
+
+    fn unpacked_len<M: Micro>(&self, extra: usize) -> usize {
+        let last = self.slices() - 1;
+        self.unpacked_offset::<M>(last, self.panels, extra)
+    }
+}
+
+/// How the tile `M` gets the values of the rows, or of the columns.
+const fn unpacking<M: Micro>(rows: bool) -> Unpacking {
+    if M::UNPACK == 0 {
+        Unpacking::No
+    } else if rows {
+        M::UNPACK_ROWS
+    } else {
+        M::UNPACK_COLS
+    }
+}
+
+/// Unpacks all panels of `packed` in `layout` into `buf`, see [`Unpacking::Whole`].
+#[inline(always)]
+fn unpack_whole<'a, M: Micro>(
+    layout: &Panels,
+    packed: &[M::E],
+    rows: bool,
+    buf: &'a mut AlignedBuf,
+    param: <M::E as KernelElem>::Param<'_>,
+) -> &'a mut [M::Operand] {
+    let extra = if rows { M::ROW_EXTRA } else { 0 };
+    let unpacked = buf.get::<M::Operand>(layout.unpacked_len::<M>(extra));
+    assert!(packed.len() >= layout.len());
+    for s in 0..layout.slices() {
+        for panel in 0..layout.panels {
+            // SAFETY: the panel within the packed values, its unpacked values within the
+            // buffer: `unpacked_len` sums up the sizes of all panels. The caller checked the CPU.
+            unsafe {
+                M::unpack(
+                    layout.slice_depth(s),
+                    packed.as_ptr().add(layout.offset(s, panel)),
+                    rows,
+                    unpacked
+                        .as_mut_ptr()
+                        .add(layout.unpacked_offset::<M>(s, panel, extra)),
+                    param,
+                );
+            }
+        }
+    }
+    unpacked
 }
 
 /// Decodes `ids` and packs them in `layout` into `out`, their values for [`Combine`] into
@@ -343,8 +432,18 @@ pub(crate) fn top_k<M: Micro, F: MatrixOperands<Elem = M::E>>(
     if m == 0 || n == 0 {
         return Ok(());
     }
-    // The packed panels are read as `Operand` unless the tile unpacks them
-    const { assert!(M::UNPACK > 0 || size_of::<M::Operand>() == size_of::<M::E>()) };
+    let (unpack_rows, unpack_cols) = (
+        const { unpacking::<M>(true) },
+        const { unpacking::<M>(false) },
+    );
+    // The packed panels of a side are read as `Operand` unless the tile unpacks them
+    const {
+        assert!(
+            (!matches!(unpacking::<M>(true), Unpacking::No)
+                && !matches!(unpacking::<M>(false), Unpacking::No))
+                || size_of::<M::Operand>() == size_of::<M::E>()
+        )
+    };
     let depth = operands.depth();
     let combine = operands.combine();
     let param = operands.param();
@@ -357,6 +456,16 @@ pub(crate) fn top_k<M: Micro, F: MatrixOperands<Elem = M::E>>(
     let a_layout = Panels::new(m, M::MR, depth, M::KC, M::KU);
     let a = s.rows.get::<M::E>(a_layout.len());
     pack::<M, F>(operands, rows, &a_layout, a, &mut s.row_aux, &mut s.decoded)?;
+    // Values per panel and lane after unpacking, of a full depth slice
+    let full_lane = M::unpacked_lane(a_layout.kc);
+    // Unpacked rows: all of them, or a row block's panels of one depth slice
+    let rows_unpacked: &mut [M::Operand] = match unpack_rows {
+        Unpacking::No => &mut [],
+        Unpacking::InBlocks => s
+            .unpacked_rows
+            .get(M::MC.div_ceil(M::MR) * (M::MR * full_lane + M::ROW_EXTRA)),
+        Unpacking::Whole => unpack_whole::<M>(&a_layout, a, true, &mut s.unpacked_rows, param),
+    };
     for j0 in (0..n).step_by(M::NC) {
         let j1 = (j0 + M::NC).min(n);
         let b_layout = Panels::new(j1 - j0, M::NR, depth, M::KC, M::KU);
@@ -369,6 +478,12 @@ pub(crate) fn top_k<M: Micro, F: MatrixOperands<Elem = M::E>>(
             &mut s.col_aux[j0..j1],
             &mut s.decoded,
         )?;
+        // Unpacked columns: all of the block, or one panel of one depth slice
+        let cols_unpacked: &mut [M::Operand] = match unpack_cols {
+            Unpacking::No => &mut [],
+            Unpacking::InBlocks => s.unpacked_cols.get(M::NR * full_lane),
+            Unpacking::Whole => unpack_whole::<M>(&b_layout, b, false, &mut s.unpacked_cols, param),
+        };
         // The triangle needs only rows below the block's last column
         let r_end = if triangle { j1 } else { m };
         for r0 in (0..r_end).step_by(M::MC) {
@@ -380,42 +495,48 @@ pub(crate) fn top_k<M: Micro, F: MatrixOperands<Elem = M::E>>(
             for slice in 0..b_layout.slices() {
                 let kc = b_layout.slice_depth(slice);
                 let k0 = b_layout.slice_start(slice);
-                // Values per panel and lane after unpacking
-                let lane = kc * M::UNPACK;
-                let rows_unpacked = s
-                    .unpacked_rows
-                    .get::<M::Operand>((rp1 - rp0) * M::MR * lane);
-                if M::UNPACK > 0 {
+                // Values per panel and lane after unpacking, and of a row panel
+                let lane = M::unpacked_lane(kc);
+                let row_panel = M::MR * lane + M::ROW_EXTRA;
+                if unpack_rows == Unpacking::InBlocks {
                     for rp in rp0..rp1 {
-                        // SAFETY: the panel within the packed rows, `MR` lanes of values within
-                        // the buffer. The caller checked the CPU.
+                        // SAFETY: the panel within the packed rows, `MR` lanes of values and
+                        // the extra ones within the buffer, sized for `MC` rows of a full
+                        // slice. The caller checked the CPU.
                         unsafe {
                             M::unpack(
                                 kc,
                                 a.as_ptr().add(a_layout.offset(slice, rp)),
                                 true,
-                                rows_unpacked.as_mut_ptr().add((rp - rp0) * M::MR * lane),
+                                rows_unpacked.as_mut_ptr().add((rp - rp0) * row_panel),
                                 param,
                             );
                         }
                     }
                 }
                 for p in p0..p1 {
-                    let b = b[b_layout.offset(slice, p - j0 / M::NR)..].as_ptr();
-                    let cols_unpacked = s.unpacked_cols.get::<M::Operand>(M::NR * lane);
-                    let b = if M::UNPACK > 0 {
-                        // SAFETY: as for the rows
-                        unsafe { M::unpack(kc, b, false, cols_unpacked.as_mut_ptr(), param) };
-                        cols_unpacked.as_ptr()
-                    } else {
+                    let b = match unpack_cols {
                         // The tile reads `E`, see `UNPACK`
-                        b.cast()
+                        Unpacking::No => {
+                            b[b_layout.offset(slice, p - j0 / M::NR)..].as_ptr().cast()
+                        }
+                        Unpacking::InBlocks => {
+                            let b = b[b_layout.offset(slice, p - j0 / M::NR)..].as_ptr();
+                            // SAFETY: as for the rows
+                            unsafe { M::unpack(kc, b, false, cols_unpacked.as_mut_ptr(), param) };
+                            cols_unpacked.as_ptr()
+                        }
+                        Unpacking::Whole => cols_unpacked
+                            [b_layout.unpacked_offset::<M>(slice, p - j0 / M::NR, 0)..]
+                            .as_ptr(),
                     };
                     for rp in rp0..rp1 {
-                        let a = if M::UNPACK > 0 {
-                            rows_unpacked[(rp - rp0) * M::MR * lane..].as_ptr()
-                        } else {
-                            a[a_layout.offset(slice, rp)..].as_ptr().cast()
+                        let a = match unpack_rows {
+                            Unpacking::No => a[a_layout.offset(slice, rp)..].as_ptr().cast(),
+                            Unpacking::InBlocks => rows_unpacked[(rp - rp0) * row_panel..].as_ptr(),
+                            Unpacking::Whole => rows_unpacked
+                                [a_layout.unpacked_offset::<M>(slice, rp, M::ROW_EXTRA)..]
+                                .as_ptr(),
                         };
                         // SAFETY: both panels are within their packed or unpacked buffers,
                         // and the tile within `block`: rows `(rp - rp0) * MR..+MR <= MC`,
