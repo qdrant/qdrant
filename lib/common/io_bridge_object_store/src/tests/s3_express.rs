@@ -12,8 +12,14 @@ use crate::backend::BlobBackend as _;
 use crate::backends::aws::{AwsConfig, AwsCredentials};
 
 #[test]
-#[ignore = "requires S3_EXPRESS_BUCKET, AWS_REGION and AWS credentials"]
+#[ignore = "requires S3 Express credentials and S3_EXPRESS_INTEGRATION_TEST=1"]
 fn native_append_preserves_s3_express_object_checksums() {
+    if std::env::var("S3_EXPRESS_INTEGRATION_TEST").as_deref() != Ok("1") {
+        eprintln!(
+            "skipping S3 Express integration test; set S3_EXPRESS_INTEGRATION_TEST=1 to enable"
+        );
+        return;
+    }
     let bucket = std::env::var("S3_EXPRESS_BUCKET").expect("S3_EXPRESS_BUCKET");
     let region = std::env::var("AWS_REGION").expect("AWS_REGION");
     let config = AwsConfig {
