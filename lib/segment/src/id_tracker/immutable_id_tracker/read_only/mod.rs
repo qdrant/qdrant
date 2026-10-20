@@ -1,6 +1,8 @@
 pub mod id_tracker_read;
 mod lifecycle;
 mod live_reload;
+#[cfg(test)]
+mod moves_tests;
 
 use std::path::PathBuf;
 
