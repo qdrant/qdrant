@@ -17,6 +17,7 @@
 //! [`format`] for the entry layout.
 
 mod format;
+mod regular;
 mod slot_moves;
 mod state;
 mod view;
@@ -33,6 +34,7 @@ use common::types::PointOffsetType;
 use uuid::Uuid;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
+pub use self::regular::apply_unexpected_point_moves;
 pub use self::slot_moves::SlotMoves;
 pub use self::state::{MoveResolution, PointMoves};
 pub use self::view::PointMovesView;
