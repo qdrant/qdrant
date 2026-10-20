@@ -22,6 +22,13 @@ pub(super) struct GraphBuildContext<'a> {
     pub stopped: &'a AtomicBool,
 }
 
+impl GraphBuildContext<'_> {
+    /// Whether the main graph gets built. Without it (`m == 0`), only payload blocks link points.
+    pub fn has_main_graph(&self) -> bool {
+        self.main_params.hnsw_m.m > 0
+    }
+}
+
 /// Parameters of one kind of graph.
 #[derive(Clone, Copy)]
 pub(super) struct GraphParams {

@@ -74,7 +74,7 @@ impl BlockFilter {
         // So blocks larger than $1/m$ are not needed.
         // We add multiplier for the extra safety.
         const PERCOLATION_MULTIPLIER: usize = 4;
-        let max_block_size = if ctx.main_params.hnsw_m.m > 0 {
+        let max_block_size = if ctx.has_main_graph() {
             ctx.vector_storage.total_vector_count() / average_links_per_0_level_int
                 * PERCOLATION_MULTIPLIER
         } else {

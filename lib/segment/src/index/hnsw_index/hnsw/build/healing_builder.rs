@@ -22,6 +22,9 @@ use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::hnsw::old_index::{OldIndex, payload_links_reusable};
 use crate::vector_storage::VectorStorageRead as _;
 
+/// Progress phase of healing the old graph.
+const MIGRATE_PHASE: &str = "migrate";
+
 /// Heals the graph of an older segment, then inserts the points it lacks with HNSW.
 ///
 /// Payload blocks start from the links their points had to each other in the old graph, if it
@@ -29,7 +32,8 @@ use crate::vector_storage::VectorStorageRead as _;
 pub(super) struct HealingBuilder<'a> {
     hnsw: HnswBuilder<'a>,
     old: &'a OldIndex<'a>,
-    /// Progress of healing the old graph. Taken by `build_main`, `None` when `m == 0`.
+    /// Progress of healing the old graph, created with the builder so that it is listed before
+    /// the main graph. `None` without a main graph, or once taken by `build_main`.
     migrate_progress: Option<ProgressTracker>,
     /// `None` if the payload links of the old graph cannot be reused.
     seeds: Option<BlockSeeds<'a>>,
@@ -47,8 +51,9 @@ impl<'a> HealingBuilder<'a> {
         rng: &'a mut dyn Rng,
         old: &'a OldIndex<'a>,
     ) -> OperationResult<Self> {
-        let migrate_progress =
-            (ctx.main_params.hnsw_m.m > 0).then(|| ctx.progress.subtask("migrate"));
+        let migrate_progress = ctx
+            .has_main_graph()
+            .then(|| ctx.progress.subtask(MIGRATE_PHASE));
         let hnsw = HnswBuilder(LocalBuilder::new(ctx, pool, rng, Some(old))?);
 
         let payload_m = ctx.block_params.hnsw_m;
@@ -68,14 +73,15 @@ impl<'a> HealingBuilder<'a> {
 
 impl GraphBuilderMethod for HealingBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
-        let local = &mut self.hnsw.0;
-        let (Some(migrate_progress), Some(main_graph_progress)) = (
-            self.migrate_progress.take(),
-            local.main_graph_progress.take(),
-        ) else {
-            // No main graph when `m == 0`
+        if !self.hnsw.0.ctx.has_main_graph() {
             return Ok(());
-        };
+        }
+        let migrate_progress = self
+            .migrate_progress
+            .take()
+            .unwrap_or_else(|| self.hnsw.0.ctx.progress.subtask(MIGRATE_PHASE));
+        let main_graph_progress = self.hnsw.0.take_main_graph_progress();
+        let local = &mut self.hnsw.0;
         let LocalBuilder {
             ctx,
             pool,

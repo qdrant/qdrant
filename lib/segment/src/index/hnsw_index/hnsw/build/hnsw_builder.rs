@@ -109,10 +109,10 @@ impl<'a> LocalMethod<'a> for HnswBuilder<'a> {
 
 impl GraphBuilderMethod for HnswBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
-        let Some(progress) = self.0.main_graph_progress.take() else {
-            // No main graph when `m == 0`
+        if !self.0.ctx.has_main_graph() {
             return Ok(());
-        };
+        }
+        let progress = self.0.take_main_graph_progress();
         self.insert(&self.0.points, progress)
     }
 
