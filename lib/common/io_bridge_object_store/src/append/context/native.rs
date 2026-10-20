@@ -19,8 +19,8 @@ use common::universal_io::{UioResult, UniversalIoError};
 use object_store::ObjectStoreExt as _;
 use object_store::aws::{AmazonS3, AwsAuthorizer};
 use object_store::client::HttpRequestBody;
-use sha2::{Digest as _, Sha256};
 
+use super::crc64nvme;
 use super::part_copy::PartCopyAppend;
 use super::signed::SignedRequestContext;
 
@@ -42,10 +42,6 @@ const NO_SUCH_KEY_CODE: &str = "NoSuchKey";
 /// appended blocks (10,000 parts); the object can only keep growing through
 /// a whole-object rewrite.
 const TOO_MANY_PARTS_CODE: &str = "TooManyParts";
-
-const SHA256_CHECKSUM_HEADER: &str = "x-amz-checksum-sha256";
-const SHA256_MISMATCH_MESSAGE: &str =
-    "Checksum Type mismatch occurred, expected checksum Type: sha256,";
 
 /// Retry limit for connection errors, 5xx and 429 responses.
 const MAX_ATTEMPTS: u32 = 3;
@@ -109,7 +105,7 @@ async fn append_request(
     // object_store crate does not support the append operation.
     // See: <https://github.com/apache/arrow-rs-object-store/issues/632>
     let mut attempt = 1;
-    let mut checksum_sha256 = None::<[u8; 32]>;
+    let checksum = crc64nvme(&data);
     let mut may_have_appended = false;
     loop {
         // Built and signed per attempt: the SigV4 signature embeds the
@@ -118,14 +114,8 @@ async fn append_request(
         let mut request = http::Request::builder()
             .method(http::Method::PUT)
             .uri(url.as_str())
-            .header(WRITE_OFFSET_HEADER, offset.to_string());
-        if let Some(checksum) = &checksum_sha256 {
-            request = request.header(
-                SHA256_CHECKSUM_HEADER,
-                data_encoding::BASE64.encode(checksum),
-            );
-        }
-        let mut request = request
+            .header(WRITE_OFFSET_HEADER, offset.to_string())
+            .header("x-amz-checksum-crc64nvme", &checksum)
             .body(HttpRequestBody::from(data.clone()))
             .map_err(|err| UniversalIoError::S3Config {
                 description: format!("append request for {key}: {err}"),
@@ -135,10 +125,7 @@ async fn append_request(
         // write-offset header) plus the payload SHA-256, and adds
         // host/date/token headers.
         AwsAuthorizer::new(&credential, context.service, &context.region)
-            .try_authorize(
-                &mut request,
-                checksum_sha256.as_ref().map(|digest| digest.as_slice()),
-            )
+            .try_authorize(&mut request, None)
             .map_err(UniversalIoError::s3)?;
 
         let response = match client.execute(request).await {
@@ -208,18 +195,6 @@ async fn append_request(
         // Read the body for the S3 error code (best-effort).
         let body = response.into_body().bytes().await.unwrap_or_default();
         let body_text = String::from_utf8_lossy(&body);
-
-        if status == http::StatusCode::BAD_REQUEST
-            && checksum_sha256.is_none()
-            && super::extract_xml_tag(&body_text, "Code") == Some("InvalidRequest")
-            && super::extract_xml_tag(&body_text, "Message")
-                .is_some_and(|message| message.starts_with(SHA256_MISMATCH_MESSAGE))
-        {
-            // Earlier attempts without the required checksum could not have written.
-            checksum_sha256 = Some(<[u8; 32]>::from(Sha256::digest(&data)));
-            may_have_appended = false;
-            continue;
-        }
 
         // The appended-block cap is a permanent property of the object —
         // report it as rewrite-required so the caller can recover, instead

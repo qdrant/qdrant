@@ -14,86 +14,45 @@ fn checksum_mismatch() -> StubResponse {
 }
 
 #[test]
-fn sha256_checksum_mismatch_retries_with_the_appended_bytes_checksum() {
-    let (endpoint, seen) = stub_server(vec![checksum_mismatch(), success_with_size(9)]);
-
+fn append_always_sends_the_crc64nvme_of_the_new_bytes() {
+    let (endpoint, seen) = stub_server(vec![success_with_size(9)]);
     assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
 
     let seen = seen.lock().unwrap();
-    let [first, retry] = &seen[..] else {
-        panic!("expected the initial append and one checksum retry");
+    let [request] = &seen[..] else {
+        panic!("expected one append");
     };
-    assert!(!first.headers.contains_key("x-amz-checksum-sha256"));
-    assert_eq!(
-        retry.headers["x-amz-checksum-sha256"],
-        "Om6weQ85rIfJTzhWst0sXREOaBFgImGpqSPTuyOtyLc=",
-    );
+    assert_eq!(request.headers["x-amz-checksum-crc64nvme"], "7a5hQ478J4A=");
+    assert!(!request.headers.contains_key("x-amz-checksum-sha256"));
     assert!(
-        retry.headers["authorization"]
+        request.headers["authorization"]
             .to_str()
             .unwrap()
-            .contains("x-amz-checksum-sha256"),
+            .contains("x-amz-checksum-crc64nvme")
     );
-    for request in &seen[..] {
-        assert_eq!(request.method, "PUT");
-        assert_eq!(request.write_offset.as_deref(), Some("5"));
-        assert_eq!(request.body, b"data");
-    }
+    assert_eq!(request.write_offset.as_deref(), Some("5"));
+    assert_eq!(request.body, b"data");
 }
 
 #[test]
-fn repeated_checksum_mismatch_is_not_retried_again() {
-    let (endpoint, seen) = stub_server(vec![
-        checksum_mismatch(),
-        checksum_mismatch(),
-        success_with_size(9),
-    ]);
-
+fn checksum_mismatch_stops_without_switching_algorithms() {
+    let (endpoint, seen) = stub_server(vec![checksum_mismatch()]);
     let err = append_data_at(&endpoint, 5).unwrap_err();
+    assert!(err.to_string().contains("Checksum Type mismatch"), "{err}");
+    assert_eq!(seen.lock().unwrap().len(), 1);
+}
 
+#[test]
+fn checksum_mismatch_after_an_uncertain_write_does_not_retry_or_reconcile() {
+    let (endpoint, seen) = stub_server(vec![StubResponse::new(503), checksum_mismatch()]);
+    let err = append_data_at(&endpoint, 5).unwrap_err();
     assert!(err.to_string().contains("Checksum Type mismatch"), "{err}");
     assert_eq!(seen.lock().unwrap().len(), 2);
 }
 
 #[test]
-fn checksum_rejection_does_not_allow_reconciling_a_foreign_append() {
+fn crc64nvme_append_preserves_lost_acknowledgement_recovery() {
     let (endpoint, seen) = stub_server(vec![
-        checksum_mismatch(),
-        write_offset_conflict(),
-        head_with_size(9),
-    ]);
-
-    let err = append_data_at(&endpoint, 5).unwrap_err();
-
-    assert_matches!(
-        err,
-        UniversalIoError::AppendOffsetConflict { offset: 5, .. }
-    );
-    assert_eq!(seen.lock().unwrap().len(), 2);
-}
-
-#[test]
-fn checksum_rejection_clears_prior_uncertain_writes() {
-    let (endpoint, seen) = stub_server(vec![
-        StubResponse::new(503),
-        checksum_mismatch(),
-        write_offset_conflict(),
-        head_with_size(9),
-    ]);
-
-    let err = append_data_at(&endpoint, 5).unwrap_err();
-
-    assert_matches!(
-        err,
-        UniversalIoError::AppendOffsetConflict { offset: 5, .. }
-    );
-    assert_eq!(seen.lock().unwrap().len(), 3);
-}
-
-#[test]
-fn checksum_retry_preserves_lost_acknowledgement_recovery() {
-    let (endpoint, seen) = stub_server(vec![
-        checksum_mismatch(),
         StubResponse::new(503),
         write_offset_conflict(),
         head_with_size(9),
@@ -102,25 +61,12 @@ fn checksum_retry_preserves_lost_acknowledgement_recovery() {
     assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
 
     let seen = seen.lock().unwrap();
-    assert_eq!(seen.len(), 4);
-    assert_eq!(seen[3].method, "HEAD");
-    assert_eq!(
-        seen[1].headers["x-amz-checksum-sha256"],
-        seen[2].headers["x-amz-checksum-sha256"],
-    );
-}
-
-#[test]
-fn checksum_retry_does_not_consume_a_transient_retry() {
-    let (endpoint, seen) = stub_server(vec![
-        StubResponse::new(503),
-        StubResponse::new(503),
-        checksum_mismatch(),
-        success_with_size(9),
-    ]);
-
-    assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
-    assert_eq!(seen.lock().unwrap().len(), 4);
+    assert_eq!(seen.len(), 3);
+    assert_eq!(seen[2].method, "HEAD");
+    for request in &seen[..2] {
+        assert_eq!(request.headers["x-amz-checksum-crc64nvme"], "7a5hQ478J4A=");
+        assert!(!request.headers.contains_key("x-amz-checksum-sha256"));
+    }
 }
 
 #[test]

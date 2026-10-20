@@ -13,7 +13,7 @@ use crate::backends::aws::{AwsConfig, AwsCredentials};
 
 #[test]
 #[ignore = "requires S3 Express credentials and S3_EXPRESS_INTEGRATION_TEST=1"]
-fn native_append_preserves_s3_express_object_checksums() {
+fn native_append_accepts_crc64nvme_and_rejects_sha256() {
     if std::env::var("S3_EXPRESS_INTEGRATION_TEST").as_deref() != Ok("1") {
         eprintln!(
             "skipping S3 Express integration test; set S3_EXPRESS_INTEGRATION_TEST=1 to enable"
@@ -74,12 +74,14 @@ fn native_append_preserves_s3_express_object_checksums() {
             };
             store.delete(&object_key).await.expect("delete test object");
 
-            assert_eq!(appended.unwrap(), 26, "{label}");
-            assert_eq!(
-                contents.unwrap(),
-                b"checksum-probe-seed-append"[..],
-                "{label}"
-            );
+            if algorithm == Checksum::CRC64NVME {
+                assert_eq!(appended.unwrap(), 26, "{label}");
+                assert_eq!(contents.unwrap(), b"checksum-probe-seed-append"[..]);
+            } else {
+                let err = appended.unwrap_err();
+                assert!(err.to_string().contains("Checksum Type mismatch"), "{err}");
+                assert_eq!(contents.unwrap(), b"checksum-probe-seed"[..]);
+            }
         });
     }
 }
