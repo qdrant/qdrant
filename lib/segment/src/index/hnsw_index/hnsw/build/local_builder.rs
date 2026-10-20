@@ -15,6 +15,9 @@ use crate::index::hnsw_index::hnsw::HNSW_USE_HEURISTIC;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
 use crate::vector_storage::VectorStorageRead;
 
+/// Progress phase of linking points into the main graph.
+const MAIN_GRAPH_PHASE: &str = "main_graph";
+
 /// State shared by every method that builds the graph on this machine. The methods wrap it
 /// and implement the algorithms themselves.
 pub(super) struct LocalBuilder<'a> {
@@ -27,7 +30,9 @@ pub(super) struct LocalBuilder<'a> {
     /// The segment graph, with `main_params` and every point's level from the start,
     /// so it is there for blocks even when `m == 0`.
     pub graph: GraphLayersBuilder,
-    /// Progress of linking the main graph. Taken by `build_main`, `None` when `m == 0`.
+    /// Progress of linking the main graph, created with the builder so that it is listed before
+    /// the payload blocks. `None` without a main graph, or once taken by
+    /// [`Self::take_main_graph_progress`].
     pub main_graph_progress: Option<ProgressTracker>,
     /// Decides which blocks get built. Created from `graph` at the first block.
     block_filter: Option<BlockFilter>,
@@ -67,7 +72,9 @@ impl<'a> LocalBuilder<'a> {
             graph.set_levels(point_id, level);
         }
 
-        let main_graph_progress = (hnsw_m.m > 0).then(|| ctx.progress.subtask("main_graph"));
+        let main_graph_progress = ctx
+            .has_main_graph()
+            .then(|| ctx.progress.subtask(MAIN_GRAPH_PHASE));
 
         Ok(Self {
             ctx,
@@ -78,6 +85,14 @@ impl<'a> LocalBuilder<'a> {
             main_graph_progress,
             block_filter: None,
         })
+    }
+
+    /// The progress of linking the main graph, for `build_main`. Created here if it was taken
+    /// already, so the main graph is never skipped for want of it.
+    pub fn take_main_graph_progress(&mut self) -> ProgressTracker {
+        self.main_graph_progress
+            .take()
+            .unwrap_or_else(|| self.ctx.progress.subtask(MAIN_GRAPH_PHASE))
     }
 
     /// Whether a block of `cardinality` points is small enough to build. Checked before its

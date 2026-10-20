@@ -164,7 +164,7 @@ impl GraphBuilderMethod for GpuBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
         let GpuBuilder(cpu, gpu) = self;
         let local = cpu.local();
-        if local.ctx.main_params.hnsw_m.m == 0 {
+        if !local.ctx.has_main_graph() {
             // No main graph
             return Ok(());
         }

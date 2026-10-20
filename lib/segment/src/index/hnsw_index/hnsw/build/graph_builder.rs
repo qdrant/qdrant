@@ -88,7 +88,7 @@ impl<'a> GraphBuilder<'a> {
 
         #[cfg(feature = "gpu")]
         if let Some(gpu_device) = gpu_device
-            && (ctx.main_params.hnsw_m.m > 0 || has_payload_blocks)
+            && (ctx.has_main_graph() || has_payload_blocks)
             && ctx.vector_storage.total_vector_count() >= SINGLE_THREADED_HNSW_BUILD_THRESHOLD
             && let Some(gpu) = GpuState::new(ctx, gpu_device)?
         {
