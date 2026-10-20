@@ -135,7 +135,18 @@ impl Sealed for Codes2 {
         out: &mut TopK,
     ) -> Result<(), F::Error> {
         // SAFETY: AVX2 and FMA from the caller
-        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 4) }
+        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 4, false) }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn top_k_avx512_vnni<F: MatrixOperands<Elem = Self>>(
+        operands: &F,
+        rows: &[PointOffsetType],
+        cols: Cols<'_>,
+        out: &mut TopK,
+    ) -> Result<(), F::Error> {
+        // SAFETY: AVX-512F, AVX-512 VNNI, AVX2, and FMA from the caller
+        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 4, true) }
     }
 
     /// No NEON kernel: TurboQuant decodes these codes to f32 on aarch64 instead
@@ -159,7 +170,18 @@ impl Sealed for Codes4 {
         out: &mut TopK,
     ) -> Result<(), F::Error> {
         // SAFETY: AVX2 and FMA from the caller
-        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 2) }
+        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 2, false) }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn top_k_avx512_vnni<F: MatrixOperands<Elem = Self>>(
+        operands: &F,
+        rows: &[PointOffsetType],
+        cols: Cols<'_>,
+        out: &mut TopK,
+    ) -> Result<(), F::Error> {
+        // SAFETY: AVX-512F, AVX-512 VNNI, AVX2, and FMA from the caller
+        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 2, true) }
     }
 
     /// No NEON kernel: TurboQuant decodes these codes to f32 on aarch64 instead
@@ -183,7 +205,18 @@ impl Sealed for Codes8 {
         out: &mut TopK,
     ) -> Result<(), F::Error> {
         // SAFETY: AVX2 and FMA from the caller
-        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 1) }
+        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 1, false) }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn top_k_avx512_vnni<F: MatrixOperands<Elem = Self>>(
+        operands: &F,
+        rows: &[PointOffsetType],
+        cols: Cols<'_>,
+        out: &mut TopK,
+    ) -> Result<(), F::Error> {
+        // SAFETY: AVX-512F, AVX-512 VNNI, AVX2, and FMA from the caller
+        unsafe { x86_codes::<Self, F>(operands, rows, cols, out, 1, true) }
     }
 
     /// No NEON kernel: TurboQuant decodes these codes to f32 on aarch64 instead
@@ -198,12 +231,12 @@ impl Sealed for Codes8 {
     }
 }
 
-/// The x86 kernel of a code type with `codes` per element, or the scalar one past the depth
-/// its i32 sums hold.
+/// The x86 kernel of a code type with `codes` per element, VNNI or AVX2, or the scalar one past
+/// the depth its i32 sums hold.
 ///
 /// # Safety
 ///
-/// The CPU must support AVX2 and FMA.
+/// The CPU must support AVX2 and FMA, and if `vnni`, AVX-512F and AVX-512 VNNI.
 #[cfg(target_arch = "x86_64")]
 unsafe fn x86_codes<E, F>(
     operands: &F,
@@ -211,14 +244,21 @@ unsafe fn x86_codes<E, F>(
     cols: Cols<'_>,
     out: &mut TopK,
     codes: usize,
+    vnni: bool,
 ) -> Result<(), F::Error>
 where
-    E: crate::x86_64::Unpack,
+    E: crate::x86_64::Unpack + crate::x86_64::Vnni,
     F: MatrixOperands<Elem = E>,
 {
     if operands.depth() * codes > crate::x86_64::MAX_CODES {
         return crate::fallback::top_k(operands, rows, cols, out);
     }
-    // SAFETY: AVX2 and FMA from the caller, the depth checked above
-    unsafe { crate::x86_64::top_k_codes(operands, rows, cols, out) }
+    // SAFETY: the CPU from the caller, the depth checked above
+    unsafe {
+        if vnni {
+            crate::x86_64::top_k_vnni(operands, rows, cols, out)
+        } else {
+            crate::x86_64::top_k_codes(operands, rows, cols, out)
+        }
+    }
 }
