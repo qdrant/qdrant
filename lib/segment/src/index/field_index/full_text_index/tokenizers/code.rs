@@ -17,15 +17,13 @@ use super::TokensProcessor;
 /// - a run that starts with a digit is a number literal and is kept whole, without its `_`
 ///   separators (`1_000_000` -> `1000000`, `0xFF`, `3e10`).
 ///
-/// Documents index the subwords in text order, followed by every `camelCase` identifier joined into
-/// one token (`getUserName` -> `getusername`, `test_getUserName` -> `getusername`). Queries are
-/// split into subwords only. Together, a query for `getUserName`, `get_user_name`, `GetUserName`
-/// or `user name` finds all four spellings, and a query for `getusername` or `hashmap` finds the
-/// `camelCase` identifier.
+/// Documents index the subwords in text order, followed by each `camelCase` run and each
+/// `snake_case` identifier joined into one token (`getUserName`, `get_user_name` ->
+/// `getusername`). Filter queries are split into subwords only. Ranking queries also get the
+/// joined tokens, so an exact identifier ranks first.
 ///
-/// Only `camelCase` is joined: people type it as one lowercase word, while they type `snake_case`
-/// with its `_`, which splits into subwords already. And only when tokens are lowercased: a query
-/// word with case changes is split, so it would never match a joined identifier that keeps them.
+/// Identifiers are joined only when tokens are lowercased: a query word with case changes is
+/// split, so it would never match a joined identifier that keeps them.
 ///
 /// Joined identifiers are detached from the document's token sequence: phrase queries are made
 /// of subwords, and the index keeps a joined identifier apart from all other tokens, so it only
@@ -55,6 +53,17 @@ impl CodeTokenizer {
                     .lowercase
                     .then_some(&mut push_joined as &mut dyn FnMut(Cow<'a, str>)),
             );
+
+            // `snake_case`: the whole identifier without its `_`
+            let is_snake = !word.starts_with(|c: char| c.is_ascii_digit())
+                && word.split('_').filter(|part| !part.is_empty()).count() > 1;
+            if tokens_processor.lowercase
+                && is_snake
+                && let Some(token) =
+                    tokens_processor.process_token_cow(Cow::Owned(word.replace('_', "")), true)
+            {
+                push_joined(token);
+            }
         });
 
         for token in joined {
@@ -341,7 +350,9 @@ fn split_classes(
 
 #[cfg(test)]
 mod tests {
+    use super::super::Tokenizer;
     use super::*;
+    use crate::data_types::index::TokenizerType;
 
     fn doc(text: &str) -> Vec<String> {
         let mut tokens = Vec::new();
@@ -412,8 +423,21 @@ mod tests {
         assert_eq!(
             doc(text),
             [
-                "let", "map", "hash", "map", "string", "u32", "self", "get", "user", "name",
-                "user", "id", "hashmap",
+                "let",
+                "map",
+                "hash",
+                "map",
+                "string",
+                "u32",
+                "self",
+                "get",
+                "user",
+                "name",
+                "user",
+                "id",
+                "hashmap",
+                "getusername",
+                "userid",
             ],
         );
         assert_eq!(
@@ -423,6 +447,27 @@ mod tests {
                 "user", "id",
             ],
         );
+    }
+
+    #[test]
+    fn test_ranking_query() {
+        let ranking = |tokenizer_type, text| {
+            let mut tokens = Vec::new();
+            Tokenizer::new(tokenizer_type, lowercase())
+                .tokenize_ranking_query(text, |t| tokens.push(t.into_owned()));
+            tokens
+        };
+
+        // The filter query, plus the joined identifier
+        assert_eq!(
+            ranking(TokenizerType::Code, "get_user_name"),
+            ["get", "user", "name", "getusername"]
+        );
+        assert_eq!(
+            ranking(TokenizerType::Code, "get user name"),
+            query("get user name")
+        );
+        assert_eq!(ranking(TokenizerType::Word, "getUserName"), ["getusername"]);
     }
 
     #[test]
@@ -462,7 +507,7 @@ mod tests {
             joined
         };
 
-        // `camelCase` runs between `_` separators
+        // `camelCase` runs between `_` separators, then the whole `snake_case` identifier
         let cases: &[(&str, &[&str])] = &[
             ("getUserName", &["getusername"]),
             ("HashMap::new", &["hashmap"]),
@@ -470,11 +515,14 @@ mod tests {
             ("getURLs", &["geturls"]),
             ("Int32Array", &["int32array"]),
             ("ÜberCafé", &["übercafé"]),
-            ("test_getUserName", &["getusername"]),
-            ("get_HTTPResponse_code", &["httpresponse"]),
-            ("fooBar_bazQux", &["foobar", "bazqux"]),
-            ("get_user_name", &[]),
-            ("MAX_BUFFER_SIZE", &[]),
+            ("test_getUserName", &["getusername", "testgetusername"]),
+            (
+                "get_HTTPResponse_code",
+                &["httpresponse", "gethttpresponsecode"],
+            ),
+            ("fooBar_bazQux", &["foobar", "bazqux", "foobarbazqux"]),
+            ("get_user_name", &["getusername"]),
+            ("MAX_BUFFER_SIZE", &["maxbuffersize"]),
             ("__init__", &[]),
             ("utf8 URLs Self", &[]),
             ("1_000_000 0xFF", &[]),

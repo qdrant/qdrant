@@ -40,7 +40,8 @@ impl Bm25 {
 
     pub fn search_embed(&self, input: &str) -> VectorPersisted {
         let mut tokens: Vec<Cow<'_, str>> = Vec::new();
-        self.tokenizer.tokenize_query(input, |t| tokens.push(t));
+        self.tokenizer
+            .tokenize_ranking_query(input, |t| tokens.push(t));
         to_persisted(self.bm25.embed_query(&tokens))
     }
 

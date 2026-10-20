@@ -280,6 +280,26 @@ impl Tokenizer {
             }
         });
     }
+
+    /// Query tokens for ranking: [`Self::tokenize_query`], plus the code tokenizer's joined
+    /// identifiers. Filters don't use them, as they need every token.
+    pub fn tokenize_ranking_query<'a, C: FnMut(Cow<'a, str>)>(
+        &'a self,
+        text: &'a str,
+        mut callback: C,
+    ) {
+        match self.tokenizer_type {
+            TokenizerType::Code => self.tokenize_doc(text, |token| {
+                if token != ARRAY_BOUNDARY_SENTINEL {
+                    callback(token)
+                }
+            }),
+            TokenizerType::Prefix
+            | TokenizerType::Whitespace
+            | TokenizerType::Word
+            | TokenizerType::Multilingual => self.tokenize_query(text, callback),
+        }
+    }
 }
 
 #[cfg(test)]
