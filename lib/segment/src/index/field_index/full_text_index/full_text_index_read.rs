@@ -62,7 +62,7 @@ pub fn fill_text_statistics<T: FullTextIndexRead>(
                 *df += posting_len;
             }
         }
-        stats.add_segment(index.points_count(), index.total_tokens());
+        stats.add_segment(index.document_count(), index.total_tokens());
         return Ok(());
     };
 
@@ -185,6 +185,10 @@ pub fn score_bm25<T: FullTextIndexRead>(
     index.score_bm25(&query, accept, limit, is_stopped)
 }
 
+/// Token id that no query contains, to keep detached tokens apart from their
+/// neighbours in a [`Document`] parsed from a payload value.
+const PHRASE_GAP: TokenId = TokenId::MAX;
+
 /// Selects how a text query is parsed and matched against the payload.
 pub enum PayloadMatchQueryType {
     /// All query tokens must be present in the document (any order).
@@ -226,6 +230,9 @@ pub trait FullTextIndexRead {
     }
 
     fn points_count(&self) -> usize;
+    /// `N` for BM25: the documents holding a token. An immutable index counts
+    /// its build, deleted documents included, until the segment is rebuilt.
+    fn document_count(&self) -> usize;
     fn values_count(&self, point_id: PointOffsetType) -> usize;
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
@@ -245,17 +252,13 @@ pub trait FullTextIndexRead {
         f: impl FnMut(usize, Option<u32>),
     ) -> OperationResult<()>;
 
-    /// Total tokens over the points this index still holds. Paired with
-    /// [`Self::points_count`] it gives an average document length, but the
-    /// division belongs to whoever has summed both over every segment, not
-    /// here.
+    /// Total tokens over the documents [`Self::document_count`] counts. Paired
+    /// with it it gives an average document length, but the division belongs
+    /// to whoever has summed both over every segment, not here.
     ///
     /// Both are counted over the documents that carry at least one indexed
-    /// token. A value that tokenizes to nothing is in neither, so that does
-    /// not move the ratio across storage placements. Deletions since the last
-    /// build do: the on-disk index returns its build-time total, which still
-    /// counts them as [`Self::posting_len`] does, while the immutable index
-    /// loaded from the same files subtracts them.
+    /// token, deleted ones included until the next build, as
+    /// [`Self::posting_len`] counts them.
     fn total_tokens(&self) -> Option<u64>;
 
     /// The `limit` best documents for `query` by BM25, highest first, among
@@ -322,11 +325,25 @@ pub trait FullTextIndexRead {
 
     fn is_cold(&self) -> bool;
 
-    /// Parse as [`TokenizerTextKind::Document`] and return [`ParsedQuery::Phrase`].
+    /// Parse as [`TokenizerTextKind::Phrase`] and return [`ParsedQuery::Phrase`].
     /// Returns [`None`] if there are any unseen tokens.
     fn parse_phrase_query(&self, phrase: &str) -> OperationResult<Option<ParsedQuery>> {
-        let document = self.parse_document(phrase)?;
-        Ok(document.map(ParsedQuery::Phrase))
+        let mut phrase_tokens = Vec::new();
+        let token_map = self.resolve_tokens(TokenizerTextKind::Phrase, phrase)?;
+        if token_map.values().any(|token_id| token_id.is_none()) {
+            return Ok(None);
+        }
+
+        self.tokenizer()
+            .tokenize(TokenizerTextKind::Phrase, phrase, |token| {
+                let token_id = token_map
+                    .get(&token)
+                    .expect("token should be in map")
+                    .expect("token_id should be set for all tokens");
+                phrase_tokens.push(token_id);
+            });
+
+        Ok(Some(ParsedQuery::Phrase(Document::new(phrase_tokens))))
     }
 
     /// Parse as [`TokenizerTextKind::Query`] and return [`ParsedQuery::AllTokens`].
@@ -373,6 +390,9 @@ pub trait FullTextIndexRead {
 
     /// Parse as [`TokenizerTextKind::Document`] and return a [`Document`].
     /// Returns [`None`] if there are any unseen tokens.
+    ///
+    /// Like the index does, puts a gap before each detached token, so that it
+    /// only matches a phrase of itself alone.
     fn parse_document(&self, text: &str) -> OperationResult<Option<Document>> {
         let mut document_tokens = Vec::new();
         let token_map = self.resolve_tokens(TokenizerTextKind::Document, text)?;
@@ -381,7 +401,10 @@ pub trait FullTextIndexRead {
         }
 
         self.tokenizer()
-            .tokenize(TokenizerTextKind::Document, text, |token| {
+            .tokenize_doc_detached(text, |token, detached| {
+                if detached {
+                    document_tokens.push(PHRASE_GAP);
+                }
                 let token_id = token_map
                     .get(&token)
                     .expect("token should be in map")

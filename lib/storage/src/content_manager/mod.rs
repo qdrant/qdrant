@@ -224,6 +224,9 @@ pub trait CollectionContainer {
 
     fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError>;
 
+    /// Remove peer addresses and drop outgoing channels after collection actions finish cleanup
+    fn remove_peer_channels(&self, peer_id: PeerId) -> Result<(), StorageError>;
+
     /// Whether the given peer has any shard replicas
     fn peer_has_shards(&self, peer_id: PeerId) -> bool;
 

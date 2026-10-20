@@ -26,6 +26,10 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
         self.inverted_index.points_count()
     }
 
+    fn document_count(&self) -> usize {
+        self.inverted_index.document_count()
+    }
+
     fn values_count(&self, point_id: PointOffsetType) -> usize {
         self.inverted_index.values_count(point_id)
     }

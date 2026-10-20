@@ -98,6 +98,7 @@ fn gpu_batched_apply_entries(batch: &Batch, new_entries: Vec<PointOffsetType>) {
 #[cfg(test)]
 mod tests {
     use std::borrow::Borrow;
+    use std::sync::Arc;
 
     use common::ambient;
     use common::types::PointOffsetType;
@@ -139,17 +140,19 @@ mod tests {
         let instance = gpu::GPU_TEST_INSTANCE.clone();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
-        let gpu_vector_storage = GpuVectorStorage::new(
-            device.clone(),
-            test.vector_storage.borrow(),
-            None,
-            false,
-            &false.into(),
-        )
-        .unwrap();
+        let gpu_vector_storage = Arc::new(
+            GpuVectorStorage::new(
+                device.clone(),
+                test.vector_storage.borrow(),
+                None,
+                false,
+                &false.into(),
+            )
+            .unwrap(),
+        );
 
         let mut gpu_search_context = GpuInsertContext::new(
-            &gpu_vector_storage,
+            gpu_vector_storage,
             groups_count,
             hnsw_m,
             ef,

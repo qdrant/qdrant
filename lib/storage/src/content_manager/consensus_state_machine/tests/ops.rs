@@ -1126,6 +1126,70 @@ fn resharding_start_up_replay() {
 }
 
 #[test]
+fn resharding_start_up_reject_missing_shard_key() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[1]);
+    add_shard_key(&mut state, "south".into(), &[2]);
+
+    let mut key = resharding_key(ReshardingDirection::Up, 3);
+    key.shard_key = Some(shard_key.clone());
+
+    let mut machine = state_machine(state);
+    let outcome = machine.apply(&drop_shard_key_op(shard_key));
+    assert!(matches!(outcome, ApplyOutcome::Accepted(_)));
+    let state = machine.state().clone();
+
+    let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key)));
+
+    assert!(matches!(
+        outcome,
+        ApplyOutcome::Rejected(StorageError::BadRequest { ref description })
+            if description == "\"north\" hashring does not exist"
+    ));
+    assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn resharding_start_up_custom_shard_key_replay() {
+    let shard_key = ShardKey::from("north");
+    let mut state = custom_sharding_state();
+    add_shard_key(&mut state, shard_key.clone(), &[1]);
+
+    let mut key = resharding_key(ReshardingDirection::Up, 2);
+    key.shard_key = Some(shard_key);
+    let operation = resharding_op(ReshardingOperation::Start(key));
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&operation);
+    let ApplyOutcome::Accepted(actions) = outcome else {
+        panic!("starting custom scale-up resharding should be accepted, got {outcome:?}");
+    };
+    let goal = machine.state().clone();
+
+    assert!(matches!(
+        actions.as_slice(),
+        [
+            Action::CreateAndRegisterShards { .. },
+            Action::SetReshardingState { .. },
+        ]
+    ));
+
+    for cut in 0..=actions.len() {
+        let mut partial = state.clone();
+        for action in &actions[..cut] {
+            partial.apply_action(action);
+        }
+
+        let mut replay = state_machine(partial);
+        let outcome = replay.apply(&operation);
+
+        assert!(matches!(outcome, ApplyOutcome::Accepted(_)), "{outcome:?}");
+        assert_eq!(replay.state(), &goal);
+    }
+}
+
+#[test]
 fn resharding_start_down_reject_last_shard() {
     let state = auto_resharding_state(1);
     let key = resharding_key(ReshardingDirection::Down, 0);

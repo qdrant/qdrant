@@ -1628,9 +1628,9 @@ class TextIndexParams:
             enable_hnsw: Whether to enable HNSW index for this field.
             memory: Memory placement of the payload index. Overrides the deprecated
                     on_disk flag if both are set.
-            scoring: Record document lengths, so a TextQuery can rank points over
-                     this field. `True` for BM25, or the TextScoringParams.
-                     Implies phrase_matching. Default: disabled.
+            scoring: Record document lengths and term frequencies, so a
+                     TextQuery can rank points over this field. `True` for
+                     BM25, or the TextScoringParams. Default: disabled.
             nested: Index every object of this array as a separate entry, e.g. "offers"
                     for the field "offers[].title". The field must be inside the array's
                     elements. Every query on the field treats each element as its own
@@ -1735,6 +1735,7 @@ class TokenizerType(Enum):
     Whitespace = ...
     Word = ...
     Multilingual = ...
+    Code = ...
 
 Stopwords = Union["Language", "StopwordsSet"]
 """Stopwords configuration - either a language or a custom set."""

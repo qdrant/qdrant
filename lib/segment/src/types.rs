@@ -415,6 +415,25 @@ pub struct ScoredPoint {
     pub shard_key: Option<ShardKey>,
     /// Order-by value
     pub order_value: Option<OrderValue>,
+    /// Where the segment that scored this point holds it, if a search of
+    /// this process found it there.
+    pub location: Option<ScoredPointLocation>,
+}
+
+/// Where a segment holds a point its search returned: valid only in the
+/// process that searched it, for reading the point back by offset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScoredPointLocation {
+    pub segment: Uuid,
+    pub offset: PointOffsetType,
+}
+
+/// A point to read from a segment by its offset, expected there at `version`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PointAtOffset {
+    pub id: PointIdType,
+    pub offset: PointOffsetType,
+    pub version: SeqNumberType,
 }
 
 impl Eq for ScoredPoint {}
@@ -2909,27 +2928,15 @@ impl TryFrom<&PayloadFieldSchema> for TextIndexParams {
 }
 
 impl PayloadFieldSchema {
-    /// Apply what the params imply, see [`TextIndexParams::normalized`], and store
-    /// `nested` as its array key, so `offers` and `offers[]` give the same schema. A
-    /// schema is normalized once, as the collection stores it, so every node and every
-    /// segment sees the same params.
+    /// Store `nested` as its array key, so `offers` and `offers[]` give the same
+    /// schema. A schema is normalized once, as the collection stores it, so every node
+    /// and every segment sees the same params.
     pub fn normalized(self) -> Self {
         match self {
             PayloadFieldSchema::FieldParams(mut params) => {
                 let nested = params.nested_mut();
                 *nested = nested.as_ref().map(JsonPath::array_key);
-                match params {
-                    PayloadSchemaParams::Text(params) => PayloadFieldSchema::FieldParams(
-                        PayloadSchemaParams::Text(params.normalized()),
-                    ),
-                    params @ (PayloadSchemaParams::Keyword(_)
-                    | PayloadSchemaParams::Integer(_)
-                    | PayloadSchemaParams::Float(_)
-                    | PayloadSchemaParams::Geo(_)
-                    | PayloadSchemaParams::Bool(_)
-                    | PayloadSchemaParams::Datetime(_)
-                    | PayloadSchemaParams::Uuid(_)) => PayloadFieldSchema::FieldParams(params),
-                }
+                PayloadFieldSchema::FieldParams(params)
             }
             schema @ PayloadFieldSchema::FieldType(_) => schema,
         }

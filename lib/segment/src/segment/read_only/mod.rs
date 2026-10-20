@@ -121,6 +121,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlySegment<S> {
                 segment_config: &self.segment_config,
                 // A read-only segment never accepts appends.
                 appendable_flag: false,
+                segment_uuid: self.uuid,
             };
 
             f(view)

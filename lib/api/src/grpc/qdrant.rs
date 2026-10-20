@@ -1615,7 +1615,7 @@ pub struct TextIndexParams {
     #[prost(enumeration = "Memory", optional, tag = "11")]
     pub memory: ::core::option::Option<i32>,
     /// Enable ranking points by BM25 over this field.
-    /// Implies `phrase_matching: true`. Changing it rebuilds the index.
+    /// Changing it rebuilds the index.
     /// Default: disabled.
     #[prost(message, optional, tag = "12")]
     pub scoring: ::core::option::Option<TextScoringParams>,
@@ -2701,6 +2701,7 @@ pub enum TokenizerType {
     Whitespace = 2,
     Word = 3,
     Multilingual = 4,
+    Code = 5,
 }
 impl TokenizerType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -2714,6 +2715,7 @@ impl TokenizerType {
             Self::Whitespace => "Whitespace",
             Self::Word => "Word",
             Self::Multilingual => "Multilingual",
+            Self::Code => "Code",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -2724,6 +2726,7 @@ impl TokenizerType {
             "Whitespace" => Some(Self::Whitespace),
             "Word" => Some(Self::Word),
             "Multilingual" => Some(Self::Multilingual),
+            "Code" => Some(Self::Code),
             _ => None,
         }
     }

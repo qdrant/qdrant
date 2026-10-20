@@ -8058,7 +8058,7 @@
             "nullable": true
           },
           "scoring": {
-            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Implies `phrase_matching: true`, since term frequencies come from the positions it stores. Changing it rebuilds the index. Default: disabled.",
+            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Changing it rebuilds the index. Default: disabled.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TextScoringInterface"
@@ -8087,7 +8087,8 @@
           "prefix",
           "whitespace",
           "word",
-          "multilingual"
+          "multilingual",
+          "code"
         ]
       },
       "StopwordsInterface": {
@@ -12038,12 +12039,12 @@
           },
           "transfer_raw_points": {
             "description": "Transfer points as storage-native bytes (raw points), for every collection rather than only those whose vector storage would lose precision in a decode-encode round-trip (TurboQuant).\n\nRead on the sending side only, where the transfer batch is prepared: nodes accept raw points regardless.",
-            "default": false,
+            "default": true,
             "type": "boolean"
           },
           "transfer_raw_payloads": {
             "description": "Send the payload of a raw point as the byte blob it is stored as, so the sending node does not parse it and neither node builds a protobuf value tree for it. The receiving node still parses the blob, once, when the operation is applied. Only has an effect on points transferred raw, see [`Self::transfer_raw_points`].\n\nRead on the sending side only: nodes accept raw payloads regardless.",
-            "default": false,
+            "default": true,
             "type": "boolean"
           },
           "persist_proxy_segments": {

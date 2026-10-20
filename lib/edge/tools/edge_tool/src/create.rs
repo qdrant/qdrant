@@ -5,7 +5,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use edge::{
     CreateIndex, Distance, EdgeConfigBuilder, EdgeOptimizersConfig, EdgeShard,
     EdgeSparseVectorParams, EdgeVectorParams, FieldIndexOperations, JsonPath, PayloadFieldSchema,
-    PayloadSchemaType, UpdateOperation,
+    PayloadSchemaParams, PayloadSchemaType, TextIndexParamsBuilder, TextScoringParams,
+    TextScoringType, UpdateOperation,
 };
 
 use crate::args::CreateArgs;
@@ -74,7 +75,7 @@ pub fn run(args: CreateArgs) -> Result<()> {
         sparse,
     );
 
-    for (name, schema_type) in &payload_index {
+    for (name, field_schema) in payload_index {
         let field_name: JsonPath = name
             .parse()
             .map_err(|()| anyhow!("invalid payload field name: {name:?}"))?;
@@ -82,11 +83,11 @@ pub fn run(args: CreateArgs) -> Result<()> {
             .update(UpdateOperation::FieldIndexOperation(
                 FieldIndexOperations::CreateIndex(CreateIndex {
                     field_name,
-                    field_schema: Some(PayloadFieldSchema::FieldType(*schema_type)),
+                    field_schema: Some(field_schema.clone()),
                 }),
             ))
             .with_context(|| format!("failed to create payload index on {name:?}"))?;
-        log::info!("created payload index: {name} ({schema_type:?})");
+        log::info!("created payload index: {name} ({field_schema:?})");
     }
 
     shard
@@ -168,26 +169,35 @@ fn check_no_duplicate_names(dense: &[(String, usize)], sparse: &[String]) -> Res
 }
 
 /// Parse `--payload-index` specs (`NAME:TYPE`), restricted to the types this
-/// tool knows how to generate random values for.
-fn parse_payload_index_specs(specs: &[String]) -> Result<Vec<(String, PayloadSchemaType)>> {
+/// tool knows how to generate random values for. `bm25` is a text index that
+/// scores with BM25.
+fn parse_payload_index_specs(specs: &[String]) -> Result<Vec<(String, PayloadFieldSchema)>> {
     specs
         .iter()
         .map(|spec| {
             let (name, kind) = spec.split_once(':').ok_or_else(|| {
                 anyhow!("--payload-index entries must be `NAME:TYPE` (got {spec:?})")
             })?;
-            let schema_type = match kind.trim().to_ascii_lowercase().as_str() {
-                "keyword" => PayloadSchemaType::Keyword,
-                "integer" => PayloadSchemaType::Integer,
-                "float" => PayloadSchemaType::Float,
-                "text" => PayloadSchemaType::Text,
-                "geo" => PayloadSchemaType::Geo,
+            let field_type = |schema_type| PayloadFieldSchema::FieldType(schema_type);
+            let field_schema = match kind.trim().to_ascii_lowercase().as_str() {
+                "keyword" => field_type(PayloadSchemaType::Keyword),
+                "integer" => field_type(PayloadSchemaType::Integer),
+                "float" => field_type(PayloadSchemaType::Float),
+                "text" => field_type(PayloadSchemaType::Text),
+                "bm25" => PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
+                    TextIndexParamsBuilder::new()
+                        .scoring(TextScoringParams {
+                            r#type: TextScoringType::Bm25,
+                        })
+                        .build(),
+                )),
+                "geo" => field_type(PayloadSchemaType::Geo),
                 other => bail!(
                     "unsupported payload index type {other:?} in {spec:?}; expected one of: \
-                     keyword, integer, float, text, geo"
+                     keyword, integer, float, text, bm25, geo"
                 ),
             };
-            Ok((name.trim().to_string(), schema_type))
+            Ok((name.trim().to_string(), field_schema))
         })
         .collect()
 }

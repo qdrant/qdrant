@@ -702,6 +702,7 @@ enum TokenizerType {
   Whitespace = 2;
   Word = 3;
   Multilingual = 4;
+  Code = 5;
 }
 
 message KeywordIndexParams {
@@ -828,7 +829,7 @@ message TextIndexParams {
   // Overrides the deprecated `on_disk` flag if both are set.
   optional Memory memory = 11;
   // Enable ranking points by BM25 over this field.
-  // Implies `phrase_matching: true`. Changing it rebuilds the index.
+  // Changing it rebuilds the index.
   // Default: disabled.
   optional TextScoringParams scoring = 12;
   // Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`.
