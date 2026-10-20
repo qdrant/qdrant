@@ -139,7 +139,7 @@ impl MutableFullTextIndex {
         }
 
         let phrase_matching = self.inner.config.phrase_matching.unwrap_or_default();
-        let str_tokens =
+        let document =
             FullTextIndex::tokenize_document(&self.inner.tokenizer, phrase_matching, &values);
 
         // Measured here, before `serialize_stored_document` may deduplicate the
@@ -148,7 +148,8 @@ impl MutableFullTextIndex {
             .inner
             .inverted_index
             .records_doc_len()
-            .then(|| FullTextIndex::document_length(&str_tokens, phrase_matching, &values));
+            .then(|| document.length());
+        let str_tokens = document.tokens;
 
         self.inner
             .inverted_index
