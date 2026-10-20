@@ -46,6 +46,7 @@ impl UpdateOnlyDiskIdTracker {
         self.moves.append(fs, &moved_out_entries(retirements))?;
         let points: Vec<(PointIdType, PointOffsetType)> = retirements
             .iter()
+            .filter(|retirement| retirement.moved_to.is_none())
             .map(|retirement| (retirement.id, retirement.slot))
             .collect();
         tombstone_points_in_stored_mask(fs, &self.segment_path, &mut self.deleted, &points)

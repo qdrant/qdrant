@@ -56,8 +56,8 @@ impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
         self.id_tracker.tombstone_points(&self.fs, points)
     }
 
-    /// [`tombstone_points`](Self::tombstone_points), recording the moves among `retirements` in the
-    /// segment's move log before the mask is replaced.
+    /// [`tombstone_points`](Self::tombstone_points), except that the moves among `retirements` are
+    /// recorded in the segment's move log instead of tombstoned.
     pub fn retire_points(&mut self, retirements: &[Retirement]) -> OperationResult<()> {
         self.id_tracker.retire_points(&self.fs, retirements)
     }

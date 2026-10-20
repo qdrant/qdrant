@@ -366,16 +366,21 @@ impl UpdateOnlyAppendableIdTracker {
         self.moves.append(fs, entries)
     }
 
-    /// Retire the points of `retirements`. The moved-out records of the moves among them are
-    /// appended first and the `Delete` entries second, so a follower that reads a tombstone can
-    /// also read the move it belongs to.
+    /// Retire the points of `retirements`. A moved point is retired by its moved-out record only,
+    /// see [`point_moves`](crate::id_tracker::point_moves); the others by a `Delete` entry.
     pub fn retire_points<Fs: UniversalAppendFs>(
         &mut self,
         fs: &Fs,
         retirements: &[Retirement],
     ) -> OperationResult<()> {
         self.moves.append(fs, &moved_out_entries(retirements))?;
-        self.delete_points(fs, retirements.iter().map(|retirement| retirement.id))
+        self.delete_points(
+            fs,
+            retirements
+                .iter()
+                .filter(|retirement| retirement.moved_to.is_none())
+                .map(|retirement| retirement.id),
+        )
     }
 
     /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never

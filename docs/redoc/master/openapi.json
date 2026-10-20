@@ -12058,7 +12058,7 @@
             "type": "boolean"
           },
           "record_point_moves": {
-            "description": "In the serverless update-only writer, record every copy-on-write move of a point in the move logs (`id_tracker.moves`) of both the source and the target segment. Only gates writing: a reader that does not resolve moves never opens the logs.",
+            "description": "In the serverless update-only writer, record every copy-on-write move of a point in the move logs (`id_tracker.moves`) of both the source and the target segment, instead of tombstoning the old copy. The read-only id trackers always read the logs.",
             "default": false,
             "type": "boolean"
           },

@@ -37,9 +37,8 @@ impl UpdateOnlyImmutableIdTracker {
         })
     }
 
-    /// Retire the points of `retirements`. The moved-out records of the moves among them are
-    /// appended first and the mask is replaced second, so a follower that reads a tombstone can
-    /// also read the move it belongs to.
+    /// Retire the points of `retirements`. A moved point is retired by its moved-out record only,
+    /// see [`point_moves`](crate::id_tracker::point_moves); the others are tombstoned in the mask.
     pub fn retire_points<Fs>(&mut self, fs: &Fs, retirements: &[Retirement]) -> OperationResult<()>
     where
         Fs: UniversalAppendFs,
@@ -47,6 +46,7 @@ impl UpdateOnlyImmutableIdTracker {
         self.moves.append(fs, &moved_out_entries(retirements))?;
         let points: Vec<(PointIdType, PointOffsetType)> = retirements
             .iter()
+            .filter(|retirement| retirement.moved_to.is_none())
             .map(|retirement| (retirement.id, retirement.slot))
             .collect();
         tombstone_points_in_stored_mask(fs, &self.segment_path, &mut self.deleted, &points)

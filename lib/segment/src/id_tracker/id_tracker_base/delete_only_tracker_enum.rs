@@ -31,8 +31,8 @@ impl DeleteOnlyIdTrackerEnum {
         }
     }
 
-    /// Retire the points of `retirements`: the moved-out records of the moves among them first,
-    /// then the tombstones in the stored deleted mask.
+    /// Retire the points of `retirements`: the moves among them by moved-out records, the others
+    /// by tombstones in the stored deleted mask.
     pub fn retire_points<Fs>(&mut self, fs: &Fs, retirements: &[Retirement]) -> OperationResult<()>
     where
         Fs: UniversalAppendFs,

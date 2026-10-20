@@ -1,16 +1,18 @@
 //! Point move logs: where copy-on-write moved a point in or out of a segment.
 //!
-//! The serverless writer moves a point by appending it to the write target and tombstoning its
-//! old copy. A searcher refreshes segments independently, so its view of the source can be newer
+//! The serverless writer moves a point by appending it to the write target and retiring its old
+//! copy. A searcher refreshes segments independently, so its view of the source can be newer
 //! than its view of the target, or the other way around. Each move is therefore recorded on both
 //! sides: the target's log gets a moved-in record, the source's log a moved-out record, and both
 //! name the same pair of slots.
 //!
-//! A searcher that resolves moves applies one rule to every pair it knows, from either log: the
-//! old copy is masked once the new slot has settled in its view of the target, and not before. A
-//! slot has settled once the view has read the insert that claimed it and a non-zero version for
-//! it. Other readers delete the old copy as soon as they read its moved-out record, see
-//! [`PointMovesMode`].
+//! The moved-out record is what retires the old copy: it gets no tombstone, so a tombstone always
+//! is a plain delete, and applies as soon as it is read. Every reader applies the log too. A
+//! searcher that resolves moves applies one rule to every pair it knows, from either log: the old
+//! copy is masked once the new slot has settled in its view of the target, and not before. A slot
+//! has settled once the view has read the insert that claimed it and a non-zero version for it.
+//! Other readers delete the old copy as soon as they read its moved-out record, see
+//! [`PointMovesMode`]. The regular id trackers do not expect a log, but apply one they find.
 //!
 //! The log is `id_tracker.moves` in the segment directory, for every id tracker format. The first
 //! record creates it, it is only ever appended to, and it goes away with its segment. See
