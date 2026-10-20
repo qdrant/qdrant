@@ -106,7 +106,7 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
             access_pattern,
             align_of::<T>(),
         )?;
-        Ok(bytes.try_cast_bytemuck().unwrap())
+        Ok(bytes.try_cast_bytemuck()?)
     }
 
     fn read_bytes<P: AccessPattern>(
@@ -231,3 +231,6 @@ pub trait UniversalRead: Sized + Debug + Send + Sync {
 
     // When adding provided methods, don't forget to update impls in crate::universal_io::wrappers::*.
 }
+
+#[cfg(test)]
+mod alignment_tests;
