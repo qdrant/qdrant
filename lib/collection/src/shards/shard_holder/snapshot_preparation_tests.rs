@@ -18,10 +18,15 @@ use crate::collection::Collection;
 use crate::operations::types::CollectionError;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
+use crate::shards::replica_set::snapshots::install_restore_local_replica_before_flag_hook;
+use crate::shards::shard_initializing_flag_path;
 use crate::shards::shard_trait::WaitUntil;
 use crate::tests::fixtures::{create_collection_config, upsert_operation};
 
 type PreparationHook = (oneshot::Sender<()>, oneshot::Receiver<()>);
+
+// Restoring a packed shard can take longer when other collection tests run in parallel.
+const RESTORE_COMPLETION_TIMEOUT: Duration = Duration::from_secs(30);
 
 static PREPARATION_HOOKS: LazyLock<Mutex<HashMap<PathBuf, PreparationHook>>> =
     LazyLock::new(Mutex::default);
@@ -40,6 +45,9 @@ enum ShardChange {
     Keep,
     Remove,
     Replace,
+    Restore,
+    RemoveDuringRestore,
+    ReplaceDuringRestore,
     Cancel,
     DropFuture,
 }
@@ -49,6 +57,9 @@ enum ShardChange {
 #[case::unpacked(ShardChange::Keep, true)]
 #[case::removed(ShardChange::Remove, false)]
 #[case::replaced(ShardChange::Replace, false)]
+#[case::restoring(ShardChange::Restore, false)]
+#[case::removed_during_restore(ShardChange::RemoveDuringRestore, false)]
+#[case::replaced_during_restore(ShardChange::ReplaceDuringRestore, false)]
 #[case::cancelled(ShardChange::Cancel, false)]
 #[case::dropped(ShardChange::DropFuture, false)]
 #[tokio::test(flavor = "multi_thread")]
@@ -63,26 +74,28 @@ async fn snapshot_preparation_releases_shard_holder(
     let distribution = CollectionShardDistribution {
         shards: AHashMap::from([(0, HashSet::from([1]))]),
     };
-    let collection = Collection::new(
-        "test".to_string(),
-        1,
-        collection_dir.path(),
-        snapshots_dir.path(),
-        &config,
-        Arc::new(Default::default()),
-        distribution,
-        None,
-        ChannelService::default(),
-        Arc::new(|_, _, _| {}),
-        Arc::new(|_| {}),
-        Arc::new(|_, _| {}),
-        None,
-        None,
-        ResourceBudget::default(),
-        None,
-    )
-    .await
-    .unwrap();
+    let collection = Arc::new(
+        Collection::new(
+            "test".to_string(),
+            1,
+            collection_dir.path(),
+            snapshots_dir.path(),
+            &config,
+            Arc::new(Default::default()),
+            distribution,
+            None,
+            ChannelService::default(),
+            Arc::new(|_, _, _| {}),
+            Arc::new(|_| {}),
+            Arc::new(|_, _| {}),
+            None,
+            None,
+            ResourceBudget::default(),
+            None,
+        )
+        .await
+        .unwrap(),
+    );
 
     let original = collection
         .shards_holder()
@@ -197,12 +210,98 @@ async fn snapshot_preparation_releases_shard_holder(
         cancel.cancel();
     }
 
+    let during_restore = matches!(
+        change,
+        ShardChange::Restore | ShardChange::RemoveDuringRestore | ShardChange::ReplaceDuringRestore
+    );
+    let restore_hook = if during_restore {
+        let (reached_tx, reached_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        install_restore_local_replica_before_flag_hook(
+            shard_initializing_flag_path(collection_dir.path(), 0),
+            reached_tx,
+            release_rx,
+        );
+        Some((reached_rx, release_tx))
+    } else {
+        None
+    };
+
     release_tx.send(()).unwrap();
-    let result = timeout(Duration::from_secs(10), restore).await.unwrap();
+
+    let removal = if let Some((reached_rx, release_tx)) = restore_hook {
+        tokio::select! {
+            result = &mut restore => panic!("restore finished before restore hook: {result:?}"),
+            reached = timeout(Duration::from_secs(10), reached_rx) => reached.unwrap().unwrap(),
+        }
+
+        // The disk restore holds only the replica set lock; holder writers and
+        // subsequent readers must still make progress.
+        let shards_holder = collection.shards_holder();
+        drop(
+            timeout(Duration::from_secs(10), shards_holder.write())
+                .await
+                .expect("shard holder writer blocked during snapshot restoration"),
+        );
+        timeout(Duration::from_secs(10), collection.state())
+            .await
+            .expect("collection reader blocked during snapshot restoration");
+
+        let removal = if matches!(
+            change,
+            ShardChange::RemoveDuringRestore | ShardChange::ReplaceDuringRestore
+        ) {
+            let collection = Arc::clone(&collection);
+            let (locked_tx, locked_rx) = oneshot::channel();
+            let removal = tokio::spawn(async move {
+                let shards_holder = collection.shards_holder();
+                let mut holder = shards_holder.write().await;
+                let _ = locked_tx.send(());
+                holder.drop_and_remove_shard(0).await
+            });
+            timeout(Duration::from_secs(10), locked_rx)
+                .await
+                .expect("removal did not acquire shard holder")
+                .unwrap();
+            Some(removal)
+        } else {
+            None
+        };
+
+        release_tx.send(()).unwrap();
+        removal
+    } else {
+        None
+    };
+
+    let result = timeout(RESTORE_COMPLETION_TIMEOUT, restore).await.unwrap();
+    if let Some(removal) = removal {
+        timeout(RESTORE_COMPLETION_TIMEOUT, removal)
+            .await
+            .expect("removal blocked after restoration")
+            .unwrap()
+            .unwrap();
+        assert!(!shard_initializing_flag_path(collection_dir.path(), 0).exists());
+        assert!(!collection_dir.path().join("0").exists());
+    }
+
+    if matches!(change, ShardChange::ReplaceDuringRestore) {
+        let replacement = collection
+            .create_replica_set(0, None, &[1], None)
+            .await
+            .unwrap();
+        collection
+            .shards_holder()
+            .write()
+            .await
+            .add_shards(vec![(0, replacement)], None)
+            .await
+            .unwrap();
+    }
 
     match change {
         ShardChange::DropFuture => unreachable!(),
-        ShardChange::Keep => {
+        ShardChange::Keep | ShardChange::Restore => {
             result.unwrap();
             assert_eq!(
                 original.info(true).await.unwrap().points_count,
@@ -220,6 +319,10 @@ async fn snapshot_preparation_releases_shard_holder(
             assert!(matches!(result, Err(CollectionError::NotFound { .. })));
             assert!(!collection.shards_holder().read().await.contains_shard(0));
         }
+        ShardChange::RemoveDuringRestore => {
+            result.unwrap();
+            assert!(!collection.shards_holder().read().await.contains_shard(0));
+        }
         ShardChange::Replace => {
             assert!(matches!(result, Err(CollectionError::BadRequest { .. })));
             let replacement = collection
@@ -230,6 +333,18 @@ async fn snapshot_preparation_releases_shard_holder(
                 .cloned()
                 .unwrap();
             assert_eq!(replacement.info(true).await.unwrap().points_count, Some(0));
+        }
+        ShardChange::ReplaceDuringRestore => {
+            result.unwrap();
+            let replacement = collection
+                .shards_holder()
+                .read()
+                .await
+                .get_shard(0)
+                .cloned()
+                .unwrap();
+            assert_eq!(replacement.info(true).await.unwrap().points_count, Some(0));
+            assert!(!shard_initializing_flag_path(collection_dir.path(), 0).exists());
         }
     }
 
