@@ -239,22 +239,25 @@ pub fn score_2bit_internal_folded_scalar(a: &[u8], b: &[u8], factors: &[i16]) ->
 }
 
 /// The folded values of [`score_2bit_internal_folded`] of one vector, one per position of
-/// `out`: `codes` must hold at least `out.len()` codes and `factors` at least as many factors.
-pub(crate) fn fold_codes(codes: &[u8], factors: &[i16], out: &mut [i8]) {
-    assert!(out.len() <= 4 * codes.len() && out.len() <= factors.len());
-    #[cfg(target_arch = "x86_64")]
-    let done = if std::is_x86_feature_detected!("avx2") {
-        // SAFETY: AVX2 checked above, the lengths asserted above
-        unsafe { x64::fold_codes_avx2(codes, factors, out) }
-    } else {
-        0
-    };
-    #[cfg(not(target_arch = "x86_64"))]
-    let done = 0;
-    for (i, o) in out.iter_mut().enumerate().skip(done) {
-        let code = (codes[i / 4] >> (2 * (i % 4))) & 0x03;
-        *o = fold_q15(codebook_signed_i64(code), factors[i]) as i8;
-    }
+/// `out`, XORed with `flip`: see [`super::fold_codes`].
+pub(crate) fn fold_codes(codes: &[u8], factors: &[i16], out: &mut [u8], flip: u8) {
+    super::fold_codes::<2>(
+        codes,
+        factors,
+        out,
+        flip,
+        codebook_signed_i64,
+        |c, f, o, flip| {
+            match SimdBackend::detect() {
+                // SAFETY: the CPU checked by `detect`, the lengths asserted by `fold_codes`
+                #[cfg(target_arch = "x86_64")]
+                SimdBackend::Avx512Vnni | SimdBackend::Avx2 => unsafe {
+                    x64::fold_codes_avx2(c, f, o, flip)
+                },
+                _ => 0,
+            }
+        },
+    );
 }
 
 /// Square of the codebook scale — the integer sum from
