@@ -54,7 +54,7 @@
 //! vectors. Leaf k 8 with a reservoir factor of 4 doubles the reservoirs, to about 1.5 GB.
 
 // TODO: remove once the graph build calls into this module.
-#![allow(dead_code, reason = "Not connected to the graph build yet")]
+#![expect(dead_code, reason = "Not connected to the graph build yet")]
 
 mod hash_prune;
 mod leaf;
