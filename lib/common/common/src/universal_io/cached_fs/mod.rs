@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
+use futures::executor::ThreadPool;
 use futures::future::{BoxFuture, RemoteHandle};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
@@ -124,14 +125,16 @@ enum ScheduledFile<S: 'static> {
 }
 
 /// 🤖 Drives scheduled opens past their first pending point, so a dependent
-/// 🤖 fetch (e.g. a range located by a header) proceeds while parked.
-static DRIVER: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_name("uio-prefetch")
-        .enable_all()
-        .build()
-        .expect("build the prefetch driver runtime")
+/// 🤖 fetch (e.g. a range located by a header) proceeds while parked. Plain
+/// 🤖 threads rather than a runtime: the sync UIO API, which blocks on the
+/// 🤖 backend's own runtime, stays callable from a poll.
+static DRIVER: LazyLock<ThreadPool> = LazyLock::new(|| {
+    let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
+    ThreadPool::builder()
+        .pool_size(threads)
+        .name_prefix("uio-prefetch-")
+        .create()
+        .expect("build the prefetch driver pool")
 });
 
 fn stage<S: Send + 'static>(mut fut: BoxFuture<'static, UioResult<S>>) -> ScheduledFile<S> {
@@ -140,7 +143,7 @@ fn stage<S: Send + 'static>(mut fut: BoxFuture<'static, UioResult<S>>) -> Schedu
         Some(file) => ScheduledFile::Ready(file),
         None => {
             let (remote, handle) = fut.remote_handle();
-            DRIVER.spawn(remote);
+            DRIVER.spawn_ok(remote);
             ScheduledFile::Future(handle)
         }
     }
@@ -413,8 +416,19 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     }
 
     fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
-        if self.files_prefetched.lock().contains_key(&path) {
-            return;
+        {
+            let mut files_prefetched = self.files_prefetched.lock();
+            if files_prefetched.contains_key(&path) {
+                return;
+            }
+            if let Some(info) = &self.files_info
+                && !info.contains_key(&path)
+            {
+                // 🤖 As in `schedule_open`; `fut` is dropped unpolled.
+                let err = UniversalIoError::NotFound { path: path.clone() };
+                files_prefetched.insert(path, ScheduledFile::Ready(Err(err)));
+                return;
+            }
         }
         // 🤖 Not under the lock: `fut` may open through this very pool.
         let fut = Box::pin(fut.unmeasured(reason("Prefetching is an internal operation")));

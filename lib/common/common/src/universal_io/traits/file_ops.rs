@@ -179,8 +179,11 @@ pub trait CachedReadFs: UniversalReadFs {
     );
 
     /// Granular version of `schedule_open` for custom `populate` cases
-    /// 🤖 Idempotent per path like [`Self::schedule_open`]: a second future
-    /// 🤖 for a still-parked path is dropped unpolled.
+    /// 🤖 Idempotent per path like [`Self::schedule_open`], and an unlisted
+    /// 🤖 path fails locally like there: such a future is dropped unpolled.
+    /// 🤖 A pending future is driven on a small thread pool shared by every
+    /// 🤖 prefetch, so it must not block: a sync UIO call is only acceptable
+    /// 🤖 when the caller knows it is cheap (listed path, known length).
     fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Self::File>>);
 
     /// Wait for all scheduled files to resolve.

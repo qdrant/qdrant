@@ -267,3 +267,29 @@ fn cached_fs_schedule_drives_parked_future() {
     }
     cached_fs.open(&path, options, ()).unwrap();
 }
+
+/// With a listing snapshot, a scheduled future for an unlisted path is never
+/// polled: the open fails locally, like a `schedule_open` of that path.
+#[test]
+fn cached_fs_schedule_unlisted_is_not_found() {
+    use crate::mmap::AdviceSetting;
+
+    let dir = tempfile::tempdir().unwrap();
+    let unlisted = dir.path().join("unlisted.dat");
+    let options = OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::No,
+        advice: AdviceSetting::Global,
+    };
+
+    let mut cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+    cached_fs.cache_file_info().unwrap();
+    cached_fs.schedule(
+        unlisted.clone(),
+        Box::pin(async { panic!("polled a future for an unlisted path") }),
+    );
+    cached_fs.prefetch_error().unwrap();
+    let err = cached_fs.open(&unlisted, options, ()).unwrap_err();
+    assert!(err.is_not_found(), "{err:?}");
+}

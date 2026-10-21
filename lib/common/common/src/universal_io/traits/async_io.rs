@@ -74,6 +74,10 @@ pub trait UniversalReadFsAsync: UniversalReadFs {
     /// Open a file, and populate it asynchronously.
     ///
     /// Must not depend on ambient async context; capture any runtime by value.
+    /// 🤖 Nor block past the first poll: a scheduled open is driven on a small
+    /// 🤖 thread pool shared by every prefetch (see [`CachedReadFs::schedule`]).
+    /// 🤖
+    /// 🤖 [`CachedReadFs::schedule`]: crate::universal_io::CachedReadFs::schedule
     fn open_async(
         &self,
         path: PathBuf,
