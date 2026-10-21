@@ -30,7 +30,7 @@ pub(super) struct BlockFilter {
 impl BlockFilter {
     /// Sample the connectivity of `graph` over `points`, the non-deleted points.
     pub fn new<R: Rng + ?Sized>(
-        ctx: GraphBuildContext,
+        ctx: &GraphBuildContext<'_>,
         graph: &GraphLayersBuilder,
         points: &[PointOffsetType],
         rng: &mut R,
