@@ -37,6 +37,11 @@ storage:
     #   secret_key: ""
     #   # Custom endpoint, for MinIO and similar
     #   endpoint_url: ""
+    #   # Timeouts and retries, in seconds
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
 
     # Google Cloud Storage. Without credential fields, Application Default
     # Credentials are used: GOOGLE_* environment, gcloud config or the
