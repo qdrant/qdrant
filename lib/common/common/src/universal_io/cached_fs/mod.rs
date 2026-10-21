@@ -415,6 +415,10 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     }
 
     fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
+        // 🤖 Idempotent like `schedule_open`; checked apart, as `fut` may lock the pool.
+        if self.files_prefetched.lock().contains_key(&path) {
+            return;
+        }
         let scheduled = stage(Box::pin(
             fut.unmeasured(reason("Prefetching is an internal operation")),
         ));
