@@ -174,7 +174,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             Some(pool) => pool,
             None => crate::read_view::build_segment_pool(
                 "edge-load",
-                provided_config.search_thread_count(),
+                // 🤖 Experiment: BIS_LOAD_THREADS overrides the load pool size.
+                std::env::var("BIS_LOAD_THREADS")
+                    .ok()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or_else(|| provided_config.search_thread_count()),
                 None,
             )?,
         };
