@@ -56,6 +56,11 @@ storage:
     #   application_credentials_path: ""
     #   # Custom endpoint, for fake-gcs-server and similar
     #   endpoint_url: ""
+    #   # Timeouts and retries, same as in s3_config
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
 
     # Azure Blob Storage. Without credential fields, the default chain is
     # used: AZURE_* environment, managed identity or the Azure CLI.
@@ -72,6 +77,11 @@ storage:
     #   tenant_id: ""
     #   # Custom endpoint, for Azurite and similar
     #   endpoint_url: ""
+    #   # Timeouts and retries, same as in s3_config
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
 
   # Where to store temporary files
   # If null, temporary snapshots are stored in: storage/snapshots_temp/

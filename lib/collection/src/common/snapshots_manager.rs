@@ -84,6 +84,14 @@ pub struct GcsConfig {
     pub application_credentials_path: Option<String>,
     /// Custom base URL, for emulators such as fake-gcs-server.
     pub endpoint_url: Option<String>,
+    /// See [`S3Config::timeout_sec`]. Overrides `GOOGLE_TIMEOUT`.
+    pub timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::connect_timeout_sec`]. Overrides `GOOGLE_CONNECT_TIMEOUT`.
+    pub connect_timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::max_retries`].
+    pub max_retries: Option<usize>,
+    /// See [`S3Config::retry_timeout_sec`].
+    pub retry_timeout_sec: Option<u64>,
 }
 
 /// Azure Blob Storage connection parameters.
@@ -108,6 +116,14 @@ pub struct AzureConfig {
     pub tenant_id: Option<String>,
     /// Custom endpoint URL, for emulators such as Azurite.
     pub endpoint_url: Option<String>,
+    /// See [`S3Config::timeout_sec`]. Overrides `AZURE_TIMEOUT`.
+    pub timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::connect_timeout_sec`]. Overrides `AZURE_CONNECT_TIMEOUT`.
+    pub connect_timeout_sec: Option<NonZeroU64>,
+    /// See [`S3Config::max_retries`].
+    pub max_retries: Option<usize>,
+    /// See [`S3Config::retry_timeout_sec`].
+    pub retry_timeout_sec: Option<u64>,
 }
 
 pub struct SnapshotStorageCloud {
@@ -146,21 +162,93 @@ pub enum SnapshotStorageManager {
     Cloud(SnapshotStorageCloud),
 }
 
-/// HTTP client settings shared by all object store backends.
-///
-/// Identifies Qdrant with its user agent so providers can attribute snapshot traffic.
-/// Plain HTTP is allowed for explicitly configured `http://` endpoints, which are
-/// typically local emulators.
-///
-/// The settings are config keys rather than a `ClientOptions`, because
-/// `with_client_options` would replace the client settings that `from_env` read
-/// from the environment, such as `AWS_TIMEOUT`.
-fn client_config(endpoint_url: Option<&str>) -> Vec<(ClientConfigKey, String)> {
-    let mut config = vec![(ClientConfigKey::UserAgent, APP_USER_AGENT.clone())];
-    if endpoint_url.is_some_and(|url| url.starts_with("http://")) {
-        config.push((ClientConfigKey::AllowHttp, true.to_string()));
+/// HTTP client settings that every object store backend accepts.
+#[derive(Clone, Copy, Debug, Default)]
+struct ClientSettings<'a> {
+    endpoint_url: Option<&'a str>,
+    timeout_sec: Option<NonZeroU64>,
+    connect_timeout_sec: Option<NonZeroU64>,
+    max_retries: Option<usize>,
+    retry_timeout_sec: Option<u64>,
+}
+
+impl<'a> From<&'a S3Config> for ClientSettings<'a> {
+    fn from(config: &'a S3Config) -> Self {
+        Self {
+            endpoint_url: config.endpoint_url.as_deref(),
+            timeout_sec: config.timeout_sec,
+            connect_timeout_sec: config.connect_timeout_sec,
+            max_retries: config.max_retries,
+            retry_timeout_sec: config.retry_timeout_sec,
+        }
     }
-    config
+}
+
+impl<'a> From<&'a GcsConfig> for ClientSettings<'a> {
+    fn from(config: &'a GcsConfig) -> Self {
+        Self {
+            endpoint_url: config.endpoint_url.as_deref(),
+            timeout_sec: config.timeout_sec,
+            connect_timeout_sec: config.connect_timeout_sec,
+            max_retries: config.max_retries,
+            retry_timeout_sec: config.retry_timeout_sec,
+        }
+    }
+}
+
+impl<'a> From<&'a AzureConfig> for ClientSettings<'a> {
+    fn from(config: &'a AzureConfig) -> Self {
+        Self {
+            endpoint_url: config.endpoint_url.as_deref(),
+            timeout_sec: config.timeout_sec,
+            connect_timeout_sec: config.connect_timeout_sec,
+            max_retries: config.max_retries,
+            retry_timeout_sec: config.retry_timeout_sec,
+        }
+    }
+}
+
+impl ClientSettings<'_> {
+    /// HTTP client settings as config keys.
+    ///
+    /// Identifies Qdrant with its user agent so providers can attribute snapshot traffic.
+    /// Plain HTTP is allowed for explicitly configured `http://` endpoints, which are
+    /// typically local emulators.
+    ///
+    /// The settings are config keys rather than a `ClientOptions`, because
+    /// `with_client_options` would replace the client settings that `from_env` read
+    /// from the environment, such as `AWS_TIMEOUT`.
+    fn client_config(&self) -> Vec<(ClientConfigKey, String)> {
+        let mut config = vec![(ClientConfigKey::UserAgent, APP_USER_AGENT.clone())];
+        if self
+            .endpoint_url
+            .is_some_and(|url| url.starts_with("http://"))
+        {
+            config.push((ClientConfigKey::AllowHttp, true.to_string()));
+        }
+        if let Some(timeout_sec) = self.timeout_sec {
+            config.push((ClientConfigKey::Timeout, format!("{timeout_sec}s")));
+        }
+        if let Some(connect_timeout_sec) = self.connect_timeout_sec {
+            config.push((
+                ClientConfigKey::ConnectTimeout,
+                format!("{connect_timeout_sec}s"),
+            ));
+        }
+        config
+    }
+
+    /// Retry settings, with the `object_store` defaults for unset fields.
+    fn retry_config(&self) -> RetryConfig {
+        let mut retry = RetryConfig::default();
+        if let Some(max_retries) = self.max_retries {
+            retry.max_retries = max_retries;
+        }
+        if let Some(retry_timeout_sec) = self.retry_timeout_sec {
+            retry.retry_timeout = Duration::from_secs(retry_timeout_sec);
+        }
+        retry
+    }
 }
 
 fn build_s3_client(config: Option<&S3Config>) -> CollectionResult<object_store::aws::AmazonS3> {
@@ -171,10 +259,11 @@ fn build_s3_client(config: Option<&S3Config>) -> CollectionResult<object_store::
 
 /// Apply `config` on top of `builder`, which normally comes from `AmazonS3Builder::from_env`.
 fn s3_builder(mut builder: AmazonS3Builder, config: Option<&S3Config>) -> AmazonS3Builder {
-    let endpoint_url = config.and_then(|config| config.endpoint_url.as_deref());
-    for (key, value) in client_config(endpoint_url) {
+    let settings = config.map(ClientSettings::from).unwrap_or_default();
+    for (key, value) in settings.client_config() {
         builder = builder.with_config(AmazonS3ConfigKey::Client(key), value);
     }
+    builder = builder.with_retry(settings.retry_config());
 
     if let Some(config) = config {
         builder = builder.with_bucket_name(&config.bucket);
@@ -190,27 +279,6 @@ fn s3_builder(mut builder: AmazonS3Builder, config: Option<&S3Config>) -> Amazon
         if let Some(endpoint_url) = &config.endpoint_url {
             builder = builder.with_endpoint(endpoint_url);
         }
-        if let Some(timeout_sec) = config.timeout_sec {
-            builder = builder.with_config(
-                AmazonS3ConfigKey::Client(ClientConfigKey::Timeout),
-                format!("{timeout_sec}s"),
-            );
-        }
-        if let Some(connect_timeout_sec) = config.connect_timeout_sec {
-            builder = builder.with_config(
-                AmazonS3ConfigKey::Client(ClientConfigKey::ConnectTimeout),
-                format!("{connect_timeout_sec}s"),
-            );
-        }
-
-        let mut retry = RetryConfig::default();
-        if let Some(max_retries) = config.max_retries {
-            retry.max_retries = max_retries;
-        }
-        if let Some(retry_timeout_sec) = config.retry_timeout_sec {
-            retry.retry_timeout = Duration::from_secs(retry_timeout_sec);
-        }
-        builder = builder.with_retry(retry);
     }
 
     builder
@@ -219,11 +287,12 @@ fn s3_builder(mut builder: AmazonS3Builder, config: Option<&S3Config>) -> Amazon
 fn build_gcs_client(
     config: Option<&GcsConfig>,
 ) -> CollectionResult<object_store::gcp::GoogleCloudStorage> {
-    let endpoint_url = config.and_then(|config| config.endpoint_url.as_deref());
+    let settings = config.map(ClientSettings::from).unwrap_or_default();
     let mut builder = GoogleCloudStorageBuilder::from_env();
-    for (key, value) in client_config(endpoint_url) {
+    for (key, value) in settings.client_config() {
         builder = builder.with_config(GoogleConfigKey::Client(key), value);
     }
+    builder = builder.with_retry(settings.retry_config());
 
     if let Some(config) = config {
         builder = builder.with_bucket_name(&config.bucket);
@@ -249,11 +318,12 @@ fn build_gcs_client(
 fn build_azure_client(
     config: Option<&AzureConfig>,
 ) -> CollectionResult<object_store::azure::MicrosoftAzure> {
-    let endpoint_url = config.and_then(|config| config.endpoint_url.as_deref());
+    let settings = config.map(ClientSettings::from).unwrap_or_default();
     let mut builder = MicrosoftAzureBuilder::from_env();
-    for (key, value) in client_config(endpoint_url) {
+    for (key, value) in settings.client_config() {
         builder = builder.with_config(AzureConfigKey::Client(key), value);
     }
+    builder = builder.with_retry(settings.retry_config());
 
     if let Some(config) = config {
         builder = builder
@@ -1234,6 +1304,62 @@ mod tests {
         config.timeout_sec = NonZeroU64::new(120);
         let builder = s3_builder(env_builder(), Some(&config));
         assert_eq!(timeout(&builder).as_deref(), Some("120s"));
+    }
+
+    #[test]
+    fn retry_config_applies_limits() {
+        let retry = |max_retries, retry_timeout_sec| {
+            let settings = ClientSettings {
+                endpoint_url: None,
+                timeout_sec: None,
+                connect_timeout_sec: None,
+                max_retries,
+                retry_timeout_sec,
+            };
+            let retry = settings.retry_config();
+            (retry.max_retries, retry.retry_timeout)
+        };
+        let default = RetryConfig::default();
+
+        assert_eq!(
+            retry(None, None),
+            (default.max_retries, default.retry_timeout),
+        );
+        assert_eq!(retry(Some(3), Some(60)), (3, Duration::from_secs(60)));
+        // Each field overrides only its own default.
+        assert_eq!(retry(Some(0), None), (0, default.retry_timeout));
+        assert_eq!(
+            retry(None, Some(600)),
+            (default.max_retries, Duration::from_secs(600)),
+        );
+    }
+
+    #[test]
+    fn gcs_and_azure_configs_deserialize_client_settings() {
+        let gcs: GcsConfig = serde_json::from_value(serde_json::json!({
+            "bucket": "b",
+            "timeout_sec": 120,
+            "connect_timeout_sec": 10,
+            "max_retries": 20,
+            "retry_timeout_sec": 600,
+        }))
+        .unwrap();
+        let azure: AzureConfig = serde_json::from_value(serde_json::json!({
+            "account": "a",
+            "container": "c",
+            "timeout_sec": 120,
+            "connect_timeout_sec": 10,
+            "max_retries": 20,
+            "retry_timeout_sec": 600,
+        }))
+        .unwrap();
+
+        for settings in [ClientSettings::from(&gcs), ClientSettings::from(&azure)] {
+            assert_eq!(settings.timeout_sec, NonZeroU64::new(120));
+            assert_eq!(settings.connect_timeout_sec, NonZeroU64::new(10));
+            assert_eq!(settings.max_retries, Some(20));
+            assert_eq!(settings.retry_timeout_sec, Some(600));
+        }
     }
 
     #[test]
