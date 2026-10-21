@@ -99,7 +99,10 @@ impl<S: UniversalReadExt> ReadOnlyHNSWIndex<S> {
         path: &Path,
         hnsw_config: &HnswConfig,
         populate_override: Option<Populate>,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<()>
+    where
+        S: 'static,
+    {
         // Graph config
         fs.schedule_open(&HnswGraphConfig::get_config_path(path), None, None);
 

@@ -75,7 +75,10 @@ impl<S: UniversalRead> VectorStorageReadEnum<S> {
         path: &Path,
         vector_index_path: &Path,
         populate_override: Option<Populate>,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<()>
+    where
+        S: 'static,
+    {
         let datatype = vector_config.datatype.unwrap_or_default();
 
         let (advice, populate, chunked) = match storage_type_layout(vector_config.storage_type) {

@@ -189,6 +189,8 @@ fn test_links_file_links<F: UniversalReadFs>(
         Some((1, 64)), Some((64, 1)), Some((64, 64)))
     ]
     aligns: Option<(usize, usize)>,
+    #[values(GraphLinksResidency::Cold, GraphLinksResidency::Cached)]
+    residency: GraphLinksResidency,
 ) {
     let format = match aligns {
         None => GraphLinksFormat::Compressed,
@@ -218,7 +220,7 @@ fn test_links_file_links<F: UniversalReadFs>(
             Default::default(),
         )
         .unwrap();
-    let view = GraphLinksFile::<F::File>::open(file, format).unwrap();
+    let view = GraphLinksFile::<F::File>::open(file, format, residency).unwrap();
     let arena = stumpalo::Arena::new();
     let max_levels = links.iter().map(|levels| levels.len()).max().unwrap_or(0);
     for level in 0..max_levels {

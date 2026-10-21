@@ -1,13 +1,17 @@
 use std::alloc::Layout;
 use std::num::NonZero;
+use std::ops::Range;
+use std::sync::OnceLock;
 
 use common::bitpacking_links::{PackedLinksIterator, iterate_packed_links};
 use common::bitpacking_ordered;
 use common::ext::aligned_vec::ACow;
-use common::generic_consts::Random;
+use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadBytesItem, ReadRange, UniversalRead};
+use common::universal_io::{
+    OpenOptions, Populate, ReadBytesItem, ReadRange, UioResult, UniversalRead, UniversalReadAsync,
+};
 use itertools::Itertools;
 use zerocopy::FromBytes;
 
@@ -34,9 +38,12 @@ pub struct GraphLinksFile<S: UniversalRead> {
     reindex_offset: u64,
     /// Byte offset of the neighbors data.
     neighbors_offset: u64,
-    offsets: bitpacking_ordered::Reader,
-    /// Byte offset of the compressed offsets data.
-    offsets_offset: u64,
+    /// 🤖 Decoder for the compressed offsets at `offsets_range`.
+    offsets_reader: bitpacking_ordered::Reader,
+    offsets_range: Range<u64>,
+    /// 🤖 The compressed offsets in RAM: read at open for `Cached`, on first
+    /// 🤖 use for `Cold`.
+    offsets_data: OnceLock<Vec<u8>>,
     hnsw_m: HnswM,
     bits_per_unsorted: u8,
     compression: CompressionInfo,
@@ -63,6 +70,16 @@ struct CommonHeader {
     neighbors_alignment: u64,
     compression: CompressionInfo,
 }
+
+/// 🤖 Byte layout of the sections after the header.
+struct Sections {
+    reindex_offset: u64,
+    neighbors_offset: u64,
+    offsets_reader: bitpacking_ordered::Reader,
+    offsets_range: Range<u64>,
+}
+
+const PLAIN_UNSUPPORTED: &str = "Plain graph links are not supported by the batched reader";
 
 impl<S: UniversalRead> GraphLinksFile<S> {
     /// Preloads header + level_offsets.
@@ -96,111 +113,56 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         // ```
         let max_levels_guess = 42;
 
-        let header_size = match format {
-            GraphLinksFormat::Plain => {
-                let err = "Plain graph links are not supported by the batched reader";
-                debug_assert!(false, "{err}");
-                0
-            }
-            GraphLinksFormat::Compressed => size_of::<HeaderCompressed>(),
-            GraphLinksFormat::CompressedWithVectors => size_of::<HeaderCompressedWithVectors>(),
-        };
-        (header_size + max_levels_guess * size_of::<u64>()) as u64
+        let header_size = header_size(format).unwrap_or_else(|| {
+            debug_assert!(false, "{PLAIN_UNSUPPORTED}");
+            0
+        });
+        header_size + max_levels_guess * size_of::<u64>() as u64
     }
 
-    pub fn open(file: S, format: GraphLinksFormat) -> OperationResult<Self> {
-        match format {
-            GraphLinksFormat::Plain => {
-                let err = "Plain graph links are not supported by the batched reader";
-                debug_assert!(false, "{err}");
-                Err(OperationError::service_error(err))
-            }
-
-            GraphLinksFormat::Compressed => Self::open_impl(file, |header: &HeaderCompressed| {
-                debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED);
-                Ok(CommonHeader {
-                    point_count: header.point_count.get(),
-                    levels_count: header.levels_count.get() as usize,
-                    total_neighbors_bytes: header.total_neighbors_bytes.get(),
-                    offsets_parameters: header.offsets_parameters,
-                    hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
-                    neighbors_alignment: 1,
-                    compression: CompressionInfo::Compressed,
-                })
-            }),
-
-            GraphLinksFormat::CompressedWithVectors => {
-                Self::open_impl(file, |header: &HeaderCompressedWithVectors| {
-                    debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED_WITH_VECTORS);
-                    let base_vector_layout = header.base_vector_layout.try_into_layout()?;
-                    let link_vector_layout = header.link_vector_layout.try_into_layout()?;
-                    let alignment =
-                        std::cmp::max(base_vector_layout.align(), link_vector_layout.align());
-                    Ok(CommonHeader {
-                        point_count: header.point_count.get(),
-                        levels_count: header.levels_count.get() as usize,
-                        total_neighbors_bytes: header.total_neighbors_bytes.get(),
-                        offsets_parameters: header.offsets_parameters,
-                        hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
-                        neighbors_alignment: alignment as u64,
-                        compression: CompressionInfo::CompressedWithVectors {
-                            base_vector_layout,
-                            link_vector_size: link_vector_size(link_vector_layout)?,
-                            link_vector_alignment: link_vector_layout.align() as u8,
-                        },
-                    })
-                })
-            }
-        }
-    }
-
-    fn open_impl<H: FromBytes>(
+    pub fn open(
         file: S,
-        parse: impl FnOnce(&H) -> OperationResult<CommonHeader>,
+        format: GraphLinksFormat,
+        residency: GraphLinksResidency,
     ) -> OperationResult<Self> {
-        let bytes = file.read_bytes(0..size_of::<H>() as u64, Random, align_of::<H>())?;
-        let header = H::read_from_bytes(&bytes).map_err(|_| error_size())?;
-        let common = parse(&header)?;
-
-        let reindex_offset = (common.levels_count as u64)
-            .checked_mul(size_of::<u64>() as u64)
-            .and_then(|len| len.checked_add(size_of::<H>() as u64))
-            .ok_or_else(error_size)?;
-        let reindex_end = common
-            .point_count
-            .checked_mul(size_of::<PointOffsetType>() as u64)
-            .and_then(|len| reindex_offset.checked_add(len))
-            .ok_or_else(error_size)?;
-        let neighbors_offset = reindex_end
-            .checked_next_multiple_of(common.neighbors_alignment)
-            .ok_or_else(error_size)?;
-        let offsets_offset = neighbors_offset
-            .checked_add(common.total_neighbors_bytes)
-            .ok_or_else(error_size)?;
-        let offsets = common.offsets_parameters.validate()?;
-        let _end = offsets_offset
-            .checked_add(offsets.compressed_size_bytes() as u64)
-            .ok_or_else(error_size)?;
+        let header_size =
+            header_size(format).ok_or_else(|| OperationError::service_error(PLAIN_UNSUPPORTED))?;
+        let bytes = file.read_bytes(0..header_size, Random, 1)?;
+        let header = CommonHeader::parse(&bytes, format)?;
+        let Sections {
+            reindex_offset,
+            neighbors_offset,
+            offsets_reader,
+            offsets_range,
+        } = header.sections(header_size)?;
 
         let range = ReadRange {
-            byte_offset: size_of::<H>() as u64,
-            length: common.levels_count as u64,
+            byte_offset: header_size,
+            length: header.levels_count as u64,
         };
-        let mut level_offsets = Vec::with_capacity(common.levels_count + 1);
+        let mut level_offsets = Vec::with_capacity(header.levels_count + 1);
         level_offsets.extend_from_slice(&file.read::<_, u64>(range, Random)?);
-        level_offsets.push(last_offset_idx(common.offsets_parameters.length.get())?);
+        level_offsets.push(last_offset_idx(header.offsets_parameters.length.get())?);
+
+        let offsets_data = match residency {
+            GraphLinksResidency::Cold => OnceLock::new(),
+            GraphLinksResidency::Cached | GraphLinksResidency::Pinned => {
+                OnceLock::from(read_offsets(&file, &offsets_range)?)
+            }
+        };
 
         Ok(Self {
             file,
-            point_count: common.point_count,
+            point_count: header.point_count,
             level_offsets,
             reindex_offset,
             neighbors_offset,
-            offsets,
-            offsets_offset,
-            hnsw_m: common.hnsw_m,
-            bits_per_unsorted: bits_per_unsorted(common.point_count)?,
-            compression: common.compression,
+            offsets_reader,
+            offsets_range,
+            offsets_data,
+            hnsw_m: header.hnsw_m,
+            bits_per_unsorted: bits_per_unsorted(header.point_count)?,
+            compression: header.compression,
         })
     }
 
@@ -210,7 +172,7 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             ("header", 0),
             ("reindex", self.reindex_offset.max(header_end)),
             ("neighbors", self.neighbors_offset.max(header_end)),
-            ("offsets", self.offsets_offset.max(header_end)),
+            ("offsets", self.offsets_range.start.max(header_end)),
         ]
     }
 
@@ -230,6 +192,16 @@ impl<S: UniversalRead> GraphLinksFile<S> {
     /// Returns `true` if the links format contains inline vectors.
     pub fn is_with_vectors(&self) -> bool {
         self.format().is_with_vectors()
+    }
+
+    /// 🤖 Heap RAM held by the offsets, in bytes.
+    pub fn heap_size_bytes(&self) -> usize {
+        self.offsets_data.get().map_or(0, Vec::len)
+    }
+
+    #[cfg(test)]
+    pub(in crate::index::hnsw_index) fn offsets_range(&self) -> Range<u64> {
+        self.offsets_range.clone()
     }
 
     /// See [`super::view::GraphLinksView::point_level`].
@@ -334,11 +306,10 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         point_id: PointOffsetType,
         align: usize,
     ) -> OperationResult<ACow<'_>> {
-        let (_position, (start, _end)) = self
-            .offsets
-            .read_pairs_iter(&self.file, self.offsets_offset, &[point_id as usize])?
-            .exactly_one()
-            .map_err(|_| OperationError::service_error("Expect the point"))??;
+        let (start, _end) = self
+            .offsets()?
+            .read_pair(point_id as usize)
+            .ok_or_else(|| OperationError::service_error("Expect the point"))?;
         let start = self.neighbors_offset + start;
         let size = self.base_vector_layout().unwrap().size() as u64;
         Ok(self.file.read_bytes(start..start + size, Random, align)?)
@@ -388,9 +359,13 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             indices
         };
 
-        let pairs =
-            self.offsets
-                .read_pairs_iter(&self.file, self.offsets_offset, offset_indices)?;
+        let offsets = self.offsets()?;
+        let pairs = offset_indices.iter().enumerate().map(|(position, &index)| {
+            offsets
+                .read_pair(index)
+                .map(|pair| (position, pair))
+                .ok_or_else(|| OperationError::service_error("Offset index out of bounds"))
+        });
         pairs.process_results(|pairs| {
             let items = pairs.map(|(position, (start, end))| ReadBytesItem {
                 user_data: (position, start),
@@ -406,10 +381,136 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         })?
     }
 
+    /// 🤖 The offsets, read on the first call when the open left them cold.
+    fn offsets(&self) -> OperationResult<bitpacking_ordered::SliceReader<'_>> {
+        let data = match self.offsets_data.get() {
+            Some(data) => data,
+            None => {
+                // 🤖 A racing thread's copy is dropped: both are read from
+                // 🤖 the same immutable bytes.
+                let data = read_offsets(&self.file, &self.offsets_range)?;
+                self.offsets_data.get_or_init(|| data)
+            }
+        };
+        Ok(self.offsets_reader.slice_reader(data)?)
+    }
+
     /// Byte range of the reindex table entry for the given point.
     fn reindex_range(&self, point_id: PointOffsetType) -> ReadRange {
         let offset =
             self.reindex_offset + u64::from(point_id) * size_of::<PointOffsetType>() as u64;
         ReadRange::one(offset)
     }
+}
+
+impl<S: UniversalReadAsync> GraphLinksFile<S> {
+    /// 🤖 Warm the cache for the offsets, so a `Cold` open reads them locally
+    /// 🤖 on first use. Header problems are left for [`Self::open`] to report.
+    pub async fn prefetch_offsets(file: &S, format: GraphLinksFormat) -> UioResult<()> {
+        let Some(header_size) = header_size(format) else {
+            return Ok(());
+        };
+        let bytes = file.read_bytes_async(0..header_size, Random, 1).await?;
+        let sections =
+            CommonHeader::parse(&bytes, format).and_then(|header| header.sections(header_size));
+        let Ok(Sections {
+            reindex_offset: _,
+            neighbors_offset: _,
+            offsets_reader: _,
+            offsets_range,
+        }) = sections
+        else {
+            return Ok(());
+        };
+        file.read_bytes_async(offsets_range, Sequential, 1).await?;
+        Ok(())
+    }
+}
+
+impl CommonHeader {
+    fn parse(bytes: &[u8], format: GraphLinksFormat) -> OperationResult<Self> {
+        match format {
+            GraphLinksFormat::Plain => Err(OperationError::service_error(PLAIN_UNSUPPORTED)),
+
+            GraphLinksFormat::Compressed => {
+                let header = HeaderCompressed::read_from_bytes(bytes).map_err(|_| error_size())?;
+                debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED);
+                Ok(CommonHeader {
+                    point_count: header.point_count.get(),
+                    levels_count: header.levels_count.get() as usize,
+                    total_neighbors_bytes: header.total_neighbors_bytes.get(),
+                    offsets_parameters: header.offsets_parameters,
+                    hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
+                    neighbors_alignment: 1,
+                    compression: CompressionInfo::Compressed,
+                })
+            }
+
+            GraphLinksFormat::CompressedWithVectors => {
+                let header = HeaderCompressedWithVectors::read_from_bytes(bytes)
+                    .map_err(|_| error_size())?;
+                debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED_WITH_VECTORS);
+                let base_vector_layout = header.base_vector_layout.try_into_layout()?;
+                let link_vector_layout = header.link_vector_layout.try_into_layout()?;
+                let alignment =
+                    std::cmp::max(base_vector_layout.align(), link_vector_layout.align());
+                Ok(CommonHeader {
+                    point_count: header.point_count.get(),
+                    levels_count: header.levels_count.get() as usize,
+                    total_neighbors_bytes: header.total_neighbors_bytes.get(),
+                    offsets_parameters: header.offsets_parameters,
+                    hnsw_m: HnswM::new(header.m.get() as usize, header.m0.get() as usize),
+                    neighbors_alignment: alignment as u64,
+                    compression: CompressionInfo::CompressedWithVectors {
+                        base_vector_layout,
+                        link_vector_size: link_vector_size(link_vector_layout)?,
+                        link_vector_alignment: link_vector_layout.align() as u8,
+                    },
+                })
+            }
+        }
+    }
+
+    fn sections(&self, header_size: u64) -> OperationResult<Sections> {
+        let reindex_offset = (self.levels_count as u64)
+            .checked_mul(size_of::<u64>() as u64)
+            .and_then(|len| len.checked_add(header_size))
+            .ok_or_else(error_size)?;
+        let reindex_end = self
+            .point_count
+            .checked_mul(size_of::<PointOffsetType>() as u64)
+            .and_then(|len| reindex_offset.checked_add(len))
+            .ok_or_else(error_size)?;
+        let neighbors_offset = reindex_end
+            .checked_next_multiple_of(self.neighbors_alignment)
+            .ok_or_else(error_size)?;
+        let offsets_offset = neighbors_offset
+            .checked_add(self.total_neighbors_bytes)
+            .ok_or_else(error_size)?;
+        let offsets_reader = self.offsets_parameters.validate()?;
+        let offsets_end = offsets_offset
+            .checked_add(offsets_reader.compressed_size_bytes() as u64)
+            .ok_or_else(error_size)?;
+        Ok(Sections {
+            reindex_offset,
+            neighbors_offset,
+            offsets_reader,
+            offsets_range: offsets_offset..offsets_end,
+        })
+    }
+}
+
+/// 🤖 `None` for formats the batched reader does not support.
+fn header_size(format: GraphLinksFormat) -> Option<u64> {
+    match format {
+        GraphLinksFormat::Plain => None,
+        GraphLinksFormat::Compressed => Some(size_of::<HeaderCompressed>() as u64),
+        GraphLinksFormat::CompressedWithVectors => {
+            Some(size_of::<HeaderCompressedWithVectors>() as u64)
+        }
+    }
+}
+
+fn read_offsets<S: UniversalRead>(file: &S, range: &Range<u64>) -> OperationResult<Vec<u8>> {
+    Ok(file.read_bytes(range.clone(), Sequential, 1)?.to_vec())
 }

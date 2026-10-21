@@ -56,7 +56,7 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
             GraphLinks::open_options(residency),
             Default::default(),
         )?;
-        let links = GraphLinksFile::open(file, format)?;
+        let links = GraphLinksFile::open(file, format, residency)?;
         trace::file_sections(
             &links_path.to_string_lossy(),
             links.uio_trace_sections(format),
@@ -682,6 +682,104 @@ mod tests {
             &vector_holder,
             &mut rng,
         );
+    }
+
+    /// `preopen_universal` leaves the offsets in the local cache, so a cold
+    /// open and its first search read them locally.
+    #[test]
+    fn test_preopen_prefetches_offsets() {
+        use std::sync::Arc;
+
+        use common::universal_io::{
+            CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext,
+            MmapFile,
+        };
+
+        use crate::index::hnsw_index::graph::HnswGraph;
+
+        let format = GraphLinksFormat::Compressed;
+        let mut rng = StdRng::seed_from_u64(42);
+        let tmp = Builder::new().prefix("graph_prefetch").tempdir().unwrap();
+        let remote_dir = tmp.path().join("remote");
+        fs_err::create_dir_all(&remote_dir).unwrap();
+
+        // Enough points to push the offsets past the eagerly read prefix and
+        // the first cache block.
+        let (vector_holder, graph_layers_builder) =
+            create_graph_layer_builder_fixture(2000, 8, DIM, false, false, DISTANCE, &mut rng);
+        let graph = graph_layers_builder
+            .into_graph_layers(&remote_dir, GraphLinksFormatParam::Compressed, true)
+            .unwrap();
+        let links_path = GraphLayers::get_links_path(&remote_dir, format);
+        let remote_bytes = fs_err::read(&links_path).unwrap();
+
+        use GraphLinksResidency::{Cached, Cold};
+        for (case, (residency, prefetch)) in [(Cold, true), (Cold, false), (Cached, true)]
+            .into_iter()
+            .enumerate()
+        {
+            let local_dir = tmp.path().join(format!("local_{case}"));
+            fs_err::create_dir_all(&local_dir).unwrap();
+            let config = Arc::new(DiskCacheConfig::new(remote_dir.clone(), local_dir).unwrap());
+            let fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+                config: Arc::clone(&config),
+                remote: Default::default(),
+            })
+            .unwrap();
+            let mut fs = CachedFs::new(fs, &remote_dir).unwrap();
+            fs.cache_file_info().unwrap();
+
+            if prefetch {
+                HnswGraph::<DiskCache<MmapFile>>::preopen_universal(&fs, &remote_dir, residency)
+                    .unwrap();
+            } else {
+                // Control: the header-only prefetch leaves the offsets cold.
+                let options =
+                    GraphLinksFile::<DiskCache<MmapFile>>::preopen_options(format, residency);
+                fs.schedule_open(&links_path, Some(options), None);
+            }
+            futures::executor::block_on(fs.wait_all());
+
+            let batched = GraphLayersBatched::open(&fs, &remote_dir, residency).unwrap();
+            let range = batched.links.offsets_range();
+            let range = range.start as usize..range.end as usize;
+
+            // The mirror: the links file's local path plus a unique suffix.
+            let mirror_base = config.local_path_for(&links_path).unwrap();
+            let mirror_name = mirror_base.file_name().unwrap().to_str().unwrap();
+            let mirror = fs_err::read_dir(mirror_base.parent().unwrap())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| {
+                    path.file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .starts_with(mirror_name)
+                })
+                .unwrap();
+            let mirrored =
+                fs_err::read(mirror).unwrap()[range.clone()] == remote_bytes[range.clone()];
+            assert_eq!(mirrored, prefetch, "{residency:?}");
+
+            // `Cached` reads the offsets at open, `Cold` on first use.
+            let eager = match residency {
+                Cold => 0,
+                Cached | GraphLinksResidency::Pinned => range.len(),
+            };
+            assert_eq!(batched.links.heap_size_bytes(), eager, "{residency:?}");
+            batched
+                .links
+                .links(&stumpalo::Arena::new(), &[0], 0, |_, _| {})
+                .unwrap();
+            assert_eq!(
+                batched.links.heap_size_bytes(),
+                range.len(),
+                "{residency:?}"
+            );
+
+            check_matches(&graph, batched, &vector_holder, &mut rng);
+        }
     }
 
     #[test]
