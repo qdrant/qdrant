@@ -3,12 +3,12 @@
 //! products of the codes, and [`TurboCombine`] finishes them with the same steps as
 //! `score_symmetric`.
 //!
-//! The codes stay in the width they're stored in, and the scores are exact, except for two
-//! that are decoded to f32 and summed by the f32 kernels, about 1e-7 of the inputs'
-//! magnitude off: 16 bits, for which no integer kernel was faster, and TQ+ 2 and 4 bits, whose
-//! weighted products need 40-bit sums, which exact integer kernels on AVX2 couldn't keep up
-//! with (1.4x the time of f32). On aarch64, which has no code tile, the Normal 2, 4, and 8
-//! bits are decoded to f32 as well, see [`CODES_IN_F32`].
+//! The codes stay in the width they're stored in, except TQ+ 2 and 4 bits, whose codes are
+//! folded with their coordinates' `D'` into the i8 values `score_symmetric` multiplies (see
+//! [`query4bit::fold_codes`]) and scored as 8-bit codes. The scores are exact, except for 16
+//! bits, decoded to f32 and summed by the f32 kernels, about 1e-7 of the inputs' magnitude
+//! off, as no integer kernel was faster. On aarch64, which has no code tile, the Normal 2, 4,
+//! and 8 bits and the folded TQ+ values are decoded to f32 as well, see [`CODES_IN_F32`].
 
 use std::marker::PhantomData;
 
@@ -26,9 +26,9 @@ use crate::turboquant::quantization::{
 };
 use crate::turboquant::simd::{query1bit, query2bit, query4bit};
 
-/// Whether [`TurboMatrixOperands::new`] decodes the Normal 2, 4, and 8 bits to f32 for the f32
-/// kernels instead of keeping their codes: on aarch64, where the code types have only the
-/// scalar kernel, far slower than NEON scoring per pair.
+/// Whether [`TurboMatrixOperands::new`] decodes the Normal 2, 4, and 8 bits and the folded TQ+
+/// 2 and 4 bits to f32 for the f32 kernels instead of keeping them as codes: on aarch64, where
+/// the code types have only the scalar kernel, far slower than NEON scoring per pair.
 ///
 /// The products are integers of at most 128², so the f32 sums are exact as long as they stay
 /// within 2²⁴: always for up to 1024 positions. Beyond, they can round, about 1e-7 of the
@@ -96,7 +96,7 @@ enum CentroidDot {
     Codebook4(Codebook4),
     /// 8 and 16 bits
     Grid(Grid),
-    /// TQ+ 2 and 4 bits: the sum weighted by `D'²`.
+    /// TQ+ 2 and 4 bits: the sum of the folded values, which carries `D'²`.
     Corrected(SymmetricCorrection),
 }
 
@@ -232,14 +232,17 @@ enum Decode {
     Grid8,
     /// Little-endian `i16` grid values, exact in f32.
     Grid16,
-    /// Codes of `bits` (2 or 4) as f32: the code's value in `codebook` times `roots` of the
-    /// position. For TQ+ the square root of the position's weight, so the product of two
-    /// decoded vectors carries the weight once; for Normal 1, which keeps the value exact.
+    /// Normal codes of `bits` (2 or 4) as f32: the code's value in `codebook` times `roots`
+    /// of the position, all 1, which keeps the value exact.
     Weighted {
         bits: u32,
         codebook: [f32; 16],
         roots: Vec<f32>,
     },
+    /// TQ+ codes of `bits` (2 or 4) folded with the Q15 `factors` of their positions, the i8
+    /// values that `score_symmetric` multiplies: as 8-bit codes, or as f32 if
+    /// [`CODES_IN_F32`].
+    Folded { bits: u32, factors: Vec<i16> },
 }
 
 /// The operands of one width: an enum, as each width has its own element type.
@@ -250,10 +253,10 @@ pub enum TurboMatrixOperands<'a, S> {
     Codes2(TurboOperands<'a, S, Codes2>),
     /// 4 bits, Normal, unless [`CODES_IN_F32`].
     Codes4(TurboOperands<'a, S, Codes4>),
-    /// 8 bits, unless [`CODES_IN_F32`].
+    /// 8 bits and the folded TQ+ 2 and 4 bits, unless [`CODES_IN_F32`].
     Codes8(TurboOperands<'a, S, Codes8>),
-    /// 16 bits, TQ+ 2 and 4 bits, and with [`CODES_IN_F32`] the Normal 2, 4, and 8 bits: the
-    /// codes decoded to f32, see the module.
+    /// 16 bits, and with [`CODES_IN_F32`] the Normal 2, 4, and 8 bits and the folded TQ+ 2
+    /// and 4 bits: decoded to f32, see the module.
     F32(TurboOperands<'a, S, f32>),
 }
 
@@ -337,8 +340,8 @@ impl<'a, S: TurboSource> TurboMatrixOperands<'a, S> {
     }
 
     /// A codebook width, with the codebook `values` and the Normal `centroid_dot`: Normal on
-    /// its stored codes, or decoded to f32 if `codes_in_f32`; TQ+ weighted and corrected as
-    /// `score_symmetric_ec`, decoded to f32.
+    /// its stored codes, or decoded to f32 if `codes_in_f32`; TQ+ folded and corrected as
+    /// `score_symmetric_ec`, as 8-bit codes, or decoded to f32 if `codes_in_f32`.
     fn codebook<E>(
         quantizer: &'a TurboQuantizer,
         source: S,
@@ -351,7 +354,9 @@ impl<'a, S: TurboSource> TurboMatrixOperands<'a, S> {
     where
         E: KernelElem<Param<'a> = Codebook>,
     {
-        let (centroid_dot, roots) = match &quantizer.error_correction {
+        debug_assert!(values.len().is_power_of_two());
+        let bits = values.len().trailing_zeros();
+        match &quantizer.error_correction {
             None if !codes_in_f32 => {
                 let bytes = quantizer.padded_dim * usize::from(quantizer.bits.bit_size()) / 8;
                 return stored(TurboOperands::new(
@@ -362,24 +367,30 @@ impl<'a, S: TurboSource> TurboMatrixOperands<'a, S> {
                     Codebook::new(values),
                 ));
             }
-            None => (centroid_dot, vec![1.0; quantizer.padded_dim]),
-            Some(ec) => (
-                CentroidDot::Corrected(ec.symmetric(quantizer.bits)),
-                ec.d_prime_sq_i16
-                    .iter()
-                    .map(|&weight| f32::from(weight).sqrt())
-                    .collect(),
-            ),
-        };
-        debug_assert!(values.len().is_power_of_two());
+            None => {}
+            Some(ec) => {
+                let combine = combine(CentroidDot::Corrected(ec.symmetric(quantizer.bits)));
+                let decode = Decode::Folded {
+                    bits,
+                    factors: ec.d_prime_q15.clone(),
+                };
+                if codes_in_f32 {
+                    return Self::decoded(quantizer, source, combine, decode);
+                }
+                let mut operands =
+                    TurboOperands::new(quantizer, source, quantizer.padded_dim, combine, ());
+                operands.decode = decode;
+                return Self::Codes8(operands);
+            }
+        }
         let mut codebook = [0.0; 16];
         for (c, &value) in codebook.iter_mut().zip(values) {
             *c = f32::from(value);
         }
         let decode = Decode::Weighted {
-            bits: values.len().trailing_zeros(),
+            bits,
             codebook,
-            roots,
+            roots: vec![1.0; quantizer.padded_dim],
         };
         Self::decoded(quantizer, source, combine(centroid_dot), decode)
     }
@@ -450,7 +461,7 @@ impl<'a, S: TurboSource, E: KernelElem> TurboOperands<'a, S, E> {
         ids: &[PointOffsetType],
         out: &mut [E],
         aux: &mut [Aux],
-        decode: impl Fn(&[u8], &mut [E]),
+        mut decode: impl FnMut(&[u8], &mut [E]),
     ) -> Result<(), S::Error> {
         let depth = self.depth;
         self.source.for_each_batch(ids, |i, vector| {
@@ -540,6 +551,15 @@ impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, f32> {
                 weighted::<4>(codes, codebook, roots, out)
             }),
             Decode::Weighted { bits, .. } => unreachable!("codebooks of 2 and 4 bits, not {bits}"),
+            Decode::Folded { bits, factors } => {
+                let mut folded = vec![0; self.depth];
+                self.decode_with(ids, out, aux, |codes, out| {
+                    fold(*bits, codes, factors, &mut folded);
+                    for (o, &value) in out.iter_mut().zip(&folded) {
+                        *o = f32::from(value);
+                    }
+                })
+            }
         }
     }
 }
@@ -680,7 +700,59 @@ macro_rules! code_operands {
 
 code_operands!(Codes2, "Bytes per vector, 4 codes each.");
 code_operands!(Codes4, "Bytes per vector, 2 codes each.");
-code_operands!(Codes8, "Bytes per vector.");
+impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, Codes8> {
+    type Elem = Codes8;
+    type Combine = TurboCombine;
+    type Error = S::Error;
+
+    /// Bytes per vector.
+    fn depth(&self) -> usize {
+        self.depth
+    }
+
+    fn combine(&self) -> TurboCombine {
+        self.combine
+    }
+
+    fn param(&self) {}
+
+    fn decode_batch(
+        &self,
+        ids: &[PointOffsetType],
+        out: &mut [Codes8],
+        aux: &mut [Aux],
+    ) -> Result<(), S::Error> {
+        match &self.decode {
+            Decode::Stored => self.decode_with(ids, out, aux, |codes, out| {
+                for (o, &byte) in out.iter_mut().zip(codes) {
+                    *o = Codes8(byte);
+                }
+            }),
+            // Stored as `value + 128`, as the 8-bit grid
+            Decode::Folded { bits, factors } => {
+                let mut folded = vec![0; self.depth];
+                self.decode_with(ids, out, aux, |codes, out| {
+                    fold(*bits, codes, factors, &mut folded);
+                    for (o, &value) in out.iter_mut().zip(&folded) {
+                        *o = Codes8(value.cast_unsigned() ^ 0x80);
+                    }
+                })
+            }
+            Decode::Grid8 | Decode::Grid16 | Decode::Weighted { .. } => {
+                unreachable!("8-bit codes are stored or folded")
+            }
+        }
+    }
+}
+
+/// Folds TQ+ codes of `bits` (2 or 4) into `out`, see [`Decode::Folded`].
+fn fold(bits: u32, codes: &[u8], factors: &[i16], out: &mut [i8]) {
+    match bits {
+        2 => query2bit::fold_codes(codes, factors, out),
+        4 => query4bit::fold_codes(codes, factors, out),
+        _ => unreachable!("TQ+ folds codes of 2 and 4 bits, not {bits}"),
+    }
+}
 
 #[cfg(test)]
 mod tests {
