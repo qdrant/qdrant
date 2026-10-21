@@ -125,8 +125,9 @@ impl ServiceConfig {
     /// The configured path prefix without a trailing `/`, if it is set and valid.
     pub fn path_prefix(&self) -> Option<&str> {
         let prefix = self.path_prefix.as_deref()?;
+        validate_path_prefix(prefix).ok()?;
         let prefix = prefix.strip_suffix('/').unwrap_or(prefix);
-        (!prefix.is_empty() && validate_path_prefix(prefix).is_ok()).then_some(prefix)
+        (!prefix.is_empty()).then_some(prefix)
     }
 }
 
@@ -750,12 +751,14 @@ mod tests {
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
     #[sealed_test]
     fn invalid_path_prefix_from_env_is_ignored() {
-        unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", "qdrant") };
+        for prefix in ["qdrant", "/qdrant//"] {
+            unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", prefix) };
 
-        let settings = Settings::new(None).expect("failed to load config");
+            let settings = Settings::new(None).expect("failed to load config");
 
-        assert!(settings.validate().is_err());
-        assert_eq!(settings.service.path_prefix(), None);
+            assert!(settings.validate().is_err(), "{prefix:?}");
+            assert_eq!(settings.service.path_prefix(), None, "{prefix:?}");
+        }
     }
 
     #[test]
