@@ -40,6 +40,7 @@ use std::sync::Arc;
 use common::universal_io::UniversalAppendFs;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
+use segment::id_tracker::IdTrackerRead as _;
 use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::SegmentConfig;
 use uuid::Uuid;
@@ -99,6 +100,16 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// Number of segments the writer has open.
     pub fn segments_count(&self) -> usize {
         self.segments.read().len()
+    }
+
+    /// Live points summed over every segment, deferred ones included. A point whose older copy
+    /// stays live beside a deferred one, or after an interrupted move, counts once per copy.
+    pub fn available_point_count(&self) -> usize {
+        self.segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.read().id_tracker.borrow().available_point_count())
+            .sum()
     }
 
     /// The append target; `None` when every appendable is claimed by a rebuild.
