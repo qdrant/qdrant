@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
-use common::fs::safe_delete_in_tmp;
+use common::fs::{move_dir, safe_delete_in_tmp};
 use common::tar_unpack::tar_unpack_file;
 use fs_err as fs;
 use fs_err::File;
@@ -85,6 +85,7 @@ fn recover_snapshot_mappings(
     is_distributed: bool,
 ) -> Vec<String> {
     let collection_dir_path = storage_dir.join(COLLECTIONS_DIR);
+    fs::create_dir_all(&collection_dir_path).unwrap();
     let mut recovered_collections: Vec<String> = vec![];
 
     for SnapshotMapping {
@@ -112,15 +113,25 @@ fn recover_snapshot_mappings(
             }
             info!("Overwriting collection {collection_name}");
         }
-        let collection_temp_path =
-            temp_dir.map_or_else(|| collection_path.with_extension("tmp"), PathBuf::from);
+        let collection_temp_path = collection_path.with_extension("tmp");
+        if collection_temp_path.exists() {
+            fs::remove_dir_all(&collection_temp_path).unwrap();
+        }
+        let collection_recovery_temp =
+            temp_dir.map(|temp_dir| snapshot_recovery_temp_dir(Some(temp_dir), storage_dir));
+        let collection_recovery_path = collection_recovery_temp
+            .as_ref()
+            .map_or(collection_temp_path.as_path(), |temp_dir| temp_dir.path());
         if let Err(err) = Collection::restore_snapshot(
             snapshot_data,
-            &collection_temp_path,
+            collection_recovery_path,
             this_peer_id,
             is_distributed,
         ) {
             panic!("Failed to recover snapshot {collection_name}: {err}");
+        }
+        if let Some(collection_recovery_temp) = collection_recovery_temp {
+            move_dir(collection_recovery_temp.path(), &collection_temp_path).unwrap();
         }
         // Remove collection_path directory if exists
         if collection_path.exists()
@@ -134,6 +145,18 @@ fn recover_snapshot_mappings(
     recovered_collections
 }
 
+fn snapshot_recovery_temp_dir(temp_dir: Option<&Path>, storage_dir: &Path) -> tempfile::TempDir {
+    let temp_base = temp_dir
+        .map(|path| path.join("tmp"))
+        .unwrap_or_else(|| storage_dir.to_path_buf());
+    fs::create_dir_all(&temp_base).unwrap();
+
+    tempfile::Builder::new()
+        .prefix("snapshots-recovery-")
+        .tempdir_in(temp_base)
+        .unwrap()
+}
+
 pub fn recover_full_snapshot(
     temp_dir: Option<&Path>,
     snapshot_path: &str,
@@ -142,13 +165,11 @@ pub fn recover_full_snapshot(
     this_peer_id: PeerId,
     is_distributed: bool,
 ) -> Vec<String> {
-    let snapshot_temp_path = temp_dir
-        .map(PathBuf::from)
-        .unwrap_or_else(|| storage_dir.join("snapshots_recovery_tmp"));
-    fs::create_dir_all(&snapshot_temp_path).unwrap();
+    let snapshot_temp_dir = snapshot_recovery_temp_dir(temp_dir, storage_dir);
+    let snapshot_temp_path = snapshot_temp_dir.path();
 
     // Un-tar snapshot into temporary directory
-    tar_unpack_file(Path::new(snapshot_path), &snapshot_temp_path).unwrap();
+    tar_unpack_file(Path::new(snapshot_path), snapshot_temp_path).unwrap();
 
     // Read configuration file with snapshot-to-collection mapping
     let config_path = snapshot_temp_path.join("config.json");
@@ -184,8 +205,7 @@ pub fn recover_full_snapshot(
         alias_persistence.insert(alias, collection_name).unwrap();
     }
 
-    // Remove temporary directory
-    fs::remove_dir_all(&snapshot_temp_path).unwrap();
+    snapshot_temp_dir.close().unwrap();
     recovered_collection
 }
 
@@ -193,7 +213,9 @@ pub fn recover_full_snapshot(
 mod tests {
     use std::path::PathBuf;
 
-    use super::SnapshotMapping;
+    use fs_err as fs;
+
+    use super::{SnapshotMapping, snapshot_recovery_temp_dir};
 
     #[test]
     fn snapshot_mapping_absolute_paths() {
@@ -255,6 +277,27 @@ mod tests {
     #[should_panic(expected = "Collection name is missing")]
     fn snapshot_mapping_rejects_empty_collection_name() {
         SnapshotMapping::from_cli_arg("collection.snapshot:");
+    }
+
+    #[test]
+    fn snapshot_recovery_uses_owned_temp_subdirectory() {
+        let configured_temp = tempfile::tempdir().unwrap();
+        let storage_dir = tempfile::tempdir().unwrap();
+        let sentinel_path = configured_temp.path().join("sentinel.txt");
+        fs::write(&sentinel_path, "keep").unwrap();
+
+        let recovery_temp =
+            snapshot_recovery_temp_dir(Some(configured_temp.path()), storage_dir.path());
+        let recovery_temp_path = recovery_temp.path().to_path_buf();
+
+        assert!(recovery_temp_path.starts_with(configured_temp.path().join("tmp")));
+        assert_ne!(recovery_temp_path, configured_temp.path());
+
+        recovery_temp.close().unwrap();
+
+        assert!(configured_temp.path().exists());
+        assert!(sentinel_path.exists());
+        assert!(!recovery_temp_path.exists());
     }
 
     #[test]
