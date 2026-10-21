@@ -34,7 +34,7 @@ pub struct CodeTokenizer;
 impl CodeTokenizer {
     /// Calls `callback` with each token, and whether it is a detached joined identifier. Those
     /// come after all subwords.
-    pub fn tokenize_doc<'a, C: FnMut(Cow<'a, str>, bool)>(
+    pub fn tokenize_with_joined<'a, C: FnMut(Cow<'a, str>, bool)>(
         text: &'a str,
         tokens_processor: &TokensProcessor,
         mut callback: C,
@@ -71,7 +71,8 @@ impl CodeTokenizer {
         }
     }
 
-    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(
+    /// Calls `callback` with each subword, in text order, without the joined identifiers.
+    pub fn tokenize_subwords<'a, C: FnMut(Cow<'a, str>)>(
         text: &'a str,
         tokens_processor: &TokensProcessor,
         mut callback: C,
@@ -356,13 +357,13 @@ mod tests {
 
     fn doc(text: &str) -> Vec<String> {
         let mut tokens = Vec::new();
-        CodeTokenizer::tokenize_doc(text, &lowercase(), |t, _| tokens.push(t.into_owned()));
+        CodeTokenizer::tokenize_with_joined(text, &lowercase(), |t, _| tokens.push(t.into_owned()));
         tokens
     }
 
     fn query(text: &str) -> Vec<String> {
         let mut tokens = Vec::new();
-        CodeTokenizer::tokenize_query(text, &lowercase(), |t| tokens.push(t.into_owned()));
+        CodeTokenizer::tokenize_subwords(text, &lowercase(), |t| tokens.push(t.into_owned()));
         tokens
     }
 
@@ -373,7 +374,7 @@ mod tests {
     fn parts(word: &str) -> Vec<String> {
         // A query is its subwords; without lowercasing they keep their case
         let mut parts = Vec::new();
-        CodeTokenizer::tokenize_query(word, &TokensProcessor::default(), |p| {
+        CodeTokenizer::tokenize_subwords(word, &TokensProcessor::default(), |p| {
             parts.push(p.into_owned())
         });
         parts
@@ -499,7 +500,7 @@ mod tests {
     fn test_joined_identifiers() {
         let joined = |text: &str, tokens_processor: &TokensProcessor| {
             let mut joined = Vec::new();
-            CodeTokenizer::tokenize_doc(text, tokens_processor, |token, detached| {
+            CodeTokenizer::tokenize_with_joined(text, tokens_processor, |token, detached| {
                 if detached {
                     joined.push(token.into_owned());
                 }
@@ -549,9 +550,9 @@ mod tests {
             assert!(!general.is_ascii_lowercase_only());
 
             let mut fast_tokens = Vec::new();
-            CodeTokenizer::tokenize_doc(text, &fast, |t, _| fast_tokens.push(t));
+            CodeTokenizer::tokenize_with_joined(text, &fast, |t, _| fast_tokens.push(t));
             let mut general_tokens = Vec::new();
-            CodeTokenizer::tokenize_doc(text, &general, |t, _| general_tokens.push(t));
+            CodeTokenizer::tokenize_with_joined(text, &general, |t, _| general_tokens.push(t));
             assert_eq!(fast_tokens, general_tokens, "lowercase: {lowercase}");
         }
     }

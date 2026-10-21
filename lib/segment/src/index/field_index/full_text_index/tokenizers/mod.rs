@@ -166,7 +166,10 @@ pub struct Tokenizer {
 }
 
 pub enum TokenizerTextKind {
+    /// A filter query: every token must be in a matching document.
     Query,
+    /// A ranking query: tokens add score, so it may have tokens a matching document lacks.
+    RankingQuery,
     Document,
     /// A phrase query: tokens that must appear in this order in a document.
     Phrase,
@@ -214,7 +217,27 @@ impl Tokenizer {
         }
     }
 
+    /// Query tokens never include [`ARRAY_BOUNDARY_SENTINEL`], even if the text contains it, so a
+    /// query can't match across the elements of an array.
     pub fn tokenize<'a, C: FnMut(Cow<'a, str>)>(
+        &self,
+        kind: TokenizerTextKind,
+        text: &'a str,
+        mut callback: C,
+    ) {
+        match kind {
+            TokenizerTextKind::Document => self.tokenize_unfiltered(kind, text, callback),
+            TokenizerTextKind::Query
+            | TokenizerTextKind::RankingQuery
+            | TokenizerTextKind::Phrase => self.tokenize_unfiltered(kind, text, |token| {
+                if token != ARRAY_BOUNDARY_SENTINEL {
+                    callback(token)
+                }
+            }),
+        }
+    }
+
+    fn tokenize_unfiltered<'a, C: FnMut(Cow<'a, str>)>(
         &self,
         kind: TokenizerTextKind,
         text: &'a str,
@@ -232,16 +255,19 @@ impl Tokenizer {
                 TokenizerTextKind::Document | TokenizerTextKind::Phrase => {
                     PrefixTokenizer::tokenize(text, tp, callback)
                 }
-                TokenizerTextKind::Query => PrefixTokenizer::tokenize_query(text, tp, callback),
+                TokenizerTextKind::Query | TokenizerTextKind::RankingQuery => {
+                    PrefixTokenizer::tokenize_query(text, tp, callback)
+                }
             },
             TokenizerType::Code => match kind {
-                TokenizerTextKind::Document => {
-                    CodeTokenizer::tokenize_doc(text, tp, |token, _| callback(token))
+                // A ranking query gets the joined identifiers too, so an exact identifier ranks first
+                TokenizerTextKind::Document | TokenizerTextKind::RankingQuery => {
+                    CodeTokenizer::tokenize_with_joined(text, tp, |token, _| callback(token))
                 }
                 // Joined identifiers are not in a document's token sequence, see
                 // `tokenize_doc_detached`
                 TokenizerTextKind::Query | TokenizerTextKind::Phrase => {
-                    CodeTokenizer::tokenize_query(text, tp, callback)
+                    CodeTokenizer::tokenize_subwords(text, tp, callback)
                 }
             },
         }
@@ -262,7 +288,7 @@ impl Tokenizer {
     ) {
         match self.tokenizer_type {
             TokenizerType::Code => {
-                CodeTokenizer::tokenize_doc(text, &self.tokens_processor, callback)
+                CodeTokenizer::tokenize_with_joined(text, &self.tokens_processor, callback)
             }
             TokenizerType::Prefix
             | TokenizerType::Whitespace
@@ -273,12 +299,8 @@ impl Tokenizer {
         }
     }
 
-    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, mut callback: C) {
-        self.tokenize(TokenizerTextKind::Query, text, |token| {
-            if token != ARRAY_BOUNDARY_SENTINEL {
-                callback(token)
-            }
-        });
+    pub fn tokenize_query<'a, C: FnMut(Cow<'a, str>)>(&'a self, text: &'a str, callback: C) {
+        self.tokenize(TokenizerTextKind::Query, text, callback);
     }
 
     /// Query tokens for ranking: [`Self::tokenize_query`], plus the code tokenizer's joined
@@ -286,19 +308,9 @@ impl Tokenizer {
     pub fn tokenize_ranking_query<'a, C: FnMut(Cow<'a, str>)>(
         &'a self,
         text: &'a str,
-        mut callback: C,
+        callback: C,
     ) {
-        match self.tokenizer_type {
-            TokenizerType::Code => self.tokenize_doc(text, |token| {
-                if token != ARRAY_BOUNDARY_SENTINEL {
-                    callback(token)
-                }
-            }),
-            TokenizerType::Prefix
-            | TokenizerType::Whitespace
-            | TokenizerType::Word
-            | TokenizerType::Multilingual => self.tokenize_query(text, callback),
-        }
+        self.tokenize(TokenizerTextKind::RankingQuery, text, callback);
     }
 }
 
