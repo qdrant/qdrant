@@ -179,6 +179,8 @@ pub trait CachedReadFs: UniversalReadFs {
     );
 
     /// Granular version of `schedule_open` for custom `populate` cases
+    /// 🤖 Idempotent per path like [`Self::schedule_open`]: a second future
+    /// 🤖 for a still-parked path is dropped unpolled.
     fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Self::File>>);
 
     /// Wait for all scheduled files to resolve.

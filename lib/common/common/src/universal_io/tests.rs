@@ -222,3 +222,48 @@ async fn cached_fs_prefetch_error() {
     cached_fs.discard_prefetched();
     cached_fs.prefetch_error().unwrap();
 }
+
+/// A scheduled future keeps making progress while parked: its wake-up after
+/// the scheduling poll is served without anyone awaiting the pool.
+#[test]
+fn cached_fs_schedule_drives_parked_future() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    use crate::mmap::AdviceSetting;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("f.dat");
+    fs_err::write(&path, b"123").unwrap();
+    let options = OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::No,
+        advice: AdviceSetting::Global,
+    };
+
+    let cached_fs = CachedFs::new(MmapFs, dir.path()).unwrap();
+    let (tx, rx) = futures::channel::oneshot::channel::<()>();
+    let reached = Arc::new(AtomicBool::new(false));
+    let fs = cached_fs.clone();
+    let flag = Arc::clone(&reached);
+    let open_path = path.clone();
+    cached_fs.schedule(
+        path.clone(),
+        Box::pin(async move {
+            rx.await.unwrap();
+            flag.store(true, Ordering::Release);
+            fs.open_async(open_path, options, ()).await
+        }),
+    );
+    assert!(!reached.load(Ordering::Acquire));
+
+    tx.send(()).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !reached.load(Ordering::Acquire) {
+        assert!(Instant::now() < deadline, "the future waited for a poll");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    cached_fs.open(&path, options, ()).unwrap();
+}
