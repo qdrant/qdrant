@@ -59,15 +59,40 @@ impl Collection {
         global_temp_dir: &Path,
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
+        let (snapshot_name, snapshot_temp_arc_file) = self
+            .create_snapshot_archive(global_temp_dir, this_peer_id)
+            .await?;
+
+        // Final location of snapshot
+        let snapshot_path = self.snapshots_path.join(&snapshot_name);
+        log::info!("Storing collection snapshot {snapshot_name} into {snapshot_path:?}");
+
+        let snapshot_manager = self.get_snapshots_storage_manager()?;
+        snapshot_manager
+            .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
+            .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "failed to store snapshot archive to {}: {err}",
+                    snapshot_temp_arc_file.path().display()
+                ))
+            })
+    }
+
+    /// Builds a snapshot archive of the collection in `global_temp_dir`, without storing it.
+    ///
+    /// Returns the snapshot file name and the archive, which is deleted when dropped.
+    pub async fn create_snapshot_archive(
+        &self,
+        global_temp_dir: &Path,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<(String, tempfile::NamedTempFile)> {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
             unique_snapshot_timestamp(),
         );
-
-        // Final location of snapshot
-        let snapshot_path = self.snapshots_path.join(&snapshot_name);
-        log::info!("Creating collection snapshot {snapshot_name} into {snapshot_path:?}");
+        log::info!("Creating collection snapshot archive {snapshot_name}");
 
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
         let snapshot_temp_arc_file = tempfile::Builder::new()
@@ -153,16 +178,7 @@ impl Collection {
             CollectionError::service_error(format!("failed to create snapshot archive: {err}"))
         })?;
 
-        let snapshot_manager = self.get_snapshots_storage_manager()?;
-        snapshot_manager
-            .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
-            .await
-            .map_err(|err| {
-                CollectionError::service_error(format!(
-                    "failed to store snapshot archive to {}: {err}",
-                    snapshot_temp_arc_file.path().display()
-                ))
-            })
+        Ok((snapshot_name, snapshot_temp_arc_file))
     }
 
     /// Restore collection from snapshot

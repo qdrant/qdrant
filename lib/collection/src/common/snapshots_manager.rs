@@ -1,5 +1,6 @@
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use common::defaults::APP_USER_AGENT;
@@ -127,7 +128,35 @@ pub struct AzureConfig {
 }
 
 pub struct SnapshotStorageCloud {
-    client: Box<dyn object_store::ObjectStore>,
+    client: Arc<dyn object_store::ObjectStore>,
+}
+
+/// An object upload in progress, fed through the writer from [`SnapshotStorageCloud::start_stream_upload`].
+pub struct StreamUpload {
+    commit: tokio::sync::oneshot::Sender<()>,
+    task: tokio::task::JoinHandle<CollectionResult<()>>,
+}
+
+impl StreamUpload {
+    /// Completes the upload. The writer must be dropped first, so the upload sees the end of the stream.
+    pub async fn commit(self) -> CollectionResult<()> {
+        // A failed send means the upload task already stopped; its result is returned below.
+        let _ = self.commit.send(());
+        self.task.await.map_err(|err| {
+            CollectionError::service_error(format!("Snapshot upload task failed: {err}"))
+        })?
+    }
+
+    /// Aborts the upload, so no object is created.
+    ///
+    /// Returns the upload's own error if it had already failed, which is usually why the
+    /// writer failed too.
+    pub async fn abort(self) -> CollectionResult<()> {
+        drop(self.commit);
+        self.task.await.map_err(|err| {
+            CollectionError::service_error(format!("Snapshot upload task failed: {err}"))
+        })?
+    }
 }
 
 impl SnapshotStorageCloud {
@@ -144,13 +173,49 @@ impl SnapshotStorageCloud {
                 .join("/");
             object_store::path::Path::from(prefix)
         });
-        let client: Box<dyn object_store::ObjectStore> = match prefix {
+        let client: Arc<dyn object_store::ObjectStore> = match prefix {
             Some(prefix) if !prefix.as_ref().is_empty() => {
-                Box::new(PrefixStore::new(store, prefix))
+                Arc::new(PrefixStore::new(store, prefix))
             }
-            _ => Box::new(store),
+            _ => Arc::new(store),
         };
         Self { client }
+    }
+
+    /// Starts uploading the object at `target_path` from the returned writer.
+    ///
+    /// `estimated_size` sets the part size and may overestimate. Call [`StreamUpload::commit`]
+    /// after dropping the writer to complete the upload, or [`StreamUpload::abort`].
+    pub fn start_stream_upload(
+        &self,
+        target_path: &Path,
+        estimated_size: u64,
+    ) -> (tokio::io::DuplexStream, StreamUpload) {
+        const STREAM_BUFFER_SIZE: usize = 8 * 1024 * 1024;
+
+        let (reader, writer) = tokio::io::duplex(STREAM_BUFFER_SIZE);
+        let (commit, commit_rx) = tokio::sync::oneshot::channel();
+        let client = self.client.clone();
+        let target_path = target_path.to_path_buf();
+        let chunk_size = snapshot_storage_ops::chunk_size_for(estimated_size as usize);
+        let task = tokio::spawn(async move {
+            snapshot_storage_ops::multipart_upload_stream(
+                client.as_ref(),
+                &target_path,
+                reader,
+                chunk_size,
+                commit_rx,
+            )
+            .await
+        });
+        (writer, StreamUpload { commit, task })
+    }
+
+    pub async fn get_snapshot_description(
+        &self,
+        snapshot_path: &Path,
+    ) -> CollectionResult<SnapshotDescription> {
+        snapshot_storage_ops::get_snapshot_description(&self.client, snapshot_path).await
     }
 }
 
