@@ -25,6 +25,7 @@
 
 use std::borrow::Cow;
 use std::path::Path;
+use std::sync::Arc;
 
 use bitpacking::{BitPacker as _, BitPacker4x};
 use common::ambient::hw::HwMetric;
@@ -35,6 +36,7 @@ use zerocopy::little_endian::{U32, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use super::TokenId;
+use super::on_disk_inverted_index::posting_directory::PostingDirectory;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Entries per block: one posting list chunk.
@@ -164,13 +166,39 @@ impl<'a> TermFrequencies<'a> {
     }
 }
 
+/// Each requested term's entry count and data range, `None` past the
+/// vocabulary.
+type Spans = Vec<Option<(usize, ReadRange)>>;
+
+/// The size of each term's data in the bytes of a `term_frequencies.dat`
+/// file, in token id order: what a posting directory records to place them.
+pub fn term_data_sizes(bytes: &[u8]) -> OperationResult<Vec<u64>> {
+    let TermFrequencies { headers, data } = TermFrequencies::new(bytes)?;
+    let ends = headers
+        .iter()
+        .skip(1)
+        .map(|header| header.offset.get())
+        .chain(std::iter::once(data.len() as u64));
+    headers
+        .iter()
+        .zip(ends)
+        .map(|(header, end)| {
+            end.checked_sub(header.offset.get())
+                .ok_or_else(|| corrupted("term data out of order"))
+        })
+        .collect()
+}
+
 /// A `term_frequencies.dat` file read through universal IO: the header at
 /// open, then only the query terms' headers and data, two batched reads per
-/// query.
+/// query. With a posting directory that places the terms, only their data.
 pub struct OnDiskTermFrequencies<S: UniversalRead> {
     storage: TypedStorage<S, u8>,
     term_count: usize,
     file_len: u64,
+    /// Places every term's data from RAM, when the index has a posting
+    /// directory that records this file.
+    directory: Option<Arc<PostingDirectory>>,
 }
 
 impl<S: UniversalRead> OnDiskTermFrequencies<S> {
@@ -205,7 +233,33 @@ impl<S: UniversalRead> OnDiskTermFrequencies<S> {
             storage,
             term_count,
             file_len,
+            directory: None,
         })
+    }
+
+    /// Offset of the first term's data: right after the headers.
+    fn data_start(&self) -> u64 {
+        size_of::<TermFrequenciesHeader>() as u64
+            + self.term_count as u64 * size_of::<TermHeader>() as u64
+    }
+
+    /// Place the terms with `directory` from now on, if it records this file:
+    /// as many terms, and data of this file's length. One that does not, a
+    /// directory written without frequencies or beside another build's file,
+    /// is ignored, and the headers are read in place as before.
+    pub fn use_directory(&mut self, directory: &Arc<PostingDirectory>) -> bool {
+        let data_len = self.file_len - self.data_start();
+        if directory.count() != self.term_count || directory.frequencies_len() != Some(data_len) {
+            return false;
+        }
+        self.directory = Some(Arc::clone(directory));
+        true
+    }
+
+    /// Whether the terms are placed from RAM.
+    #[cfg(test)]
+    pub fn has_directory(&self) -> bool {
+        self.directory.is_some()
     }
 
     /// Number of terms, token ids `0..term_count()`.
@@ -219,12 +273,70 @@ impl<S: UniversalRead> OnDiskTermFrequencies<S> {
 
     /// The frequencies of each of `token_ids`, in that order, `None` past the
     /// vocabulary, handed to `f`. A term's data ends where the next term's
-    /// starts, so its header is read with the next one.
+    /// starts, so its header is read with the next one; with a directory, no
+    /// header is read.
     pub fn with_terms<R>(
         &self,
         token_ids: &[TokenId],
         f: impl FnOnce(Vec<Option<TermFrequencyList<'_>>>) -> OperationResult<R>,
     ) -> OperationResult<R> {
+        let (spans, header_bytes) = match &self.directory {
+            Some(directory) => (self.spans_from(directory, token_ids), 0),
+            None => self.read_spans(token_ids)?,
+        };
+
+        // Billed as the length and header reads of the same index are.
+        let bytes_read = header_bytes
+            + spans
+                .iter()
+                .flatten()
+                .map(|(_, range)| range.length)
+                .sum::<u64>();
+        HwMetric::PayloadIndexIoRead.bump(bytes_read as usize);
+
+        let mut data: Vec<Option<(usize, Cow<'_, [u8]>)>> = vec![None; token_ids.len()];
+        let data_ranges = spans
+            .iter()
+            .enumerate()
+            .filter_map(|(at, span)| span.map(|(len, range)| ((at, len), range)));
+        for entry in self.storage.read_iter(data_ranges, Sequential)? {
+            let ((at, len), bytes) = entry?;
+            data[at] = Some((len, bytes));
+        }
+
+        let lists = data
+            .iter()
+            .map(|entry| {
+                entry
+                    .as_ref()
+                    .map(|(len, bytes)| TermFrequencyList::parse(*len, bytes))
+                    .transpose()
+            })
+            .collect::<OperationResult<_>>()?;
+        f(lists)
+    }
+
+    /// Each term's entry count and data range, from the directory.
+    fn spans_from(&self, directory: &PostingDirectory, token_ids: &[TokenId]) -> Spans {
+        let data_start = self.data_start();
+        token_ids
+            .iter()
+            .map(|&token_id| {
+                let span = directory.frequency_span(token_id)?;
+                Some((
+                    span.len,
+                    ReadRange {
+                        byte_offset: data_start + span.offset,
+                        length: span.size,
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// Each term's entry count and data range, from the headers read in
+    /// place, and how many header bytes that read.
+    fn read_spans(&self, token_ids: &[TokenId]) -> OperationResult<(Spans, u64)> {
         let header_len = size_of::<TermHeader>() as u64;
         let headers_start = size_of::<TermFrequenciesHeader>() as u64;
         let data_start = headers_start + self.term_count as u64 * header_len;
@@ -241,7 +353,7 @@ impl<S: UniversalRead> OnDiskTermFrequencies<S> {
                 };
                 (at, range)
             });
-        let mut spans: Vec<Option<(usize, ReadRange)>> = vec![None; token_ids.len()];
+        let mut spans: Spans = vec![None; token_ids.len()];
         let mut bytes_read = 0;
         self.storage
             .read_batch(header_ranges, Random, |at, bytes: &[u8]| {
@@ -266,35 +378,7 @@ impl<S: UniversalRead> OnDiskTermFrequencies<S> {
                 ));
                 OperationResult::Ok(())
             })?;
-
-        // Billed as the length and header reads of the same index are.
-        bytes_read += spans
-            .iter()
-            .flatten()
-            .map(|(_, range)| range.length)
-            .sum::<u64>();
-        HwMetric::PayloadIndexIoRead.bump(bytes_read as usize);
-
-        let mut data: Vec<Option<(usize, Cow<'_, [u8]>)>> = vec![None; token_ids.len()];
-        let data_ranges = spans
-            .iter()
-            .enumerate()
-            .filter_map(|(at, span)| span.map(|(len, range)| ((at, len), range)));
-        for entry in self.storage.read_iter(data_ranges, Sequential)? {
-            let ((at, len), bytes) = entry?;
-            data[at] = Some((len, bytes));
-        }
-
-        let lists = data
-            .iter()
-            .map(|entry| {
-                entry
-                    .as_ref()
-                    .map(|(len, bytes)| TermFrequencyList::parse(*len, bytes))
-                    .transpose()
-            })
-            .collect::<OperationResult<_>>()?;
-        f(lists)
+        Ok((spans, bytes_read))
     }
 }
 

@@ -1,15 +1,18 @@
 use std::cell::Cell;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use common::generic_consts::{Random, Sequential};
 use common::universal_io::{
-    CachedReadFs, OkNotFound, OpenOptions, ReadRange, UniversalIoError, UioResult, UniversalRead,
+    CachedReadFs, OkNotFound, OneshotFile, OpenOptions, ReadRange, UniversalIoError, UioResult,
+    UniversalRead,
     UniversalReadFs,
 };
 use posting_list::{PostingList, PostingListView};
 use zerocopy::FromBytes;
 
+use super::posting_directory::{self, POSTING_DIRECTORY_FILE, PostingDirectory};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
 use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::raw_posting_list::RawPostingList;
@@ -25,11 +28,15 @@ use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted
 /// `get_header(token_id)` indexes the per-token header array directly:
 /// `size_of::<PostingsHeader>() + token_id * size_of::<PostingListHeader>()`.
 /// Each [`PostingListHeader`] then points (via absolute `offset`) into the
-/// posting-data region.
+/// posting-data region. With a [`PostingDirectory`] next to the file, the
+/// headers come from RAM instead, and only posting bytes are read.
 pub struct OnDiskPostings<V: ZerocopyPostingValue, S: UniversalRead> {
     _path: PathBuf,
     storage: S,
     header: PostingsHeader,
+    /// Every posting list header, in RAM, when the index has a posting
+    /// directory: headers are then never read from `storage`.
+    directory: Option<Arc<PostingDirectory>>,
     _value_type: PhantomData<V>,
 }
 
@@ -73,13 +80,64 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
         };
 
         let header = storage.read::<_, PostingsHeader>(ReadRange::one(0), Sequential)?[0];
+        let directory = Self::read_directory(fs, &path, &header, &storage)?;
 
         Ok(Some(Self {
             _path: path,
             storage,
             header,
+            directory,
             _value_type: PhantomData,
         }))
+    }
+
+    /// The posting directory next to the postings file at `path`, read whole in
+    /// one request, or `None` when the index has none.
+    ///
+    /// One that does not describe this postings file, a partially copied or
+    /// stale file set, is ignored with a warning, as a bad document length
+    /// sidecar is: its offsets would send posting reads to another list's
+    /// bytes, while `postings.dat` alone still answers correctly, reading its
+    /// headers in place.
+    fn read_directory<Fs: UniversalReadFs<File = S>>(
+        fs: &Fs,
+        path: &Path,
+        header: &PostingsHeader,
+        storage: &S,
+    ) -> OperationResult<Option<Arc<PostingDirectory>>> {
+        let directory_path = path.with_file_name(POSTING_DIRECTORY_FILE);
+        let Some(file) = OneshotFile::open(fs, &directory_path).ok_not_found()? else {
+            return Ok(None);
+        };
+        let bytes = file.read_whole::<u8>()?;
+        let file_len = storage.len::<u8>()?;
+        match posting_directory::read::<V>(&bytes, header.posting_count, file_len) {
+            Ok(directory) => Ok(Some(Arc::new(directory))),
+            Err(reason) => {
+                log::warn!(
+                    "Ignoring posting directory {path}: {reason}",
+                    path = directory_path.display(),
+                );
+                Ok(None)
+            }
+        }
+    }
+
+    /// Whether the headers are held in RAM, see [`PostingDirectory`].
+    pub fn has_directory(&self) -> bool {
+        self.directory.is_some()
+    }
+
+    /// The posting directory, which also places the term frequencies.
+    pub fn directory(&self) -> Option<&Arc<PostingDirectory>> {
+        self.directory.as_ref()
+    }
+
+    /// Heap held by the posting directory, if any.
+    pub fn ram_usage_bytes(&self) -> usize {
+        self.directory
+            .as_ref()
+            .map_or(0, |directory| directory.ram_usage_bytes())
     }
 
     /// Hint the storage backend to populate any RAM cache backing this file.
@@ -103,6 +161,18 @@ impl<V: ZerocopyPostingValue, S: UniversalRead> OnDiskPostings<V, S> {
     /// pairs with the list of token ids that were out-of-range. Order is not
     /// guaranteed to match the input.
     fn headers_iter(&self, token_ids: &[TokenId]) -> Result<HeadersBatch, UniversalIoError> {
+        if let Some(directory) = &self.directory {
+            let mut headers = Vec::with_capacity(token_ids.len());
+            let mut missing = Vec::new();
+            for &token_id in token_ids {
+                match directory.header::<V>(token_id) {
+                    Some(header) => headers.push(Ok((token_id, header))),
+                    None => missing.push(token_id),
+                }
+            }
+            return Ok(HeadersBatch { headers, missing });
+        }
+
         let header_length = size_of::<PostingListHeader>() as u64;
         let posting_count = self.header.posting_count;
 

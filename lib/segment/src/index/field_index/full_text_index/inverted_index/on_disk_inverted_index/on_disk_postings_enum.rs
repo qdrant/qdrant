@@ -1,11 +1,14 @@
 #[cfg(test)]
 use common::types::PointOffsetType;
+use std::sync::Arc;
+
 use common::universal_io::UniversalRead;
 
 use super::super::positions::Positions;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
 use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::on_disk_postings::OnDiskPostings;
+use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::posting_directory::PostingDirectory;
 
 pub enum OnDiskPostingsEnum<S: UniversalRead> {
     Ids(OnDiskPostings<(), S>),
@@ -24,6 +27,29 @@ impl<S: UniversalRead> OnDiskPostingsEnum<S> {
         match self {
             OnDiskPostingsEnum::Ids(postings) => postings.clear_cache(),
             OnDiskPostingsEnum::WithPositions(postings) => postings.clear_cache(),
+        }
+    }
+
+    /// Whether the posting list headers are held in RAM.
+    pub fn has_directory(&self) -> bool {
+        match self {
+            OnDiskPostingsEnum::Ids(postings) => postings.has_directory(),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.has_directory(),
+        }
+    }
+
+    /// The posting directory, which also places the term frequencies.
+    pub fn directory(&self) -> Option<&Arc<PostingDirectory>> {
+        match self {
+            OnDiskPostingsEnum::Ids(postings) => postings.directory(),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.directory(),
+        }
+    }
+
+    pub fn ram_usage_bytes(&self) -> usize {
+        match self {
+            OnDiskPostingsEnum::Ids(postings) => postings.ram_usage_bytes(),
+            OnDiskPostingsEnum::WithPositions(postings) => postings.ram_usage_bytes(),
         }
     }
 

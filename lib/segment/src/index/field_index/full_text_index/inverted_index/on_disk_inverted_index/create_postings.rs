@@ -72,11 +72,13 @@ use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted
 /// - `V = Positions` — phrase index; per-doc token positions live in
 ///   `var_size_data`, with each `PostingChunk` / `RemainderPosting` carrying
 ///   a `Sized` handle (offset/len) into that blob.
+///
+/// Returns the headers it wrote, in token id order.
 pub fn create_postings_file<V: ZerocopyPostingValue>(
     path: PathBuf,
     compressed_postings: &[PostingList<V>],
     total_tokens: u64,
-) -> io::Result<()> {
+) -> io::Result<Vec<PostingListHeader>> {
     // Create a new empty file, where we will write the compressed posting lists and the header
     let (file, temp_path) = tempfile::Builder::new()
         .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
@@ -95,6 +97,7 @@ pub fn create_postings_file<V: ZerocopyPostingValue>(
 
     let postings_lists_headers_size = compressed_postings.len() * size_of::<PostingListHeader>();
     let mut posting_offset = size_of::<PostingsHeader>() + postings_lists_headers_size;
+    let mut headers = Vec::with_capacity(compressed_postings.len());
 
     for compressed_posting in compressed_postings {
         let view = compressed_posting.view();
@@ -124,6 +127,7 @@ pub fn create_postings_file<V: ZerocopyPostingValue>(
         bufw.write_all(posting_list_header.as_bytes())?;
 
         posting_offset += posting_list_header.posting_size::<V>();
+        headers.push(posting_list_header);
     }
 
     for compressed_posting in compressed_postings {
@@ -168,5 +172,5 @@ pub fn create_postings_file<V: ZerocopyPostingValue>(
     drop(file);
     temp_path.persist(path)?;
 
-    Ok(())
+    Ok(headers)
 }
