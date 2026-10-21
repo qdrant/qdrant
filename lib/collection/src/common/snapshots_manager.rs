@@ -5,7 +5,7 @@ use common::tempfile_ext::MaybeTempPath;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use http::HeaderValue;
-use object_store::aws::{AmazonS3Builder, Checksum};
+use object_store::aws::AmazonS3Builder;
 use object_store::azure::{AzureConfigKey, MicrosoftAzureBuilder};
 use object_store::gcp::GoogleCloudStorageBuilder;
 use object_store::prefix::PrefixStore;
@@ -22,9 +22,6 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::snapshot_storage_ops;
 use crate::operations::types::{CollectionError, CollectionResult};
-
-#[cfg(test)]
-mod s3_tests;
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapshotsConfig {
@@ -175,7 +172,6 @@ fn build_s3_client(config: Option<&S3Config>) -> CollectionResult<object_store::
     }
 
     builder
-        .with_checksum_algorithm(Checksum::CRC64NVME)
         .build()
         .map_err(|e| CollectionError::service_error(format!("Failed to create S3 client: {e}")))
 }
