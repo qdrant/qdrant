@@ -1753,9 +1753,9 @@ impl PayloadStorageType {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vector_name_map")]
     pub vector_data: HashMap<VectorNameBuf, VectorDataConfig>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vector_name_map")]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     /// Defines payload storage type
@@ -1764,6 +1764,23 @@ pub struct SegmentConfig {
     /// default: `cold` in serverless-compatible mode, `pinned` otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_tracker_memory: Option<Memory>,
+}
+
+/// Reject vector names that would escape the segment directory, see
+/// [`crate::segment_constructor::check_vector_name_path`]. Covers every reader of `segment.json`.
+fn deserialize_vector_name_map<'de, D, V>(
+    deserializer: D,
+) -> Result<HashMap<VectorNameBuf, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Deserialize<'de>,
+{
+    let map = HashMap::<VectorNameBuf, V>::deserialize(deserializer)?;
+    for name in map.keys() {
+        crate::segment_constructor::check_vector_name_path(name)
+            .map_err(serde::de::Error::custom)?;
+    }
+    Ok(map)
 }
 
 impl SegmentConfig {
@@ -6592,6 +6609,18 @@ mod tests {
         let cbor_bytes = serde_cbor::to_vec(&filter).unwrap();
         let deserialized: Filter = serde_cbor::from_slice(&cbor_bytes).unwrap();
         assert_eq!(filter, deserialized);
+    }
+
+    #[rstest]
+    #[case::traversal("x/../../tmp/pwned", false)]
+    #[case::absolute("/tmp/pwned", false)]
+    #[case::default("", true)]
+    #[case::plain("image", true)]
+    #[case::legacy_nested("a/b", true)]
+    fn vector_name_map_rejects_escaping_names(#[case] name: &str, #[case] ok: bool) {
+        let result =
+            deserialize_vector_name_map::<_, serde_json::Value>(serde_json::json!({ name: {} }));
+        assert_eq!(result.is_ok(), ok, "{name:?}: {result:?}");
     }
 }
 
