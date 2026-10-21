@@ -3,6 +3,8 @@ mod lifecycle;
 mod live_reload;
 
 #[cfg(test)]
+mod lazy_open_tests;
+#[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;
