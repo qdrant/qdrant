@@ -49,7 +49,7 @@ struct GpuBlocks {
 impl GpuState {
     /// Uploads the vectors to `device`. `None` if that fails, so the graphs are built on the CPU.
     pub fn new(
-        ctx: GraphBuildContext<'_>,
+        ctx: &GraphBuildContext<'_>,
         device: &LockedGpuDevice,
     ) -> OperationResult<Option<Self>> {
         let vectors = GpuVectorStorage::new(
@@ -83,7 +83,7 @@ impl GpuState {
     /// GPU failed.
     pub fn build_main(
         &self,
-        ctx: GraphBuildContext<'_>,
+        ctx: &GraphBuildContext<'_>,
         graph: &GraphLayersBuilder,
         points: &[PointOffsetType],
     ) -> OperationResult<Option<GraphLayersBuilder>> {
@@ -116,7 +116,7 @@ impl GpuState {
     /// failed.
     pub fn build_block(
         &mut self,
-        ctx: GraphBuildContext<'_>,
+        ctx: &GraphBuildContext<'_>,
         points: &[PointOffsetType],
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         let GraphParams {
@@ -168,14 +168,14 @@ impl GraphBuilderMethod for GpuBuilder<'_> {
             // No main graph
             return Ok(());
         }
-        if let Some(progress) = &local.main_graph_progress {
-            progress.start();
-        }
-        match gpu.build_main(local.ctx, &local.graph, &local.points)? {
+        match gpu.build_main(&local.ctx, &local.graph, &local.points)? {
             Some(graph) => {
                 local.graph = graph;
+                // The phases only time CPU work, so they end unstarted
+                drop(local.ctx.progress.take());
                 Ok(())
             }
+            // The phases are untouched, so the CPU method runs them in order, as without a GPU
             None => cpu.build_main(),
         }
     }
@@ -209,7 +209,7 @@ impl<'a> LocalMethod<'a> for GpuBuilder<'a> {
     ) -> OperationResult<()> {
         let GpuBuilder(cpu, gpu) = self;
         let local = cpu.local();
-        match gpu.build_block(local.ctx, points)? {
+        match gpu.build_block(&local.ctx, points)? {
             Some(block_graph) => {
                 local.graph.merge_from_other(block_graph);
                 Ok(())
@@ -221,7 +221,7 @@ impl<'a> LocalMethod<'a> for GpuBuilder<'a> {
 
 /// Scorer against `point_id` over the whole segment, for the CPU parts of a GPU build.
 fn scorer<'a>(
-    ctx: GraphBuildContext<'a>,
+    ctx: &GraphBuildContext<'a>,
     point_id: PointOffsetType,
 ) -> OperationResult<FilteredScorer<'a>> {
     FilteredScorer::new_internal(

@@ -3,7 +3,6 @@ mod seeds;
 use std::ops::Deref as _;
 use std::sync::atomic::AtomicU64;
 
-use common::progress_tracker::ProgressTracker;
 use common::types::PointOffsetType;
 use log::debug;
 use rand::Rng;
@@ -11,7 +10,7 @@ use rayon::ThreadPool;
 
 use self::seeds::BlockSeeds;
 use super::block::Block;
-use super::context::GraphBuildContext;
+use super::context::{GraphBuildContext, MainGraphProgress};
 use super::graph_builder::GraphBuilderMethod;
 use super::hnsw_builder::HnswBuilder;
 use super::local_builder::{LocalBuilder, LocalMethod};
@@ -22,9 +21,6 @@ use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::hnsw::old_index::{OldIndex, payload_links_reusable};
 use crate::vector_storage::VectorStorageRead as _;
 
-/// Progress phase of healing the old graph.
-const MIGRATE_PHASE: &str = "migrate";
-
 /// Heals the graph of an older segment, then inserts the points it lacks with HNSW.
 ///
 /// Payload blocks start from the links their points had to each other in the old graph, if it
@@ -32,10 +28,7 @@ const MIGRATE_PHASE: &str = "migrate";
 pub(super) struct HealingBuilder<'a> {
     hnsw: HnswBuilder<'a>,
     old: &'a OldIndex<'a>,
-    /// Progress of healing the old graph, created with the builder so that it is listed before
-    /// the main graph. `None` without a main graph, or once taken by `build_main`.
-    migrate_progress: Option<ProgressTracker>,
-    /// `None` if the payload links of the old graph cannot be reused.
+    /// Allocated only when the first payload block is seeded on the CPU.
     seeds: Option<BlockSeeds<'a>>,
     /// Points of the blocks built, for the log.
     block_points: usize,
@@ -51,20 +44,12 @@ impl<'a> HealingBuilder<'a> {
         rng: &'a mut dyn Rng,
         old: &'a OldIndex<'a>,
     ) -> OperationResult<Self> {
-        let migrate_progress = ctx
-            .has_main_graph()
-            .then(|| ctx.progress.subtask(MIGRATE_PHASE));
         let hnsw = HnswBuilder(LocalBuilder::new(ctx, pool, rng, Some(old))?);
-
-        let payload_m = ctx.block_params.hnsw_m;
-        let seeds = payload_links_reusable(payload_m, &old.index.config)
-            .then(|| BlockSeeds::new(old, payload_m, ctx.vector_storage.total_vector_count()));
 
         Ok(Self {
             hnsw,
             old,
-            migrate_progress,
-            seeds,
+            seeds: None,
             block_points: 0,
             seeded_points: 0,
         })
@@ -74,21 +59,31 @@ impl<'a> HealingBuilder<'a> {
 impl GraphBuilderMethod for HealingBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
         if !self.hnsw.0.ctx.has_main_graph() {
+            // No main graph
             return Ok(());
         }
-        let migrate_progress = self
-            .migrate_progress
+        let progress = self
+            .hnsw
+            .0
+            .ctx
+            .progress
             .take()
-            .unwrap_or_else(|| self.hnsw.0.ctx.progress.subtask(MIGRATE_PHASE));
-        let main_graph_progress = self.hnsw.0.take_main_graph_progress();
+            .expect("main graph built once");
+        let MainGraphProgress {
+            migrate,
+            main_graph,
+        } = progress;
         let local = &self.hnsw.0;
         let old = self.old;
 
-        migrate_progress.start();
+        // Outside the phase, which times the healing. A stop during it must not wait for the
+        // healer to copy the old graph.
+        old.populate_links();
+        check_process_stopped(local.ctx.stopped)?;
+
+        migrate.start();
 
         let timer = std::time::Instant::now();
-
-        old.populate_links();
 
         let mut healer = GraphLayersHealer::new(
             old.graph(),
@@ -98,7 +93,7 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
         let old_vector_storage = old.index.vector_storage.borrow();
         let old_quantized_vectors = old.index.quantized_vectors.borrow();
 
-        let counter = migrate_progress.track_progress(Some(healer.to_heal_count() as u64));
+        let counter = migrate.track_progress(Some(healer.to_heal_count() as u64));
         healer.heal(
             local.pool,
             &old_vector_storage,
@@ -117,9 +112,9 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
             .collect::<Vec<_>>();
 
         debug!("Migrated in {:?}", timer.elapsed());
-        drop(migrate_progress);
+        drop(migrate);
 
-        self.hnsw.insert(&missing_points, main_graph_progress)
+        self.hnsw.insert(&missing_points, main_graph)
     }
 
     fn build_field_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
@@ -137,7 +132,7 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
     }
 
     fn seeds_payload_blocks(&self) -> bool {
-        self.seeds.is_some()
+        payload_links_reusable(self.hnsw.0.ctx.block_params.hnsw_m, &self.old.index.config)
     }
 }
 
@@ -153,12 +148,20 @@ impl<'a> LocalMethod<'a> for HealingBuilder<'a> {
         points: &[PointOffsetType],
         counter: &AtomicU64,
     ) -> OperationResult<()> {
-        let Some(seeds) = &mut self.seeds else {
+        if !self.seeds_payload_blocks() {
             return self.hnsw.build_block(points, counter);
-        };
+        }
         self.old.populate_links();
         let local = &mut self.hnsw.0;
-        let block = Block::new(local.ctx, points);
+        check_process_stopped(local.ctx.stopped)?;
+        let seeds = self.seeds.get_or_insert_with(|| {
+            BlockSeeds::new(
+                self.old,
+                local.ctx.block_params.hnsw_m,
+                local.ctx.vector_storage.total_vector_count(),
+            )
+        });
+        let block = Block::new(&local.ctx, points);
         let to_insert = seeds.seed_block(&block, &local.graph, local.pool, counter)?;
         self.block_points += points.len();
         self.seeded_points += points.len() - to_insert.len();
