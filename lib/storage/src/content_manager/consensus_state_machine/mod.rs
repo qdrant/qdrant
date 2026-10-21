@@ -287,7 +287,7 @@ impl NodeContext {
             ShardingMethod::Auto => {
                 let shard_number = op.create_collection.shard_number.or_else(|| {
                     let defaults = self.collection_defaults.as_ref()?;
-                    Some(defaults.get_shard_number(1))
+                    Some(defaults.get_shard_number(1, 1))
                 });
 
                 (0..shard_number.unwrap_or(1))
