@@ -6,8 +6,8 @@ use crate::turboquant::rotation::HadamardRotation;
 use crate::turboquant::simd::{
     CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query1bitWideSimd,
     Query2bitSimd, Query4bitSimd, Query8bitSimd, Query16bitSimd, score_1bit_internal,
-    score_2bit_internal, score_2bit_internal_weighted, score_4bit_internal,
-    score_4bit_internal_weighted, score_8bit_internal, score_16bit_internal,
+    score_2bit_internal, score_2bit_internal_folded, score_4bit_internal,
+    score_4bit_internal_folded, score_8bit_internal, score_16bit_internal,
 };
 use crate::turboquant::{EncodedQueryTQ, EncodedQueryTQData, TQBits, TQMode, TQRotation};
 
@@ -29,19 +29,17 @@ pub struct TurboQuantizer {
 pub struct ErrorCorrection {
     pub(crate) shift: Vec<f32>,
     pub(crate) scale: Vec<f32>,
-    /// Signed 16-bit quantized `D'_i² = 1 / scale_i²` per coordinate, used
-    /// by the SIMD weighted-dot path of `score_symmetric_ec` for Bits2/Bits4.
-    /// `D'²_f32 ≈ d_prime_sq_i16[i] / weight_scale`. Values are non-negative
-    /// and clamped to `[0, i16::MAX − 1]` so SIMD kernels can use
-    /// `_mm256_madd_epi16` / `vmlal_s16` directly — the `i16` element type
-    /// makes that contract a type-system invariant. Recomputed from `scale`
-    /// rather than persisted — `scale` is the single source of truth.
-    pub(super) d_prime_sq_i16: Vec<i16>,
-    /// `(i16::MAX − 1) / max(D'²)` — quantization scale. The 1-bit cap
-    /// (vs. full u16) costs ~3e-5 relative precision but lets SIMD use
-    /// signed `i16` multiply-adds. `1.0` if all `D'²` are effectively zero
-    /// (degenerate quantizer).
-    pub(super) weight_scale: f32,
+    /// `D'_i = 1 / scale_i` per coordinate relative to the largest, in Q15:
+    /// `round(D'_i · q15_scale)`, at most `i16::MAX`. Symmetric scoring of
+    /// Bits2/Bits4 scales each code's signed codebook value by it
+    /// (`fold_q15`, as `pmulhrsw` / `vqrdmulh` round), so the scaled values
+    /// stay in i8 and their products carry `D'_i²`; the matrix operands
+    /// decode the same values, which keeps them exact. Recomputed from
+    /// `scale` rather than persisted — `scale` is the single source of truth.
+    pub(super) d_prime_q15: Vec<i16>,
+    /// `i16::MAX / max(D')`, see `d_prime_q15`. `1.0` if all `D'` are
+    /// effectively zero (degenerate quantizer).
+    pub(super) q15_scale: f32,
     /// `⟨M, M⟩ = Σ shift²` global constant. Used in symmetric TQ+ scoring to
     /// cancel the double-counted `⟨M, M⟩` from `xm_a + xm_b`.
     pub(super) mm_const: f32,
@@ -56,41 +54,34 @@ impl ErrorCorrection {
         );
         let mm_const = shift.iter().map(|&s| s * s).sum();
 
-        // Build f32 D'² per coord, then quantize to u16 with a single global
-        // scale chosen from the largest D'². Per-coord precision lower bound:
-        // `1/weight_scale = max(D'²)/65534`; relative error on the smallest
-        // coord is `(min/max)·(1/65534)` — overwhelmingly tighter than f32
-        // precision in this dynamic range.
-        let d_prime_sq_f32: Vec<f32> = scale
+        // `D'` per coord, quantized with a single global scale chosen from
+        // the largest, so the factors span the whole Q15 range.
+        let d_prime_f32: Vec<f32> = scale
             .iter()
             .map(|&s| {
                 if s.abs() > f32::EPSILON {
-                    (s * s).recip()
+                    s.abs().recip()
                 } else {
                     0.0
                 }
             })
             .collect();
-        let max_d_prime_sq = d_prime_sq_f32.iter().copied().fold(0.0f32, f32::max);
-        // Cap quantized values to `i16::MAX − 1` so SIMD kernels can
-        // multiply them as signed `i16` without sign flips. See
-        // `d_prime_sq_i16` field doc for the full rationale.
-        const QUANT_CAP: i16 = i16::MAX - 1;
-        let weight_scale = if max_d_prime_sq > f32::EPSILON {
-            f32::from(QUANT_CAP) / max_d_prime_sq
+        let max_d_prime = d_prime_f32.iter().copied().fold(0.0f32, f32::max);
+        let q15_scale = if max_d_prime > f32::EPSILON {
+            f32::from(i16::MAX) / max_d_prime
         } else {
             1.0
         };
-        let d_prime_sq_i16: Vec<i16> = d_prime_sq_f32
+        let d_prime_q15: Vec<i16> = d_prime_f32
             .iter()
-            .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as i16)
+            .map(|&x| (x * q15_scale).round().clamp(0.0, f32::from(i16::MAX)) as i16)
             .collect();
 
         ErrorCorrection {
             shift,
             scale,
-            d_prime_sq_i16,
-            weight_scale,
+            d_prime_q15,
+            q15_scale,
             mm_const,
         }
     }
@@ -105,16 +96,18 @@ impl ErrorCorrection {
                 unreachable!("TQ+ weights the symmetric scores of 2 and 4 bits only, not {bits:?}")
             }
         };
+        // `fold_q15` divides by 2¹⁵ while scaling by `D' · q15_scale`
+        let factor_scale = self.q15_scale / 32768.0;
         SymmetricCorrection {
-            div: self.weight_scale * codebook_scale_sq,
+            div: codebook_scale_sq * factor_scale * factor_scale,
             mm: self.mm_const,
         }
     }
 }
 
-/// How TQ+ turns the weighted code sum `Σ c_a · c_b · D'²` of two vectors, with the codebook
-/// values and weights as the integers the kernels multiply, into their centroid dot: divided
-/// by `weight_scale · CODEBOOK_SCALE²`, plus `xm_a + xm_b − ⟨M, M⟩`.
+/// How TQ+ turns the folded code sum `Σ q_a · q_b` of two vectors, the codebook values scaled
+/// by `D'` as the integers the kernels multiply, into their centroid dot: divided by
+/// `CODEBOOK_SCALE² · (q15_scale / 2¹⁵)²`, plus `xm_a + xm_b − ⟨M, M⟩`.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SymmetricCorrection {
     div: f32,
@@ -125,11 +118,11 @@ impl SymmetricCorrection {
     #[inline(always)]
     pub(crate) fn centroid_dot(
         self,
-        weighted: f32,
+        folded: f32,
         values_a: &SymmetricValues,
         values_b: &SymmetricValues,
     ) -> f32 {
-        weighted / self.div + values_a.correction + values_b.correction - self.mm
+        folded / self.div + values_a.correction + values_b.correction - self.mm
     }
 }
 
@@ -190,13 +183,13 @@ impl TurboQuantizer {
             let ErrorCorrection {
                 shift,
                 scale,
-                d_prime_sq_i16,
-                weight_scale: _,
+                d_prime_q15,
+                q15_scale: _,
                 mm_const: _,
             } = ec;
             shift.capacity() * size_of::<f32>()
                 + scale.capacity() * size_of::<f32>()
-                + d_prime_sq_i16.capacity() * size_of::<i16>()
+                + d_prime_q15.capacity() * size_of::<i16>()
         })
     }
 
@@ -525,10 +518,8 @@ impl TurboQuantizer {
         let values_v1 = self.symmetric_values(&extra_v1);
         let values_v2 = self.symmetric_values(&extra_v2);
 
-        // For TQ+, the SIMD kernels' uniform-weight dot can't produce the
-        // per-coord-weighted `Σ X+_a_i · X+_b_i · D'_i²` we need. Fall back to
-        // a scalar loop and add the precomputed `xm_a + xm_b − ⟨M, M⟩`.
-        // SIMD support for this path is a follow-up.
+        // For TQ+, the per-coord-weighted `Σ X+_a_i · X+_b_i · D'_i²` comes
+        // from the folded kernels, plus the precomputed `xm_a + xm_b − ⟨M, M⟩`.
         let raw_dot = match &self.error_correction {
             Some(ec) => self.score_symmetric_ec(data_v1, data_v2, &values_v1, &values_v2, ec),
             None => match self.bits {
@@ -591,9 +582,11 @@ impl TurboQuantizer {
     /// scrambles scales (centroid dot is in `X⁺`-space units, `xm`/`mm`
     /// are in `X`-space units) and destroys ranking entirely.
     ///
-    /// **Bits2 / Bits4**: full math-correct form `Σ c_a c_b D'_i² + xm_a
-    /// + xm_b − ⟨M, M⟩`. Codebooks are fine-grained enough that the
-    /// quantization noise stays small even after `D'⁴` amplification.
+    /// **Bits2 / Bits4**: full math-correct form
+    /// `Σ c_a c_b D'_i² + xm_a + xm_b − ⟨M, M⟩`, with `c · D'` folded into i8
+    /// on both sides ([`ErrorCorrection::d_prime_q15`]). Codebooks are
+    /// fine-grained enough that the quantization noise stays small even
+    /// after `D'⁴` amplification.
     fn score_symmetric_ec(
         &self,
         data_v1: &[u8],
@@ -602,13 +595,12 @@ impl TurboQuantizer {
         values_v2: &SymmetricValues,
         ec: &ErrorCorrection,
     ) -> f32 {
-        // Bits2 / Bits4: integer SIMD-amenable weighted dot. The kernel
-        // returns `Σ c_a_int · c_b_int · weights_i16` as i64, which the
-        // correction divides back by `weight_scale · CODEBOOK_SCALE²` to
-        // recover the f32 centroid dot.
+        // Bits2 / Bits4: the kernel returns `Σ q_a · q_b` of the folded i8
+        // values, which the correction divides back by `CODEBOOK_SCALE²` and
+        // the square of the factors' scale to recover the f32 centroid dot.
         let raw_int = match self.bits {
-            TQBits::Bits2 => score_2bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
-            TQBits::Bits4 => score_4bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
+            TQBits::Bits2 => score_2bit_internal_folded(data_v1, data_v2, &ec.d_prime_q15),
+            TQBits::Bits4 => score_4bit_internal_folded(data_v1, data_v2, &ec.d_prime_q15),
             TQBits::Bits8 | TQBits::Bits16 => {
                 unreachable!("{:?} does not support TQ+ error correction", self.bits)
             }

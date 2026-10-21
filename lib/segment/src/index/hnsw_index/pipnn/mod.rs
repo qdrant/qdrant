@@ -54,7 +54,7 @@
 //! vectors. Leaf k 8 with a reservoir factor of 4 doubles the reservoirs, to about 1.5 GB.
 
 // TODO: remove once the graph build calls into this module.
-#![allow(dead_code, reason = "Not connected to the graph build yet")]
+#![expect(dead_code, reason = "Not connected to the graph build yet")]
 
 mod hash_prune;
 mod leaf;
@@ -700,8 +700,8 @@ mod orchestration_tests {
         assert_eq!(sizes, [1800, 400, 40, 5, 1]);
 
         assert_eq!(degrees[4], [0], "alone on the top level");
-        for level in 0..4 {
-            assert!(degrees[level].iter().all(|&d| d > 0), "level {level}");
+        for (level, degrees) in degrees[..4].iter().enumerate() {
+            assert!(degrees.iter().all(|&d| d > 0), "level {level}");
         }
         // A single leaf, with every candidate the reservoirs hold: the HNSW heuristic keeps
         // most of them on uniform data in 16 dimensions

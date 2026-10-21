@@ -8,9 +8,9 @@ mod tests {
     use quantization::encoded_vectors_tq::{self, EncodedVectorsTQ, ErrorCorrectionMetadata};
     use quantization::turboquant::simd::{
         CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, score_1bit_internal_scalar,
-        score_2bit_internal_scalar, score_2bit_internal_weighted_scalar,
-        score_4bit_internal_scalar, score_4bit_internal_weighted_scalar,
-        score_8bit_internal_scalar, score_16bit_internal_scalar,
+        score_2bit_internal_folded_scalar, score_2bit_internal_scalar,
+        score_4bit_internal_folded_scalar, score_4bit_internal_scalar, score_8bit_internal_scalar,
+        score_16bit_internal_scalar,
     };
     use quantization::turboquant::{TQBits, TQMode, TQRotation};
     use rand::{RngExt, SeedableRng};
@@ -142,30 +142,31 @@ mod tests {
         read_f32(extra, extra.len() - size_of::<f32>())
     }
 
-    fn tq_plus_weight_scale(ec: &ErrorCorrectionMetadata) -> (Vec<i16>, f32) {
-        let d_prime_sq_f32: Vec<f32> = ec
+    /// The Q15 factors of `ErrorCorrection::d_prime_q15`, and the scale that
+    /// undoes their division by 2¹⁵.
+    fn tq_plus_factors(ec: &ErrorCorrectionMetadata) -> (Vec<i16>, f32) {
+        let d_prime_f32: Vec<f32> = ec
             .scale
             .iter()
             .map(|&s| {
                 if s.abs() > f32::EPSILON {
-                    (s * s).recip()
+                    s.abs().recip()
                 } else {
                     0.0
                 }
             })
             .collect();
-        let max_d_prime_sq = d_prime_sq_f32.iter().copied().fold(0.0f32, f32::max);
-        const QUANT_CAP: i16 = i16::MAX - 1;
-        let weight_scale = if max_d_prime_sq > f32::EPSILON {
-            f32::from(QUANT_CAP) / max_d_prime_sq
+        let max_d_prime = d_prime_f32.iter().copied().fold(0.0f32, f32::max);
+        let q15_scale = if max_d_prime > f32::EPSILON {
+            f32::from(i16::MAX) / max_d_prime
         } else {
             1.0
         };
-        let weights: Vec<i16> = d_prime_sq_f32
+        let factors: Vec<i16> = d_prime_f32
             .iter()
-            .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as i16)
+            .map(|&x| (x * q15_scale).round().clamp(0.0, f32::from(i16::MAX)) as i16)
             .collect();
-        (weights, weight_scale)
+        (factors, q15_scale / 32768.0)
     }
 
     fn score_scalar_reference(
@@ -182,21 +183,23 @@ mod tests {
         let raw_dot = match (mode, bits) {
             (TQMode::Plus, TQBits::Bits2) => {
                 let ec = ec.expect("TQ+ reference requires error correction metadata");
-                let (weights, weight_scale) = tq_plus_weight_scale(ec);
-                let raw_int = score_2bit_internal_weighted_scalar(data_v1, data_v2, &weights);
+                let (factors, factor_scale) = tq_plus_factors(ec);
+                let raw_int = score_2bit_internal_folded_scalar(data_v1, data_v2, &factors);
                 let xm_a = ec_correction(extra_v1);
                 let xm_b = ec_correction(extra_v2);
                 let mm: f32 = ec.shift.iter().map(|&s| s * s).sum();
-                raw_int as f32 / (weight_scale * CODEBOOK_SCALE_SQ_2BIT) + xm_a + xm_b - mm
+                let div = CODEBOOK_SCALE_SQ_2BIT * factor_scale * factor_scale;
+                raw_int as f32 / div + xm_a + xm_b - mm
             }
             (TQMode::Plus, TQBits::Bits4) => {
                 let ec = ec.expect("TQ+ reference requires error correction metadata");
-                let (weights, weight_scale) = tq_plus_weight_scale(ec);
-                let raw_int = score_4bit_internal_weighted_scalar(data_v1, data_v2, &weights);
+                let (factors, factor_scale) = tq_plus_factors(ec);
+                let raw_int = score_4bit_internal_folded_scalar(data_v1, data_v2, &factors);
                 let xm_a = ec_correction(extra_v1);
                 let xm_b = ec_correction(extra_v2);
                 let mm: f32 = ec.shift.iter().map(|&s| s * s).sum();
-                raw_int as f32 / (weight_scale * CODEBOOK_SCALE_SQ_4BIT) + xm_a + xm_b - mm
+                let div = CODEBOOK_SCALE_SQ_4BIT * factor_scale * factor_scale;
+                raw_int as f32 / div + xm_a + xm_b - mm
             }
             (_, TQBits::Bits1 | TQBits::Bits1_5) => score_1bit_internal_scalar(data_v1, data_v2),
             (_, TQBits::Bits2) => score_2bit_internal_scalar(data_v1, data_v2),
