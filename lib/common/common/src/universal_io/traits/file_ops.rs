@@ -143,7 +143,7 @@ pub trait UniversalWriteFs: UniversalReadFs {
 /// Component-level preload helpers bound on `impl CachedFs<File = S>` are
 /// only callable when the caller opens through a caching filesystem;
 /// plain-`UniversalReadFs` open paths never see these methods.
-pub trait CachedReadFs: UniversalReadFs {
+pub trait CachedReadFs: UniversalReadFsAsync {
     type Inner: UniversalReadFsAsync<File = Self::File>;
 
     /// The wrapped inner filesystem.
