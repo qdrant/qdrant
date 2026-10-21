@@ -3916,6 +3916,8 @@ version = "0.0.0"
 dependencies = [
  "bytes",
  "common",
+ "crc-fast",
+ "data-encoding",
  "futures",
  "http 1.5.0",
  "io_bridge",

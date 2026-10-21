@@ -223,8 +223,10 @@ mod tests {
                 "<InitiateMultipartUploadResult><UploadId>upload-1</UploadId>\
                  </InitiateMultipartUploadResult>",
             ),
-            StubResponse::new(200)
-                .body("<CopyPartResult><ETag>\"etag-copy\"</ETag></CopyPartResult>"),
+            StubResponse::new(200).body(
+                "<CopyPartResult><ETag>\"etag-copy\"</ETag>\
+                 <ChecksumCRC64NVME>rosUhgp5mIg=</ChecksumCRC64NVME></CopyPartResult>",
+            ),
             StubResponse::new(200).header("etag", "\"etag-data\""),
             StubResponse::new(200).body("<CompleteMultipartUploadResult/>"),
         ]);
@@ -266,8 +268,10 @@ mod tests {
                 "<InitiateMultipartUploadResult><UploadId>upload-1</UploadId>\
                  </InitiateMultipartUploadResult>",
             ),
-            StubResponse::new(200)
-                .body("<CopyPartResult><ETag>\"etag-copy\"</ETag></CopyPartResult>"),
+            StubResponse::new(200).body(
+                "<CopyPartResult><ETag>\"etag-copy\"</ETag>\
+                 <ChecksumCRC64NVME>rosUhgp5mIg=</ChecksumCRC64NVME></CopyPartResult>",
+            ),
             StubResponse::new(200).header("etag", "\"etag-data\""),
             StubResponse::new(400).body("<Error><Code>EntityTooSmall</Code></Error>"),
             StubResponse::new(204),
