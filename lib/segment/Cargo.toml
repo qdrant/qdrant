@@ -13,7 +13,7 @@ workspace = true
 
 [features]
 default = []
-testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing", "dep:exhaustive"]
+testing = ["common/testing", "sparse/testing", "gpu/testing", "quantization/testing", "io_bridge_object_store/testing", "dep:exhaustive"]
 gpu = ["gpu/gpu"]
 
 [build-dependencies]

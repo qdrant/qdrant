@@ -307,24 +307,6 @@ mod tests {
 
     use super::*;
 
-    /// Test-only backend: an in-memory store with a no-op config so that
-    /// unit tests exercise the full `ObjectStoreSource<S>` → `BlobFile` → pipeline
-    /// stack without needing a network mock.
-    #[derive(Clone, Debug, Default)]
-    pub struct InMemoryConfig;
-
-    impl BlobBackend for InMemory {
-        type Config = InMemoryConfig;
-
-        fn build_store(_config: &Self::Config) -> UioResult<Self> {
-            Ok(InMemory::new())
-        }
-
-        fn kind() -> UniversalKind {
-            UniversalKind::S3
-        }
-    }
-
     /// TEST-ONLY emulation of the native append RPC over [`InMemory`]: a
     /// head + get + conditional-put CAS loop. Production backends must be
     /// single-request (see [`crate::append`]); this exists so the `BlobFile`

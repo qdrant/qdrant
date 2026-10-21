@@ -1,15 +1,20 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use common::ambient;
 use common::fs::atomic_save;
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFs;
 use common::universal_io::{
-    CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile,
-    MmapFs, UniversalReadFs, UniversalReadFsAsync,
+    CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, MmapFs, UniversalReadFs,
+    UniversalReadFsAsync,
 };
+use io_bridge_object_store::{BlobFile, BlobFs, BridgeRuntime, ObjectStoreSource};
+use object_store::ObjectStoreExt;
+use object_store::memory::InMemory;
 use rand::RngExt;
 use rstest::rstest;
 use tempfile::Builder;
@@ -335,6 +340,7 @@ fn test_preload_offsets(
     #[case] preload: bool,
     #[case] expect_warm: bool,
 ) {
+    let _scope = ambient::test_guard();
     let format = GraphLinksFormat::Compressed;
     let hnsw_m = HnswM::new2(8);
     // Enough points to push the offsets block past both the eagerly read
@@ -342,32 +348,41 @@ fn test_preload_offsets(
     let links = random_links(5000, 10, &hnsw_m);
 
     let tmp = Builder::new().prefix("graph_dir").tempdir().unwrap();
-    let remote_dir = tmp.path().join("remote");
+    let remote_dir = PathBuf::from("remote");
     let local_dir = tmp.path().join("local");
-    fs_err::create_dir_all(&remote_dir).unwrap();
     fs_err::create_dir_all(&local_dir).unwrap();
     let links_path = remote_dir.join("links.bin");
-    atomic_save(&links_path, |writer| {
-        serialize_graph_links(
-            links,
-            format.with_param_for_tests(None::<&TestGraphLinksVectors>),
-            hnsw_m,
-            writer,
-        )
-    })
+    let mut data = std::io::Cursor::new(Vec::new());
+    serialize_graph_links(
+        links,
+        format.with_param_for_tests(None::<&TestGraphLinksVectors>),
+        hnsw_m,
+        &mut data,
+    )
     .unwrap();
 
-    let disk_cache_fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
-        config: Arc::new(DiskCacheConfig::new(remote_dir.clone(), local_dir).unwrap()),
-        remote: Default::default(),
-    })
-    .unwrap();
-    let stats = disk_cache_fs.stats();
+    let runtime = BridgeRuntime::global();
+    let store = Arc::new(InMemory::new());
+    runtime
+        .block_on(store.put(
+            &object_store::path::Path::from(links_path.to_string_lossy().as_ref()),
+            data.into_inner().into(),
+        ))
+        .unwrap();
+    let remote_fs = BlobFs::new(ObjectStoreSource::new(store), runtime);
+    let stats = remote_fs.stats();
+    let disk_cache_fs = DiskCacheFs::<BlobFile<ObjectStoreSource<InMemory>>>::new(
+        Arc::new(DiskCacheConfig::new(remote_dir.clone(), local_dir).unwrap()),
+        remote_fs,
+    );
 
     let mut fs = CachedFs::new(disk_cache_fs, &remote_dir).unwrap();
     fs.cache_file_info().unwrap();
 
-    let options = GraphLinksFile::<DiskCache<MmapFile>>::preopen_options(residency);
+    let options =
+        GraphLinksFile::<DiskCache<BlobFile<ObjectStoreSource<InMemory>>>>::preopen_options(
+            residency,
+        );
     if preload {
         let fs_clone = fs.clone();
         let path_clone = links_path.clone();
@@ -387,9 +402,9 @@ fn test_preload_offsets(
 
     let file = fs.open(&links_path, options, Default::default()).unwrap();
 
-    let before = stats.snapshot().remote_fetches_started;
+    let before = stats.snapshot();
     GraphLinksFile::open(file, format).unwrap();
-    let fetches = stats.snapshot().remote_fetches_started - before;
+    let fetches = stats.snapshot().delta_since(&before).total().started;
 
     if expect_warm {
         assert_eq!(fetches, 0, "the open still went to the remote");
