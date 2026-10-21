@@ -463,6 +463,7 @@ mod tests {
         COMPACT_VOCAB_FILE, OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE, POSTINGS_FILE, VOCAB_FILE,
         Vocab, VocabFormat,
     };
+    use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::posting_directory::POSTING_DIRECTORY_FILE;
 
     fn generate_word() -> String {
         let mut rng = rand::rng();
@@ -1252,12 +1253,18 @@ mod tests {
             .unwrap();
             assert!(written.exists(), "{format:?}");
             assert!(!removed.exists(), "{format:?}");
+            // The posting directory goes with the compact vocabulary.
+            let directory = mmap_dir.path().join(POSTING_DIRECTORY_FILE);
+            let resident = format == VocabFormat::Compact;
+            assert_eq!(directory.exists(), resident, "{format:?}");
 
             let opened = open_on_disk(mmap_dir.path(), phrase_matching);
             assert_eq!(opened.storage.vocab.format(), format);
+            assert_eq!(opened.storage.postings.has_directory(), resident);
             let files = opened.files();
             assert!(files.contains(written), "{format:?}");
             assert!(!files.contains(removed), "{format:?}");
+            assert_eq!(files.contains(&directory), resident, "{format:?}");
             for (token, &id) in &immutable.vocab {
                 opened
                     .for_each_token_id(std::iter::once(((), token.as_str())), |(), found| {
@@ -1380,6 +1387,55 @@ mod tests {
         });
         let io = acc.hw_data()[HwMetric::PayloadIndexIoRead];
         assert_eq!(io == 0, compact, "{io} bytes accounted");
+
+        // Posting lengths come from the directory, without IO either.
+        let acc = AmbientContext::new();
+        acc.measure(|| {
+            for token_id in 0..immutable.vocab.len() as TokenId {
+                assert!(opened.get_posting_len(token_id).unwrap().is_some());
+            }
+        });
+        let io = acc.hw_data()[HwMetric::PayloadIndexIoRead];
+        assert_eq!(io == 0, compact, "{io} bytes accounted for posting lengths");
+        assert_eq!(opened.storage.postings.ram_usage_bytes() > 0, compact);
+    }
+
+    /// A posting directory of another build is ignored, instead of pointing
+    /// posting reads at another build's offsets: the index reads its headers in
+    /// place and answers as without one.
+    #[test]
+    fn a_stale_posting_directory_is_ignored() {
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let _scope = ambient::test_guard();
+        let directory = mmap_dir.path().join(POSTING_DIRECTORY_FILE);
+        OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable_inverted_index(64, 0, false),
+            VocabFormat::Compact,
+        )
+        .unwrap();
+        let stale = fs_err::read(&directory).unwrap();
+        let immutable = OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable_inverted_index(80, 0, false),
+            VocabFormat::Compact,
+        )
+        .unwrap();
+        fs_err::write(&directory, stale).unwrap();
+
+        let opened = open_on_disk(mmap_dir.path(), false);
+        assert!(!opened.storage.postings.has_directory());
+        assert!(!opened.files().contains(&directory));
+        for token_id in 0..immutable.postings.len() as TokenId {
+            let expected: Vec<_> = immutable.postings.iter_ids(token_id).unwrap().collect();
+            let actual: Vec<_> = opened
+                .storage
+                .postings
+                .iter_ids(token_id)
+                .unwrap()
+                .collect();
+            assert_eq!(actual, expected, "token {token_id}");
+        }
     }
 
     /// `preopen` fetches the compact vocabulary ahead of `open`, which then
@@ -1422,6 +1478,7 @@ mod tests {
         if vocab_format == VocabFormat::Compact {
             // The read of `open` must now come from the prefetch pool.
             fs_err::remove_file(mmap_dir.path().join(COMPACT_VOCAB_FILE)).unwrap();
+            fs_err::remove_file(mmap_dir.path().join(POSTING_DIRECTORY_FILE)).unwrap();
         }
 
         let opened = OnDiskInvertedIndex::<Storage>::open(

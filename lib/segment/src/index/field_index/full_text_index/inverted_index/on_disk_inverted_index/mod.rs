@@ -18,6 +18,7 @@ use posting_list::{PostingListView, PostingValue};
 use types::ZerocopyPostingValue;
 
 use self::create_postings::create_postings_file;
+use self::posting_directory::POSTING_DIRECTORY_FILE;
 use super::bm25::{Bm25Accept, Bm25Query, FrequencyCursors, ON_DISK_BLOCK, score_top_k};
 use super::doc_len::decode_doc_len;
 use super::immutable_inverted_index::ImmutableInvertedIndex;
@@ -28,7 +29,7 @@ use super::positions::Positions;
 use super::postings_iterator::{
     intersect_compressed_postings_iterator, merge_compressed_postings_iterator,
 };
-use super::term_frequencies::{OnDiskTermFrequencies, TermFrequencyList};
+use super::term_frequencies::{OnDiskTermFrequencies, TermFrequencyList, term_data_sizes};
 use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -45,6 +46,7 @@ mod create_postings;
 pub(super) mod doc_len_sidecar;
 mod on_disk_postings;
 pub mod on_disk_postings_enum;
+pub(super) mod posting_directory;
 mod raw_posting_list;
 pub mod types;
 mod varint;
@@ -133,7 +135,7 @@ pub struct Storage<S: UniversalRead = MmapFile> {
 impl<S: UniversalRead> Storage<S> {
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         let Self {
-            postings: _,
+            postings,
             vocab,
             point_to_tokens_count: _,
             point_to_doc_len,
@@ -146,7 +148,10 @@ impl<S: UniversalRead> Storage<S> {
         let doc_len_bytes = point_to_doc_len
             .as_ref()
             .map_or(0, |codes| codes.capacity() * size_of::<u16>());
-        deleted_points.ram_usage_bytes() + doc_len_bytes + vocab.ram_usage_bytes()
+        deleted_points.ram_usage_bytes()
+            + doc_len_bytes
+            + vocab.ram_usage_bytes()
+            + postings.ram_usage_bytes()
     }
 }
 
@@ -207,13 +212,37 @@ impl OnDiskInvertedIndex<MmapFile> {
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
+        // The directory duplicates the headers of `postings.dat` and
+        // `term_frequencies.dat`, so a stale one would point a later open at
+        // another build's offsets: it goes whenever this build writes none.
+        let directory_path = path.join(POSTING_DIRECTORY_FILE);
+        let resident = vocab_format == VocabFormat::Compact;
+        let frequency_sizes = match term_frequencies {
+            Some(bytes) if resident => Some(term_data_sizes(bytes)?),
+            _ => None,
+        };
+        let frequency_sizes = frequency_sizes.as_deref();
         match postings {
             ImmutablePostings::Ids(postings) => {
-                create_postings_file(postings_path, postings, *total_tokens)?
+                let headers = create_postings_file(postings_path, postings, *total_tokens)?;
+                if resident {
+                    posting_directory::save::<()>(fs, &directory_path, &headers, frequency_sizes)?;
+                }
             }
             ImmutablePostings::WithPositions(postings) => {
-                create_postings_file(postings_path, postings, *total_tokens)?
+                let headers = create_postings_file(postings_path, postings, *total_tokens)?;
+                if resident {
+                    posting_directory::save::<Positions>(
+                        fs,
+                        &directory_path,
+                        &headers,
+                        frequency_sizes,
+                    )?;
+                }
             }
+        }
+        if !resident {
+            fs.remove(&directory_path).ok_not_found()?;
         }
 
         // Only one format is ever on disk: `open` takes whichever it finds,
@@ -308,6 +337,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         // ready not-found. The compact one is read in full whatever the
         // placement, as in `open`.
         OneshotFile::<S>::preopen(fs, path.join(COMPACT_VOCAB_FILE));
+        // Posting list headers, when the index holds them in RAM. Missing is
+        // recorded as not-found, as for the vocabulary.
+        OneshotFile::<S>::preopen(fs, path.join(POSTING_DIRECTORY_FILE));
         UniversalHashMap::<str, TokenId, S>::preopen(
             fs,
             &path.join(VOCAB_FILE),
@@ -366,13 +398,25 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             open_point_to_tokens_count(fs, &path, open_options(populate, AdviceSetting::Global))?;
         let total_count = point_to_tokens_count.len()? as usize;
         let point_to_doc_len = read_doc_len_codes(fs, &path, total_count)?;
-        let term_frequencies = open_term_frequencies(
+        let mut term_frequencies = open_term_frequencies(
             fs,
             &path,
             postings.posting_count(),
             open_options(populate, AdviceSetting::Advice(Advice::Normal)),
         )?
         .map(Box::new);
+        // The posting directory places the frequencies too, when it records
+        // this file; otherwise their headers are read in place.
+        if let (Some(term_frequencies), Some(directory)) =
+            (term_frequencies.as_deref_mut(), postings.directory())
+            && !term_frequencies.use_directory(directory)
+            && directory.frequencies_len().is_some()
+        {
+            log::warn!(
+                "Posting directory at {path} does not match its term frequencies, read in place",
+                path = path.display(),
+            );
+        }
         let (deleted, compact_deleted_mask, documents) = read_deleted_points(
             fs,
             &path,
@@ -765,6 +809,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             &self.path,
             self.compact_deleted_mask,
             self.storage.vocab.format(),
+            self.storage.postings.has_directory(),
             self.storage.point_to_doc_len.is_some(),
             self.storage.term_frequencies.is_some(),
         )
@@ -846,6 +891,7 @@ pub(in super::super) fn index_files(
     path: &Path,
     compact_deleted_mask: bool,
     vocab_format: VocabFormat,
+    has_directory: bool,
     has_doc_len: bool,
     has_term_frequencies: bool,
 ) -> Vec<PathBuf> {
@@ -859,6 +905,9 @@ pub(in super::super) fn index_files(
         path.join(POINT_TO_TOKENS_COUNT_FILE),
         deleted_mask_file(path, compact_deleted_mask, DELETED_POINTS_FILE),
     ];
+    if has_directory {
+        files.push(path.join(POSTING_DIRECTORY_FILE));
+    }
     // Listed only when the index loaded them, which is not the same as the
     // files existing: one rejected at open is deliberately left out of the
     // snapshot file set, since restoring it would only get it rejected again.
@@ -1147,8 +1196,10 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
 
     fn get_posting_len(&self, token_id: TokenId) -> OperationResult<Option<usize>> {
         // One header read, and the statistics gather performs one per query
-        // term per segment.
-        HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD);
+        // term per segment. None when the headers are in RAM.
+        if !self.storage.postings.has_directory() {
+            HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD);
+        }
         self.storage.postings.posting_len(token_id)
     }
 
@@ -1177,14 +1228,11 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         }
     }
 
+    /// Answered from RAM: `open` folds the points that had no tokens at build
+    /// time into `deleted_points`, so an active point always has some, and a
+    /// point past the index is inactive.
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        if !self.storage.deleted_points.is_active(point_id) {
-            return true;
-        }
-        // If the read fails or the point does not exist, treat as empty.
-        read_point_to_tokens_count(&self.storage.point_to_tokens_count, point_id)
-            .map(|count| count == 0)
-            .unwrap_or(true)
+        !self.storage.deleted_points.is_active(point_id)
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {

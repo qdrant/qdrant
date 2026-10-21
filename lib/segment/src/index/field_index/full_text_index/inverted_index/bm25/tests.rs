@@ -332,7 +332,7 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
     }
     let on_disk = on_disk(dir.path(), &mutable, &after_mask);
     let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
-    // Tokens from the compact vocabulary.
+    // Headers from the posting directory, tokens from the compact vocabulary.
     let compact_dir = tempfile::tempdir().unwrap();
     let compact = on_disk_in(
         compact_dir.path(),
@@ -340,6 +340,7 @@ fn every_shape_matches_the_reference(#[values(1, 3, 10, 1000)] limit: usize) {
         &after_mask,
         VocabFormat::Compact,
     );
+    assert!(compact.storage.postings.has_directory());
     for &idx in &deleted_after {
         mutable.remove(idx);
         immutable.remove(idx);
@@ -658,6 +659,22 @@ fn counts_only_shapes_match_the_positional_reference(#[values(1, 10, 1000)] limi
     }
     let on_disk = on_disk_with(false, dir.path(), &mutable, &after_mask);
     let from_disk = ImmutableInvertedIndex::try_from(&on_disk).unwrap();
+    // Frequencies placed by the posting directory.
+    let compact_dir = tempfile::tempdir().unwrap();
+    let compact = on_disk_built(
+        false,
+        compact_dir.path(),
+        &mutable,
+        &after_mask,
+        VocabFormat::Compact,
+    );
+    assert!(
+        compact
+            .storage
+            .term_frequencies
+            .as_ref()
+            .is_some_and(|frequencies| frequencies.has_directory()),
+    );
     for &idx in &deleted_after {
         positional.remove(idx);
         mutable.remove(idx);
@@ -689,6 +706,12 @@ fn counts_only_shapes_match_the_positional_reference(#[values(1, 10, 1000)] limi
             run(
                 &from_disk,
                 &local(&query, &positional, &from_disk),
+                |_| true,
+                limit,
+            ),
+            run(
+                &compact,
+                &local(&query, &positional, &compact),
                 |_| true,
                 limit,
             ),
@@ -748,6 +771,65 @@ fn term_frequencies_of_another_build_are_ignored() {
     .unwrap()
     .unwrap();
     assert!(!reopened.can_score(), "a truncated file is not used");
+}
+
+/// A posting directory places the frequencies only of the file it was
+/// written beside. Against another one, here one byte longer, the index reads
+/// the frequency headers in place, still scores the same, and keeps the
+/// directory for the posting lists.
+#[test]
+fn frequencies_the_directory_does_not_place_are_read_in_place() {
+    let _scope = ambient::test_guard();
+    let mutable = fixture_with(false, 11, 400, &[]);
+    let dir = tempfile::tempdir().unwrap();
+    let deleted = BitVec::new();
+    let placed = on_disk_built(false, dir.path(), &mutable, &deleted, VocabFormat::Compact);
+    let frequencies = |index: &OnDiskInvertedIndex<MmapFile>| {
+        index
+            .storage
+            .term_frequencies
+            .as_ref()
+            .unwrap()
+            .has_directory()
+    };
+    assert!(frequencies(&placed));
+    let expected: Vec<_> = queries()
+        .iter()
+        .map(|terms| {
+            let query = local(
+                &query(&mutable, terms, Bm25Params::default()),
+                &mutable,
+                &placed,
+            );
+            run(&placed, &query, |_| true, 10)
+        })
+        .collect();
+    drop(placed);
+
+    let path = dir.path().join("term_frequencies.dat");
+    let mut bytes = fs_err::read(&path).unwrap();
+    bytes.push(0);
+    fs_err::write(&path, bytes).unwrap();
+    let in_place = OnDiskInvertedIndex::<MmapFile>::open(
+        &MmapFs,
+        dir.path().to_path_buf(),
+        Populate::No,
+        false,
+        &deleted,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(in_place.can_score());
+    assert!(!frequencies(&in_place));
+    assert!(in_place.storage.postings.has_directory());
+    for (terms, expected) in queries().iter().zip(&expected) {
+        let query = local(
+            &query(&mutable, terms, Bm25Params::default()),
+            &mutable,
+            &in_place,
+        );
+        assert_top_k(&run(&in_place, &query, |_| true, 10), expected, 10);
+    }
 }
 
 #[test]

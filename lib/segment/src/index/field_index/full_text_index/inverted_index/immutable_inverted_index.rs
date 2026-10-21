@@ -760,6 +760,7 @@ impl ImmutableInvertedIndex {
             path,
             compact_deleted_mask,
             vocab.format(),
+            postings.has_directory(),
             index.point_to_doc_len.is_some(),
             index.term_frequencies.is_some(),
         );

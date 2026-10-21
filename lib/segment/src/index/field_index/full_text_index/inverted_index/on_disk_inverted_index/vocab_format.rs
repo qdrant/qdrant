@@ -4,10 +4,13 @@ use common::flags::feature_flags;
 /// opened in whichever format they were written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VocabFormat {
-    /// `vocab.dat`, a hash map read in place, token by token.
+    /// `vocab.dat`, a hash map read in place, token by token, and posting list
+    /// headers read in place from `postings.dat`.
     Hashmap,
-    /// `compact_vocab.dat`, read whole into RAM at open. See
-    /// [`compact_vocab`](super::compact_vocab).
+    /// `compact_vocab.dat` and `posting_directory.dat`, both read whole into
+    /// RAM at open, so that a query reads posting bytes alone. See
+    /// [`compact_vocab`](super::compact_vocab) and
+    /// [`posting_directory`](super::posting_directory).
     Compact,
 }
 
