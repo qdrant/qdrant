@@ -842,8 +842,8 @@ mod tests {
     #[test]
     fn top_k_size_is_clamped_to_the_leaders() {
         let with = |fanout: Vec<usize>, max_leaders| PartitionParams {
-            fanout,
             max_leaders,
+            fanout,
             ..params()
         };
         assert_eq!(top_k_size(&with(vec![10, 3], 1000), 100_000), 10);

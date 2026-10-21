@@ -534,7 +534,6 @@ mod tests {
 
     /// The vector of `id` in the space it's projected in, which for the Turbo storages is
     /// rotated.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "test code")]
     fn projected(storage: &VectorStorageEnum, id: usize) -> Vec<f64> {
         let id = id as PointOffsetType;
         let rotated = match storage {
@@ -616,9 +615,10 @@ mod tests {
                 .zip(&vectors[p])
                 .map(|(c, p)| c - p)
                 .collect();
-            for bit in 0..HASH_BITS {
+            for (bit, (&(at_c, magnitude_c), &(at_p, magnitude_p))) in
+                exact[c].iter().zip(&exact[p]).enumerate()
+            {
                 let (residual, _) = project_exactly(&residual, &hyperplanes, bit);
-                let ((at_c, magnitude_c), (at_p, magnitude_p)) = (exact[c][bit], exact[p][bit]);
                 let margin = 1e-6 * (at_c.abs() + at_p.abs()) + 1e-12 * (magnitude_c + magnitude_p);
                 if residual.abs() <= margin {
                     near_ties += 1;
