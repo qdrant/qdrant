@@ -13,7 +13,7 @@ use super::file::{DiskCache, State};
 use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
-use super::{DiskCacheRemote, block_aligned_fetch};
+use super::{DiskCacheRemote, block_aligned_fetch, to_block_range};
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::traits::read_from_via_read_bytes;
@@ -52,8 +52,16 @@ where
             },
             Populate::PreferBackground | Populate::Blocking => {
                 let remote = self.open_remote(&path, remote_extra.clone())?;
-                let local = if extra.known_len == Some(0) {
-                    LocalState::new(&local_path, 0, options)?
+                let local = if let Some(len) = extra.known_len {
+                    // 🤖 Length known from the listing: one ranged read, no length probe.
+                    let local = LocalState::new(&local_path, len, options)?;
+                    if len > 0 {
+                        let content = remote
+                            .read_bytes_async(0..len, Sequential, REMOTE_READ_ALIGNMENT)
+                            .await?;
+                        unsafe { local.write_mmap_bytes(&content, to_block_range(0..len)) };
+                    }
+                    local
                 } else {
                     // The mirror is created at the length of the file as read, which differs
                     // from `known_len` when the file was replaced since it was observed.
