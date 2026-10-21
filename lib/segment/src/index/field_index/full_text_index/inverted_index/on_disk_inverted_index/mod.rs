@@ -40,15 +40,24 @@ use crate::index::field_index::full_text_index::inverted_index::postings_iterato
     check_compressed_postings_phrase, intersect_compressed_postings_phrase_iterator,
 };
 
+pub mod compact_vocab;
 mod create_postings;
 pub(super) mod doc_len_sidecar;
 mod on_disk_postings;
 pub mod on_disk_postings_enum;
 mod raw_posting_list;
 pub mod types;
+mod varint;
+mod vocab;
+mod vocab_format;
+
+pub use self::vocab::Vocab;
+pub(super) use self::vocab::open_vocab;
+pub use self::vocab_format::VocabFormat;
 
 pub(super) const POSTINGS_FILE: &str = "postings.dat";
-const VOCAB_FILE: &str = "vocab.dat";
+pub(super) const VOCAB_FILE: &str = "vocab.dat";
+pub(super) const COMPACT_VOCAB_FILE: &str = "compact_vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 pub(super) const POINT_TO_DOC_LEN_FILE: &str = "point_to_doc_len.dat";
 /// Term frequencies of an index that scores, apart from its postings. See
@@ -74,7 +83,7 @@ pub(in super::super) fn has_doc_len_sidecar(
 
 /// Mmap-backed immutable full-text inverted index.
 ///
-/// On-disk state (`postings.dat`, `vocab.dat`, `point_to_tokens_count.dat`,
+/// On-disk state (`postings.dat`, `vocab.dat` or `compact_vocab.dat`, `point_to_tokens_count.dat`,
 /// `point_to_doc_len.dat`, `deleted_mask.bin`) is written once during
 /// [`Self::create`] and not
 /// mutated afterwards: `deleted_mask.bin` (legacy `deleted_points.dat` on
@@ -96,7 +105,7 @@ pub struct OnDiskInvertedIndex<S: UniversalRead = MmapFile> {
 
 pub struct Storage<S: UniversalRead = MmapFile> {
     pub postings: OnDiskPostingsEnum<S>,
-    pub vocab: UniversalHashMap<str, TokenId, S>,
+    pub vocab: Vocab<S>,
     pub point_to_tokens_count: TypedStorage<S, usize>,
     /// Total tokens per point, for BM25 length normalization. `None` when the
     /// index does not record lengths.
@@ -125,7 +134,7 @@ impl<S: UniversalRead> Storage<S> {
     pub(crate) fn ram_usage_bytes(&self) -> usize {
         let Self {
             postings: _,
-            vocab: _,
+            vocab,
             point_to_tokens_count: _,
             point_to_doc_len,
             // Mmap-backed, like the postings: not part of the resident set.
@@ -137,7 +146,7 @@ impl<S: UniversalRead> Storage<S> {
         let doc_len_bytes = point_to_doc_len
             .as_ref()
             .map_or(0, |codes| codes.capacity() * size_of::<u16>());
-        deleted_points.ram_usage_bytes() + doc_len_bytes
+        deleted_points.ram_usage_bytes() + doc_len_bytes + vocab.ram_usage_bytes()
     }
 }
 
@@ -148,12 +157,29 @@ impl OnDiskInvertedIndex<MmapFile> {
     /// Takes the mutable index rather than the immutable one because only the
     /// mutable index holds exact document lengths, which is what the sidecar
     /// keeps; the immutable one holds their codes.
+    ///
+    /// The vocabulary is written in the deployment's [`VocabFormat`].
     pub fn create(
         path: PathBuf,
         mutable: MutableInvertedIndex,
     ) -> OperationResult<ImmutableInvertedIndex> {
+        Self::create_with_vocab_format(path, mutable, VocabFormat::from_feature_flags())
+    }
+
+    /// [`Self::create`] with an explicit vocabulary format.
+    pub fn create_with_vocab_format(
+        path: PathBuf,
+        mutable: MutableInvertedIndex,
+        vocab_format: VocabFormat,
+    ) -> OperationResult<ImmutableInvertedIndex> {
         let (inverted_index, doc_lens) = ImmutableInvertedIndex::from_mutable(mutable);
-        Self::write_files(&MmapFs, &path, &inverted_index, doc_lens.as_deref())?;
+        Self::write_files(
+            &MmapFs,
+            &path,
+            &inverted_index,
+            doc_lens.as_deref(),
+            vocab_format,
+        )?;
         Ok(inverted_index)
     }
 
@@ -162,6 +188,7 @@ impl OnDiskInvertedIndex<MmapFile> {
         path: &Path,
         inverted_index: &ImmutableInvertedIndex,
         doc_lens: Option<&[u32]>,
+        vocab_format: VocabFormat,
     ) -> OperationResult<()> {
         let ImmutableInvertedIndex {
             postings,
@@ -177,7 +204,6 @@ impl OnDiskInvertedIndex<MmapFile> {
         debug_assert_eq!(vocab.len(), postings.len());
 
         let postings_path = path.join(POSTINGS_FILE);
-        let vocab_path = path.join(VOCAB_FILE);
         let point_to_tokens_count_path = path.join(POINT_TO_TOKENS_COUNT_FILE);
         let point_to_doc_len_path = path.join(POINT_TO_DOC_LEN_FILE);
 
@@ -190,10 +216,26 @@ impl OnDiskInvertedIndex<MmapFile> {
             }
         }
 
-        serialize_hashmap::<str, TokenId>(
-            &vocab_path,
-            vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
-        )?;
+        // Only one format is ever on disk: `open` takes whichever it finds,
+        // so the other one, left by a rebuild in another format, goes, as the
+        // stale sidecar does below.
+        let (vocab_path, stale_vocab_path) = match vocab_format {
+            VocabFormat::Hashmap => {
+                let vocab_path = path.join(VOCAB_FILE);
+                serialize_hashmap::<str, TokenId>(
+                    &vocab_path,
+                    vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
+                )?;
+                (vocab_path, path.join(COMPACT_VOCAB_FILE))
+            }
+            VocabFormat::Compact => {
+                let vocab_path = path.join(COMPACT_VOCAB_FILE);
+                compact_vocab::save(fs, &vocab_path, vocab)?;
+                (vocab_path, path.join(VOCAB_FILE))
+            }
+        };
+        debug_assert_ne!(vocab_path, stale_vocab_path);
+        fs.remove(&stale_vocab_path).ok_not_found()?;
 
         // Save point_to_tokens_count, separated into a "no tokens" mask and a
         // slice for actual values.
@@ -261,7 +303,11 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
             open_options(populate, AdviceSetting::Advice(Advice::Normal)),
         );
 
-        // Vocabulary
+        // Vocabulary, in whichever format is on disk. Both are scheduled
+        // rather than probed: the scheduler records the missing one as a
+        // ready not-found. The compact one is read in full whatever the
+        // placement, as in `open`.
+        OneshotFile::<S>::preopen(fs, path.join(COMPACT_VOCAB_FILE));
         UniversalHashMap::<str, TokenId, S>::preopen(
             fs,
             &path.join(VOCAB_FILE),
@@ -352,11 +398,9 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
 
     pub(super) fn for_each_vocab(
         &self,
-        mut f: impl FnMut(&str, TokenId) -> OperationResult<()>,
+        f: impl FnMut(&str, TokenId) -> OperationResult<()>,
     ) -> OperationResult<()> {
-        self.storage
-            .vocab
-            .for_each_entry(|k, v| f(k, unwrap_token(v)))
+        self.storage.vocab.for_each_entry(f)
     }
 
     /// Whether this index has document lengths on disk.
@@ -720,6 +764,7 @@ impl<S: UniversalRead> OnDiskInvertedIndex<S> {
         index_files(
             &self.path,
             self.compact_deleted_mask,
+            self.storage.vocab.format(),
             self.storage.point_to_doc_len.is_some(),
             self.storage.term_frequencies.is_some(),
         )
@@ -800,12 +845,17 @@ pub(super) fn open_options(populate: Populate, advice: AdviceSetting) -> OpenOpt
 pub(in super::super) fn index_files(
     path: &Path,
     compact_deleted_mask: bool,
+    vocab_format: VocabFormat,
     has_doc_len: bool,
     has_term_frequencies: bool,
 ) -> Vec<PathBuf> {
+    let vocab_file = match vocab_format {
+        VocabFormat::Hashmap => VOCAB_FILE,
+        VocabFormat::Compact => COMPACT_VOCAB_FILE,
+    };
     let mut files = vec![
         path.join(POSTINGS_FILE),
-        path.join(VOCAB_FILE),
+        path.join(vocab_file),
         path.join(POINT_TO_TOKENS_COUNT_FILE),
         deleted_mask_file(path, compact_deleted_mask, DELETED_POINTS_FILE),
     ];
@@ -837,19 +887,6 @@ pub(super) fn open_postings<S: UniversalRead>(
                 .map(OnDiskPostingsEnum::WithPositions)
         }
     })
-}
-
-pub(super) fn open_vocab<S: UniversalRead>(
-    fs: &impl UniversalReadFs<File = S>,
-    path: &Path,
-    options: OpenOptions,
-) -> OperationResult<UniversalHashMap<str, TokenId, S>> {
-    Ok(UniversalHashMap::open(
-        fs,
-        &path.join(VOCAB_FILE),
-        options,
-        Default::default(),
-    )?)
 }
 
 pub(super) fn open_point_to_tokens_count<S: UniversalRead>(
@@ -980,12 +1017,12 @@ pub(super) fn clear_files_cache<S: UniversalRead>(
     path: &Path,
     compact_deleted_mask: bool,
     postings: &OnDiskPostingsEnum<S>,
-    vocab: &UniversalHashMap<str, TokenId, S>,
+    vocab: &Vocab<S>,
     point_to_tokens_count: &TypedStorage<S, usize>,
     term_frequencies: Option<&OnDiskTermFrequencies<S>>,
 ) -> OperationResult<()> {
     postings.clear_cache()?;
-    vocab.clear_ram_cache()?;
+    vocab.clear_cache()?;
     point_to_tokens_count.clear_ram_cache()?;
     if let Some(term_frequencies) = term_frequencies {
         term_frequencies.storage().clear_ram_cache()?;
@@ -1211,15 +1248,22 @@ impl<S: UniversalRead> InvertedIndex for OnDiskInvertedIndex<S> {
         tokens: impl Iterator<Item = (U, &'a str)>,
         mut f: impl FnMut(U, Option<TokenId>),
     ) -> OperationResult<()> {
-        self.storage
-            .vocab
-            .for_each_entry_in_iter(tokens, |user_data, token_ids| {
-                // Avoid check overhead and assume token is always read
-                HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD + size_of::<TokenId>());
+        match &self.storage.vocab {
+            Vocab::Hashmap(vocab) => {
+                vocab.for_each_entry_in_iter(tokens, |user_data, token_ids| {
+                    // Avoid check overhead and assume token is always read
+                    HwMetric::PayloadIndexIoRead.bump(READ_ENTRY_OVERHEAD + size_of::<TokenId>());
 
-                f(user_data, token_ids.map(unwrap_token));
+                    f(user_data, token_ids.map(unwrap_token));
+                    Ok(())
+                })
+            }
+            // In RAM: no IO to account, as for the in-RAM indexes.
+            Vocab::Compact(vocab) => {
+                tokens.for_each(|(user_data, token)| f(user_data, vocab.get(token)));
                 Ok(())
-            })
+            }
+        }
     }
 }
 
