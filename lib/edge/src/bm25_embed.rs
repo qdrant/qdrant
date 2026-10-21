@@ -162,7 +162,8 @@ impl EdgeBm25 {
 
     pub fn embed_query(&self, text: &str) -> SparseVector {
         let mut tokens: Vec<Cow<'_, str>> = Vec::new();
-        self.tokenizer.tokenize_query(text, |t| tokens.push(t));
+        self.tokenizer
+            .tokenize_ranking_query(text, |t| tokens.push(t));
         to_sparse_vector(self.bm25.embed_query(&tokens))
     }
 
