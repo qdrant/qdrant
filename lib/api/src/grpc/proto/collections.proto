@@ -556,8 +556,8 @@ message CreateCollection {
   optional WalConfigDiff wal_config = 5;
   // Configuration of the optimizers
   optional OptimizersConfigDiff optimizers_config = 6;
-  // Number of shards in the collection, default is 1 for standalone, otherwise
-  // equal to the number of nodes. Minimum is 1
+  // Number of shards in the collection. If not specified, selected
+  // automatically. Minimum is 1
   optional uint32 shard_number = 7;
   // Deprecated: use `payload.memory` instead.
   // If true - point's payload will not be stored in memory
