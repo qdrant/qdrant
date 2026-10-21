@@ -9,8 +9,8 @@ use collection::config::{CollectionConfigInternal, ShardingMethod};
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
 use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateCollection, CreateCollectionOperation, CreateShardKey,
-    SetShardReplicaState,
+    ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
+    CreateCollectionOperation, CreateShardKey, SetShardReplicaState,
 };
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::shard_distribution::ShardDistributionProposal;
@@ -35,6 +35,7 @@ pub async fn handle_existing_collections(
         .expect("Full access should have manage rights");
 
     consensus_state.is_leader_established.await_ready();
+    let mut alias_actions = Vec::new();
     for collection_name in collections {
         let Ok(collection_obj) = toc_arc
             .get_collection(&multipass.issue_pass(&collection_name))
@@ -42,6 +43,20 @@ pub async fn handle_existing_collections(
         else {
             break;
         };
+
+        alias_actions.extend(
+            toc_arc
+                .all_collection_aliases(&collection_name, &multipass)
+                .await
+                .into_iter()
+                .map(|alias_name| {
+                    CreateAlias {
+                        collection_name: collection_name.clone(),
+                        alias_name,
+                    }
+                    .into()
+                }),
+        );
 
         let State {
             config,
@@ -164,5 +179,19 @@ pub async fn handle_existing_collections(
                     .await;
             }
         }
+    }
+
+    if !alias_actions.is_empty()
+        && let Err(error) = dispatcher_arc
+            .submit_collection_meta_op(
+                CollectionMetaOperations::ChangeAliases(ChangeAliasesOperation {
+                    actions: alias_actions,
+                }),
+                full_auth,
+                None,
+            )
+            .await
+    {
+        log::error!("Failed to migrate collection aliases to consensus: {error}");
     }
 }
