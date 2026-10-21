@@ -737,7 +737,7 @@ mod tests {
         let mut original_scores: Vec<_> = vector_data
             .iter()
             .enumerate()
-            .map(|(i, v)| (l1_similarity(&vector_data[0], v), i))
+            .map(|(i, v)| (l2_similarity(&vector_data[0], v), i))
             .collect();
 
         original_scores.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
