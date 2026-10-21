@@ -8,10 +8,7 @@
 //!
 //! The write-offset append API exists on AWS S3 Express One Zone directory
 //! buckets and on S3-compatible stores that adopted it (e.g. MinIO AiStor) —
-//! plain S3 Standard buckets reject it. MinIO-AiStor-compatible stores are
-//! the primary supported target for now; real S3 Express directory buckets
-//! use zonal endpoints and session-token auth that have not been verified
-//! against this implementation yet.
+//! plain S3 Standard buckets reject it.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,6 +20,7 @@ use object_store::ObjectStoreExt as _;
 use object_store::aws::{AmazonS3, AwsAuthorizer};
 use object_store::client::HttpRequestBody;
 
+use super::crc64nvme;
 use super::part_copy::PartCopyAppend;
 use super::signed::SignedRequestContext;
 
@@ -45,11 +43,7 @@ const NO_SUCH_KEY_CODE: &str = "NoSuchKey";
 /// a whole-object rewrite.
 const TOO_MANY_PARTS_CODE: &str = "TooManyParts";
 
-/// Total attempts for one append: transient failures (connection errors,
-/// 5xx, 429) are retried with a short linear backoff, like `object_store`
-/// does for its own requests. Retrying is safe: the write offset acts as a
-/// compare-and-swap, and a conflict caused by a lost-acknowledgement
-/// attempt is reconciled in [`append_request`].
+/// Retry limit for connection errors, 5xx and 429 responses.
 const MAX_ATTEMPTS: u32 = 3;
 
 /// Backoff before retry attempt `n` is `n * RETRY_BACKOFF`.
@@ -111,6 +105,8 @@ async fn append_request(
     // object_store crate does not support the append operation.
     // See: <https://github.com/apache/arrow-rs-object-store/issues/632>
     let mut attempt = 1;
+    let checksum = crc64nvme(&data);
+    let mut may_have_appended = false;
     loop {
         // Built and signed per attempt: the SigV4 signature embeds the
         // request date. Building can fail — `url` accepts URIs the `http`
@@ -119,6 +115,7 @@ async fn append_request(
             .method(http::Method::PUT)
             .uri(url.as_str())
             .header(WRITE_OFFSET_HEADER, offset.to_string())
+            .header("x-amz-checksum-crc64nvme", &checksum)
             .body(HttpRequestBody::from(data.clone()))
             .map_err(|err| UniversalIoError::S3Config {
                 description: format!("append request for {key}: {err}"),
@@ -134,6 +131,7 @@ async fn append_request(
         let response = match client.execute(request).await {
             Ok(response) => response,
             Err(_) if attempt < MAX_ATTEMPTS => {
+                may_have_appended = true;
                 tokio::time::sleep(RETRY_BACKOFF * attempt).await;
                 attempt += 1;
                 continue;
@@ -145,6 +143,7 @@ async fn append_request(
         if (status.is_server_error() || status == http::StatusCode::TOO_MANY_REQUESTS)
             && attempt < MAX_ATTEMPTS
         {
+            may_have_appended = true;
             tokio::time::sleep(RETRY_BACKOFF * attempt).await;
             attempt += 1;
             continue;
@@ -232,7 +231,7 @@ async fn append_request(
             // A conflict on a retried attempt may just mean the earlier,
             // lost-acknowledgement attempt landed; under the single-writer
             // contract a matching object size proves the tail is ours.
-            if attempt > 1
+            if may_have_appended
                 && let Ok(meta) = store.head(key).await
                 && meta.size == offset + data_len
             {
@@ -267,310 +266,4 @@ async fn append_request(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::assert_matches;
-
-    use object_store::aws::AmazonS3Builder;
-    use url::Url;
-
-    use super::super::stub::{StubResponse, stub_server, stub_store_and_context};
-    use super::*;
-
-    /// Request building failures (URIs the `http` crate rejects) surface as
-    /// errors instead of panics. Fails before any network IO.
-    #[test]
-    fn unbuildable_request_is_an_error_not_a_panic() {
-        let store = Arc::new(
-            AmazonS3Builder::new()
-                .with_bucket_name("bucket")
-                .with_region("us-east-1")
-                .with_access_key_id("id")
-                .with_secret_access_key("secret")
-                .build()
-                .unwrap(),
-        );
-        let context = SignedRequestContext::new(
-            true,
-            "bucket".to_string(),
-            Url::parse("http://localhost:9000/bucket").unwrap(),
-            "us-east-1".to_string(),
-            "s3",
-        );
-        // `url` accepts this; `http` caps URIs at u16::MAX bytes.
-        let key = object_store::path::Path::from("k".repeat(70_000));
-
-        let result = io_bridge::BridgeRuntime::global().block_on(
-            NativeAppend::new(context).append(&store, &key, 0, Bytes::from_static(b"data")),
-        );
-        assert!(matches!(result, Err(UniversalIoError::S3Config { .. })));
-    }
-
-    /// Append `b"data"` at `offset` to `dir/append.dat` via the stub, so a
-    /// consistent store would report a new object size of `offset + 4`.
-    fn append_data_at(endpoint: &str, offset: u64) -> UioResult<u64> {
-        let (store, context) = stub_store_and_context(endpoint);
-        let key = object_store::path::Path::from("dir/append.dat");
-
-        io_bridge::BridgeRuntime::global().block_on(NativeAppend::new(context).append(
-            &store,
-            &key,
-            offset,
-            Bytes::from_static(b"data"),
-        ))
-    }
-
-    fn success_with_size(size: u64) -> StubResponse {
-        StubResponse::new(200).header(OBJECT_SIZE_HEADER, size)
-    }
-
-    fn write_offset_conflict() -> StubResponse {
-        StubResponse::new(400).body("<Error><Code>InvalidWriteOffset</Code></Error>")
-    }
-
-    /// A `head()` response; object metadata is parsed from the headers.
-    fn head_with_size(size: u64) -> StubResponse {
-        StubResponse::new(200)
-            .header("content-length", size)
-            .header("last-modified", "Tue, 14 Jul 2026 12:00:00 GMT")
-            .header("etag", "\"stub\"")
-    }
-
-    #[test]
-    fn append_sends_a_signed_write_offset_put_and_returns_the_new_size() {
-        let (endpoint, seen) = stub_server(vec![success_with_size(9)]);
-        assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
-
-        let seen = seen.lock().unwrap();
-        let [request] = &seen[..] else {
-            panic!("expected exactly one request");
-        };
-        assert_eq!(request.method, "PUT");
-        assert_eq!(request.path, "/bucket/dir/append.dat");
-        assert_eq!(request.write_offset.as_deref(), Some("5"));
-        assert!(request.signed);
-        assert_eq!(request.body, b"data");
-    }
-
-    /// A success whose size header disagrees with `offset + data` means the
-    /// write did not land as the single append we requested; the reported
-    /// size must not be trusted.
-    #[test]
-    fn success_with_a_mismatching_size_is_an_error() {
-        let (endpoint, _seen) = stub_server(vec![success_with_size(42)]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3 { .. });
-        assert!(err.to_string().contains("expected 9"), "{err}");
-    }
-
-    #[test]
-    fn success_with_an_unparseable_size_is_an_error() {
-        let (endpoint, _seen) = stub_server(vec![
-            StubResponse::new(200).header(OBJECT_SIZE_HEADER, "over 9000"),
-        ]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3 { .. });
-    }
-
-    /// At offset 0 an append equals a whole-object write, so a store that
-    /// accepted the PUT without the size header still produced the right
-    /// object.
-    #[test]
-    fn success_without_the_size_header_at_offset_zero_is_a_whole_object_write() {
-        let (endpoint, _seen) = stub_server(vec![StubResponse::new(200)]);
-
-        assert_eq!(append_data_at(&endpoint, 0).unwrap(), 4);
-    }
-
-    /// Past offset 0 the missing size header is the replaced-not-appended
-    /// signature of a store without write-offset support.
-    #[test]
-    fn success_without_the_size_header_at_a_nonzero_offset_is_an_error() {
-        let (endpoint, _seen) = stub_server(vec![StubResponse::new(200)]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3 { .. });
-        assert!(err.to_string().contains(OBJECT_SIZE_HEADER), "{err}");
-    }
-
-    /// A first-attempt conflict is returned as-is: no reconciliation
-    /// `head()` is issued, since no earlier attempt of ours can have landed.
-    #[test]
-    fn invalid_write_offset_is_a_conflict() {
-        let (endpoint, seen) = stub_server(vec![write_offset_conflict()]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(
-            err,
-            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
-        );
-        assert_eq!(seen.lock().unwrap().len(), 1);
-    }
-
-    /// Some S3-compatibles report the offset mismatch as 412 instead of
-    /// AWS's 400 `InvalidWriteOffset`.
-    #[test]
-    fn precondition_failed_is_a_conflict() {
-        let (endpoint, _seen) = stub_server(vec![StubResponse::new(412)]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(
-            err,
-            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
-        );
-    }
-
-    /// The appended-block cap surfaces as `AppendRewriteRequired`, so the
-    /// caller recovers with a whole-object rewrite.
-    #[test]
-    fn too_many_parts_is_rewrite_required() {
-        let (endpoint, _seen) = stub_server(vec![
-            StubResponse::new(400).body("<Error><Code>TooManyParts</Code></Error>"),
-        ]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::AppendRewriteRequired { .. });
-    }
-
-    /// Only the `InvalidWriteOffset` error code makes a 400 a conflict;
-    /// other bad requests must not masquerade as recoverable.
-    #[test]
-    fn bad_request_without_the_conflict_code_is_not_a_conflict() {
-        let (endpoint, _seen) = stub_server(vec![
-            StubResponse::new(400).body("<Code>MissingHeader</Code>"),
-        ]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3 { .. });
-    }
-
-    /// A missing object under a nonzero offset is a stale view of the
-    /// object (deleted behind our back): the same recovery as an offset
-    /// mismatch. Bodiless 404s (and explicit NoSuchKey) both qualify.
-    #[test]
-    fn not_found_at_a_nonzero_offset_is_a_conflict() {
-        let (endpoint, _seen) = stub_server(vec![StubResponse::new(404)]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(
-            err,
-            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
-        );
-
-        let (endpoint, _seen) = stub_server(vec![
-            StubResponse::new(404).body("<Error><Code>NoSuchKey</Code></Error>"),
-        ]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(
-            err,
-            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
-        );
-    }
-
-    /// A 404 whose body names a missing *bucket* is a config/endpoint
-    /// problem (e.g. a directory bucket addressed through the standard
-    /// endpoint): it must surface loudly instead of masquerading as a
-    /// recoverable offset conflict or a missing file.
-    #[test]
-    fn not_found_for_a_missing_bucket_is_a_hard_error() {
-        let (endpoint, _seen) = stub_server(vec![
-            StubResponse::new(404).body("<Error><Code>NoSuchBucket</Code></Error>"),
-        ]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3 { .. });
-        assert!(err.to_string().contains("NoSuchBucket"), "{err}");
-    }
-
-    /// At offset 0 a 404 is a genuine missing target (e.g. missing bucket).
-    #[test]
-    fn not_found_at_offset_zero_is_not_found() {
-        let (endpoint, _seen) = stub_server(vec![StubResponse::new(404)]);
-
-        let err = append_data_at(&endpoint, 0).unwrap_err();
-        let UniversalIoError::NotFound { path } = err else {
-            panic!("expected NotFound, got {err:?}");
-        };
-        assert_eq!(path, PathBuf::from("dir/append.dat"));
-    }
-
-    /// Transient failures are retried at the same offset — the offset acts
-    /// as a compare-and-swap, so the retry cannot double-append.
-    #[test]
-    fn transient_failures_are_retried_at_the_same_offset() {
-        let (endpoint, seen) = stub_server(vec![StubResponse::new(429), success_with_size(9)]);
-
-        assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
-
-        let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 2);
-        assert!(
-            seen.iter()
-                .all(|request| request.method == "PUT"
-                    && request.write_offset.as_deref() == Some("5")),
-        );
-    }
-
-    #[test]
-    fn persistent_server_errors_fail_after_max_attempts() {
-        let responses = (0..MAX_ATTEMPTS).map(|_| StubResponse::new(503)).collect();
-        let (endpoint, seen) = stub_server(responses);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3 { .. });
-        assert!(err.to_string().contains("503"), "{err}");
-        assert_eq!(seen.lock().unwrap().len(), MAX_ATTEMPTS as usize);
-    }
-
-    /// Lost acknowledgement: the first attempt landed but its response was
-    /// lost, so the retry conflicts. A `head()` showing the object ends
-    /// exactly at `offset + data` proves the tail is ours (single-writer
-    /// contract) and the append reports success.
-    #[test]
-    fn retried_conflict_reconciles_via_head_when_the_tail_landed() {
-        let (endpoint, seen) = stub_server(vec![
-            StubResponse::new(503),
-            write_offset_conflict(),
-            head_with_size(9),
-        ]);
-
-        assert_eq!(append_data_at(&endpoint, 5).unwrap(), 9);
-
-        let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 3);
-        assert_eq!(seen[2].method, "HEAD");
-    }
-
-    /// The reconciliation only accepts the exact expected size: any other
-    /// length means the conflict is real (someone else grew the object).
-    #[test]
-    fn retried_conflict_with_a_foreign_head_size_stays_a_conflict() {
-        let (endpoint, _seen) = stub_server(vec![
-            StubResponse::new(503),
-            write_offset_conflict(),
-            head_with_size(7),
-        ]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(
-            err,
-            UniversalIoError::AppendOffsetConflict { offset: 5, .. }
-        );
-    }
-
-    /// Unexpected failure statuses surface the status and an excerpt of the
-    /// response body for diagnosis.
-    #[test]
-    fn failure_status_surfaces_the_body_excerpt() {
-        let (endpoint, _seen) =
-            stub_server(vec![StubResponse::new(403).body("AccessDenied by stub")]);
-
-        let err = append_data_at(&endpoint, 5).unwrap_err();
-        assert_matches!(err, UniversalIoError::S3 { .. });
-        let message = err.to_string();
-        assert!(message.contains("403"), "{message}");
-        assert!(message.contains("AccessDenied by stub"), "{message}");
-    }
-}
+mod tests;
