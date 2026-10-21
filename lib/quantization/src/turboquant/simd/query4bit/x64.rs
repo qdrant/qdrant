@@ -409,13 +409,18 @@ pub unsafe fn score_4bit_internal_folded_avx2(a: &[u8], b: &[u8], factors: &[i16
 
 /// [`super::fold_codes`] for whole groups of 32 codes (16 bytes). Returns the
 /// positions done; the values are the ones [`super::score_4bit_internal_folded`]
-/// multiplies.
+/// multiplies, XORed with `flip`.
 ///
 /// # Safety
 /// CPU must support `avx2`. `codes` must hold `out.len()` codes and `factors`
 /// `out.len()` factors.
 #[target_feature(enable = "avx2")]
-pub(super) unsafe fn fold_codes_avx2(codes: &[u8], factors: &[i16], out: &mut [i8]) -> usize {
+pub(super) unsafe fn fold_codes_avx2(
+    codes: &[u8],
+    factors: &[i16],
+    out: &mut [u8],
+    flip: u8,
+) -> usize {
     use core::arch::x86_64::*;
 
     let groups = out.len() / 32;
@@ -423,6 +428,7 @@ pub(super) unsafe fn fold_codes_avx2(codes: &[u8], factors: &[i16], out: &mut [i
     // within the slices for `g < groups` by the caller's lengths
     unsafe {
         let codebook_i8 = signed_codebook_avx2();
+        let flip = _mm256_set1_epi8(flip.cast_signed());
         for g in 0..groups {
             let c = unpack_32_codes_avx2(codebook_i8, codes.as_ptr().add(16 * g));
             let f_lo = _mm256_loadu_si256(factors.as_ptr().add(32 * g).cast::<__m256i>());
@@ -432,6 +438,7 @@ pub(super) unsafe fn fold_codes_avx2(codes: &[u8], factors: &[i16], out: &mut [i
                 _mm256_mulhrs_epi16(_mm256_cvtepi8_epi16(_mm256_extracti128_si256(c, 1)), f_hi);
             // `packs` works per 128-bit lane: positions 0..8, 16..24, 8..16, 24..32, by 64 bits
             let packed = _mm256_permute4x64_epi64(_mm256_packs_epi16(q_lo, q_hi), 0b11_01_10_00);
+            let packed = _mm256_xor_si256(packed, flip);
             _mm256_storeu_si256(out.as_mut_ptr().add(32 * g).cast::<__m256i>(), packed);
         }
     }
@@ -572,15 +579,18 @@ mod tests {
         for &dim in PARITY_DIMS {
             let (_, codes) = random_inputs(&mut rng, dim);
             let factors = random_factors(&mut rng, codes.len());
-            let want: Vec<i8> = (0..dim)
-                .map(|i| {
-                    let code = (codes[i / 2] >> (4 * (i % 2))) & 0x0F;
-                    fold_q15(codebook_signed_i64(code), factors[i]) as i8
-                })
-                .collect();
-            let mut got = vec![0; dim];
-            fold_codes(&codes, &factors, &mut got);
-            assert_eq!(got, want, "fold_codes at dim {dim}");
+            for flip in [0, 0x80] {
+                let want: Vec<u8> = (0..dim)
+                    .map(|i| {
+                        let code = (codes[i / 2] >> (4 * (i % 2))) & 0x0F;
+                        (fold_q15(codebook_signed_i64(code), factors[i]) as i8).cast_unsigned()
+                            ^ flip
+                    })
+                    .collect();
+                let mut got = vec![0; dim];
+                fold_codes(&codes, &factors, &mut got, flip);
+                assert_eq!(got, want, "fold_codes at dim {dim}, flip {flip:#x}");
+            }
         }
     }
 
