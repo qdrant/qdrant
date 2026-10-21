@@ -1233,6 +1233,9 @@ mod random {
             for target in 0..=BATCHES as usize {
                 let view = run.compose(&format!("cold-{source}-{target}"), source, target);
                 run.check(&open_follower(&view), source, target, true);
+                // Each view is a full shard copy, and CI puts TMPDIR on the size-limited
+                // `/dev/shm` tmpfs. Keep only the view being checked, not all 81 of them.
+                fs_err::remove_dir_all(&view).unwrap();
             }
         }
     }
