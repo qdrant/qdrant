@@ -161,7 +161,17 @@ impl Metric<VectorElementType> for DotProductMetric {
 
 impl MetricPostProcessing for DotProductMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
-        score
+        if score.is_nan() {
+            0.0
+        } else if score.is_infinite() {
+            if score.is_sign_positive() {
+                ScoreType::MAX
+            } else {
+                ScoreType::MIN
+            }
+        } else {
+            score
+        }
     }
 }
 
@@ -274,5 +284,36 @@ mod tests {
                 "renormalization is not stable (vector #{attempt})"
             );
         }
+    }
+
+    #[test]
+    fn test_dot_product_postprocessing_overflow() {
+        assert_eq!(DotProductMetric::postprocess(123.45), 123.45);
+        assert_eq!(DotProductMetric::postprocess(-123.45), -123.45);
+        assert_eq!(DotProductMetric::postprocess(0.0), 0.0);
+
+        // Clamping non-finite float scores prevents JSON `null` serialization
+        assert_eq!(DotProductMetric::postprocess(f32::INFINITY), ScoreType::MAX);
+        assert_eq!(
+            DotProductMetric::postprocess(f32::NEG_INFINITY),
+            ScoreType::MIN
+        );
+        assert_eq!(DotProductMetric::postprocess(f32::NAN), 0.0);
+
+        let v1 = vec![1e20, 1e20];
+        let v2 = vec![1e20, 1e20];
+        let raw_sim = DotProductMetric::similarity(&v1, &v2);
+        assert!(raw_sim.is_infinite());
+        let postprocessed = DotProductMetric::postprocess(raw_sim);
+        assert_eq!(postprocessed, ScoreType::MAX);
+        assert!(postprocessed.is_finite());
+
+        // Mixed-sign overflow (+inf + -inf = NaN) must also resolve to a finite score
+        let v_mixed = vec![1e20, -1e20];
+        let raw_mixed = DotProductMetric::similarity(&v1, &v_mixed);
+        assert!(raw_mixed.is_nan());
+        let postprocessed_mixed = DotProductMetric::postprocess(raw_mixed);
+        assert_eq!(postprocessed_mixed, 0.0);
+        assert!(postprocessed_mixed.is_finite());
     }
 }
