@@ -7,6 +7,7 @@ mod tonic_telemetry;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use ::api::grpc::grpc_health_v1::health_check_response::ServingStatus;
@@ -269,6 +270,11 @@ pub fn init_internal(
                 None
             };
 
+            let keepalive_interval =
+                Duration::from_millis(settings.cluster.p2p.keepalive_interval_ms);
+            let keepalive_timeout =
+                Duration::from_millis(settings.cluster.p2p.keepalive_timeout_ms);
+
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
             let qdrant_internal_service =
@@ -288,7 +294,12 @@ pub fn init_internal(
                 // We prefer to keep more pending reset streams even though this may be expensive,
                 // versus an internal error that is very hard to handle.
                 // More info: <https://github.com/qdrant/qdrant/issues/1907>
-                .http2_max_pending_accept_reset_streams(Some(1024));
+                .http2_max_pending_accept_reset_streams(Some(1024))
+                // Detect and close stale/ghost connections behind stateful network layers.
+                // See: <https://github.com/qdrant/qdrant/issues/11271>
+                .http2_keepalive_interval(Some(keepalive_interval))
+                .http2_keepalive_timeout(Some(keepalive_timeout))
+                .tcp_keepalive(Some(keepalive_interval));
 
             if let Some(config) = tls_config {
                 log::info!("TLS enabled for internal gRPC API (TTL not supported)");

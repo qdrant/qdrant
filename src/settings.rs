@@ -2,7 +2,8 @@ use std::borrow::Cow;
 use std::{env, io};
 
 use api::grpc::transport_channel_pool::{
-    DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
+    DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_KEEPALIVE_INTERVAL,
+    DEFAULT_KEEPALIVE_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::common::snapshots_manager::SnapshotsStorageConfig;
 use collection::operations::validation;
@@ -155,6 +156,12 @@ pub struct P2pConfig {
     pub connection_pool_size: usize,
     #[serde(default)]
     pub enable_tls: bool,
+    #[serde(default = "default_keepalive_interval_ms")]
+    #[validate(range(min = 1))]
+    pub keepalive_interval_ms: u64,
+    #[serde(default = "default_keepalive_timeout_ms")]
+    #[validate(range(min = 1))]
+    pub keepalive_timeout_ms: u64,
 }
 
 impl Default for P2pConfig {
@@ -164,6 +171,8 @@ impl Default for P2pConfig {
             port: None,
             connection_pool_size: default_connection_pool_size(),
             enable_tls: false,
+            keepalive_interval_ms: default_keepalive_interval_ms(),
+            keepalive_timeout_ms: default_keepalive_timeout_ms(),
         }
     }
 }
@@ -583,6 +592,14 @@ const fn default_connection_pool_size() -> usize {
     DEFAULT_POOL_SIZE
 }
 
+const fn default_keepalive_interval_ms() -> u64 {
+    DEFAULT_KEEPALIVE_INTERVAL.as_millis() as u64
+}
+
+const fn default_keepalive_timeout_ms() -> u64 {
+    DEFAULT_KEEPALIVE_TIMEOUT.as_millis() as u64
+}
+
 const fn default_message_timeout_tics() -> u64 {
     10
 }
@@ -649,6 +666,14 @@ mod tests {
         assert_eq!(
             config.service.http_client_disconnect_timeout_sec,
             default_http_client_disconnect_timeout_sec()
+        );
+        assert_eq!(
+            config.cluster.p2p.keepalive_interval_ms,
+            default_keepalive_interval_ms()
+        );
+        assert_eq!(
+            config.cluster.p2p.keepalive_timeout_ms,
+            default_keepalive_timeout_ms()
         );
 
         config
