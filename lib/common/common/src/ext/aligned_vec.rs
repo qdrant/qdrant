@@ -31,6 +31,17 @@ impl<'a> ACow<'a> {
     }
 }
 
+#[test]
+fn test_empty_cast() {
+    let a: &[u8] = &[];
+    let b: ACow = ACow::Borrowed(a);
+    let _c: Cow<[u32]> = b.try_cast_bytemuck().expect("empty slice cast");
+
+    // thread 'ext::aligned_vec::test_empty_cast' (817613) panicked at lib/common/common/src/ext/aligned_vec.rs:38:48:
+    // empty slice cast: TargetAlignmentGreaterAndInputNotAligned
+    // note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+}
+
 impl Deref for ACow<'_> {
     type Target = [u8];
 
