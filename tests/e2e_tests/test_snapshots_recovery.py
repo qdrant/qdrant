@@ -179,3 +179,24 @@ class TestSnapshotsRecovery:
         # Final verification after all recovery operations
         _verify_recovered(client, RECOVERED_URL, original_config)
         _verify_recovered(client, RECOVERED_FILE, original_config)
+
+        # --- Full snapshot ---
+
+        base_url = f"http://{container_info.host}:{container_info.http_port}"
+        response = requests.post(f"{base_url}/snapshots", params={"wait": "true"})
+        response.raise_for_status()
+        full_snapshot_name = response.json()["result"]["name"]
+
+        response = requests.get(f"{base_url}/snapshots/{full_snapshot_name}")
+        response.raise_for_status()
+        full_snapshot_file = tmp_path / full_snapshot_name
+        full_snapshot_file.write_bytes(response.content)
+
+        # Restore the whole storage on a fresh node
+        restored = qdrant_container_factory(QdrantContainerConfig(
+            volumes={str(full_snapshot_file): {'bind': '/qdrant/full.snapshot', 'mode': 'ro'}},
+            command=["./qdrant", "--storage-snapshot", "/qdrant/full.snapshot"],
+        ))
+        restored_client = ClientUtils(host=restored.host, port=restored.http_port)
+        restored_client.wait_for_server()
+        _verify_recovered(restored_client, COLLECTION_NAME, original_config)

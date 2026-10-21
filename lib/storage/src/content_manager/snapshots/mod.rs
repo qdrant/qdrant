@@ -5,18 +5,24 @@ pub mod recover;
 
 use std::collections::HashMap;
 use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 
+use collection::common::snapshots_manager::{SnapshotStorageCloud, SnapshotStorageManager};
 use collection::operations::snapshot_ops::{SnapshotDescription, unique_snapshot_timestamp};
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::disk::dir_disk_size;
+use common::disk_usage::disk_usage;
+use common::tar_ext::BuilderExt;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
+use tokio_util::io::SyncIoBridge;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
+use crate::content_manager::toc::{COLLECTIONS_DIR, FULL_SNAPSHOT_FILE_NAME};
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{AccessRequirements, Auth, CollectionMultipass};
 use crate::{StorageError, TableOfContent};
@@ -114,6 +120,111 @@ pub async fn do_create_full_snapshot(
 }
 
 async fn _do_create_full_snapshot(
+    toc: &TableOfContent,
+    multipass: CollectionMultipass,
+) -> Result<SnapshotDescription, StorageError> {
+    match toc.get_snapshots_storage_manager()? {
+        SnapshotStorageManager::Cloud(cloud) => {
+            create_full_snapshot_streaming(toc, multipass, &cloud).await
+        }
+        SnapshotStorageManager::LocalFS(_) => create_full_snapshot_local(toc, multipass).await,
+    }
+}
+
+/// Streams the full snapshot archive into object storage as it is built.
+///
+/// Collection snapshots are built one at a time in the temp directory, appended to the
+/// archive and deleted, so they are never stored on their own. Temp disk holds one
+/// collection archive at a time plus its build scratch space, and the archive is
+/// uploaded once.
+async fn create_full_snapshot_streaming(
+    toc: &TableOfContent,
+    multipass: CollectionMultipass,
+    cloud: &SnapshotStorageCloud,
+) -> Result<SnapshotDescription, StorageError> {
+    let current_time = unique_snapshot_timestamp();
+    let snapshot_name = format!("{FULL_SNAPSHOT_FILE_NAME}-{current_time}.snapshot");
+    let full_snapshot_path = toc.snapshots_path().join(&snapshot_name);
+
+    // Sizes the upload parts and caps it at 10,000 of them; doubled for compression and growth.
+    let storage_path = toc.storage_config.storage_path.clone();
+    let estimated_size = tokio::task::spawn_blocking(move || {
+        match dir_disk_size(storage_path.join(COLLECTIONS_DIR)) {
+            Ok(size) => size.saturating_mul(2),
+            Err(err) => {
+                // Files can vanish mid-scan; used disk space is a race-free upper bound.
+                log::warn!("Failed to measure collections, sizing parts from disk usage: {err}");
+                disk_usage(&storage_path).map_or(0, |usage| usage.used())
+            }
+        }
+    })
+    .await?;
+
+    let (writer, upload) = cloud.start_stream_upload(&full_snapshot_path, estimated_size);
+    let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(writer));
+
+    let all_collections = toc.multipass_into_collections(&multipass).await;
+    let archived = async {
+        let mut collections_mapping = HashMap::new();
+        let temp_dir = toc.optional_temp_or_storage_temp_path()?;
+        for collection_pass in &all_collections {
+            // Spans the append too, which is where this collection gets uploaded
+            let _running_snapshots_guard = toc.count_snapshot_creation(collection_pass.name());
+            let (collection_snapshot_name, archive) = toc
+                .get_collection(collection_pass)
+                .await?
+                .create_snapshot_archive(&temp_dir, toc.this_peer_id)
+                .await?;
+            let collection_tar = tar.clone();
+            let dst = PathBuf::from(&collection_snapshot_name);
+            tokio::task::spawn_blocking(move || {
+                collection_tar.blocking_append_file(archive.path(), &dst)
+            })
+            .await??;
+            collections_mapping
+                .insert(collection_pass.name().to_string(), collection_snapshot_name);
+        }
+
+        let mut collections_aliases: HashMap<String, String> = Default::default();
+        for collection_pass in &all_collections {
+            for alias in toc
+                .all_collection_aliases(collection_pass.name(), &multipass)
+                .await
+            {
+                collections_aliases.insert(alias, collection_pass.name().to_string());
+            }
+        }
+
+        let snapshot_config = SnapshotConfig {
+            collections_mapping,
+            collections_aliases,
+        };
+        tar.append_data(
+            serde_json::to_vec_pretty(&snapshot_config)?,
+            Path::new("config.json"),
+        )
+        .await?;
+        tar.finish().await?;
+        Ok::<(), StorageError>(())
+    }
+    .await;
+
+    if let Err(err) = archived {
+        // A failed upload breaks the archive stream, so its error is the real cause.
+        return Err(match upload.abort().await {
+            Ok(()) => err,
+            Err(upload_err) => {
+                log::warn!("Full snapshot {snapshot_name} archive failed: {err}");
+                StorageError::from(upload_err)
+            }
+        });
+    }
+
+    upload.commit().await?;
+    Ok(cloud.get_snapshot_description(&full_snapshot_path).await?)
+}
+
+async fn create_full_snapshot_local(
     toc: &TableOfContent,
     multipass: CollectionMultipass,
 ) -> Result<SnapshotDescription, StorageError> {
