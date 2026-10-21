@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use futures::future::BoxFuture;
+use futures::executor::ThreadPool;
+use futures::future::{BoxFuture, RemoteHandle};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use parking_lot::Mutex;
@@ -118,9 +119,33 @@ where
 }
 
 enum ScheduledFile<S: 'static> {
-    Future(BoxFuture<'static, UioResult<S>>),
+    Future(RemoteHandle<UioResult<S>>),
     Ready(UioResult<S>),
     Unchanged,
+}
+
+/// 🤖 Drives scheduled opens past their first pending point, so a chained
+/// 🤖 fetch (e.g. a range located by a header) proceeds while parked.
+/// 🤖 Plain threads, so a sync UIO call stays callable from a poll.
+static DRIVER: LazyLock<ThreadPool> = LazyLock::new(|| {
+    let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
+    ThreadPool::builder()
+        .pool_size(threads)
+        .name_prefix("uio-prefetch-")
+        .create()
+        .expect("build the prefetch driver pool")
+});
+
+fn stage<S: Send + 'static>(mut fut: BoxFuture<'static, UioResult<S>>) -> ScheduledFile<S> {
+    // Poll once, so that real async work begins right away
+    match fut.as_mut().now_or_never() {
+        Some(file) => ScheduledFile::Ready(file),
+        None => {
+            let (remote, handle) = fut.remote_handle();
+            DRIVER.spawn_ok(remote);
+            ScheduledFile::Future(handle)
+        }
+    }
 }
 
 impl<S> Debug for ScheduledFile<S> {
@@ -358,17 +383,11 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
         // Clone the fs handle so that the future can own it.
         let fs = self.fs.clone();
         let path_owned = path.to_path_buf();
-        let mut fut = Box::pin(
+        let fut = Box::pin(
             async move { fs.open_async(path_owned, open_options, open_extra).await }
                 .unmeasured(reason("Prefetching is an internal operation")),
         );
-
-        // Poll once, so that real async work begins right away
-        let scheduled = match fut.as_mut().now_or_never() {
-            Some(file) => ScheduledFile::Ready(file),
-            None => ScheduledFile::Future(fut),
-        };
-        files_prefetched.insert(path.to_path_buf(), scheduled);
+        files_prefetched.insert(path.to_path_buf(), stage(fut));
     }
 
     // TODO(uio): merge into `schedule_open`? might make it simpler to use
@@ -396,12 +415,9 @@ impl<Fs: UniversalReadFsAsync> CachedReadFs for CachedFs<Fs> {
     }
 
     fn schedule(&self, path: PathBuf, fut: BoxFuture<'static, UioResult<Fs::File>>) {
-        let mut fut = Box::pin(fut.unmeasured(reason("Prefetching is an internal operation")));
-        // Poll once, so that real async work begins right away
-        let scheduled = match fut.as_mut().now_or_never() {
-            Some(file) => ScheduledFile::Ready(file),
-            None => ScheduledFile::Future(fut),
-        };
+        let scheduled = stage(Box::pin(
+            fut.unmeasured(reason("Prefetching is an internal operation")),
+        ));
         self.files_prefetched.lock().insert(path, scheduled);
     }
 
@@ -508,7 +524,9 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
             return self.fs.open(path, options, extra);
         }
 
-        if let Some(file) = self.files_prefetched.lock().remove(path) {
+        // 🤖 A separate statement, so the lock is released before blocking.
+        let scheduled_file = self.files_prefetched.lock().remove(path);
+        if let Some(file) = scheduled_file {
             return match file {
                 ScheduledFile::Future(future) => futures::executor::block_on(future),
                 ScheduledFile::Ready(result) => result,

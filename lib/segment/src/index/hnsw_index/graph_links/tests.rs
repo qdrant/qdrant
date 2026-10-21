@@ -320,3 +320,77 @@ fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
     // fully random links
     check(random_links(100, 10, &hnsw_m));
 }
+
+/// 🤖 With the offsets prefetched, reading them never reaches the remote,
+/// 🤖 zeroed in place after the open.
+#[rstest]
+#[case::preopen(true)]
+#[case::header_only(false)]
+fn test_preopen_prefetches_offsets(#[case] preopen: bool) {
+    use std::io::Write as _;
+    use std::sync::Arc;
+
+    use common::generic_consts::Random;
+    use common::universal_io::{
+        CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext,
+        MmapFile, UniversalRead,
+    };
+    use zerocopy::FromBytes;
+
+    use super::header::HeaderCompressed;
+    use crate::index::hnsw_index::graph::HnswGraph;
+    use crate::index::hnsw_index::graph_layers::GraphLayers;
+
+    let format = GraphLinksFormat::Compressed;
+    let residency = GraphLinksResidency::Cold;
+    let hnsw_m = HnswM::new2(8);
+    let tmp = Builder::new().prefix("graph_dir").tempdir().unwrap();
+    let remote_dir = tmp.path().join("remote");
+    let local_dir = tmp.path().join("local");
+    fs_err::create_dir_all(&remote_dir).unwrap();
+    fs_err::create_dir_all(&local_dir).unwrap();
+    let links_path = GraphLayers::get_links_path(&remote_dir, format);
+    // Enough points to push the offsets past the eagerly read header block.
+    let links = random_links(5000, 10, &hnsw_m);
+    atomic_save(&links_path, |writer| {
+        let param = format.with_param_for_tests(None::<&TestGraphLinksVectors>);
+        serialize_graph_links(links, param, hnsw_m, writer)
+    })
+    .unwrap();
+    let remote_bytes = fs_err::read(&links_path).unwrap();
+
+    let fs = DiskCacheFs::<MmapFile>::from_context(DiskCacheFsContext {
+        config: Arc::new(DiskCacheConfig::new(remote_dir.clone(), local_dir).unwrap()),
+        remote: Default::default(),
+    })
+    .unwrap();
+    let mut fs = CachedFs::new(fs, &remote_dir).unwrap();
+    fs.cache_file_info().unwrap();
+    let options = GraphLinksFile::<DiskCache<MmapFile>>::preopen_options(format, residency);
+    if preopen {
+        HnswGraph::<DiskCache<MmapFile>>::preopen_universal(&fs, &remote_dir, residency).unwrap();
+    } else {
+        fs.schedule_open(&links_path, Some(options), None);
+    }
+    futures::executor::block_on(fs.wait_all());
+    let file = fs.open(&links_path, options, Default::default()).unwrap();
+
+    let zeros = vec![0; remote_bytes.len()];
+    let mut remote = fs_err::OpenOptions::new()
+        .write(true)
+        .open(&links_path)
+        .unwrap();
+    remote.write_all(&zeros).unwrap();
+
+    let (header, _) = HeaderCompressed::read_from_prefix(&remote_bytes).unwrap();
+    let size = header
+        .offsets_parameters
+        .validate()
+        .unwrap()
+        .compressed_size_bytes();
+    let range = remote_bytes.len() - size..remote_bytes.len();
+    let read = file
+        .read_bytes(range.start as u64..range.end as u64, Random, 1)
+        .unwrap();
+    assert_eq!(*read == remote_bytes[range], preopen);
+}

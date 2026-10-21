@@ -231,7 +231,7 @@ fnv = "1.0"
 fs4 = "1.1.0"
 fs-err = { version = "3.3.0", features = ["tokio"] }
 fs_extra = "1.3.0"
-futures = "0.3.32"
+futures = { version = "0.3.32", features = ["thread-pool"] }
 futures-util = "0.3.32"
 half = { version = "2.7.1", features = [
     "alloc",

@@ -70,7 +70,7 @@ where
 /// either by an awaited barrier
 /// ([`CachedFs::resolve_prefetched`](crate::universal_io::CachedFs::resolve_prefetched))
 /// or lazily at consume time.
-pub trait UniversalReadFsAsync: UniversalReadFs {
+pub trait UniversalReadFsAsync: UniversalReadFs<File: UniversalReadAsync> {
     /// Open a file, and populate it asynchronously.
     ///
     /// Must not depend on ambient async context; capture any runtime by value.

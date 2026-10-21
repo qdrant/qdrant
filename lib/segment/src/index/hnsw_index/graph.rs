@@ -9,7 +9,9 @@ use common::flags::feature_flags;
 use common::types::{PointOffsetType, ScoredPointOffset};
 #[cfg(not(target_os = "linux"))]
 use common::universal_io::MmapFile;
-use common::universal_io::{CachedReadFs, UniversalKind, UniversalRead, UniversalReadFs};
+use common::universal_io::{
+    CachedReadFs, OpenExtra, UniversalKind, UniversalRead, UniversalReadFs, UniversalReadFsAsync,
+};
 #[cfg(target_os = "linux")]
 use common::universal_io::{IoUringFile, IoUringFs};
 use itertools::Itertools as _;
@@ -147,15 +149,34 @@ impl<S: UniversalRead> HnswGraph<S> {
         let Some(format) = GraphLayers::probe_links_format(fs, dir)? else {
             return Ok(());
         };
-        let options = if Self::format_is_batched(format, residency) {
-            GraphLinksFile::<S>::preopen_options(format, residency)
-        } else {
-            GraphLinks::preopen_options(residency)
+        let path = GraphLayers::get_links_path(dir, format);
+        if !Self::format_is_batched(format, residency) {
+            fs.schedule_open(&path, Some(GraphLinks::preopen_options(residency)), None);
+            return Ok(());
+        }
+        let options = GraphLinksFile::<S>::preopen_options(format, residency);
+        let file_len = match residency {
+            GraphLinksResidency::Cold => fs.cached_file_info(&path).map(|info| info.size),
+            // 🤖 Fetched whole by `options`.
+            GraphLinksResidency::Cached | GraphLinksResidency::Pinned => None,
         };
-        fs.schedule_open(
-            &GraphLayers::get_links_path(dir, format),
-            Some(options),
-            None,
+        let Some(file_len) = file_len else {
+            fs.schedule_open(&path, Some(options), None);
+            return Ok(());
+        };
+
+        // 🤖 The header, then the offsets; the rest stays on demand.
+        let inner = fs.inner().clone();
+        let extra = OpenExtra::with_known_len(Default::default(), file_len);
+        fs.schedule(
+            path.clone(),
+            Box::pin(async move {
+                let file = inner.open_async(path.clone(), options, extra).await?;
+                if let Err(err) = GraphLinksFile::prefetch_offsets(&file, format, file_len).await {
+                    log::warn!("Failed to prefetch offsets of {}: {err}", path.display());
+                }
+                Ok(file)
+            }),
         );
         Ok(())
     }

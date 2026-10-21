@@ -4,10 +4,12 @@ use std::num::NonZero;
 use common::bitpacking_links::{PackedLinksIterator, iterate_packed_links};
 use common::bitpacking_ordered;
 use common::ext::aligned_vec::ACow;
-use common::generic_consts::Random;
+use common::generic_consts::{Random, Sequential};
 use common::mmap::{Advice, AdviceSetting};
 use common::types::PointOffsetType;
-use common::universal_io::{OpenOptions, Populate, ReadBytesItem, ReadRange, UniversalRead};
+use common::universal_io::{
+    OpenOptions, Populate, ReadBytesItem, ReadRange, UniversalRead, UniversalReadAsync,
+};
 use itertools::Itertools;
 use zerocopy::FromBytes;
 
@@ -202,6 +204,36 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             bits_per_unsorted: bits_per_unsorted(common.point_count)?,
             compression: common.compression,
         })
+    }
+
+    /// 🤖 Fetch the compressed offsets, so that reading them later is local.
+    /// 🤖 They are the tail of the file: no need to know where the rest ends.
+    pub async fn prefetch_offsets(
+        file: &S,
+        format: GraphLinksFormat,
+        file_len: u64,
+    ) -> OperationResult<()>
+    where
+        S: UniversalReadAsync,
+    {
+        let params = match format {
+            GraphLinksFormat::Plain => return Ok(()),
+            GraphLinksFormat::Compressed => {
+                read_header_async::<HeaderCompressed, _>(file)
+                    .await?
+                    .offsets_parameters
+            }
+            GraphLinksFormat::CompressedWithVectors => {
+                read_header_async::<HeaderCompressedWithVectors, _>(file)
+                    .await?
+                    .offsets_parameters
+            }
+        };
+        let size = params.validate()?.compressed_size_bytes() as u64;
+        let start = file_len.checked_sub(size).ok_or_else(error_size)?;
+        file.read_bytes_async(start..file_len, Sequential, 1)
+            .await?;
+        Ok(())
     }
 
     pub fn uio_trace_sections(&self, format: GraphLinksFormat) -> Vec<(&'static str, u64)> {
@@ -412,4 +444,11 @@ impl<S: UniversalRead> GraphLinksFile<S> {
             self.reindex_offset + u64::from(point_id) * size_of::<PointOffsetType>() as u64;
         ReadRange::one(offset)
     }
+}
+
+async fn read_header_async<H: FromBytes, S: UniversalReadAsync>(file: &S) -> OperationResult<H> {
+    let bytes = file
+        .read_bytes_async(0..size_of::<H>() as u64, Random, align_of::<H>())
+        .await?;
+    H::read_from_bytes(&bytes).map_err(|_| error_size())
 }
