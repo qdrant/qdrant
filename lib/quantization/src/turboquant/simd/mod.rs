@@ -79,6 +79,19 @@ impl SimdBackend {
     }
 }
 
+/// A TQ+ code's signed codebook value `value` scaled by its coordinate's Q15 factor `factor`:
+/// `value · factor / 2¹⁵`, rounded half up. That's what `pmulhrsw` on x86_64 and `vqrdmulh` on
+/// aarch64 compute, so the scalar and SIMD paths of the folded kernels agree bit for bit. With
+/// `|value| ≤ 128` and `0 ≤ factor < 2¹⁵` the result stays an i8.
+#[inline(always)]
+pub(crate) fn fold_q15(value: i64, factor: i16) -> i64 {
+    (value * i64::from(factor) + (1 << 14)) >> 15
+}
+
+/// The longest vectors the folded kernels take: they sum products of at most 128² in i32,
+/// which holds 2¹⁶ coordinates (Qdrant's largest dimension) with room to spare.
+pub(crate) const FOLDED_MAX_DIM: usize = 1 << 16;
+
 // Re-exports below include the runtime-dispatching entry points used by the
 // crate's scoring paths (`Query{N}bitSimd`, `score_{N}bit_internal`) plus
 // scalar-reference and arch-specific kernels the benchmarks at
@@ -97,7 +110,7 @@ pub use query1bit::{
 };
 pub use query2bit::{
     CODEBOOK_SCALE_SQ as CODEBOOK_SCALE_SQ_2BIT, Query2bitSimd, score_2bit_internal,
-    score_2bit_internal_scalar, score_2bit_internal_weighted, score_2bit_internal_weighted_scalar,
+    score_2bit_internal_folded, score_2bit_internal_folded_scalar, score_2bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 pub use query2bit::{
@@ -107,7 +120,7 @@ pub use query2bit::{
 pub use query2bit::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
 pub use query4bit::{
     CODEBOOK_SCALE_SQ as CODEBOOK_SCALE_SQ_4BIT, Query4bitSimd, score_4bit_internal,
-    score_4bit_internal_scalar, score_4bit_internal_weighted, score_4bit_internal_weighted_scalar,
+    score_4bit_internal_folded, score_4bit_internal_folded_scalar, score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 pub use query4bit::{

@@ -1,7 +1,7 @@
 //! TurboQuant matrix operands against `score_internal`: the best columns of each row by brute
-//! force, through every kernel the CPU supports. Exact for the widths that keep their codes;
-//! within a tolerance for those decoded to f32: 16 bits, TQ+ 2 and 4 bits, and on aarch64
-//! (or forced with `codes_in_f32`) the Normal 2, 4, and 8 bits.
+//! force, through every kernel the CPU supports. Exact for the integer widths, TQ+ 2 and 4
+//! bits included; within a tolerance for those decoded to f32: 16 bits, and on aarch64 (or
+//! forced with `codes_in_f32`) the Normal 2, 4, and 8 bits and TQ+ 2 and 4 bits.
 
 use std::sync::atomic::AtomicBool;
 
@@ -207,12 +207,21 @@ fn codebooks_in_f32() {
     check_all_with(TQBits::Bits4, &[TQMode::Normal], true, Some(2e-6));
 }
 
-/// TQ+ codes weighted and summed in f32, restarted every 256: up to 3.6e-7 of the input
-/// magnitude here.
+/// TQ+ codes folded with `D'` into the i8 values `score_internal` multiplies, as 8-bit codes:
+/// exact. Decoded to f32 on aarch64, see [`folded_codebooks_in_f32`].
 #[test]
-fn weighted_codebooks() {
-    check_all(TQBits::Bits2, &[TQMode::Plus], Some(2e-6));
-    check_all(TQBits::Bits4, &[TQMode::Plus], Some(2e-6));
+fn folded_codebooks() {
+    let tolerance = CODES_IN_F32.then_some(2e-6);
+    check_all(TQBits::Bits2, &[TQMode::Plus], tolerance);
+    check_all(TQBits::Bits4, &[TQMode::Plus], tolerance);
+}
+
+/// The aarch64 operands of [`folded_codebooks`] on every platform: the folded values summed in
+/// f32, restarted every 256.
+#[test]
+fn folded_codebooks_in_f32() {
+    check_all_with(TQBits::Bits2, &[TQMode::Plus], true, Some(2e-6));
+    check_all_with(TQBits::Bits4, &[TQMode::Plus], true, Some(2e-6));
 }
 
 /// Integer sums of grid values: exact. Decoded to f32 on aarch64, see

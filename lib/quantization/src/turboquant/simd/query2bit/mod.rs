@@ -12,8 +12,8 @@
 //! Both codebooks derive from `CENTROIDS_2BIT` (Lloyd-Max on N(0,1)); see
 //! `test_codebook_matches_lloyd_max` for the consistency check.
 
-use super::SimdBackend;
 use super::query::{Code, Encoding, QuerySimd, pad_codebook};
+use super::{FOLDED_MAX_DIM, SimdBackend, fold_q15};
 
 /// `max|c|` over `CENTROIDS_2BIT` — the extreme centroid magnitude.
 const CODEBOOK_ABS_MAX: f32 = 1.510;
@@ -178,70 +178,88 @@ pub(crate) fn score_2bit_internal_integer(a: &[u8], b: &[u8]) -> i64 {
     acc
 }
 
-/// Weighted variant of [`score_2bit_internal`]: returns `Σ_j c[a[j]] · c[b[j]]
-/// · weights[j]` in centroid-float space. `weights` is i16-quantized `D'_j²`
-/// from TQ+ error correction (non-negative, capped at `i16::MAX − 1`); the
-/// caller divides the integer sum by `weight_scale · CODEBOOK_SCALE²` to
-/// recover the true f32 dot. The `i16` element type encodes the SIMD
-/// invariant directly — every backend can multiply via `vmull_s16` /
-/// `madd_epi16` without re-checking the high bit.
+/// The TQ+ variant of [`score_2bit_internal`]: `Σ_j q(a, j) · q(b, j)`, where `q(v, j) =
+/// fold_q15(c[v[j]], factors[j])` is the code's signed codebook value scaled by the
+/// coordinate's Q15 factor (`ErrorCorrection::d_prime_q15`, `D'_j / max D'`). The folded
+/// values stay in i8, so the matrix operands decode the same values with [`fold_codes`] and
+/// score them exactly as this does.
 ///
-/// Each input byte holds four 2-bit indices (lanes 0..=3 from LSB). `weights
-/// .len()` must equal `4 · a.len()`.
+/// Each input byte holds four 2-bit indices (lanes 0..=3 from LSB). `factors.len()` must
+/// equal `4 · a.len()`.
 ///
 /// # Panics
-/// Panics if `a` and `b` have different lengths or if `weights` has the
-/// wrong length.
-pub fn score_2bit_internal_weighted(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
+/// Panics if `a` and `b` have different lengths, if `factors` has the wrong length, or if it
+/// exceeds [`FOLDED_MAX_DIM`].
+pub fn score_2bit_internal_folded(a: &[u8], b: &[u8], factors: &[i16]) -> i64 {
     assert_eq!(
         a.len(),
         b.len(),
-        "score_2bit_internal_weighted: vector length mismatch ({} vs {})",
+        "score_2bit_internal_folded: vector length mismatch ({} vs {})",
         a.len(),
         b.len(),
     );
     assert_eq!(
-        weights.len(),
+        factors.len(),
         4 * a.len(),
-        "score_2bit_internal_weighted: weights length {} != 4 · a.len() {}",
-        weights.len(),
+        "score_2bit_internal_folded: factors length {} != 4 · a.len() {}",
+        factors.len(),
         4 * a.len(),
     );
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     match SimdBackend::detect() {
         #[cfg(target_arch = "x86_64")]
         SimdBackend::Avx512Vnni | SimdBackend::Avx2 => unsafe {
-            x64::score_2bit_internal_weighted_avx2(a, b, weights)
+            x64::score_2bit_internal_folded_avx2(a, b, factors)
         },
         #[cfg(target_arch = "x86_64")]
-        SimdBackend::Sse => unsafe { x64::score_2bit_internal_weighted_sse(a, b, weights) },
+        SimdBackend::Sse => unsafe { x64::score_2bit_internal_folded_sse(a, b, factors) },
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         SimdBackend::NeonSdot | SimdBackend::Neon => unsafe {
-            arm::score_2bit_internal_weighted_neon(a, b, weights)
+            arm::score_2bit_internal_folded_neon(a, b, factors)
         },
-        SimdBackend::Scalar => score_2bit_internal_weighted_scalar(a, b, weights),
+        SimdBackend::Scalar => score_2bit_internal_folded_scalar(a, b, factors),
     }
 }
 
-/// Scalar reference for [`score_2bit_internal_weighted`].
+/// Scalar reference for [`score_2bit_internal_folded`].
 #[inline]
-pub fn score_2bit_internal_weighted_scalar(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
+pub fn score_2bit_internal_folded_scalar(a: &[u8], b: &[u8], factors: &[i16]) -> i64 {
     let mut acc: i64 = 0;
     for (i, (&byte_a, &byte_b)) in a.iter().zip(b.iter()).enumerate() {
         for k in 0..4 {
             let shift = 2 * k;
-            let a_k = (byte_a >> shift) & 0x03;
-            let b_k = (byte_b >> shift) & 0x03;
-            let p = codebook_signed_i64(a_k) * codebook_signed_i64(b_k);
-            acc += p * i64::from(weights[4 * i + k]);
+            let factor = factors[4 * i + k];
+            let q_a = fold_q15(codebook_signed_i64((byte_a >> shift) & 0x03), factor);
+            let q_b = fold_q15(codebook_signed_i64((byte_b >> shift) & 0x03), factor);
+            acc += q_a * q_b;
         }
     }
     acc
 }
 
+/// The folded values of [`score_2bit_internal_folded`] of one vector, one per position of
+/// `out`: `codes` must hold at least `out.len()` codes and `factors` at least as many factors.
+pub(crate) fn fold_codes(codes: &[u8], factors: &[i16], out: &mut [i8]) {
+    assert!(out.len() <= 4 * codes.len() && out.len() <= factors.len());
+    #[cfg(target_arch = "x86_64")]
+    let done = if std::is_x86_feature_detected!("avx2") {
+        // SAFETY: AVX2 checked above, the lengths asserted above
+        unsafe { x64::fold_codes_avx2(codes, factors, out) }
+    } else {
+        0
+    };
+    #[cfg(not(target_arch = "x86_64"))]
+    let done = 0;
+    for (i, o) in out.iter_mut().enumerate().skip(done) {
+        let code = (codes[i / 4] >> (2 * (i % 4))) & 0x03;
+        *o = fold_q15(codebook_signed_i64(code), factors[i]) as i8;
+    }
+}
+
 /// Square of the codebook scale — the integer sum from
-/// [`score_2bit_internal_weighted`] is divided by `weight_scale ·
-/// CODEBOOK_SCALE_SQ` to get the f32 weighted dot.
+/// [`score_2bit_internal_folded`] is divided by `CODEBOOK_SCALE_SQ` and the
+/// square of the factors' scale to get the f32 weighted dot.
 pub const CODEBOOK_SCALE_SQ: f32 = CODEBOOK_SCALE * CODEBOOK_SCALE;
 
 /// The centroid dot of two vectors from the sum of their codes' products, the codes as their
@@ -260,12 +278,12 @@ mod x64;
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub use arm::{
-    score_2bit_internal_neon, score_2bit_internal_neon_sdot, score_2bit_internal_weighted_neon,
+    score_2bit_internal_folded_neon, score_2bit_internal_neon, score_2bit_internal_neon_sdot,
 };
 #[cfg(target_arch = "x86_64")]
 pub use x64::{
-    score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_sse,
-    score_2bit_internal_weighted_avx2, score_2bit_internal_weighted_sse,
+    score_2bit_internal_avx2, score_2bit_internal_avx512_vnni, score_2bit_internal_folded_avx2,
+    score_2bit_internal_folded_sse, score_2bit_internal_sse,
 };
 
 /// 2-bit-specific test helpers.  Bit-width-agnostic helpers (`pack_codes`,
@@ -373,40 +391,33 @@ mod tests {
         }
     }
 
-    /// Saturation-safety at 64K dims: every centroid index at max (`3`),
-    /// every weight at `i16::MAX`. Same worst-case shape as the 4-bit
-    /// counterpart — `weights[i]` is `i16` (the storage type is the
-    /// SIMD-load contract). The i64 accumulator must hold the load.
-    ///
-    /// Per-coord product:
-    ///   `c_signed² × weight = 127² × 32 767 ≈ 5.28e8` (fits i32 with ~4× headroom).
-    /// Total over 65 536 coords: `≈ 3.46e13` — fits i64.
+    /// Saturation-safety at 64K dims: every centroid index at the largest
+    /// magnitude (`0`, `−128` on x86_64), every factor at `i16::MAX`. The
+    /// worst-case integer load the folded kernel can see.
     #[test]
-    fn test_score_2bit_internal_weighted_saturation_safety_64k() {
+    fn test_score_2bit_internal_folded_saturation_safety_64k() {
         let dim = 65_536;
-        let indices: Vec<u8> = vec![3; dim]; // max-magnitude centroid
+        let indices: Vec<u8> = vec![0; dim];
         let vec_a = pack_codes(&indices, 2);
         let vec_b = pack_codes(&indices, 2);
-        let max_weight: i16 = i16::MAX;
-        let weights: Vec<i16> = vec![max_weight; dim];
+        let factors: Vec<i16> = vec![i16::MAX; dim];
 
-        let raw_int = super::score_2bit_internal_weighted(&vec_a, &vec_b, &weights);
+        let raw_int = super::score_2bit_internal_folded(&vec_a, &vec_b, &factors);
 
-        let c_max_signed = super::codebook_signed_i64(3);
-        let per_coord = c_max_signed * c_max_signed * i64::from(max_weight);
-        let expected = per_coord * dim as i64;
+        let q_max = super::fold_q15(super::codebook_signed_i64(0), i16::MAX);
+        let expected = q_max * q_max * dim as i64;
         assert_eq!(
             raw_int, expected,
-            "i64 sum overflow / mismatch at dim={dim} (per-coord={per_coord}, expected={expected}, got={raw_int})",
+            "sum overflow / mismatch at dim={dim} (q={q_max}, expected={expected}, got={raw_int})",
         );
     }
 
-    /// `score_2bit_internal_weighted` should recover `Σ c[a[j]] · c[b[j]] ·
-    /// D'_j²` after dividing by `weight_scale · CODEBOOK_SCALE²`.
-    /// Weights are quantized into the `i16` storage form the SIMD kernels
-    /// consume directly.
+    /// `score_2bit_internal_folded` should recover `Σ c[a[j]] · c[b[j]] ·
+    /// D'_j²` after dividing by `CODEBOOK_SCALE²` and the square of the
+    /// factors' scale. Factors are quantized into the Q15 form the SIMD
+    /// kernels consume directly, as `ErrorCorrection::new` does.
     #[test]
-    fn test_score_2bit_internal_weighted_matches_reference() {
+    fn test_score_2bit_internal_folded_matches_reference() {
         use rand::RngExt;
 
         let mut rng = StdRng::seed_from_u64(0xBADD00D);
@@ -420,35 +431,36 @@ mod tests {
             let idx_a = encode_to_nearest_centroid(centroids, &raw_a);
             let idx_b = encode_to_nearest_centroid(centroids, &raw_b);
 
-            let weights_f32: Vec<f32> = (0..dim).map(|_| rng.random_range(0.0..4.0)).collect();
-            let max_w = weights_f32.iter().copied().fold(0.0f32, f32::max);
-            const QUANT_CAP: i16 = i16::MAX - 1;
-            let weight_scale = f32::from(QUANT_CAP) / max_w;
-            let weights_i16: Vec<i16> = weights_f32
+            let d_prime: Vec<f32> = (0..dim).map(|_| rng.random_range(0.0..2.0)).collect();
+            let max_d_prime = d_prime.iter().copied().fold(0.0f32, f32::max);
+            let q15_scale = f32::from(i16::MAX) / max_d_prime;
+            let factors: Vec<i16> = d_prime
                 .iter()
-                .map(|&x| (x * weight_scale).round().clamp(0.0, f32::from(QUANT_CAP)) as i16)
+                .map(|&x| (x * q15_scale).round().clamp(0.0, f32::from(i16::MAX)) as i16)
                 .collect();
 
             let truth: f64 = idx_a
                 .iter()
                 .zip(idx_b.iter())
-                .zip(weights_f32.iter())
-                .map(|((&a, &b), &w)| {
+                .zip(d_prime.iter())
+                .map(|((&a, &b), &d)| {
                     f64::from(centroids[a as usize])
                         * f64::from(centroids[b as usize])
-                        * f64::from(w)
+                        * f64::from(d)
+                        * f64::from(d)
                 })
                 .sum();
-            let raw_int = super::score_2bit_internal_weighted(
+            let raw_int = super::score_2bit_internal_folded(
                 &pack_codes(&idx_a, 2),
                 &pack_codes(&idx_b, 2),
-                &weights_i16,
+                &factors,
             );
-            let score = raw_int as f32 / (weight_scale * super::CODEBOOK_SCALE_SQ);
+            let factor_scale = q15_scale / 32768.0;
+            let score = raw_int as f32 / (super::CODEBOOK_SCALE_SQ * factor_scale * factor_scale);
 
             assert!(
                 (truth as f32 - score).abs() < 16.0,
-                "weighted score {score} too far from reference {truth}",
+                "folded score {score} too far from reference {truth}",
             );
         }
     }

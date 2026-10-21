@@ -221,41 +221,34 @@ pub unsafe fn score_4bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
 }
 
 // ------------------------------------------------------------------
-// score_4bit_internal_weighted — TQ+ symmetric path with per-coord
-// `D'²` weighting. `weights[i]` is `i16` (non-negative, capped at
-// `i16::MAX − 1` — see `ErrorCorrection::d_prime_sq_i16` doc), which
-// matches the SIMD load directly and feeds the very efficient
-// `madd_epi16` pair-sum.
-//
-// Per-coord product bound:
-//   |c_a · c_b · w| ≤ 128·128·32 766 ≈ 5.37e8
-//   madd pair sum: ≤ 2 · 5.37e8 ≈ 1.07e9 < i32::MAX (2.15e9) ✓
-// At dim=64 K the i32 sum reaches ≈ 1.7e10 — overflow if accumulated
-// in i32. We widen each `madd_epi16` result to i64 lanes immediately
-// (`_mm256_cvtepi32_epi64`) and accumulate into an i64 ymm reg, with
-// far enough headroom for any practical dim.
+// score_4bit_internal_folded — TQ+ symmetric path. Each side's signed
+// codebook value is scaled by its coordinate's Q15 factor with
+// `mulhrs_epi16`, the same rounding as `fold_q15`, which keeps it within
+// [−128, 127]; `madd_epi16` then pair-sums the products into i32 lanes:
+//   per product:   |q_a · q_b| ≤ 128 · 128 = 16 384
+//   total:         ≤ 2¹⁶ · 16 384 = 2³⁰ at `FOLDED_MAX_DIM` ✓
 // ------------------------------------------------------------------
 
-/// SSE4.1 + SSSE3 weighted variant of [`super::score_4bit_internal`].
+/// SSE4.1 + SSSE3 implementation of [`super::score_4bit_internal_folded`].
 ///
 /// # Safety
 /// CPU must support `ssse3` and `sse4.1`.
 #[target_feature(enable = "sse4.1,ssse3")]
-pub unsafe fn score_4bit_internal_weighted_sse(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
+pub unsafe fn score_4bit_internal_folded_sse(a: &[u8], b: &[u8], factors: &[i16]) -> i64 {
     use core::arch::x86_64::*;
 
     assert_eq!(
         a.len(),
         b.len(),
-        "score_4bit_internal_weighted_sse: vector length mismatch ({} vs {})",
+        "score_4bit_internal_folded_sse: vector length mismatch ({} vs {})",
         a.len(),
         b.len(),
     );
     assert_eq!(
-        weights.len(),
+        factors.len(),
         2 * a.len(),
-        "score_4bit_internal_weighted_sse: weights length {} != 2 · a.len() {}",
-        weights.len(),
+        "score_4bit_internal_folded_sse: factors length {} != 2 · a.len() {}",
+        factors.len(),
         2 * a.len(),
     );
 
@@ -265,7 +258,7 @@ pub unsafe fn score_4bit_internal_weighted_sse(a: &[u8], b: &[u8], weights: &[i1
             _mm_set1_epi8(-128i8),
         );
         let nibble_mask = _mm_set1_epi8(0x0F);
-        let mut acc = _mm_setzero_si128(); // 2 i64 lanes
+        let mut acc = _mm_setzero_si128();
 
         // 8 bytes from each source = 16 coords per iter.
         let n_full = a.len() / 8;
@@ -273,156 +266,176 @@ pub unsafe fn score_4bit_internal_weighted_sse(a: &[u8], b: &[u8], weights: &[i1
             let va = _mm_loadl_epi64(a.as_ptr().add(i * 8).cast::<__m128i>());
             let va_lo = _mm_and_si128(va, nibble_mask);
             let va_hi = _mm_and_si128(_mm_srli_epi16(va, 4), nibble_mask);
-            let a_idx = _mm_unpacklo_epi8(va_lo, va_hi);
-            let c_a_i8 = _mm_shuffle_epi8(codebook_i8, a_idx);
+            let c_a_i8 = _mm_shuffle_epi8(codebook_i8, _mm_unpacklo_epi8(va_lo, va_hi));
 
             let vb = _mm_loadl_epi64(b.as_ptr().add(i * 8).cast::<__m128i>());
             let vb_lo = _mm_and_si128(vb, nibble_mask);
             let vb_hi = _mm_and_si128(_mm_srli_epi16(vb, 4), nibble_mask);
-            let b_idx = _mm_unpacklo_epi8(vb_lo, vb_hi);
-            let c_b_i8 = _mm_shuffle_epi8(codebook_i8, b_idx);
+            let c_b_i8 = _mm_shuffle_epi8(codebook_i8, _mm_unpacklo_epi8(vb_lo, vb_hi));
 
-            // Widen i8×16 → i16×8 (low half only — the high half is zero
-            // because `unpacklo_epi8` placed all 16 indices in the low 16
-            // bytes already; for SSE we process 16 coords per iter via two
-            // halves of the i8 register).
-            let c_a_lo = _mm_cvtepi8_epi16(c_a_i8);
-            let c_a_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_a_i8, 8));
-            let c_b_lo = _mm_cvtepi8_epi16(c_b_i8);
-            let c_b_hi = _mm_cvtepi8_epi16(_mm_srli_si128(c_b_i8, 8));
+            let f_lo = _mm_loadu_si128(factors.as_ptr().add(16 * i).cast::<__m128i>());
+            let f_hi = _mm_loadu_si128(factors.as_ptr().add(16 * i + 8).cast::<__m128i>());
 
-            // c_a × c_b in i16 (max 16129 fits).
-            let prod_lo = _mm_mullo_epi16(c_a_lo, c_b_lo);
-            let prod_hi = _mm_mullo_epi16(c_a_hi, c_b_hi);
+            let q_a_lo = _mm_mulhrs_epi16(_mm_cvtepi8_epi16(c_a_i8), f_lo);
+            let q_a_hi = _mm_mulhrs_epi16(_mm_cvtepi8_epi16(_mm_srli_si128(c_a_i8, 8)), f_hi);
+            let q_b_lo = _mm_mulhrs_epi16(_mm_cvtepi8_epi16(c_b_i8), f_lo);
+            let q_b_hi = _mm_mulhrs_epi16(_mm_cvtepi8_epi16(_mm_srli_si128(c_b_i8, 8)), f_hi);
 
-            // Load 16 i16 weights = 32 bytes = 2 xmm regs.
-            let w_lo = _mm_loadu_si128(weights.as_ptr().add(16 * i).cast::<__m128i>());
-            let w_hi = _mm_loadu_si128(weights.as_ptr().add(16 * i + 8).cast::<__m128i>());
-
-            // Pair-sum (prod[2k]·w[2k] + prod[2k+1]·w[2k+1]) → 4 i32 lanes each.
-            let pw_lo = _mm_madd_epi16(prod_lo, w_lo);
-            let pw_hi = _mm_madd_epi16(prod_hi, w_hi);
-            let pw = _mm_add_epi32(pw_lo, pw_hi);
-
-            // Widen 4 i32 → 2 i64 + 2 i64, accumulate.
-            let pw_lo_i64 = _mm_cvtepi32_epi64(pw);
-            let pw_hi_i64 = _mm_cvtepi32_epi64(_mm_srli_si128(pw, 8));
-            acc = _mm_add_epi64(acc, pw_lo_i64);
-            acc = _mm_add_epi64(acc, pw_hi_i64);
+            let products = _mm_add_epi32(
+                _mm_madd_epi16(q_a_lo, q_b_lo),
+                _mm_madd_epi16(q_a_hi, q_b_hi),
+            );
+            acc = _mm_add_epi32(acc, products);
         }
 
-        // Hsum 2 i64 lanes.
-        let mut tmp = [0i64; 2];
-        _mm_storeu_si128(tmp.as_mut_ptr().cast::<__m128i>(), acc);
-        let simd_sum = tmp[0] + tmp[1];
-
-        // Tail.
         let simd_bytes = n_full * 8;
-        let tail = super::score_4bit_internal_weighted_scalar(
-            &a[simd_bytes..],
-            &b[simd_bytes..],
-            &weights[2 * simd_bytes..],
-        );
-        simd_sum + tail
+        i64::from(hsum_i32_sse(acc))
+            + super::score_4bit_internal_folded_scalar(
+                &a[simd_bytes..],
+                &b[simd_bytes..],
+                &factors[2 * simd_bytes..],
+            )
     }
 }
 
-/// AVX2 weighted variant of [`super::score_4bit_internal`]. 32 coords per
-/// iteration; `madd_epi16` pair-sums i16 weighted products into i32 lanes
-/// then widens to i64 for accumulation.
+/// The 32 codes of the 16 bytes at `bytes` as their signed codebook values, in coord order.
+///
+/// # Safety
+/// CPU must support `avx2`; `bytes` must be valid for 16 bytes.
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn unpack_32_codes_avx2(
+    codebook_i8: core::arch::x86_64::__m256i,
+    bytes: *const u8,
+) -> core::arch::x86_64::__m256i {
+    use core::arch::x86_64::*;
+    unsafe {
+        let nibble_mask = _mm_set1_epi8(0x0F);
+        let v = _mm_loadu_si128(bytes.cast::<__m128i>());
+        let v_lo = _mm_and_si128(v, nibble_mask);
+        let v_hi = _mm_and_si128(_mm_srli_epi16(v, 4), nibble_mask);
+        let idx_0 = _mm_unpacklo_epi8(v_lo, v_hi);
+        let idx_1 = _mm_unpackhi_epi8(v_lo, v_hi);
+        let idx = _mm256_inserti128_si256(_mm256_castsi128_si256(idx_0), idx_1, 1);
+        _mm256_shuffle_epi8(codebook_i8, idx)
+    }
+}
+
+/// The signed codebook in both 128-bit lanes, for [`unpack_32_codes_avx2`].
 ///
 /// # Safety
 /// CPU must support `avx2`.
+#[inline]
 #[target_feature(enable = "avx2")]
-pub unsafe fn score_4bit_internal_weighted_avx2(a: &[u8], b: &[u8], weights: &[i16]) -> i64 {
+unsafe fn signed_codebook_avx2() -> core::arch::x86_64::__m256i {
     use core::arch::x86_64::*;
-
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "score_4bit_internal_weighted_avx2: vector length mismatch ({} vs {})",
-        a.len(),
-        b.len(),
-    );
-    assert_eq!(
-        weights.len(),
-        2 * a.len(),
-        "score_4bit_internal_weighted_avx2: weights length {} != 2 · a.len() {}",
-        weights.len(),
-        2 * a.len(),
-    );
-
     unsafe {
         let codebook_i8_128 = _mm_xor_si128(
             _mm_loadu_si128(CODEBOOK_U8.as_ptr().cast::<__m128i>()),
             _mm_set1_epi8(-128i8),
         );
-        let codebook_i8 = _mm256_broadcastsi128_si256(codebook_i8_128);
-        let nibble_mask = _mm_set1_epi8(0x0F);
-        let mut acc = _mm256_setzero_si256(); // 4 i64 lanes
+        _mm256_broadcastsi128_si256(codebook_i8_128)
+    }
+}
+
+/// AVX2 implementation of [`super::score_4bit_internal_folded`]. 32 coords
+/// per iteration.
+///
+/// # Safety
+/// CPU must support `avx2`.
+#[target_feature(enable = "avx2")]
+pub unsafe fn score_4bit_internal_folded_avx2(a: &[u8], b: &[u8], factors: &[i16]) -> i64 {
+    use core::arch::x86_64::*;
+
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "score_4bit_internal_folded_avx2: vector length mismatch ({} vs {})",
+        a.len(),
+        b.len(),
+    );
+    assert_eq!(
+        factors.len(),
+        2 * a.len(),
+        "score_4bit_internal_folded_avx2: factors length {} != 2 · a.len() {}",
+        factors.len(),
+        2 * a.len(),
+    );
+
+    unsafe {
+        let codebook_i8 = signed_codebook_avx2();
+        let mut acc = _mm256_setzero_si256();
 
         // 16 bytes from each source = 32 coords per iter.
         let n_iters = a.len() / 16;
         for i in 0..n_iters {
-            let va = _mm_loadu_si128(a.as_ptr().add(16 * i).cast::<__m128i>());
-            let va_lo = _mm_and_si128(va, nibble_mask);
-            let va_hi = _mm_and_si128(_mm_srli_epi16(va, 4), nibble_mask);
-            let a_idx_0 = _mm_unpacklo_epi8(va_lo, va_hi);
-            let a_idx_1 = _mm_unpackhi_epi8(va_lo, va_hi);
-            let a_idx_256 = _mm256_inserti128_si256(_mm256_castsi128_si256(a_idx_0), a_idx_1, 1);
-            let c_a_i8 = _mm256_shuffle_epi8(codebook_i8, a_idx_256);
+            let c_a_i8 = unpack_32_codes_avx2(codebook_i8, a.as_ptr().add(16 * i));
+            let c_b_i8 = unpack_32_codes_avx2(codebook_i8, b.as_ptr().add(16 * i));
 
-            let vb = _mm_loadu_si128(b.as_ptr().add(16 * i).cast::<__m128i>());
-            let vb_lo = _mm_and_si128(vb, nibble_mask);
-            let vb_hi = _mm_and_si128(_mm_srli_epi16(vb, 4), nibble_mask);
-            let b_idx_0 = _mm_unpacklo_epi8(vb_lo, vb_hi);
-            let b_idx_1 = _mm_unpackhi_epi8(vb_lo, vb_hi);
-            let b_idx_256 = _mm256_inserti128_si256(_mm256_castsi128_si256(b_idx_0), b_idx_1, 1);
-            let c_b_i8 = _mm256_shuffle_epi8(codebook_i8, b_idx_256);
+            let f_lo = _mm256_loadu_si256(factors.as_ptr().add(32 * i).cast::<__m256i>());
+            let f_hi = _mm256_loadu_si256(factors.as_ptr().add(32 * i + 16).cast::<__m256i>());
 
-            // Widen i8×32 → i16×16 + i16×16.
-            let c_a_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(c_a_i8));
-            let c_a_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(c_a_i8, 1));
-            let c_b_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(c_b_i8));
-            let c_b_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256(c_b_i8, 1));
+            let q_a_lo =
+                _mm256_mulhrs_epi16(_mm256_cvtepi8_epi16(_mm256_castsi256_si128(c_a_i8)), f_lo);
+            let q_a_hi = _mm256_mulhrs_epi16(
+                _mm256_cvtepi8_epi16(_mm256_extracti128_si256(c_a_i8, 1)),
+                f_hi,
+            );
+            let q_b_lo =
+                _mm256_mulhrs_epi16(_mm256_cvtepi8_epi16(_mm256_castsi256_si128(c_b_i8)), f_lo);
+            let q_b_hi = _mm256_mulhrs_epi16(
+                _mm256_cvtepi8_epi16(_mm256_extracti128_si256(c_b_i8, 1)),
+                f_hi,
+            );
 
-            // c_a × c_b in i16 (max 16129 fits).
-            let prod_lo = _mm256_mullo_epi16(c_a_lo, c_b_lo);
-            let prod_hi = _mm256_mullo_epi16(c_a_hi, c_b_hi);
-
-            // Load 32 i16 weights = 64 bytes = 2 ymm regs.
-            let w_lo = _mm256_loadu_si256(weights.as_ptr().add(32 * i).cast::<__m256i>());
-            let w_hi = _mm256_loadu_si256(weights.as_ptr().add(32 * i + 16).cast::<__m256i>());
-
-            // Pair-sum into i32: 8 i32 lanes per madd.
-            let pw_lo = _mm256_madd_epi16(prod_lo, w_lo);
-            let pw_hi = _mm256_madd_epi16(prod_hi, w_hi);
-            let pw = _mm256_add_epi32(pw_lo, pw_hi);
-
-            // Widen 8 i32 → 4 i64 + 4 i64, accumulate.
-            let pw_lo_i64 = _mm256_cvtepi32_epi64(_mm256_castsi256_si128(pw));
-            let pw_hi_i64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(pw, 1));
-            acc = _mm256_add_epi64(acc, pw_lo_i64);
-            acc = _mm256_add_epi64(acc, pw_hi_i64);
+            let products = _mm256_add_epi32(
+                _mm256_madd_epi16(q_a_lo, q_b_lo),
+                _mm256_madd_epi16(q_a_hi, q_b_hi),
+            );
+            acc = _mm256_add_epi32(acc, products);
         }
 
-        // Hsum 4 i64 lanes.
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256(acc, 1);
-        let summed = _mm_add_epi64(acc_lo, acc_hi);
-        let mut tmp = [0i64; 2];
-        _mm_storeu_si128(tmp.as_mut_ptr().cast::<__m128i>(), summed);
-        let simd_sum = tmp[0] + tmp[1];
-
-        // Tail.
         let simd_bytes = n_iters * 16;
-        let tail = super::score_4bit_internal_weighted_scalar(
-            &a[simd_bytes..],
-            &b[simd_bytes..],
-            &weights[2 * simd_bytes..],
-        );
-        simd_sum + tail
+        i64::from(hsum_i32_sse(_mm_add_epi32(acc_lo, acc_hi)))
+            + super::score_4bit_internal_folded_scalar(
+                &a[simd_bytes..],
+                &b[simd_bytes..],
+                &factors[2 * simd_bytes..],
+            )
     }
+}
+
+/// [`super::fold_codes`] for whole groups of 32 codes (16 bytes). Returns the
+/// positions done; the values are the ones [`super::score_4bit_internal_folded`]
+/// multiplies.
+///
+/// # Safety
+/// CPU must support `avx2`. `codes` must hold `out.len()` codes and `factors`
+/// `out.len()` factors.
+#[target_feature(enable = "avx2")]
+pub(super) unsafe fn fold_codes_avx2(codes: &[u8], factors: &[i16], out: &mut [i8]) -> usize {
+    use core::arch::x86_64::*;
+
+    let groups = out.len() / 32;
+    // SAFETY: group `g` reads 16 bytes of `codes` and 32 factors, and writes 32 positions, all
+    // within the slices for `g < groups` by the caller's lengths
+    unsafe {
+        let codebook_i8 = signed_codebook_avx2();
+        for g in 0..groups {
+            let c = unpack_32_codes_avx2(codebook_i8, codes.as_ptr().add(16 * g));
+            let f_lo = _mm256_loadu_si256(factors.as_ptr().add(32 * g).cast::<__m256i>());
+            let f_hi = _mm256_loadu_si256(factors.as_ptr().add(32 * g + 16).cast::<__m256i>());
+            let q_lo = _mm256_mulhrs_epi16(_mm256_cvtepi8_epi16(_mm256_castsi256_si128(c)), f_lo);
+            let q_hi =
+                _mm256_mulhrs_epi16(_mm256_cvtepi8_epi16(_mm256_extracti128_si256(c, 1)), f_hi);
+            // `packs` works per 128-bit lane: positions 0..8, 16..24, 8..16, 24..32, by 64 bits
+            let packed = _mm256_permute4x64_epi64(_mm256_packs_epi16(q_lo, q_hi), 0b11_01_10_00);
+            _mm256_storeu_si256(out.as_mut_ptr().add(32 * g).cast::<__m256i>(), packed);
+        }
+    }
+    groups * 32
 }
 
 #[cfg(test)]
@@ -432,15 +445,19 @@ mod tests {
 
     use super::super::super::shared::pack_codes;
     use super::super::shared::{PARITY_DIMS, random_inputs};
-    use super::super::{score_4bit_internal_scalar, score_4bit_internal_weighted_scalar};
-    use super::{
-        score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_sse,
-        score_4bit_internal_weighted_avx2, score_4bit_internal_weighted_sse,
+    use super::super::{
+        codebook_signed_i64, fold_codes, score_4bit_internal_folded_scalar,
+        score_4bit_internal_scalar,
     };
+    use super::{
+        score_4bit_internal_avx2, score_4bit_internal_avx512_vnni, score_4bit_internal_folded_avx2,
+        score_4bit_internal_folded_sse, score_4bit_internal_sse,
+    };
+    use crate::turboquant::simd::fold_q15;
 
-    /// Build deterministic non-negative i16 weights of length `2 · vec_bytes`
-    /// for parity tests of the weighted kernels.
-    fn random_weights(rng: &mut StdRng, vec_bytes: usize) -> Vec<i16> {
+    /// Build deterministic non-negative Q15 factors of length `2 · vec_bytes`
+    /// for parity tests of the folded kernels.
+    fn random_factors(rng: &mut StdRng, vec_bytes: usize) -> Vec<i16> {
         use rand::RngExt;
         (0..2 * vec_bytes)
             .map(|_| rng.random_range(0..=i16::MAX))
@@ -508,10 +525,10 @@ mod tests {
         }
     }
 
-    /// Parity for the weighted kernel: every x86 backend must match the
+    /// Parity for the folded kernel: every x86 backend must match the
     /// scalar reference bit-exactly across our matryoshka corner-case dims.
     #[test]
-    fn test_score_weighted_sse_matches_scalar() {
+    fn test_score_folded_sse_matches_scalar() {
         if !std::is_x86_feature_detected!("ssse3") || !std::is_x86_feature_detected!("sse4.1") {
             return;
         }
@@ -519,18 +536,18 @@ mod tests {
         for &dim in PARITY_DIMS {
             let (_, vec_a) = random_inputs(&mut rng, dim);
             let (_, vec_b) = random_inputs(&mut rng, dim);
-            let weights = random_weights(&mut rng, vec_a.len());
-            let scalar = score_4bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
-            let sse = unsafe { score_4bit_internal_weighted_sse(&vec_a, &vec_b, &weights) };
+            let factors = random_factors(&mut rng, vec_a.len());
+            let scalar = score_4bit_internal_folded_scalar(&vec_a, &vec_b, &factors);
+            let sse = unsafe { score_4bit_internal_folded_sse(&vec_a, &vec_b, &factors) };
             assert_eq!(
                 scalar, sse,
-                "weighted: scalar {scalar} != sse {sse} at dim {dim}"
+                "folded: scalar {scalar} != sse {sse} at dim {dim}"
             );
         }
     }
 
     #[test]
-    fn test_score_weighted_avx2_matches_scalar() {
+    fn test_score_folded_avx2_matches_scalar() {
         if !std::is_x86_feature_detected!("avx2") {
             return;
         }
@@ -538,47 +555,60 @@ mod tests {
         for &dim in PARITY_DIMS {
             let (_, vec_a) = random_inputs(&mut rng, dim);
             let (_, vec_b) = random_inputs(&mut rng, dim);
-            let weights = random_weights(&mut rng, vec_a.len());
-            let scalar = score_4bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
-            let avx2 = unsafe { score_4bit_internal_weighted_avx2(&vec_a, &vec_b, &weights) };
+            let factors = random_factors(&mut rng, vec_a.len());
+            let scalar = score_4bit_internal_folded_scalar(&vec_a, &vec_b, &factors);
+            let avx2 = unsafe { score_4bit_internal_folded_avx2(&vec_a, &vec_b, &factors) };
             assert_eq!(
                 scalar, avx2,
-                "weighted: scalar {scalar} != avx2 {avx2} at dim {dim}"
+                "folded: scalar {scalar} != avx2 {avx2} at dim {dim}"
             );
         }
     }
 
-    /// Saturation-safety for the weighted kernel: every x86 backend at 64K
-    /// dims with worst-case inputs (max-magnitude codebook + max-magnitude
-    /// i16 weight) must match the i64 scalar reference.
+    /// The decode for the matrix operands gives the values the kernels multiply.
     #[test]
-    fn test_score_weighted_saturation_safety_64k() {
+    fn test_fold_codes_matches_scalar() {
+        let mut rng = StdRng::seed_from_u64(0xF01D);
+        for &dim in PARITY_DIMS {
+            let (_, codes) = random_inputs(&mut rng, dim);
+            let factors = random_factors(&mut rng, codes.len());
+            let want: Vec<i8> = (0..dim)
+                .map(|i| {
+                    let code = (codes[i / 2] >> (4 * (i % 2))) & 0x0F;
+                    fold_q15(codebook_signed_i64(code), factors[i]) as i8
+                })
+                .collect();
+            let mut got = vec![0; dim];
+            fold_codes(&codes, &factors, &mut got);
+            assert_eq!(got, want, "fold_codes at dim {dim}");
+        }
+    }
+
+    /// Saturation-safety for the folded kernel: every x86 backend at 64K
+    /// dims must match the i64 scalar reference under worst-case inputs
+    /// (largest-magnitude codebook value and factor).
+    #[test]
+    fn test_score_folded_saturation_safety_64k() {
         let dim = 65_536;
-        let indices: Vec<u8> = vec![15; dim];
+        let indices: Vec<u8> = vec![0; dim];
         let vec_a = pack_codes(&indices, 4);
         let vec_b = pack_codes(&indices, 4);
-        let max_weight: i16 = i16::MAX;
-        let weights: Vec<i16> = vec![max_weight; dim];
+        let factors: Vec<i16> = vec![i16::MAX; dim];
 
-        let scalar = score_4bit_internal_weighted_scalar(&vec_a, &vec_b, &weights);
+        let scalar = score_4bit_internal_folded_scalar(&vec_a, &vec_b, &factors);
 
         unsafe {
             if std::is_x86_feature_detected!("ssse3") && std::is_x86_feature_detected!("sse4.1") {
-                let sse = score_4bit_internal_weighted_sse(&vec_a, &vec_b, &weights);
-                assert_eq!(scalar, sse, "weighted score sse disagrees at dim={dim}");
+                let sse = score_4bit_internal_folded_sse(&vec_a, &vec_b, &factors);
+                assert_eq!(scalar, sse, "folded score sse disagrees at dim={dim}");
             }
             if std::is_x86_feature_detected!("avx2") {
-                let avx2 = score_4bit_internal_weighted_avx2(&vec_a, &vec_b, &weights);
-                assert_eq!(scalar, avx2, "weighted score avx2 disagrees at dim={dim}");
+                let avx2 = score_4bit_internal_folded_avx2(&vec_a, &vec_b, &factors);
+                assert_eq!(scalar, avx2, "folded score avx2 disagrees at dim={dim}");
             }
         }
     }
 
-    /// Saturation-safety at 64K for all x86 score paths simultaneously.
-    /// Both vectors are every index 15 → `c_signed = 127`, every product is
-    /// `127² = 16 129`, every madd pair ≤ 32 258 (i32-safe, nowhere near i16
-    /// because we already widen).  Total = 16 384·16 129 ≈ 264 M, fits i32
-    /// with ~8× headroom.
     #[test]
     fn test_score_saturation_safety_64k() {
         let dim = 65_536;
