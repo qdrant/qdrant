@@ -14,6 +14,11 @@
 //! step draws its leaders and its children's seeds from its own seed, and the picks of a point
 //! don't depend on the other points of its matrix call, so the leaves don't depend on the number
 //! of threads either.
+//!
+//! Progress: a step that carves keeps half of its share for its matrix calls, adding it per call,
+//! and hands the other half to its clusters by size. A cluster that becomes a leaf, or is cut
+//! into chunks, adds its share at once; one that is carved again splits it the same way. The top
+//! step of a large level and the steps below it take about the same time.
 
 use std::sync::atomic::AtomicBool;
 
@@ -26,12 +31,12 @@ use rand::seq::SliceRandom as _;
 use rand::{RngExt as _, SeedableRng as _};
 use rayon::prelude::*;
 
+use super::progress::Progress;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK};
 
-/// Points per matrix call against the leaders. Every call packs the leaders again, which costs
-/// 2% to 5% of a call of 1024 points against 1000 leaders, so smaller calls
-/// would pay that more often.
+/// Points per matrix call against the leaders. Every call packs the leaders again, so smaller
+/// calls would pay that more often.
 const POINTS_PER_CALL: usize = 1024;
 
 /// An unused slot of a point's nearest leaders. Points with NaN scores get fewer picks.
@@ -89,6 +94,8 @@ impl Default for PartitionParams {
 /// point in at least one leaf. Deterministic for the same input and seed. The order of `points`
 /// and repeated points don't matter, nor does the number of threads.
 ///
+/// Adds all of `progress` by the time it returns the leaves, per step, see the module docs.
+///
 /// Memory: one step holds `fanout` leader slots per point of its cluster, and then the clusters
 /// themselves, 40 bytes each per point at the top level with a fanout of 10. The leaves hold
 /// about 4 bytes per point and leaf it's in, typically 30.
@@ -98,6 +105,7 @@ pub(super) fn partition(
     params: &PartitionParams,
     seed: u64,
     stopped: &AtomicBool,
+    progress: Progress<'_>,
 ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
     if params.max_leaf_size == 0 {
         return Err(OperationError::service_error(
@@ -111,6 +119,7 @@ pub(super) fn partition(
     points.par_sort_unstable();
     points.dedup();
     if points.is_empty() {
+        progress.add();
         return Ok(Vec::new());
     }
 
@@ -123,7 +132,7 @@ pub(super) fn partition(
             free: Mutex::default(),
         },
     };
-    let leaves = carving.split(points, 0, seed, 0)?;
+    let leaves = carving.split(points, 0, seed, 0, progress)?;
     debug_assert!(leaves.iter().all(|leaf| {
         !leaf.is_empty() && leaf.len() <= params.max_leaf_size && leaf.is_sorted_by(|a, b| a < b)
     }));
@@ -156,24 +165,39 @@ enum Next {
     },
 }
 
+impl Next {
+    fn len(&self) -> usize {
+        match self {
+            Next::Leaf(points) | Next::Split { points, .. } | Next::Chunks { points, .. } => {
+                points.len()
+            }
+        }
+    }
+}
+
 impl Carving<'_, '_> {
     /// Leaves of `points`, sorted and distinct, at recursion `depth`, after `stalls` steps in a
-    /// row that kept them together.
+    /// row that kept them together. Adds all of `progress` by the time it returns them.
     fn split(
         &self,
         points: Vec<PointOffsetType>,
         depth: usize,
         seed: u64,
         stalls: usize,
+        progress: Progress<'_>,
     ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
         let params = self.params;
         if points.len() <= params.max_leaf_size {
+            progress.add();
             return Ok(vec![points]);
         }
         if depth >= params.max_depth || stalls >= MAX_STALLS {
+            progress.add();
             return Ok(random_chunks(points, params.max_leaf_size, seed));
         }
         check_process_stopped(self.stopped)?;
+        // Half for this step's matrix calls, half for its clusters
+        let (own, children) = progress.halves();
 
         let mut rng = StdRng::seed_from_u64(seed);
         let leaders = sample_leaders(&points, self.leader_count(points.len()), &mut rng);
@@ -183,7 +207,7 @@ impl Carving<'_, '_> {
             .copied()
             .unwrap_or(1)
             .clamp(1, leaders.len());
-        let nearest = self.nearest_leaders(&points, &leaders, fanout)?;
+        let nearest = self.nearest_leaders(&points, &leaders, fanout, own)?;
         let (clusters, orphans) = group_by_leader(&points, &nearest, fanout, leaders.len());
         drop(nearest);
         let parent_len = points.len();
@@ -220,16 +244,23 @@ impl Carving<'_, '_> {
         }
         next.extend(merge_small(small, params.max_leaf_size, &mut rng).map(Next::Leaf));
 
+        // Every point is in some cluster, so there's at least one
+        let shares = children.split(next.iter().map(|next| next.len() as u64));
         let leaves = next
             .into_par_iter()
-            .map(|next| match next {
-                Next::Leaf(leaf) => Ok(vec![leaf]),
+            .zip(shares)
+            .map(|(next, progress)| match next {
+                Next::Leaf(leaf) => {
+                    progress.add();
+                    Ok(vec![leaf])
+                }
                 Next::Split {
                     points,
                     seed,
                     stalls,
-                } => self.split(points, depth + 1, seed, stalls),
+                } => self.split(points, depth + 1, seed, stalls, progress),
                 Next::Chunks { points, seed } => {
+                    progress.add();
                     Ok(random_chunks(points, params.max_leaf_size, seed))
                 }
             })
@@ -246,22 +277,24 @@ impl Carving<'_, '_> {
     }
 
     /// The `fanout` nearest leaders of each point, as positions in `leaders`: `fanout` slots
-    /// per point, best first, the unused ones [`NO_LEADER`].
+    /// per point, best first, the unused ones [`NO_LEADER`]. Adds `progress` per matrix call,
+    /// by its points.
     fn nearest_leaders(
         &self,
         points: &[PointOffsetType],
         leaders: &[PointOffsetType],
         fanout: usize,
+        progress: Progress<'_>,
     ) -> OperationResult<Vec<u32>> {
         let mut nearest = vec![NO_LEADER; points.len() * fanout];
+        let shares = progress.split(points.chunks(POINTS_PER_CALL).map(|rows| rows.len() as u64));
         points
             .par_chunks(POINTS_PER_CALL)
             .zip(nearest.par_chunks_mut(POINTS_PER_CALL * fanout))
-            .try_for_each(|(rows, nearest)| {
+            .zip(shares)
+            .try_for_each(|((rows, nearest), progress)| -> OperationResult<()> {
                 check_process_stopped(self.stopped)?;
-                let _scope = ambient::unmeasured_guard(reason(
-                    "No need to accumulate hardware, since this is an internal operation",
-                ));
+                let _scope = ambient::unmeasured_guard(reason("Internal operation"));
                 self.top_k.with(|top_k| {
                     self.scorer.top_k(rows, MatrixCols::Other(leaders), top_k)?;
                     for (r, slots) in nearest.chunks_exact_mut(fanout).enumerate() {
@@ -271,7 +304,9 @@ impl Carving<'_, '_> {
                         slots[..picked].copy_from_slice(&cols[..picked]);
                     }
                     Ok::<_, OperationError>(())
-                })
+                })?;
+                progress.add();
+                Ok(())
             })?;
         Ok(nearest)
     }
@@ -421,6 +456,7 @@ impl TopKPool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::sync::atomic::AtomicU64;
 
     use rstest::rstest;
     use tempfile::TempDir;
@@ -439,6 +475,8 @@ mod tests {
     use crate::vector_storage::{VectorStorage as _, VectorStorageEnum};
 
     const LEAF: usize = 64;
+    /// Progress of a call, more units than it has pieces of work.
+    const PROGRESS: u64 = 1_000_003;
 
     /// Small leaves, so that a few thousand points take two or three levels of carving. Leaders
     /// in the same ratio to the leaf size as the defaults.
@@ -499,20 +537,25 @@ mod tests {
             new_matrix_scorer(&self.storage, self.quantized.as_ref()).unwrap()
         }
 
+        /// [`partition`], which must add all of its progress.
         fn partition(
             &self,
             points: Vec<PointOffsetType>,
             params: &PartitionParams,
             seed: u64,
         ) -> Vec<Vec<PointOffsetType>> {
-            partition(
+            let counter = AtomicU64::new(0);
+            let leaves = partition(
                 &self.scorer(),
                 points,
                 params,
                 seed,
                 &AtomicBool::new(false),
+                Progress::new(&counter, PROGRESS),
             )
-            .unwrap()
+            .unwrap();
+            assert_eq!(counter.into_inner(), PROGRESS, "progress");
+            leaves
         }
     }
 
@@ -661,10 +704,7 @@ mod tests {
                 .num_threads(threads)
                 .build()
                 .unwrap();
-            pool.install(|| {
-                let _scope = ambient::test_guard();
-                fixture.partition(all(points), &params(), 5)
-            })
+            pool.install(|| fixture.partition(all(points), &params(), 5))
         };
         let expected = leaves(1);
         check_leaves(&expected, &all(points), LEAF);
@@ -788,14 +828,45 @@ mod tests {
     fn stopped() {
         let _scope = ambient::test_guard();
         let fixture = Fixture::uniform(1000, 8, Distance::Euclid);
+        let counter = AtomicU64::new(0);
         let result = partition(
             &fixture.scorer(),
             all(1000),
             &params(),
             1,
             &AtomicBool::new(true),
+            Progress::new(&counter, PROGRESS),
         );
         assert!(matches!(result, Err(OperationError::Cancelled { .. })));
+        assert_eq!(counter.into_inner(), 0);
+    }
+
+    /// Every step adds its share, also when the share is smaller than its pieces of work, for
+    /// leaves, merged clusters, and the chunks of duplicates.
+    #[rstest]
+    fn progress_ends_at_its_share(
+        #[values(0, 1, 7, 1_000_003)] units: u64,
+        #[values(false, true)] duplicates: bool,
+    ) {
+        let _scope = ambient::test_guard();
+        let points = 3000;
+        let mut vectors = uniform(points, 8, 42);
+        if duplicates {
+            vectors[..1000].fill(vec![0.5; 8]);
+        }
+        let fixture = Fixture::new(&vectors, Distance::Euclid, None);
+        let counter = AtomicU64::new(0);
+        let leaves = partition(
+            &fixture.scorer(),
+            all(points),
+            &params(),
+            1,
+            &AtomicBool::new(false),
+            Progress::new(&counter, units),
+        )
+        .unwrap();
+        check_leaves(&leaves, &all(points), LEAF);
+        assert_eq!(counter.into_inner(), units);
     }
 
     #[test]
@@ -812,6 +883,7 @@ mod tests {
             &params,
             1,
             &AtomicBool::new(false),
+            Progress::new(&AtomicU64::new(0), PROGRESS),
         );
         assert!(result.is_err());
     }
@@ -842,8 +914,8 @@ mod tests {
     #[test]
     fn top_k_size_is_clamped_to_the_leaders() {
         let with = |fanout: Vec<usize>, max_leaders| PartitionParams {
-            fanout,
             max_leaders,
+            fanout,
             ..params()
         };
         assert_eq!(top_k_size(&with(vec![10, 3], 1000), 100_000), 10);

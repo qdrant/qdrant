@@ -24,23 +24,13 @@
 //! # Memory and Parallelism
 //!
 //! This phase reads the vectors of all candidates of every point and is bound by memory bandwidth,
-//! not compute. Scores are computed from the stored vectors in place: the prototype copied the
-//! candidates' vectors together first, which made no difference, since loading them from DRAM is
-//! the cost. Only one point's candidates are held per thread at a time, and the
-//! result holds at most `level_m` ids per point.
+//! not compute. Scores are computed from the stored vectors in place: copying the candidates'
+//! vectors together first doesn't help, since loading them from DRAM dominates. Only one point's
+//! candidates are held per thread at a time, and the result holds at most `level_m` ids per point.
 //!
 //! Points are pruned in jobs of [`POINTS_PER_JOB`] consecutive points on the current rayon pool,
 //! one scorer per job, each writing to its own range of the result. A point's links only depend on
 //! its reservoir and on `score_internal`, so the result doesn't depend on the number of threads.
-//!
-//! # Extensions
-//!
-//! - **Alpha above 1** needs a loop of its own in place of `fill_from_sorted_with_heuristic`, over
-//!   the same sorted candidates and pair scores. Scores are similarities, not distances, so alpha
-//!   needs a form that works for Dot and Cosine.
-//! - **Pruning in leaf order**, so neighboring points find their candidates in cache, only changes
-//!   which points a job takes: groups of points from the same leaf instead of consecutive ones,
-//!   each written to its position in the result.
 
 use std::cmp::Ordering;
 use std::sync::atomic::AtomicBool;
@@ -52,6 +42,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use rayon::prelude::*;
 
 use super::hash_prune::Reservoirs;
+use super::progress::Progress;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::links_container::LinksContainer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -74,7 +65,12 @@ const POINTS_PER_JOB: usize = 64;
 /// As for HNSW, `point_deleted` must have a flag for every point: missing flags count as deleted.
 ///
 /// Runs in parallel on the current rayon pool, and checks `stopped` before every
-/// [`POINTS_PER_JOB`] points. Fails if a scorer can't be created.
+/// [`POINTS_PER_JOB`] points. Adds all of `progress` by the time it returns, each job its share
+/// by its points. Fails if a scorer can't be created.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the level and the inputs of HNSW's scorers"
+)]
 pub(super) fn prune(
     reservoirs: &Reservoirs,
     points: &[PointOffsetType],
@@ -83,27 +79,33 @@ pub(super) fn prune(
     quantized_vectors: Option<&QuantizedVectors>,
     point_deleted: &BitSlice,
     stopped: &AtomicBool,
+    progress: Progress<'_>,
 ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
+    debug_assert!(
+        points.is_sorted_by(|a, b| a < b),
+        "points must be sorted and distinct",
+    );
     check_process_stopped(stopped)?;
     // Empty lists don't allocate
     let mut links = vec![Vec::new(); points.len()];
-    if level_m == 0 {
+    if level_m == 0 || points.is_empty() {
+        progress.add();
         return Ok(links);
     }
 
+    let shares = progress.split(points.chunks(POINTS_PER_JOB).map(|job| job.len() as u64));
     points
         .par_chunks(POINTS_PER_JOB)
         .zip(links.par_chunks_mut(POINTS_PER_JOB))
+        .zip(shares)
         // Every job stealable until the end, see `HNSW_BUILD_MAX_PAR_LEN`
         .with_max_len(1)
-        .try_for_each(|(points, links)| -> OperationResult<()> {
+        .try_for_each(|((points, links), progress)| -> OperationResult<()> {
             check_process_stopped(stopped)?;
             let Some(&first) = points.first() else {
                 return Ok(());
             };
-            let _scope = ambient::unmeasured_guard(reason(
-                "No need to accumulate hardware, since this is an internal operation",
-            ));
+            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
             // One scorer serves every point of the job: `score_internal(a, b)` scores the stored
             // vectors of `a` and `b`, whatever point the scorer was made for, as HNSW's heuristic
             // relies on for its pairs too. Without quantization, making a scorer copies the
@@ -126,6 +128,7 @@ pub(super) fn prune(
                 );
                 *links = container.links().to_vec();
             }
+            progress.add();
             Ok(())
         })?;
     Ok(links)
@@ -161,6 +164,7 @@ fn scored_candidates(
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::sync::atomic::AtomicU64;
 
     use common::bitvec::BitVec;
     use rand::rngs::StdRng;
@@ -192,6 +196,8 @@ mod tests {
     const RANDOM: usize = 8;
     /// Small enough that many points reach it.
     const LEVEL_M: usize = 6;
+    /// Progress of a call, more units than it has jobs.
+    const PROGRESS: u64 = 1_000_003;
 
     #[derive(Clone, Copy, Debug)]
     enum Data {
@@ -324,13 +330,16 @@ mod tests {
             reservoirs
         }
 
+        /// [`prune`], which must add all of its progress if it succeeds, and none if stopped
+        /// before.
         fn prune(
             &self,
             reservoirs: &Reservoirs,
             level_m: usize,
             stopped: &AtomicBool,
         ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
-            prune(
+            let counter = AtomicU64::new(0);
+            let links = prune(
                 reservoirs,
                 &self.points,
                 level_m,
@@ -338,7 +347,11 @@ mod tests {
                 self.quantized.as_ref(),
                 &self.deleted,
                 stopped,
-            )
+                Progress::new(&counter, PROGRESS),
+            );
+            let want = if links.is_ok() { PROGRESS } else { 0 };
+            assert_eq!(counter.into_inner(), want, "progress");
+            links
         }
 
         /// Prunes reservoirs holding `candidates`, and checks the guarantees of [`prune`].
@@ -735,6 +748,7 @@ mod tests {
         let _scope = ambient::test_guard();
         let fixture = Fixture::new(Data::Random, Distance::Dot, None);
         let reservoirs = Reservoirs::new(&[], CAPACITY);
+        let counter = AtomicU64::new(0);
         let links = prune(
             &reservoirs,
             &[],
@@ -743,9 +757,11 @@ mod tests {
             None,
             &fixture.deleted,
             &AtomicBool::new(false),
+            Progress::new(&counter, PROGRESS),
         )
         .unwrap();
         assert!(links.is_empty());
+        assert_eq!(counter.into_inner(), PROGRESS);
     }
 
     #[test]
@@ -753,6 +769,7 @@ mod tests {
         let _scope = ambient::test_guard();
         let fixture = Fixture::new(Data::Random, Distance::Dot, None);
         let reservoirs = Reservoirs::new(&[7], CAPACITY);
+        let counter = AtomicU64::new(0);
         let links = prune(
             &reservoirs,
             &[7],
@@ -761,8 +778,10 @@ mod tests {
             None,
             &fixture.deleted,
             &AtomicBool::new(false),
+            Progress::new(&counter, PROGRESS),
         )
         .unwrap();
         assert_eq!(links, vec![Vec::<PointOffsetType>::new()]);
+        assert_eq!(counter.into_inner(), PROGRESS);
     }
 }
