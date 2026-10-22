@@ -65,7 +65,7 @@ where
             match algorithm {
                 SearchAlgorithm::Hnsw => (),
                 // ACORN is not implemented for graph with vectors yet (but possible)
-                SearchAlgorithm::Acorn => return Ok(None),
+                SearchAlgorithm::Acorn | SearchAlgorithm::PathSeer => return Ok(None),
             }
             if !self.graph.has_inline_vectors()
                 || !is_quantized_search(self.quantized_vectors, params)

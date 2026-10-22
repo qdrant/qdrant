@@ -16097,6 +16097,17 @@
               }
             ]
           },
+          "pathseer": {
+            "description": "Experimental PathSeer search params. Takes precedence over ACORN when both are enabled. Exact/plain search takes precedence.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PathSeerSearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "idf": {
             "description": "Which population IDF statistics are computed over. By default (or with explicit `\"global\"`) statistics are collection-wide. Only applicable to sparse vectors with the IDF modifier enabled, and to BM25 over a text index.",
             "anyOf": [
@@ -16149,6 +16160,17 @@
             "maximum": 1,
             "minimum": 0,
             "nullable": true
+          }
+        }
+      },
+      "PathSeerSearchParams": {
+        "description": "Experimental PathSeer-related search parameters.",
+        "type": "object",
+        "properties": {
+          "enable": {
+            "description": "If true, then PathSeer may be used for filtered HNSW searches. Takes precedence over ACORN when both are enabled.",
+            "default": false,
+            "type": "boolean"
           }
         }
       },
