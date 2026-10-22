@@ -344,11 +344,11 @@ fn snapshot_invalidates_application_state() {
     );
 }
 
-fn meta(operation: CollectionMetaOperations) -> ConsensusOperations {
+pub(super) fn meta(operation: CollectionMetaOperations) -> ConsensusOperations {
     ConsensusOperations::CollectionMeta(Box::new(operation))
 }
 
-fn create_collection(name: &str, custom: bool) -> ConsensusOperations {
+pub(super) fn create_collection(name: &str, custom: bool) -> ConsensusOperations {
     let mut operation = CreateCollectionOperation::new(
         name.into(),
         serde_json::from_value(json!({
@@ -369,7 +369,7 @@ fn create_collection(name: &str, custom: bool) -> ConsensusOperations {
     meta(CollectionMetaOperations::CreateCollection(operation))
 }
 
-fn entry(operation: &ConsensusOperations) -> Entry {
+pub(super) fn entry(operation: &ConsensusOperations) -> Entry {
     Entry {
         data: serde_cbor::to_vec(operation).unwrap(),
         ..Default::default()
@@ -419,6 +419,9 @@ fn raw_node_with_conf(conf: ConfState) -> RawNode<MemStorage> {
     .unwrap()
 }
 
-fn state(manager: &ConsensusManager<TableOfContent>, toc: &Arc<TableOfContent>) -> ClusterState {
+pub(super) fn state(
+    manager: &ConsensusManager<TableOfContent>,
+    toc: &Arc<TableOfContent>,
+) -> ClusterState {
     read_cluster_state(toc.as_ref(), &manager.persistent.read())
 }
