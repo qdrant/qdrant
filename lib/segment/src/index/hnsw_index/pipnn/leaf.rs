@@ -20,6 +20,7 @@ use common::types::{PointOffsetType, ScoreType};
 use parking_lot::Mutex;
 use rayon::prelude::*;
 
+use super::progress::Progress;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK};
 
@@ -35,11 +36,14 @@ use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK}
 ///   id in a sorted leaf. Leaves with fewer than 2 points have no edges.
 /// - Runs in parallel over the leaves, in the current rayon pool: `edge` is called from many
 ///   threads at once, in no particular order.
+/// - Adds all of `progress` by the time it returns: each leaf its share once its edges are sent,
+///   by the square of its size, about the pairs its matrix call scores.
 pub(super) fn for_each_leaf_edge(
     scorer: &MatrixScorer<'_>,
     leaves: &[Vec<PointOffsetType>],
     k: usize,
     stopped: &AtomicBool,
+    progress: Progress<'_>,
     edge: impl Fn(PointOffsetType, PointOffsetType, ScoreType) + Sync,
 ) -> OperationResult<()> {
     // A point has at most `len - 1` neighbors in its leaf, so a larger `k` would only size the
@@ -47,21 +51,25 @@ pub(super) fn for_each_leaf_edge(
     let max_leaf = leaves.iter().map(Vec::len).max().unwrap_or(0);
     let k = k.min(max_leaf.saturating_sub(1));
     if k == 0 {
+        progress.add();
         return Ok(());
     }
 
+    let shares = progress.split(leaves.iter().map(|leaf| (leaf.len() as u64).pow(2)));
     // Buffers of the matrix calls, reused across leaves: with large vectors, a call keeps
     // megabytes of packed operands in them. One per leaf in progress, so about one per thread.
     let spare_tops = Mutex::new(Vec::new());
     leaves
         .par_iter()
+        .zip(shares)
         // Every leaf its own job, stealable until the end: a leaf takes up to milliseconds, sizes
         // differ, and rayon's splitting can leave one thread with a long run of them otherwise,
         // see `HNSW_BUILD_MAX_PAR_LEN`
         .with_max_len(1)
-        .try_for_each(|leaf| {
+        .try_for_each(|(leaf, progress)| {
             check_process_stopped(stopped)?;
             if leaf.len() < 2 {
+                progress.add();
                 return Ok(());
             }
             let _scope = ambient::unmeasured_guard(reason("Internal operation"));
@@ -71,7 +79,9 @@ pub(super) fn for_each_leaf_edge(
                 .unwrap_or_else(|| MatrixTopK::new(k));
             let result = leaf_edges(scorer, leaf, &mut top, &edge);
             spare_tops.lock().push(top);
-            result
+            result?;
+            progress.add();
+            Ok(())
         })
 }
 
@@ -101,7 +111,7 @@ fn leaf_edges(
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     use common::bitvec::BitVec;
     use rand::rngs::StdRng;
@@ -127,10 +137,12 @@ mod tests {
 
     const POINTS: usize = 300;
     const DIM: usize = 100;
-    /// The prototype's leaf k.
+    /// The default leaf k, see `PipnnParams::new`.
     const K: usize = 4;
     /// Uneven leaf sizes, including leaves without pairs.
     const SIZES: &[usize] = &[150, 0, 1, 2, 3, 5, 200, 17, 64, 2, 120, 1, 90, 33];
+    /// Progress of a call, more units than it has leaves.
+    const PROGRESS: u64 = 1_000_003;
 
     type Edge = (PointOffsetType, PointOffsetType, ScoreType);
 
@@ -258,7 +270,8 @@ mod tests {
         edges
     }
 
-    /// Runs [`for_each_leaf_edge`] in the current pool, and returns its edges, sorted.
+    /// Runs [`for_each_leaf_edge`] in the current pool, and returns its edges, sorted. Checks
+    /// that it added all of its progress if it succeeded, and none if stopped before a leaf.
     fn collect_edges(
         scorer: &MatrixScorer<'_>,
         leaves: &[Vec<PointOffsetType>],
@@ -266,9 +279,13 @@ mod tests {
         stopped: &AtomicBool,
     ) -> (OperationResult<()>, Vec<Edge>) {
         let edges = Mutex::new(Vec::new());
-        let result = for_each_leaf_edge(scorer, leaves, k, stopped, |p, q, score| {
+        let counter = AtomicU64::new(0);
+        let progress = Progress::new(&counter, PROGRESS);
+        let result = for_each_leaf_edge(scorer, leaves, k, stopped, progress, |p, q, score| {
             edges.lock().push((p, q, score));
         });
+        let want = if result.is_ok() { PROGRESS } else { 0 };
+        assert_eq!(counter.into_inner(), want, "progress");
         (result, sorted(edges.into_inner()))
     }
 
@@ -569,6 +586,45 @@ mod tests {
         }
     }
 
+    /// The work stays on the current pool: every edge comes from one of its threads.
+    #[test]
+    fn runs_on_the_current_pool() {
+        let _scope = ambient::test_guard();
+        let fixture = Fixture::new(Data::Random, Distance::Cosine, None);
+        let scorer = fixture.scorer();
+        let leaves = random_leaves(SIZES, 1);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(3)
+            .thread_name(|i| format!("pipnn-leaf-test-{i}"))
+            .build()
+            .unwrap();
+        let threads = Mutex::new(HashSet::new());
+        let counter = AtomicU64::new(0);
+        pool.install(|| {
+            let progress = Progress::new(&counter, PROGRESS);
+            for_each_leaf_edge(
+                &scorer,
+                &leaves,
+                K,
+                &AtomicBool::new(false),
+                progress,
+                |_, _, _| {
+                    let name = std::thread::current().name().map(str::to_owned);
+                    threads.lock().insert(name);
+                },
+            )
+        })
+        .unwrap();
+        let threads = threads.into_inner();
+        assert!(!threads.is_empty(), "no edges");
+        assert!(
+            threads.iter().all(|name| name
+                .as_deref()
+                .is_some_and(|name| name.starts_with("pipnn-leaf-test-"))),
+            "{threads:?}",
+        );
+    }
+
     #[test]
     fn stopped_before_the_first_leaf() {
         let _scope = ambient::test_guard();
@@ -583,7 +639,8 @@ mod tests {
         assert!(edges.is_empty());
     }
 
-    /// A leaf in progress finishes, the next doesn't start.
+    /// A leaf in progress finishes, the next doesn't start. The progress has the leaf's share,
+    /// and no more.
     #[test]
     fn stopped_between_leaves() {
         let _scope = ambient::test_guard();
@@ -598,8 +655,10 @@ mod tests {
             .unwrap();
         let stopped = AtomicBool::new(false);
         let count = AtomicUsize::new(0);
+        let counter = AtomicU64::new(0);
+        let progress = Progress::new(&counter, PROGRESS);
         let result = pool.install(|| {
-            for_each_leaf_edge(&scorer, &leaves, K, &stopped, |_, _, _| {
+            for_each_leaf_edge(&scorer, &leaves, K, &stopped, progress, |_, _, _| {
                 count.fetch_add(1, Ordering::Relaxed);
                 stopped.store(true, Ordering::Relaxed);
             })
@@ -607,5 +666,45 @@ mod tests {
         assert!(matches!(result, Err(OperationError::Cancelled { .. })));
         let count = count.into_inner();
         assert!(0 < count && count < all.len(), "{count} of {}", all.len());
+        // On one thread, the first leaf has all the edges, and its share by size
+        let squares: Vec<u64> = SIZES.iter().map(|&size| (size as u64).pow(2)).collect();
+        let first = PROGRESS * squares[0] / squares.iter().sum::<u64>();
+        assert_eq!(counter.into_inner(), first);
+    }
+
+    /// The progress rises leaf by leaf: on one thread, each leaf sees the shares of the leaves
+    /// before it, starting at 0, and the last one sends its edges before the end.
+    #[test]
+    fn progress_rises_per_leaf() {
+        let _scope = ambient::test_guard();
+        let fixture = Fixture::new(Data::Exact, Distance::Euclid, None);
+        let scorer = fixture.scorer();
+        let leaves = random_leaves(SIZES, 1);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let counter = AtomicU64::new(0);
+        let seen = Mutex::new(Vec::new());
+        pool.install(|| {
+            let progress = Progress::new(&counter, PROGRESS);
+            for_each_leaf_edge(
+                &scorer,
+                &leaves,
+                K,
+                &AtomicBool::new(false),
+                progress,
+                |_, _, _| {
+                    seen.lock().push(counter.load(Ordering::Relaxed));
+                },
+            )
+        })
+        .unwrap();
+        let seen = seen.into_inner();
+        assert!(seen.is_sorted(), "progress went down");
+        assert_eq!(seen.first(), Some(&0));
+        assert!(seen.iter().any(|&seen| 0 < seen && seen < PROGRESS));
+        assert!(*seen.last().unwrap() < PROGRESS);
+        assert_eq!(counter.into_inner(), PROGRESS);
     }
 }
