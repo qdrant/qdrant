@@ -841,6 +841,54 @@ impl VectorStorageEnum {
         }
     }
 
+    /// Append the slot of a point that has no vector here, flagged deleted.
+    ///
+    /// Multi-dense storages give it an offset entry only. The others keep slots
+    /// in step with points, so they store [`Self::default_vector`].
+    pub(crate) fn insert_missing(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.insert_empty(key),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.insert_empty(key),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.insert_empty(key),
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::DenseMemmap(_)
+            | VectorStorageEnum::DenseMemmapByte(_)
+            | VectorStorageEnum::DenseMemmapHalf(_)
+            | VectorStorageEnum::DenseGraphInline(_)
+            | VectorStorageEnum::DenseGraphInlineByte(_)
+            | VectorStorageEnum::DenseGraphInlineHalf(_)
+            | VectorStorageEnum::DenseAppendableMemmap(_)
+            | VectorStorageEnum::DenseAppendableMemmapByte(_)
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_)
+            | VectorStorageEnum::DenseTurboMemmap(_)
+            | VectorStorageEnum::DenseTurboGraphInline(_)
+            | VectorStorageEnum::DenseTurboAppendableMemmap(_)
+            | VectorStorageEnum::SparseVolatile(_)
+            | VectorStorageEnum::SparseMmap(_)
+            | VectorStorageEnum::MultiDenseVolatile(_)
+            | VectorStorageEnum::MultiDenseTurbo(_)
+            | VectorStorageEnum::EmptyDense(_)
+            | VectorStorageEnum::EmptySparse(_) => self.insert_deleted_default(key),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_)
+            | VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => self.insert_deleted_default(key),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseUring(_)
+            | VectorStorageEnum::DenseUringByte(_)
+            | VectorStorageEnum::DenseUringHalf(_)
+            | VectorStorageEnum::DenseTurboUring(_) => self.insert_deleted_default(key),
+        }
+    }
+
+    fn insert_deleted_default(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        let default_vector = self.default_vector();
+        self.insert_vector(key, VectorRef::from(&default_vector))?;
+        self.delete_vector(key)?;
+        Ok(())
+    }
+
     pub fn populate(&self) -> OperationResult<()> {
         match self {
             VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
