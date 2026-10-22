@@ -12,9 +12,7 @@ use super::super::shared::{self, DELETED_DIR_PATH, VECTORS_DIR_PATH};
 use super::appendable_mmap_multi_turbo_vector_storage::OFFSETS_DIR_PATH;
 use crate::common::flags::update_only_stored_flags::UpdateOnlyStoredFlags;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{
-    MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
-};
+use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::update_only::UpdateOnlyChunkedVectors;
@@ -94,13 +92,8 @@ impl UpdateOnlyMultiTurboVectorStorage {
                 VectorToStore::Decoded(vector) => self.encode_decoded(vector)?,
                 VectorToStore::Raw(bytes) => self.encode_raw(bytes)?,
                 VectorToStore::Missing => {
-                    // One placeholder record, as the writable storage stores
-                    // for a missing multi-vector: its `update_from` rejects a
-                    // run of no records, so a segment with one could not be
-                    // optimized.
                     missing.push(start_slot + offset as PointOffsetType);
-                    let placeholder = MultiDenseVectorInternal::placeholder(self.dim);
-                    self.encode_decoded(VectorRef::from(&placeholder))?
+                    Vec::new()
                 }
             };
 
