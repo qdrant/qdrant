@@ -17,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::generic_consts::{AccessPattern, Random};
+use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::mmap::AdviceSetting;
 use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
@@ -65,6 +65,14 @@ pub struct AppendableMmapMultiTurboVectorStorage {
     deleted: BitvecFlags<MmapFile>,
     /// Number of points currently flagged as deleted.
     deleted_count: usize,
+    /// Points that own no records (see [`Self::insert_empty`]). Always deleted.
+    empty_count: usize,
+    /// Write points without a vector as empty slots instead of placeholder
+    /// records, see [`FeatureFlags::turbo_multivector_empty_slots`]. Empty
+    /// slots are read either way.
+    ///
+    /// [`FeatureFlags::turbo_multivector_empty_slots`]: common::flags::FeatureFlags::turbo_multivector_empty_slots
+    write_empty_slots: bool,
 
     /// Distance used for scoring / query preprocessing.
     distance: Distance,
@@ -84,6 +92,8 @@ impl std::fmt::Debug for AppendableMmapMultiTurboVectorStorage {
             distance,
             offsets,
             deleted_count,
+            empty_count: _,
+            write_empty_slots: _,
             storage: _,
             quantizer: _,
             deleted: _,
@@ -121,7 +131,7 @@ pub fn open_appendable_turbo_multi_vector_storage(
         in_ram,
     )?;
 
-    let offsets = ChunkedVectors::open(
+    let offsets: ChunkedVectors<MultivectorMmapOffset, MmapFile> = ChunkedVectors::open(
         MmapFs,
         &path.join(OFFSETS_DIR_PATH),
         1,
@@ -136,6 +146,15 @@ pub fn open_appendable_turbo_multi_vector_storage(
         populate,
     )?;
     let deleted_count = deleted.count_trues();
+    // Empty slots are always deleted, so only the deleted points need a look
+    let empty_count = deleted
+        .iter_trues()
+        .filter(|&key| {
+            offsets
+                .get::<Sequential>(key as VectorOffsetType)
+                .is_some_and(|record| record.first().is_some_and(|offset| offset.count == 0))
+        })
+        .count();
 
     let quantization_buffer = vec![0.0; quantizer.get_padded_dim()];
 
@@ -145,6 +164,8 @@ pub fn open_appendable_turbo_multi_vector_storage(
         quantizer,
         deleted,
         deleted_count,
+        empty_count,
+        write_empty_slots: common::flags::feature_flags().turbo_multivector_empty_slots,
         distance,
         dim,
         multi_vector_config,
@@ -180,6 +201,39 @@ impl AppendableMmapMultiTurboVectorStorage {
             _ => {}
         }
         previous
+    }
+
+    /// Point `key` at `offset`, keeping `empty_count` in sync.
+    fn set_offset(
+        &mut self,
+        key: PointOffsetType,
+        offset: MultivectorMmapOffset,
+    ) -> OperationResult<()> {
+        let was_empty = self
+            .get_offset::<Random>(key)
+            .is_some_and(|previous| previous.count == 0);
+        match (was_empty, offset.count == 0) {
+            (true, false) => self.empty_count -= 1,
+            (false, true) => self.empty_count += 1,
+            _ => {}
+        }
+        self.offsets.insert(key as VectorOffsetType, &[offset])?;
+        Ok(())
+    }
+
+    /// Whether points without a vector are written as empty slots, see
+    /// [`Self::insert_empty`].
+    pub(crate) fn writes_empty_slots(&self) -> bool {
+        self.write_empty_slots
+    }
+
+    /// Give `key` a slot without a vector: an offset entry that owns no
+    /// records, flagged deleted. A point without this vector takes only its
+    /// offset entry, where a placeholder would take a full record.
+    pub(crate) fn insert_empty(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        self.set_offset(key, MultivectorMmapOffset::default())?;
+        self.set_deleted(key, true);
+        Ok(())
     }
 
     /// Decode one inner record into `out`: dequantize, rotate back, drop the padding tail.
@@ -326,7 +380,7 @@ impl AppendableMmapMultiTurboVectorStorage {
             self.storage
                 .upsert_vector(offset.offset + i as PointOffsetType, &quantized)?;
         }
-        self.offsets.insert(key as VectorOffsetType, &[offset])?;
+        self.set_offset(key, offset)?;
         self.set_deleted(key, false);
 
         Ok(())
@@ -356,7 +410,7 @@ impl AppendableMmapMultiTurboVectorStorage {
             self.storage
                 .upsert_vector(offset.offset + i as PointOffsetType, encoded)?;
         }
-        self.offsets.insert(key as VectorOffsetType, &[offset])?;
+        self.set_offset(key, offset)?;
         self.set_deleted(key, false);
 
         Ok(())
@@ -518,10 +572,12 @@ impl VectorStorageRead for AppendableMmapMultiTurboVectorStorage {
     }
 
     fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
+        // Records are shared out among the points that own any: empty slots own none.
+        let points_with_records = self.total_vector_count() - self.empty_count;
+        if points_with_records > 0 {
             let total_size = self.storage.vectors_count() * self.quantizer.quantized_size();
             (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
+                / points_with_records as u128) as usize
         } else {
             0
         }
@@ -647,9 +703,17 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
 
         for (blob, deleted) in other_vectors {
             check_process_stopped(stopped)?;
-            // A missing vector stored without records, as the update-only
-            // writer does, gets the placeholder record this storage writes
-            // for one, which every version reads
+            let key = self.offsets.len() as PointOffsetType;
+            if deleted && self.write_empty_slots {
+                // A deleted vector is never read again, so its records are not copied
+                self.insert_empty(key)?;
+                continue;
+            }
+
+            // A missing vector stored without records, by the update-only
+            // writer or by a storage with empty slots enabled, gets the
+            // placeholder record this storage writes for one, which every
+            // version reads
             let blob = if deleted && blob.is_empty() {
                 Cow::Owned(vec![0; record_size])
             } else {
@@ -663,7 +727,6 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
             }
 
             let count = (blob.len() / record_size) as u32;
-            let key = self.offsets.len() as PointOffsetType;
             let inner_start = self.storage.vectors_count() as PointOffsetType;
             for (i, record) in blob.chunks_exact(record_size).enumerate() {
                 self.storage
@@ -675,7 +738,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
                 count,
                 capacity: count,
             };
-            self.offsets.insert(key as VectorOffsetType, &[offset])?;
+            self.set_offset(key, offset)?;
             self.set_deleted(key, deleted);
         }
 
@@ -692,7 +755,9 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal};
+    use crate::vector_storage::VectorStorageEnum;
     use crate::vector_storage::common::CHUNK_SIZE;
+    use crate::vector_storage::turbo::multi_turbo::read_only::ReadOnlyChunkedMultiTurboVectorStorage;
     use crate::vector_storage::turbo::shared::{TQDT_MODE, TQDT_ROTATION};
 
     /// Deterministic multivectors of unit inner vectors; point `i` gets `(i % 4) + 1` inner vectors.
@@ -1901,6 +1966,255 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    fn open_dot(
+        path: &Path,
+        dim: usize,
+        write_empty_slots: bool,
+    ) -> AppendableMmapMultiTurboVectorStorage {
+        let mut storage = open_appendable_turbo_multi_vector_storage(
+            path,
+            dim,
+            Distance::Dot,
+            TQBits::Bits4,
+            MultiVectorConfig::default(),
+            false,
+        )
+        .unwrap();
+        storage.write_empty_slots = write_empty_slots;
+        storage
+    }
+
+    /// Even keys hold one inner vector, odd keys an empty slot: deleted, no
+    /// records, read back empty one by one and batched, and scored `-inf`.
+    fn check_half_empty<S: MultiTQVectorStorageRead + TurboMultiScoring>(
+        storage: &S,
+        points: PointOffsetType,
+        dim: usize,
+    ) {
+        let record_size = storage.quantized_vector_size();
+        assert_eq!(storage.total_vector_count(), points as usize);
+        assert_eq!(storage.deleted_vector_count(), points as usize / 2);
+
+        let query = storage.preprocess_query(&multi_of(dim, 1, 99));
+        let mut batched = vec![None; points as usize];
+        storage
+            .for_each_record_range::<Random, _>(
+                (0..points).map(|key| (key as usize, key)),
+                |i, _, records| {
+                    let score = storage.score_records_max_similarity(&query, records);
+                    batched[i] = Some((records.len(), score));
+                },
+            )
+            .unwrap();
+
+        for key in 0..points {
+            let has_vector = key % 2 == 0;
+            let records = usize::from(has_vector);
+            assert_eq!(storage.is_deleted_vector(key), !has_vector, "{key}");
+            assert_eq!(
+                storage.get_multi_tq::<Random>(key).len(),
+                records * record_size,
+                "{key}",
+            );
+            let CowVector::MultiDense(vector) = storage.get_vector::<Random>(key) else {
+                panic!("expected a multi-dense vector");
+            };
+            assert_eq!(
+                vector.as_vec_ref().flattened_vectors.len(),
+                records * dim,
+                "{key}",
+            );
+            let (len, score) = batched[key as usize].unwrap();
+            assert_eq!(len, records * record_size, "{key}");
+            assert_eq!(score.is_finite(), has_vector, "{key}: {score}");
+        }
+    }
+
+    /// With empty slots, points without a vector take an offset entry and no
+    /// records. A storage that does not write empty slots reads them all the
+    /// same, and so does the read-only storage. The size estimate counts only
+    /// the points with records.
+    #[test]
+    fn missing_points_own_no_records() {
+        const DIM: usize = 64;
+        const POINTS: PointOffsetType = 20;
+        let dir = Builder::new()
+            .prefix("turbo_multi_empty_slots")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+
+        let record_size = {
+            let mut storage = open_dot(dir.path(), DIM, true);
+            for key in 0..POINTS {
+                if key % 2 == 0 {
+                    let multi = multi_of(DIM, 1, u64::from(key));
+                    storage
+                        .insert_vector(key, TypedMultiDenseVectorRef::from(&multi).into())
+                        .unwrap();
+                } else {
+                    storage.insert_empty(key).unwrap();
+                }
+            }
+            check_half_empty(&storage, POINTS, DIM);
+            storage.flusher()().unwrap();
+            storage.quantized_vector_size()
+        };
+
+        let storage = open_dot(dir.path(), DIM, false);
+        check_half_empty(&storage, POINTS, DIM);
+        assert_eq!(storage.storage.vectors_count(), POINTS as usize / 2);
+        assert_eq!(
+            storage.size_of_available_vectors_in_bytes(),
+            POINTS as usize / 2 * record_size,
+        );
+        drop(storage);
+
+        let read_only = ReadOnlyChunkedMultiTurboVectorStorage::<MmapFile>::open(
+            &MmapFs,
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            TQBits::Bits4,
+            MultiVectorConfig::default(),
+            AdviceSetting::Global,
+            Populate::No,
+        )
+        .unwrap();
+        check_half_empty(&read_only, POINTS, DIM);
+    }
+
+    /// A point without a vector gets one: it stops being deleted and owns its
+    /// records, and the size estimate follows.
+    #[test]
+    fn vector_set_on_empty_slot_is_visible() {
+        const DIM: usize = 64;
+        let dir = Builder::new()
+            .prefix("turbo_multi_empty_slots")
+            .tempdir()
+            .unwrap();
+        let _scope = ambient::test_guard();
+
+        let mut storage = open_dot(dir.path(), DIM, true);
+        let record_size = storage.quantized_vector_size();
+        storage.insert_empty(0).unwrap();
+        storage.insert_empty(1).unwrap();
+        assert_eq!(storage.size_of_available_vectors_in_bytes(), 0);
+
+        let multi = multi_of(DIM, 2, 7);
+        storage
+            .insert_vector(1, TypedMultiDenseVectorRef::from(&multi).into())
+            .unwrap();
+        assert!(storage.is_deleted_vector(0));
+        assert!(!storage.is_deleted_vector(1));
+        assert_eq!(storage.get_multi_tq::<Random>(1).len(), 2 * record_size);
+        assert_eq!(storage.empty_count, 1);
+        assert_eq!(
+            storage.size_of_available_vectors_in_bytes(),
+            2 * record_size
+        );
+    }
+
+    /// `update_from` with and without empty slots, from live vectors, a vector
+    /// deleted after insert, an older placeholder, and an empty slot. With
+    /// empty slots a deleted vector takes no records. Without them deleted
+    /// records are copied verbatim, and an empty slot gets the placeholder
+    /// record back. Live vectors are copied verbatim either way.
+    #[test]
+    fn update_from_with_and_without_empty_slots() {
+        const DIM: usize = 64;
+        let oracle = Oracle::new(DIM, Distance::Dot);
+        let record_size = oracle.quantized_size();
+        let live = |seed| oracle.encode_multi(&multi_of(DIM, 2, seed)).concat();
+        let sources: Vec<(Vec<u8>, bool)> = vec![
+            (live(1), false),
+            (live(2), true),
+            (vec![0; record_size], true),
+            (Vec::new(), true),
+            (live(3), false),
+        ];
+
+        for write_empty_slots in [false, true] {
+            let dir = Builder::new()
+                .prefix("turbo_multi_empty_slots")
+                .tempdir()
+                .unwrap();
+            let _scope = ambient::test_guard();
+            let stopped = AtomicBool::new(false);
+
+            let expected: Vec<Vec<u8>> = sources
+                .iter()
+                .map(|(blob, deleted)| match (deleted, write_empty_slots) {
+                    (false, _) => blob.clone(),
+                    (true, true) => Vec::new(),
+                    (true, false) if blob.is_empty() => vec![0; record_size],
+                    (true, false) => blob.clone(),
+                })
+                .collect();
+            let records: usize = expected.iter().map(|blob| blob.len() / record_size).sum();
+
+            let check = |storage: &AppendableMmapMultiTurboVectorStorage| {
+                assert_eq!(storage.storage.vectors_count(), records);
+                for (key, ((_, deleted), blob)) in sources.iter().zip(&expected).enumerate() {
+                    let key = key as PointOffsetType;
+                    assert_eq!(storage.is_deleted_vector(key), *deleted, "{key}");
+                    assert_eq!(
+                        storage.get_multi_tq::<Random>(key).as_ref(),
+                        blob.as_slice(),
+                        "{key}, empty slots: {write_empty_slots}",
+                    );
+                }
+                if write_empty_slots {
+                    assert_eq!(
+                        storage.size_of_available_vectors_in_bytes(),
+                        4 * record_size
+                    );
+                }
+            };
+
+            {
+                let mut storage = open_dot(dir.path(), DIM, write_empty_slots);
+                let mut it = sources
+                    .iter()
+                    .map(|(blob, deleted)| (Cow::from(blob.as_slice()), *deleted));
+                assert_eq!(storage.update_from(&mut it, &stopped).unwrap(), 0..5);
+                check(&storage);
+                storage.flusher()().unwrap();
+            }
+            check(&open_dot(dir.path(), DIM, false));
+        }
+    }
+
+    /// A point added without the vector takes an empty slot only when the
+    /// storage writes them, the placeholder record otherwise.
+    #[test]
+    fn missing_point_follows_the_flag() {
+        const DIM: usize = 64;
+        for write_empty_slots in [false, true] {
+            let dir = Builder::new()
+                .prefix("turbo_multi_empty_slots")
+                .tempdir()
+                .unwrap();
+            let _scope = ambient::test_guard();
+
+            let mut storage = VectorStorageEnum::MultiDenseTurbo(Box::new(open_dot(
+                dir.path(),
+                DIM,
+                write_empty_slots,
+            )));
+            storage.insert_missing(0).unwrap();
+            assert!(storage.is_deleted_vector(0));
+            let VectorStorageEnum::MultiDenseTurbo(turbo) = &storage else {
+                unreachable!();
+            };
+            assert_eq!(
+                turbo.storage.vectors_count(),
+                usize::from(!write_empty_slots)
+            );
+            assert_eq!(turbo.empty_count, usize::from(write_empty_slots));
         }
     }
 }

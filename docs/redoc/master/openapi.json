@@ -12057,6 +12057,11 @@
             "default": true,
             "type": "boolean"
           },
+          "turbo_multivector_empty_slots": {
+            "description": "Store a TurboQuant multivector point that has no vector, or whose vector was deleted, as an offset entry without encoded records, instead of one placeholder record. Only gates writing: both forms are always readable. Releases before reading was added fail to optimize a segment that holds such entries.",
+            "default": false,
+            "type": "boolean"
+          },
           "serverless_compatible": {
             "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`], [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
