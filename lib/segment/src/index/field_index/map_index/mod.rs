@@ -32,6 +32,10 @@ pub(super) const BLOCK_SIZE_KEYWORD: usize = 16;
 
 pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per indexed field, not per point; boxing `Immutable` only moves the gap to `OnDisk`"
+)]
 pub enum MapIndex<N: MapIndexKey + ?Sized>
 where
     Vec<<N as MapIndexKey>::Owned>: Blob + Send + Sync,

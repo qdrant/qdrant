@@ -7,7 +7,7 @@ use common::universal_io::UniversalRead;
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
-use super::{ContainerSegment, ImmutableMapIndex};
+use super::{ContainerSegment, ImmutableMapIndex, MANY_VALUES, NO_VALUE};
 use crate::common::operation_error::OperationResult;
 use crate::index::payload_config::{ImmutableLayout, StorageType};
 
@@ -25,6 +25,18 @@ where
         Ok(self
             .point_to_values
             .check_values_any(idx, |v| check_fn(v.borrow())))
+    }
+
+    fn value_id(&self, value: &N) -> Option<u32> {
+        self.value_to_points.get(value).map(|segment| segment.id)
+    }
+
+    fn check_value_id(&self, idx: PointOffsetType, id: u32) -> Option<bool> {
+        match *self.point_value_ids.get(idx as usize)? {
+            NO_VALUE => Some(false),
+            MANY_VALUES => None,
+            value_id => Some(value_id == id),
+        }
     }
 
     fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
@@ -152,6 +164,7 @@ where
             value_to_points_container,
             deleted_value_to_points_container,
             point_to_values,
+            point_value_ids,
             sorted_keys,
             indexed_points: _,
             values_count: _,
@@ -181,5 +194,6 @@ where
             + deleted_bytes
             + sorted_keys_bytes
             + point_to_values.ram_usage_bytes()
+            + point_value_ids.capacity() * size_of::<u32>()
     }
 }
