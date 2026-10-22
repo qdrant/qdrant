@@ -609,7 +609,7 @@ fn main() -> anyhow::Result<()> {
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
         tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
 
-        telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
+        telemetry_collector = Arc::new(telemetry);
 
         // `raft` crate uses `slog` crate so it is needed to use `slog_stdlog::StdLog` to forward
         // logs from it to `log` crate
@@ -695,7 +695,7 @@ fn main() -> anyhow::Result<()> {
             TelemetryCollector::new(settings.clone(), dispatcher_arc.clone(), reporting_id);
 
         tonic_telemetry_collector = telemetry.tonic_telemetry_collector.clone();
-        telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry));
+        telemetry_collector = Arc::new(telemetry);
         health_checker = None;
     };
 
