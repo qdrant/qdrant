@@ -32,9 +32,8 @@ impl VectorIndex for PlainVectorIndex {
             if id as usize >= vector_storage.total_vector_count() {
                 debug_assert!(id as usize == vector_storage.total_vector_count());
                 // Vector doesn't exist in the storage
-                // Insert default vector to keep the sequence
-                let default_vector = vector_storage.default_vector();
-                vector_storage.insert_vector(id, VectorRef::from(&default_vector))?;
+                // Insert an empty slot to keep the sequence
+                vector_storage.insert_missing(id)?;
             }
             vector_storage.delete_vector(id)?;
         }

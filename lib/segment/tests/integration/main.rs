@@ -18,6 +18,7 @@ mod hnsw_incremental_build;
 mod hnsw_quantized_search_test;
 mod multivector_filtrable_hnsw_test;
 mod multivector_hnsw_test;
+mod multivector_missing_vectors_test;
 mod multivector_quantization_test;
 mod nested_filtering_test;
 mod payload_index_test;
