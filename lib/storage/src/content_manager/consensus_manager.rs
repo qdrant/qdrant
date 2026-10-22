@@ -1580,6 +1580,7 @@ mod tests {
 
     #[derive(Default)]
     struct NoCollections {
+        snapshot_reads: std::sync::atomic::AtomicUsize,
         this_peer_id: PeerId,
         peer_addresses: Arc<RwLock<PeerAddressById>>,
         peer_channel_removals: parking_lot::Mutex<Vec<PeerId>>,
@@ -1602,6 +1603,8 @@ mod tests {
         }
 
         fn collections_snapshot(&self) -> super::CollectionsSnapshot {
+            self.snapshot_reads
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             super::CollectionsSnapshot::default()
         }
 
@@ -1654,18 +1657,19 @@ mod tests {
             Ok(())
         }
 
-        // Only consensus state machine validation reads these, and these tests never enable it
-
         fn node_context(&self) -> crate::content_manager::consensus_state_machine::NodeContext {
-            unimplemented!()
+            let mut context =
+                crate::content_manager::consensus_state_machine::tests::node_context();
+            context.peer_id = self.this_peer_id;
+            context
         }
 
         fn collection_names(&self) -> std::collections::BTreeSet<collection::shards::CollectionId> {
-            unimplemented!()
+            Default::default()
         }
 
         fn alias_mapping(&self) -> crate::content_manager::alias_mapping::AliasMapping {
-            unimplemented!()
+            Default::default()
         }
 
         fn collection_state(
@@ -1679,6 +1683,157 @@ mod tests {
             &self,
         ) -> std::collections::BTreeSet<collection::shards::CollectionId> {
             std::collections::BTreeSet::new()
+        }
+    }
+
+    #[test]
+    fn state_machine_service_error_notifies_and_reloads_for_replay() {
+        use std::sync::atomic::Ordering;
+
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
+        let operation = ConsensusOperations::UpdateClusterMetadata {
+            key: "owner".into(),
+            value: serde_json::json!("reader"),
+        };
+        let entry = Entry {
+            index: 1,
+            term: 1,
+            data: serde_cbor::to_vec(&operation).unwrap(),
+            ..Default::default()
+        };
+        let (manager, storage) = setup_storages(vec![entry], dir.path());
+        manager.set_unapplied_entries(1, 1).unwrap();
+        let config = raft::Config {
+            id: manager.this_peer_id(),
+            ..Default::default()
+        };
+        let logger = slog::Logger::root(slog::Discard, slog::o!());
+        let mut raw = raft::RawNode::new(&config, storage, &logger).unwrap();
+        let (sender, mut receiver) = broadcast::channel(1);
+        manager
+            .on_consensus_op_apply
+            .lock()
+            .insert(operation.clone(), sender);
+        let path = manager.persistent.read().path.clone();
+        let backup = path.with_extension("backup");
+        fs_err::rename(&path, &backup).unwrap();
+        fs_err::create_dir(&path).unwrap();
+
+        let error = manager.apply_entries(&mut raw).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to apply collection meta operation entry")
+        );
+        assert!(
+            !manager
+                .on_consensus_op_apply
+                .lock()
+                .contains_key(&operation)
+        );
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            Err(crate::StorageError::ServiceError { .. })
+        ));
+        assert_eq!(manager.toc.snapshot_reads.load(Ordering::Relaxed), 1);
+        assert_eq!(manager.persistent.read().current_unapplied_entry(), Some(1));
+        fs_err::remove_dir(&path).unwrap();
+        fs_err::rename(backup, path).unwrap();
+
+        // The apply loop persists dirty state before replay: the failed save already changed
+        // memory, so the planner can omit the matching metadata action on the retry.
+        assert!(!manager.apply_entries(&mut raw).unwrap());
+
+        assert_eq!(manager.toc.snapshot_reads.load(Ordering::Relaxed), 2);
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Closed)
+        ));
+        assert_eq!(manager.persistent.read().current_unapplied_entry(), None);
+        let loaded = Persistent::load_or_init(dir.path(), true, false, None).unwrap();
+        assert_eq!(
+            loaded.cluster_metadata["owner"],
+            serde_json::json!("reader")
+        );
+    }
+
+    #[test]
+    fn state_machine_peer_cleanup_failure_keeps_awaiter_for_replay() {
+        use crate::StorageError;
+
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
+        let entry = conf_change_v2(1, &[(ConfChangeType::RemoveNode, 1)]);
+        let (manager, _) = setup_storages(vec![entry], dir.path());
+        manager
+            .add_peer(1, "http://127.0.0.1:6335".parse().unwrap())
+            .unwrap();
+        manager.set_unapplied_entries(1, 1).unwrap();
+        *manager.toc.peer_channel_error.lock() = Some(StorageError::bad_request("channel failure"));
+        let storage = MemStorage::new_with_conf_state((vec![manager.this_peer_id(), 1], vec![]));
+        let config = raft::Config {
+            id: manager.this_peer_id(),
+            ..Default::default()
+        };
+        let logger = slog::Logger::root(slog::Discard, slog::o!());
+        let mut raw = raft::RawNode::new(&config, storage, &logger).unwrap();
+        let operation = ConsensusOperations::RemovePeer(1);
+        let (sender, mut receiver) = broadcast::channel(1);
+        manager
+            .on_consensus_op_apply
+            .lock()
+            .insert(operation.clone(), sender);
+
+        manager.apply_entries(&mut raw).unwrap_err();
+
+        assert!(
+            manager
+                .on_consensus_op_apply
+                .lock()
+                .contains_key(&operation)
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+        assert!(!manager.conf_state().voters.contains(&1));
+        assert!(manager.peer_address_by_id().contains_key(&1));
+        assert_eq!(manager.persistent.read().current_unapplied_entry(), Some(1));
+        manager.toc.peer_channel_error.lock().take();
+
+        assert!(!manager.apply_entries(&mut raw).unwrap());
+
+        assert!(receiver.try_recv().unwrap().unwrap());
+        assert!(
+            !manager
+                .on_consensus_op_apply
+                .lock()
+                .contains_key(&operation)
+        );
+        assert!(!manager.peer_address_by_id().contains_key(&1));
+        assert_eq!(manager.persistent.read().current_unapplied_entry(), None);
+    }
+
+    #[test]
+    fn state_machine_normal_peer_changes_are_rejected() {
+        let dir = Builder::new().prefix("raft_state_test").tempdir().unwrap();
+        let (manager, _) = setup_storages(vec![], dir.path());
+        for operation in [
+            ConsensusOperations::AddPeer {
+                peer_id: 1,
+                uri: "http://127.0.0.1:6335".into(),
+            },
+            ConsensusOperations::RemovePeer(manager.this_peer_id()),
+        ] {
+            let entry = Entry {
+                data: serde_cbor::to_vec(&operation).unwrap(),
+                ..Default::default()
+            };
+
+            let error = manager.apply_normal_entry(&entry).unwrap_err();
+
+            assert!(matches!(error, crate::StorageError::ServiceError { .. }));
+            assert!(manager.peer_address_by_id().is_empty());
         }
     }
 

@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
-use crate::content_manager::consensus_ops::ConsensusOperations;
+use crate::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use crate::content_manager::consensus_state_machine::*;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
@@ -45,12 +45,31 @@ fn nop() {
         token: 42,
     }));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("a nop should be accepted, got {outcome:?}");
     };
 
     assert!(actions.is_empty());
     assert_eq!(machine.state(), &state);
+}
+
+#[test]
+fn internal_consensus_signals_are_rejected_without_changing_state() {
+    let state = cluster_state(Vec::new());
+    let machine = state_machine(state.clone());
+
+    for operation in [
+        ConsensusOperations::RequestSnapshot,
+        ConsensusOperations::ReportSnapshot {
+            peer_id: PEER_ID,
+            status: SnapshotStatus::Finish,
+        },
+    ] {
+        let error = machine.plan(&operation).unwrap_err();
+
+        assert!(matches!(error, StorageError::ServiceError { .. }));
+        assert_eq!(machine.state(), &state);
+    }
 }
 
 #[test]
@@ -61,7 +80,7 @@ fn create_collection() {
         Some(vec![vec![PEER_ID]]),
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("creating a collection should be accepted, got {outcome:?}");
     };
 
@@ -85,7 +104,7 @@ fn create_collection_distribution() {
         Some(vec![vec![PEER_ID, OTHER_PEER_ID], vec![OTHER_PEER_ID]]),
     ));
 
-    let ApplyOutcome::Accepted(_) = outcome else {
+    let Ok(_) = outcome else {
         panic!("creating a collection should be accepted, got {outcome:?}");
     };
 
@@ -106,7 +125,9 @@ fn create_collection_custom_sharding() {
     create_collection.sharding_method = Some(ShardingMethod::Custom);
 
     let mut machine = state_machine(ClusterState::default());
-    machine.apply(&create_collection_op(create_collection, None));
+    machine
+        .apply(&create_collection_op(create_collection, None))
+        .unwrap();
 
     let state = machine.state().collection(COLLECTION).expect("created");
 
@@ -130,7 +151,9 @@ fn create_collection_defaults() {
 
     // Without a distribution this node places every shard on itself, as many as it defaults to
     let mut machine = ConsensusStateMachine::new(ClusterState::default(), context);
-    machine.apply(&create_collection_op(create_collection_request(), None));
+    machine
+        .apply(&create_collection_op(create_collection_request(), None))
+        .unwrap();
 
     let state = machine.state().collection(COLLECTION).expect("created");
 
@@ -153,10 +176,7 @@ fn create_collection_reject_existing() {
         Some(vec![vec![PEER_ID]]),
     ));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::AlreadyExists { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::AlreadyExists { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -172,10 +192,7 @@ fn create_collection_reject_alias_name() {
         Some(vec![vec![PEER_ID]]),
     ));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadInput { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadInput { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -196,10 +213,7 @@ fn create_collection_reject_max_collections() {
         Some(vec![vec![PEER_ID]]),
     ));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -215,10 +229,7 @@ fn create_collection_reject_zero_shards() {
         Some(Vec::new()),
     ));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadInput { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadInput { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -231,7 +242,7 @@ fn update_collection() {
     let mut machine = state_machine(cluster_state(Vec::new()));
     let outcome = machine.apply(&update_collection_op(update));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("updating a collection should be accepted, got {outcome:?}");
     };
 
@@ -263,7 +274,7 @@ fn update_collection_diff_order() {
 
     let outcome = machine.apply(&update_collection_op(update));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("updating a collection should be accepted, got {outcome:?}");
     };
 
@@ -293,12 +304,14 @@ fn update_collection_replay() {
     update.metadata = Some(metadata(json!({ "region": "eu" })));
 
     let mut machine = state_machine(cluster_state(Vec::new()));
-    machine.apply(&update_collection_op(update.clone()));
+    machine
+        .apply(&update_collection_op(update.clone()))
+        .unwrap();
 
     let applied = machine.state().clone();
     let outcome = machine.apply(&update_collection_op(update));
 
-    let ApplyOutcome::Accepted(_) = outcome else {
+    let Ok(_) = outcome else {
         panic!("replay of an applied update should be accepted, got {outcome:?}");
     };
 
@@ -334,10 +347,7 @@ fn update_collection_reject_whole_operation(update: UpdateCollection) {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&update_collection_op(update));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadInput { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadInput { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -356,7 +366,7 @@ fn update_collection_metadata_merge() {
     update.metadata = Some(metadata(json!({ "region": null, "size": 2 })));
 
     let mut machine = state_machine(state);
-    machine.apply(&update_collection_op(update));
+    machine.apply(&update_collection_op(update)).unwrap();
 
     // Merged into what is there, and a null value removes its key
     assert_eq!(
@@ -371,7 +381,7 @@ fn update_collection_metadata_null_without_metadata() {
     update.metadata = Some(metadata(json!({ "region": null })));
 
     let mut machine = state_machine(cluster_state(Vec::new()));
-    machine.apply(&update_collection_op(update));
+    machine.apply(&update_collection_op(update)).unwrap();
 
     // A collection with no metadata takes the payload as it is, so the null is stored.
     // A replay merges the payload into itself and drops the key.
@@ -402,7 +412,7 @@ fn update_collection_replica_changes() {
         CollectionMetaOperations::UpdateCollection(operation),
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("removing a replica should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -449,7 +459,7 @@ fn update_collection_replica_change_aborts_transfer_before_removal() {
         CollectionMetaOperations::UpdateCollection(operation),
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("removing a transfer destination should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -493,7 +503,7 @@ fn update_collection_replica_change_guard_rejects_partial_replay_case(
     operation.set_shard_replica_changes(vec![replica_set::Change::Remove(0, PEER_ID)]);
     let operation = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
     let mut machine = state_machine(state.clone());
-    let ApplyOutcome::Accepted(actions) = machine.apply(&operation) else {
+    let Ok(Plan { actions, .. }) = machine.apply(&operation) else {
         panic!("removing a replica with another active replica should be accepted");
     };
     let goal = machine.state().clone();
@@ -507,8 +517,8 @@ fn update_collection_replica_change_guard_rejects_partial_replay_case(
         let reached_goal = crashed == goal;
         let mut replay = state_machine(crashed);
         match replay.apply(&operation) {
-            ApplyOutcome::Accepted(_) => assert_eq!(replay.state(), &goal),
-            ApplyOutcome::Rejected(error) if !reached_goal => {
+            Ok(_) => assert_eq!(replay.state(), &goal),
+            Err(error) if !reached_goal => {
                 partial_rejections += 1;
                 assert!(super::replay::replica_removal_guard_may_reject(
                     &state,
@@ -531,8 +541,7 @@ fn update_collection_replica_change_guard_rejects_partial_replay_case(
                     &unrelated_error,
                 ));
             }
-            ApplyOutcome::Rejected(_) => {}
-            ApplyOutcome::NotCovered => panic!("replica removal should be covered"),
+            Err(_) => {}
         }
     }
     assert_eq!(partial_rejections, 3);
@@ -561,7 +570,7 @@ fn update_collection_replica_change_order() {
         CollectionMetaOperations::UpdateCollection(operation),
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("updating config and replicas should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -599,15 +608,12 @@ fn update_collection_replica_change_replay_rejects_complete() {
 
     let op = collection_meta_op(CollectionMetaOperations::UpdateCollection(operation));
     let mut machine = state_machine(state);
-    machine.apply(&op);
+    machine.apply(&op).unwrap();
     let goal = machine.state().clone();
 
     let outcome = machine.apply(&op);
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &goal);
 }
 
@@ -618,9 +624,11 @@ fn delete_collection() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&delete_collection_op(COLLECTION));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, result }) = outcome else {
         panic!("deleting a collection should be accepted, got {outcome:?}");
     };
+
+    assert!(result);
 
     assert!(matches!(
         actions.as_slice(),
@@ -643,7 +651,7 @@ fn delete_collection_aliases() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&delete_collection_op(COLLECTION));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("deleting a collection should be accepted, got {outcome:?}");
     };
 
@@ -673,11 +681,13 @@ fn delete_collection_replay() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&delete_collection_op(COLLECTION));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, result }) = outcome else {
         panic!("replay of an applied delete should be accepted, got {outcome:?}");
     };
 
     // Action is emitted even if state already matches
+    assert!(!result);
+
     assert!(matches!(
         actions.as_slice(),
         [Action::DropCollection { .. }]
@@ -694,12 +704,14 @@ fn delete_collection_alias_name() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&delete_collection_op("alias"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, result }) = outcome else {
         panic!("deleting a collection by alias should be accepted, got {outcome:?}");
     };
 
     // The name is not resolved: the alias names no collection to delete, and it points at
     // `alpha`, not at itself, so it stays
+    assert!(!result);
+
     assert!(matches!(
         actions.as_slice(),
         [Action::DropCollection { .. }]
@@ -741,7 +753,7 @@ fn create_shard_key() {
         Some(ReplicaState::Partial),
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("creating a shard key should be accepted, got {outcome:?}");
     };
 
@@ -802,7 +814,7 @@ fn create_shard_key_default_initial_state() {
             None,
         ));
 
-        let ApplyOutcome::Accepted(actions) = outcome else {
+        let Ok(Plan { actions, .. }) = outcome else {
             panic!("creating a shard key should be accepted, got {outcome:?}");
         };
 
@@ -840,15 +852,12 @@ fn create_shard_key_replay() {
 
     let mut machine = state_machine(state);
     let first = machine.apply(&operation);
-    assert!(matches!(first, ApplyOutcome::Accepted(_)));
+    assert!(first.is_ok());
 
     let applied = machine.state().clone();
     let replay = machine.apply(&operation);
 
-    assert!(matches!(
-        replay,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(replay, Err(StorageError::BadRequest { .. })));
     assert_eq!(
         machine.state(),
         &applied,
@@ -921,7 +930,7 @@ fn drop_shard_key() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&drop_shard_key_op(shard_key.clone()));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("dropping a shard key should be accepted, got {outcome:?}");
     };
 
@@ -976,7 +985,7 @@ fn drop_shard_key_replay() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&drop_shard_key_op("north".into()));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of an applied shard-key drop should be accepted, got {outcome:?}");
     };
 
@@ -993,7 +1002,7 @@ fn drop_shard_key_replay_after_mapping_removal() {
     let operation = drop_shard_key_op(shard_key);
     let mut uncrashed = state_machine(state.clone());
     let outcome = uncrashed.apply(&operation);
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("dropping a shard key should be accepted, got {outcome:?}");
     };
     let goal = uncrashed.state().clone();
@@ -1008,7 +1017,11 @@ fn drop_shard_key_replay_after_mapping_removal() {
     let mut replay = state_machine(crashed);
     let outcome = replay.apply(&operation);
 
-    let ApplyOutcome::Accepted(replay_actions) = outcome else {
+    let Ok(Plan {
+        actions: replay_actions,
+        ..
+    }) = outcome
+    else {
         panic!("replay after mapping removal should be accepted, got {outcome:?}");
     };
 
@@ -1023,10 +1036,7 @@ fn drop_shard_key_reject_auto_sharding() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&drop_shard_key_op("north".into()));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &state);
 }
 
@@ -1040,7 +1050,7 @@ fn drop_shard_key_resharding_same_key() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&drop_shard_key_op(shard_key));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("dropping a resharding shard key should be accepted, got {outcome:?}");
     };
     assert!(
@@ -1083,7 +1093,7 @@ fn resharding_start_up() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("starting scale-up resharding should be accepted, got {outcome:?}");
     };
 
@@ -1112,12 +1122,14 @@ fn resharding_start_up() {
 fn resharding_start_up_replay() {
     let key = resharding_key(ReshardingDirection::Up, 1);
     let mut machine = state_machine(auto_resharding_state(1));
-    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+    machine
+        .apply(&resharding_op(ReshardingOperation::Start(key.clone())))
+        .unwrap();
 
     let goal = machine.state().clone();
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replaying resharding start should be accepted, got {outcome:?}");
     };
 
@@ -1137,14 +1149,14 @@ fn resharding_start_up_reject_missing_shard_key() {
 
     let mut machine = state_machine(state);
     let outcome = machine.apply(&drop_shard_key_op(shard_key));
-    assert!(matches!(outcome, ApplyOutcome::Accepted(_)));
+    assert!(outcome.is_ok());
     let state = machine.state().clone();
 
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key)));
 
     assert!(matches!(
         outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { ref description })
+        Err(StorageError::BadRequest { ref description })
             if description == "\"north\" hashring does not exist"
     ));
     assert_eq!(machine.state(), &state);
@@ -1162,7 +1174,7 @@ fn resharding_start_up_custom_shard_key_replay() {
 
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&operation);
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("starting custom scale-up resharding should be accepted, got {outcome:?}");
     };
     let goal = machine.state().clone();
@@ -1184,7 +1196,7 @@ fn resharding_start_up_custom_shard_key_replay() {
         let mut replay = state_machine(partial);
         let outcome = replay.apply(&operation);
 
-        assert!(matches!(outcome, ApplyOutcome::Accepted(_)), "{outcome:?}");
+        assert!(outcome.is_ok(), "{outcome:?}");
         assert_eq!(replay.state(), &goal);
     }
 }
@@ -1197,10 +1209,7 @@ fn resharding_start_down_reject_last_shard() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Start(key)));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &state);
 }
 
@@ -1208,10 +1217,12 @@ fn resharding_start_down_reject_last_shard() {
 fn resharding_commit_stages() {
     let key = resharding_key(ReshardingDirection::Up, 1);
     let mut machine = state_machine(auto_resharding_state(1));
-    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+    machine
+        .apply(&resharding_op(ReshardingOperation::Start(key.clone())))
+        .unwrap();
 
     let outcome = machine.apply(&resharding_op(ReshardingOperation::CommitRead(key.clone())));
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("committing the read hash ring should be accepted, got {outcome:?}");
     };
 
@@ -1229,7 +1240,7 @@ fn resharding_commit_stages() {
     let outcome = machine.apply(&resharding_op(ReshardingOperation::CommitWrite(
         key.clone(),
     )));
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("committing the write hash ring should be accepted, got {outcome:?}");
     };
 
@@ -1272,7 +1283,7 @@ fn resharding_finish_down() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Finish(key)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("finishing scale-down resharding should be accepted, got {outcome:?}");
     };
 
@@ -1295,16 +1306,20 @@ fn resharding_finish_down() {
 fn resharding_abort_up() {
     let key = resharding_key(ReshardingDirection::Up, 1);
     let mut machine = state_machine(auto_resharding_state(1));
-    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
+    machine
+        .apply(&resharding_op(ReshardingOperation::Start(key.clone())))
+        .unwrap();
 
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("aborting scale-up resharding should be accepted, got {outcome:?}");
     };
 
+    let actions = actions.as_slice();
+
     assert!(matches!(
-        actions.as_slice(),
+        actions,
         [
             Action::InvalidateCleanLocalShards { .. },
             Action::RevertHashRing { .. },
@@ -1335,7 +1350,7 @@ fn resharding_abort_up_removes_custom_mapping() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("aborting custom scale-up should be accepted, got {outcome:?}");
     };
     assert!(actions.iter().any(|action| matches!(
@@ -1376,12 +1391,14 @@ fn resharding_abort_down_reverts_replicas() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("aborting scale-down resharding should be accepted, got {outcome:?}");
     };
 
+    let actions = actions.as_slice();
+
     assert!(matches!(
-        actions.as_slice(),
+        actions,
         [
             Action::InvalidateCleanLocalShards { .. },
             Action::SetReplicaState {
@@ -1431,7 +1448,7 @@ fn resharding_abort_down_without_key_matches_unmapped_shards() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("aborting scale-down resharding should be accepted, got {outcome:?}");
     };
 
@@ -1440,8 +1457,10 @@ fn resharding_abort_down_without_key_matches_unmapped_shards() {
     };
     assert_eq!(shard_ids, &[1, 2]);
 
+    let actions = actions.as_slice();
+
     assert!(matches!(
-        actions.as_slice(),
+        actions,
         [
             Action::InvalidateCleanLocalShards { .. },
             Action::SetReplicaState {
@@ -1471,16 +1490,17 @@ fn resharding_abort_down_without_key_matches_unmapped_shards() {
 fn resharding_abort_reject_after_read_commit() {
     let key = resharding_key(ReshardingDirection::Up, 1);
     let mut machine = state_machine(auto_resharding_state(1));
-    machine.apply(&resharding_op(ReshardingOperation::Start(key.clone())));
-    machine.apply(&resharding_op(ReshardingOperation::CommitRead(key.clone())));
+    machine
+        .apply(&resharding_op(ReshardingOperation::Start(key.clone())))
+        .unwrap();
+    machine
+        .apply(&resharding_op(ReshardingOperation::CommitRead(key.clone())))
+        .unwrap();
     let state = machine.state().clone();
 
     let outcome = machine.apply(&resharding_op(ReshardingOperation::Abort(key)));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &state);
 }
 
@@ -1531,11 +1551,13 @@ fn transfer_start() {
         transfer.clone(),
     )));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("starting a transfer should be accepted, got {outcome:?}");
     };
+    let actions = actions.as_slice();
+
     assert!(matches!(
-        actions.as_slice(),
+        actions,
         [
             Action::RegisterTransfer { .. },
             Action::SetReplicaState {
@@ -1574,10 +1596,7 @@ fn transfer_start_rejects_resharding_between_shard_keys() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(transfer)));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &state);
 }
 
@@ -1598,7 +1617,7 @@ fn transfer_start_receiver_initializes_local_shard() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(transfer)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("starting a received transfer should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -1626,17 +1645,16 @@ fn transfer_start_replay_rejects_completed() {
         ShardTransferMethod::StreamRecords,
     );
     let mut machine = state_machine(transfer_state());
-    machine.apply(&transfer_op(ShardTransferOperations::Start(
-        transfer.clone(),
-    )));
+    machine
+        .apply(&transfer_op(ShardTransferOperations::Start(
+            transfer.clone(),
+        )))
+        .unwrap();
     let state = machine.state().clone();
 
     let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(transfer)));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &state);
 }
 
@@ -1661,11 +1679,13 @@ fn transfer_start_applies_optimizer_override_to_default_method() {
     let mut machine = ConsensusStateMachine::new(state, context);
     let outcome = machine.apply(&transfer_op(ShardTransferOperations::Start(transfer)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("starting a transfer should be accepted, got {outcome:?}");
     };
+    let actions = actions.as_slice();
+
     assert!(matches!(
-        actions.as_slice(),
+        actions,
         [
             Action::RegisterTransfer {
                 transfer: ShardTransfer {
@@ -1706,7 +1726,7 @@ fn transfer_restart() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&transfer_op(ShardTransferOperations::Restart(restart)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("restarting a transfer should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -1767,10 +1787,7 @@ fn transfer_restart_validates_initial_state_before_shard() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&transfer_op(ShardTransferOperations::Restart(restart)));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadInput { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadInput { .. })));
 }
 
 #[test]
@@ -1794,7 +1811,7 @@ fn transfer_finish_move() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&transfer_op(ShardTransferOperations::Finish(transfer)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("finishing a transfer should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -1850,7 +1867,7 @@ fn transfer_abort_move() {
         reason: "test".into(),
     }));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("aborting a transfer should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -1911,7 +1928,7 @@ fn transfer_abort_resharding_clears_resharding_first() {
         reason: "test".into(),
     }));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("aborting a resharding transfer should be accepted, got {outcome:?}");
     };
     let clear = actions
@@ -1947,7 +1964,7 @@ fn transfer_recovery_to_partial() {
         transfer.key(),
     )));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("advancing recovery should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -2003,7 +2020,7 @@ fn set_shard_replica_state_upserts_known_peer() {
         None,
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("setting replica state should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -2037,10 +2054,7 @@ fn set_shard_replica_state_reject_from_state_mismatch() {
         Some(ReplicaState::Initializing),
     ));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadInput { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadInput { .. })));
     assert_eq!(machine.state(), &state);
 }
 
@@ -2051,10 +2065,7 @@ fn set_shard_replica_state_reject_last_active() {
 
     let outcome = machine.apply(&set_replica_state_op(0, PEER_ID, ReplicaState::Dead, None));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadInput { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadInput { .. })));
     assert_eq!(machine.state(), &state);
 }
 
@@ -2084,7 +2095,7 @@ fn set_shard_replica_state_dead_aborts_transfer_first() {
         None,
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("marking a transfer replica dead should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -2120,9 +2131,11 @@ fn set_shard_replica_state_dead_aborts_scale_up() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&set_replica_state_op(1, PEER_ID, ReplicaState::Dead, None));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("marking a scale-up replica dead should be accepted, got {outcome:?}");
     };
+    let actions = actions.as_slice();
+
     assert!(matches!(
         actions.last(),
         Some(Action::SetReshardingState { state: None, .. })
@@ -2159,9 +2172,11 @@ fn set_shard_replica_state_missing_shard_finishes_abort() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&set_replica_state_op(1, PEER_ID, ReplicaState::Dead, None));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replaying after scale-up shard drop should be accepted, got {outcome:?}");
     };
+    let actions = actions.as_slice();
+
     assert!(matches!(
         actions.last(),
         Some(Action::SetReshardingState { state: None, .. })
@@ -2202,7 +2217,7 @@ fn create_alias() {
         "alias", COLLECTION,
     )]));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("creating an alias should be accepted, got {outcome:?}");
     };
 
@@ -2223,7 +2238,7 @@ fn create_alias_replay() {
         "alias", COLLECTION,
     )]));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of an applied alias should be accepted, got {outcome:?}");
     };
 
@@ -2242,10 +2257,7 @@ fn create_alias_reject_missing_collection() {
         "alias", "missing",
     )]));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::NotFound { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::NotFound { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -2261,10 +2273,7 @@ fn create_alias_reject_alias_target() {
     )]));
 
     // An alias of an alias is rejected: the target is not resolved
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::NotFound { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::NotFound { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -2278,10 +2287,7 @@ fn create_alias_reject_collection_name() {
         COLLECTION, COLLECTION,
     )]));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::AlreadyExists { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::AlreadyExists { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -2294,7 +2300,7 @@ fn delete_alias() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&change_aliases_op(vec![delete_alias_action("alias")]));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("deleting an alias should be accepted, got {outcome:?}");
     };
 
@@ -2310,7 +2316,7 @@ fn delete_alias_missing() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&change_aliases_op(vec![delete_alias_action("alias")]));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("deleting an alias that does not exist should be accepted, got {outcome:?}");
     };
 
@@ -2330,7 +2336,7 @@ fn rename_alias() {
         "alias", "other",
     )]));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("renaming an alias should be accepted, got {outcome:?}");
     };
 
@@ -2358,10 +2364,7 @@ fn rename_alias_reject_missing() {
         "alias", "other",
     )]));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::NotFound { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::NotFound { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -2376,10 +2379,7 @@ fn change_aliases_reject_missing_rename() {
         rename_alias_action("missing", "other"),
     ]));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::NotFound { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::NotFound { .. })));
 
     // The action before the rename is validated, never emitted
     assert_eq!(machine.state(), &state);
@@ -2395,7 +2395,7 @@ fn change_aliases_in_order() {
         rename_alias_action("alias", "other"),
     ]));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("renaming an alias the operation just created should be accepted, got {outcome:?}");
     };
 
@@ -2419,10 +2419,7 @@ fn change_aliases_reject_whole_operation() {
         create_alias_action("other", "missing"),
     ]));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::NotFound { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::NotFound { .. })));
 
     // The delete before the failing action is validated, never emitted
     assert_eq!(machine.state(), &state);
@@ -2467,7 +2464,7 @@ fn create_named_vector_impl(config: VectorNameConfig) -> ConsensusStateMachine {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&create_named_vector_op("text", config));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("creating a new named vector should be accepted, got {outcome:?}");
     };
 
@@ -2487,7 +2484,7 @@ fn create_named_vector_replay() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&create_named_vector_op("text", config));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of an applied named vector should be accepted, got {outcome:?}");
     };
 
@@ -2515,10 +2512,7 @@ fn create_named_vector_reject_existing(config: VectorNameConfig) {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&create_named_vector_op("text", config));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadInput { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadInput { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -2539,7 +2533,7 @@ fn delete_named_vector_impl(config: VectorNameConfig) {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&delete_named_vector_op("text"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("deleting an existing vector should be accepted, got {outcome:?}");
     };
 
@@ -2572,7 +2566,7 @@ fn delete_named_vector_missing() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&delete_named_vector_op("text"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("deleting a vector that does not exist should be accepted, got {outcome:?}");
     };
 
@@ -2592,7 +2586,7 @@ fn create_payload_index() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&create_payload_index_op("city", PayloadSchemaType::Keyword));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("creating payload index should be accepted, got {outcome:?}");
     };
 
@@ -2618,7 +2612,7 @@ fn create_payload_index_replay() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&create_payload_index_op("city", PayloadSchemaType::Keyword));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of an applied payload index should be accepted, got {outcome:?}");
     };
 
@@ -2637,7 +2631,7 @@ fn create_payload_index_replace_schema() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&create_payload_index_op("city", PayloadSchemaType::Integer));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("indexing a field again with another schema should be accepted, got {outcome:?}");
     };
 
@@ -2667,7 +2661,7 @@ fn drop_payload_index() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&drop_payload_index_op("city"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("dropping an indexed field should be accepted, got {outcome:?}");
     };
 
@@ -2693,7 +2687,7 @@ fn drop_payload_index_missing() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&drop_payload_index_op("city"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("dropping a field that is not indexed should be accepted, got {outcome:?}");
     };
 
@@ -2714,7 +2708,7 @@ fn add_peer_operation() {
         uri: "http://peer-42".into(),
     });
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("adding a peer should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -2741,7 +2735,7 @@ fn add_peer_replay() {
         uri: "http://peer-42/".into(),
     });
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("re-adding a peer should be accepted, got {outcome:?}");
     };
     assert!(actions.is_empty());
@@ -2764,7 +2758,7 @@ fn remove_peer_operation() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&ConsensusOperations::RemovePeer(OTHER_PEER_ID));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("removing a peer should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -2811,7 +2805,7 @@ fn remove_peer_aborts_transfer_before_replica() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&ConsensusOperations::RemovePeer(OTHER_PEER_ID));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("removing a transferring peer should be accepted, got {outcome:?}");
     };
     let unregister = actions
@@ -2855,7 +2849,7 @@ fn remove_peer_aborts_related_resharding_transfers() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&ConsensusOperations::RemovePeer(OTHER_PEER_ID));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("removing a resharding transfer peer should be accepted, got {outcome:?}");
     };
 
@@ -2907,7 +2901,7 @@ fn remove_peer_force_aborts_resharding() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&ConsensusOperations::RemovePeer(OTHER_PEER_ID));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("removing a resharding peer should be accepted, got {outcome:?}");
     };
     assert!(
@@ -2915,12 +2909,6 @@ fn remove_peer_force_aborts_resharding() {
             .iter()
             .any(|action| matches!(action, Action::SetReshardingState { state: None, .. }))
     );
-    assert!(matches!(
-        actions.last(),
-        Some(Action::RemovePeer {
-            peer_id: OTHER_PEER_ID,
-        })
-    ));
     assert!(
         machine
             .state()
@@ -2937,12 +2925,12 @@ fn remove_peer_replay() {
     add_peer(&mut state, OTHER_PEER_ID, Some("1.18.0"));
     let operation = ConsensusOperations::RemovePeer(OTHER_PEER_ID);
     let mut machine = state_machine(state);
-    machine.apply(&operation);
+    machine.apply(&operation).unwrap();
     let goal = machine.state().clone();
 
     let outcome = machine.apply(&operation);
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replaying peer removal should be accepted, got {outcome:?}");
     };
     assert!(matches!(
@@ -2959,7 +2947,7 @@ fn update_peer_metadata() {
     let mut machine = state_machine(ClusterState::default());
     let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("metadata of a peer without any should be accepted, got {outcome:?}");
     };
 
@@ -2985,7 +2973,7 @@ fn update_peer_metadata_replace() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("a peer reporting a new version should be accepted, got {outcome:?}");
     };
 
@@ -3011,7 +2999,7 @@ fn update_peer_metadata_replay() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&update_peer_metadata_op(PEER_ID, "1.15.0"));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of applied metadata should be accepted, got {outcome:?}");
     };
 
@@ -3026,7 +3014,7 @@ fn update_cluster_metadata() {
     let mut machine = state_machine(ClusterState::default());
     let outcome = machine.apply(&update_cluster_metadata_op("region", json!("eu")));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("a new metadata key should be accepted, got {outcome:?}");
     };
 
@@ -3046,7 +3034,7 @@ fn update_cluster_metadata_replace() {
     let mut machine = state_machine(cluster_metadata_state("region", json!("eu")));
     let outcome = machine.apply(&update_cluster_metadata_op("region", json!("us")));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("another value for a key should be accepted, got {outcome:?}");
     };
 
@@ -3068,7 +3056,7 @@ fn update_cluster_metadata_replay() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&update_cluster_metadata_op("region", json!("eu")));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of an applied key should be accepted, got {outcome:?}");
     };
 
@@ -3081,7 +3069,7 @@ fn update_cluster_metadata_remove() {
     let mut machine = state_machine(cluster_metadata_state("region", json!("eu")));
     let outcome = machine.apply(&update_cluster_metadata_op("region", Value::Null));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("a null value should be accepted, got {outcome:?}");
     };
 
@@ -3100,7 +3088,7 @@ fn update_cluster_metadata_remove_missing() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&update_cluster_metadata_op("region", Value::Null));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("removing a key that does not exist should be accepted, got {outcome:?}");
     };
 
@@ -3113,7 +3101,7 @@ fn set_quota_config() {
     let mut machine = state_machine(ClusterState::default());
     let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(true)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("a quota config should be accepted, got {outcome:?}");
     };
 
@@ -3135,7 +3123,7 @@ fn set_quota_config_replace() {
     let mut machine = state_machine(state);
     let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(false)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("another quota config should be accepted, got {outcome:?}");
     };
 
@@ -3157,7 +3145,7 @@ fn set_quota_config_replay() {
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&ConsensusOperations::SetQuotaConfig(quota_config(true)));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("replay of an applied quota config should be accepted, got {outcome:?}");
     };
 
@@ -3208,7 +3196,7 @@ fn staging_operation_changes_nothing(operation: CollectionMetaOperations) -> Vec
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&collection_meta_op(operation));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("a staging operation should be accepted, got {outcome:?}");
     };
 
@@ -3222,10 +3210,7 @@ fn reject_missing_collection() {
     let mut machine = state_machine(ClusterState::default());
     let outcome = machine.apply(&create_named_vector_op("text", dense(4, Distance::Cosine)));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::NotFound { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::NotFound { .. })));
 }
 
 #[test]
@@ -3242,7 +3227,7 @@ fn resolve_alias() {
         }),
     ));
 
-    let ApplyOutcome::Accepted(actions) = outcome else {
+    let Ok(Plan { actions, .. }) = outcome else {
         panic!("an alias should resolve to its collection, got {outcome:?}");
     };
 
@@ -3279,10 +3264,7 @@ fn reject_dangling_alias() {
         }),
     ));
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::NotFound { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::NotFound { .. })));
 
     assert_eq!(machine.state(), &state);
 }
@@ -3412,10 +3394,7 @@ fn create_shard_key_rejects_without_change(state: ClusterState, operation: Conse
     let mut machine = state_machine(state.clone());
     let outcome = machine.apply(&operation);
 
-    assert!(matches!(
-        outcome,
-        ApplyOutcome::Rejected(StorageError::BadRequest { .. })
-    ));
+    assert!(matches!(outcome, Err(StorageError::BadRequest { .. })));
     assert_eq!(machine.state(), &state);
 }
 

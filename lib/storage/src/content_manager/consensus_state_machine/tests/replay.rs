@@ -14,23 +14,12 @@ use crate::content_manager::collection_meta_ops::{
 use crate::content_manager::errors::StorageError;
 
 proptest! {
-    /// Accepted operation changes the state only through its own actions.
-    ///
-    /// Applying the actions one by one must reach exactly the same state as `apply`.
-    /// If it does not, something else modified the state.
+    /// Planning either accepts or rejects without changing the state used by the next attempt
     #[test]
-    fn state_change_matches_actions((state, operation) in arb_state_and_operation()) {
-        let mut machine = state_machine(state.clone());
+    fn planning_is_read_only((state, operation) in arb_state_and_operation()) {
+        let machine = state_machine(state.clone());
 
-        let ApplyOutcome::Accepted(actions) = machine.apply(&operation) else {
-            return Ok(());
-        };
-
-        let mut state = state;
-
-        for action in &actions {
-            state.apply_action(action);
-        }
+        let _plan = machine.plan(&operation);
 
         prop_assert_eq!(machine.state(), &state);
     }
@@ -40,7 +29,7 @@ proptest! {
     fn rejection_changes_nothing((state, operation) in arb_state_and_operation()) {
         let mut machine = state_machine(state.clone());
 
-        if let ApplyOutcome::Rejected(_) = machine.apply(&operation) {
+        if machine.apply(&operation).is_err() {
             prop_assert_eq!(machine.state(), &state);
         }
     }
@@ -48,16 +37,15 @@ proptest! {
     /// The same operation applied to the same state produces the same actions
     #[test]
     fn planning_is_deterministic((state, operation) in arb_state_and_operation()) {
-        let first = apply(&state, &operation);
-        let second = apply(&state, &operation);
+        let first = plan(&state, &operation);
+        let second = plan(&state, &operation);
 
         match (first, second) {
-            (ApplyOutcome::Accepted(first), ApplyOutcome::Accepted(second)) => {
+            (Ok(first), Ok(second)) => {
                 prop_assert_eq!(first, second);
             }
 
-            (ApplyOutcome::Rejected(_), ApplyOutcome::Rejected(_)) => {}
-            (ApplyOutcome::NotCovered, ApplyOutcome::NotCovered) => {}
+            (Err(_), Err(_)) => {}
 
             (first, second) => prop_assert!(
                 false,
@@ -84,7 +72,7 @@ proptest! {
 
         let mut uncrashed = state_machine(state.clone());
 
-        let ApplyOutcome::Accepted(actions) = uncrashed.apply(&operation) else {
+        let Ok(Plan { actions, .. }) = uncrashed.apply(&operation) else {
             return Ok(());
         };
 
@@ -101,7 +89,7 @@ proptest! {
             let mut replay = state_machine(crashed);
 
             match replay.apply(&operation) {
-                ApplyOutcome::Accepted(_) => {
+                Ok(_) => {
                     prop_assert_eq!(
                         replay.state(),
                         &goal,
@@ -111,7 +99,7 @@ proptest! {
                     );
                 }
 
-                ApplyOutcome::Rejected(err) => {
+                Err(err) => {
                     let known_guard_failure = replica_removal_guard_may_reject(
                         &state,
                         &operation,
@@ -126,11 +114,6 @@ proptest! {
                         err,
                     );
                 }
-
-                ApplyOutcome::NotCovered => prop_assert!(
-                    false,
-                    "operation planned actions but a replay reported it as not covered",
-                ),
             }
         }
     }
@@ -203,9 +186,9 @@ pub(super) fn replica_removal_guard_may_reject(
     })
 }
 
-/// Apply `operation` without modifying `state`
-fn apply(state: &ClusterState, operation: &ConsensusOperations) -> ApplyOutcome {
-    state_machine(state.clone()).apply(operation)
+/// Plan `operation` against a copy of `state`
+fn plan(state: &ClusterState, operation: &ConsensusOperations) -> StorageResult<Plan> {
+    state_machine(state.clone()).plan(operation)
 }
 
 /// Operations that are not fully idempotent, and may diverge on replay.

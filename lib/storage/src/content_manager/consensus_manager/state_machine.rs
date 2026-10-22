@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use collection::shards::CollectionId;
 use parking_lot::MutexGuard;
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};

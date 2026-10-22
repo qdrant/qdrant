@@ -161,8 +161,8 @@ mod tests {
 
     #[test]
     fn cluster_match() {
-        let (shadow, actual) = cluster_states();
-        let diff = cluster(&shadow, &actual);
+        let (expected, actual) = cluster_states();
+        let diff = cluster(&expected, &actual);
 
         assert!(diff.is_empty(), "states match, got {diff:?}");
     }
@@ -170,11 +170,11 @@ mod tests {
     /// A collection one side does not hold is reported by name, whatever is inside it
     #[test]
     fn cluster_collection_names() {
-        let (shadow, mut actual) = cluster_states();
+        let (expected, mut actual) = cluster_states();
         actual.collections.clear();
 
         assert_eq!(
-            cluster(&shadow, &actual),
+            cluster(&expected, &actual),
             [format!("collections[{COLLECTION}]")],
         );
     }
@@ -198,10 +198,10 @@ mod tests {
         ];
 
         for (field, mutate) in mutations {
-            let (shadow, mut actual) = cluster_states();
+            let (expected, mut actual) = cluster_states();
             mutate(&mut actual);
 
-            assert_eq!(cluster(&shadow, &actual), [field], "mutated {field}");
+            assert_eq!(cluster(&expected, &actual), [field], "mutated {field}");
         }
     }
 
@@ -216,7 +216,7 @@ mod tests {
         let cluster_metadata = HashMap::from([("owner".to_string(), json!("qdrant"))]);
         let quota_config = QuotaConfig::default();
 
-        let shadow = ClusterState {
+        let expected = ClusterState {
             collections: HashMap::from([(COLLECTION.to_string(), collection_state(Vec::new()))]),
             aliases: aliases.clone(),
             peer_address_by_id: peer_address_by_id.clone(),
@@ -234,7 +234,7 @@ mod tests {
             quota_config,
         };
 
-        (shadow, actual)
+        (expected, actual)
     }
 
     #[test]
