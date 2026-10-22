@@ -67,7 +67,11 @@ pub unsafe fn avx_euclid_similarity_half(
         for i in 0..n - m {
             result += (f16::to_f32(*ptr1_f16.add(i)) - f16::to_f32(*ptr2_f16.add(i))).powi(2);
         }
-        -result
+        if result == 0.0 && v1 != v2 {
+            -ScoreType::from_bits(1)
+        } else {
+            -result
+        }
     }
 }
 

@@ -56,7 +56,11 @@ pub(crate) unsafe fn euclid_similarity_sse(
         for i in 0..n - m {
             result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
         }
-        -result
+        if result == 0.0 && v1 != v2 {
+            -ScoreType::from_bits(1)
+        } else {
+            -result
+        }
     }
 }
 

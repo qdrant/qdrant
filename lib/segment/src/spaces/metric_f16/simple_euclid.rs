@@ -60,8 +60,17 @@ pub fn euclid_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
-    -v1.iter()
-        .zip(v2)
-        .map(|(a, b)| (f16::to_f32(*a) - f16::to_f32(*b)).powi(2))
-        .sum::<f32>()
+    let mut sum: ScoreType = 0.0;
+    let mut any_diff = false;
+    for (&a, &b) in v1.iter().zip(v2) {
+        if a != b {
+            any_diff = true;
+            sum += (f16::to_f32(a) - f16::to_f32(b)).powi(2);
+        }
+    }
+    if any_diff && sum == 0.0 {
+        -ScoreType::from_bits(1)
+    } else {
+        -sum
+    }
 }
