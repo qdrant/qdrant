@@ -1,21 +1,19 @@
 //! Report field-level differences between consensus state machine and applied state
 
 use std::collections::{BTreeSet, HashMap};
-use std::mem;
 
 use collection::collection_state;
 use collection::shards::CollectionId;
 
 use crate::content_manager::alias_mapping::AliasMapping;
-use crate::content_manager::consensus_state_machine::{ApplyOutcome, ClusterState};
-use crate::content_manager::errors::StorageResult;
+use crate::content_manager::consensus_state_machine::ClusterState;
 use crate::quota::QuotaConfig;
 use crate::types::{PeerAddressById, PeerMetadataById};
 
 /// Lightweight view of applied consensus state.
 ///
 /// Mirrors [`ClusterState`], but stores only collection names instead of full collection state,
-/// because validation reads it after each covered consensus operation.
+/// so validation can check cluster fields without reading every collection.
 ///
 /// Full state is loaded on demand for collections the operation may have changed.
 #[derive(Clone, Debug)]
@@ -134,48 +132,6 @@ pub fn collection(
         .into_iter()
         .map(|field| format!("collections[{name}].{field}"))
         .collect()
-}
-
-/// Compare outcomes from consensus state machine and operation handler.
-/// Errors match by variant, error messages are ignored.
-pub fn outcome<T>(outcome: &ApplyOutcome, result: &StorageResult<T>) -> Option<String> {
-    match (outcome, result) {
-        (ApplyOutcome::Accepted(_), Ok(_)) => {
-            log::debug!("Consensus state machine and operation handler accepted operation");
-            None
-        }
-
-        (ApplyOutcome::Rejected(state_machine), Err(handler))
-            if mem::discriminant(state_machine) == mem::discriminant(handler) =>
-        {
-            log::debug!(
-                "Consensus state machine and operation handler rejected operation: \
-                 `{state_machine}` and `{handler}`"
-            );
-
-            None
-        }
-
-        (ApplyOutcome::Accepted(_), Err(handler)) => Some(format!(
-            "state machine accepted operation, \
-             but operation handler returned error `{handler}`"
-        )),
-
-        (ApplyOutcome::Rejected(state_machine), Ok(_)) => Some(format!(
-            "state machine rejected operation with `{state_machine}`, \
-             but operation handler applied it successfully"
-        )),
-
-        (ApplyOutcome::Rejected(state_machine), Err(handler)) => Some(format!(
-            "state machine and operation handler rejected operation differently: \
-             `{state_machine}` vs `{handler}`"
-        )),
-
-        (ApplyOutcome::NotCovered, _) => {
-            log::debug!("Consensus state machine does not cover operation");
-            None
-        }
-    }
 }
 
 #[cfg(test)]

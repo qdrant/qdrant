@@ -27,11 +27,10 @@ use tokio::time::error::Elapsed;
 use tokio_util::task::AbortOnDropHandle;
 use tonic::transport::Uri;
 
+use self::state_machine::CachedStateMachine;
 use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
-use super::consensus_shadow::{ShadowMode, ShadowStateMachine};
-use super::consensus_state_machine::ApplyOutcome;
 use super::errors::{StorageError, StorageResult};
 use crate::content_manager::consensus::applied_log::{AppliedEntryRing, AppliedLog};
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
@@ -45,6 +44,8 @@ use crate::types::{
 };
 
 mod action_applier;
+pub mod state_machine;
+mod validation;
 
 pub mod prelude {
     use crate::content_manager::toc::TableOfContent;
@@ -113,8 +114,8 @@ pub struct ConsensusManager<C: CollectionContainer> {
     next_peer_metadata_update_attempt: Mutex<Instant>,
     /// Recently applied entries, for `/profiler/consensus_lag`. Diagnostics only.
     applied_log: AppliedEntryRing,
-    /// Consensus state machine used to check `ToC` operation handlers. `None` when disabled.
-    shadow: Option<Mutex<ShadowStateMachine>>,
+    /// Consensus state machine used to plan application and check applied state
+    state_machine: Mutex<CachedStateMachine>,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -145,6 +146,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             wal.clear()?;
         }
 
+        let state_machine = CachedStateMachine::new(toc.as_ref(), &persistent_state);
+
         Ok(Self {
             persistent: RwLock::new(persistent_state),
             is_leader_established: Arc::new(IsReady::default()),
@@ -159,14 +162,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             message_send_failures: Default::default(),
             next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
             applied_log: Default::default(),
-            shadow: None,
+            state_machine: Mutex::new(state_machine),
         })
-    }
-
-    /// Configure consensus state machine validation
-    pub fn with_shadow(mut self, mode: ShadowMode) -> Self {
-        self.shadow = mode.build();
-        self
     }
 
     /// Snapshot of the recently applied entries on this peer, oldest first.
@@ -328,16 +325,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// 3. Report to the listeners
     ///
     /// Return if consensus should be stopped.
-    pub fn on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
+    pub fn _on_peer_remove(&self, peer_id: PeerId) -> Result<bool, StorageError> {
         let operation = ConsensusOperations::RemovePeer(peer_id);
 
-        let result = if self.this_peer_id() == peer_id {
-            // If the current peer is removed, we stop consensus and no longer need CSM validation
-            self.invalidate_shadow();
-            self.remove_peer(peer_id)
-        } else {
-            self.apply_with_shadow(&operation, || self.remove_peer(peer_id))
-        };
+        let result = self.remove_peer(peer_id);
 
         let (report, stop_consensus) = match result {
             Ok(()) => {
@@ -389,13 +380,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         // Consensus reapplies a failed entry after restart.
         //
-        // An operation handler may return an error after persisting only part of the operation,
-        // while consensus state machine may have applied it completely.
-        //
-        // Invalidate state machine so it reloads state left by the handler
-        // and both paths have the same state for the retry.
+        // The handler or action applier may have persisted only part of the operation,
+        // while the in-memory state machine has applied it completely.
+        // Reload the state those writes left behind before planning the retry.
         if result.is_err() {
-            self.invalidate_shadow();
+            self.invalidate_state_machine();
         }
 
         result
@@ -509,16 +498,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<bool, StorageError> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
-        // TODO: Check all peer changes with CSM before applying and persisting `conf_state`.
-        //
-        // Currently, we update Raft membership *before* running the peer-change handlers.
-        // We call `apply_conf_change` *before* `match single_change.change_type() { ... }`.
-        //
-        // For example, if we are removing a peer and `remove_peer` returns `BadRequest` error,
-        // the peer is already absent from Raft and no longer receives new Raft log entries,
-        // but is still present in `peer_address_by_id`. Replicas and transfers still refer to it.
-        //
-        // When CSM applies operations, user errors must leave Raft membership unchanged.
+        self.apply_conf_change_with_state_machine(entry, &change, raw_node)
+    }
+
+    pub fn _apply_conf_change_entry<T: Storage>(
+        &self,
+        entry: &RaftEntry,
+        raw_node: &mut RawNode<T>,
+    ) -> Result<bool, StorageError> {
+        let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
         let conf_state = raw_node.apply_conf_change(&change)?;
         log::debug!("Applied conf state {conf_state:?}");
@@ -546,13 +534,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                                 ))
                             })?;
 
-                        let operation = ConsensusOperations::AddPeer {
-                            peer_id: single_change.node_id,
-                            uri: peer_uri.to_string(),
-                        };
-                        self.apply_with_shadow(&operation, || {
-                            self.add_peer(single_change.node_id, peer_uri)
-                        })?;
+                        self.add_peer(single_change.node_id, peer_uri)?;
                     } else {
                         debug_assert!(
                             self.peer_address_by_id()
@@ -563,7 +545,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 }
                 ConfChangeType::RemoveNode => {
                     log::debug!("Removing node {}", single_change.node_id);
-                    let stop = self.on_peer_remove(single_change.node_id)?;
+                    let stop = self._on_peer_remove(single_change.node_id)?;
                     stop_consensus |= stop;
                 }
                 ConfChangeType::AddLearnerNode => {
@@ -579,9 +561,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         };
 
                         // Add peer to state
-                        self.apply_with_shadow(&operation, || {
-                            self.add_peer(single_change.node_id, peer_uri.clone())
-                        })?;
+                        self.add_peer(single_change.node_id, peer_uri)?;
 
                         // Notify the submitter, that operation was performed
                         {
@@ -623,25 +603,25 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
 
-        // Apply to consensus state machine before operation handler changes applied state
-        let outcome = self.shadow_apply(&operation);
+        if matches!(
+            operation,
+            ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_)
+        ) {
+            return Err(StorageError::service_error(
+                "Peer changes must be committed as configuration entries",
+            ));
+        }
 
-        // If consensus state machine is enabled, we need to clone the operation,
-        // because `apply_consensus_op` consumes it
-        let shadow_op = if self.shadow.is_some() {
-            operation.clone()
-        } else {
-            // Consensus state machine is disabled, this is a dummy operation that is never used
-            ConsensusOperations::RequestSnapshot
-        };
+        let result = self.apply_with_state_machine(&operation);
+        self.notify_operation(&operation, result.clone());
+        result
+    }
+
+    pub fn _apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
+        let operation: ConsensusOperations = entry.try_into()?;
 
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
-        let result = self.apply_consensus_op(operation);
-
-        // Compare operation handler with consensus state machine
-        if let Some(outcome) = outcome {
-            self.shadow_compare(&shadow_op, &outcome, &result);
-        }
+        let result = self.apply_consensus_op(operation.clone());
 
         if let Some(on_apply) = on_apply
             && on_apply.send(result.clone()).is_err()
@@ -701,58 +681,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         Ok(status)
     }
 
-    fn shadow_apply(&self, operation: &ConsensusOperations) -> Option<ApplyOutcome> {
-        let shadow = self.shadow.as_ref()?;
-        let persistent = self.persistent.read();
-
-        let outcome = shadow
-            .lock()
-            .apply(self.toc.as_ref(), &persistent, operation);
-
-        Some(outcome)
-    }
-
-    fn shadow_compare<T>(
-        &self,
-        operation: &ConsensusOperations,
-        outcome: &ApplyOutcome,
-        result: &StorageResult<T>,
-    ) {
-        let Some(shadow) = self.shadow.as_ref() else {
-            return;
-        };
-
-        let persistent = self.persistent.read();
-
-        shadow
-            .lock()
-            .compare(self.toc.as_ref(), &persistent, operation, outcome, result);
-    }
-
-    /// Run one non-normal-entry handler between state-machine planning and comparison
-    fn apply_with_shadow<T>(
-        &self,
-        operation: &ConsensusOperations,
-        apply: impl FnOnce() -> StorageResult<T>,
-    ) -> StorageResult<T> {
-        let outcome = self.shadow_apply(operation);
-        let result = apply();
-
-        if let Some(outcome) = outcome {
-            self.shadow_compare(operation, &outcome, &result);
-        }
-
-        result
-    }
-
-    fn invalidate_shadow(&self) {
-        let Some(shadow) = &self.shadow else {
-            return;
-        };
-
-        shadow.lock().invalidate();
-    }
-
     // Outer `Result` is "fatal" error, inner `Result` is "transient"/"local" error.
     pub fn apply_snapshot(
         &self,
@@ -762,7 +690,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         // Snapshot recovery replaces applied state without updating consensus state machine.
         // Invalidate it so it rebuilds from recovered state on next entry.
-        self.invalidate_shadow();
+        self.invalidate_state_machine();
 
         let SnapshotData {
             collections_data,
@@ -883,7 +811,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn add_peer(&self, peer_id: PeerId, uri: Uri) -> Result<(), StorageError> {
-        self.persistent.write().insert_peer(peer_id, uri)
+        let mut persistent = self.persistent.write();
+        let result = persistent.insert_peer(peer_id, uri);
+        // Peer discovery updates addresses without going through consensus.
+        // Invalidate the CSM cache so the next operation reloads the new address.
+        // Keep the persistent lock until invalidation finishes, so planning cannot start
+        // between the address update and cache invalidation.
+        self.invalidate_state_machine();
+        result
     }
 
     pub fn remove_peer(&self, peer_id: PeerId) -> Result<(), StorageError> {
