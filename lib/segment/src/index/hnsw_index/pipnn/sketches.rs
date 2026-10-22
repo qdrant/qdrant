@@ -6,8 +6,8 @@
 //!
 //! Hyperplanes are drawn from a Gaussian, seeded from the build's rng. Their normal vectors then
 //! point in uniformly random directions, so two residuals at angle `θ` get the same bit with
-//! probability `1 - θ/π` (Charikar's LSH), as the paper assumes. The prototype drew them
-//! uniformly from a cube, which favors its diagonals.
+//! probability `1 - θ/π` (Charikar's LSH), as the paper assumes. Hyperplanes drawn uniformly
+//! from a cube instead would favor its diagonals.
 //!
 //! Which vectors are projected:
 //! - The original vectors, also where HNSW scores with quantized ones. The hash only needs the
@@ -51,7 +51,7 @@ use crate::vector_storage::{
 /// Number of hyperplanes, one hash bit each.
 ///
 /// The paper found 8 to 16 bits equally good, 6 worse, and uses 12 (Figure 13).
-pub(super) const HASH_BITS: usize = 12;
+const HASH_BITS: usize = 12;
 
 const _: () = assert!(HASH_BITS <= u16::BITS as usize, "a hash must fit in u16");
 
@@ -69,12 +69,12 @@ pub(super) struct Sketches {
 }
 
 impl Sketches {
-    /// Projections of the vectors of `points` (sorted, distinct). `None` if the vectors aren't
-    /// dense, so the caller builds with HNSW.
+    /// Projections of the vectors of `points`, which must be sorted and distinct, as debug builds
+    /// check. `None` if the vectors aren't dense, so the caller builds with HNSW.
     ///
     /// Reads the vectors once, in batches, in parallel on the current rayon pool, and checks
-    /// `stopped` before each batch. Fails on points out of order, repeated, or past the stored
-    /// vectors, and on failed reads.
+    /// `stopped` before each batch. Fails on points past the stored vectors, which the id tracker
+    /// can hold, and on failed reads.
     pub fn new(
         vector_storage: &VectorStorageEnum,
         points: &[PointOffsetType],
@@ -127,11 +127,10 @@ impl Sketches {
             VectorStorageEnum::EmptyDense(_) => return Ok(None),
         };
 
-        if !points.is_sorted_by(|a, b| a < b) {
-            return Err(OperationError::service_error(
-                "PiPNN sketch points must be sorted and distinct",
-            ));
-        }
+        debug_assert!(
+            points.is_sorted_by(|a, b| a < b),
+            "points must be sorted and distinct",
+        );
         let count = vector_storage.total_vector_count();
         if let Some(&last) = points.last()
             && last as usize >= count
@@ -163,9 +162,7 @@ impl Sketches {
 
         batches.into_par_iter().try_for_each(|(batch, own)| {
             check_process_stopped(stopped)?;
-            let _scope = ambient::unmeasured_guard(reason(
-                "No need to accumulate hardware, since this is an internal operation",
-            ));
+            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
             let start = batch[0];
             vectors.for_each_in_batch(batch, &mut |i, vector| {
                 own[(batch[i] - start) as usize] = project(vector, &hyperplanes, normalize);
@@ -534,7 +531,6 @@ mod tests {
 
     /// The vector of `id` in the space it's projected in, which for the Turbo storages is
     /// rotated.
-    #[expect(clippy::wildcard_enum_match_arm, reason = "test code")]
     fn projected(storage: &VectorStorageEnum, id: usize) -> Vec<f64> {
         let id = id as PointOffsetType;
         let rotated = match storage {
@@ -616,9 +612,9 @@ mod tests {
                 .zip(&vectors[p])
                 .map(|(c, p)| c - p)
                 .collect();
-            for bit in 0..HASH_BITS {
+            let bits = exact[c].iter().zip(&exact[p]).enumerate();
+            for (bit, (&(at_c, magnitude_c), &(at_p, magnitude_p))) in bits {
                 let (residual, _) = project_exactly(&residual, &hyperplanes, bit);
-                let ((at_c, magnitude_c), (at_p, magnitude_p)) = (exact[c][bit], exact[p][bit]);
                 let margin = 1e-6 * (at_c.abs() + at_p.abs()) + 1e-12 * (magnitude_c + magnitude_p);
                 if residual.abs() <= margin {
                     near_ties += 1;
@@ -958,19 +954,31 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsorted_repeated_or_missing_points() {
+    fn rejects_points_past_the_stored_vectors() {
         let _scope = ambient::test_guard();
         let vectors = random_vectors(Kind::F32, Distance::Dot, POINTS, DIM, 15);
         let fixture = Fixture::new(Kind::F32, Distance::Dot, &vectors);
-        let stopped = AtomicBool::new(false);
         let missing = POINTS as PointOffsetType;
-        for points in [&[2, 1][..], &[1, 1], &[0, missing]] {
-            let result = Sketches::new(&fixture.storage, points, SEED, &stopped);
-            assert!(
-                matches!(result, Err(OperationError::ServiceError { .. })),
-                "{points:?}",
-            );
-        }
+        let result = Sketches::new(
+            &fixture.storage,
+            &[0, missing],
+            SEED,
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(result, Err(OperationError::ServiceError { .. })));
+    }
+
+    /// The caller's contract, which `build_links` checks once for all parts.
+    #[rstest]
+    #[case::unsorted(&[2, 1])]
+    #[case::repeated(&[1, 1])]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "points must be sorted and distinct")]
+    fn unsorted_or_repeated_points_fail_in_debug_builds(#[case] points: &[PointOffsetType]) {
+        let _scope = ambient::test_guard();
+        let vectors = random_vectors(Kind::F32, Distance::Dot, POINTS, DIM, 15);
+        let fixture = Fixture::new(Kind::F32, Distance::Dot, &vectors);
+        let _ = Sketches::new(&fixture.storage, points, SEED, &AtomicBool::new(false));
     }
 
     /// Byte vectors are stored as they are, but Cosine only sees their directions: a vector
