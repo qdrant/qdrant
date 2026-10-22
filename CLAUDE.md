@@ -92,3 +92,4 @@ Full rules with examples: `.github/review-rules.md`. Tests and benchmarks are ex
   - Ignore struct fields explicitly (`field: _`) instead of using `..`.
   - Avoid `matches!` for the same reason.
 - Don't use the `transmute_*` helpers in new code; use `bytemuck` or `zerocopy`.
+- Don't co-locate structures in large files, prefer isolating logical blocks in independent files / modules.
