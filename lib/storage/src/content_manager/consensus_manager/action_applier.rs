@@ -71,9 +71,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             | Action::UpdateAliases { .. } => self.toc.apply_action(action),
 
             #[cfg(feature = "staging")]
-            Action::TestSlowDown(_) | Action::TestTransientError(_) => {
-                self.toc.apply_action(action)
-            }
+            Action::TestSlowDown(_)
+            | Action::TestTransientError(_)
+            | Action::TestPauseShardTransferStart
+            | Action::TestPauseReshardingAbort
+            | Action::TestCrashAfterScaleDownStateClear => self.toc.apply_action(action),
         }
     }
 }

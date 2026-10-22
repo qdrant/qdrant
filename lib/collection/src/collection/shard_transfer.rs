@@ -197,18 +197,6 @@ impl Collection {
             shard_transfer.method = Some(default_method);
         }
 
-        // Staging-only: pause the sender before it registers anything of the `Start`, so a test
-        // can kill this peer while the entry is committed but not yet applied. On restart the
-        // entry is replayed before this peer rejoins consensus, spawning a driver for a transfer
-        // the rest of the cluster may have aborted since.
-        #[cfg(feature = "staging")]
-        if consensus.this_peer_id() == shard_transfer.from
-            && let Ok(secs) = std::env::var("QDRANT_STAGING_SHARD_TRANSFER_START_DELAY_SEC")
-            && let Ok(secs) = secs.parse::<f64>()
-        {
-            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
-        }
-
         let do_transfer = {
             let this_peer_id = consensus.this_peer_id();
             let is_receiver = this_peer_id == shard_transfer.to;
@@ -700,9 +688,6 @@ impl Collection {
         //   abort the transfer
         // - transfer not registered: everything already applied, no-op
 
-        #[cfg(feature = "staging")]
-        let is_resharding_abort = resharding_state.is_some();
-
         if let Some(state) = resharding_state {
             self.abort_resharding(
                 state.key(),
@@ -713,17 +698,6 @@ impl Collection {
                 },
             )
             .await?;
-        }
-
-        // Staging-only: pause after clearing resharding state, but before aborting
-        // transfer, so test can kill this peer mid-abort (resharding state cleared,
-        // transfer still registered) and verify that replay converges.
-        #[cfg(feature = "staging")]
-        if is_resharding_abort
-            && let Ok(secs) = std::env::var("QDRANT_STAGING_RESHARDING_ABORT_DELAY_SEC")
-            && let Ok(secs) = secs.parse::<f64>()
-        {
-            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
         }
 
         let shard_holder = self.shards_holder.read().await;

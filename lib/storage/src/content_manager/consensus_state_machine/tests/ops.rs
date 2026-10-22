@@ -1318,6 +1318,11 @@ fn resharding_abort_up() {
 
     let actions = actions.as_slice();
 
+    #[cfg(feature = "staging")]
+    let [actions @ .., Action::TestPauseReshardingAbort] = actions else {
+        panic!("abort hooks must follow the state clear, got {actions:?}");
+    };
+
     assert!(matches!(
         actions,
         [
@@ -1397,6 +1402,16 @@ fn resharding_abort_down_reverts_replicas() {
 
     let actions = actions.as_slice();
 
+    #[cfg(feature = "staging")]
+    let [
+        actions @ ..,
+        Action::TestCrashAfterScaleDownStateClear,
+        Action::TestPauseReshardingAbort,
+    ] = actions
+    else {
+        panic!("abort hooks must follow the state clear, got {actions:?}");
+    };
+
     assert!(matches!(
         actions,
         [
@@ -1458,6 +1473,16 @@ fn resharding_abort_down_without_key_matches_unmapped_shards() {
     assert_eq!(shard_ids, &[1, 2]);
 
     let actions = actions.as_slice();
+
+    #[cfg(feature = "staging")]
+    let [
+        actions @ ..,
+        Action::TestCrashAfterScaleDownStateClear,
+        Action::TestPauseReshardingAbort,
+    ] = actions
+    else {
+        panic!("abort hooks must follow the state clear, got {actions:?}");
+    };
 
     assert!(matches!(
         actions,
@@ -1555,6 +1580,11 @@ fn transfer_start() {
         panic!("starting a transfer should be accepted, got {outcome:?}");
     };
     let actions = actions.as_slice();
+
+    #[cfg(feature = "staging")]
+    let [Action::TestPauseShardTransferStart, actions @ ..] = actions else {
+        panic!("sender pause must precede registration, got {actions:?}");
+    };
 
     assert!(matches!(
         actions,
@@ -1683,6 +1713,11 @@ fn transfer_start_applies_optimizer_override_to_default_method() {
         panic!("starting a transfer should be accepted, got {outcome:?}");
     };
     let actions = actions.as_slice();
+
+    #[cfg(feature = "staging")]
+    let [Action::TestPauseShardTransferStart, actions @ ..] = actions else {
+        panic!("sender pause must precede registration, got {actions:?}");
+    };
 
     assert!(matches!(
         actions,
@@ -1941,6 +1976,16 @@ fn transfer_abort_resharding_clears_resharding_first() {
         .expect("transfer unregister");
     assert!(clear < unregister);
 
+    #[cfg(feature = "staging")]
+    assert!(matches!(
+        &actions[clear + 1..],
+        [
+            Action::TestPauseReshardingAbort,
+            Action::StopTransferDriver { .. },
+            ..
+        ]
+    ));
+
     let collection = machine.state().collection(COLLECTION).expect("collection");
     assert!(collection.resharding.is_none());
     assert!(collection.transfers.is_empty());
@@ -2136,6 +2181,11 @@ fn set_shard_replica_state_dead_aborts_scale_up() {
     };
     let actions = actions.as_slice();
 
+    #[cfg(feature = "staging")]
+    let [actions @ .., Action::TestPauseReshardingAbort] = actions else {
+        panic!("abort hooks must follow the state clear, got {actions:?}");
+    };
+
     assert!(matches!(
         actions.last(),
         Some(Action::SetReshardingState { state: None, .. })
@@ -2177,6 +2227,11 @@ fn set_shard_replica_state_missing_shard_finishes_abort() {
     };
     let actions = actions.as_slice();
 
+    #[cfg(feature = "staging")]
+    let [actions @ .., Action::TestPauseReshardingAbort] = actions else {
+        panic!("abort hooks must follow the state clear, got {actions:?}");
+    };
+
     assert!(matches!(
         actions.last(),
         Some(Action::SetReshardingState { state: None, .. })
@@ -2189,6 +2244,65 @@ fn set_shard_replica_state_missing_shard_finishes_abort() {
             .resharding
             .is_none()
     );
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn scale_down_abort_hooks_precede_dead_write_and_are_omitted_on_replay() {
+    let mut state = auto_resharding_state(2);
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.resharding = Some(ReshardState::new(
+        Uuid::nil(),
+        ReshardingDirection::Down,
+        PEER_ID,
+        1,
+        None,
+    ));
+    collection
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::ReshardingScaleDown);
+
+    let operation = set_replica_state_op(0, OTHER_PEER_ID, ReplicaState::Dead, None);
+    let mut machine = state_machine(state.clone());
+    let Ok(Plan { actions, .. }) = machine.apply(&operation) else {
+        panic!("marking a scale-down replica dead should be accepted");
+    };
+
+    let clear = actions
+        .iter()
+        .position(|action| matches!(action, Action::SetReshardingState { state: None, .. }))
+        .expect("resharding clear");
+    assert!(matches!(
+        &actions[clear + 1..],
+        [
+            Action::TestCrashAfterScaleDownStateClear,
+            Action::TestPauseReshardingAbort,
+            Action::SetReplicaState {
+                shard_id: 0,
+                peer_id: OTHER_PEER_ID,
+                state: ReplicaState::Dead,
+                ..
+            },
+        ]
+    ));
+
+    for action in &actions[..=clear] {
+        state.apply_action(action);
+    }
+
+    let mut replay = state_machine(state);
+    let Ok(Plan { actions, .. }) = replay.apply(&operation) else {
+        panic!("replay after clearing resharding state should be accepted");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetReplicaState { .. }]
+    ));
+    assert_eq!(replay.state(), machine.state());
 }
 
 fn set_replica_state_op(
@@ -2909,6 +3023,17 @@ fn remove_peer_force_aborts_resharding() {
             .iter()
             .any(|action| matches!(action, Action::SetReshardingState { state: None, .. }))
     );
+    #[cfg(feature = "staging")]
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        Action::TestPauseReshardingAbort | Action::TestCrashAfterScaleDownStateClear
+    )));
+    assert!(matches!(
+        actions.last(),
+        Some(Action::RemovePeer {
+            peer_id: OTHER_PEER_ID,
+        })
+    ));
     assert!(
         machine
             .state()
@@ -3186,6 +3311,24 @@ fn test_transient_error() {
     ));
 
     assert_eq!(actions, vec![Action::TestTransientError(operation)]);
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn staging_hook_actions_change_nothing() {
+    let state = transfer_state();
+
+    for action in [
+        Action::TestPauseShardTransferStart,
+        Action::TestPauseReshardingAbort,
+        Action::TestCrashAfterScaleDownStateClear,
+    ] {
+        let mut applied = state.clone();
+        applied.apply_action(&action);
+
+        assert_eq!(applied, state);
+        assert_eq!(action.collection(), None);
+    }
 }
 
 /// The action a staging operation emits only has an effect outside `ClusterState`

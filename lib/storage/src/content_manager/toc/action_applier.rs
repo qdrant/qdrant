@@ -396,6 +396,7 @@ impl TableOfContent {
             Action::SetReshardingState { collection, state } => {
                 let collection = self.get_collection_unchecked(collection).await?;
                 let shard_holder = collection.shards_holder();
+
                 shard_holder
                     .write()
                     .await
@@ -515,6 +516,24 @@ impl TableOfContent {
 
             #[cfg(feature = "staging")]
             Action::TestTransientError(operation) => operation.execute(self.this_peer_id),
+
+            #[cfg(feature = "staging")]
+            Action::TestPauseShardTransferStart => {
+                crate::content_manager::staging::pause_shard_transfer_start().await;
+                Ok(())
+            }
+
+            #[cfg(feature = "staging")]
+            Action::TestPauseReshardingAbort => {
+                crate::content_manager::staging::pause_resharding_abort().await;
+                Ok(())
+            }
+
+            #[cfg(feature = "staging")]
+            Action::TestCrashAfterScaleDownStateClear => {
+                crate::content_manager::staging::crash_after_scale_down_state_clear();
+                Ok(())
+            }
         }
     }
 

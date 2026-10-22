@@ -915,6 +915,17 @@ impl ClusterState {
             state: None,
         });
 
+        #[cfg(feature = "staging")]
+        if let Some(resharding) = &state.resharding
+            && resharding.stage < ReshardingStage::ReadHashRingCommitted
+        {
+            if resharding.direction == ReshardingDirection::Down {
+                actions.push(Action::TestCrashAfterScaleDownStateClear);
+            }
+
+            actions.push(Action::TestPauseReshardingAbort);
+        }
+
         Ok(actions)
     }
 
@@ -1063,10 +1074,17 @@ impl ClusterState {
         let mut transfer = transfer.clone();
         transfer.method = Some(method);
 
-        let mut actions = vec![Action::RegisterTransfer {
+        let mut actions = Actions::new();
+
+        #[cfg(feature = "staging")]
+        if context.peer_id == transfer.from {
+            actions.push(Action::TestPauseShardTransferStart);
+        }
+
+        actions.push(Action::RegisterTransfer {
             collection: collection.clone(),
             transfer: transfer.clone(),
-        }];
+        });
 
         let destination_shard = transfer.to_shard_id.unwrap_or(transfer.shard_id);
 
