@@ -446,7 +446,7 @@ fn retry_after_failed_save(
     Persistent::load_or_init(storage_dir.path(), true, false, None).unwrap()
 }
 
-fn consensus_manager(
+pub(super) fn consensus_manager(
     storage_dir: &TempDir,
     toc: Arc<TableOfContent>,
 ) -> ConsensusManager<TableOfContent> {
