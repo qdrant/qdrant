@@ -1,12 +1,10 @@
-use std::sync::atomic::AtomicU64;
-
 use common::types::PointOffsetType;
 use rand::Rng;
 use rayon::ThreadPool;
 
 use super::block_filter::{BlockFilter, BlockSkip};
 use super::context::{GraphBuildContext, GraphParams};
-use super::payload_blocks::{FieldBlocks, PayloadBlock};
+use super::payload_blocks::PayloadBlock;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -111,44 +109,5 @@ impl<'a> LocalBuilder<'a> {
     pub fn finalize(self) -> (GraphLayersBuilder, usize) {
         let indexed_vectors = self.points.len();
         (self.graph, indexed_vectors)
-    }
-}
-
-/// A method that builds the graph on this machine, on top of a [`LocalBuilder`].
-pub(super) trait LocalMethod<'a> {
-    /// The state the method builds on.
-    fn local(&mut self) -> &mut LocalBuilder<'a>;
-
-    /// Link one payload block in its own id space and merge it into the graph.
-    fn build_block(
-        &mut self,
-        points: &[PointOffsetType],
-        counter: &AtomicU64,
-    ) -> OperationResult<()>;
-
-    /// Build the blocks of `field` worth building, given the graph built so far, with
-    /// [`Self::build_block`].
-    fn build_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
-        let FieldBlocks {
-            progress,
-            skip,
-            blocks,
-            loader,
-        } = field;
-        let counter = progress.track_progress(None);
-        for block in blocks {
-            check_process_stopped(self.local().ctx.stopped)?;
-            // Read the points of one block at a time, and only of blocks small enough to build
-            if !self.local().fits(block.cardinality) {
-                continue;
-            }
-            let Some(block) = loader.load(block)? else {
-                continue;
-            };
-            if self.local().should_build(&block, skip) {
-                self.build_block(&block.points, &counter)?;
-            }
-        }
-        Ok(())
     }
 }
