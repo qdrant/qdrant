@@ -850,6 +850,9 @@ impl VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.insert_empty(key),
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.insert_empty(key),
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.insert_empty(key),
+            // Behind a feature flag: releases before empty Turbo slots fail to
+            // optimize a segment that holds them
+            VectorStorageEnum::MultiDenseTurbo(v) if v.writes_empty_slots() => v.insert_empty(key),
             VectorStorageEnum::DenseVolatile(_)
             | VectorStorageEnum::DenseMemmap(_)
             | VectorStorageEnum::DenseMemmapByte(_)
