@@ -73,7 +73,8 @@ pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_b: TypedMultiDenseVectorRef<'_, T>,
 ) -> ScoreType {
     debug_assert!(!multi_dense_a.is_empty());
-    debug_assert!(!multi_dense_b.is_empty());
+    // `multi_dense_b` is empty for a point without the vector: it matches
+    // nothing, so it scores -inf.
     let mut sum = 0.0;
     for dense_a in multi_dense_a.multi_vectors() {
         let mut max_sim = ScoreType::NEG_INFINITY;

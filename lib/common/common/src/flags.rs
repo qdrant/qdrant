@@ -92,6 +92,12 @@ pub struct FeatureFlags {
     /// Existing `GraphInline` segments are always readable, regardless of this flag.
     pub combined_vector_storage: bool,
 
+    /// Store a TurboQuant multivector point that has no vector, or whose vector was deleted, as
+    /// an offset entry without encoded records, instead of one placeholder record. Only gates
+    /// writing: both forms are always readable. Releases before reading was added fail to
+    /// optimize a segment that holds such entries.
+    pub turbo_multivector_empty_slots: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].
@@ -118,6 +124,7 @@ impl Default for FeatureFlags {
             transfer_raw_payloads: true,
             persist_proxy_segments: false,
             combined_vector_storage: true,
+            turbo_multivector_empty_slots: false,
             serverless_compatible: false,
         }
     }
@@ -154,6 +161,7 @@ impl FeatureFlags {
             transfer_raw_payloads: true,
             persist_proxy_segments: true,
             combined_vector_storage: true,
+            turbo_multivector_empty_slots: true,
             serverless_compatible: false,
         }
     }
