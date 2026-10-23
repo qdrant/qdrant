@@ -392,9 +392,9 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
         )
     }
 
-    /// [`tombstone_points`](Self::tombstone_points), recording the moves among `retirements` in the
-    /// segment's move log before the tombstones. The same caveat applies: only for points the batch
-    /// does not store here again.
+    /// [`tombstone_points`](Self::tombstone_points), except that the moves among `retirements` are
+    /// recorded in the segment's move log instead of tombstoned. The same caveat applies: only for
+    /// points the batch does not store here again.
     pub fn retire_points(&mut self, retirements: &[Retirement]) -> OperationResult<()> {
         self.id_tracker.retire_points(&self.fs, retirements)
     }
