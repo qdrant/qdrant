@@ -107,6 +107,22 @@ pub(crate) mod sealed {
             unsafe { Self::top_k_avx2(operands, rows, cols, out) }
         }
 
+        /// The AVX-512F kernel, unless the type has a VNNI one.
+        ///
+        /// # Safety
+        ///
+        /// The CPU must support AVX-512F, AVX-512 VNNI, AVX2, and FMA.
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx512_vnni<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // SAFETY: AVX-512F, AVX2, and FMA, from the caller
+            unsafe { Self::top_k_avx512(operands, rows, cols, out) }
+        }
+
         /// # Safety
         ///
         /// The CPU must support NEON.
@@ -164,6 +180,17 @@ pub(crate) mod sealed {
         ) -> Result<(), F::Error> {
             // SAFETY: forwarded from the caller
             unsafe { crate::x86_64::top_k_u8(operands, rows, cols, out) }
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn top_k_avx512_vnni<F: MatrixOperands<Elem = Self>>(
+            operands: &F,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> Result<(), F::Error> {
+            // SAFETY: forwarded from the caller
+            unsafe { crate::x86_64::top_k_vnni(operands, rows, cols, out) }
         }
 
         #[cfg(target_arch = "aarch64")]
