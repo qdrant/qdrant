@@ -1,8 +1,8 @@
 //! In-memory consensus state machine.
 //!
-//! [`ConsensusStateMachine::apply`] evaluates an operation against [`ClusterState`].
-//! For accepted operations, it returns ordered [`Action`]s to be applied to `TableOfContent`
-//! and applies the same actions to in-memory state; rejected operations leave state unchanged.
+//! [`ConsensusStateMachine::plan`] evaluates an operation against [`ClusterState`] without
+//! changing it. Accepted plans contain ordered [`Action`]s and the operation response.
+//! Storage executes the actions before advancing the cached state through the same actions.
 //!
 //! [`ClusterState::apply_action`] cannot fail.
 //! Applying the first N actions reproduces state left by a crash after N writes.
@@ -70,7 +70,7 @@ impl ConsensusStateMachine {
         &self.context
     }
 
-    /// Replace collection state after an unmodeled or external change
+    /// Replace collection state after an external change
     pub fn resync_collection(
         &mut self,
         collection: &CollectionId,
@@ -82,117 +82,122 @@ impl ConsensusStateMachine {
         };
     }
 
-    /// Plan `operation` and advance the state by the actions it returns
-    pub fn apply(&mut self, operation: &ConsensusOperations) -> ApplyOutcome {
-        let outcome = self.plan(operation);
-
-        if let ApplyOutcome::Accepted(actions) = &outcome {
-            for action in actions {
-                self.state.apply_action(action);
-            }
+    /// Advance the state through actions whose storage execution completed successfully
+    pub fn apply_actions(&mut self, actions: &[Action]) {
+        for action in actions {
+            self.state.apply_action(action);
         }
-
-        outcome
     }
 
-    /// Plan `operation` and return actions to apply or an error
-    fn plan(&self, operation: &ConsensusOperations) -> ApplyOutcome {
-        match operation {
-            ConsensusOperations::CollectionMeta(operation) => self.plan_collection_meta(operation),
+    /// Plan an operation without changing state, preserving its response even for cleanup actions
+    pub fn plan(&self, operation: &ConsensusOperations) -> StorageResult<Plan> {
+        let result = if let ConsensusOperations::CollectionMeta(operation) = operation
+            && let CollectionMetaOperations::DeleteCollection(operation) = operation.as_ref()
+        {
+            // Deleting an absent collection still emits cleanup, but returns false to the caller.
+            self.state.has_collection(&operation.0)
+        } else {
+            true
+        };
+
+        let actions = match operation {
+            ConsensusOperations::CollectionMeta(operation) => {
+                self.plan_collection_meta(operation)?
+            }
 
             ConsensusOperations::UpdatePeerMetadata { peer_id, metadata } => {
-                let actions = self.state.plan_update_peer_metadata(*peer_id, metadata);
-                ApplyOutcome::Accepted(actions)
+                self.state.plan_update_peer_metadata(*peer_id, metadata)
             }
 
             ConsensusOperations::UpdateClusterMetadata { key, value } => {
-                let actions = self.state.plan_update_cluster_metadata(key, value);
-                ApplyOutcome::Accepted(actions)
+                self.state.plan_update_cluster_metadata(key, value)
             }
 
-            ConsensusOperations::SetQuotaConfig(config) => {
-                ApplyOutcome::Accepted(self.state.plan_set_quota_config(config))
-            }
+            ConsensusOperations::SetQuotaConfig(config) => self.state.plan_set_quota_config(config),
 
             ConsensusOperations::AddPeer { peer_id, uri } => {
-                ApplyOutcome::new(self.state.plan_add_peer(*peer_id, uri))
+                self.state.plan_add_peer(*peer_id, uri)?
             }
 
             ConsensusOperations::RemovePeer(peer_id) => {
-                ApplyOutcome::new(self.state.plan_remove_peer(&self.context, *peer_id))
+                self.state.plan_remove_peer(&self.context, *peer_id)?
             }
 
-            // Never reach the apply path: consensus handles them in its own thread
+            // Internal signals belong to the consensus thread, never to the committed-entry path.
             ConsensusOperations::RequestSnapshot | ConsensusOperations::ReportSnapshot { .. } => {
-                ApplyOutcome::NotCovered
+                return Err(StorageError::service_error(format!(
+                    "Internal consensus signal cannot be applied as a committed operation: {operation:?}"
+                )));
             }
-        }
+        };
+
+        Ok(Plan { actions, result })
     }
 
-    fn plan_collection_meta(&self, operation: &CollectionMetaOperations) -> ApplyOutcome {
+    fn plan_collection_meta(
+        &self,
+        operation: &CollectionMetaOperations,
+    ) -> StorageResult<Vec<Action>> {
         match operation {
-            CollectionMetaOperations::Nop { .. } => ApplyOutcome::Accepted(Vec::new()),
+            CollectionMetaOperations::Nop { .. } => Ok(Vec::new()),
 
             CollectionMetaOperations::CreateCollection(operation) => {
-                ApplyOutcome::new(self.state.plan_create_collection(&self.context, operation))
+                self.state.plan_create_collection(&self.context, operation)
             }
 
             CollectionMetaOperations::UpdateCollection(operation) => {
-                ApplyOutcome::new(self.state.plan_update_collection(&self.context, operation))
+                self.state.plan_update_collection(&self.context, operation)
             }
 
             CollectionMetaOperations::DeleteCollection(operation) => {
-                ApplyOutcome::Accepted(self.state.plan_delete_collection(operation))
+                Ok(self.state.plan_delete_collection(operation))
             }
 
             CollectionMetaOperations::ChangeAliases(operation) => {
-                ApplyOutcome::new(self.state.plan_change_aliases(operation))
+                self.state.plan_change_aliases(operation)
             }
 
-            CollectionMetaOperations::Resharding(collection, operation) => ApplyOutcome::new(
-                self.state
-                    .plan_resharding(&self.context, collection, operation),
-            ),
+            CollectionMetaOperations::Resharding(collection, operation) => self
+                .state
+                .plan_resharding(&self.context, collection, operation),
 
-            CollectionMetaOperations::TransferShard(collection, operation) => ApplyOutcome::new(
-                self.state
-                    .plan_transfer(&self.context, collection, operation),
-            ),
+            CollectionMetaOperations::TransferShard(collection, operation) => self
+                .state
+                .plan_transfer(&self.context, collection, operation),
 
-            CollectionMetaOperations::SetShardReplicaState(operation) => ApplyOutcome::new(
-                self.state
-                    .plan_set_shard_replica_state(&self.context, operation),
-            ),
+            CollectionMetaOperations::SetShardReplicaState(operation) => self
+                .state
+                .plan_set_shard_replica_state(&self.context, operation),
 
             CollectionMetaOperations::CreateShardKey(operation) => {
-                ApplyOutcome::new(self.state.plan_create_shard_key(&self.context, operation))
+                self.state.plan_create_shard_key(&self.context, operation)
             }
             CollectionMetaOperations::DropShardKey(operation) => {
-                ApplyOutcome::new(self.state.plan_drop_shard_key(&self.context, operation))
+                self.state.plan_drop_shard_key(&self.context, operation)
             }
 
             CollectionMetaOperations::CreateNamedVector(operation) => {
-                ApplyOutcome::new(self.state.plan_create_named_vector(operation))
+                self.state.plan_create_named_vector(operation)
             }
             CollectionMetaOperations::DeleteNamedVector(operation) => {
-                ApplyOutcome::new(self.state.plan_delete_named_vector(operation))
+                self.state.plan_delete_named_vector(operation)
             }
 
             CollectionMetaOperations::CreatePayloadIndex(operation) => {
-                ApplyOutcome::new(self.state.plan_create_payload_index(operation))
+                self.state.plan_create_payload_index(operation)
             }
             CollectionMetaOperations::DropPayloadIndex(operation) => {
-                ApplyOutcome::new(self.state.plan_drop_payload_index(operation))
+                self.state.plan_drop_payload_index(operation)
             }
 
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestSlowDown(operation) => {
-                ApplyOutcome::Accepted(vec![Action::TestSlowDown(operation.clone())])
+                Ok(vec![Action::TestSlowDown(operation.clone())])
             }
 
             #[cfg(feature = "staging")]
             CollectionMetaOperations::TestTransientError(operation) => {
-                ApplyOutcome::Accepted(vec![Action::TestTransientError(operation.clone())])
+                Ok(vec![Action::TestTransientError(operation.clone())])
             }
         }
     }
@@ -407,26 +412,9 @@ impl NodeContext {
     }
 }
 
-/// What the machine decided about an operation.
-#[derive(Clone, Debug)]
-pub enum ApplyOutcome {
-    /// Apply these actions, in order
-    Accepted(Vec<Action>),
-
-    /// Reject the operation with a user error.
-    /// Consensus counts the entry as applied and moves on.
-    Rejected(StorageError),
-
-    /// Operation is not yet implemented.
-    /// Caller must rebuild the state from `TableOfContent`.
-    NotCovered,
-}
-
-impl ApplyOutcome {
-    pub fn new(result: StorageResult<Vec<Action>>) -> Self {
-        match result {
-            Ok(actions) => ApplyOutcome::Accepted(actions),
-            Err(err) => ApplyOutcome::Rejected(err),
-        }
-    }
+/// Ordered storage actions and the response returned after they complete
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plan {
+    pub actions: Vec<Action>,
+    pub result: bool,
 }

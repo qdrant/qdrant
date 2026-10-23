@@ -109,7 +109,7 @@ pub struct TableOfContent {
     telemetry: TocTelemetryCollector,
     /// Cluster-wide resource quotas, applied to updates on top of strict mode.
     quota_manager: Arc<QuotaManager>,
-    /// Collections changed outside consensus since the last shadow resync
+    /// Collections changed outside consensus since the last state machine resync
     dirty_collections: parking_lot::Mutex<BTreeSet<CollectionId>>,
 }
 
@@ -303,7 +303,7 @@ impl TableOfContent {
         })
     }
 
-    /// Mark a collection for shadow-state resync
+    /// Mark a collection for consensus state machine resync
     pub fn mark_collection_dirty(&self, collection: &str) {
         self.dirty_collections.lock().insert(collection.to_string());
     }

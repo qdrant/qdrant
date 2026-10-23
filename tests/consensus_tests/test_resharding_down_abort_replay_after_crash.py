@@ -1,13 +1,12 @@
-"""A peer crashed mid scale-down `abort_resharding` orphans its resharding state.
+"""A scale-down abort replays after clearing resharding state, before marking a replica Dead.
 
-`abort_resharding` reverts the scaled-down receiver replicas to `Active` (persisting
-each) before it clears `resharding_state`. A crash in that gap leaves replica=Active
-durable with resharding_state still set; the replay's `is_resharding()` gate then
-reads `Active` and skips the abort, so the state survives forever. Only the gate path
-(SetReplicaState(Dead)) hits this — the explicit abort op re-runs whole on replay and
-converges. Fails until the state clear is persisted before the replica revert.
+Failure detection commits SetReplicaState(Dead) for the scaled-down receiver.
+CSM clears resharding state before persisting the receiver replica's Dead state.
+Crash a follower between those writes and verify that replay completes the replica update
+without leaving resharding state on any peer.
 """
 
+import json
 import pathlib
 import threading
 import time
@@ -16,7 +15,7 @@ from .fixtures import create_collection, upsert_random_points
 from .test_resharding import all_replicas, start_resharding
 from .utils import *
 
-COLLECTION = "test_resharding_down_revert_crash_orphans_state"
+COLLECTION = "test_resharding_down_abort_replay_after_crash"
 
 
 def _resharding_ops(uri) -> int:
@@ -36,8 +35,8 @@ def _replica_state(uri, shard_id, peer_id):
     )
 
 
-def test_scale_down_revert_crash_orphans_resharding_state(tmp_path: pathlib.Path):
-    env = {"QDRANT_STAGING_RESHARDING_CRASH_ON_SCALE_DOWN_REVERT": "1"}
+def test_scale_down_abort_replays_after_state_clear_crash(tmp_path: pathlib.Path):
+    env = {"QDRANT_STAGING_RESHARDING_CRASH_AFTER_STATE_CLEAR": "1"}
     peer_uris, peer_dirs, _ = start_cluster(tmp_path, 3, extra_env=env)
     skip_if_no_feature(peer_uris[0], "staging")
     wait_for(all_peers_are_voters, peer_uris)
@@ -118,8 +117,8 @@ def test_scale_down_revert_crash_orphans_resharding_state(tmp_path: pathlib.Path
     victim_idx = next(i for i in live_idxs if i != survivor_idx)
     survivor_uri = peer_uris[survivor_idx]
 
-    # The staging crash fires on the peer whose working dir holds this marker.
-    (peer_dirs[victim_idx] / "crash_on_scale_down_revert").write_text("")
+    # Crash this follower after clearing resharding state, before persisting Dead.
+    (peer_dirs[victim_idx] / "crash_after_resharding_state_clear").write_text("")
 
     stop = threading.Event()
 
@@ -145,13 +144,22 @@ def test_scale_down_revert_crash_orphans_resharding_state(tmp_path: pathlib.Path
     wait_for(lambda: victim_proc.proc.poll() is not None, wait_for_timeout=60)
     stop.set()
     driver.join(timeout=10)
+    assert victim_proc.proc.returncode == 1
     victim_proc.kill()  # already exited; frees its ports for the restart
     processes.remove(victim_proc)
+
+    # Prove the crash reached the intended persisted-state boundary.
+    collection_dir = peer_dirs[victim_idx] / "storage" / "collections" / COLLECTION
+    assert json.loads((collection_dir / "resharding_state.json").read_text()) is None
+    replica_state = json.loads(
+        (collection_dir / str(surviving) / "replica_state.json").read_text()
+    )
+    assert replica_state["peers"][str(receiver_peer)] == "ReshardingScaleDown"
 
     wait_for(lambda: _resharding_ops(survivor_uri) == 0, wait_for_timeout=30)
 
     # Restart victim first (restores quorum), then receiver. Liveness only — the
-    # orphaned shard may never pass /readyz.
+    # receiver's replica may still be recovering when the peer comes online.
     for idx in (victim_idx, receiver_idx):
         peer_uris[idx] = start_peer(
             peer_dirs[idx],
@@ -170,3 +178,8 @@ def test_scale_down_revert_crash_orphans_resharding_state(tmp_path: pathlib.Path
         except Exception:
             stuck[uri] = _resharding_ops(uri)
     assert not stuck, f"resharding state diverged after restart: {stuck}"
+
+    wait_for(
+        lambda: _replica_state(peer_uris[victim_idx], surviving, receiver_peer)
+        not in (None, "ReshardingScaleDown")
+    )

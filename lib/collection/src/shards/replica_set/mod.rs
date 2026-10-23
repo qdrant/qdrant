@@ -52,6 +52,8 @@ use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_initializing_flag_path;
 use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
+#[cfg(feature = "testing")]
+use crate::update_handler::Optimizer;
 
 //    │    Collection Created
 //    │
@@ -422,6 +424,14 @@ impl ShardReplicaSet {
             .map(|optimizer| optimizer.segment_optimizer_config().clone())
             .collect();
         Some(configs)
+    }
+
+    /// Optimizers currently installed on the local shard, for recreation tests
+    #[cfg(feature = "testing")]
+    pub async fn local_optimizers_for_test(&self) -> Option<Arc<Vec<Arc<Optimizer>>>> {
+        let local = self.local.read().await;
+        let local_shard = local.as_ref()?.local_shard()?;
+        Some(local_shard.optimizers.load_full())
     }
 
     pub fn shard_key(&self) -> Option<ShardKey> {
