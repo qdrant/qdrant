@@ -74,8 +74,8 @@ impl TextSearchRequestInternal {
 
 impl TextScoringQuery {
     /// The query terms, tokenized as the field's text index tokenizes a
-    /// query. A field the schema holds no text index for is an error: there
-    /// is nothing to score it with.
+    /// ranking query. A field the schema holds no text index for is an error:
+    /// there is nothing to score it with.
     pub fn tokenize(&self, schema: &PayloadIndexSchema) -> OperationResult<Vec<String>> {
         self.tokenize_field(schema.schema.get(&self.field))
     }
@@ -101,7 +101,7 @@ impl TextScoringQuery {
         };
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
         let mut terms = Vec::new();
-        tokenizer.tokenize_query(&self.text, |token| terms.push(token.into_owned()));
+        tokenizer.tokenize_ranking_query(&self.text, |token| terms.push(token.into_owned()));
         Ok(terms)
     }
 }
@@ -119,7 +119,7 @@ pub fn cut_at_threshold(points: &mut Vec<ScoredPoint>, score_threshold: Option<S
 /// A query context seeded with the text statistics of `field` for `terms`
 /// over `idf_corpus` (every point when `None`), ready to be filled over the
 /// shard's segments by
-/// [`fill_query_context`](super::query_context::fill_query_context).
+/// [`fill_segment_query_context`](super::query_context::fill_segment_query_context).
 pub fn init_text_query_context(
     field: &JsonPath,
     idf_corpus: Option<&Filter>,

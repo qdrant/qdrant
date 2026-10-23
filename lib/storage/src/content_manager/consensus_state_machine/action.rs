@@ -212,11 +212,11 @@ pub enum Action {
         config: QuotaConfig,
     },
 
-    /// TODO: this action has to sleep when implemented for `TableOfContent`
+    /// Introduce the requested delay on the selected peers
     #[cfg(feature = "staging")]
     TestSlowDown(TestSlowDown),
 
-    /// TODO: this action has to return an error when implemented for `TableOfContent`
+    /// Draw a transient failure on the selected peers each time the action is applied
     #[cfg(feature = "staging")]
     TestTransientError(TestTransientError),
 }

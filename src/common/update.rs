@@ -911,22 +911,30 @@ pub async fn do_create_index(
     // here, before the operation is proposed at all.
     shard::quota::global().check_update()?;
 
-    let Some(field_schema) = operation.field_schema else {
+    let CreateFieldIndex {
+        field_name,
+        field_schema,
+    } = operation;
+
+    let Some(field_schema) = field_schema else {
         return Err(StorageError::bad_request(
             "Can't auto-detect field type, please specify `field_schema` in the request",
         ));
     };
+
+    let toc = dispatcher.toc(&auth, &pass).clone();
+
+    check_nested(&toc, &field_name, &field_schema)?;
+
     // Once, before the schema is proposed and applied: every node, and the
     // direct index operation below, must see the same params.
     let field_schema = field_schema.normalized();
 
     let consensus_op = CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
         collection_name: collection_name.clone(),
-        field_name: operation.field_name.clone(),
+        field_name: field_name.clone(),
         field_schema: field_schema.clone(),
     });
-
-    let toc = dispatcher.toc(&auth, &pass).clone();
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
@@ -936,12 +944,37 @@ pub async fn do_create_index(
     do_create_index_internal(
         toc,
         collection_name,
-        operation.field_name,
+        field_name,
         Some(field_schema),
         internal_params,
         params,
     )
     .await
+}
+
+/// Refuse a per-element index that `field_name` can't have, or that some peer would not
+/// build per element.
+fn check_nested(
+    toc: &TableOfContent,
+    field_name: &JsonPath,
+    field_schema: &PayloadFieldSchema,
+) -> Result<(), StorageError> {
+    if field_schema.nested().is_none() {
+        return Ok(());
+    }
+    field_schema
+        .validate_for_field(field_name)
+        .map_err(StorageError::bad_request)?;
+    if !toc
+        .get_channel_service()
+        .all_peers_at_version(&NESTED_PAYLOAD_INDEX_FROM_VERSION)
+    {
+        return Err(StorageError::bad_request(format!(
+            "`nested` requires all peers to run version {} or later",
+            *NESTED_PAYLOAD_INDEX_FROM_VERSION,
+        )));
+    }
+    Ok(())
 }
 
 pub async fn do_create_index_internal(

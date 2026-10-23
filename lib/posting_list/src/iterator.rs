@@ -2,9 +2,9 @@ use std::iter::FusedIterator;
 
 use common::types::PointOffsetType;
 
-use crate::value_handler::PostingValue;
+use crate::value_handler::{PostingValue, ValueHandler};
 use crate::visitor::PostingVisitor;
-use crate::{PostingElement, PostingLen};
+use crate::{CHUNK_LEN, PostingElement, PostingLen};
 
 pub struct PostingIterator<'a, V: PostingValue> {
     visitor: PostingVisitor<'a, V>,
@@ -105,6 +105,8 @@ impl<V: PostingValue> FusedIterator for PostingIterator<'_, V> {}
 pub struct PostingLenIterator<'a, V: PostingValue> {
     visitor: PostingVisitor<'a, V>,
     current: Option<PostingLen>,
+    /// The offset of `current`, while there is one.
+    current_offset: Option<usize>,
     offset: usize,
 }
 
@@ -113,7 +115,102 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
         Self {
             visitor,
             current: None,
+            current_offset: None,
             offset: 0,
+        }
+    }
+
+    /// Call `f` for every element from the current one, if any, else from the
+    /// next, to the end of the list, in order, and leave the iterator
+    /// exhausted.
+    ///
+    /// The same elements a loop of [`Iterator::next`] would yield, a chunk at
+    /// a time: each chunk is decompressed once and its lengths read from
+    /// neighbouring offsets, with no per-element offset arithmetic.
+    pub fn for_each_remaining(&mut self, f: impl FnMut(PostingLen)) {
+        self.walk(None, f);
+    }
+
+    /// [`Self::for_each_remaining`] up to the first element whose id is at or
+    /// past `end`, which becomes the current one. Returns whether there is
+    /// such an element: `false` leaves the iterator exhausted.
+    pub fn for_each_below(&mut self, end: PointOffsetType, f: impl FnMut(PostingLen)) -> bool {
+        self.walk(Some(end), f)
+    }
+
+    fn walk(&mut self, end: Option<PointOffsetType>, mut f: impl FnMut(PostingLen)) -> bool {
+        let mut offset = self.current_offset.unwrap_or(self.offset);
+        let len = self.visitor.len();
+        let chunks = self.visitor.list.chunks_len();
+        let var_data_len = self.visitor.list.var_size_data.len();
+        let mut stop = None;
+        while offset < len {
+            let chunk_idx = offset / CHUNK_LEN;
+            if chunk_idx < chunks {
+                let ids = *self.visitor.decompressed_chunk(chunk_idx);
+                let list = &self.visitor.list;
+                let sized_values = &list.get_chunk_unchecked(chunk_idx).sized_values;
+                // The value after the chunk's last: the next chunk's first, or
+                // the first remainder's.
+                let after = list
+                    .get_chunk(chunk_idx + 1)
+                    .map(|chunk| chunk.sized_values[0])
+                    .or_else(|| list.get_remainder(0).map(|e| e.value));
+                // Ids rise within a chunk, so one comparison with its last
+                // tells whether `end` falls inside it.
+                let from = offset % CHUNK_LEN;
+                let upto = match end {
+                    Some(end) if ids[CHUNK_LEN - 1] >= end => {
+                        from + ids[from..].partition_point(|&id| id < end)
+                    }
+                    _ => CHUNK_LEN,
+                };
+                for local in from..upto {
+                    let next = sized_values.get(local + 1).copied().or(after);
+                    let value_len =
+                        V::Handler::value_len(sized_values[local], || next, var_data_len);
+                    f(PostingLen {
+                        id: ids[local],
+                        value_len,
+                    });
+                }
+                if upto < CHUNK_LEN {
+                    stop = Some(chunk_idx * CHUNK_LEN + upto);
+                    break;
+                }
+                offset = (chunk_idx + 1) * CHUNK_LEN;
+            } else {
+                let list = &self.visitor.list;
+                for local in offset % CHUNK_LEN..list.remainders_len() {
+                    let e = list.get_remainder(local).expect("within the remainders");
+                    if end.is_some_and(|end| e.id.get() >= end) {
+                        stop = Some(chunks * CHUNK_LEN + local);
+                        break;
+                    }
+                    let next = list.get_remainder(local + 1).map(|r| r.value);
+                    let value_len = V::Handler::value_len(e.value, || next, var_data_len);
+                    f(PostingLen {
+                        id: e.id.get(),
+                        value_len,
+                    });
+                }
+                break;
+            }
+        }
+        match stop {
+            // As if `next` had just yielded it.
+            Some(at) => {
+                self.current = self.visitor.value_len_by_offset(at);
+                self.current_offset = Some(at);
+                self.offset = at + 1;
+                true
+            }
+            None => {
+                self.offset = len;
+                self.current = None;
+                self.current_offset = None;
+                false
+            }
         }
     }
 
@@ -121,6 +218,12 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
     /// [`Self::advance_until_greater_or_equal`], if any.
     pub fn current(&self) -> Option<PostingLen> {
         self.current
+    }
+
+    /// Index of [`Self::current`] in the posting list, so that data kept
+    /// alongside the list in posting order can be looked up for it.
+    pub fn current_offset(&self) -> Option<usize> {
+        self.current_offset
     }
 
     /// Advances until the current id is greater than or equal to `target_id`,
@@ -144,12 +247,14 @@ impl<'a, V: PostingValue> PostingLenIterator<'a, V> {
             .search_greater_or_equal(target_id, Some(self.offset))
         else {
             self.current = None;
+            self.current_offset = None;
             self.offset = self.visitor.len();
             return None;
         };
 
         debug_assert!(offset >= self.offset);
         self.current = self.visitor.value_len_by_offset(offset);
+        self.current_offset = self.current.map(|_| offset);
         self.offset = offset;
         self.current
     }
@@ -159,10 +264,12 @@ impl<V: PostingValue> Iterator for PostingLenIterator<'_, V> {
     type Item = PostingLen;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.visitor.value_len_by_offset(self.offset).inspect(|_| {
+        let at = self.offset;
+        let next = self.visitor.value_len_by_offset(at).inspect(|_| {
             self.offset += 1;
         });
         self.current = next;
+        self.current_offset = next.map(|_| at);
         next
     }
 

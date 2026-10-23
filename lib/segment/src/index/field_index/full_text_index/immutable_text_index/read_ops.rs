@@ -15,7 +15,7 @@ use crate::types::{FieldCondition, PayloadKeyType};
 
 impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
     fn tokenizer(&self) -> &Tokenizer {
-        &self.storage.tokenizer
+        &self.tokenizer
     }
 
     fn telemetry_index_type(&self) -> &'static str {
@@ -24,6 +24,10 @@ impl<S: UniversalRead> FullTextIndexRead for ImmutableFullTextIndex<S> {
 
     fn points_count(&self) -> usize {
         self.inverted_index.points_count()
+    }
+
+    fn document_count(&self) -> usize {
+        self.inverted_index.document_count()
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {

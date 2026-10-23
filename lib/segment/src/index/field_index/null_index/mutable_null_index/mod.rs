@@ -64,7 +64,7 @@ mod tests {
                 2 => builder.add_point(i, &[]).unwrap(),
                 3 => builder.add_point(i, &[&Value::Bool(true)]).unwrap(),
                 _ => unreachable!(),
-            }
+            };
         }
 
         let null_index = builder.finalize().unwrap();

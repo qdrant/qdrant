@@ -368,6 +368,7 @@ mod tests {
             vector: None,
             shard_key: None,
             order_value: None,
+            location: None,
         }
     }
 

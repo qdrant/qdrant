@@ -7,6 +7,7 @@ mod tonic_telemetry;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use ::api::grpc::grpc_health_v1::health_check_response::ServingStatus;
@@ -260,20 +261,19 @@ pub fn init_internal(
         .block_on(async {
             let socket = SocketAddr::from((host.parse::<IpAddr>().unwrap(), internal_grpc_port));
             let qdrant_service = QdrantService::default();
-            // Only enforce authentication on the internal API when the operator
-            // explicitly opts in. The API key is still forwarded unconditionally
-            // on outgoing internal requests, so the cluster keeps working
-            // across a rolling upgrade while `enforce_internal_auth` is false.
-            //
             // The internal layer accepts read-write keys only: a read-only key
             // or a JWT must not be able to join consensus or move shards.
-            let internal_auth_layer = if settings.service.enforce_internal_auth.unwrap_or_default()
-            {
+            let internal_auth_layer = if settings.service.enforce_internal_auth() {
                 AuthKeys::try_create(&settings.service, toc.clone())
                     .map(auth::AuthLayer::new_internal)
             } else {
                 None
             };
+
+            let keepalive_interval =
+                Duration::from_millis(settings.cluster.p2p.keepalive_interval_ms);
+            let keepalive_timeout =
+                Duration::from_millis(settings.cluster.p2p.keepalive_timeout_ms);
 
             let points_internal_service =
                 PointsInternalService::new(toc.clone(), settings.service.clone());
@@ -294,7 +294,12 @@ pub fn init_internal(
                 // We prefer to keep more pending reset streams even though this may be expensive,
                 // versus an internal error that is very hard to handle.
                 // More info: <https://github.com/qdrant/qdrant/issues/1907>
-                .http2_max_pending_accept_reset_streams(Some(1024));
+                .http2_max_pending_accept_reset_streams(Some(1024))
+                // Detect and close stale/ghost connections behind stateful network layers.
+                // See: <https://github.com/qdrant/qdrant/issues/11271>
+                .http2_keepalive_interval(Some(keepalive_interval))
+                .http2_keepalive_timeout(Some(keepalive_timeout))
+                .tcp_keepalive(Some(keepalive_interval));
 
             if let Some(config) = tls_config {
                 log::info!("TLS enabled for internal gRPC API (TTL not supported)");

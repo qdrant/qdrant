@@ -62,7 +62,7 @@ impl IndexBuilder {
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         match self {
             IndexBuilder::MutableGridstore(builder) => builder.add_point(id, payload),
             IndexBuilder::Mmap(builder) => builder.add_point(id, payload),

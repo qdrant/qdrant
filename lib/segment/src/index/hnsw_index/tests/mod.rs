@@ -1,5 +1,6 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
+mod test_heal_payload_links;
 
 use common::ambient;
 use common::types::PointOffsetType;

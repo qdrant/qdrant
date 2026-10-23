@@ -22,6 +22,26 @@ use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, Value
 use crate::index::payload_config::IndexMutability;
 use crate::types::Memory;
 
+/// A point's tokens, as [`FullTextIndex::tokenize_document`] produces them.
+pub(super) struct DocumentTokens<'a> {
+    pub tokens: Vec<Cow<'a, str>>,
+    /// How many of `tokens` are sentinels that were inserted, rather than found in the text.
+    sentinels: usize,
+}
+
+impl DocumentTokens<'_> {
+    /// Number of tokens in the document, for BM25 length normalization.
+    ///
+    /// Discounts the inserted sentinels by count rather than by value:
+    /// `tokenize_doc` does not strip the sentinel from user text the way
+    /// `tokenize_query` does, so a payload containing it has those tokens
+    /// indexed, and they must be counted. This also keeps the length the same
+    /// with phrase matching on or off.
+    pub fn length(&self) -> u32 {
+        self.tokens.len().saturating_sub(self.sentinels) as u32
+    }
+}
+
 impl FullTextIndex {
     pub fn new_mmap(
         path: PathBuf,
@@ -48,31 +68,34 @@ impl FullTextIndex {
             return Ok(None);
         }
 
-        let Some(on_disk_index) =
+        let opened = if memory.is_heap() {
+            ImmutableFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
+                .map(|index| (index.can_score(), Self::Immutable(index)))
+        } else {
             OnDiskFullTextIndex::open(&MmapFs, path, config, populate, deleted_points)?
-        else {
+                .map(|index| (index.can_score(), Self::OnDisk(index)))
+        };
+        let Some((can_score, index)) = opened else {
             return Ok(None);
         };
 
-        // Lengths cannot be recovered from anything else on disk, so report the
+        // Lengths and term frequencies cannot be recovered from anything else
+        // on disk, so report the
         // index absent and let the caller rebuild it from payload. The decision
         // belongs here rather than in `OnDiskInvertedIndex::open`: the read-only
         // stack never builds, and would drop the field instead.
         //
         // Reachable past the probe above when the sidecar exists but `open`
-        // rejected it, so the log says which of the two happened.
-        if scoring && !on_disk_index.records_doc_len() {
-            log::info!("Text index rejected its document length sidecar, rebuilding from payload");
+        // rejected it, or when scoring has no term frequencies, so the log says
+        // which of the two happened.
+        if scoring && !can_score {
+            log::info!(
+                "Text index rejected its document lengths or has no term frequencies, \
+                 rebuilding from payload"
+            );
             return Ok(None);
         }
 
-        let index = if memory.is_heap() {
-            // Load into RAM, use mmap as backing storage
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
-        } else {
-            // Use on-disk directly
-            Self::OnDisk(on_disk_index)
-        };
         Ok(Some(index))
     }
 
@@ -122,64 +145,56 @@ impl FullTextIndex {
     /// from, in document order.
     ///
     /// With phrase matching on, a sentinel separates the values of an array, so
-    /// that no phrase matches across two of them.
+    /// that no phrase matches across two of them. Another one goes before each
+    /// detached token (see [`Tokenizer::tokenize_doc_detached`]), so that it is
+    /// next to no other token, and only matches a phrase of itself alone.
     ///
-    /// A stream made only of those boundaries is returned empty, so that an
+    /// A stream made only of those sentinels is returned empty, so that an
     /// array whose values all tokenize to nothing is not a document, the same
     /// as a single value that tokenizes to nothing.
     pub(super) fn tokenize_document<'a>(
         tokenizer: &'a Tokenizer,
         phrase_matching: bool,
         values: &'a [String],
-    ) -> Vec<Cow<'a, str>> {
+    ) -> DocumentTokens<'a> {
         let insert_boundaries = phrase_matching && values.len() > 1;
 
-        let mut str_tokens: Vec<Cow<str>> =
-            Vec::with_capacity((values.len() * 2).saturating_sub(1));
+        let mut tokens: Vec<Cow<str>> = Vec::with_capacity((values.len() * 2).saturating_sub(1));
+        let mut sentinels = 0;
         for (i, value) in values.iter().enumerate() {
             if insert_boundaries && i > 0 {
-                str_tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+                tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+                sentinels += 1;
             }
-            tokenizer.tokenize_doc(value, |token| {
-                str_tokens.push(token);
+            tokenizer.tokenize_doc_detached(value, |token, detached| {
+                if phrase_matching && detached {
+                    tokens.push(Cow::Borrowed(ARRAY_BOUNDARY_SENTINEL));
+                    sentinels += 1;
+                }
+                tokens.push(token);
             });
         }
 
-        if Self::document_length(&str_tokens, phrase_matching, values) == 0 {
-            str_tokens.clear();
+        let mut document = DocumentTokens { tokens, sentinels };
+        if document.length() == 0 {
+            document.tokens.clear();
+            document.sentinels = 0;
         }
-
-        str_tokens
-    }
-
-    /// Number of tokens in a document, for BM25 length normalization.
-    ///
-    /// Discounts the boundaries [`Self::tokenize_document`] inserted by count
-    /// rather than by value: `tokenize_doc` does not strip the sentinel from
-    /// user text the way `tokenize_query` does, so a payload containing it has
-    /// those tokens indexed, and they must be counted.
-    pub(super) fn document_length(
-        str_tokens: &[Cow<str>],
-        phrase_matching: bool,
-        values: &[String],
-    ) -> u32 {
-        let boundaries = match phrase_matching && values.len() > 1 {
-            true => values.len() - 1,
-            false => 0,
-        };
-        str_tokens.len().saturating_sub(boundaries) as u32
+        document
     }
 
     /// Encode a point's tokens as the document the storage holds.
     ///
-    /// Phrase matching needs them in the order they were written; without it
-    /// only membership matters, so they are stored sorted and deduplicated.
+    /// Phrase matching needs them in the order they were written, and an
+    /// index that scores (records lengths) needs their repeats, so both keep
+    /// them as written. Otherwise only membership matters, and they are stored
+    /// sorted and deduplicated.
     pub(super) fn serialize_stored_document(
         str_tokens: Vec<Cow<str>>,
         phrase_matching: bool,
         doc_len: Option<u32>,
     ) -> OperationResult<Vec<u8>> {
-        let tokens = if phrase_matching {
+        let tokens = if phrase_matching || doc_len.is_some() {
             str_tokens
         } else {
             str_tokens.into_iter().sorted().dedup().collect()
@@ -230,7 +245,8 @@ impl FullTextIndex {
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.clear_cache(),
-            Self::Immutable(index) => index.clear_cache(),
+            // Nothing to drop: no file is open, and the load cleared their cache.
+            Self::Immutable(_) => Ok(()),
             Self::OnDisk(index) => index.clear_cache(),
         }
     }
@@ -340,7 +356,8 @@ impl ValueIndexer for FullTextGridstoreIndexBuilder {
     ) -> OperationResult<()> {
         let values: Vec<Value> = values.into_iter().map(Value::String).collect();
         let values: Vec<&Value> = values.iter().collect();
-        FieldIndexBuilderTrait::add_point(self, id, &values)
+        FieldIndexBuilderTrait::add_point(self, id, &values)?;
+        Ok(())
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -376,7 +393,7 @@ impl FieldIndexBuilderTrait for FullTextGridstoreIndexBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         let Some(index) = &mut self.index else {
             return Err(OperationError::service_error(
                 "FullTextIndexGridstoreBuilder: index must be initialized before adding points",

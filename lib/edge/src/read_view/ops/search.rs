@@ -1,9 +1,8 @@
 use std::cmp;
-use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::reason::Reason;
-use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
 use segment::entry::ReadSegmentEntry;
@@ -69,9 +68,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
             .map(|search| self.config.get_distance(search.query.get_vector_name()))
             .collect::<OperationResult<Vec<_>>>()?;
 
-        let Some(context) =
-            fill_query_context_over(query_context, &self.segments, &self.is_stopped)?
-        else {
+        let Some(context) = self.fill_query_context(query_context)? else {
             // No segments to search
             return Ok(vec![Vec::new(); searches.len()]);
         };
@@ -130,6 +127,45 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
 
         Ok(points_by_request)
     }
+
+    /// Fill `query_context` from this view's segments, as
+    /// `SegmentsSearcher::fill_query_context` does over a segment holder.
+    /// Statistics beyond the point count are gathered from the segments in
+    /// parallel, each into a clone of the unfilled context, and summed.
+    /// Returns `None` when there are no segments to search.
+    pub(super) fn fill_query_context(
+        &self,
+        mut query_context: QueryContext,
+    ) -> OperationResult<Option<QueryContext>> {
+        if self.segments.is_empty() {
+            return Ok(None);
+        }
+
+        // Only the available point count is gathered, too little work per
+        // segment to pay for a task each.
+        if !query_context.has_statistics_to_collect() {
+            for segment in &self.segments {
+                self.check_stopped()?;
+                segment
+                    .read_segment()
+                    .fill_query_context(&mut query_context)?;
+            }
+            self.check_stopped()?;
+            return Ok(Some(query_context));
+        }
+
+        // Every count is still zero, so each clone carries only its own segment.
+        debug_assert_eq!(query_context.available_point_count(), 0);
+        let forks = self.par_map_segments(|segment| {
+            let mut fork = query_context.clone();
+            segment.read_segment().fill_query_context(&mut fork)?;
+            Ok(fork)
+        })?;
+        for fork in forks {
+            query_context.merge_statistics(fork);
+        }
+        Ok(Some(query_context))
+    }
 }
 
 /// Turn the raw segment scores of a single request into the scores the caller expects: apply the
@@ -169,28 +205,4 @@ fn postprocess_scores(
     }
 
     let _ = points.drain(..cmp::min(points.len(), search.offset));
-}
-
-/// Fill a [`QueryContext`] from a pre-collected snapshot of read handles.
-///
-/// Read-handle equivalent of [`shard::query::query_context::fill_query_context`], which is hard-typed
-/// to a `LockedSegmentHolder`. Returns `None` when there are no segments to search.
-pub(super) fn fill_query_context_over<H: ReadSegmentHandle>(
-    mut query_context: QueryContext,
-    segments: &[H],
-    is_stopped: &AtomicBool,
-) -> OperationResult<Option<QueryContext>> {
-    if segments.is_empty() {
-        return Ok(None);
-    }
-
-    for segment in segments {
-        check_process_stopped(is_stopped)?;
-        segment
-            .read_segment()
-            .fill_query_context(&mut query_context)?;
-    }
-
-    check_process_stopped(is_stopped)?;
-    Ok(Some(query_context))
 }

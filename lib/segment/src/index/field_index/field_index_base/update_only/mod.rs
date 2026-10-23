@@ -27,6 +27,7 @@ use crate::index::field_index::bool_index::mutable_bool_index::update_only::Upda
 use crate::index::field_index::full_text_index::UpdateOnlyTextKind;
 use crate::index::field_index::geo_index::mutable_geo_index::update_only::UpdateOnlyGeoKind;
 use crate::index::field_index::map_index::mutable_map_index::update_only::UpdateOnlyMapKind;
+use crate::index::field_index::nested_index::UpdateOnlyNestedFieldIndex;
 use crate::index::field_index::null_index::mutable_null_index::update_only::UpdateOnlyNullIndex;
 use crate::index::field_index::numeric_index::mutable_numeric_index::update_only::UpdateOnlyNumericKind;
 use crate::index::payload_config::{FullPayloadIndexType, PayloadIndexType};
@@ -57,12 +58,33 @@ pub enum UpdateOnlyFieldIndex<S: UniversalAppend + 'static> {
     FullTextIndex(UpdateOnlyValueIndex<UpdateOnlyTextKind, S>),
     BoolIndex(UpdateOnlyBoolIndex),
     NullIndex(UpdateOnlyNullIndex),
+    /// Index of the elements of a nested array, see [`UpdateOnlyNestedFieldIndex`]
+    Nested(Box<UpdateOnlyNestedFieldIndex<S>>),
 }
 
 impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
     /// Open the writer for `field`'s index of type `index_type`, under the
     /// payload index root `dir`, creating its storage if it is not there yet.
+    ///
+    /// A per-element index (a `nested` schema) is opened with its element map.
     pub fn open(
+        fs: &impl UniversalAppendFs<AppendFile = S>,
+        dir: &Path,
+        field: &JsonPath,
+        schema: &PayloadFieldSchema,
+        index_type: &FullPayloadIndexType,
+    ) -> OperationResult<Self> {
+        let inner = Self::open_flat(fs, dir, field, schema, index_type)?;
+        match schema.nested() {
+            Some(array_key) => Ok(Self::Nested(Box::new(UpdateOnlyNestedFieldIndex::open(
+                fs, dir, field, array_key, index_type, inner,
+            )?))),
+            None => Ok(inner),
+        }
+    }
+
+    /// Like [`Self::open`], for the index itself, keyed by points or by elements.
+    fn open_flat(
         fs: &impl UniversalAppendFs<AppendFile = S>,
         dir: &Path,
         field: &JsonPath,
@@ -110,7 +132,26 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
         Ok(index)
     }
 
-    /// Index `values`, the point's values for this index's field, at the slot
+    /// Payload path to extract for [`Self::add_point`], like
+    /// [`FieldIndex::input_path`](crate::index::field_index::FieldIndex::input_path).
+    /// `field` is the indexed field; a per-element index consumes its array's elements.
+    pub fn input_path<'a>(&'a self, field: &'a JsonPath) -> &'a JsonPath {
+        match self {
+            Self::Nested(index) => index.array_key(),
+            Self::IntIndex(_)
+            | Self::DatetimeIndex(_)
+            | Self::FloatIndex(_)
+            | Self::IntMapIndex(_)
+            | Self::KeywordIndex(_)
+            | Self::UuidMapIndex(_)
+            | Self::GeoIndex(_)
+            | Self::FullTextIndex(_)
+            | Self::BoolIndex(_)
+            | Self::NullIndex(_) => field,
+        }
+    }
+
+    /// Index `values`, the point's values at [`Self::input_path`], at the slot
     /// the ID tracker claimed for it. Buffers only, see
     /// [`flush`](Self::flush).
     pub fn add_point(
@@ -130,6 +171,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             Self::FullTextIndex(index) => index.add_point(fs, slot, values),
             Self::BoolIndex(index) => index.add_point(slot, values),
             Self::NullIndex(index) => index.add_point(slot, values),
+            Self::Nested(index) => index.add_point(fs, slot, values),
         }
     }
 
@@ -146,6 +188,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyFieldIndex<S> {
             Self::FullTextIndex(index) => index.flush(),
             Self::BoolIndex(index) => index.flush(fs),
             Self::NullIndex(index) => index.flush(fs),
+            Self::Nested(index) => index.flush(fs),
         }
     }
 }

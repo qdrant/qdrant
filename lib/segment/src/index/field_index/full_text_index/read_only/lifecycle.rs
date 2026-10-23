@@ -40,13 +40,19 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
         config: TextIndexParams,
     ) -> OperationResult<Option<Self>> {
         let scoring = config.scoring();
-        Ok(
-            ReadOnlyAppendableFullTextIndex::open(fs, dir, max_point_offset, config, scoring)?
-                .map(Self::Appendable),
-        )
+        Ok(ReadOnlyAppendableFullTextIndex::open(
+            fs,
+            dir,
+            max_point_offset,
+            deleted,
+            config,
+            scoring,
+        )?
+        .map(|index| Self::Appendable(Box::new(index))))
     }
 
     /// Schedule background prefetch for the immutable (mmap) format.
@@ -103,24 +109,27 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
             return Ok(None);
         }
 
-        let Some(on_disk_index) =
+        let opened = if memory.is_heap() {
+            ImmutableFullTextIndex::open(fs, path, config, populate, deleted_points)?
+                .map(|index| (index.can_score(), Self::Immutable(index)))
+        } else {
             OnDiskFullTextIndex::open(fs, path, config, populate, deleted_points)?
-        else {
+                .map(|index| (index.can_score(), Self::OnDisk(index)))
+        };
+        let Some((can_score, index)) = opened else {
             return Ok(None);
         };
 
         // Reachable past the probe when the sidecar exists but `open` rejected
-        // it, so the log says which of the two happened.
-        if scoring && !on_disk_index.records_doc_len() {
-            log::info!("Text index rejected its document length sidecar, not opened read-only");
+        // it, or when scoring has no term frequencies, so the log says which
+        // of the two happened.
+        if scoring && !can_score {
+            log::info!(
+                "Text index rejected its document lengths or has no term frequencies, \
+                 not opened read-only"
+            );
             return Ok(None);
         }
-
-        let index = if memory.is_heap() {
-            Self::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
-        } else {
-            Self::OnDisk(on_disk_index)
-        };
 
         Ok(Some(index))
     }
@@ -174,7 +183,8 @@ impl<S: UniversalRead> ReadOnlyFullTextIndex<S> {
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
             Self::Appendable(index) => index.clear_cache(),
-            Self::Immutable(index) => index.clear_cache(),
+            // Nothing to drop: no file is open, and the load cleared their cache.
+            Self::Immutable(_) => Ok(()),
             Self::OnDisk(index) => index.clear_cache(),
         }
     }

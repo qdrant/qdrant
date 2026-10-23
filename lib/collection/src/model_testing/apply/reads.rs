@@ -1407,7 +1407,8 @@ fn scores_match(a: f32, b: f32) -> bool {
 /// is the merge of the shards'. With `no_proxies` (the optimizer off, and no snapshot proxying
 /// segments) they must agree, and the statistics are exactly the model's: no segment keeps
 /// deleted points in its postings, and no proxy counts a moved point twice. So there every score
-/// is also checked against BM25 by definition, over the model's documents in that shard.
+/// is also checked against BM25 by definition, over the model's documents in that shard, unless
+/// append-only mutations left tombstones the index still counts.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn apply_query_text(
     collection: &Collection,
@@ -1423,7 +1424,7 @@ pub(super) async fn apply_query_text(
     // Query terms count once: the scorer deduplicates them. Tokenized as the shard does.
     let tokenizer = text_tokenizer(collection);
     let mut terms: Vec<String> = Vec::new();
-    tokenizer.tokenize_query(text, |token| terms.push(token.into_owned()));
+    tokenizer.tokenize_ranking_query(text, |token| terms.push(token.into_owned()));
     terms.sort();
     terms.dedup();
     let docs: AHashMap<PointIdType, TextDoc> = model
@@ -1476,10 +1477,10 @@ pub(super) async fn apply_query_text(
         .shard_number
         .get();
 
-    let mut layouts_before = Vec::with_capacity(shard_count as usize);
+    let mut exact_stats_before = Vec::with_capacity(shard_count as usize);
     let mut before = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
-        layouts_before.push(exact_stats_layout(collection, shard_id).await);
+        exact_stats_before.push(exact_stats_layout(collection, shard_id).await);
         before.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
     }
     let points = run(ShardSelectorInternal::All, limit).await;
@@ -1499,10 +1500,10 @@ pub(super) async fn apply_query_text(
         tops.push(shard_tops);
     }
     let mut after = Vec::with_capacity(shard_count as usize);
-    let mut layouts_after = Vec::with_capacity(shard_count as usize);
+    let mut exact_stats_after = Vec::with_capacity(shard_count as usize);
     for shard_id in 0..shard_count {
         after.push(run(ShardSelectorInternal::ShardId(shard_id), QUERY_TEXT_ALL).await);
-        layouts_after.push(exact_stats_layout(collection, shard_id).await);
+        exact_stats_after.push(exact_stats_layout(collection, shard_id).await);
     }
 
     // Across the collection. Exactly the matches only below the undersampling threshold: from
@@ -1547,11 +1548,11 @@ pub(super) async fn apply_query_text(
                 check_top_k(top, full, *cut, &shard_ctx);
             }
         }
-        // Exact with the optimizer running too, while the shard's layout allows it, which is
-        // what reaches the immutable and on-disk indexes: they only exist once it has run.
-        let layout = &layouts_before[shard_id as usize];
-        let exact_layout = layout.is_some() && *layout == layouts_after[shard_id as usize];
-        if no_proxies || (exact_layout && shard_stable) {
+        // Check exact scores only if the statistics match the model and did not change during the
+        // queries: either nothing can change them, or segments and scores are the same at both ends.
+        let exact_stats = &exact_stats_before[shard_id as usize];
+        let unchanged = *exact_stats == exact_stats_after[shard_id as usize];
+        if exact_stats.is_some() && (no_proxies || (unchanged && shard_stable)) {
             let shard_docs = shard_point_ids(collection, shard_id).await;
             check_scores_by_definition(full, &docs, &shard_docs, &terms, params, &shard_ctx);
         }
@@ -1832,8 +1833,10 @@ fn check_merge(points: &[ScoredPoint], shards: &[Vec<ScoredPoint>], limit: usize
 /// One shard's segments as `(id, appendable, available points)`, when its text statistics are
 /// exactly the model's: no proxy (which would count a moved point twice), and no deleted point in
 /// an immutable or on-disk segment (which masks the point but keeps its postings, so `df` counts
-/// it). `None` otherwise. Compared before and after the queries, so a layout that changed in
-/// between does not count.
+/// it), nor, under append-only mutations, in any segment (a tombstone never reaches the text
+/// index, so `N`, `df` and the token total keep counting it until the segment is rebuilt). `None`
+/// otherwise. Compared before and after the queries, so a layout that changed in between does not
+/// count.
 async fn exact_stats_layout(
     collection: &Collection,
     shard_id: u32,
@@ -1844,6 +1847,7 @@ async fn exact_stats_layout(
         .local_segments_for_test()
         .await?;
     let segments = segments.read();
+    let append_only = common::flags::feature_flags().append_only_mutations;
     let mut layout = Vec::new();
     for (id, segment) in segments.iter() {
         let segment = segment.get();
@@ -1852,7 +1856,7 @@ async fn exact_stats_layout(
             return None;
         }
         let appendable = segment.is_appendable();
-        if !appendable && segment.deleted_point_count() > 0 {
+        if (!appendable || append_only) && segment.deleted_point_count() > 0 {
             return None;
         }
         layout.push((id, appendable, segment.available_point_count()));

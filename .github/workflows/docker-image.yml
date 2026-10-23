@@ -11,6 +11,7 @@ jobs:
   build:
     # Run build on our self-hosted runner, we had trouble with shared runners
     runs-on: [self-hosted, linux, x64]
+    environment: release
     permissions:
       contents: read
       packages: write
@@ -40,7 +41,7 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username qdrant --password-stdin
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build regular image for Docker Hub
@@ -79,6 +80,7 @@ jobs:
 
   build-gpu:
     runs-on: [self-hosted, linux, x64]
+    environment: release
     permissions:
       contents: read
       packages: write
@@ -108,7 +110,7 @@ jobs:
         docker buildx create --use
 
         # Authenticate on registries
-        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username generall --password-stdin
+        echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username qdrant --password-stdin
         echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://docker.pkg.github.com -u qdrant --password-stdin
 
         # Build GPU NVIDIA image for Docker Hub

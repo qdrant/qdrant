@@ -12,6 +12,7 @@ use super::view::GridstoreView;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::reader::CONFIG_FILENAME;
+use crate::blobstore::{ITER_BATCH_SIZE, iter_batch_in_order};
 use crate::config::GridstoreConfig;
 use crate::error::BlobstoreError;
 use crate::tracker::{PageId, PointOffset, ReadOnlyTracker, Tracker};
@@ -131,8 +132,8 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         Ok(bytes.map(std::borrow::Cow::into_owned))
     }
 
-    /// Iterate over all values with point offsets below `max_id` and execute callback for each one.
-    /// Missing values are skipped.
+    /// Iterate over all values with point offsets below `max_id`, in ascending order, and
+    /// execute callback for each one. Missing values are skipped.
     ///
     /// Return `false` from the callback to stop iteration early.
     //
@@ -148,20 +149,35 @@ impl<V: Blob, S: UniversalRead> GridstoreReader<V, S> {
         E: From<BlobstoreError>,
     {
         let max_id = cmp::min(max_id, self.max_point_offset()?);
+        let view = self.view();
 
-        let point_offsets = (0..max_id).map(|point_offset| ((), point_offset));
+        let mut batch = Vec::new();
+        let mut current_offset = 0;
+        while current_offset < max_id {
+            let end_offset = current_offset.saturating_add(ITER_BATCH_SIZE).min(max_id);
+            let point_offsets = (current_offset..end_offset).map(|point_offset| ((), point_offset));
 
-        self.view().read_values::<Sequential, _, _>(
-            point_offsets,
-            |_, point_offset, value| {
-                let Some(value) = value else {
-                    return Ok(true);
-                };
+            let should_continue = iter_batch_in_order(
+                &mut batch,
+                |batch| {
+                    view.read_values::<Sequential, _, _>(
+                        point_offsets,
+                        |_, point_offset, value| -> Result<_, E> {
+                            batch.extend(value.map(|value| (point_offset, value)));
+                            Ok(true)
+                        },
+                        Some(hw_metric),
+                    )?;
+                    Ok(())
+                },
+                &mut callback,
+            )?;
+            if !should_continue {
+                return Ok(());
+            }
 
-                callback(point_offset, value)
-            },
-            Some(hw_metric),
-        )?;
+            current_offset = end_offset;
+        }
 
         Ok(())
     }

@@ -37,7 +37,7 @@ mod read_ops;
 /// [6]: crate::index::field_index::field_index_base::read_only::ReadOnlyFieldIndex
 pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
     /// Loads into RAM from appendable storage format
-    Appendable(ReadOnlyAppendableFullTextIndex<S>),
+    Appendable(Box<ReadOnlyAppendableFullTextIndex<S>>),
     /// Loads into RAM from immutable format
     Immutable(ImmutableFullTextIndex<S>),
     /// Directly reads from storage in immutable format
@@ -47,6 +47,7 @@ pub enum ReadOnlyFullTextIndex<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::ambient;
+    use common::bitvec::BitSlice;
     use common::sorted_slice::SortedSlice;
     use common::types::PointOffsetType;
     use common::universal_io::{MmapFile, ReadOnly, UniversalRead, UniversalReadFs};
@@ -78,6 +79,7 @@ mod tests {
             ascii_folding: None,
             enable_hnsw: None,
             scoring: None,
+            nested: None,
         }
     }
 
@@ -111,6 +113,7 @@ mod tests {
             &fs,
             dir.path().to_path_buf(),
             PointOffsetType::MAX,
+            BitSlice::empty(),
             config.clone(),
             false,
         )
@@ -125,6 +128,7 @@ mod tests {
             &fs,
             dir.path().to_path_buf(),
             PointOffsetType::MAX,
+            BitSlice::empty(),
             config,
             true,
         )
@@ -233,6 +237,7 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
+                BitSlice::empty(),
                 config,
             )
             .unwrap()
@@ -303,6 +308,7 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
+                BitSlice::empty(),
                 config.clone(),
             )
             .unwrap()
@@ -330,6 +336,7 @@ mod tests {
                 &fs,
                 dir.path().to_path_buf(),
                 PointOffsetType::MAX,
+                BitSlice::empty(),
                 config,
             )
             .unwrap()

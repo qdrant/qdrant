@@ -130,6 +130,58 @@ fn deseriailze_config_with_explicit_nulls() {
     assert_eq!(config, LoggerConfig::default());
 }
 
+#[test]
+fn utc_timer_matches_default_timer_format() {
+    let utc = format_time(&TimeFormat::Utc);
+    let default = format_time(&tracing_subscriber::fmt::time::SystemTime);
+
+    // e.g. `2026-10-13T02:04:27.604091Z`
+    assert_eq!(utc.len(), default.len(), "{utc} vs {default}");
+    assert!(utc.ends_with('Z'), "{utc}");
+
+    let utc = chrono::DateTime::parse_from_rfc3339(&utc).unwrap();
+    let default = chrono::DateTime::parse_from_rfc3339(&default).unwrap();
+    assert!((utc - default).abs() < chrono::TimeDelta::seconds(1));
+}
+
+#[test]
+fn write_rfc3339_matches_chrono() {
+    let timestamps = [
+        (1_791_857_067, 604_091_123),
+        (1_791_857_067, 999),
+        (0, 0),
+        (1_798_761_599, 999_999_999),
+    ];
+    let offsets = [
+        0,
+        8 * 3600,
+        -4 * 3600,
+        5 * 3600 + 45 * 60,
+        -(9 * 3600 + 30 * 60),
+    ];
+
+    for (secs, nanos) in timestamps {
+        for offset in offsets {
+            let time = DateTime::from_timestamp(secs, nanos)
+                .unwrap()
+                .with_timezone(&FixedOffset::east_opt(offset).unwrap());
+
+            let mut buf = String::new();
+            write_rfc3339(&mut buf, time).unwrap();
+            assert_eq!(
+                buf,
+                time.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            );
+        }
+    }
+}
+
+fn format_time(timer: &impl FormatTime) -> String {
+    let mut buf = String::new();
+    timer.format_time(&mut Writer::new(&mut buf)).unwrap();
+    buf
+}
+
 fn deserialize_config(json: serde_json::Value) -> LoggerConfig {
     serde_json::from_value(json).unwrap()
 }

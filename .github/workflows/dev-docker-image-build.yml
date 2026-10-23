@@ -16,6 +16,7 @@ jobs:
   branch-build-and-push:
     if: ${{ !github.event.client_payload.triggered }}
     runs-on: [self-hosted, linux, x64]
+    environment: ${{ (github.ref_name == 'dev' || github.ref_name == 'master') && 'dev-publish' || '' }}
     permissions:
       contents: read
       packages: write

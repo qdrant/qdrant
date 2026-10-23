@@ -6875,7 +6875,7 @@
         "type": "object",
         "properties": {
           "m": {
-            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required. Set to 0 to disable the main HNSW graph. Additional payload-aware links may still be built when the effective payload M is positive (see payload_m). This setting alone does not guarantee exact search.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -6920,7 +6920,7 @@
             ]
           },
           "payload_m": {
-            "description": "Custom M param for additional payload-aware HNSW links. If not set, default M will be used.",
+            "description": "Number of additional payload-aware links per node. If unset, the value of m is used. An effective value of 0 disables these additional links. A positive value allows them for indexed payload fields with HNSW enabled, even when m is 0.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -7340,7 +7340,7 @@
         ],
         "properties": {
           "m": {
-            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.",
+            "description": "Number of edges per node in the index graph. Larger the value - more accurate the search, more space required. Set to 0 to disable the main HNSW graph. Additional payload-aware links may still be built when the effective payload M is positive (see payload_m). This setting alone does not guarantee exact search.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
@@ -7382,7 +7382,7 @@
             ]
           },
           "payload_m": {
-            "description": "Custom M param for hnsw graph built for payload index. If not set, default M will be used.",
+            "description": "Number of additional payload-aware links per node. If unset, the value of m is used. An effective value of 0 disables these additional links. A positive value allows them for indexed payload fields with HNSW enabled, even when m is 0.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -7806,6 +7806,11 @@
             "description": "If true, enable prefix matching (`match: { \"prefix\": ... }`) on this field. Default: false.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -7860,6 +7865,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -7904,6 +7914,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -7942,6 +7957,11 @@
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -8038,7 +8058,7 @@
             "nullable": true
           },
           "scoring": {
-            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Implies `phrase_matching: true`, since term frequencies come from the positions it stores. Changing it rebuilds the index. Default: disabled.",
+            "description": "Enable ranking points by BM25 over this field; `true` for the defaults. Changing it rebuilds the index. Default: disabled.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TextScoringInterface"
@@ -8047,6 +8067,11 @@
                 "nullable": true
               }
             ]
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].title`. The field must be inside the array's elements. Every query on the field, not only nested filters, treats each element as its own document: a condition matches a point when a single element matches it, and BM25 scores elements separately. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8062,7 +8087,8 @@
           "prefix",
           "whitespace",
           "word",
-          "multilingual"
+          "multilingual",
+          "code"
         ]
       },
       "StopwordsInterface": {
@@ -8268,6 +8294,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8312,6 +8343,11 @@
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
             "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -8355,6 +8391,11 @@
           "enable_hnsw": {
             "description": "Enable HNSW graph building for this payload field. If true, builds additional HNSW links (Need payload_m > 0). Default: true.",
             "type": "boolean",
+            "nullable": true
+          },
+          "nested": {
+            "description": "Index every object of this array as a separate entry, e.g. `offers` for the field `offers[].price`. The field must be inside the array's elements. `is_empty` on the field matches a point when one of its elements lacks the field, and never a point without elements. Default: disabled.",
+            "type": "string",
             "nullable": true
           }
         }
@@ -9722,7 +9763,7 @@
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
-            "description": "For auto sharding: Number of shards in collection. - Default is 1 for standalone, otherwise equal to the number of nodes - Minimum is 1\n\nFor custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
+            "description": "For auto sharding: Number of shards in collection. - If not specified, selected automatically - Minimum is 1\n\nFor custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
@@ -11998,12 +12039,12 @@
           },
           "transfer_raw_points": {
             "description": "Transfer points as storage-native bytes (raw points), for every collection rather than only those whose vector storage would lose precision in a decode-encode round-trip (TurboQuant).\n\nRead on the sending side only, where the transfer batch is prepared: nodes accept raw points regardless.",
-            "default": false,
+            "default": true,
             "type": "boolean"
           },
           "transfer_raw_payloads": {
             "description": "Send the payload of a raw point as the byte blob it is stored as, so the sending node does not parse it and neither node builds a protobuf value tree for it. The receiving node still parses the blob, once, when the operation is applied. Only has an effect on points transferred raw, see [`Self::transfer_raw_points`].\n\nRead on the sending side only: nodes accept raw payloads regardless.",
-            "default": false,
+            "default": true,
             "type": "boolean"
           },
           "persist_proxy_segments": {

@@ -48,6 +48,7 @@ pprof = { workspace = true }
 io_bridge_object_store = { path = "../common/io_bridge_object_store" }
 blink-alloc = { workspace = true }
 futures = { workspace = true }
+bitpacking = { workspace = true }
 bytemuck = { workspace = true }
 data-encoding = { workspace = true }
 fs-err = { workspace = true }
@@ -217,6 +218,10 @@ name = "range_filtering"
 harness = false
 
 [[bench]]
+name = "nested_filtering"
+harness = false
+
+[[bench]]
 name = "in_memory_id_tracker"
 harness = false
 
@@ -234,4 +239,8 @@ harness = false
 
 [[bench]]
 name = "facets"
+harness = false
+
+[[bench]]
+name = "tokenizers"
 harness = false

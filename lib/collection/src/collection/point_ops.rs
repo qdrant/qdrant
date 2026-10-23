@@ -25,7 +25,7 @@ use crate::shards::shard_trait::WaitUntil;
 
 impl Collection {
     /// Apply collection update operation to all local shards.
-    /// Return None if there are no local shards
+    /// Return None if no shard returns an update result
     ///
     /// # Cancel safety
     ///
@@ -44,6 +44,11 @@ impl Collection {
             .all_shards()
             .map(Arc::clone)
             .collect();
+
+        let is_index_operation = matches!(
+            operation,
+            CollectionUpdateOperations::FieldIndexOperation(_)
+        );
 
         let results = self
             .update_runtime
@@ -80,9 +85,25 @@ impl Collection {
 
         let mut result = None;
 
-        for collection_result in results {
-            let update_result = collection_result?;
+        for update_result in results {
+            if let Err(CollectionError::ForwardProxyError { peer_id, error }) = &update_result
+                && is_index_operation
+            {
+                // If the local shard is a `ForwardProxy`, it applies the payload index operation
+                // locally, then forwards it to a remote replica.
+                //
+                // All peers receive and apply the same payload index operation through consensus,
+                // so the remote replica does not need the forwarded update to apply it.
+                //
+                // `ForwardProxyError` means the local update succeeded and forwarding failed,
+                // so we can ignore that error.
+                log::debug!("Failed to forward payload index update to peer {peer_id}: {error}");
+                continue;
+            }
 
+            let update_result = update_result?;
+
+            // Propagate first non-None result
             if result.is_none() && update_result.is_some() {
                 result = update_result;
             }

@@ -1,7 +1,7 @@
 //! AWS S3 backend.
 
 use common::universal_io::{UioResult, UniversalIoError, UniversalKind};
-use object_store::aws::{AmazonS3, AmazonS3Builder};
+use object_store::aws::{AmazonS3, AmazonS3Builder, Checksum};
 use url::Url;
 
 use crate::append::{AppendContext, NativeAppend, PartCopyAppend, SignedRequestContext};
@@ -77,9 +77,12 @@ impl BlobBackend for AmazonS3 {
         if let Some(endpoint) = &config.endpoint {
             builder = builder.with_endpoint(endpoint).with_allow_http(true);
         }
-        builder.build().map_err(|err| UniversalIoError::S3Config {
-            description: format!("AmazonS3Builder: {err}"),
-        })
+        builder
+            .with_checksum_algorithm(Checksum::CRC64NVME)
+            .build()
+            .map_err(|err| UniversalIoError::S3Config {
+                description: format!("AmazonS3Builder: {err}"),
+            })
     }
 
     fn kind() -> UniversalKind {

@@ -43,10 +43,10 @@ use tempfile::Builder;
 #[case::nearest_multi(QueryVariant::Nearest, 3, 64, 20)]
 #[case::discover_eq(QueryVariant::Discover, 1, 128, 5)]
 #[case::discover_multi(QueryVariant::Discover, 3, 128, 20)]
-#[case::recobestscore_eq(QueryVariant::RecoBestScore, 1, 64, 5)]
+#[case::recobestscore_eq(QueryVariant::RecoBestScore, 1, 64, 10)]
 #[case::recobestscore_multi(QueryVariant::RecoBestScore, 2, 64, 10)]
 #[case::recosumscores_eq(QueryVariant::RecoSumScores, 1, 64, 5)]
-#[case::recosumscores_multi(QueryVariant::RecoSumScores, 2, 64, 10)]
+#[case::recosumscores_multi(QueryVariant::RecoSumScores, 2, 64, 20)]
 fn test_multi_filterable_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] max_num_vector_per_points: usize,

@@ -12,8 +12,11 @@ mod vectors;
 
 use std::collections::HashMap;
 
+use ahash::{AHashMap, AHashSet};
 use common::types::DeferredBehavior;
+use uuid::Uuid;
 
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::FieldIndex;
@@ -43,6 +46,8 @@ where
     pub(crate) vector_data: &'s HashMap<VectorNameBuf, TVectorData>,
     pub(crate) segment_config: &'s SegmentConfig,
     pub(crate) appendable_flag: bool,
+    /// The segment's uuid, for the locations of the points its searches return.
+    pub(crate) segment_uuid: Uuid,
 }
 
 /// Concrete `SegmentReadView` instantiation that wraps a regular [`Segment`].
@@ -76,6 +81,49 @@ where
         self.id_tracker
             .internal_id_with_behavior(point_id, DeferredBehavior::WithDeferred)
             .and_then(|internal_id| self.id_tracker.internal_version(internal_id))
+    }
+
+    /// The ids among `point_ids` that
+    /// [`has_point`](crate::entry::entry_point::ReadSegmentEntry::has_point)
+    /// accepts, in one batch of id lookups. Storage errors propagate.
+    pub fn has_points(
+        &self,
+        point_ids: &[PointIdType],
+        deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<AHashSet<PointIdType>> {
+        let mut held = AHashSet::with_capacity(point_ids.len());
+        self.id_tracker.resolve_external_ids(
+            point_ids.iter().copied(),
+            deferred_behavior,
+            |point_id, _| {
+                held.insert(point_id);
+            },
+        )?;
+        Ok(held)
+    }
+
+    /// [`Self::point_version`] of each of `point_ids`, in one batch of id
+    /// lookups and one of version reads. Points without a version are left out.
+    pub fn point_versions(
+        &self,
+        point_ids: &[PointIdType],
+    ) -> OperationResult<AHashMap<PointIdType, SeqNumberType>> {
+        let mut external_ids = AHashMap::with_capacity(point_ids.len());
+        self.id_tracker.resolve_external_ids(
+            point_ids.iter().copied(),
+            DeferredBehavior::WithDeferred,
+            |point_id, internal_id| {
+                external_ids.insert(internal_id, point_id);
+            },
+        )?;
+        let mut versions = AHashMap::with_capacity(external_ids.len());
+        self.id_tracker.internal_versions_batch(
+            external_ids.keys().copied(),
+            |internal_id, version| {
+                versions.insert(external_ids[&internal_id], version);
+            },
+        )?;
+        Ok(versions)
     }
 
     pub fn read_range(

@@ -107,7 +107,7 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
             indexes.into_par_iter().try_for_each(|(field, index)| {
                 let _scope = handoff.enter_guard();
                 for (slot, payload) in &points {
-                    let values = payload.get_value(field);
+                    let values = payload.get_value(index.input_path(field));
                     index.add_point(fs, *slot, &values)?;
                 }
 

@@ -1,4 +1,5 @@
 mod build;
+mod nested;
 mod payload_index;
 mod read_view;
 
@@ -137,7 +138,13 @@ impl StructPayloadIndex {
         let mut load_error = None;
         let mut is_dirty = false;
 
-        let mut indexes = if payload_schema.types.is_empty() {
+        let nested = payload_schema.schema.nested();
+
+        let mut indexes = if nested.is_some() && payload_schema.types.is_empty() {
+            // No exact index types to open per element
+            rebuild = true;
+            vec![]
+        } else if payload_schema.types.is_empty() {
             let selector = self.selector(&payload_schema.schema);
             let indexes = selector.new_index(
                 field,
@@ -158,7 +165,8 @@ impl StructPayloadIndex {
                 if let Some(null_index) = selector.new_null_index(
                     field,
                     create_if_missing,
-                    &id_tracker_borrow,
+                    id_tracker_borrow.total_point_count(),
+                    deleted_points,
                     selector.default_mutability(),
                 )? {
                     indexes.push(null_index);
@@ -180,14 +188,25 @@ impl StructPayloadIndex {
                 // Load each index
                 .map(|index| {
                     let selector = self.selector_with_type(index, &payload_schema.schema);
-                    selector.new_index_with_type(
-                        field,
-                        &payload_schema.schema,
-                        index,
-                        create_if_missing,
-                        &id_tracker_borrow,
-                        deleted_points,
-                    )
+                    match nested {
+                        Some(array_key) => self.open_nested_index(
+                            &selector,
+                            field,
+                            array_key,
+                            &payload_schema.schema,
+                            index,
+                            create_if_missing,
+                            &id_tracker_borrow,
+                        ),
+                        None => selector.new_index_with_type(
+                            field,
+                            &payload_schema.schema,
+                            index,
+                            create_if_missing,
+                            id_tracker_borrow.total_point_count(),
+                            deleted_points,
+                        ),
+                    }
                 })
                 // Interrupt loading indices if one fails to load
                 // Set rebuild flag if any index fails to load

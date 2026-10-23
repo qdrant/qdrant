@@ -48,7 +48,7 @@ use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::snapshot_ops::SnapshotDescription;
+use crate::operations::snapshot_ops::{SnapshotDescription, unique_snapshot_timestamp};
 use crate::operations::types::{
     CollectionError, CollectionResult, ReshardingInfo, ShardTransferInfo,
 };
@@ -287,18 +287,30 @@ impl ShardHolder {
         // Persist mapping first: it is the only fallible step, so a failed write leaves
         // in-memory state untouched.
         if let Some(shard_key) = &shard_key {
-            self.key_mapping.write_optional(|mapping| {
-                let mut mapping = mapping.clone();
-                let shard_ids = mapping.entry(shard_key.clone()).or_default();
+            let result = self
+                .key_mapping
+                .write_optional(|mapping| {
+                    let mut mapping = mapping.clone();
+                    let shard_ids = mapping.entry(shard_key.clone()).or_default();
 
-                let mut changed = false;
+                    let mut changed = false;
 
-                for &(shard_id, _) in &shards {
-                    changed |= shard_ids.insert(shard_id);
+                    for &(shard_id, _) in &shards {
+                        changed |= shard_ids.insert(shard_id);
+                    }
+
+                    if changed { Some(mapping) } else { None }
+                })
+                .map_err(CollectionError::from);
+
+            if let Err(error) = result {
+                // Replay rebuilds these directories, so their workers must stop before retry
+                for (_, shard) in shards {
+                    shard.stop_gracefully().await;
                 }
 
-                if changed { Some(mapping) } else { None }
-            })?;
+                return Err(error);
+            }
         }
 
         let ring = self
@@ -327,28 +339,39 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
-        let mut remove_shard_ids = Vec::new();
-
+    /// Remove the key's routing and persisted mapping, leaving shards for separate cleanup
+    pub fn remove_shard_key_mapping(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
         self.key_mapping.write_optional(|key_mapping| {
-            if key_mapping.contains_key(shard_key) {
-                let mut new_key_mapping = key_mapping.clone();
-                if let Some(shard_ids) = new_key_mapping.remove(shard_key) {
-                    for shard_id in shard_ids {
-                        remove_shard_ids.push(shard_id);
-                    }
-                }
-                Some(new_key_mapping)
-            } else {
-                None
+            if !key_mapping.contains_key(shard_key) {
+                return None;
             }
+
+            let mut key_mapping = key_mapping.clone();
+            key_mapping.remove(shard_key);
+            Some(key_mapping)
         })?;
 
-        self.rings.remove(&shard_key.clone().into());
+        self.rings.remove(&Some(shard_key.clone()));
+        self.shard_id_to_key_mapping
+            .retain(|_, key| key != shard_key);
+
+        Ok(())
+    }
+
+    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
+        let remove_shard_ids = self
+            .key_mapping
+            .read()
+            .get(shard_key)
+            .cloned()
+            .unwrap_or_default();
+
+        self.remove_shard_key_mapping(shard_key)?;
+
         for shard_id in remove_shard_ids {
             self.drop_and_remove_shard(shard_id).await?;
-            self.shard_id_to_key_mapping.remove(&shard_id);
         }
+
         Ok(())
     }
 
@@ -1249,7 +1272,7 @@ impl ShardHolder {
 
         let snapshot_file_name = format!(
             "{collection_name}-shard-{shard_id}-{}.snapshot",
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            unique_snapshot_timestamp(),
         );
 
         let snapshot_temp_dir = tempfile::Builder::new()
@@ -1325,7 +1348,7 @@ impl ShardHolder {
 
         let snapshot_file_name = format!(
             "{collection_name}-shard-{shard_id}-{}.snapshot",
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
+            unique_snapshot_timestamp(),
         );
 
         let snapshot_temp_dir = tempfile::Builder::new()
@@ -1709,12 +1732,93 @@ pub fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::not_found(format!("shard {shard_id}"))
 }
 
+/// Transfer registration must notify watchers even when replay leaves the record unchanged.
 /// `register_restart_transfer` completes transfer restart by updating its record on disk.
 /// These tests assert its replay-safety: the record is never removed, so replaying operation
 /// after record is already updated should be a no-op instead of returning "no transfer" error.
 #[cfg(test)]
-mod restart_transfer_tests {
+mod transfer_registration_tests {
     use super::*;
+
+    #[test]
+    fn register_transfer_replay_notifies() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let mut changes = holder.shard_transfer_changes.subscribe();
+
+        for _ in 0..2 {
+            holder
+                .register_start_shard_transfer(transfer.clone())
+                .unwrap();
+
+            assert_eq!(
+                changes.try_recv().unwrap(),
+                ShardTransferChange::Start(transfer.clone()),
+            );
+            assert!(changes.is_empty());
+        }
+    }
+
+    #[test]
+    fn restart_transfer_replay_notifies() {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        holder
+            .register_start_shard_transfer(transfer.clone())
+            .unwrap();
+        let mut changes = holder.shard_transfer_changes.subscribe();
+
+        for _ in 0..2 {
+            let updated = holder
+                .register_restart_transfer(&transfer.key(), ShardTransferMethod::Snapshot)
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(
+                changes.try_recv().unwrap(),
+                ShardTransferChange::Abort(transfer.key()),
+            );
+            assert_eq!(
+                changes.try_recv().unwrap(),
+                ShardTransferChange::Start(updated),
+            );
+            assert!(changes.is_empty());
+        }
+    }
+
+    #[test]
+    fn finish_transfer_replay_notifies() {
+        unregister_transfer_replay_notifies(true);
+    }
+
+    #[test]
+    fn abort_transfer_replay_notifies() {
+        unregister_transfer_replay_notifies(false);
+    }
+
+    fn unregister_transfer_replay_notifies(finish: bool) {
+        let (_dir, holder) = make_holder();
+        let transfer = wal_delta_transfer();
+        let key = transfer.key();
+        holder.register_start_shard_transfer(transfer).unwrap();
+        let mut changes = holder.shard_transfer_changes.subscribe();
+        let expected = if finish {
+            ShardTransferChange::Finish(key)
+        } else {
+            ShardTransferChange::Abort(key)
+        };
+
+        for _ in 0..2 {
+            if finish {
+                holder.register_finish_transfer(&key).unwrap();
+            } else {
+                holder.register_abort_transfer(&key).unwrap();
+            }
+
+            assert_eq!(changes.try_recv().unwrap(), expected);
+            assert!(changes.is_empty());
+        }
+    }
 
     fn make_holder() -> (tempfile::TempDir, ShardHolder) {
         let dir = tempfile::tempdir().unwrap();
@@ -1818,6 +1922,68 @@ mod restart_transfer_tests {
         assert_eq!(replay.method, Some(ShardTransferMethod::Snapshot));
         assert_eq!(replay.sync, transfer.sync);
         assert_eq!(holder.shard_transfers.read().len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod shard_key_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn remove_shard_key_mapping_save_failure_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut holder = ShardHolder::new(dir.path(), ShardingMethod::Custom).unwrap();
+        let key = ShardKey::from("tenant");
+        let mut mapping = ShardKeyMapping::default();
+        mapping.insert(key.clone(), HashSet::from([1, 2]));
+        holder.set_shard_key_mappings(mapping.clone()).unwrap();
+        holder
+            .rings
+            .insert(Some(key.clone()), HashRingRouter::single());
+
+        // A directory at the destination makes the atomic rename fail
+        let path = dir.path().join(SHARD_KEY_MAPPING_FILE);
+        let backup = dir.path().join("mapping-backup");
+        fs::rename(&path, &backup).unwrap();
+        fs::create_dir(&path).unwrap();
+
+        assert!(holder.remove_shard_key_mapping(&key).is_err());
+        assert_eq!(holder.get_shard_key_to_ids_mapping(), mapping);
+        assert_eq!(
+            holder.get_shard_id_to_key_mapping(),
+            &mapping.shard_id_to_shard_key()
+        );
+        assert!(holder.rings.contains_key(&Some(key.clone())));
+
+        fs::remove_dir(&path).unwrap();
+        fs::rename(&backup, &path).unwrap();
+        holder.remove_shard_key_mapping(&key).unwrap();
+
+        assert!(holder.get_shard_key_to_ids_mapping().is_empty());
+        assert!(holder.get_shard_id_to_key_mapping().is_empty());
+        assert!(holder.rings.is_empty());
+        let persisted = ShardHolder::new(dir.path(), ShardingMethod::Custom).unwrap();
+        assert!(persisted.get_shard_key_to_ids_mapping().is_empty());
+    }
+
+    #[test]
+    fn remove_shard_key_mapping_empty_and_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut holder = ShardHolder::new(dir.path(), ShardingMethod::Custom).unwrap();
+        let key = ShardKey::from("tenant");
+        let mut mapping = ShardKeyMapping::default();
+        mapping.insert(key.clone(), HashSet::new());
+        holder.set_shard_key_mappings(mapping).unwrap();
+        holder
+            .rings
+            .insert(Some(key.clone()), HashRingRouter::single());
+
+        for _ in 0..2 {
+            holder.remove_shard_key_mapping(&key).unwrap();
+
+            assert!(holder.get_shard_key_to_ids_mapping().is_empty());
+            assert!(holder.rings.is_empty());
+        }
     }
 }
 

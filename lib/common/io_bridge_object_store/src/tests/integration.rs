@@ -4,6 +4,7 @@ use std::assert_matches;
 use std::path::Path;
 
 use bytes::Bytes;
+use common::ambient;
 use common::generic_consts::Random;
 use common::universal_io::{ListedFile, ReadRange, UioResult, UniversalIoError, UniversalRead};
 use io_bridge::{AsyncRead, BridgeRuntime};
@@ -39,6 +40,7 @@ fn maybe_skip_append() -> bool {
 #[test]
 #[ignore]
 fn test_open_and_read_whole() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -55,6 +57,7 @@ fn test_open_and_read_whole() {
 #[test]
 #[ignore]
 fn test_read_range() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -78,6 +81,7 @@ fn test_read_range() {
 #[test]
 #[ignore]
 fn test_read_batch_parallel() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -106,6 +110,7 @@ fn test_read_batch_parallel() {
 #[test]
 #[ignore]
 fn test_not_found() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }
@@ -131,6 +136,7 @@ fn test_not_found() {
 #[test]
 #[ignore]
 fn test_native_append_flow() {
+    let _scope = ambient::test_guard();
     if maybe_skip_append() {
         return;
     }
@@ -180,6 +186,7 @@ fn test_native_append_flow() {
 #[test]
 #[ignore]
 fn test_list_files() {
+    let _scope = ambient::test_guard();
     if maybe_skip() {
         return;
     }

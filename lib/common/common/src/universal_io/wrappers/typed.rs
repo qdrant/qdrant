@@ -127,6 +127,12 @@ where
     }
 
     #[inline]
+    pub fn will_need(&self, ranges: impl Iterator<Item = ReadRange>) {
+        self.inner
+            .will_need(ranges.map(ReadRange::into_byte_range::<T>));
+    }
+
+    #[inline]
     pub fn clear_ram_cache(&self) -> UioResult<()> {
         self.inner.clear_ram_cache()
     }

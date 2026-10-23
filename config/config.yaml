@@ -3,6 +3,7 @@ log_level: INFO
 # Logging configuration
 # Qdrant logs to stdout. You may configure to also write logs to a file on disk.
 # Be aware that this file may grow indefinitely.
+# Log timestamps are in UTC, set the `TZ` environment variable to use a different timezone.
 # logger:
 #   # Logging format, supports `text` and `json`
 #   format: text
@@ -36,6 +37,11 @@ storage:
     #   secret_key: ""
     #   # Custom endpoint, for MinIO and similar
     #   endpoint_url: ""
+    #   # Timeouts and retries, in seconds
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
 
     # Google Cloud Storage. Without credential fields, Application Default
     # Credentials are used: GOOGLE_* environment, gcloud config or the
@@ -50,6 +56,11 @@ storage:
     #   application_credentials_path: ""
     #   # Custom endpoint, for fake-gcs-server and similar
     #   endpoint_url: ""
+    #   # Timeouts and retries, same as in s3_config
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
 
     # Azure Blob Storage. Without credential fields, the default chain is
     # used: AZURE_* environment, managed identity or the Azure CLI.
@@ -66,6 +77,11 @@ storage:
     #   tenant_id: ""
     #   # Custom endpoint, for Azurite and similar
     #   endpoint_url: ""
+    #   # Timeouts and retries, same as in s3_config
+    #   timeout_sec: 30
+    #   connect_timeout_sec: 5
+    #   max_retries: 10
+    #   retry_timeout_sec: 180
 
   # Where to store temporary files
   # If null, temporary snapshots are stored in: storage/snapshots_temp/
@@ -228,6 +244,9 @@ storage:
   # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
+    # Set to 0 to disable the main HNSW graph. Additional payload-aware links
+    # may still be built when the effective payload M is positive (see payload_m).
+    # This setting alone does not guarantee exact search.
     m: 16
 
     # Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build index.
@@ -255,7 +274,9 @@ storage:
     # Overrides the deprecated `on_disk` flag if both are set.
     # memory: cached
 
-    # Custom M param for hnsw graph built for payload index. If not set, default M will be used.
+    # Number of additional payload-aware links per node. If unset, the value of m is used.
+    # An effective value of 0 disables these additional links. A positive value allows
+    # them for indexed payload fields with HNSW enabled, even when m is 0.
     payload_m: null
 
   # Default shard transfer method to use if none is defined.
@@ -282,6 +303,8 @@ storage:
       # Overrides the deprecated `on_disk` flag if both are set.
       # memory: null
 
+    # Number of shards per node for auto-sharded collections.
+    # If not specified, selected automatically.
     # shard_number_per_node: 1
 
     # Default quantization configuration.
@@ -432,12 +455,14 @@ service:
   # Only `api_key` and `alt_api_key` are accepted there; the read-only key
   # and JWT tokens are rejected, since peers joining consensus and moving
   # shards must hold the read-write key.
-  # The regular api_key is always forwarded on internal requests, but the
-  # receiving side only verifies it when this flag is enabled. Keep disabled
-  # during a rolling upgrade so older peers (that do not attach a key yet)
-  # can still reach newer peers, then turn it on once every node is upgraded.
+  # Peers forward `api_key` (or `alt_api_key` if `api_key` is unset) on
+  # internal requests, so every node must accept the key the others send.
+  # To rotate it, first set the new key as `alt_api_key` on every node, then
+  # swap the two.
+  # Enabled by default, has no effect without an API key.
   #
-  # enforce_internal_auth: true
+  # Uncomment to disable.
+  # enforce_internal_auth: false
 
   # Hardware reporting adds information to the API responses with a
   # hint on how many resources were used to execute the request.

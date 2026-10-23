@@ -21,6 +21,7 @@ impl Segment {
                 vector_data: &self.vector_data,
                 segment_config: &self.segment_config,
                 appendable_flag: self.appendable_flag,
+                segment_uuid: self.uuid,
             };
 
             f(view)

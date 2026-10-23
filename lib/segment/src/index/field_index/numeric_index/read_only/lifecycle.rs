@@ -48,14 +48,15 @@ where
         fs: &impl UniversalReadFs<File = S>,
         dir: PathBuf,
         max_point_offset: PointOffsetType,
+        deleted: &BitSlice,
     ) -> OperationResult<Option<Self>> {
         Ok(
-            ReadOnlyNumericIndexInner::open_appendable(fs, dir, max_point_offset)?.map(|inner| {
-                Self {
+            ReadOnlyNumericIndexInner::open_appendable(fs, dir, max_point_offset, deleted)?.map(
+                |inner| Self {
                     inner,
                     _phantom: PhantomData,
-                }
-            }),
+                },
+            ),
         )
     }
 

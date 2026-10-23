@@ -22,7 +22,7 @@ jobs:
   edge-py-linux:
     name: Build Python wheels [Linux]
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
 
     strategy:
       matrix:
@@ -38,9 +38,16 @@ jobs:
         include: >-
           ${{ github.event_name == 'push' && fromJSON('[]') || fromJSON('[
           {"arch": "x86_64", "target": "x86_64-unknown-linux-musl", "manylinux": "musllinux_1_2", "python": "python3.10"},
-          {"arch": "aarch64", "target": "aarch64-unknown-linux-musl", "manylinux": "musllinux_1_2", "python": "python3.10"}
+          {"arch": "aarch64", "target": "aarch64-unknown-linux-musl", "manylinux": "musllinux_1_2", "python": "python3.10"},
+          {"target": "x86_64", "manylinux": "manylinux_2_28", "python": "pypy3.11", "interpreter": "/opt/python/pp311-pypy311_pp73/bin/python /opt/python/pp311-pypy311_pp80/bin/python"},
+          {"target": "aarch64", "manylinux": "manylinux_2_28", "python": "pypy3.11", "runner": "ubuntu-24.04-arm", "interpreter": "/opt/python/pp311-pypy311_pp73/bin/python /opt/python/pp311-pypy311_pp80/bin/python"}
           ]') }}
 
+        # PyPy 3.11 has two ABIs: pp73 (PyPy 7.3) and pp80 (PyPy 8). The
+        # manylinux_2_28 image ships both, but `--interpreter pypy3.11` only
+        # picks pp73, so the 2_28 PyPy builds name both interpreters. maturin
+        # can only cross-compile pp73 for PyPy 3.11, so aarch64 PyPy builds
+        # natively on an ARM runner. PyPy 8 needs glibc 2.28, so 2_17 stays pp73.
         exclude:
           - target: aarch64
             manylinux: manylinux_2_17
@@ -82,7 +89,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           command: build
-          args: --release --features abi3 --interpreter ${{ matrix.python }} --out dist
+          args: --release --features abi3 --interpreter ${{ matrix.interpreter || matrix.python }} --out dist
           working-directory: lib/edge/python
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
@@ -313,6 +320,7 @@ jobs:
     name: Publish to PyPI
 
     runs-on: ubuntu-latest
+    environment: dev-publish
     needs:
       - merge-artifacts
 
@@ -342,6 +350,7 @@ jobs:
     name: Publish dev wheels to GCS
 
     runs-on: ubuntu-latest
+    environment: dev-publish
     needs:
       - merge-artifacts
 

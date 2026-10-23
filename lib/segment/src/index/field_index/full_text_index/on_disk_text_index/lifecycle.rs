@@ -9,7 +9,6 @@ use serde_json::Value;
 use super::super::FullTextIndex;
 use super::super::immutable_text_index::ImmutableFullTextIndex;
 use super::super::inverted_index::InvertedIndex;
-use super::super::inverted_index::immutable_inverted_index::ImmutableInvertedIndex;
 use super::super::inverted_index::mutable_inverted_index::MutableInvertedIndex;
 use super::super::inverted_index::on_disk_inverted_index::OnDiskInvertedIndex;
 use super::super::tokenizers::Tokenizer;
@@ -55,6 +54,10 @@ impl<S: UniversalRead> OnDiskFullTextIndex<S> {
     /// Whether this index has document lengths on disk.
     pub fn records_doc_len(&self) -> bool {
         self.inverted_index.records_doc_len()
+    }
+
+    pub fn can_score(&self) -> bool {
+        self.inverted_index.can_score()
     }
 
     pub fn wipe(self) -> OperationResult<()> {
@@ -140,22 +143,21 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             return Ok(());
         }
 
-        // Through the shared helper: `document_length` subtracts the sentinels
+        // Through the shared helper: its document length subtracts the sentinels
         // it inserts, so the two rules have to agree. Read from the config like
         // the other two callers, rather than from whether a container happens
         // to be allocated, so that the two halves cannot drift apart.
         let phrase_matching = self.config.phrase_matching.unwrap_or_default();
-        let str_tokens =
-            FullTextIndex::tokenize_document(&self.tokenizer, phrase_matching, &values);
+        let document = FullTextIndex::tokenize_document(&self.tokenizer, phrase_matching, &values);
 
         // Measured here, the last point at which every token exists.
         let doc_len = self
             .mutable_index
             .records_doc_len()
-            .then(|| FullTextIndex::document_length(&str_tokens, phrase_matching, &values));
+            .then(|| document.length());
 
         self.mutable_index
-            .index_str_tokens(id, &str_tokens, doc_len)
+            .index_str_tokens(id, &document.tokens, doc_len)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -172,7 +174,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<bool> {
         ValueIndexer::add_point(self, id, payload)
     }
 
@@ -182,40 +184,29 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             mutable_index,
             config,
             memory,
-            tokenizer,
+            tokenizer: _,
             deleted_points,
         } = self;
 
-        let immutable = ImmutableInvertedIndex::from(mutable_index);
-
         fs::create_dir_all(path.as_path())?;
 
-        OnDiskInvertedIndex::create(path.clone(), &immutable)?;
+        // Reopened below rather than kept: the in-RAM placement loads from the
+        // files, the same way a restart does.
+        let _ = OnDiskInvertedIndex::create(path.clone(), mutable_index)?;
 
         // Same placement a later open would apply, so the built index can serve as-is.
         let memory = memory.clamp_to_low_memory();
         let populate = Populate::from(memory.populate_on_open());
-        let has_positions = config.phrase_matching.unwrap_or_default();
-        let inverted_index =
-            OnDiskInvertedIndex::open(&MmapFs, path, populate, has_positions, &deleted_points)?
-                .ok_or_else(|| {
-                    OperationError::service_error(
-                        "Failed to open OnDiskInvertedIndex that was just created",
-                    )
-                })?;
-
-        let on_disk_index = OnDiskFullTextIndex {
-            inverted_index,
-            tokenizer,
-            cold: !memory.populate_on_open(),
-        };
-
         let text_index = if memory.is_heap() {
-            FullTextIndex::Immutable(ImmutableFullTextIndex::load_from_on_disk(on_disk_index)?)
+            ImmutableFullTextIndex::open(&MmapFs, path, config, populate, &deleted_points)?
+                .map(FullTextIndex::Immutable)
         } else {
-            FullTextIndex::OnDisk(on_disk_index)
+            OnDiskFullTextIndex::open(&MmapFs, path, config, populate, &deleted_points)?
+                .map(FullTextIndex::OnDisk)
         };
 
-        Ok(text_index)
+        text_index.ok_or_else(|| {
+            OperationError::service_error("Failed to open full text index that was just created")
+        })
     }
 }

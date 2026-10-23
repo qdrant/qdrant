@@ -2,29 +2,31 @@
 //!
 //! The formula and the top-k driver live here once; what differs per backend
 //! is how a posting list is walked and where a term frequency comes from, and
-//! that is behind [`TermCursors`]. The immutable and on-disk indexes store
-//! positions per (term, document) and read `tf` as a value length, without
-//! touching the positions themselves. The mutable index stores documents as
+//! that is behind [`TermCursors`]. The immutable and on-disk indexes read `tf`
+//! from `term_frequencies.dat`, in posting order. The mutable index stores documents as
 //! ordered token ids and counts a candidate document once for every query term.
 //!
 //! Corpus statistics are inputs, not something computed here: `IDF` and the
 //! average document length are gathered across the shard before any segment
 //! scores, so the same document scores the same wherever it lives.
 
+mod frequency_cursors;
 mod mutable_cursors;
-mod positional_cursors;
 #[cfg(test)]
 mod tests;
 mod top_k;
 
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select, default_check_batched};
 use common::types::{PointOffsetType, ScoreType};
+pub use frequency_cursors::FrequencyCursors;
 pub use mutable_cursors::MutableCursors;
-pub use positional_cursors::PositionalCursors;
+#[cfg(test)]
+use top_k::{HEAP_MIN_ESSENTIAL, Strategy, score_top_k_with};
 pub use top_k::{ON_DISK_BLOCK, score_top_k};
 
 use super::TokenId;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::nested_index::ElementOffsetType;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 
 /// Saturation and length normalization. Request-time parameters: they are not
@@ -48,6 +50,9 @@ pub struct Bm25Accept<'a> {
     visible: &'a dyn Fn(PointOffsetType) -> bool,
     /// May read storage, and fail.
     filter: Option<&'a OptimizedFilter<'a>>,
+    /// The point that owns a scored document, when the index scores the elements
+    /// of a nested array instead of points. `filter` is checked on that point.
+    element_point: Option<&'a dyn Fn(ElementOffsetType) -> Option<PointOffsetType>>,
 }
 
 impl<'a> Bm25Accept<'a> {
@@ -55,7 +60,27 @@ impl<'a> Bm25Accept<'a> {
         visible: &'a dyn Fn(PointOffsetType) -> bool,
         filter: Option<&'a OptimizedFilter<'a>>,
     ) -> Self {
-        Self { visible, filter }
+        Self {
+            visible,
+            filter,
+            element_point: None,
+        }
+    }
+
+    /// The same filter for an index whose documents are elements of a nested array:
+    /// `element_point` gives the point that owns an element, `None` for an element
+    /// no point owns, and `visible` is the mask over elements.
+    pub fn for_elements<'b>(
+        &'b self,
+        visible: &'b dyn Fn(ElementOffsetType) -> bool,
+        element_point: &'b dyn Fn(ElementOffsetType) -> Option<PointOffsetType>,
+    ) -> Bm25Accept<'b> {
+        debug_assert!(self.element_point.is_none());
+        Bm25Accept {
+            visible,
+            filter: self.filter,
+            element_point: Some(element_point),
+        }
     }
 
     /// Whether a query sees `point_id`.
@@ -72,6 +97,18 @@ impl<'a> Bm25Accept<'a> {
         Bm25Accept {
             visible,
             filter: self.filter,
+            element_point: self.element_point,
+        }
+    }
+
+    /// Whether the outer filter allows the document `id`.
+    fn check_filter(&self, filter: &OptimizedFilter, id: PointOffsetType) -> OperationResult<bool> {
+        match self.element_point {
+            Some(element_point) => match element_point(id) {
+                Some(point_id) => filter.check(point_id),
+                None => Ok(false),
+            },
+            None => filter.check(id),
         }
     }
 }
@@ -87,7 +124,7 @@ impl ConditionChecker for Bm25Accept<'_> {
             return Ok(false);
         }
         match self.filter {
-            Some(filter) => filter.check(point_id),
+            Some(filter) => self.check_filter(filter, point_id),
             None => Ok(true),
         }
     }
@@ -103,11 +140,17 @@ impl ConditionChecker for Bm25Accept<'_> {
                 let visible = default_check_batched(items, Select::Matches, rest, |point_id| {
                     Ok::<_, OperationError>(self.is_visible(point_id))
                 })?;
-                match self.filter {
-                    Some(filter) => {
+                match (self.filter, self.element_point) {
+                    (Some(filter), None) => {
                         filter.check_batched(&mut items[..visible], Select::Matches, rest)
                     }
-                    None => Ok(visible),
+                    // Element ids are not point ids: check the owning points one by one
+                    (Some(filter), Some(_)) => {
+                        default_check_batched(&mut items[..visible], Select::Matches, rest, |id| {
+                            self.check_filter(filter, id)
+                        })
+                    }
+                    (None, _) => Ok(visible),
                 }
             }
             Select::NonMatches => {
@@ -220,16 +263,32 @@ impl Bm25Query {
         term.idf * (self.params.k1 + 1.0)
     }
 
-    /// One term's contribution to one document.
+    /// One term's contribution to one document. The scorers compute
+    /// [`Self::doc_norm`] once per document and use
+    /// [`Self::term_score_with_norm`]; this is their definition, for the tests.
+    #[cfg(test)]
     fn term_score(&self, idf: f32, tf: u32, doc_len: Option<u32>) -> ScoreType {
+        self.term_score_with_norm(idf, tf, self.doc_norm(doc_len))
+    }
+
+    /// The part of [`Self::term_score`] that depends on the document alone,
+    /// `k1 * (1 - b + b * len / avg)`: computed once per document, it saves a
+    /// division per posting.
+    fn doc_norm(&self, doc_len: Option<u32>) -> ScoreType {
         let Bm25Params { k1, b } = self.params;
-        let tf = tf as f32;
-        let norm = match (self.avg_doc_len, doc_len) {
+        match (self.avg_doc_len, doc_len) {
             (Some(avg), Some(len)) if self.normalizes_length() => {
                 k1 * (1.0 - b + b * len as f32 / avg)
             }
             _ => k1,
-        };
+        }
+    }
+
+    /// [`Self::term_score`] given the document's [`Self::doc_norm`].
+    #[inline]
+    fn term_score_with_norm(&self, idf: f32, tf: u32, norm: ScoreType) -> ScoreType {
+        let k1 = self.params.k1;
+        let tf = tf as f32;
         idf * tf * (k1 + 1.0) / (tf + norm)
     }
 }
@@ -242,6 +301,35 @@ pub trait TermCursors {
 
     /// Move the cursor for `term` past its current document.
     fn advance(&mut self, term: usize);
+
+    /// Entries in the posting list of `term`, as when the cursors were made.
+    fn posting_len(&self, term: usize) -> usize;
+
+    /// Call `f(doc, tf)` for every document from the cursor's current one up
+    /// to `end`, excluded, in order, and leave the cursor on the first
+    /// document at or past `end`, if any.
+    fn for_each_posting_below(
+        &mut self,
+        term: usize,
+        end: PointOffsetType,
+        mut f: impl FnMut(PointOffsetType, u32),
+    ) where
+        Self: Sized,
+    {
+        while let Some(doc) = self.current(term) {
+            if doc >= end {
+                break;
+            }
+            let tf = self.tf(term, doc);
+            f(doc, tf);
+            self.advance(term);
+        }
+    }
+
+    /// Whether `tf` is as cheap read one term at a time over many documents as
+    /// one document at a time over its terms, so the query may be scored term
+    /// at a time.
+    fn term_at_a_time(&self) -> bool;
 
     /// Move the cursor for `term` to the first document at or after `target`
     /// and return it. A cursor already at or past `target` does not move.

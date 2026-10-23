@@ -4457,6 +4457,7 @@ fn field_index_params_echo_in_info_and_survive_reload() {
                             is_tenant: Some(true),
                             memory: Some(Memory::Cold),
                             enable_hnsw: Some(false),
+                            nested: None,
                             prefix: Some(true),
                         },
                     },
@@ -4506,6 +4507,7 @@ fn text_index_with_params_filters_with_stopwords() {
                         memory: None,
                         stemmer: None,
                         enable_hnsw: None,
+                        nested: None,
                         scoring: None,
                     },
                 },
@@ -4575,6 +4577,7 @@ fn text_query_ranks_by_bm25() {
             memory: None,
             stemmer: None,
             enable_hnsw: None,
+            nested: None,
             scoring,
         },
     };
@@ -4660,4 +4663,156 @@ fn wal_less_shard_roundtrip() {
     let shard = EdgeShard::load(path, None).expect("reload failed");
     assert_eq!(shard.info().unwrap().points_count, 3);
     assert_eq!(shard.config().unwrap().wal_enabled, Some(false));
+}
+
+/// A per-element index created through the FFI: its params report the array path as the
+/// engine stores it, also after a reload, a nested filter matches conditions on the same
+/// element only, and a field outside the array is rejected.
+#[test]
+fn nested_field_index_through_ffi() {
+    use qdrant_edge_ffi::filter::{
+        Condition, FieldCondition, Filter, Match, RangeFloat, ValueVariants,
+    };
+    use qdrant_edge_ffi::{IntegerIndexParams, KeywordIndexParams, PayloadIndexParams};
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+
+    let keyword = |nested: &str| PayloadIndexParams::Keyword {
+        config: KeywordIndexParams {
+            is_tenant: None,
+            memory: None,
+            enable_hnsw: None,
+            prefix: None,
+            nested: Some(nested.to_string()),
+        },
+    };
+    let integer = PayloadIndexParams::Integer {
+        config: IntegerIndexParams {
+            lookup: None,
+            range: None,
+            is_principal: None,
+            memory: None,
+            enable_hnsw: None,
+            nested: Some("offers".to_string()),
+        },
+    };
+    let field = |key: &str, r#match: Option<Match>, range: Option<RangeFloat>| Condition::Field {
+        condition: FieldCondition {
+            key: key.to_string(),
+            r#match,
+            range,
+            datetime_range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+        },
+    };
+    // An offer of shop "a" under 20, in a single element
+    let cheap_offer_of_a = Filter {
+        must: Some(vec![Condition::Nested {
+            key: "offers".to_string(),
+            filter: Filter {
+                must: Some(vec![
+                    field(
+                        "shop",
+                        Some(Match::Value {
+                            value: ValueVariants::String {
+                                value: "a".to_string(),
+                            },
+                        }),
+                        None,
+                    ),
+                    field(
+                        "price",
+                        None,
+                        Some(RangeFloat {
+                            gte: None,
+                            gt: None,
+                            lte: None,
+                            lt: Some(20.0),
+                        }),
+                    ),
+                ]),
+                should: None,
+                must_not: None,
+                min_should: None,
+            },
+        }]),
+        should: None,
+        must_not: None,
+        min_should: None,
+    };
+    let assert_nested = |shard: &EdgeShard| {
+        let info = shard.info().expect("info failed");
+        for key in ["offers[].shop", "offers[].price"] {
+            let params = info.payload_schema[key].params.clone().expect("params");
+            let nested = match params {
+                PayloadIndexParams::Keyword { config } => config.nested,
+                PayloadIndexParams::Integer { config } => config.nested,
+                PayloadIndexParams::Float { .. }
+                | PayloadIndexParams::Geo { .. }
+                | PayloadIndexParams::Text { .. }
+                | PayloadIndexParams::Bool { .. }
+                | PayloadIndexParams::Datetime { .. }
+                | PayloadIndexParams::Uuid { .. } => panic!("unexpected params for {key}"),
+            };
+            assert_eq!(nested.as_deref(), Some("offers[]"), "{key}");
+        }
+        let n = shard
+            .count(CountRequest {
+                filter: Some(cheap_offer_of_a.clone()),
+                exact: true,
+            })
+            .expect("count failed");
+        // Point 2 has shop "a" and a price under 20, but in different offers
+        assert_eq!(n, 1);
+    };
+
+    {
+        let shard: Arc<EdgeShard> =
+            EdgeShard::load(path.clone(), Some(make_config())).expect("load failed");
+        let points = vec![
+            Point {
+                id: PointId::NumId { value: 1 },
+                vector: named_vec([0.1, 0.2, 0.3, 0.4]),
+                payload: Some(r#"{"offers":[{"shop":"a","price":10}]}"#.to_string()),
+            },
+            Point {
+                id: PointId::NumId { value: 2 },
+                vector: named_vec([0.4, 0.3, 0.2, 0.1]),
+                payload: Some(
+                    r#"{"offers":[{"shop":"a","price":30},{"shop":"b","price":5}]}"#.to_string(),
+                ),
+            },
+        ];
+        shard
+            .update(UpdateOperation::upsert_points(points, None, None).expect("upsert failed"))
+            .expect("update failed");
+        for (key, params) in [
+            ("offers[].shop", keyword("offers")),
+            ("offers[].price", integer),
+        ] {
+            shard
+                .update(
+                    UpdateOperation::create_field_index_with_params(key.to_string(), params)
+                        .expect("create_field_index_with_params failed"),
+                )
+                .expect("update failed");
+        }
+        assert_nested(&shard);
+
+        // The field must be inside the elements of the array
+        let outside =
+            UpdateOperation::create_field_index_with_params("title".to_string(), keyword("offers"))
+                .expect("params convert");
+        assert!(shard.update(outside).is_err());
+
+        shard.flush().expect("flush failed");
+        shard.unload().expect("unload failed");
+    }
+
+    let shard: Arc<EdgeShard> = EdgeShard::load(path, None).expect("reload failed");
+    assert_nested(&shard);
 }
