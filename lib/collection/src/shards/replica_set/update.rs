@@ -661,6 +661,13 @@ impl ShardReplicaSet {
         local: &Shard,
         operation: &OperationWithClockTag,
     ) -> CollectionResult<()> {
+        // Payload-index updates arrive after consensus commits them. Refusing one here
+        // can leave the schema saved without a local index and block consensus replay
+        // behind point writes that keep consuming the replenished tokens.
+        if let CollectionUpdateOperations::FieldIndexOperation(_) = &operation.operation {
+            return Ok(());
+        }
+
         let Some(local_shard) = local.local_shard() else {
             return Ok(());
         };
