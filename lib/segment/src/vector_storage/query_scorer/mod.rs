@@ -13,6 +13,7 @@ pub mod custom_query_scorer;
 pub mod metric_query_scorer;
 pub mod multi_custom_query_scorer;
 pub mod multi_metric_query_scorer;
+pub mod packed_max_sim;
 pub mod sparse_custom_query_scorer;
 pub mod sparse_metric_query_scorer;
 pub mod turbo_custom_query_scorer;
@@ -69,6 +70,23 @@ impl<TQueryScorer: QueryScorer> QueryScorerBytes for QueryScorerBytesImpl<TQuery
 /// In that case the score value will be different but the ranking will be the same.
 /// We do that because of performance reasons and complex sort ordering of the vectors when applying the post-processing step.
 pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
+    multi_dense_a: TypedMultiDenseVectorRef<'_, T>,
+    multi_dense_b: TypedMultiDenseVectorRef<'_, T>,
+) -> ScoreType {
+    let distance = TMetric::distance();
+    packed_max_sim::pays::<T>(
+        distance,
+        multi_dense_a.dim,
+        multi_dense_a.vectors_count(),
+        true,
+    )
+    .then(|| packed_max_sim::score_max_similarity_packed(multi_dense_a, multi_dense_b, distance))
+    .flatten()
+    .unwrap_or_else(|| score_max_similarity_pairwise::<T, TMetric>(multi_dense_a, multi_dense_b))
+}
+
+/// [`score_max_similarity`] one token pair at a time.
+pub fn score_max_similarity_pairwise<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_a: TypedMultiDenseVectorRef<'_, T>,
     multi_dense_b: TypedMultiDenseVectorRef<'_, T>,
 ) -> ScoreType {

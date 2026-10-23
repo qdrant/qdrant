@@ -6,8 +6,6 @@ use common::generic_consts::{AccessPattern, Random};
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
 use quantization::EncodedStorageWrite;
-use quantization::turboquant::EncodedQueryTQ;
-use smallvec::{SmallVec, smallvec};
 
 use super::ReadOnlyChunkedMultiTurboVectorStorage;
 use crate::common::operation_error::OperationResult;
@@ -19,6 +17,7 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::MultivectorMmapOffset;
+use crate::vector_storage::turbo::multi_turbo::{TurboMultiQuery, score_records_symmetric};
 use crate::vector_storage::turbo::shared;
 use crate::vector_storage::vector_storage_base::VectorStorageRead;
 use crate::vector_storage::{MultiTQVectorStorageRead, TurboMultiScoring, VectorOffsetType};
@@ -39,10 +38,6 @@ impl<S: UniversalRead> ReadOnlyChunkedMultiTurboVectorStorage<S> {
 
     fn invert_score(&self) -> bool {
         matches!(self.distance, Distance::Euclid | Distance::Manhattan)
-    }
-
-    fn signed(&self, score: f32) -> ScoreType {
-        if self.invert_score() { -score } else { score }
     }
 
     /// Decode one inner record into `out`: dequantize, rotate back, drop padding.
@@ -198,8 +193,8 @@ impl<S: UniversalRead> MultiTQVectorStorageRead for ReadOnlyChunkedMultiTurboVec
 }
 
 impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStorage<S> {
-    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ> {
-        query
+    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> TurboMultiQuery {
+        let vectors = query
             .multi_vectors()
             .map(|inner| {
                 let preprocessed = match self.distance {
@@ -218,7 +213,8 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
                 };
                 self.quantizer.precompute_query(&preprocessed)
             })
-            .collect()
+            .collect();
+        TurboMultiQuery::new(&self.quantizer, self.invert_score(), vectors)
     }
 
     fn score_internal_max_similarity(
@@ -248,33 +244,11 @@ impl<S: UniversalRead> TurboMultiScoring for ReadOnlyChunkedMultiTurboVectorStor
         let mul = usize::from(self.storage.is_cold()); // Reads from RAM don't count as IO.
         HwMetric::VectorIoRead.bump((records_a.len() + records_b.len()) * mul);
 
-        let quantized_size = self.quantizer.quantized_size();
-        let mut sum = 0.0;
-        for bytes_a in records_a.chunks_exact(quantized_size) {
-            let mut max_sim = ScoreType::NEG_INFINITY;
-            for bytes_b in records_b.chunks_exact(quantized_size) {
-                let sim = self.signed(self.quantizer.score_symmetric(bytes_a, bytes_b));
-                if sim > max_sim {
-                    max_sim = sim;
-                }
-            }
-            sum += max_sim;
-        }
-        sum
+        score_records_symmetric(&self.quantizer, self.invert_score(), &records_a, &records_b)
     }
 
-    fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType {
-        let mut max_sim: SmallVec<[_; 8]> = smallvec![ScoreType::NEG_INFINITY; query.len()];
-
-        for bytes in records.chunks_exact(self.quantizer.quantized_size()) {
-            for (qi, inner_query) in query.iter().enumerate() {
-                let sim = self.signed(self.quantizer.score_precomputed(inner_query, bytes));
-                if max_sim[qi] < sim {
-                    max_sim[qi] = sim;
-                }
-            }
-        }
-        max_sim.into_iter().sum()
+    fn score_records_max_similarity(&self, query: &TurboMultiQuery, records: &[u8]) -> ScoreType {
+        query.score_records(&self.quantizer, self.invert_score(), records)
     }
 
     fn for_each_record_range<P: AccessPattern, U: Copy + UserData>(

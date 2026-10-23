@@ -8,7 +8,7 @@ use common::ambient::hw::HwMetric;
 use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, PackedMultiQuery};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -18,6 +18,8 @@ use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
 mod live_reload;
 mod offsets;
+#[cfg(test)]
+mod packed_tests;
 
 pub use offsets::{
     MultivectorOffsetsStorageChunked, MultivectorOffsetsStorageChunkedRead,
@@ -143,6 +145,100 @@ where
             // does memory copy, but minimizes assessed to external storage
             self.score_points_batch_uring_like(point_ids, scorer, scores)
         }
+    }
+
+    /// [`Self::score_points_batch`] for a query packed by
+    /// [`EncodedVectors::pack_multi_query`]: each multi-vector's stored vectors are
+    /// folded into one batched MaxSim instead of being scored pair by pair.
+    pub fn score_points_batch_packed(
+        &self,
+        point_ids: &[PointOffsetType],
+        query: &PackedMultiQuery,
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()> {
+        debug_assert_eq!(point_ids.len(), scores.len());
+        match self.multi_vector_config.comparator {
+            MultiVectorComparator::MaxSim => (),
+        }
+
+        let mut max_sim = query.max_sim();
+        if QuantizedStorage::is_in_ram_or_mmap() {
+            for (index, &point_id) in point_ids.iter().enumerate() {
+                let offsets = self.vector_offsets(point_id)?;
+                self.quantized_storage
+                    .for_each_batch(&offsets, |_, vector| max_sim.push(&vector))?;
+                scores[index] = max_sim.finish();
+            }
+            Ok(())
+        } else {
+            self.for_each_in_multi_batch(point_ids, |index, multi_vector| {
+                for vector in multi_vector {
+                    max_sim.push(vector);
+                }
+                scores[index] = max_sim.finish();
+            })
+        }
+    }
+
+    /// [`Self::score_points_batch`] for queries of several multi-vectors, each
+    /// packed by [`EncodedVectors::pack_multi_query`]: `scorer` folds the MaxSim
+    /// scores of its packed multi-vectors against one point into its score.
+    pub fn score_points_batch_packed_by<F>(
+        &self,
+        point_ids: &[PointOffsetType],
+        scorer: F,
+        scores: &mut [ScoreType],
+    ) -> OperationResult<()>
+    where
+        F: Fn(&dyn Fn(&PackedMultiQuery) -> ScoreType) -> ScoreType,
+    {
+        debug_assert_eq!(point_ids.len(), scores.len());
+        match self.multi_vector_config.comparator {
+            MultiVectorComparator::MaxSim => (),
+        }
+
+        let max_sim = |query: &PackedMultiQuery, vectors: &mut dyn Iterator<Item = &[u8]>| {
+            let mut max_sim = query.max_sim();
+            for vector in vectors {
+                max_sim.push(vector);
+            }
+            max_sim.finish()
+        };
+        if QuantizedStorage::is_in_ram_or_mmap() {
+            // The storage lends its vectors only for the duration of a callback:
+            // copy one point's vectors to score them against every multi-vector.
+            let vector_size = self.quantized_vector_size();
+            let mut vectors = Vec::new();
+            for (index, &point_id) in point_ids.iter().enumerate() {
+                let offsets = self.vector_offsets(point_id)?;
+                vectors.clear();
+                self.quantized_storage
+                    .for_each_batch(&offsets, |_, vector| vectors.extend_from_slice(&vector))?;
+                scores[index] =
+                    scorer(&|query| max_sim(query, &mut vectors.chunks_exact(vector_size)));
+            }
+            Ok(())
+        } else {
+            self.for_each_in_multi_batch(point_ids, |index, multi_vector| {
+                scores[index] = scorer(&|query| {
+                    max_sim(
+                        query,
+                        &mut multi_vector.iter().map(|vector| vector.as_ref()),
+                    )
+                });
+            })
+        }
+    }
+
+    /// Storage offsets of the stored vectors of one point.
+    fn vector_offsets(
+        &self,
+        point_id: PointOffsetType,
+    ) -> OperationResult<SmallVec<[PointOffsetType; 8]>> {
+        let mut offset = MultivectorOffset::default();
+        self.offsets
+            .for_each_offset(slice::from_ref(&point_id), |_, found| offset = found)?;
+        Ok((offset.start..offset.start + offset.count).collect())
     }
 
     #[inline]
@@ -360,6 +456,9 @@ where
     ) -> ScoreType {
         let offset_a = self.offsets.get_offset(vector_a_index);
         let offset_b = self.offsets.get_offset(vector_b_index);
+        if let Some(score) = self.score_internal_max_similarity_packed(offset_a, offset_b) {
+            return score;
+        }
         let mut sum = 0.0;
         for a in 0..offset_a.count {
             let mut max_sim = ScoreType::NEG_INFINITY;
@@ -376,6 +475,42 @@ where
             sum += max_sim;
         }
         sum
+    }
+
+    /// [`Self::score_internal_max_similarity`] with the vectors of `a` packed by
+    /// [`EncodedVectors::pack_multi_stored_if_faster`]; `None` without a faster
+    /// batched kernel or when the vectors can't be read.
+    fn score_internal_max_similarity_packed(
+        &self,
+        offset_a: MultivectorOffset,
+        offset_b: MultivectorOffset,
+    ) -> Option<ScoreType> {
+        if !QuantizedStorage::is_in_ram_or_mmap()
+            || !self
+                .quantized_storage
+                .packed_pays(offset_a.count as usize, true)
+        {
+            return None;
+        }
+        let vector_size = self.quantized_vector_size();
+        let offsets_a: SmallVec<[_; 8]> =
+            (offset_a.start..offset_a.start + offset_a.count).collect();
+        let offsets_b: SmallVec<[_; 8]> =
+            (offset_b.start..offset_b.start + offset_b.count).collect();
+        let mut vectors_a = Vec::with_capacity(offsets_a.len() * vector_size);
+        self.quantized_storage
+            .for_each_batch(&offsets_a, |_, vector| vectors_a.extend_from_slice(&vector))
+            .ok()?;
+        let packed = self
+            .quantized_storage
+            .pack_multi_stored_if_faster(vectors_a.chunks_exact(vector_size))?;
+        let mut max_sim = packed.max_sim();
+        self.quantized_storage
+            .for_each_batch(&offsets_b, |_, vector| max_sim.push(&vector))
+            .ok()?;
+        let mul = usize::from(self.quantized_storage.is_cold()); // Reads from RAM don't count as IO.
+        HwMetric::VectorIoRead.bump((offsets_a.len() + offsets_b.len()) * vector_size * mul);
+        Some(max_sim.finish())
     }
 
     pub fn inner_storage(&self) -> &QuantizedStorage {

@@ -2,13 +2,13 @@ use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::turboquant::EncodedQueryTQ;
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::vector_storage::TurboMultiScoring;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::turbo::multi_turbo::TurboMultiQuery;
 
 /// Raw scorer for multi-vector queries (reco / discover / context / feedback)
 /// against a multivector TurboQuant storage ([`TurboMultiScoring`]).
@@ -19,7 +19,7 @@ use crate::vector_storage::query_scorer::QueryScorer;
 pub struct TurboMultiCustomQueryScorer<'a, TStorage, TQuery>
 where
     TStorage: TurboMultiScoring,
-    TQuery: Query<Vec<EncodedQueryTQ>>,
+    TQuery: Query<TurboMultiQuery>,
 {
     hw: HwScale,
     query: TQuery,
@@ -29,12 +29,12 @@ where
 impl<'a, TStorage, TQuery> TurboMultiCustomQueryScorer<'a, TStorage, TQuery>
 where
     TStorage: TurboMultiScoring,
-    TQuery: Query<Vec<EncodedQueryTQ>>,
+    TQuery: Query<TurboMultiQuery>,
 {
     pub fn new<TInputQuery>(raw_query: TInputQuery, storage: &'a TStorage) -> Self
     where
         TInputQuery: Query<MultiDenseVectorInternal>
-            + TransformInto<TQuery, MultiDenseVectorInternal, Vec<EncodedQueryTQ>>,
+            + TransformInto<TQuery, MultiDenseVectorInternal, TurboMultiQuery>,
     {
         // Preprocess and precompute every inner vector of each sub-query once.
         let query: TQuery = raw_query
@@ -55,7 +55,7 @@ where
 impl<TStorage, TQuery> QueryScorer for TurboMultiCustomQueryScorer<'_, TStorage, TQuery>
 where
     TStorage: TurboMultiScoring,
-    TQuery: Query<Vec<EncodedQueryTQ>>,
+    TQuery: Query<TurboMultiQuery>,
 {
     fn score_stored_batch(
         &self,
