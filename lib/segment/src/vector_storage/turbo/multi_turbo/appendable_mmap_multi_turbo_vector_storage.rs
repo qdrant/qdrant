@@ -647,6 +647,15 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
 
         for (blob, deleted) in other_vectors {
             check_process_stopped(stopped)?;
+            // A missing vector stored without records, as the update-only
+            // writer does, gets the placeholder record this storage writes
+            // for one, which every version reads
+            // TODO(1.21): store the empty blob as is, once released readers read empty runs
+            let blob = if deleted && blob.is_empty() {
+                Cow::Owned(vec![0; record_size])
+            } else {
+                blob
+            };
             if blob.is_empty() || blob.len() % record_size != 0 {
                 return Err(OperationError::service_error(format!(
                     "Malformed multi TQ blob of {} bytes, expected a positive multiple of {record_size}",
