@@ -1,5 +1,5 @@
 use common::types::PointOffsetType;
-use pairwise::{Combine, MatrixOperands};
+use pairwise::{Combine, CombineDispatch, CombineFn, MatrixOperands};
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -20,14 +20,47 @@ pub(super) enum DenseCombine {
     Cos,
 }
 
-impl Combine for DenseCombine {
+impl CombineDispatch for DenseCombine {
+    #[inline(always)]
+    fn dispatch<F: CombineFn>(self, f: F) -> F::Output {
+        match self {
+            DenseCombine::Plain => f.call(Plain),
+            DenseCombine::Euclid => f.call(Euclid),
+            DenseCombine::Cos => f.call(Cos),
+        }
+    }
+}
+
+/// [`DenseCombine::Plain`]
+#[derive(Clone, Copy)]
+struct Plain;
+
+impl Combine for Plain {
+    #[inline(always)]
+    fn score(self, dot: f32, _: f32, _: f32) -> f32 {
+        dot
+    }
+}
+
+/// [`DenseCombine::Euclid`]
+#[derive(Clone, Copy)]
+struct Euclid;
+
+impl Combine for Euclid {
     #[inline(always)]
     fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32 {
-        match self {
-            DenseCombine::Plain => dot,
-            DenseCombine::Euclid => 2.0 * dot - aux_a - aux_b,
-            DenseCombine::Cos => dot * aux_a * aux_b,
-        }
+        2.0 * dot - aux_a - aux_b
+    }
+}
+
+/// [`DenseCombine::Cos`]
+#[derive(Clone, Copy)]
+struct Cos;
+
+impl Combine for Cos {
+    #[inline(always)]
+    fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32 {
+        dot * aux_a * aux_b
     }
 }
 
