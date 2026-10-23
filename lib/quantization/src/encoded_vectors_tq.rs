@@ -17,14 +17,15 @@ use crate::encoded_storage::{
     EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, validate_storage_vector_size,
 };
 use crate::encoded_vectors::{
-    EncodedVectors, VectorParameters, calibration_vectors, validate_vector_parameters,
+    EncodedVectors, EncodedVectorsWrite, VectorParameters, calibration_vectors,
+    validate_vector_parameters,
 };
 use crate::quantile::find_quantile_interval_per_coordinate_with_preprocess;
 use crate::turboquant::math::std_normal_cdf;
 use crate::turboquant::quantization::{ErrorCorrection, TurboQuantizer};
 use crate::turboquant::{EncodedQueryTQ, TQBits, TQMode, TQRotation};
 
-pub struct EncodedVectorsTQ<TStorage: EncodedStorageWrite> {
+pub struct EncodedVectorsTQ<TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
@@ -123,7 +124,7 @@ impl EncoderTQ {
     }
 }
 
-impl<TStorage: EncodedStorageWrite> EncodedVectorsTQ<TStorage> {
+impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
     pub fn storage(&self) -> &TStorage {
         &self.encoded_vectors
     }
@@ -513,19 +514,8 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         None
     }
 
-    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
-        let encoded_vector =
-            Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
-        self.encoded_vectors
-            .upsert_vector(id, bytemuck::cast_slice(encoded_vector.as_slice()))
-    }
-
     fn vectors_count(&self) -> usize {
         self.encoded_vectors.vectors_count()
-    }
-
-    fn flusher(&self) -> Flusher {
-        self.encoded_vectors.flusher()
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -553,5 +543,18 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsTQ<TStorage> {
         } else {
             score
         }
+    }
+}
+
+impl<TStorage: EncodedStorageWrite> EncodedVectorsWrite for EncodedVectorsTQ<TStorage> {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
+        let encoded_vector =
+            Self::encode_vector(vector, &self.quantizer, &mut self.encoding_buffer);
+        self.encoded_vectors
+            .upsert_vector(id, bytemuck::cast_slice(encoded_vector.as_slice()))
+    }
+
+    fn flusher(&self) -> Flusher {
+        self.encoded_vectors.flusher()
     }
 }

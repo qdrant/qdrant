@@ -86,6 +86,19 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageWrite
             .map_err(std::io::Error::other)
     }
 
+    fn flusher(&self) -> Flusher {
+        let flusher = self.data.flusher();
+        Box::new(move || {
+            Ok(flusher().map_err(|e| {
+                std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
+            })?)
+        })
+    }
+}
+
+impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
+    for QuantizedChunkedStorage<S>
+{
     fn is_in_ram_or_mmap() -> bool {
         ChunkedVectors::<u8, S>::storage_kind().is_in_ram_or_mmap()
     }
@@ -98,24 +111,11 @@ impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorageWrite
         self.data.len()
     }
 
-    fn flusher(&self) -> Flusher {
-        let flusher = self.data.flusher();
-        Box::new(move || {
-            Ok(flusher().map_err(|e| {
-                std::io::Error::other(format!("Failed to flush quantization storage: {e}"))
-            })?)
-        })
-    }
-
     fn heap_size_bytes(&self) -> usize {
         let Self { data } = self;
         data.heap_size_bytes()
     }
-}
 
-impl<S: UniversalWrite + Send + 'static> quantization::EncodedStorage
-    for QuantizedChunkedStorage<S>
-{
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         self.get_vector_data_opt(index).unwrap_or_default()
     }

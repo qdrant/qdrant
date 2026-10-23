@@ -87,6 +87,12 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
         Ok(())
     }
 
+    fn flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
+    }
+}
+
+impl quantization::EncodedStorage for QuantizedRamStorage {
     fn is_in_ram_or_mmap() -> bool {
         true
     }
@@ -99,17 +105,11 @@ impl quantization::EncodedStorageWrite for QuantizedRamStorage {
         self.vectors.len()
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
-    }
-
     fn heap_size_bytes(&self) -> usize {
         let Self { vectors, path: _ } = self;
         vectors.heap_size_bytes()
     }
-}
 
-impl quantization::EncodedStorage for QuantizedRamStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         Cow::Borrowed(self.vectors.get(index as VectorOffsetType))
     }
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn loads_complete_vectors() {
-        use quantization::{EncodedStorage, EncodedStorageWrite};
+        use quantization::EncodedStorage;
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("quantized.bin");

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::maybe_uninit::maybe_uninit_fill_from;
-use common::mmap::{AdviceSetting, Flusher, advice};
+use common::mmap::{AdviceSetting, advice};
 use common::prefetch::{
     MAX_UNPREFETCHED_BATCH, MIN_PREFETCH_STORAGE_BYTES, prefetch_slice, prefetch_slice_l2,
     prefetch_windows,
@@ -268,14 +268,7 @@ impl<S: UniversalRead> QuantizedStorage<S> {
     }
 }
 
-impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S> {
-    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[u8]) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Cannot upsert vector in mmap storage",
-        ))
-    }
-
+impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn is_in_ram_or_mmap() -> bool {
         true
     }
@@ -288,11 +281,6 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
         self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size.get()
     }
 
-    fn flusher(&self) -> Flusher {
-        // Mmap storage does not need a flusher, as it is non-appendable and already backed by a file.
-        Box::new(|| Ok(()))
-    }
-
     fn heap_size_bytes(&self) -> usize {
         let Self {
             storage: _,
@@ -303,9 +291,7 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedStorage<S>
 
         0
     }
-}
 
-impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     fn prefers_contiguous_reads() -> bool {
         // Exhaustive on purpose: a new backend must decide here rather than
         // inherit whichever answer a wildcard happened to give it.
