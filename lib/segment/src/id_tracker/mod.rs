@@ -7,6 +7,7 @@ pub mod in_memory_id_tracker;
 mod memory_reporter;
 pub mod mutable_id_tracker;
 pub mod point_mappings;
+pub mod point_moves;
 
 use common::types::PointOffsetType;
 pub use format_detection::IdTrackerFormat;
