@@ -94,11 +94,12 @@ pub trait UniversalWriteFs: UniversalReadFs {
 
     /// Create or truncate a file at the given path.
     ///
-    /// Local backends use `expected_length` to pre-size the file and
-    /// reserve its blocks, so that writes into it report `ENOSPC` when the
-    /// filesystem is full, instead of crashing the process with `SIGBUS`
-    /// when written through a memory map. Backends without fixed-size file
-    /// objects may ignore it.
+    /// Local backends use `expected_length` to pre-size the file. Where the
+    /// filesystem supports `fallocate`, they also reserve its blocks, so a
+    /// full disk makes `create` fail with `ENOSPC` before any mapped write.
+    /// Where `fallocate` is unsupported, the file stays sparse, `create`
+    /// succeeds, and a full disk can raise `SIGBUS` during memory-map
+    /// writes. Backends without fixed-size file objects may ignore it.
     fn create(&self, path: &Path, expected_length: usize) -> UioResult<()>;
 
     /// Create a directory at the given path.

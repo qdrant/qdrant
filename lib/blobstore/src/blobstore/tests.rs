@@ -2503,6 +2503,8 @@ fn test_iter_batch_in_order() {
     assert_eq!(visited, [(8, 'd')]);
 }
 
+/// A gridstore created through the `create()` path reserves blocks for every
+/// file it later maps; see `assert_all_files_reserved` for why.
 #[cfg(target_os = "linux")]
 #[test]
 fn test_gridstore_files_have_reserved_blocks() {
@@ -2544,6 +2546,7 @@ fn test_gridstore_files_have_reserved_blocks() {
 fn assert_all_files_reserved(dir: &std::path::Path) {
     use std::os::unix::fs::MetadataExt;
 
+    /// Collects every regular file under `dir`, recursively.
     fn walk(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();

@@ -52,7 +52,30 @@ pub static MULTI_MMAP_IS_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
 /// If multi-mmap support is checked at Qdrant startup, the result is stored in this cell.
 pub static MULTI_MMAP_SUPPORT_CHECK_RESULT: OnceLock<bool> = OnceLock::new();
 
+/// Creates the file at `path` if needed and ensures it has exactly `length`
+/// bytes, without reserving any blocks.
 pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
+    let no_reservation = |_file: &File, _length: usize| Ok(());
+    create_and_ensure_length_inner(path, length, &no_reservation)
+}
+
+/// Shared implementation of [`create_and_ensure_length`] and
+/// [`create_and_ensure_length_allocated`], with the block reservation step
+/// passed in as a function: [`create_and_ensure_length`] hands it a no-op,
+/// [`create_and_ensure_length_allocated`] hands in [`reserve_blocks`], and
+/// the tests inject failures through it.
+///
+/// A failed reservation leaves the file in its previous state: an existing
+/// file is shrunk back to the length it had before the growth attempt, and a
+/// new file is only renamed to `path` after its blocks are reserved, so it
+/// is never published at all on failure. Either way, no file is left behind
+/// that is longer than the range with reserved blocks, which a later open
+/// would otherwise map and write through.
+fn create_and_ensure_length_inner(
+    path: &Path,
+    length: usize,
+    reserve: &dyn Fn(&File, usize) -> io::Result<()>,
+) -> io::Result<File> {
     if path.exists() {
         let file = OpenOptions::new()
             .read(true)
@@ -60,7 +83,23 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
             // Don't truncate because we explicitly set the length later
             .truncate(false)
             .open(path)?;
+        // Length before this call grows the file; needed to undo the growth
+        // if the block reservation below fails.
+        let previous_len = file.metadata().ok().map(|metadata| metadata.len());
         file.set_len(length as u64)?;
+        if let Err(err) = reserve(&file, length) {
+            if let Some(previous_len) = previous_len.filter(|&len| len < length as u64) {
+                // Undo the growth, so the next open does not map an
+                // enlarged but unreserved tail, which would reintroduce
+                // the SIGBUS window the reservation exists to close.
+                // Only an actual growth is undone: the file may have been
+                // recreated smaller, and padding it back with zeros would
+                // fabricate data. Best effort only: the reservation error
+                // is the failure that gets reported.
+                let _ = file.set_len(previous_len);
+            }
+            return Err(err);
+        }
 
         Ok(file)
     } else {
@@ -76,6 +115,10 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
                 .truncate(false)
                 .open(&temp_path)?;
             temp_file.set_len(length as u64)?;
+            // Reserve before the rename publishes the file, so a failed
+            // reservation cannot leave a full-length sparse file at `path`
+            // that a later open would map and write through.
+            reserve(&temp_file, length)?;
         }
 
         fs::rename(&temp_path, path)?;
@@ -98,10 +141,11 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
 /// On filesystems that do not support `fallocate` this degrades to the
 /// previous sparse behavior (with a warning), so that creating a store keeps
 /// working everywhere.
+/// If the reservation fails, most importantly with `ENOSPC` on a full
+/// filesystem, the caller gets the error and the file keeps its previous
+/// state; see [`create_and_ensure_length_inner`].
 pub fn create_and_ensure_length_allocated(path: &Path, length: usize) -> io::Result<File> {
-    let file = create_and_ensure_length(path, length)?;
-    reserve_blocks(&file, length)?;
-    Ok(file)
+    create_and_ensure_length_inner(path, length, &reserve_blocks)
 }
 
 /// Reserves physical blocks for the first `length` bytes of `file`.
@@ -234,6 +278,8 @@ mod tests {
 
     use super::*;
 
+    /// [`create_and_ensure_length`] leaves the file sparse: no blocks are
+    /// allocated for regions that were never written.
     #[test]
     fn test_create_and_ensure_length_is_sparse() {
         let dir = tempfile::tempdir().unwrap();
@@ -251,6 +297,8 @@ mod tests {
         );
     }
 
+    /// [`create_and_ensure_length_allocated`] allocates blocks for the whole
+    /// file, so mapped writes cannot run past the end of the free space.
     #[test]
     fn test_create_and_ensure_length_allocated_reserves_all_blocks() {
         let dir = tempfile::tempdir().unwrap();
@@ -268,6 +316,8 @@ mod tests {
         );
     }
 
+    /// Growing a reserved file through [`create_and_ensure_length_allocated`]
+    /// also reserves the added range.
     #[test]
     fn test_create_and_ensure_length_allocated_reserves_grown_blocks() {
         let dir = tempfile::tempdir().unwrap();
@@ -284,5 +334,45 @@ mod tests {
             metadata.blocks() * 512,
             metadata.len(),
         );
+    }
+
+    /// When the block reservation fails while growing an existing file, the
+    /// growth is undone so the next open cannot map an unreserved tail.
+    #[test]
+    fn test_failed_reservation_restores_previous_length() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grow-fail.dat");
+
+        create_and_ensure_length_allocated(&path, 8 * 1024).unwrap();
+
+        let err = create_and_ensure_length_inner(&path, 64 * 1024, &|_: &File, _: usize| {
+            Err(io::Error::other("injected reservation failure"))
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("injected reservation failure"));
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(
+            metadata.len(),
+            8 * 1024,
+            "a failed growth must be undone, but the file is {} bytes long",
+            metadata.len(),
+        );
+    }
+
+    /// A failed block reservation must not publish a new full-length sparse
+    /// file: the rename only happens after the blocks are reserved.
+    #[test]
+    fn test_failed_reservation_does_not_publish_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new-fail.dat");
+
+        let err = create_and_ensure_length_inner(&path, 64 * 1024, &|_: &File, _: usize| {
+            Err(io::Error::other("injected reservation failure"))
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("injected reservation failure"));
+
+        assert!(!path.exists(), "a failed creation must not publish a file");
     }
 }
