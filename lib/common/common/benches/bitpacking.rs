@@ -1,20 +1,12 @@
 use std::hint::black_box;
-use std::io::Write;
-use std::path::Path;
 
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::{iterate_packed_links, pack_links};
 use common::bitpacking_ordered;
-use common::mmap::AdviceSetting;
-#[cfg(target_os = "linux")]
-use common::universal_io::IoUringFs;
-use common::universal_io::{MmapFs, OpenOptions, Populate, UniversalReadFs};
-use criterion::measurement::WallTime;
-use criterion::{BatchSize, BenchmarkGroup, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use itertools::Itertools as _;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng as _};
-use tempfile::NamedTempFile;
 use zerocopy::IntoBytes;
 
 pub fn bench_bitpacking(c: &mut Criterion) {
@@ -160,19 +152,6 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
             BatchSize::SmallInput,
         )
     });
-
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(&compressed).unwrap();
-
-    bench_uio_batch(&mut group, "batch/uio_mmap", &MmapFs, file.path(), reader);
-    #[cfg(target_os = "linux")]
-    bench_uio_batch(
-        &mut group,
-        "batch/uio_io_uring",
-        &IoUringFs,
-        file.path(),
-        reader,
-    );
 }
 
 const MAX_BATCH_SIZE: usize = 32;
@@ -182,40 +161,6 @@ fn random_batch(rng: &mut SmallRng, len: usize) -> Vec<usize> {
     (0..batch_size)
         .map(|_| rng.random_range(0..len - 1))
         .collect()
-}
-
-fn bench_uio_batch<Fs: UniversalReadFs>(
-    group: &mut BenchmarkGroup<'_, WallTime>,
-    name: &str,
-    fs: &Fs,
-    path: &Path,
-    reader: bitpacking_ordered::Reader,
-) {
-    let options = OpenOptions {
-        writeable: false,
-        need_sequential: false,
-        populate: Populate::Blocking,
-        advice: AdviceSetting::Global,
-    };
-    let storage = fs.open(path, options, Default::default()).unwrap();
-
-    let len = reader.decompressed_len();
-    let mut rng = SmallRng::seed_from_u64(42);
-    let mut out = [(0, 0); MAX_BATCH_SIZE];
-    group.bench_function(name, |b| {
-        b.iter_batched(
-            || random_batch(&mut rng, len),
-            |indices| {
-                let out = &mut out[..indices.len()];
-                for result in reader.read_pairs_iter(&storage, 0, &indices).unwrap() {
-                    let (position, pair) = result.unwrap();
-                    out[position] = pair;
-                }
-                black_box(out);
-            },
-            BatchSize::SmallInput,
-        )
-    });
 }
 
 criterion_group! {
