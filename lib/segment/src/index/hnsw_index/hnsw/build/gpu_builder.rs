@@ -27,7 +27,8 @@ use crate::vector_storage::VectorStorageRead as _;
 
 /// Inserts points in batches on a GPU. A step the GPU fails to build returns the state as a
 /// [`Fallback`], and is built on the CPU by the method `select` picks without a GPU: the old
-/// graph is healed if there is one worth healing.
+/// graph is healed if there is one worth healing, and PiPNN builds the main graph where it
+/// applies.
 pub(super) struct GpuBuilder<'a> {
     pub local: LocalBuilder<'a>,
     pub gpu: GpuState,

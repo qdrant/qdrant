@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 use common::ambient;
 use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
-use common::progress_tracker::ProgressTracker;
+use common::progress_tracker::{ProgressTracker, ProgressTree, new_progress_tracker};
 use common::types::ScoredPointOffset;
 use ordered_float::OrderedFloat;
 use parking_lot::Mutex;
@@ -22,7 +22,7 @@ use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::get_num_indexing_threads;
 use segment::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use segment::index::hnsw_index::gpu::set_gpu_groups_count;
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
+use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs, with_pipnn_min_points};
 use segment::index::{PayloadIndex, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
@@ -41,6 +41,24 @@ fn build_hnsw(
     hnsw_config: HnswConfig,
     gpu_device: Option<&LockedGpuDevice>,
     stopped: &AtomicBool,
+) -> HNSWIndex {
+    build_hnsw_with_progress(
+        path,
+        segment,
+        hnsw_config,
+        gpu_device,
+        stopped,
+        ProgressTracker::new_for_test(),
+    )
+}
+
+fn build_hnsw_with_progress(
+    path: &Path,
+    segment: &Segment,
+    hnsw_config: HnswConfig,
+    gpu_device: Option<&LockedGpuDevice>,
+    stopped: &AtomicBool,
+    progress: ProgressTracker,
 ) -> HNSWIndex {
     let permit_cpu_count = get_num_indexing_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
@@ -67,7 +85,7 @@ fn build_hnsw(
             hnsw_global_config: &HnswGlobalConfig::default(),
             feature_flags: FeatureFlags::default(),
             inline_vectors: false,
-            progress: ProgressTracker::new_for_test(),
+            progress,
         },
     )
     .unwrap()
@@ -325,4 +343,99 @@ fn test_gpu_filterable_hnsw() {
 
     // Reset global GPU groups state to avoid leaking to other tests
     set_gpu_groups_count(None);
+}
+
+fn find_progress<'a>(tree: &'a ProgressTree, name: &str) -> Option<&'a ProgressTree> {
+    if tree.name == name {
+        return Some(tree);
+    }
+    tree.children
+        .iter()
+        .find_map(|child| find_progress(child, name))
+}
+
+/// Where PiPNN applies, the GPU still builds the main graph: PiPNN only builds what the GPU
+/// fails to build. The CPU main graph phase stays unstarted, and blocks and recall are as with
+/// the GPU alone.
+#[test]
+fn test_gpu_before_pipnn() {
+    let _scope = ambient::test_guard();
+    let stopped = AtomicBool::new(false);
+    let dim = 8;
+    let num_vectors: u64 = 10_000;
+    let int_key = "int";
+    let hnsw_config = HnswConfig {
+        m: 8,
+        ef_construct: 16,
+        full_scan_threshold: 32, // KB
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        memory: None,
+        payload_m: None,
+        inline_storage: None,
+    };
+
+    let gpu_instance = gpu::GPU_TEST_INSTANCE.clone();
+    let gpu_device = Mutex::new(
+        gpu::Device::new(gpu_instance.clone(), &gpu_instance.physical_devices()[0]).unwrap(),
+    );
+    set_gpu_groups_count(Some(64));
+
+    let seg_dir = Builder::new().prefix("seg_idx").tempdir().unwrap();
+    let segment = create_test_segment(
+        seg_dir.path(),
+        dim,
+        Distance::Cosine,
+        num_vectors,
+        int_key,
+        2,
+        true,
+    );
+    let hnsw_dir = Builder::new().prefix("hnsw_gpu").tempdir().unwrap();
+    let (progress_view, progress) = new_progress_tracker();
+    let hnsw = with_pipnn_min_points(0, || {
+        let locked = LockedGpuDevice::new(gpu_device.lock());
+        build_hnsw_with_progress(
+            hnsw_dir.path(),
+            &segment,
+            hnsw_config,
+            Some(&locked),
+            &stopped,
+            progress,
+        )
+    });
+    set_gpu_groups_count(None);
+
+    let progress = progress_view.snapshot("index");
+    let main_graph = find_progress(&progress, "main_graph").expect("main graph progress");
+    assert!(
+        main_graph.started_at.is_none(),
+        "the CPU built the main graph: {main_graph:?}",
+    );
+
+    let mut query_rng = StdRng::seed_from_u64(12345);
+    let top = 3;
+    let attempts = 100;
+    let hits = (0..attempts)
+        .filter(|_| {
+            let query: QueryVector = random_vector(&mut query_rng, dim).into();
+            let search = |params: Option<&SearchParams>| {
+                hnsw.search(&[&query], None, top, params, &Default::default())
+                    .unwrap()[0]
+                    .iter()
+                    .map(|scored| scored.idx)
+                    .collect::<HashSet<_>>()
+            };
+            let exact = search(Some(&SearchParams {
+                exact: true,
+                ..Default::default()
+            }));
+            let graph = search(Some(&SearchParams {
+                hnsw_ef: Some(32),
+                ..Default::default()
+            }));
+            exact == graph
+        })
+        .count();
+    assert!(hits >= 90, "hits: {hits} of {attempts}");
 }

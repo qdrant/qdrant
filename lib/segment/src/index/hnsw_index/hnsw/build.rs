@@ -36,11 +36,14 @@ mod healing_builder;
 mod hnsw_builder;
 mod local_builder;
 mod payload_blocks;
+mod pipnn_builder;
 
 use self::block_filter::BlockSkip;
 use self::context::{GraphBuildContext, GraphParams, MainGraphProgress};
 use self::graph_builder::{GraphBuildOptions, GraphBuilder, GraphBuilderMethod};
 use self::payload_blocks::{BlockLoader, FieldBlocks, field_payload_blocks, payload_block_fields};
+#[cfg(feature = "testing")]
+pub use self::pipnn_builder::with_pipnn_min_points;
 
 impl HNSWIndex {
     pub fn build<R: Rng + ?Sized>(
