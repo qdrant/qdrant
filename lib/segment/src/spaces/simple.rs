@@ -3,6 +3,8 @@ use common::types::ScoreType;
 use super::metric::{Metric, MetricPostProcessing};
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
+#[cfg(target_arch = "x86_64")]
+use super::simple_avx512::*;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -10,6 +12,9 @@ use super::simple_sse::*;
 use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
+
+#[cfg(target_arch = "x86_64")]
+pub(crate) const MIN_DIM_SIZE_AVX512: usize = 64;
 
 #[cfg(target_arch = "x86_64")]
 pub(crate) const MIN_DIM_SIZE_AVX: usize = 32;
@@ -20,6 +25,39 @@ pub(crate) const MIN_DIM_SIZE_AVX: usize = 32;
     all(target_arch = "aarch64", target_feature = "neon")
 ))]
 pub(crate) const MIN_DIM_SIZE_SIMD: usize = 16;
+
+/// Best f32 distance backend available on this CPU.
+///
+/// Resolved once via [`f32_simd_backend`] so hot scoring loops (HNSW construction
+/// neighbor search and heuristic `score_internal`) do not re-run feature detection
+/// on every vector. Preference order: AVX-512F → AVX+FMA → SSE → scalar
+/// (NEON is selected separately on aarch64).
+#[cfg(target_arch = "x86_64")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum F32SimdBackend {
+    Avx512,
+    Avx,
+    Sse,
+    Scalar,
+}
+
+#[cfg(target_arch = "x86_64")]
+fn f32_simd_backend() -> F32SimdBackend {
+    use std::sync::OnceLock;
+
+    static BACKEND: OnceLock<F32SimdBackend> = OnceLock::new();
+    *BACKEND.get_or_init(|| {
+        if is_x86_feature_detected!("avx512f") {
+            F32SimdBackend::Avx512
+        } else if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
+            F32SimdBackend::Avx
+        } else if is_x86_feature_detected!("sse") {
+            F32SimdBackend::Sse
+        } else {
+            F32SimdBackend::Scalar
+        }
+    })
+}
 
 #[derive(Clone)]
 pub struct DotProductMetric;
@@ -41,15 +79,23 @@ impl Metric<VectorElementType> for EuclidMetric {
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx")
-                && is_x86_feature_detected!("fma")
-                && v1.len() >= MIN_DIM_SIZE_AVX
-            {
-                return unsafe { euclid_similarity_avx(v1, v2) };
+            match f32_simd_backend() {
+                F32SimdBackend::Avx512 if v1.len() >= MIN_DIM_SIZE_AVX512 => {
+                    return unsafe { euclid_similarity_avx512(v1, v2) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx if v1.len() >= MIN_DIM_SIZE_AVX => {
+                    return unsafe { euclid_similarity_avx(v1, v2) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx | F32SimdBackend::Sse
+                    if v1.len() >= MIN_DIM_SIZE_SIMD =>
+                {
+                    return unsafe { euclid_similarity_sse(v1, v2) };
+                }
+                _ => {}
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(target_arch = "x86", not(target_arch = "x86_64")))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { euclid_similarity_sse(v1, v2) };
@@ -85,15 +131,23 @@ impl Metric<VectorElementType> for ManhattanMetric {
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx")
-                && is_x86_feature_detected!("fma")
-                && v1.len() >= MIN_DIM_SIZE_AVX
-            {
-                return unsafe { manhattan_similarity_avx(v1, v2) };
+            match f32_simd_backend() {
+                F32SimdBackend::Avx512 if v1.len() >= MIN_DIM_SIZE_AVX512 => {
+                    return unsafe { manhattan_similarity_avx512(v1, v2) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx if v1.len() >= MIN_DIM_SIZE_AVX => {
+                    return unsafe { manhattan_similarity_avx(v1, v2) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx | F32SimdBackend::Sse
+                    if v1.len() >= MIN_DIM_SIZE_SIMD =>
+                {
+                    return unsafe { manhattan_similarity_sse(v1, v2) };
+                }
+                _ => {}
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(target_arch = "x86", not(target_arch = "x86_64")))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { manhattan_similarity_sse(v1, v2) };
@@ -129,15 +183,23 @@ impl Metric<VectorElementType> for DotProductMetric {
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx")
-                && is_x86_feature_detected!("fma")
-                && v1.len() >= MIN_DIM_SIZE_AVX
-            {
-                return unsafe { dot_similarity_avx(v1, v2) };
+            match f32_simd_backend() {
+                F32SimdBackend::Avx512 if v1.len() >= MIN_DIM_SIZE_AVX512 => {
+                    return unsafe { dot_similarity_avx512(v1, v2) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx if v1.len() >= MIN_DIM_SIZE_AVX => {
+                    return unsafe { dot_similarity_avx(v1, v2) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx | F32SimdBackend::Sse
+                    if v1.len() >= MIN_DIM_SIZE_SIMD =>
+                {
+                    return unsafe { dot_similarity_sse(v1, v2) };
+                }
+                _ => {}
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(target_arch = "x86", not(target_arch = "x86_64")))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_sse(v1, v2) };
@@ -178,15 +240,25 @@ impl Metric<VectorElementType> for CosineMetric {
     fn preprocess(vector: DenseVector) -> DenseVector {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx")
-                && is_x86_feature_detected!("fma")
-                && vector.len() >= MIN_DIM_SIZE_AVX
-            {
-                return unsafe { cosine_preprocess_avx(vector) };
+            match f32_simd_backend() {
+                F32SimdBackend::Avx512 if vector.len() >= MIN_DIM_SIZE_AVX512 => {
+                    return unsafe { cosine_preprocess_avx512(vector) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx
+                    if vector.len() >= MIN_DIM_SIZE_AVX =>
+                {
+                    return unsafe { cosine_preprocess_avx(vector) };
+                }
+                F32SimdBackend::Avx512 | F32SimdBackend::Avx | F32SimdBackend::Sse
+                    if vector.len() >= MIN_DIM_SIZE_SIMD =>
+                {
+                    return unsafe { cosine_preprocess_sse(vector) };
+                }
+                _ => {}
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(target_arch = "x86", not(target_arch = "x86_64")))]
         {
             if is_x86_feature_detected!("sse") && vector.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { cosine_preprocess_sse(vector) };
@@ -274,5 +346,19 @@ mod tests {
                 "renormalization is not stable (vector #{attempt})"
             );
         }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_dispatched_metrics_match_scalar() {
+        let v1: Vec<f32> = (0..96).map(|i| i as f32 * 0.1).collect();
+        let v2: Vec<f32> = (0..96).map(|i| (i as f32 * 0.07) + 1.0).collect();
+
+        let tol = 1e-4_f32;
+        assert!((DotProductMetric::similarity(&v1, &v2) - dot_similarity(&v1, &v2)).abs() < tol);
+        assert!((EuclidMetric::similarity(&v1, &v2) - euclid_similarity(&v1, &v2)).abs() < tol);
+        assert!(
+            (ManhattanMetric::similarity(&v1, &v2) - manhattan_similarity(&v1, &v2)).abs() < tol
+        );
     }
 }
