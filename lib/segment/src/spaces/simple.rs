@@ -212,10 +212,19 @@ impl MetricPostProcessing for CosineMetric {
 }
 
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    -v1.iter()
-        .zip(v2)
-        .map(|(a, b)| (a - b).powi(2))
-        .sum::<ScoreType>()
+    let mut sum: ScoreType = 0.0;
+    let mut any_diff = false;
+    for (&a, &b) in v1.iter().zip(v2) {
+        if a != b {
+            any_diff = true;
+            sum += (a - b).powi(2);
+        }
+    }
+    if any_diff && sum == 0.0 {
+        -ScoreType::from_bits(1)
+    } else {
+        -sum
+    }
 }
 
 pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
@@ -272,6 +281,28 @@ mod tests {
             assert_eq!(
                 preprocess1, preprocess2,
                 "renormalization is not stable (vector #{attempt})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_euclid_tiny_vectors() {
+        for dim in [2, 16, 32, 64] {
+            let mut v1 = vec![0.0; dim];
+            v1[0] = 1e-25;
+            let v2 = vec![0.0; dim];
+
+            let sim_self = <EuclidMetric as Metric<VectorElementType>>::similarity(&v1, &v1);
+            let sim_other = <EuclidMetric as Metric<VectorElementType>>::similarity(&v1, &v2);
+
+            assert_eq!(sim_self, 0.0, "dim: {dim}, sim_self should be 0.0");
+            assert!(
+                sim_self > sim_other,
+                "dim: {dim}, sim_self: {sim_self}, sim_other: {sim_other}"
+            );
+            assert!(
+                <EuclidMetric as MetricPostProcessing>::postprocess(sim_other) > 0.0,
+                "dim: {dim}, postprocessed distance must be positive"
             );
         }
     }
