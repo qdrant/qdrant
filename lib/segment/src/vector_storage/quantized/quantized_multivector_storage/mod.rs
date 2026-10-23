@@ -8,7 +8,7 @@ use common::ambient::hw::HwMetric;
 use common::mmap::Flusher;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, EncodedVectorsWrite};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -58,6 +58,14 @@ pub trait MultivectorOffsetsStorage: Sized {
 
     fn len(&self) -> usize;
 
+    fn files(&self) -> Vec<PathBuf>;
+
+    fn immutable_files(&self) -> Vec<PathBuf>;
+
+    fn heap_size_bytes(&self) -> usize;
+}
+
+pub trait MultivectorOffsetsStorageWrite: MultivectorOffsetsStorage {
     fn upsert_offset(
         &mut self,
         id: PointOffsetType,
@@ -65,12 +73,6 @@ pub trait MultivectorOffsetsStorage: Sized {
     ) -> std::io::Result<()>;
 
     fn flusher(&self) -> Flusher;
-
-    fn files(&self) -> Vec<PathBuf>;
-
-    fn immutable_files(&self) -> Vec<PathBuf>;
-
-    fn heap_size_bytes(&self) -> usize;
 }
 
 pub struct QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
@@ -464,6 +466,45 @@ where
         Some(query)
     }
 
+    fn vectors_count(&self) -> usize {
+        self.offsets.len()
+    }
+
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.files();
+        files.extend(self.offsets.files());
+        files
+    }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        let mut files = self.quantized_storage.immutable_files();
+        files.extend(self.offsets.immutable_files());
+        files
+    }
+
+    fn heap_size_bytes(&self) -> usize {
+        let Self {
+            quantized_storage,
+            offsets,
+            dim: _,
+            multi_vector_config: _,
+        } = self;
+
+        quantized_storage.heap_size_bytes() + offsets.heap_size_bytes()
+    }
+
+    type SupportsBytes = False;
+    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &Self::EncodedQuery, _: &[u8]) -> f32 {
+        match enabled {}
+    }
+}
+
+impl<QuantizedStorage, TMultivectorOffsetsStorage> EncodedVectorsWrite
+    for QuantizedMultivectorStorage<QuantizedStorage, TMultivectorOffsetsStorage>
+where
+    QuantizedStorage: EncodedVectorsWrite,
+    TMultivectorOffsetsStorage: MultivectorOffsetsStorageWrite,
+{
     fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
@@ -501,10 +542,6 @@ where
         Ok(())
     }
 
-    fn vectors_count(&self) -> usize {
-        self.offsets.len()
-    }
-
     fn flusher(&self) -> Flusher {
         let quantized_storage_flusher = self.quantized_storage.flusher();
         let offsets_flusher = self.offsets.flusher();
@@ -513,34 +550,6 @@ where
             offsets_flusher()?;
             Ok(())
         })
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        let mut files = self.quantized_storage.files();
-        files.extend(self.offsets.files());
-        files
-    }
-
-    fn immutable_files(&self) -> Vec<PathBuf> {
-        let mut files = self.quantized_storage.immutable_files();
-        files.extend(self.offsets.immutable_files());
-        files
-    }
-
-    fn heap_size_bytes(&self) -> usize {
-        let Self {
-            quantized_storage,
-            offsets,
-            dim: _,
-            multi_vector_config: _,
-        } = self;
-
-        quantized_storage.heap_size_bytes() + offsets.heap_size_bytes()
-    }
-
-    type SupportsBytes = False;
-    fn score_bytes(&self, enabled: Self::SupportsBytes, _: &Self::EncodedQuery, _: &[u8]) -> f32 {
-        match enabled {}
     }
 }
 

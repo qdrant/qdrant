@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::generic_consts::{AccessPattern, Random};
-use common::mmap::{AdviceSetting, Flusher};
+use common::mmap::AdviceSetting;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, Populate, UniversalRead, UniversalReadFs, UserData};
 
@@ -79,14 +79,7 @@ impl<S: UniversalRead> QuantizedChunkedStorageRead<S> {
     }
 }
 
-impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedStorageRead<S> {
-    fn upsert_vector(&mut self, _id: PointOffsetType, _vector: &[u8]) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "Cannot upsert vector in read-only chunked storage",
-        ))
-    }
-
+impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageRead<S> {
     fn is_in_ram_or_mmap() -> bool {
         S::kind().is_in_ram_or_mmap()
     }
@@ -99,17 +92,10 @@ impl<S: UniversalRead> quantization::EncodedStorageWrite for QuantizedChunkedSto
         self.data.len()
     }
 
-    fn flusher(&self) -> Flusher {
-        // Read-only storage is never dirty.
-        Box::new(|| Ok(()))
-    }
-
     fn heap_size_bytes(&self) -> usize {
         self.data.heap_size_bytes()
     }
-}
 
-impl<S: UniversalRead> quantization::EncodedStorage for QuantizedChunkedStorageRead<S> {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         self.get_vector_data_opt(index).unwrap_or_default()
     }
