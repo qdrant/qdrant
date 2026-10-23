@@ -2966,3 +2966,289 @@ fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
          changes log",
     );
 }
+
+/// A -> B, unproxy A, then B -> A must not retain both flush dependencies.
+/// The optimizer and snapshot paths both restore the original segment ID.
+#[rstest::rstest]
+#[case::optimizer(false)]
+#[case::snapshot(true)]
+fn test_unproxy_retires_cow_dependencies_before_segment_can_receive_moves(#[case] snapshot: bool) {
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    let dir = Builder::new().prefix("cow_cycle").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+    let mut source = empty_segment(dir.path());
+    source
+        .upsert_point(
+            10,
+            100.into(),
+            segment::data_types::vectors::only_default_vector(&[1.0, 0.0, 0.0, 0.0]),
+        )
+        .unwrap();
+    let mut holder = SegmentHolder::default();
+    let a = holder.add_new(source);
+    let b = holder.add_new(empty_segment(dir.path()));
+    let holder = LockedSegmentHolder::new(holder);
+
+    // Force the point to move back and forth, without an intervening explicit
+    // flush. With only two segments, there is exactly one eligible destination.
+    for (round, from, to) in [(20, a, b), (30, b, a)] {
+        {
+            let mut segments = holder.write();
+            let original = segments.get(from).unwrap().clone();
+            segments
+                .replace(from, LockedSegment::from(ProxySegment::new(original)))
+                .unwrap();
+        }
+        holder
+            .read()
+            .apply_points_with_conditional_move(
+                round,
+                &[100.into()],
+                |_, _| unreachable!("the source is proxied"),
+                |_, _, _, payload| {
+                    payload.0.insert("round".to_string(), round.into());
+                },
+                None,
+            )
+            .unwrap();
+        if snapshot {
+            let lock = holder.upgradable_read();
+            let lock = SegmentHolder::try_unproxy_segment(&holder, lock, from)
+                .unwrap_or_else(|_| panic!("snapshot unproxy should succeed"));
+            drop(lock);
+        } else {
+            unwrap_proxy(&holder, &[from]).unwrap();
+        }
+        let segments = holder.read();
+        assert!(
+            segments
+                .get(to)
+                .unwrap()
+                .get()
+                .read()
+                .has_point(100.into(), DeferredBehavior::VisibleOnly)
+        );
+        assert!(
+            !segments
+                .get(from)
+                .unwrap()
+                .get()
+                .read()
+                .has_point(100.into(), DeferredBehavior::VisibleOnly)
+        );
+    }
+
+    // Without the fix, this panics on the A <-> B flush cycle in debug builds.
+    assert_eq!(holder.read().flush_all(FlushMode::Sync, false).unwrap(), 30);
+    let segments = holder.read();
+    let a_segment = segments.get(a).unwrap().get().read();
+    assert_eq!(
+        a_segment.payload(100.into()).unwrap(),
+        payload_json! {"round": 30}
+    );
+    assert!(a_segment.persistent_version() >= 30);
+    assert_eq!(
+        segments.flush_dependency.lock().dependencies_of(&a).count(),
+        0
+    );
+    assert_eq!(
+        segments.flush_dependency.lock().dependencies_of(&b).count(),
+        0
+    );
+
+    let paths = [(a, true), (b, false)]
+        .map(|(id, present)| (segments.get(id).unwrap().get().read().data_path(), present));
+    drop(a_segment);
+    drop(segments);
+    drop(holder);
+    for (path, present) in paths {
+        let restored = segment::segment_constructor::load_segment(
+            &path,
+            uuid::Uuid::nil(),
+            None,
+            &AtomicBool::new(false),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            restored.has_point(100.into(), DeferredBehavior::VisibleOnly),
+            present
+        );
+        if present {
+            assert_eq!(
+                restored.payload(100.into()).unwrap(),
+                payload_json! {"round": 30}
+            );
+        }
+    }
+}
+
+#[rstest::rstest]
+#[case::pending_moves(true, true)]
+#[case::no_pending_moves(false, true)]
+#[case::non_appendable_source(true, false)]
+fn test_unproxy_flushes_only_with_pending_moves_and_preserves_proxy_on_error(
+    #[case] pending_moves: bool,
+    #[case] appendable: bool,
+) {
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    let dir = Builder::new().prefix("cow_flush_error").tempdir().unwrap();
+    let mut holder = SegmentHolder::default();
+    let mut segment = empty_segment(dir.path());
+    segment.appendable_flag = appendable;
+    let wrapped = LockedSegment::new(segment);
+    let proxy_id = holder.add_new_locked(LockedSegment::from(ProxySegment::new(wrapped)));
+    let destination = holder.add_new(empty_segment(dir.path()));
+    if pending_moves {
+        holder
+            .flush_dependency
+            .lock()
+            .add_dependency(proxy_id, destination, 0);
+    }
+    let flush_attempted = Arc::new(AtomicBool::new(false));
+    let attempted = flush_attempted.clone();
+    holder.register_post_flush_action(0, 0, move || {
+        attempted.store(true, Ordering::Relaxed);
+        Err(OperationError::service_error("unproxy flush failed"))
+    });
+    let holder = LockedSegmentHolder::new(holder);
+    let result = unwrap_proxy(&holder, &[proxy_id]);
+    let should_flush = pending_moves && appendable;
+    assert_eq!(result.is_err(), should_flush);
+    assert_eq!(flush_attempted.load(Ordering::Relaxed), should_flush);
+    assert_eq!(
+        matches!(holder.read().get(proxy_id), Some(LockedSegment::Proxy(_))),
+        should_flush
+    );
+    if should_flush {
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unproxy flush failed")
+        );
+        // The error was surfaced, but recovery can still unwrap the installed proxy.
+        unwrap_proxy(&holder, &[proxy_id]).unwrap();
+        assert!(matches!(
+            holder.read().get(proxy_id),
+            Some(LockedSegment::Original(_))
+        ));
+    }
+}
+
+#[test]
+fn test_unproxy_keeps_proxy_when_dependency_is_past_flush_waterline() {
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    let dir = Builder::new()
+        .prefix("cow_unfinished_move")
+        .tempdir()
+        .unwrap();
+    let mut holder = SegmentHolder::default();
+    let wrapped = LockedSegment::new(empty_segment(dir.path()));
+    let proxy_id = holder.add_new_locked(LockedSegment::from(ProxySegment::new(wrapped)));
+    let destination = holder.add_new(empty_segment(dir.path()));
+    // A failed move may register its edge before advancing either segment.
+    holder
+        .flush_dependency
+        .lock()
+        .add_dependency(proxy_id, destination, 10);
+    let holder = LockedSegmentHolder::new(holder);
+    let error = unwrap_proxy(&holder, &[proxy_id]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unpersisted copy-on-write dependencies")
+    );
+    assert!(matches!(
+        holder.read().get(proxy_id),
+        Some(LockedSegment::Proxy(_))
+    ));
+    assert_eq!(
+        holder
+            .read()
+            .flush_dependency
+            .lock()
+            .dependencies_of(&proxy_id)
+            .count(),
+        1
+    );
+}
+
+/// The bulk flush must allow updates to proceed, but dependencies added after it
+/// must still be persisted before restoring an appendable destination.
+#[test]
+fn test_unproxy_preflush_allows_updates_and_flushes_late_dependencies() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use crate::optimize::unwrap_proxy;
+    use crate::proxy_segment::ProxySegment;
+
+    let dir = Builder::new().prefix("cow_preflush").tempdir().unwrap();
+    let mut segments = SegmentHolder::default();
+    let wrapped = LockedSegment::new(empty_segment(dir.path()));
+    let proxy_id = segments.add_new_locked(LockedSegment::from(ProxySegment::new(wrapped)));
+    let destination = segments.add_new(empty_segment(dir.path()));
+    segments
+        .flush_dependency
+        .lock()
+        .add_dependency(proxy_id, destination, 0);
+    let holder = LockedSegmentHolder::new(segments);
+
+    let updates = holder.clone();
+    holder.write().register_post_flush_action(0, 0, move || {
+        let (tx, rx) = mpsc::channel();
+        let updates = updates.clone();
+        let update = std::thread::spawn(move || {
+            let _guard = updates.acquire_updates_lock();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(5)).map_err(|err| {
+            OperationError::service_error(format!("bulk flush blocked updates: {err}"))
+        })?;
+        update.join().unwrap();
+        Ok(PostFlushOutcome::Done)
+    });
+
+    let delta_flushed = Arc::new(AtomicBool::new(false));
+    let flushed = delta_flushed.clone();
+    let hook_holder = holder.clone();
+    BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            let segments = hook_holder.read();
+            segments
+                .flush_dependency
+                .lock()
+                .add_dependency(proxy_id, destination, 0);
+            let flushed = flushed.clone();
+            segments.register_post_flush_action(0, 0, move || {
+                flushed.store(true, Ordering::Relaxed);
+                Ok(PostFlushOutcome::Done)
+            });
+        }));
+    });
+    let result = unwrap_proxy(&holder, &[proxy_id]);
+    BETWEEN_UNPROXY_PHASES_HOOK.with(|hook| *hook.borrow_mut() = None);
+    result.unwrap();
+
+    assert!(delta_flushed.load(Ordering::Relaxed));
+    assert_eq!(
+        holder
+            .read()
+            .flush_dependency
+            .lock()
+            .dependencies_of(&proxy_id)
+            .count(),
+        0
+    );
+    assert!(matches!(
+        holder.read().get(proxy_id),
+        Some(LockedSegment::Original(_))
+    ));
+}
