@@ -476,6 +476,14 @@ service:
   # Prefix for the names of metrics in the /metrics API.
   # metrics_prefix: qdrant_
 
+  # URL path prefix under which the REST API and Web UI are also served.
+  # For reverse proxies that forward requests without stripping the prefix.
+  # With `/qdrant`, the Web UI is available at `/qdrant/dashboard`.
+  # Requests without the prefix are served as before.
+  #
+  # Uncomment to enable.
+  # path_prefix: /qdrant
+
   # Allow snapshot recovery from remote HTTP/HTTPS URLs.
   # If disabled, snapshot recovery will only work with local files and uploads.
   # Disabling this can mitigate SSRF risks in environments where the Qdrant node
