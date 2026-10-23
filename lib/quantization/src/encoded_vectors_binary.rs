@@ -13,7 +13,7 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use fs_err as fs;
-use pairwise::{Bits, Combine, MatrixOperands};
+use pairwise::{Aux, Bits, Combine, MatrixOperands};
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
@@ -1059,7 +1059,7 @@ pub struct BinaryCombine(VectorParameters);
 
 impl Combine for BinaryCombine {
     #[inline(always)]
-    fn score(self, dot: f32, _: f32, _: f32) -> f32 {
+    fn score(self, dot: f32, _: &Aux, _: &Aux) -> f32 {
         xor_metric(&self.0, dot)
     }
 }
@@ -1096,11 +1096,13 @@ where
         BinaryCombine(self.vectors.metadata.vector_parameters)
     }
 
+    fn param(&self) {}
+
     fn decode_batch(
         &self,
         ids: &[PointOffsetType],
         out: &mut [Bits],
-        _aux: &mut [f32],
+        _aux: &mut [Aux],
     ) -> std::io::Result<()> {
         let depth = self.depth;
         self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {

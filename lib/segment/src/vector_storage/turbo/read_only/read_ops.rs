@@ -5,6 +5,7 @@ use common::generic_consts::AccessPattern;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
 use quantization::turboquant::EncodedQueryTQ;
+use quantization::turboquant::quantization::TurboQuantizer;
 use quantization::{EncodedStorage, EncodedStorageWrite};
 
 use super::super::shared;
@@ -172,5 +173,8 @@ impl<S: UniversalRead> TurboScoring for ReadOnlyChunkedTurboVectorStorage<S> {
 
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         self.storage.get_vector_data(key)
+    }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
     }
 }

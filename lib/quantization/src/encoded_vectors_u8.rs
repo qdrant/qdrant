@@ -10,7 +10,7 @@ use common::typelevel::True;
 use common::types::PointOffsetType;
 use common::universal_io::{UioResult, UniversalReadFs, read_json_via};
 use fs_err as fs;
-use pairwise::{Combine, MatrixOperands};
+use pairwise::{Aux, Combine, MatrixOperands};
 use serde::{Deserialize, Serialize};
 
 use crate::EncodingError;
@@ -919,8 +919,8 @@ pub struct ScalarCombine(MetadataInt8);
 
 impl Combine for ScalarCombine {
     #[inline(always)]
-    fn score(self, dot: f32, aux_a: f32, aux_b: f32) -> f32 {
-        self.0.postprocess_internal_score(dot, aux_a, aux_b)
+    fn score(self, dot: f32, aux_a: &Aux, aux_b: &Aux) -> f32 {
+        self.0.postprocess_internal_score(dot, aux_a[0], aux_b[0])
     }
 }
 
@@ -951,17 +951,19 @@ impl<TStorage: EncodedStorage + Sync> MatrixOperands for ScalarOperands<'_, TSto
         self.combine
     }
 
+    fn param(&self) {}
+
     fn decode_batch(
         &self,
         ids: &[PointOffsetType],
         out: &mut [u8],
-        aux: &mut [f32],
+        aux: &mut [Aux],
     ) -> std::io::Result<()> {
         let depth = self.depth();
         self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {
             let (offset, code) = EncodedVectorsU8::<TStorage>::parse_vec_data(&data);
             out[i * depth..(i + 1) * depth].copy_from_slice(&code[..depth]);
-            aux[i] = offset;
+            aux[i] = [offset, 0.0, 0.0];
         })
     }
 }

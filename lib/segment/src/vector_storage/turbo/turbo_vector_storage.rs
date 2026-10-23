@@ -428,6 +428,9 @@ impl<B: TurboVectorBlob> TurboScoring for TurboVectorStorageImpl<B> {
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]> {
         Self::get_quantized_vector(self, key)
     }
+    fn quantizer(&self) -> &TurboQuantizer {
+        &self.quantizer
+    }
 }
 
 impl<B: TurboVectorBlob> DenseTQVectorStorageRead for TurboVectorStorageImpl<B> {

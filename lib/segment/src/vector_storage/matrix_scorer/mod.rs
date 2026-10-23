@@ -7,19 +7,23 @@
 mod dense_operands;
 #[cfg(test)]
 mod tests;
+mod turbo_source;
 
 use common::types::PointOffsetType;
 use pairwise::MatrixOperands;
 pub use pairwise::{Cols as MatrixCols, TopK as MatrixTopK};
 use quantization::encoded_vectors_binary::BinaryOperands;
 use quantization::encoded_vectors_u8::ScalarOperands;
+use quantization::turboquant::matrix::{TurboMatrixOperands, TurboSource};
 
 use self::dense_operands::{DenseOperands, MatrixElement};
+use self::turbo_source::TurboStorageSource;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::quantized::quantized_vectors::{
     QuantizedVectorStorage, QuantizedVectors,
 };
-use crate::vector_storage::{DenseVectorStorageRead, VectorStorageEnum};
+use crate::vector_storage::turbo::shared::invert_score;
+use crate::vector_storage::{DenseVectorStorageRead, TurboScoring, VectorStorageEnum};
 
 /// Scores pairs of stored points of one segment, shared by all threads of a build.
 pub struct MatrixScorer<'a> {
@@ -90,12 +94,12 @@ fn quantized_matrix_scorer(storage: &QuantizedVectorStorage) -> Option<MatrixSco
         QuantizedVectorStorage::BinaryChunkedMmap(q) => {
             Some(MatrixScorer::from_operands(BinaryOperands::new(q)))
         }
+        QuantizedVectorStorage::TQRam(q) => turbo_matrix_scorer(q.matrix_operands()),
+        QuantizedVectorStorage::TQMmap(q) => turbo_matrix_scorer(q.matrix_operands()),
+        QuantizedVectorStorage::TQChunkedMmap(q) => turbo_matrix_scorer(q.matrix_operands()),
         QuantizedVectorStorage::PQRam(_)
         | QuantizedVectorStorage::PQMmap(_)
-        | QuantizedVectorStorage::PQChunkedMmap(_)
-        | QuantizedVectorStorage::TQRam(_)
-        | QuantizedVectorStorage::TQMmap(_)
-        | QuantizedVectorStorage::TQChunkedMmap(_) => None,
+        | QuantizedVectorStorage::PQChunkedMmap(_) => None,
         QuantizedVectorStorage::ScalarRamMulti(_)
         | QuantizedVectorStorage::ScalarMmapMulti(_)
         | QuantizedVectorStorage::ScalarChunkedMmapMulti(_)
@@ -137,12 +141,13 @@ fn original_matrix_scorer(storage: &VectorStorageEnum) -> Option<MatrixScorer<'_
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => dense_matrix_scorer(vs.as_ref()),
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => dense_matrix_scorer(vs.as_ref()),
 
-        // TurboQuant storages get operands through `TurboScoring` later
-        VectorStorageEnum::DenseTurboMemmap(_)
-        | VectorStorageEnum::DenseTurboGraphInline(_)
-        | VectorStorageEnum::DenseTurboAppendableMemmap(_) => None,
+        VectorStorageEnum::DenseTurboMemmap(vs) => turbo_storage_matrix_scorer(vs.as_ref()),
+        VectorStorageEnum::DenseTurboGraphInline(vs) => turbo_storage_matrix_scorer(vs.as_ref()),
+        VectorStorageEnum::DenseTurboAppendableMemmap(vs) => {
+            turbo_storage_matrix_scorer(vs.as_ref())
+        }
         #[cfg(target_os = "linux")]
-        VectorStorageEnum::DenseTurboUring(_) => None,
+        VectorStorageEnum::DenseTurboUring(vs) => turbo_storage_matrix_scorer(vs.as_ref()),
 
         VectorStorageEnum::SparseVolatile(_)
         | VectorStorageEnum::SparseMmap(_)
@@ -166,6 +171,35 @@ where
     S: DenseVectorStorageRead<T> + Sync,
 {
     DenseOperands::new(storage, storage.distance()).map(MatrixScorer::from_operands)
+}
+
+/// A TurboQuant datatype storage scores as TurboQuant quantization does, negated for the
+/// distances.
+fn turbo_storage_matrix_scorer<S>(storage: &S) -> Option<MatrixScorer<'_>>
+where
+    S: TurboScoring + Sync,
+{
+    turbo_matrix_scorer(TurboMatrixOperands::new(
+        storage.quantizer(),
+        TurboStorageSource(storage),
+        invert_score(storage.distance()),
+    ))
+}
+
+fn turbo_matrix_scorer<'a, S>(
+    operands: Option<TurboMatrixOperands<'a, S>>,
+) -> Option<MatrixScorer<'a>>
+where
+    S: TurboSource + 'a,
+    S::Error: Into<OperationError>,
+{
+    Some(match operands? {
+        TurboMatrixOperands::Bits(operands) => MatrixScorer::from_operands(operands),
+        TurboMatrixOperands::Codes2(operands) => MatrixScorer::from_operands(operands),
+        TurboMatrixOperands::Codes4(operands) => MatrixScorer::from_operands(operands),
+        TurboMatrixOperands::Codes8(operands) => MatrixScorer::from_operands(operands),
+        TurboMatrixOperands::F32(operands) => MatrixScorer::from_operands(operands),
+    })
 }
 
 /// Object-safe face of a [`MatrixOperands`]: the only dynamic dispatch, once per matrix call.

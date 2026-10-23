@@ -18,6 +18,7 @@ pub(super) struct BitsTile;
 impl Micro for BitsTile {
     type E = Bits;
     type Acc = u16;
+    type Operand = Bits;
     const MR: usize = 4;
     const NR: usize = 4;
     /// A vector of depth bytes per pair
@@ -29,7 +30,16 @@ impl Micro for BitsTile {
     const NC: usize = 128;
 
     #[inline(always)]
-    unsafe fn tile(kc: usize, a: *const Bits, b: *const Bits, c: *mut u16, ldc: usize, acc: bool) {
+    unsafe fn tile(
+        kc: usize,
+        a: *const Self::Operand,
+        b: *const Self::Operand,
+        c: *mut u16,
+        ldc: usize,
+        acc: bool,
+        (): (),
+        _: usize,
+    ) {
         // SAFETY: forwarded from the caller, the same contract; `Bits` is a transparent `u8`
         unsafe { tile_bits(kc, a.cast(), b.cast(), c, ldc, acc) }
     }
