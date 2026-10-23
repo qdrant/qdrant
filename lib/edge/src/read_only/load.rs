@@ -4,10 +4,8 @@ use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
-use futures::StreamExt;
 use futures::future::join_all;
-use futures::stream::FuturesUnordered;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -18,10 +16,9 @@ use uuid::Uuid;
 
 /// Open the given segments and return the ones that loaded, in input order.
 ///
-/// Listings and the final fetch wait run on the calling thread. Staging and
-/// assembly run on `pool` (the shard's dedicated load pool), so one segment's
-/// config reads do not block staging on other workers or occupy search workers.
-/// Each segment is staged as soon as its own listing pipeline completes.
+/// 🤖 Listing, staging and the fetch wait run on the calling thread, one future
+/// 🤖 per segment, so a fetch chained on an earlier one proceeds as soon as that
+/// 🤖 one lands. Only the assembly runs on `pool` (the shard's dedicated load pool).
 ///
 /// A `load_profile` (see [`LoadProfile`]) parks the components the shard's request won't touch
 /// cold instead of warming them per the segment configs.
@@ -46,93 +43,59 @@ where
     S: UniversalReadExt + 'static,
     S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
 {
+    // 🤖 Stage every segment and drive its fetches to completion, overlapped, off the pool.
     check_process_stopped(is_stopped)?;
-    let mut listed_futs: FuturesUnordered<_> = segments
+    let staged = futures::executor::block_on(join_all(segments.into_iter().map(
+        |(uuid, segment_path)| async move {
+            let staged = async {
+                let cached_fs = build_cached_fs_async(fs, &segment_path).await?;
+                let staged = ReadOnlySegment::<S>::schedule_open_with_cached_fs(
+                    cached_fs,
+                    &segment_path,
+                    uuid,
+                    None,
+                    load_profile,
+                    is_stopped,
+                )
+                .await?;
+                staged.wait().await;
+                Ok(staged)
+            }
+            .await;
+            (uuid, staged)
+        },
+    )));
+    check_process_stopped(is_stopped)?;
+    let staged = staged
         .into_iter()
-        .enumerate()
-        .map(|(index, (uuid, path))| async move {
-            let cached_fs = build_cached_fs_async(fs, &path).await;
-            (index, uuid, path, cached_fs)
-        })
-        .collect();
-    let handoff = ambient::current();
-    let staged_opens = Mutex::new(Vec::new());
-    // Keep polling all listings on the caller while workers stage each ready segment.
-    // An in-place scope leaves every pool worker available, including in a single-thread pool.
-    pool.in_place_scope(|scope| {
-        let handoff = &handoff;
-        let staged_opens = &staged_opens;
-        futures::executor::block_on(async {
-            while let Some((index, uuid, segment_path, cached_fs)) = listed_futs.next().await {
-                check_process_stopped(is_stopped)?;
-                scope.spawn(move |_| {
-                    let staged_open = handoff.enter(|| {
-                        cached_fs.and_then(|cached_fs| {
-                            ReadOnlySegment::<S>::schedule_open_with_cached_fs(
-                                cached_fs,
-                                &segment_path,
-                                uuid,
-                                None,
-                                load_profile,
-                                is_stopped,
-                            )
-                        })
-                    });
-                    staged_opens.lock().push((index, uuid, staged_open));
-                });
-            }
-            OperationResult::Ok(())
-        })
-    })?;
-    check_process_stopped(is_stopped)?;
-
-    // Listing and staging completion order must not change the returned segment order.
-    let mut staged_opens = staged_opens.into_inner();
-    staged_opens.sort_unstable_by_key(|(index, _, _)| *index);
-    let mut staged = Vec::new();
-    for (_, uuid, staged_open) in staged_opens {
-        match staged_open {
-            Ok(segment) => staged.push((uuid, segment)),
-            Err(err) => {
-                if err.is_not_found() {
-                    // The segment might not be well-formed yet, this follower can catch up next live-reload.
-                    log::debug!("read-only open: skipping unloadable segment {uuid}: {err}");
-                } else {
-                    return Err(err);
-                }
-            }
-        }
-    }
-
-    // Drive all segments' fetches to completion here, overlapped, off the pool.
-    check_process_stopped(is_stopped)?;
-    futures::executor::block_on(join_all(staged.iter().map(|(_, staged)| staged.wait())));
-    check_process_stopped(is_stopped)?;
+        .filter_map(|(uuid, staged)| skip_not_found(uuid, staged))
+        .collect::<OperationResult<Vec<_>>>()?;
 
     // Assemble from the resolved handles on the pool.
     let loaded = ambient::parallel(|handoff| {
         pool.install(|| {
             staged
                 .into_par_iter()
-                .filter_map(|(uuid, staged)| match handoff.enter(|| staged.finish(fs)) {
-                    Ok(segment) => Some(Ok((uuid, segment))),
-                    Err(err) => {
-                        if err.is_not_found() {
-                            // The segment might not be well-formed yet, this follower can catch up next live-reload.
-                            log::debug!(
-                                "read-only open: skipping unloadable segment {uuid}: {err}"
-                            );
-                            None
-                        } else {
-                            Some(Err(err))
-                        }
-                    }
+                .filter_map(|(uuid, staged)| {
+                    skip_not_found(uuid, handoff.enter(|| staged.finish(fs)))
                 })
                 .collect::<OperationResult<Vec<_>>>()
         })
     })?;
     check_process_stopped(is_stopped)?;
     Ok(loaded)
+}
+
+/// 🤖 The segment might not be well-formed yet; this follower catches up next live-reload.
+fn skip_not_found<T>(uuid: Uuid, result: OperationResult<T>) -> Option<OperationResult<(Uuid, T)>> {
+    match result {
+        Ok(value) => Some(Ok((uuid, value))),
+        Err(err) if err.is_not_found() => {
+            log::debug!("read-only open: skipping unloadable segment {uuid}: {err}");
+            None
+        }
+        Err(err) => Some(Err(err)),
+    }
 }
 
 /// Live-reload the given segments in two phases — stage every fetch under

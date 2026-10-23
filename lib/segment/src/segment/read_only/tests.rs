@@ -1413,16 +1413,17 @@ fn test_open_writer_appends_between_list_and_tracker_open() {
     upsert(&mut mutable, NUM_POINTS..5000);
 
     let stop = AtomicBool::new(false);
-    let mut read_only = ReadOnlySegment::<MmapFile>::schedule_open_with_cached_fs(
-        cached_fs,
-        &mutable.data_path(),
-        mutable.uuid,
-        None,
-        None,
-        &stop,
-    )
-    .and_then(|staged| staged.finish(&MmapFs))
-    .expect("read-only open");
+    let mut read_only =
+        futures::executor::block_on(ReadOnlySegment::<MmapFile>::schedule_open_with_cached_fs(
+            cached_fs,
+            &mutable.data_path(),
+            mutable.uuid,
+            None,
+            None,
+            &stop,
+        ))
+        .and_then(|staged| staged.finish(&MmapFs))
+        .expect("read-only open");
 
     assert_eq!(
         read_only.available_point_count(),

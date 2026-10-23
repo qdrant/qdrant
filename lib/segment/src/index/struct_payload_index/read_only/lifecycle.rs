@@ -21,19 +21,21 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// A `load_profile` decides per field whether its indexes keep the
     /// persisted placement or are parked cold (see
     /// [`LoadProfile::payload_index_placement`]).
-    pub fn preopen(
+    pub async fn preopen(
         fs: &impl CachedReadFs<File = S>,
         path: &Path,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<PayloadConfig> {
         // Config
         let config_path = PayloadConfig::get_config_path(path);
-        let config = PayloadConfig::load_universal(fs, &config_path)?.ok_or_else(|| {
-            OperationError::service_error(format!(
-                "Read-only payload index missing config at {}",
-                config_path.display()
-            ))
-        })?;
+        let config = PayloadConfig::load_universal_async(fs, config_path.clone())
+            .await?
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "Read-only payload index missing config at {}",
+                    config_path.display()
+                ))
+            })?;
 
         // Payload indexes
         for (field, indexed) in config.indices.iter() {

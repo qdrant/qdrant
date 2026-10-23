@@ -41,8 +41,8 @@ use crate::read_only::holder::ReadOnlySegmentHolder;
 pub struct ReadOnlyEdgeShardPools {
     /// Runs per-segment reads. Overrides the configured search thread count and core affinity.
     pub search: Option<Arc<rayon::ThreadPool>>,
-    /// Runs segment staging, assembly, and live-reload apply. By default, a separate unpinned
-    /// pool is created with [`EdgeConfig::search_thread_count`] workers.
+    /// 🤖 Runs segment assembly and live-reload apply. By default, a separate unpinned
+    /// 🤖 pool is created with [`EdgeConfig::search_thread_count`] workers.
     pub load: Option<Arc<rayon::ThreadPool>>,
 }
 
@@ -69,8 +69,9 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// `provided_config` alone: the CPU-derived default unless explicitly set (see
     /// [`EdgeConfig::search_thread_count`]).
     search_pool: Arc<rayon::ThreadPool>,
-    /// Pool for segment staging, assembly, and live-reload apply. Separate from the search pool
-    /// by default, so blocking config reads do not occupy search workers.
+    /// 🤖 Pool for segment assembly and live-reload apply; staging and fetch waits run on the
+    /// 🤖 calling thread. Separate from the search pool by default, so loads do not occupy
+    /// 🤖 search workers.
     load_pool: Arc<rayon::ThreadPool>,
     /// Request-specific load profile this shard was opened with, if any: components the request
     /// won't touch are parked cold instead of warmed per the segment configs. Kept so segments a

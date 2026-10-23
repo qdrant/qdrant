@@ -9,7 +9,7 @@ use common::storage_version::{StorageVersion, VERSION_FILE};
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedFs, CachedReadFs, FileInfo, Populate, UniversalReadFs, UniversalReadFsAsync,
-    read_json_via,
+    read_json_via_async,
 };
 use uuid::Uuid;
 
@@ -47,14 +47,6 @@ fn schedule_static_files<Fs: UniversalReadFsAsync>(cached_fs: &CachedFs<Fs>, seg
     ] {
         cached_fs.schedule_open(&path, None, None);
     }
-}
-
-/// Build a per-segment [`CachedReadFs`] over `segment_path`. Schedules statically known files.
-fn build_cached_fs<Fs: UniversalReadFsAsync>(
-    fs: &Fs,
-    segment_path: &Path,
-) -> OperationResult<CachedFs<Fs>> {
-    futures::executor::block_on(build_cached_fs_async(fs, segment_path))
 }
 
 /// Take the segment's listing snapshot without blocking, for
@@ -140,7 +132,7 @@ pub(super) fn sparse_storage_populate(sparse_vector_config: &SparseVectorDataCon
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
     /// Open the segment over a per-segment [`CachedReadFs`]: known files are
     /// prefetched before the listing snapshot is taken (see
-    /// [`build_cached_fs`]), and probes for optional files resolve against
+    /// [`build_cached_fs_async`]), and probes for optional files resolve against
     /// the snapshot, without inner-filesystem round-trips.
     ///
     /// A `load_profile` — derived from the one request this open serves —
@@ -180,6 +172,10 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// segment. A single component's staging, the IO wait, or one component's
     /// assembly is indivisible and can delay the observation. The flag is never
     /// set or reset here.
+    ///
+    /// 🤖 Blocks the calling thread on its own executor, so it must not run
+    /// 🤖 inside another `futures::executor::block_on`; async callers use
+    /// 🤖 [`schedule_open_with_cached_fs`](Self::schedule_open_with_cached_fs).
     pub fn schedule_open<'a>(
         fs: &S::Fs,
         segment_path: &Path,
@@ -189,20 +185,23 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         is_stopped: &'a AtomicBool,
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
-        let fs = build_cached_fs(fs, segment_path)?;
-        Self::schedule_open_with_cached_fs(
-            fs,
-            segment_path,
-            uuid,
-            deferred_internal_id,
-            load_profile,
-            is_stopped,
-        )
+        futures::executor::block_on(async {
+            let fs = build_cached_fs_async(fs, segment_path).await?;
+            Self::schedule_open_with_cached_fs(
+                fs,
+                segment_path,
+                uuid,
+                deferred_internal_id,
+                load_profile,
+                is_stopped,
+            )
+            .await
+        })
     }
 
     /// [`schedule_open`](Self::schedule_open) over a snapshot already taken by
     /// [`build_cached_fs_async`].
-    pub fn schedule_open_with_cached_fs<'a>(
+    pub async fn schedule_open_with_cached_fs<'a>(
         fs: CachedFs<S::Fs>,
         segment_path: &Path,
         uuid: Uuid,
@@ -212,7 +211,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
         let (config, payload_config) =
-            Self::first_preopen(&fs, segment_path, load_profile, is_stopped)?;
+            Self::first_preopen(&fs, segment_path, load_profile, is_stopped).await?;
         Ok(StagedSegmentOpen {
             fs,
             segment_path: segment_path.to_path_buf(),
@@ -228,7 +227,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     /// Schedule the prefetch of every file the segment's components will open,
     /// returning the configs parsed along the way so [`open_via`](Self::open_via)
     /// does not have to read them a second time.
-    fn first_preopen(
+    async fn first_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         load_profile: Option<&LoadProfile>,
@@ -238,7 +237,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             initial_version: _,
             version: _,
             config,
-        } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
+        } = read_json_via_async(fs, segment_path.join(SEGMENT_STATE_FILE)).await?;
         check_process_stopped(is_stopped)?;
 
         // Payload storage
@@ -314,7 +313,8 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             fs,
             &get_payload_index_path(segment_path),
             load_profile,
-        )?;
+        )
+        .await?;
 
         Ok((config, payload_config))
     }

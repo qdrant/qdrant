@@ -504,7 +504,9 @@ impl<Fs: UniversalReadFs> UniversalReadFs for CachedFs<Fs> {
             return self.fs.open(path, options, extra);
         }
 
-        if let Some(file) = self.files_prefetched.lock().remove(path) {
+        // 🤖 A separate statement, so the lock is released before blocking.
+        let scheduled_file = self.files_prefetched.lock().remove(path);
+        if let Some(file) = scheduled_file {
             return match file {
                 ScheduledFile::Future(future) => futures::executor::block_on(future),
                 ScheduledFile::Ready(result) => result,

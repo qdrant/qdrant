@@ -3,7 +3,9 @@ use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
 use common::fs::{atomic_save_json, read_json};
-use common::universal_io::{OkNotFound, UniversalReadFs, read_json_via};
+use common::universal_io::{
+    OkNotFound, UniversalReadFs, UniversalReadFsAsync, read_json_via, read_json_via_async,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
@@ -35,6 +37,14 @@ impl PayloadConfig {
         path: &Path,
     ) -> OperationResult<Option<Self>> {
         Ok(read_json_via(fs, path).ok_not_found()?)
+    }
+
+    /// 🤖 [`load_universal`](Self::load_universal) over an async open.
+    pub async fn load_universal_async<Fs: UniversalReadFsAsync>(
+        fs: &Fs,
+        path: PathBuf,
+    ) -> OperationResult<Option<Self>> {
+        Ok(read_json_via_async(fs, path).await.ok_not_found()?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {

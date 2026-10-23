@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 
 use super::UniversalIoError;
-use super::traits::UniversalReadFs;
+use super::traits::{UniversalReadAsync, UniversalReadFs, UniversalReadFsAsync};
+use crate::generic_consts::Sequential;
 use crate::mmap::{Advice, AdviceSetting};
 use crate::universal_io::{UniversalRead, UserData};
 
@@ -272,14 +273,7 @@ pub fn read_whole_via<Fs, T>(
 where
     Fs: UniversalReadFs,
 {
-    use super::UniversalRead;
-    let options = OpenOptions {
-        writeable: false,
-        need_sequential: false,
-        populate: Populate::No,
-        advice: AdviceSetting::Advice(Advice::Sequential),
-    };
-    let storage = fs.open(path, options, Default::default())?;
+    let storage = fs.open(path, whole_read_options(), Default::default())?;
     let bytes = storage.read_whole::<u8>()?;
 
     let callback_t = callback(bytes)?;
@@ -287,6 +281,37 @@ where
     storage.clear_ram_cache()?;
 
     Ok(callback_t)
+}
+
+/// 🤖 [`read_whole_via`] over an async open and read.
+pub async fn read_whole_via_async<Fs, T>(
+    fs: &Fs,
+    path: PathBuf,
+    callback: impl FnOnce(Cow<'_, [u8]>) -> UioResult<T>,
+) -> UioResult<T>
+where
+    Fs: UniversalReadFsAsync,
+{
+    let storage = fs
+        .open_async(path, whole_read_options(), Default::default())
+        .await?;
+    let len = storage.len::<u8>()?;
+    let bytes = storage.read_bytes_async(0..len, Sequential, 1).await?;
+
+    let callback_t = callback(Cow::Borrowed(&bytes))?;
+
+    storage.clear_ram_cache()?;
+
+    Ok(callback_t)
+}
+
+fn whole_read_options() -> OpenOptions {
+    OpenOptions {
+        writeable: false,
+        need_sequential: false,
+        populate: Populate::No,
+        advice: AdviceSetting::Advice(Advice::Sequential),
+    }
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as JSON.
@@ -301,6 +326,18 @@ where
     read_whole_via(fs, path, |bytes| {
         serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
     })
+}
+
+/// 🤖 [`read_json_via`] over an async open.
+pub async fn read_json_via_async<Fs, T>(fs: &Fs, path: PathBuf) -> UioResult<T>
+where
+    Fs: UniversalReadFsAsync,
+    T: DeserializeOwned,
+{
+    read_whole_via_async(fs, path, |bytes| {
+        serde_json::from_slice(&bytes).map_err(UniversalIoError::from)
+    })
+    .await
 }
 
 /// Open a file via universal io, read it as a whole, and deserialize as bincode.
