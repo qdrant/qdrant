@@ -21,7 +21,7 @@ use crate::id_tracker::mutable_id_tracker::update_only::{
 use crate::index::struct_payload_index::update_only::UpdateOnlyStructPayloadIndex;
 use crate::payload_storage::update_only::UpdateOnlyPayloadStorage;
 use crate::segment_constructor::get_vector_storage_path;
-use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorName, VectorNameBuf};
 use crate::vector_storage::quantized::update_only::UpdateOnlyQuantizedVectors;
 use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore};
 
@@ -62,12 +62,12 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
     /// Appends many points to the original and quantized (if any) storages in parallel
     fn append_many(
         &mut self,
-        pool: &rayon::ThreadPool,
-        points: &[FullyQualifiedPoint],
-        start_slot: u32,
         fs: &Fs,
+        start_slot: PointOffsetType,
+        points: &[FullyQualifiedPoint],
+        vector_name: &VectorName,
+        pool: &rayon::ThreadPool,
         handoff: &Handoff,
-        vector_name: &String,
     ) -> OperationResult<()> {
         let vectors: Vec<VectorToStore> = points
             .iter()
@@ -283,12 +283,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
         let (fs, store) = self.store_components(pool)?;
 
-        let slot_payloads = || {
-            inserted
-                .iter()
-                .zip(points)
-                .map(|((_, slot), point)| (*slot, &point.payload))
-        };
+        let payloads = || points.iter().map(|point| &point.payload);
 
         // Each component owns its files, so none of them waits on another
         let mut vectors_res = Ok(());
@@ -303,24 +298,28 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
                             .par_iter_mut()
                             .try_for_each(|(vector_name, components)| {
                                 components.append_many(
-                                    pool,
-                                    points,
-                                    start_slot,
                                     fs,
-                                    handoff,
+                                    start_slot,
+                                    points,
                                     vector_name,
+                                    pool,
+                                    handoff,
                                 )
                             });
                 });
 
                 s.spawn(|_| {
                     let _scope = handoff.enter_guard();
-                    payload_res = store.payload_storage.append_many(fs, slot_payloads());
+                    payload_res = store
+                        .payload_storage
+                        .append_many(fs, start_slot, payloads());
                 });
 
                 s.spawn(|_| {
                     let _scope = handoff.enter_guard();
-                    indexes_res = store.payload_indexes.par_append_many(fs, slot_payloads());
+                    indexes_res = store
+                        .payload_indexes
+                        .append_many(fs, start_slot, payloads());
                 });
             });
         });
