@@ -1,0 +1,12 @@
+{"id": 1, "tenant": "beta", "language": "EN", "sensitivity": 1, "text": "Annual filing requirements for subsidiaries and audit timeline."}
+{"id": 2, "tenant": "beta", "language": "EL", "sensitivity": 3, "text": "Οδηγίες συμμόρφωσης για ετήσιες οικονομικές καταστάσεις."}
+{"id": 3, "tenant": "alpha", "language": "EN", "sensitivity": 1, "text": "Network policy for internal access and document retention."}
+{"id": 4, "tenant": "alpha", "language": "EL", "sensitivity": 2, "text": "Πολιτικές πρόσβασης σε έγγραφα και συμμόρφωση ελέγχου."}
+{"id": 5, "tenant": "alpha", "language": "EN", "sensitivity": 3, "text": "Manufacturing quality checks and safety procedures."}
+{"id": 6, "tenant": "alpha", "language": "EL", "sensitivity": 1, "text": "Διαδικασίες ποιοτικού ελέγχου στην παραγωγή."}
+{"id": 7, "tenant": "alpha", "language": "EN", "sensitivity": 2, "text": "Customer onboarding steps and KYC checklist."}
+{"id": 8, "tenant": "beta", "language": "EL", "sensitivity": 1, "text": "Έλεγχος KYC και διαδικασίες έναρξης συνεργασίας."}
+{"id": 9, "tenant": "alpha", "language": "EN", "sensitivity": 1, "text": "Travel policy: routes, bookings, reviews aggregator."}
+{"id": 10, "tenant": "beta", "language": "EL", "sensitivity": 1, "text": "Πολιτική ταξιδιών: διαδρομές, κρατήσεις, αξιολογήσεις."}
+{"id": 11, "tenant": "alpha", "language": "EN", "sensitivity": 1, "text": "Language‑gated knowledge base with EN/EL groups."}
+{"id": 12, "tenant": "alpha", "language": "EL", "sensitivity": 3, "text": "Βάση γνώσης με γλωσσική πρόσβαση EN/EL."}
