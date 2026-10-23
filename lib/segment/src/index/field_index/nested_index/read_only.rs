@@ -120,4 +120,43 @@ impl<S: UniversalReadExt> NestedFieldIndex<ReadOnlyFieldIndex<S>, ReadOnlyElemen
         self.indexed_points = (self.indexed_points + indexed_after).saturating_sub(indexed_before);
         Ok(())
     }
+
+    /// The deletion half of [`Self::live_reload`], without IO: drop the values of the elements of
+    /// `deleted_points`. Deleted points keep their elements, as a writer that deletes by tombstone
+    /// keeps their lists.
+    pub fn apply_deletions(
+        &mut self,
+        deleted_points: &SortedSlice<'_, PointOffsetType>,
+    ) -> OperationResult<()> {
+        let mut deleted_elements: Vec<_> = deleted_points
+            .iter()
+            .flat_map(|&point| self.element_map.point_elements(point))
+            .collect();
+        deleted_elements.sort_unstable();
+        deleted_elements.dedup();
+
+        // An immutable map keeps its build-time upper bound of indexed points, see `live_reload`
+        let recount = self.element_map.indexed_points().is_none();
+        let indexed_count = |index: &Self| -> OperationResult<usize> {
+            let mut count = 0;
+            if recount {
+                for &point in deleted_points.iter() {
+                    if index.has_values(index.element_map.point_elements(point))? {
+                        count += 1;
+                    }
+                }
+            }
+            Ok(count)
+        };
+
+        let indexed_before = indexed_count(self)?;
+        self.inner
+            .apply_deletions(&SortedSlice::new(&deleted_elements).ok_or_else(|| {
+                OperationError::service_error("deleted elements are not sorted")
+            })?)?;
+        let indexed_after = indexed_count(self)?;
+
+        self.indexed_points = (self.indexed_points + indexed_after).saturating_sub(indexed_before);
+        Ok(())
+    }
 }
