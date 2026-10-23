@@ -5,14 +5,13 @@ use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
 
-use super::score_multi;
+use super::{MultiDenseQuery, score_multi};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{
-    DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
-};
+use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, TypedMultiDenseVectorRef};
 use crate::spaces::metric::Metric;
+use crate::types::MultiVectorComparator;
 use crate::vector_storage::MultiVectorStorageRead;
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -24,7 +23,7 @@ pub struct MultiMetricQueryScorer<
 > {
     hw: HwScale,
     vector_storage: &'a TVectorStorage,
-    query: TypedMultiDenseVector<TElement>,
+    query: MultiDenseQuery<TElement, TMetric>,
     metric: PhantomData<TMetric>,
 }
 
@@ -51,7 +50,9 @@ impl<
                     0
                 },
             },
-            query: TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),
+            query: MultiDenseQuery::new(
+                TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),
+            ),
             vector_storage,
             metric: PhantomData,
         }
@@ -74,7 +75,12 @@ impl<
     }
 
     fn score_ref(&self, v2: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
-        self.score_multi(TypedMultiDenseVectorRef::from(&self.query), v2)
+        // Calculate the amount of comparisons needed for multi vector scoring.
+        self.hw.cpu(self.query.vectors_count() * v2.vectors_count());
+
+        match self.vector_storage.multi_vector_config().comparator {
+            MultiVectorComparator::MaxSim => self.query.score_max_similarity(v2),
+        }
     }
 }
 

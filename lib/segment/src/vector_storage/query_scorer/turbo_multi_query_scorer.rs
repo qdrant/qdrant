@@ -2,12 +2,12 @@ use common::ambient::hw::HwScale;
 use common::generic_consts::Random;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::turboquant::EncodedQueryTQ;
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::MultiDenseVectorInternal;
 use crate::vector_storage::TurboMultiScoring;
 use crate::vector_storage::query_scorer::QueryScorer;
+use crate::vector_storage::turbo::multi_turbo::TurboMultiQuery;
 
 /// Asymmetric MaxSim raw scorer for a multivector TurboQuant storage
 /// ([`TurboMultiScoring`]).
@@ -17,7 +17,7 @@ use crate::vector_storage::query_scorer::QueryScorer;
 /// MaxSim, delegating the arithmetic and the sign convention to the storage.
 pub struct TurboMultiQueryScorer<'a, TStorage: TurboMultiScoring> {
     hw: HwScale,
-    query: Vec<EncodedQueryTQ>,
+    query: TurboMultiQuery,
     storage: &'a TStorage,
 }
 
@@ -49,7 +49,7 @@ impl<TStorage: TurboMultiScoring> QueryScorer for TurboMultiQueryScorer<'_, TSto
             .for_each_record_range::<Random, _>(keys, |idx, _id, records| {
                 self.hw.vector_io_read(records.len());
 
-                self.hw.cpu(records.len() * self.query.len());
+                self.hw.cpu(records.len() * self.query.vectors_count());
 
                 scores[idx] = self
                     .storage

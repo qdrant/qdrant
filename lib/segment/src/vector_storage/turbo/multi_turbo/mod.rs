@@ -14,3 +14,7 @@ pub(crate) use self::appendable_mmap_multi_turbo_vector_storage::OFFSETS_DIR_PAT
 pub use self::appendable_mmap_multi_turbo_vector_storage::{
     AppendableMmapMultiTurboVectorStorage, open_appendable_turbo_multi_vector_storage,
 };
+
+mod max_sim;
+
+pub use self::max_sim::TurboMultiQuery;

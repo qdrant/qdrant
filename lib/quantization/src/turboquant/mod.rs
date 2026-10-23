@@ -7,6 +7,7 @@ use crate::turboquant::simd::{
 pub mod encoding;
 pub mod lloyd_max;
 pub mod math;
+mod max_sim;
 mod permutation;
 pub mod quantization;
 pub mod rotation;

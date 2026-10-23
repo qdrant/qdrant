@@ -1,10 +1,12 @@
+use std::marker::PhantomData;
+
 use bytemuck::TransparentWrapper;
 use common::typelevel::{TBool, TOption};
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::TypedMultiDenseVectorRef;
+use crate::data_types::vectors::{TypedMultiDenseVector, TypedMultiDenseVectorRef};
 use crate::spaces::metric::Metric;
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 use crate::vector_storage::VectorOffset;
@@ -88,6 +90,42 @@ pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
         sum += max_sim;
     }
     sum
+}
+
+/// A multi-dense query prepared once for MaxSim against stored multi-vectors.
+pub struct MultiDenseQuery<T: PrimitiveVectorElement, TMetric> {
+    kernel: MultiDenseKernel<T>,
+    metric: PhantomData<TMetric>,
+}
+
+enum MultiDenseKernel<T: PrimitiveVectorElement> {
+    /// Scored pair by pair, as [`score_max_similarity`] does.
+    PerPair(TypedMultiDenseVector<T>),
+}
+
+impl<T: PrimitiveVectorElement, TMetric: Metric<T>> MultiDenseQuery<T, TMetric> {
+    pub fn new(query: TypedMultiDenseVector<T>) -> Self {
+        Self {
+            kernel: MultiDenseKernel::PerPair(query),
+            metric: PhantomData,
+        }
+    }
+
+    /// Number of inner vectors.
+    pub fn vectors_count(&self) -> usize {
+        match &self.kernel {
+            MultiDenseKernel::PerPair(query) => query.vectors_count(),
+        }
+    }
+
+    /// MaxSim of this query against one stored multi-vector.
+    pub fn score_max_similarity(&self, stored: TypedMultiDenseVectorRef<'_, T>) -> ScoreType {
+        match &self.kernel {
+            MultiDenseKernel::PerPair(query) => {
+                score_max_similarity::<T, TMetric>(TypedMultiDenseVectorRef::from(query), stored)
+            }
+        }
+    }
 }
 
 fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
