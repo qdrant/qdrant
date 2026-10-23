@@ -13,5 +13,6 @@ pub mod primitive;
 pub mod query_context;
 pub mod segment_record;
 pub mod tiny_map;
+pub mod update_metering;
 pub mod vector_name_config;
 pub mod vectors;
