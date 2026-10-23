@@ -460,7 +460,8 @@ mod tests {
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::types::PostingsHeader;
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::doc_len_sidecar::read_exact;
     use crate::index::field_index::full_text_index::inverted_index::on_disk_inverted_index::{
-        OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE, POSTINGS_FILE,
+        COMPACT_VOCAB_FILE, OnDiskInvertedIndex, POINT_TO_DOC_LEN_FILE, POSTINGS_FILE, VOCAB_FILE,
+        Vocab, VocabFormat,
     };
 
     fn generate_word() -> String {
@@ -593,6 +594,7 @@ mod tests {
         #[case] indexed_count: u32,
         #[case] deleted_count: u32,
         #[values(false, true)] phrase_matching: bool,
+        #[values(VocabFormat::Hashmap, VocabFormat::Compact)] vocab_format: VocabFormat,
     ) {
         use std::collections::HashSet;
 
@@ -601,7 +603,12 @@ mod tests {
 
         let _scope = ambient::test_guard();
 
-        let immutable = OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable).unwrap();
+        let immutable = OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable,
+            vocab_format,
+        )
+        .unwrap();
         let empty_deleted = BitVec::new();
         let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -613,7 +620,9 @@ mod tests {
         .unwrap()
         .unwrap();
 
+        assert_eq!(mmap.storage.vocab.format(), vocab_format);
         let imm_mmap = ImmutableInvertedIndex::try_from(&mmap).unwrap();
+        assert_eq!(imm_mmap.vocab, immutable.vocab);
 
         // Check same vocabulary
         let assert_same_id = |expected: TokenId, actual: Option<TokenId>| {
@@ -1139,7 +1148,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_mmap_index_congruence(#[values(false, true)] phrase_matching: bool) {
+    fn test_mmap_index_congruence(
+        #[values(false, true)] phrase_matching: bool,
+        #[values(VocabFormat::Hashmap, VocabFormat::Compact)] vocab_format: VocabFormat,
+    ) {
         let indexed_count = 10000;
         let deleted_count = 500;
 
@@ -1148,7 +1160,12 @@ mod tests {
 
         let mut mut_index = mutable_inverted_index(indexed_count, deleted_count, phrase_matching);
 
-        OnDiskInvertedIndex::create(mmap_dir.path().into(), mut_index.clone()).unwrap();
+        OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mut_index.clone(),
+            vocab_format,
+        )
+        .unwrap();
         let empty_deleted = BitVec::new();
         let mut mmap_index = OnDiskInvertedIndex::open(
             &MmapFs,
@@ -1196,6 +1213,234 @@ mod tests {
             &mmap_index,
             &imm_mmap_index,
         );
+    }
+
+    fn open_on_disk(dir: &std::path::Path, phrase_matching: bool) -> OnDiskInvertedIndex {
+        OnDiskInvertedIndex::open(
+            &MmapFs,
+            dir.to_path_buf(),
+            Populate::No,
+            phrase_matching,
+            &BitVec::new(),
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    /// Only one vocabulary format is ever on disk: a rebuild in the other
+    /// format removes the file of the first, and the file list follows.
+    #[rstest]
+    fn rebuilding_in_another_vocab_format_removes_the_other_file(
+        #[values(false, true)] phrase_matching: bool,
+    ) {
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let hashmap = mmap_dir.path().join(VOCAB_FILE);
+        let _scope = ambient::test_guard();
+        let compact = mmap_dir.path().join(COMPACT_VOCAB_FILE);
+        let mutable = mutable_inverted_index(64, 8, phrase_matching);
+
+        for (format, written, removed) in [
+            (VocabFormat::Hashmap, &hashmap, &compact),
+            (VocabFormat::Compact, &compact, &hashmap),
+            (VocabFormat::Hashmap, &hashmap, &compact),
+        ] {
+            let immutable = OnDiskInvertedIndex::create_with_vocab_format(
+                mmap_dir.path().into(),
+                mutable.clone(),
+                format,
+            )
+            .unwrap();
+            assert!(written.exists(), "{format:?}");
+            assert!(!removed.exists(), "{format:?}");
+
+            let opened = open_on_disk(mmap_dir.path(), phrase_matching);
+            assert_eq!(opened.storage.vocab.format(), format);
+            let files = opened.files();
+            assert!(files.contains(written), "{format:?}");
+            assert!(!files.contains(removed), "{format:?}");
+            for (token, &id) in &immutable.vocab {
+                opened
+                    .for_each_token_id(std::iter::once(((), token.as_str())), |(), found| {
+                        assert_eq!(found, Some(id), "{token:?}");
+                    })
+                    .unwrap();
+            }
+        }
+    }
+
+    /// Loaded whole into RAM, the index reports the vocabulary file it was
+    /// read from, whichever the format: the list is what the segment manifest
+    /// carries.
+    #[rstest]
+    fn loads_into_ram_from_either_vocab_format(
+        #[values(VocabFormat::Hashmap, VocabFormat::Compact)] vocab_format: VocabFormat,
+    ) {
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let mutable = mutable_inverted_index(200, 20, true);
+        let immutable = OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable,
+            vocab_format,
+        )
+        .unwrap();
+
+        let (loaded, files) = ImmutableInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path(),
+            Populate::No,
+            true,
+            &BitVec::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(loaded.vocab, immutable.vocab);
+
+        let (written, other) = match vocab_format {
+            VocabFormat::Hashmap => (VOCAB_FILE, COMPACT_VOCAB_FILE),
+            VocabFormat::Compact => (COMPACT_VOCAB_FILE, VOCAB_FILE),
+        };
+        assert!(files.contains(&mmap_dir.path().join(written)));
+        assert!(!files.contains(&mmap_dir.path().join(other)));
+        for file in &files {
+            assert!(file.exists(), "{} listed but not on disk", file.display());
+        }
+    }
+
+    /// Both formats on disk is a file set no build leaves behind, and nothing
+    /// says which one the postings were written with.
+    #[test]
+    fn both_vocab_formats_on_disk_fail_the_open() {
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let mutable = mutable_inverted_index(64, 0, false);
+        OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable.clone(),
+            VocabFormat::Compact,
+        )
+        .unwrap();
+        let compact = fs_err::read(mmap_dir.path().join(COMPACT_VOCAB_FILE)).unwrap();
+        OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable,
+            VocabFormat::Hashmap,
+        )
+        .unwrap();
+        fs_err::write(mmap_dir.path().join(COMPACT_VOCAB_FILE), compact).unwrap();
+
+        let opened = OnDiskInvertedIndex::<MmapFile>::open(
+            &MmapFs,
+            mmap_dir.path().to_path_buf(),
+            Populate::No,
+            false,
+            &BitVec::new(),
+        );
+        assert!(opened.is_err());
+        let loaded = ImmutableInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path(),
+            Populate::No,
+            false,
+            &BitVec::new(),
+        );
+        assert!(loaded.is_err());
+    }
+
+    /// The compact vocabulary is held in RAM and answers without IO; the hash
+    /// map is read in place and accounts a read per token.
+    #[rstest]
+    fn compact_vocab_is_resident(
+        #[values(VocabFormat::Hashmap, VocabFormat::Compact)] vocab_format: VocabFormat,
+    ) {
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let mutable = mutable_inverted_index(200, 0, false);
+        let immutable = OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable,
+            vocab_format,
+        )
+        .unwrap();
+        let opened = open_on_disk(mmap_dir.path(), false);
+
+        let compact = matches!(opened.storage.vocab, Vocab::Compact(_));
+        assert_eq!(compact, vocab_format == VocabFormat::Compact);
+        let vocab_bytes = opened.storage.vocab.ram_usage_bytes();
+        assert_eq!(
+            vocab_bytes > 0,
+            compact,
+            "{vocab_bytes} bytes of vocabulary"
+        );
+        assert!(opened.ram_usage_bytes() >= vocab_bytes);
+
+        let acc = AmbientContext::new();
+        acc.measure(|| {
+            let tokens = immutable.vocab.keys().map(|token| ((), token.as_str()));
+            opened
+                .for_each_token_id(tokens, |(), id| assert!(id.is_some()))
+                .unwrap();
+        });
+        let io = acc.hw_data()[HwMetric::PayloadIndexIoRead];
+        assert_eq!(io == 0, compact, "{io} bytes accounted");
+    }
+
+    /// `preopen` fetches the compact vocabulary ahead of `open`, which then
+    /// reads it from the prefetch rather than from storage; a hash map
+    /// vocabulary still preopens and opens.
+    #[rstest]
+    fn preopen_fetches_the_vocab(
+        #[values(VocabFormat::Hashmap, VocabFormat::Compact)] vocab_format: VocabFormat,
+    ) {
+        use common::universal_io::{
+            CachedFs, CachedReadFs as _, ReadOnly, UniversalRead, UniversalReadFs as _,
+        };
+
+        type Storage = ReadOnly<MmapFile>;
+        type RoFs = <Storage as UniversalRead>::Fs;
+        let _scope = ambient::test_guard();
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let mutable = mutable_inverted_index(200, 20, true);
+        let immutable = OnDiskInvertedIndex::create_with_vocab_format(
+            mmap_dir.path().into(),
+            mutable,
+            vocab_format,
+        )
+        .unwrap();
+
+        let fs = RoFs::from_context(Default::default()).unwrap();
+        let mut cached_fs = CachedFs::new(fs, mmap_dir.path()).unwrap();
+        cached_fs.cache_file_info().unwrap();
+        assert!(
+            OnDiskInvertedIndex::<Storage>::preopen(
+                &cached_fs,
+                mmap_dir.path(),
+                Populate::PreferBackground,
+            )
+            .unwrap()
+        );
+        futures::executor::block_on(cached_fs.wait_all());
+
+        if vocab_format == VocabFormat::Compact {
+            // The read of `open` must now come from the prefetch pool.
+            fs_err::remove_file(mmap_dir.path().join(COMPACT_VOCAB_FILE)).unwrap();
+        }
+
+        let opened = OnDiskInvertedIndex::<Storage>::open(
+            &cached_fs,
+            mmap_dir.path().to_path_buf(),
+            Populate::PreferBackground,
+            true,
+            &BitVec::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(opened.storage.vocab.format(), vocab_format);
+        let tokens = immutable
+            .vocab
+            .iter()
+            .map(|(token, &id)| (id, token.as_str()));
+        opened
+            .for_each_token_id(tokens, |expected, found| assert_eq!(found, Some(expected)))
+            .unwrap();
     }
 
     fn check_query_congruence(
