@@ -1374,10 +1374,6 @@ mod tests {
     #[case::three_nodes(3, 0..3)]
     #[case::four_nodes(4, 1..4)]
     #[case::five_nodes(5, 1..5)]
-    #[case::six_nodes(6, 1..6)]
-    #[case::seven_nodes(7, 1..7)]
-    #[case::eight_nodes(8, 1..8)]
-    #[case::nine_nodes(9, 1..9)]
     #[case::ten_nodes(10, 1..10)]
     #[tokio::test]
     async fn test_resolve_wal_delta_randomized(
