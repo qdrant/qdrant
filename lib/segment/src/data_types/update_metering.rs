@@ -110,7 +110,13 @@ impl UpdateMetering {
         };
         for field in &self.payload_fields {
             for value in point.payload.get_value(field) {
-                bytes.indexed_bytes = bytes.indexed_bytes.saturating_add(json_bytes(value)?);
+                // Field indexes store an array's elements, not the array.
+                let elements = value
+                    .as_array()
+                    .map_or(std::slice::from_ref(value), Vec::as_slice);
+                for element in elements {
+                    bytes.indexed_bytes = bytes.indexed_bytes.saturating_add(json_bytes(element)?);
+                }
             }
         }
         for (name, vector) in point.updated_vectors.iter() {

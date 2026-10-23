@@ -120,6 +120,25 @@ fn payload_update_meters_full_merged_payload_and_retained_vectors() {
 }
 
 #[test]
+fn an_indexed_array_is_metered_per_element_like_the_index_stores_it() {
+    let config = test_config();
+    let metering = UpdateMetering::new(&config, ["tags".parse::<JsonPath>().unwrap()]);
+    let (_dir, writer) = writer(config);
+    let mut tagged = point(1);
+    tagged.payload = Some(payload_json! { "tags": ["a", "bc"] });
+    let (_, outcome) = writer
+        .apply_batch_metered(
+            [(1, PointOperation(UpsertPoints(PointsList(vec![tagged]))))],
+            &metering,
+        )
+        .unwrap();
+    assert_eq!(
+        outcome.usage.indexed_bytes,
+        4 + r#""a""#.len() as u64 + r#""bc""#.len() as u64
+    );
+}
+
+#[test]
 fn folds_repeated_updates_and_does_not_meter_rejected_or_missing_points() {
     let config = test_config();
     let metering = UpdateMetering::new(&config, []);
