@@ -1,21 +1,19 @@
 //! Report field-level differences between consensus state machine and applied state
 
 use std::collections::{BTreeSet, HashMap};
-use std::mem;
 
 use collection::collection_state;
 use collection::shards::CollectionId;
 
 use crate::content_manager::alias_mapping::AliasMapping;
-use crate::content_manager::consensus_state_machine::{ApplyOutcome, ClusterState};
-use crate::content_manager::errors::StorageResult;
+use crate::content_manager::consensus_state_machine::ClusterState;
 use crate::quota::QuotaConfig;
 use crate::types::{PeerAddressById, PeerMetadataById};
 
 /// Lightweight view of applied consensus state.
 ///
 /// Mirrors [`ClusterState`], but stores only collection names instead of full collection state,
-/// because validation reads it after each covered consensus operation.
+/// so validation can check cluster fields without reading every collection.
 ///
 /// Full state is loaded on demand for collections the operation may have changed.
 #[derive(Clone, Debug)]
@@ -136,48 +134,6 @@ pub fn collection(
         .collect()
 }
 
-/// Compare outcomes from consensus state machine and operation handler.
-/// Errors match by variant, error messages are ignored.
-pub fn outcome<T>(outcome: &ApplyOutcome, result: &StorageResult<T>) -> Option<String> {
-    match (outcome, result) {
-        (ApplyOutcome::Accepted(_), Ok(_)) => {
-            log::debug!("Consensus state machine and operation handler accepted operation");
-            None
-        }
-
-        (ApplyOutcome::Rejected(state_machine), Err(handler))
-            if mem::discriminant(state_machine) == mem::discriminant(handler) =>
-        {
-            log::debug!(
-                "Consensus state machine and operation handler rejected operation: \
-                 `{state_machine}` and `{handler}`"
-            );
-
-            None
-        }
-
-        (ApplyOutcome::Accepted(_), Err(handler)) => Some(format!(
-            "state machine accepted operation, \
-             but operation handler returned error `{handler}`"
-        )),
-
-        (ApplyOutcome::Rejected(state_machine), Ok(_)) => Some(format!(
-            "state machine rejected operation with `{state_machine}`, \
-             but operation handler applied it successfully"
-        )),
-
-        (ApplyOutcome::Rejected(state_machine), Err(handler)) => Some(format!(
-            "state machine and operation handler rejected operation differently: \
-             `{state_machine}` vs `{handler}`"
-        )),
-
-        (ApplyOutcome::NotCovered, _) => {
-            log::debug!("Consensus state machine does not cover operation");
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -205,8 +161,8 @@ mod tests {
 
     #[test]
     fn cluster_match() {
-        let (shadow, actual) = cluster_states();
-        let diff = cluster(&shadow, &actual);
+        let (expected, actual) = cluster_states();
+        let diff = cluster(&expected, &actual);
 
         assert!(diff.is_empty(), "states match, got {diff:?}");
     }
@@ -214,11 +170,11 @@ mod tests {
     /// A collection one side does not hold is reported by name, whatever is inside it
     #[test]
     fn cluster_collection_names() {
-        let (shadow, mut actual) = cluster_states();
+        let (expected, mut actual) = cluster_states();
         actual.collections.clear();
 
         assert_eq!(
-            cluster(&shadow, &actual),
+            cluster(&expected, &actual),
             [format!("collections[{COLLECTION}]")],
         );
     }
@@ -242,10 +198,10 @@ mod tests {
         ];
 
         for (field, mutate) in mutations {
-            let (shadow, mut actual) = cluster_states();
+            let (expected, mut actual) = cluster_states();
             mutate(&mut actual);
 
-            assert_eq!(cluster(&shadow, &actual), [field], "mutated {field}");
+            assert_eq!(cluster(&expected, &actual), [field], "mutated {field}");
         }
     }
 
@@ -260,7 +216,7 @@ mod tests {
         let cluster_metadata = HashMap::from([("owner".to_string(), json!("qdrant"))]);
         let quota_config = QuotaConfig::default();
 
-        let shadow = ClusterState {
+        let expected = ClusterState {
             collections: HashMap::from([(COLLECTION.to_string(), collection_state(Vec::new()))]),
             aliases: aliases.clone(),
             peer_address_by_id: peer_address_by_id.clone(),
@@ -278,7 +234,7 @@ mod tests {
             quota_config,
         };
 
-        (shadow, actual)
+        (expected, actual)
     }
 
     #[test]

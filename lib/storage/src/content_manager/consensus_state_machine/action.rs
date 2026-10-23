@@ -219,6 +219,18 @@ pub enum Action {
     /// Draw a transient failure on the selected peers each time the action is applied
     #[cfg(feature = "staging")]
     TestTransientError(TestTransientError),
+
+    /// Pause the sender before persisting the transfer so restart replays its start entry
+    #[cfg(feature = "staging")]
+    TestPauseShardTransferStart,
+
+    /// Hold abort after clearing resharding state, before the remaining transfer or replica writes
+    #[cfg(feature = "staging")]
+    TestPauseReshardingAbort,
+
+    /// Crash after clearing scale-down resharding state to test replay of the remaining actions
+    #[cfg(feature = "staging")]
+    TestCrashAfterScaleDownStateClear,
 }
 
 impl Action {
@@ -260,9 +272,13 @@ impl Action {
             | Action::SetClusterMetadataKey { .. }
             | Action::SetQuotaConfig { .. } => None,
 
-            // Sleep on a peer, or fail at random. Neither is scoped to a collection.
+            // Staging actions only pause or interrupt application on this peer.
             #[cfg(feature = "staging")]
-            Action::TestSlowDown(_) | Action::TestTransientError(_) => None,
+            Action::TestSlowDown(_)
+            | Action::TestTransientError(_)
+            | Action::TestPauseShardTransferStart
+            | Action::TestPauseReshardingAbort
+            | Action::TestCrashAfterScaleDownStateClear => None,
         }
     }
 }

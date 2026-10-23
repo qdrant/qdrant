@@ -11,7 +11,6 @@ use collection::shards::shard::PeerId;
 use common::flags::FeatureFlags;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
-use storage::content_manager::consensus_shadow::ShadowMode;
 use storage::types::StorageConfig;
 use validator::{Validate, ValidationError};
 
@@ -193,9 +192,6 @@ pub struct ConsensusConfig {
     /// Compact WAL when it grows to enough applied entries
     #[serde(default = "default_compact_wal_entries")]
     pub compact_wal_entries: u64,
-    /// Compare consensus state machine with operation handlers
-    #[serde(default)]
-    pub shadow_state_machine: ShadowMode,
 }
 
 impl Default for ConsensusConfig {
@@ -206,7 +202,6 @@ impl Default for ConsensusConfig {
             bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
             message_timeout_ticks: default_message_timeout_tics(),
             compact_wal_entries: default_compact_wal_entries(),
-            shadow_state_machine: ShadowMode::default(),
         }
     }
 }
@@ -705,20 +700,6 @@ mod tests {
             .validate()
             .expect("failed to validate development config at runtime");
         assert!(config.load_errors.is_empty(), "must not have load errors")
-    }
-
-    /// Ensure environment variable used by consensus tests enables state machine validation
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
-    fn shadow_state_machine_from_env() {
-        unsafe { env::set_var("QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE", "panic") };
-
-        let settings = Settings::new(None).expect("failed to load config");
-
-        assert_eq!(
-            settings.cluster.consensus.shadow_state_machine,
-            ShadowMode::Panic,
-        );
     }
 
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
