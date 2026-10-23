@@ -1,5 +1,5 @@
 use std::ops::Deref as _;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use common::ambient;
 use common::progress_tracker::ProgressTracker;
@@ -8,8 +8,9 @@ use log::debug;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 
+use super::context::GraphBuildContext;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
+use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
@@ -17,26 +18,28 @@ use crate::index::hnsw_index::hnsw::{
     FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_BUILD_MAX_PAR_LEN, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
+use crate::vector_storage::VectorStorageRead;
 
 /// Link every non-deleted point into `graph_layers_builder`, whose levels must already be set.
 ///
 /// With an `old_index`, its graph is healed into the builder first and only points absent
 /// from it are inserted.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn build_main_graph_on_cpu(
-    id_tracker: &IdTrackerEnum,
-    vector_storage: &VectorStorageEnum,
-    quantized_vectors: &Option<QuantizedVectors>,
+    ctx: GraphBuildContext,
     old_index: Option<&OldIndex<'_>>,
     graph_layers_builder: &GraphLayersBuilder,
-    ef_construct: usize,
     progress_migrate: ProgressTracker,
     progress_main_graph: ProgressTracker,
     pool: &ThreadPool,
-    stopped: &AtomicBool,
 ) -> OperationResult<()> {
+    let GraphBuildContext {
+        id_tracker,
+        vector_storage,
+        quantized_vectors,
+        main_params,
+        block_params: _,
+        stopped,
+    } = ctx;
     let total_vector_count = vector_storage.total_vector_count();
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
@@ -51,8 +54,11 @@ pub(super) fn build_main_graph_on_cpu(
 
         let timer = std::time::Instant::now();
 
-        let mut healer =
-            GraphLayersHealer::new(old_index.graph(), &old_index.old_to_new, ef_construct);
+        let mut healer = GraphLayersHealer::new(
+            old_index.graph(),
+            &old_index.old_to_new,
+            main_params.ef_construct,
+        );
         let old_vector_storage = old_index.index.vector_storage.borrow();
         let old_quantized_vectors = old_index.index.quantized_vectors.borrow();
 
@@ -100,7 +106,7 @@ pub(super) fn build_main_graph_on_cpu(
         let points_scorer = FilteredScorer::new_internal(
             vector_id,
             vector_storage,
-            quantized_vectors.as_ref(),
+            quantized_vectors,
             None,
             id_tracker.deleted_point_bitslice(),
         )?;
