@@ -650,6 +650,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
             // A missing vector stored without records, as the update-only
             // writer does, gets the placeholder record this storage writes
             // for one, which every version reads
+            // TODO(1.21): store the empty blob as is, once released readers read empty runs
             let blob = if deleted && blob.is_empty() {
                 Cow::Owned(vec![0; record_size])
             } else {
