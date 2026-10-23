@@ -125,12 +125,14 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             Self::refresh_file(mappings, inner_fs, mappings_path(&self.segment_path)),
         )?;
 
-        let v_len = match versions {
-            Some(file) => (file.len::<u8>()? / VERSION_ELEMENT_SIZE) as usize,
+        // A lazily opened handle reports a file the writer has not created yet as `NotFound`.
+        let v_bytes = match versions {
+            Some(file) => file.len::<u8>().ok_not_found()?.unwrap_or(0),
             None => 0,
         };
+        let v_len = (v_bytes / VERSION_ELEMENT_SIZE) as usize;
         let m_bytes = match mappings {
-            Some(file) => file.len::<u8>()?,
+            Some(file) => file.len::<u8>().ok_not_found()?.unwrap_or(0),
             None => 0,
         };
 
