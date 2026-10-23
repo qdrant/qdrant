@@ -192,11 +192,10 @@ mod tests {
     use uuid::Uuid;
 
     use crate::config::vectors::EdgeVectorParams;
+    use crate::test_helpers::{VECTOR_NAME, test_config};
     use crate::{
         CountRequest, EdgeConfig, EdgeOptimizersConfig, EdgeShard, RetrieveRequestBuilder,
     };
-
-    const VECTOR_NAME: &str = "edge-test-vector";
 
     #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
     #[test]
@@ -958,35 +957,6 @@ mod tests {
                 &vec![expected_id as f32],
                 "vector value mismatch for point {expected_id}"
             );
-        }
-    }
-
-    fn test_config() -> EdgeConfig {
-        EdgeConfig {
-            on_disk_payload: Some(false),
-            payload_memory: None,
-            id_tracker_memory: None,
-            vectors: HashMap::from([(
-                VECTOR_NAME.to_string(),
-                EdgeVectorParams {
-                    size: 1,
-                    distance: Distance::Dot,
-                    quantization_config: None,
-                    multivector_config: None,
-                    datatype: None,
-                    on_disk: None,
-                    memory: None,
-                    hnsw_config: None,
-                },
-            )]),
-            sparse_vectors: HashMap::new(),
-            hnsw_config: None,
-            quantization_config: None,
-            optimizers: None,
-            wal_options: None,
-            wal_enabled: None,
-            max_search_threads: None,
-            search_pool_core: None,
         }
     }
 
