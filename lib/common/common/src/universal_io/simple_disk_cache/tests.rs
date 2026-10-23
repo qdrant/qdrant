@@ -1603,4 +1603,34 @@ mod tests_async {
                 .is_empty()
         );
     }
+
+    /// 🤖 A lazy async open without a known length resolves it at open, so no
+    /// 🤖 later touch blocks on a remote `len`; a missing object fails there.
+    #[tokio::test]
+    async fn lazy_open_without_known_len_is_ready() {
+        let scn = Scenario::new(BLOCK_SIZE + 100);
+        let fs = scn.fs::<AsyncOnlyRemote>();
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let file = fs
+            .open_async(scn.remote_path.clone(), options, Default::default())
+            .await
+            .unwrap();
+        assert!(file.is_ready());
+        assert_eq!(file.len::<u8>().unwrap(), scn.data.len() as u64);
+
+        let missing = scn.remote_path.with_file_name("missing.bin");
+        let err = fs
+            .open_async(missing, options, Default::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::universal_io::UniversalIoError::NotFound { .. }
+        ));
+    }
 }

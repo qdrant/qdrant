@@ -18,8 +18,8 @@ use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
-    ChunkSink, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
-    UniversalReadFsAsync,
+    ChunkSink, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalIoError,
+    UniversalReadAsync, UniversalReadFsAsync,
 };
 
 impl<R> UniversalReadFsAsync for DiskCacheFs<R>
@@ -43,13 +43,15 @@ where
         let remote_extra = extra.remote_extra.clone().with_prevent_caching(true);
 
         let state = match populate {
-            Populate::Auto | Populate::No => match extra.known_len {
-                Some(len) => State::ready(
+            Populate::Auto | Populate::No => {
+                // 🤖 Sized here, so the open never parks as `State::Uninit`,
+                // 🤖 whose first touch would block on a remote `len`.
+                let file_len = self.file_len_async(&path, extra.known_len).await?;
+                State::ready(
                     self.open_remote(&path, remote_extra.clone())?,
-                    LocalState::new(&local_path, len, options)?,
-                ),
-                None => State::Uninit,
-            },
+                    LocalState::new(&local_path, file_len, options)?,
+                )
+            }
             Populate::PreferBackground | Populate::Blocking => {
                 let remote = self.open_remote(&path, remote_extra.clone())?;
                 let local = if extra.known_len == Some(0) {
@@ -73,10 +75,7 @@ where
             }
             Populate::Partial(read_range) => {
                 let remote = self.open_remote(&path, remote_extra.clone())?;
-                let file_len = match extra.known_len {
-                    Some(len) => len,
-                    None => remote.len::<u8>()?,
-                };
+                let file_len = self.file_len_async(&path, extra.known_len).await?;
                 let byte_range = read_range.into_byte_range::<u8>();
                 let (block_range, fetch_range) =
                     block_aligned_fetch(byte_range, file_len).expect("range should not be empty");
@@ -111,6 +110,27 @@ where
         paths: &[P],
     ) -> UioResult<Vec<ListedFile>> {
         self.remote_fs.select_files_async(paths).await
+    }
+}
+
+impl<R> DiskCacheFs<R>
+where
+    R: DiskCacheRemote,
+{
+    /// 🤖 The listed size, unless known.
+    async fn file_len_async(&self, path: &Path, known_len: Option<u64>) -> UioResult<u64> {
+        if let Some(len) = known_len {
+            return Ok(len);
+        }
+        self.remote_fs
+            .select_files_async(&[path])
+            .await?
+            .into_iter()
+            .find(|file| file.path == path)
+            .map(|file| file.size)
+            .ok_or_else(|| UniversalIoError::NotFound {
+                path: path.to_path_buf(),
+            })
     }
 }
 
