@@ -118,19 +118,13 @@ fn update_only_nested_indexes_match_writable() {
     config
         .save(&crate::index::payload_config::PayloadConfig::get_config_path(&index_path))
         .unwrap();
-    let points: Vec<_> = payloads.iter().enumerate().collect();
+    let batch_size = payloads.len().div_ceil(3);
     // Reopened per batch: the next batch resumes after the offsets the last one gave out
-    for batch in points.chunks(points.len().div_ceil(3)) {
+    for (i, batch) in payloads.chunks(batch_size).enumerate() {
         let mut index =
             UpdateOnlyStructPayloadIndex::<MmapFile>::par_open(&MmapFs, &segment_path).unwrap();
-        index
-            .par_append_many(
-                &MmapFs,
-                batch
-                    .iter()
-                    .map(|&(slot, payload)| (slot as PointOffsetType, payload)),
-            )
-            .unwrap();
+        let start_slot = (i * batch_size) as PointOffsetType;
+        index.append_many(&MmapFs, start_slot, batch).unwrap();
     }
 
     let total = NUM_POINTS as PointOffsetType;

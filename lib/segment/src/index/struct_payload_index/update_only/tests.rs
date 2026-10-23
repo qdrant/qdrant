@@ -74,12 +74,7 @@ fn batch_reaches_every_index_of_a_field() {
     ];
 
     let mut index = Index::par_open(&MmapFs, dir.path()).unwrap();
-    index
-        .par_append_many(
-            &MmapFs,
-            payloads.iter().enumerate().map(|(i, p)| (i as u32, p)),
-        )
-        .unwrap();
+    index.append_many(&MmapFs, 0, &payloads).unwrap();
     drop(index);
 
     let path = get_payload_index_path(dir.path());
@@ -129,7 +124,7 @@ fn batches_resume() {
     for (slot, value) in [(0, "alpha"), (1, "beta")] {
         let payload = payload_json! { "f": value };
         let mut index = Index::par_open(&MmapFs, dir.path()).unwrap();
-        index.par_append_many(&MmapFs, [(slot, &payload)]).unwrap();
+        index.append_many(&MmapFs, slot, [&payload]).unwrap();
     }
 
     let path = get_payload_index_path(dir.path());
@@ -170,7 +165,7 @@ fn segment_without_indexes_opens_empty() {
 
     let payload = payload_json! { "f": "alpha" };
     let mut index = Index::par_open(&MmapFs, dir.path()).unwrap();
-    index.par_append_many(&MmapFs, [(0, &payload)]).unwrap();
+    index.append_many(&MmapFs, 0, [&payload]).unwrap();
 }
 
 /// A config that does not say which indexes a field has is refused: this writer

@@ -45,28 +45,29 @@ impl<S: UniversalAppend + 'static> UpdateOnlyPayloadStorage<S> {
         Ok(Self { storage })
     }
 
-    /// Store one payload per point of a batch, each at the slot the ID tracker
-    /// claimed for it, and persist them.
+    /// Store a run of payloads at consecutive slots, starting at `start_slot`,
+    /// and persist them.
     ///
-    /// The slots must come in increasing order and must all be above every slot
-    /// this storage already holds a payload for: it is append-only, so a slot
-    /// that was written cannot be written again. Slots skipped in between stay
-    /// empty for good.
+    /// `start_slot` must be above every slot this storage already holds a
+    /// payload for: it is append-only, so a slot that was written cannot be
+    /// written again.
     ///
     /// A point with an empty payload is not stored at all, its slot is skipped:
     /// an unwritten slot already reads back as an empty payload.
     pub fn append_many<'a>(
         &mut self,
         fs: &impl UniversalAppendFs<AppendFile = S>,
-        payloads: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
+        start_slot: PointOffsetType,
+        payloads: impl IntoIterator<Item = &'a Payload>,
     ) -> OperationResult<()> {
-        for (internal_id, payload) in payloads {
+        for (offset, payload) in payloads.into_iter().enumerate() {
             if payload.is_empty() {
                 continue;
             }
 
+            let slot = start_slot + offset as PointOffsetType;
             self.storage
-                .put(fs, internal_id, payload, HwMetric::PayloadIoWrite)?;
+                .put(fs, slot, payload, HwMetric::PayloadIoWrite)?;
         }
 
         // Puts only buffer, the flush is what makes them durable.
