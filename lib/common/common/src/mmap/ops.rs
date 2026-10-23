@@ -5,6 +5,7 @@ use std::{io, mem, ptr};
 
 use fs_err as fs;
 use fs_err::{File, OpenOptions};
+use fs4::FileExt;
 use memmap2::{Mmap, MmapMut};
 
 use super::advice::{AdviceSetting, Madviseable, madvise};
@@ -80,6 +81,56 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
         fs::rename(&temp_path, path)?;
 
         OpenOptions::new().read(true).write(true).open(path)
+    }
+}
+
+/// Like [`create_and_ensure_length`], but also reserves the file's blocks on
+/// the filesystem.
+///
+/// Files created this way are written through a `MAP_SHARED` memory map by
+/// their callers, for example the gridstore page and tracker files. Without
+/// the reservation those files stay sparse, and when the filesystem runs out
+/// of free blocks mid-write the kernel raises `SIGBUS` and kills the process,
+/// which no error handling can catch. With the reservation, a full disk
+/// surfaces here as a regular `ENOSPC` error, before anything is written
+/// through the mapping.
+///
+/// On filesystems that do not support `fallocate` this degrades to the
+/// previous sparse behavior (with a warning), so that creating a store keeps
+/// working everywhere.
+pub fn create_and_ensure_length_allocated(path: &Path, length: usize) -> io::Result<File> {
+    let file = create_and_ensure_length(path, length)?;
+    reserve_blocks(&file, length)?;
+    Ok(file)
+}
+
+/// Reserves physical blocks for the first `length` bytes of `file`.
+fn reserve_blocks(file: &File, length: usize) -> io::Result<()> {
+    if length == 0 {
+        return Ok(());
+    }
+
+    match file.file().allocate(length as u64) {
+        Ok(()) => Ok(()),
+        // Filesystems without fallocate support, like some network or FUSE
+        // mounts, keep the previous sparse behavior.
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput
+            ) || err.raw_os_error() == Some(38 /* ENOSYS on Linux */) =>
+        {
+            static WARNED: OnceLock<()> = OnceLock::new();
+            if WARNED.set(()).is_ok() {
+                log::warn!(
+                    "Filesystem does not support reserving file blocks with fallocate; files will stay sparse, which can crash Qdrant with SIGBUS if the disk fills up while writing through a memory map: {err}"
+                );
+            }
+            Ok(())
+        }
+        // Any other error, most importantly `ENOSPC`, fails the creation
+        // here where callers can handle it.
+        Err(err) => Err(err),
     }
 }
 
@@ -175,4 +226,63 @@ pub unsafe fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 #[deprecated = "use `bytemuck` or `zerocopy`"]
 pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), mem::size_of_val(v)) }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::os::unix::fs::MetadataExt;
+
+    use super::*;
+
+    #[test]
+    fn test_create_and_ensure_length_is_sparse() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sparse.dat");
+
+        create_and_ensure_length(&path, 64 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 64 * 1024);
+        assert!(
+            metadata.blocks() * 512 < 64 * 1024,
+            "expected a sparse file, but {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
+
+    #[test]
+    fn test_create_and_ensure_length_allocated_reserves_all_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reserved.dat");
+
+        create_and_ensure_length_allocated(&path, 64 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 64 * 1024);
+        assert!(
+            metadata.blocks() * 512 >= 64 * 1024,
+            "expected a fully allocated file, but only {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
+
+    #[test]
+    fn test_create_and_ensure_length_allocated_reserves_grown_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grown.dat");
+
+        create_and_ensure_length_allocated(&path, 8 * 1024).unwrap();
+        create_and_ensure_length_allocated(&path, 64 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 64 * 1024);
+        assert!(
+            metadata.blocks() * 512 >= 64 * 1024,
+            "expected the grown file to be fully allocated, but only {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
+    }
 }
