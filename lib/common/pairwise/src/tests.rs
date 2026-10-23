@@ -88,6 +88,49 @@ struct TestOperands<E> {
 /// An element type with the parameter of its inner product in these tests.
 trait TestElem: KernelElem {
     fn test_param(operands: &TestOperands<Self>) -> Self::Param<'_>;
+
+    /// Runs the VNNI kernel with its register tile emulated, if the type has one and the CPU
+    /// runs the rest of it.
+    fn emulated_vnni(
+        operands: &TestOperands<Self>,
+        rows: &[PointOffsetType],
+        cols: Cols<'_>,
+        out: &mut TopK,
+    ) -> bool {
+        let _ = (operands, rows, cols, out);
+        false
+    }
+}
+
+/// [`TestElem::emulated_vnni`] for the types with a VNNI kernel.
+#[cfg(target_arch = "x86_64")]
+fn emulated_vnni<E: TestElem + crate::x86_64::Vnni>(
+    operands: &TestOperands<E>,
+    rows: &[PointOffsetType],
+    cols: Cols<'_>,
+    out: &mut TopK,
+) -> bool {
+    // Deeper vectors take the scalar kernel, see `x86_codes`
+    if !Kernel::Avx2.is_supported() || operands.depth * E::VALUES > crate::x86_64::MAX_CODES {
+        return false;
+    }
+    // SAFETY: AVX2 and FMA, and the depth, checked above
+    unsafe { crate::x86_64::top_k_vnni_emulated(operands, rows, cols, out).unwrap() };
+    true
+}
+
+macro_rules! emulated_vnni {
+    () => {
+        #[cfg(target_arch = "x86_64")]
+        fn emulated_vnni(
+            operands: &TestOperands<Self>,
+            rows: &[PointOffsetType],
+            cols: Cols<'_>,
+            out: &mut TopK,
+        ) -> bool {
+            emulated_vnni(operands, rows, cols, out)
+        }
+    };
 }
 
 impl TestElem for f32 {
@@ -96,6 +139,8 @@ impl TestElem for f32 {
 
 impl TestElem for u8 {
     fn test_param(_: &TestOperands<Self>) {}
+
+    emulated_vnni!();
 }
 
 impl TestElem for Bits {
@@ -106,16 +151,22 @@ impl TestElem for Codes2 {
     fn test_param(operands: &TestOperands<Self>) -> Codebook {
         Codebook::new(&operands.values)
     }
+
+    emulated_vnni!();
 }
 
 impl TestElem for Codes4 {
     fn test_param(operands: &TestOperands<Self>) -> Codebook {
         Codebook::new(&operands.values)
     }
+
+    emulated_vnni!();
 }
 
 impl TestElem for Codes8 {
     fn test_param(_: &TestOperands<Self>) {}
+
+    emulated_vnni!();
 }
 
 impl<E: TestElem> MatrixOperands for TestOperands<E> {
@@ -202,8 +253,15 @@ impl<E: TestElem> TestOperands<E> {
         let mut expected = TopK::new(k);
         top_k_with(Kernel::Fallback, self, &rows, cols, &mut expected).unwrap();
         let actual = reused.entry(k).or_insert_with(|| TopK::new(k));
-        for kernel in Kernel::available() {
-            top_k_with(kernel, self, &rows, cols, actual).unwrap();
+        let kernels = Kernel::available().into_iter().map(Some);
+        for kernel in kernels.chain([None]) {
+            // `None`: the emulated VNNI kernel
+            match kernel {
+                Some(kernel) => top_k_with(kernel, self, &rows, cols, actual).unwrap(),
+                None if E::emulated_vnni(self, &rows, cols, actual) => {}
+                None => continue,
+            }
+            let kernel = kernel.map_or("emulated VNNI".to_string(), |k| format!("{k:?}"));
             assert_eq!(actual.rows(), rows.len());
             for r in 0..rows.len() {
                 let (want_cols, want_scores) = expected.row(r);
@@ -212,7 +270,7 @@ impl<E: TestElem> TestOperands<E> {
                 assert_eq!(
                     (got_cols, bits(got_scores)),
                     (want_cols, bits(want_scores)),
-                    "{kernel:?}, {shape:?}, depth {}, k {k}, {:?}, row {r}: scores {got_scores:?}, \
+                    "{kernel}, {shape:?}, depth {}, k {k}, {:?}, row {r}: scores {got_scores:?}, \
                      expected {want_scores:?}",
                     self.depth,
                     self.combine,
@@ -294,8 +352,8 @@ fn u8_kernels_match_fallback() {
         mult: 0.37,
         shift: 1.5,
     });
-    // Groups of 4, and depth slices of 1024
-    for depth in [1, 3, 4, 5, 64, 257, 1100] {
+    // Groups of 4, and depth slices of 1024 and 512
+    for depth in [1, 3, 4, 5, 64, 257, 513, 1100] {
         // Few distinct values give many ties
         let max = if depth % 2 == 0 { 127 } else { 2 };
         let operands = TestOperands::new(&mut rng, depth, combine, |rng| rng.random_range(0..=max));
@@ -356,8 +414,8 @@ fn with_codebook<E>(
     operands
 }
 
-/// [`GEMM_SHAPES`] with fewer pairs, for the slower scalar inner products: tiles of 4
-/// rows, panels of 16 columns, row blocks of 48, and column blocks of 128.
+/// [`GEMM_SHAPES`] with fewer pairs, for the slower scalar inner products: tiles of 4 and 8
+/// rows, panels of 16 and 32 columns, row blocks of 48, and column blocks of 128.
 const CODE_SHAPES: &[Shape] = &[
     Shape::Other(1, 1),
     Shape::Rows(2),
@@ -376,14 +434,19 @@ fn code_combine(i: usize) -> TestCombine {
 }
 
 /// The shapes with all kernels, at depths in bytes around the tiles' groups of two pair steps
-/// and their depth `slice`.
-fn check_codes<E: TestElem>(seed: u64, values: usize, slice: usize, element: fn(&mut StdRng) -> E) {
+/// and their depth `slices`.
+fn check_codes<E: TestElem>(
+    seed: u64,
+    values: usize,
+    slices: [usize; 2],
+    element: fn(&mut StdRng) -> E,
+) {
     let mut rng = StdRng::seed_from_u64(seed);
     let mut reused = HashMap::new();
-    for (i, depth) in [1, 3, 8, slice - 1, slice, slice + 3]
+    let around = slices
         .into_iter()
-        .enumerate()
-    {
+        .flat_map(|slice| [slice - 1, slice, slice + 3]);
+    for (i, depth) in [1, 3, 8].into_iter().chain(around).enumerate() {
         let operands = TestOperands::new(&mut rng, depth, code_combine(i), element);
         let operands = with_codebook(operands, &mut rng, values);
         for (j, &shape) in CODE_SHAPES.iter().enumerate() {
@@ -405,14 +468,15 @@ fn extreme_or<E>(rng: &mut StdRng, all_zero: E, random: impl Fn(&mut StdRng) -> 
 
 #[test]
 fn codes2_kernels_match_fallback() {
-    check_codes(4, 4, 256, |rng| {
+    // Slices of the AVX2 and the VNNI tile
+    check_codes(4, 4, [256, 128], |rng| {
         extreme_or(rng, Codes2(0), |rng| Codes2(rng.random()))
     });
 }
 
 #[test]
 fn codes4_kernels_match_fallback() {
-    check_codes(5, 16, 512, |rng| {
+    check_codes(5, 16, [512, 256], |rng| {
         extreme_or(rng, Codes4(0), |rng| Codes4(rng.random()))
     });
 }
@@ -420,7 +484,7 @@ fn codes4_kernels_match_fallback() {
 #[test]
 fn codes8_kernels_match_fallback() {
     // 0 is the value −128
-    check_codes(6, 0, 1024, |rng| {
+    check_codes(6, 0, [1024, 512], |rng| {
         extreme_or(rng, Codes8(0), |rng| Codes8(rng.random()))
     });
 }
