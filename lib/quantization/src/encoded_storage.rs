@@ -16,42 +16,18 @@ use fs_err as fs;
 #[cfg(feature = "testing")]
 use fs_err::File;
 
-/// The subset of [`EncodedStorage`] an append-only writer can implement without ever reading a
-/// vector back — the write-only counterparts of a storage (e.g. an update-only segment's
-/// quantized overlay, which never reads: scoring always goes through the promoted read-only
-/// segment) implement only this, instead of faking the read methods on [`EncodedStorage`].
-pub trait EncodedStorageWrite {
+pub trait EncodedStorage {
     fn is_in_ram_or_mmap() -> bool;
     /// Whether the data was opened cold: left on disk and paged in on demand, so
     /// reads may hit the disk. False for heap data and for mmaps populated on open.
     fn is_cold(&self) -> bool;
 
-    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()>;
-
-    /// Persist `vectors` on consecutive ids starting at `start_id`. A storage
-    /// whose backend can batch writes overrides this; the default loops over
-    /// [`upsert_vector`](Self::upsert_vector).
-    fn upsert_many<'a, I>(&mut self, start_id: PointOffsetType, vectors: I) -> std::io::Result<()>
-    where
-        I: IntoIterator<Item = &'a [u8]>,
-        I::IntoIter: ExactSizeIterator,
-    {
-        for (offset, vector) in vectors.into_iter().enumerate() {
-            self.upsert_vector(start_id + offset as PointOffsetType, vector)?;
-        }
-        Ok(())
-    }
-
     fn vectors_count(&self) -> usize;
-
-    fn flusher(&self) -> Flusher;
 
     /// Additional heap memory used by this storage beyond what's tracked in files.
     /// RAM-based storages should report their in-memory data size here.
     fn heap_size_bytes(&self) -> usize;
-}
 
-pub trait EncodedStorage: EncodedStorageWrite {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]>;
 
     fn get_vector_data_opt(&self, index: PointOffsetType) -> Option<Cow<'_, [u8]>>;
@@ -125,6 +101,27 @@ pub trait EncodedStorage: EncodedStorageWrite {
     fn files(&self) -> Vec<PathBuf>;
 
     fn immutable_files(&self) -> Vec<PathBuf>;
+}
+
+/// An [`EncodedStorage`] that accepts new vectors. Immutable storages implement only the read side.
+pub trait EncodedStorageWrite: EncodedStorage {
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()>;
+
+    /// Persist `vectors` on consecutive ids starting at `start_id`. A storage
+    /// whose backend can batch writes overrides this; the default loops over
+    /// [`upsert_vector`](Self::upsert_vector).
+    fn upsert_many<'a, I>(&mut self, start_id: PointOffsetType, vectors: I) -> std::io::Result<()>
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        for (offset, vector) in vectors.into_iter().enumerate() {
+            self.upsert_vector(start_id + offset as PointOffsetType, vector)?;
+        }
+        Ok(())
+    }
+
+    fn flusher(&self) -> Flusher;
 }
 
 pub fn default_for_each_batch<E: EncodedStorage + ?Sized>(
@@ -234,7 +231,7 @@ pub fn offsets_worth_batch_scoring(offsets: &[PointOffsetType]) -> bool {
 }
 
 pub trait EncodedStorageBuilder {
-    type Storage: EncodedStorageWrite;
+    type Storage: EncodedStorage;
     type Error: std::fmt::Display;
 
     fn build(self) -> Result<Self::Storage, Self::Error>;
@@ -336,6 +333,13 @@ impl EncodedStorageWrite for TestEncodedStorage {
         Ok(())
     }
 
+    fn flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
+    }
+}
+
+#[cfg(feature = "testing")]
+impl EncodedStorage for TestEncodedStorage {
     fn is_in_ram_or_mmap() -> bool {
         true
     }
@@ -348,10 +352,6 @@ impl EncodedStorageWrite for TestEncodedStorage {
         self.data.len() / self.quantized_vector_size.get()
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
-    }
-
     fn heap_size_bytes(&self) -> usize {
         let Self {
             data,
@@ -361,10 +361,7 @@ impl EncodedStorageWrite for TestEncodedStorage {
 
         data.capacity()
     }
-}
 
-#[cfg(feature = "testing")]
-impl EncodedStorage for TestEncodedStorage {
     fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
         self.get_vector_data_opt(index)
             .unwrap_or(Cow::Borrowed(&[]))

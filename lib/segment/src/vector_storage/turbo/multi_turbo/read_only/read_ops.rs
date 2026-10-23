@@ -5,7 +5,7 @@ use common::bitvec::BitSlice;
 use common::generic_consts::{AccessPattern, Random};
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{UniversalRead, UserData};
-use quantization::EncodedStorageWrite;
+use quantization::EncodedStorage;
 use quantization::turboquant::EncodedQueryTQ;
 use smallvec::{SmallVec, smallvec};
 

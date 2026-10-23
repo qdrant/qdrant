@@ -21,10 +21,10 @@ use crate::encoded_vectors::{calibration_vectors, validate_vector_parameters};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
-    EncodingError, VectorParameters,
+    EncodedVectorsWrite, EncodingError, VectorParameters,
 };
 
-pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite> {
+pub struct EncodedVectorsBin<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
     encoded_vectors: TStorage,
     metadata: Metadata,
     metadata_path: Option<PathBuf>,
@@ -587,7 +587,7 @@ impl BitsStoreType for u128 {
     }
 }
 
-impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite>
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     EncodedVectorsBin<TBitsStoreType, TStorage>
 {
     pub fn storage(&self) -> &TStorage {
@@ -958,24 +958,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
         }))
     }
 
-    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
-        let encoded_vector = EncodedBinVector::<TBitsStoreType>::encode(
-            vector,
-            &self.metadata.vector_stats,
-            self.metadata.encoding,
-        );
-        self.encoded_vectors.upsert_vector(
-            id,
-            bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
-        )
-    }
-
     fn vectors_count(&self) -> usize {
         self.encoded_vectors.vectors_count()
-    }
-
-    fn flusher(&self) -> Flusher {
-        self.encoded_vectors.flusher()
     }
 
     fn files(&self) -> Vec<PathBuf> {
@@ -1029,6 +1013,26 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
                 u8::BITS as usize / 2,
             ),
         }
+    }
+}
+
+impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite> EncodedVectorsWrite
+    for EncodedVectorsBin<TBitsStoreType, TStorage>
+{
+    fn upsert_vector(&mut self, id: PointOffsetType, vector: &[f32]) -> std::io::Result<()> {
+        let encoded_vector = EncodedBinVector::<TBitsStoreType>::encode(
+            vector,
+            &self.metadata.vector_stats,
+            self.metadata.encoding,
+        );
+        self.encoded_vectors.upsert_vector(
+            id,
+            bytemuck::cast_slice(encoded_vector.encoded_vector.as_slice()),
+        )
+    }
+
+    fn flusher(&self) -> Flusher {
+        self.encoded_vectors.flusher()
     }
 }
 

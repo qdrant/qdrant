@@ -13,8 +13,7 @@ use common::universal_io::{MmapFile, UniversalRead};
 
 pub use self::storage::ReadOnlyQuantizedVectorStorage;
 use super::{QUANTIZED_CONFIG_PATH, QuantizedVectorsConfig};
-use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::QueryVector;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::RawScorer;
@@ -128,11 +127,6 @@ impl<S: UniversalRead> ReadOnlyQuantizedVectors<S> {
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         self.storage_impl.clear_cache()
-    }
-
-    pub fn flusher(&self) -> Flusher {
-        let flusher = self.storage_impl.flusher();
-        Box::new(move || flusher().map_err(OperationError::from))
     }
 }
 
