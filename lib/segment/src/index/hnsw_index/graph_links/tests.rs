@@ -1,11 +1,20 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
+use std::path::PathBuf;
+use std::sync::Arc;
 
+use common::ambient;
 use common::fs::atomic_save;
 use common::types::PointOffsetType;
 #[cfg(target_os = "linux")]
 use common::universal_io::IoUringFs;
-use common::universal_io::{MmapFs, UniversalReadFs};
+use common::universal_io::{
+    CachedFs, CachedReadFs, DiskCache, DiskCacheConfig, DiskCacheFs, MmapFs, UniversalReadFs,
+    UniversalReadFsAsync,
+};
+use io_bridge_object_store::{BlobFile, BlobFs, BridgeRuntime, ObjectStoreSource};
+use object_store::ObjectStoreExt;
+use object_store::memory::InMemory;
 use rand::RngExt;
 use rstest::rstest;
 use tempfile::Builder;
@@ -319,4 +328,87 @@ fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
 
     // fully random links
     check(random_links(100, 10, &hnsw_m));
+}
+
+#[rstest]
+#[case::cold_preloaded(GraphLinksResidency::Cold, true, true)]
+#[case::cold_header_only(GraphLinksResidency::Cold, false, false)]
+#[case::cached_preloaded(GraphLinksResidency::Cached, true, true)]
+#[case::cached_plain_open(GraphLinksResidency::Cached, false, true)]
+fn test_preload_offsets(
+    #[case] residency: GraphLinksResidency,
+    #[case] preload: bool,
+    #[case] expect_warm: bool,
+) {
+    let _scope = ambient::test_guard();
+    let format = GraphLinksFormat::Compressed;
+    let hnsw_m = HnswM::new2(8);
+    // Enough points to push the offsets block past both the eagerly read
+    // prefix and the first cache block.
+    let links = random_links(5000, 10, &hnsw_m);
+
+    let tmp = Builder::new().prefix("graph_dir").tempdir().unwrap();
+    let remote_dir = PathBuf::from("remote");
+    let local_dir = tmp.path().join("local");
+    fs_err::create_dir_all(&local_dir).unwrap();
+    let links_path = remote_dir.join("links.bin");
+    let mut data = std::io::Cursor::new(Vec::new());
+    serialize_graph_links(
+        links,
+        format.with_param_for_tests(None::<&TestGraphLinksVectors>),
+        hnsw_m,
+        &mut data,
+    )
+    .unwrap();
+
+    let runtime = BridgeRuntime::global();
+    let store = Arc::new(InMemory::new());
+    runtime
+        .block_on(store.put(
+            &object_store::path::Path::from(links_path.to_string_lossy().as_ref()),
+            data.into_inner().into(),
+        ))
+        .unwrap();
+    let remote_fs = BlobFs::new(ObjectStoreSource::new(store), runtime);
+    let stats = remote_fs.stats();
+    let disk_cache_fs = DiskCacheFs::<BlobFile<ObjectStoreSource<InMemory>>>::new(
+        Arc::new(DiskCacheConfig::new(remote_dir.clone(), local_dir).unwrap()),
+        remote_fs,
+    );
+
+    let mut fs = CachedFs::new(disk_cache_fs, &remote_dir).unwrap();
+    fs.cache_file_info().unwrap();
+
+    let options =
+        GraphLinksFile::<DiskCache<BlobFile<ObjectStoreSource<InMemory>>>>::preopen_options(
+            residency,
+        );
+    if preload {
+        let fs_clone = fs.clone();
+        let path_clone = links_path.clone();
+        fs.schedule(
+            links_path.clone(),
+            Box::pin(async move {
+                let file = fs_clone
+                    .open_async(path_clone, options, Default::default())
+                    .await?;
+                GraphLinksFile::preload_offsets(file, format).await
+            }),
+        );
+    } else {
+        fs.schedule_open(&links_path, Some(options), None);
+    }
+    futures::executor::block_on(fs.wait_all());
+
+    let file = fs.open(&links_path, options, Default::default()).unwrap();
+
+    let before = stats.snapshot();
+    GraphLinksFile::open(file, format).unwrap();
+    let fetches = stats.snapshot().delta_since(&before).total().started;
+
+    if expect_warm {
+        assert_eq!(fetches, 0, "the open still went to the remote");
+    } else {
+        assert!(fetches > 0, "the open was warm without a prefetch");
+    }
 }

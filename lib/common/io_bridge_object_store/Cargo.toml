@@ -7,6 +7,9 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+testing = []
+
 [dependencies]
 bytes = { workspace = true }
 common = { workspace = true }

@@ -36,7 +36,7 @@ pub trait DiskCacheRemote:
 impl<R> DiskCacheRemote for R
 where
     R: UniversalReadAsync + 'static,
-    R::Fs: Clone + Send + Sync + UniversalReadFsAsync,
+    R::Fs: UniversalReadFsAsync + Clone + Send + Sync,
     <R::Fs as UniversalReadFs>::OpenExtra: Clone + Send + Sync,
     R::ReadPipeline<'static, ()>: Send,
     R::ReadPipeline<'static, Range<u32>>: Send,

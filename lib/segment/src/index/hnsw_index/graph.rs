@@ -142,20 +142,32 @@ impl<S: UniversalRead> HnswGraph<S> {
         fs: &impl CachedReadFs<File = S>,
         dir: &Path,
         residency: GraphLinksResidency,
-    ) -> OperationResult<()> {
+    ) -> OperationResult<()>
+    where
+        S: 'static,
+    {
         fs.schedule_open(&GraphLayers::get_path(dir), None, None);
         let Some(format) = GraphLayers::probe_links_format(fs, dir)? else {
             return Ok(());
         };
-        let options = if Self::format_is_batched(format, residency) {
-            GraphLinksFile::<S>::preopen_options(format, residency)
-        } else {
-            GraphLinks::preopen_options(residency)
-        };
-        fs.schedule_open(
-            &GraphLayers::get_links_path(dir, format),
-            Some(options),
-            None,
+        let path = GraphLayers::get_links_path(dir, format);
+
+        if !Self::format_is_batched(format, residency) {
+            fs.schedule_open(&path, Some(GraphLinks::preopen_options(residency)), None);
+            return Ok(());
+        }
+
+        let options = GraphLinksFile::<S>::preopen_options(residency);
+        let fs_clone = fs.clone();
+        let path_clone = path.clone();
+        fs.schedule(
+            path,
+            Box::pin(async move {
+                let file = fs_clone
+                    .open_async(path_clone, options, Default::default())
+                    .await?;
+                GraphLinksFile::preload_offsets(file, format).await
+            }),
         );
         Ok(())
     }
