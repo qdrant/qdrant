@@ -66,11 +66,13 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
 /// the tests inject failures through it.
 ///
 /// A failed reservation leaves the file in its previous state: an existing
-/// file is shrunk back to the length it had before the growth attempt, and a
-/// new file is only renamed to `path` after its blocks are reserved, so it
-/// is never published at all on failure. Either way, no file is left behind
-/// that is longer than the range with reserved blocks, which a later open
-/// would otherwise map and write through.
+/// file is shrunk back to the length it had before the growth attempt, an
+/// existing file that the call would shrink is not truncated until its
+/// target range is reserved, so a failed reservation cannot drop its tail,
+/// and a new file is only renamed to `path` after its blocks are reserved,
+/// so it is never published at all on failure. Either way, no file is left
+/// behind that is longer than the range with reserved blocks, which a later
+/// open would otherwise map and write through.
 fn create_and_ensure_length_inner(
     path: &Path,
     length: usize,
@@ -86,19 +88,29 @@ fn create_and_ensure_length_inner(
         // Length before this call grows the file; needed to undo the growth
         // if the block reservation below fails.
         let previous_len = file.metadata().ok().map(|metadata| metadata.len());
-        file.set_len(length as u64)?;
-        if let Err(err) = reserve(&file, length) {
-            if let Some(previous_len) = previous_len.filter(|&len| len < length as u64) {
-                // Undo the growth, so the next open does not map an
-                // enlarged but unreserved tail, which would reintroduce
-                // the SIGBUS window the reservation exists to close.
-                // Only an actual growth is undone: the file may have been
-                // recreated smaller, and padding it back with zeros would
-                // fabricate data. Best effort only: the reservation error
-                // is the failure that gets reported.
-                let _ = file.set_len(previous_len);
+        if previous_len.is_some_and(|len| len > length as u64) {
+            // The file shrinks: reserve the target range *before* the
+            // truncation, because `set_len` drops the tail permanently. A
+            // failed reservation must hit while the file is still intact;
+            // the truncation afterwards cannot newly fail from allocating
+            // blocks, since shrinking only frees them.
+            reserve(&file, length)?;
+            file.set_len(length as u64)?;
+        } else {
+            file.set_len(length as u64)?;
+            if let Err(err) = reserve(&file, length) {
+                if let Some(previous_len) = previous_len.filter(|&len| len < length as u64) {
+                    // Undo the growth, so the next open does not map an
+                    // enlarged but unreserved tail, which would reintroduce
+                    // the SIGBUS window the reservation exists to close.
+                    // Only an actual growth is undone: the file may have
+                    // been recreated smaller, and padding it back with
+                    // zeros would fabricate data. Best effort only: the
+                    // reservation error is the failure that gets reported.
+                    let _ = file.set_len(previous_len);
+                }
+                return Err(err);
             }
-            return Err(err);
         }
 
         Ok(file)
@@ -274,6 +286,8 @@ pub unsafe fn transmute_to_u8_slice<T>(v: &[T]) -> &[u8] {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
+    use std::cell::RefCell;
+    use std::io::{Read, Seek, SeekFrom, Write};
     use std::os::unix::fs::MetadataExt;
 
     use super::*;
@@ -374,5 +388,80 @@ mod tests {
         assert!(err.to_string().contains("injected reservation failure"));
 
         assert!(!path.exists(), "a failed creation must not publish a file");
+    }
+
+    /// A failed block reservation must leave a shortening call a no-op: the
+    /// target range is reserved before the tail is dropped, so the file
+    /// keeps its original length and content when the reservation fails,
+    /// and the caller still sees the reservation error.
+    #[test]
+    fn test_failed_reservation_leaves_shrink_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shrink-fail.dat");
+
+        let mut file = create_and_ensure_length(&path, 64 * 1024).unwrap();
+        file.seek(SeekFrom::Start(63 * 1024)).unwrap();
+        file.write_all(&[42]).unwrap();
+        drop(file);
+
+        let seen_lengths = RefCell::new(Vec::new());
+        let err = create_and_ensure_length_inner(&path, 8 * 1024, &|file: &File, _: usize| {
+            seen_lengths
+                .borrow_mut()
+                .push(file.metadata().unwrap().len());
+            Err(io::Error::from_raw_os_error(28 /* ENOSPC */))
+        })
+        .unwrap_err();
+        assert_eq!(
+            err.raw_os_error(),
+            Some(28),
+            "the caller must see the reservation error, got {err:?}"
+        );
+
+        let seen_lengths = seen_lengths.into_inner();
+        assert_eq!(
+            seen_lengths,
+            vec![64 * 1024u64],
+            "reserve must run before shortening, saw lengths {seen_lengths:?}"
+        );
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(
+            metadata.len(),
+            64 * 1024,
+            "a failed shortening must keep the original length, but the file is {} bytes long",
+            metadata.len()
+        );
+
+        let mut file = OpenOptions::new().read(true).open(&path).unwrap();
+        file.seek(SeekFrom::Start(63 * 1024)).unwrap();
+        let mut tail = Vec::new();
+        file.read_to_end(&mut tail).unwrap();
+        let mut expected_tail = vec![0u8; 64 * 1024 - 63 * 1024];
+        expected_tail[0] = 42;
+        assert_eq!(
+            tail, expected_tail,
+            "the tail a failed shortening would have dropped must survive"
+        );
+    }
+
+    /// Shortening a reserved file through the allocated variant still ends at
+    /// the target length, with the kept range fully allocated.
+    #[test]
+    fn test_create_and_ensure_length_allocated_shrinks_and_reserves() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shrink-ok.dat");
+
+        create_and_ensure_length_allocated(&path, 64 * 1024).unwrap();
+        create_and_ensure_length_allocated(&path, 8 * 1024).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(), 8 * 1024);
+        assert!(
+            metadata.blocks() * 512 >= 8 * 1024,
+            "expected the kept range to stay reserved, but only {} of {} bytes are allocated",
+            metadata.blocks() * 512,
+            metadata.len(),
+        );
     }
 }
