@@ -53,6 +53,16 @@ impl<T: Eq + std::hash::Hash + Copy, V> TopoSort<T, V> {
         self.dependencies.get(element).into_iter().flatten()
     }
 
+    /// Removes all dependencies to and from `element`.
+    pub fn remove_element(&mut self, element: &T) {
+        self.dependencies.remove(element);
+
+        self.dependencies.retain(|_, deps| {
+            deps.remove(element);
+            !deps.is_empty()
+        });
+    }
+
     /// Removes dependencies for which the filter function returns false
     pub fn retain(&mut self, filter: impl Fn(&T, &T, &V) -> bool) {
         self.dependencies.retain(|element, deps| {
