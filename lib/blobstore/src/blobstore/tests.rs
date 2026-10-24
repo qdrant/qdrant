@@ -2502,3 +2502,78 @@ fn test_iter_batch_in_order() {
     assert!(!should_continue);
     assert_eq!(visited, [(8, 'd')]);
 }
+
+/// A gridstore created through the `create()` path reserves blocks for every
+/// file it later maps; see `assert_all_files_reserved` for why.
+#[cfg(target_os = "linux")]
+#[test]
+fn test_gridstore_files_have_reserved_blocks() {
+    // The smallest page size the config validation accepts (one block times
+    // the region size). Several payloads fit into one page file, so a few
+    // values span several page files, and the bitmask grows along the way.
+    // The values are much smaller than a page, so without a reservation most
+    // of each page file would stay a hole.
+    const PAGE_SIZE_BYTES: usize = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
+    const VALUE_SIZE_BYTES: usize = 16 * 1024;
+
+    let (dir, mut storage) = empty_storage_sized(PAGE_SIZE_BYTES, Compression::None);
+
+    let _scope = ambient::test_guard();
+
+    let mut payload = Payload::default();
+    payload.0.insert(
+        "blob".to_string(),
+        serde_json::Value::String("x".repeat(VALUE_SIZE_BYTES)),
+    );
+    for point_offset in 0u32..80 {
+        storage
+            .put_value(point_offset, &payload, HwMetric::PayloadIoWrite)
+            .unwrap();
+    }
+    // Overwriting a value frees its old blocks, marking them as deleted in
+    // the bitmask, which also writes into a fully reserved file.
+    storage
+        .put_value(0, &payload, HwMetric::PayloadIoWrite)
+        .unwrap();
+
+    assert_all_files_reserved(dir.path());
+}
+
+/// Every non-empty file in the storage must have all of its blocks allocated:
+/// writing through a memory map into a sparse region crashes the process with
+/// `SIGBUS` when the filesystem is full, instead of returning an error.
+#[cfg(target_os = "linux")]
+fn assert_all_files_reserved(dir: &std::path::Path) {
+    use std::os::unix::fs::MetadataExt;
+
+    /// Collects every regular file under `dir`, recursively.
+    fn walk(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                walk(&entry.path(), files);
+            } else {
+                files.push(entry.path());
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    walk(dir, &mut files);
+    assert!(!files.is_empty());
+
+    for file in &files {
+        let metadata = fs::metadata(file).unwrap();
+        if metadata.len() == 0 {
+            continue;
+        }
+        let allocated_bytes = metadata.blocks() * 512;
+        assert!(
+            allocated_bytes >= metadata.len(),
+            "file {} is not fully allocated: only {} of {} bytes are allocated",
+            file.display(),
+            allocated_bytes,
+            metadata.len(),
+        );
+    }
+}
