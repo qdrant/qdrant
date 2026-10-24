@@ -230,6 +230,17 @@ pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
     if is_length_zero_or_normalized(length) {
         return vector;
     }
+    if !length.is_finite() {
+        // The f32 accumulator overflowed to inf, which turned every component
+        // into `x / inf = 0.0` and silently stored the zero vector instead.
+        // Redo the norm in f64: the square of an f32 always fits there.
+        let length: f64 = vector.iter().map(|x| f64::from(*x) * f64::from(*x)).sum();
+        let length = length.sqrt();
+        return vector
+            .iter()
+            .map(|x| (f64::from(*x) / length) as f32)
+            .collect();
+    }
     length = length.sqrt();
     vector.iter().map(|x| x / length).collect()
 }
@@ -274,5 +285,77 @@ mod tests {
                 "renormalization is not stable (vector #{attempt})"
             );
         }
+    }
+
+    /// Mirrors the report: a squared norm just past the `f32` range used to
+    /// collapse the whole vector to zeros (`x / inf = 0.0`).
+    #[test]
+    fn test_cosine_preprocess_norm_overflow() {
+        let vector: DenseVector = vec![1.4e19, 1.4e19];
+        let res = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+        let norm: f32 = res.iter().map(|x| x * x).sum();
+        assert!(
+            (norm - 1.0).abs() < 1e-3,
+            "vector collapsed instead of normalizing, norm = {norm}"
+        );
+    }
+
+    /// Same overflow through the trait dispatch, with a dimension count that
+    /// takes the SIMD path on x86_64.
+    #[test]
+    fn test_cosine_preprocess_metric_dispatch_overflow() {
+        let vector: DenseVector = vec![1.0e20; 64];
+        let res = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+        let norm: f32 = res.iter().map(|x| x * x).sum();
+        assert!(
+            (norm - 1.0).abs() < 1e-3,
+            "vector collapsed instead of normalizing, norm = {norm}"
+        );
+    }
+
+    /// 64 * (1e20)^2 overflows `f32` before the sum even starts.
+    #[test]
+    fn test_cosine_preprocess_scalar_norm_overflow() {
+        let vector: DenseVector = vec![1.0e20; 64];
+        let res = cosine_preprocess(vector);
+        let norm: f32 = res.iter().map(|x| x * x).sum();
+        assert!(
+            (norm - 1.0).abs() < 1e-3,
+            "vector collapsed instead of normalizing, norm = {norm}"
+        );
+    }
+
+    /// Each square fits into `f32`, but the accumulated sum still overflows.
+    #[test]
+    fn test_cosine_preprocess_scalar_partial_sum_overflow() {
+        let vector: DenseVector = vec![1.0e19; 1500];
+        let res = cosine_preprocess(vector);
+        let norm: f32 = res.iter().map(|x| x * x).sum();
+        assert!(
+            (norm - 1.0).abs() < 1e-3,
+            "vector collapsed instead of normalizing, norm = {norm}"
+        );
+    }
+
+    /// Large-magnitude vectors must renormalize as stably as regular ones.
+    #[test]
+    fn test_cosine_stable_preprocessing_overflow() {
+        let vector: DenseVector = vec![1.0e20; 64];
+        let preprocess1 = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+        let preprocess2: DenseVector =
+            <CosineMetric as Metric<VectorElementType>>::preprocess(preprocess1.clone());
+        assert_eq!(preprocess1, preprocess2);
+    }
+
+    /// The exact non-overflowing boundary from the report keeps working.
+    #[test]
+    fn test_cosine_preprocess_norm_boundary_representable() {
+        let vector: DenseVector = vec![1.3e19, 1.3e19];
+        let res = cosine_preprocess(vector);
+        let norm: f32 = res.iter().map(|x| x * x).sum();
+        assert!(
+            (norm - 1.0).abs() < 1e-3,
+            "representable norm broken, norm = {norm}"
+        );
     }
 }

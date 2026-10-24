@@ -7,6 +7,7 @@ use common::types::ScoreType;
 
 use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::spaces::simple::cosine_preprocess;
 
 #[target_feature(enable = "sse")]
 #[allow(clippy::missing_safety_doc)]
@@ -142,6 +143,11 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
         for i in 0..n - m {
             length += (*ptr.add(i)).powi(2);
         }
+        if !length.is_finite() {
+            // The f32 accumulation overflows to inf for large-magnitude
+            // vectors. Re-run on the scalar path, which accumulates in f64.
+            return cosine_preprocess(vector);
+        }
         if is_length_zero_or_normalized(length) {
             return vector;
         }
@@ -236,6 +242,23 @@ mod tests {
             let cosine_simd = unsafe { cosine_preprocess_sse(v1.clone()) };
             let cosine = cosine_preprocess(v1);
             assert_eq!(cosine_simd, cosine);
+        } else {
+            println!("sse test skipped");
+        }
+    }
+
+    #[test]
+    fn test_spaces_sse_cosine_preprocess_norm_overflow() {
+        use super::*;
+
+        if is_x86_feature_detected!("sse") {
+            let vector: Vec<f32> = vec![1.0e20; 64];
+            let cosine_simd = unsafe { cosine_preprocess_sse(vector) };
+            let norm: f32 = cosine_simd.iter().map(|x| x * x).sum();
+            assert!(
+                (norm - 1.0).abs() < 1e-3,
+                "sse preprocessing collapsed the vector, norm = {norm}"
+            );
         } else {
             println!("sse test skipped");
         }

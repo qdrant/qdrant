@@ -8,6 +8,8 @@ use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::DenseVector;
 #[cfg(target_feature = "neon")]
 use crate::data_types::vectors::VectorElementType;
+#[cfg(target_feature = "neon")]
+use crate::spaces::simple::cosine_preprocess;
 
 #[cfg(target_feature = "neon")]
 pub(crate) unsafe fn euclid_similarity_neon(
@@ -125,6 +127,11 @@ pub(crate) unsafe fn cosine_preprocess_neon(mut vector: DenseVector) -> DenseVec
         for v in vector.iter().take(n).skip(m) {
             length += v.powi(2);
         }
+        if !length.is_finite() {
+            // The f32 accumulation overflows to inf for large-magnitude
+            // vectors. Re-run on the scalar path, which accumulates in f64.
+            return cosine_preprocess(vector);
+        }
         if is_length_zero_or_normalized(length) {
             return vector;
         }
@@ -230,6 +237,24 @@ mod tests {
                 let tol = 1e-6_f32.max(8.0 * f32::EPSILON * a.abs().max(b.abs()).max(1.0));
                 assert!((a - b).abs() <= tol, "Cosine SIMD mismatch: {a} vs {b}",);
             }
+        } else {
+            println!("neon test skipped");
+        }
+    }
+
+    #[cfg(target_feature = "neon")]
+    #[test]
+    fn test_spaces_neon_cosine_preprocess_norm_overflow() {
+        use super::*;
+
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            let vector: Vec<f32> = vec![1.0e20; 64];
+            let cosine_simd = unsafe { cosine_preprocess_neon(vector) };
+            let norm: f32 = cosine_simd.iter().map(|x| x * x).sum();
+            assert!(
+                (norm - 1.0).abs() < 1e-3,
+                "neon preprocessing collapsed the vector, norm = {norm}"
+            );
         } else {
             println!("neon test skipped");
         }
