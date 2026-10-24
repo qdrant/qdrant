@@ -133,25 +133,42 @@ impl Metric<VectorElementType> for DotProductMetric {
                 && is_x86_feature_detected!("fma")
                 && v1.len() >= MIN_DIM_SIZE_AVX
             {
-                return unsafe { dot_similarity_avx(v1, v2) };
+                let score = unsafe { dot_similarity_avx(v1, v2) };
+                if score.is_nan() {
+                    return resolve_overflow_dot(v1, v2);
+                }
+                return score;
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_sse(v1, v2) };
+                let score = unsafe { dot_similarity_sse(v1, v2) };
+                if score.is_nan() {
+                    return resolve_overflow_dot(v1, v2);
+                }
+                return score;
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_neon(v1, v2) };
+                let score = unsafe { dot_similarity_neon(v1, v2) };
+                if score.is_nan() {
+                    return resolve_overflow_dot(v1, v2);
+                }
+                return score;
             }
         }
 
-        dot_similarity(v1, v2)
+        let score = dot_similarity(v1, v2);
+        if score.is_nan() {
+            resolve_overflow_dot(v1, v2)
+        } else {
+            score
+        }
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
@@ -159,9 +176,39 @@ impl Metric<VectorElementType> for DotProductMetric {
     }
 }
 
+/// Fallback for mixed-sign f32 dot-product overflow where opposite-signed products
+/// sum to NaN in f32. Re-accumulate in f64 to determine the true mathematical result
+/// and clamp to the valid ScoreType range.
+fn resolve_overflow_dot(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    let sum: f64 = v1
+        .iter()
+        .zip(v2)
+        .map(|(&a, &b)| (a as f64) * (b as f64))
+        .sum();
+    if sum.is_nan() {
+        0.0
+    } else if sum > ScoreType::MAX as f64 {
+        ScoreType::MAX
+    } else if sum < ScoreType::MIN as f64 {
+        ScoreType::MIN
+    } else {
+        sum as ScoreType
+    }
+}
+
 impl MetricPostProcessing for DotProductMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
-        score
+        if score.is_nan() {
+            0.0
+        } else if score.is_infinite() {
+            if score.is_sign_positive() {
+                ScoreType::MAX
+            } else {
+                ScoreType::MIN
+            }
+        } else {
+            score
+        }
     }
 }
 
@@ -274,5 +321,44 @@ mod tests {
                 "renormalization is not stable (vector #{attempt})"
             );
         }
+    }
+
+    #[test]
+    fn test_dot_product_postprocessing_overflow() {
+        assert_eq!(DotProductMetric::postprocess(123.45), 123.45);
+        assert_eq!(DotProductMetric::postprocess(-123.45), -123.45);
+        assert_eq!(DotProductMetric::postprocess(0.0), 0.0);
+
+        // Clamping non-finite float scores prevents JSON `null` serialization
+        assert_eq!(DotProductMetric::postprocess(f32::INFINITY), ScoreType::MAX);
+        assert_eq!(
+            DotProductMetric::postprocess(f32::NEG_INFINITY),
+            ScoreType::MIN
+        );
+        assert_eq!(DotProductMetric::postprocess(f32::NAN), 0.0);
+
+        let v1 = vec![1e20, 1e20];
+        let v2 = vec![1e20, 1e20];
+        let raw_sim = DotProductMetric::similarity(&v1, &v2);
+        assert!(raw_sim.is_infinite());
+        let postprocessed = DotProductMetric::postprocess(raw_sim);
+        assert_eq!(postprocessed, ScoreType::MAX);
+        assert!(postprocessed.is_finite());
+
+        // Mixed-sign overflow (+inf + -inf) resolves to finite score without NaN
+        let v_mixed = vec![1e20, -1e20];
+        let sim_mixed = DotProductMetric::similarity(&v1, &v_mixed);
+        assert_eq!(sim_mixed, 0.0);
+        let postprocessed_mixed = DotProductMetric::postprocess(sim_mixed);
+        assert_eq!(postprocessed_mixed, 0.0);
+        assert!(postprocessed_mixed.is_finite());
+
+        // Unequal mixed-sign overflow (1e40 - 5e39 > 0) preserves the positive overflowing score
+        let v_unequal = vec![1e20, -5e19];
+        let sim_unequal = DotProductMetric::similarity(&v1, &v_unequal);
+        assert_eq!(sim_unequal, ScoreType::MAX);
+        let postprocessed_unequal = DotProductMetric::postprocess(sim_unequal);
+        assert_eq!(postprocessed_unequal, ScoreType::MAX);
+        assert!(postprocessed_unequal.is_finite());
     }
 }
