@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
 
 /// A structure, that performs topological sorting over
@@ -41,11 +41,69 @@ impl<T: Eq + std::hash::Hash + Copy, V> TopoSort<T, V> {
     ///
     /// Additionally, stores a value associated with the dependency.
     /// Overwrites any existing value for the same dependency.
-    pub fn add_dependency(&mut self, element: T, depends_on: T, value: V) {
+    ///
+    /// An edge that would close a cycle — including a self-edge — is rejected, because the only
+    /// reader is [`Self::sort_elements`], and a topological sort cannot order a cycle: the
+    /// elements left over would come back as "unordered" leftovers rather than in dependency
+    /// order. Rejecting at insertion keeps the graph acyclic by construction, so ordering stays
+    /// total no matter what order edges arrive in.
+    ///
+    /// Returns whether the edge is in the graph afterwards. A `false` return means the request
+    /// was dropped, so the caller must not assume the recorded ordering was applied.
+    pub fn add_dependency(&mut self, element: T, depends_on: T, value: V) -> bool {
+        if element == depends_on {
+            // A self-edge is a cycle of length one, and no order satisfies it.
+            log::warn!("Refusing self-referential dependency in topological sort");
+            return false;
+        }
+
+        if self
+            .dependencies
+            .get(&element)
+            .is_some_and(|deps| deps.contains_key(&depends_on))
+        {
+            // Edge already recorded: overwriting its value cannot change the graph shape, and
+            // this is the common case (a batch of points moving between the same pair of
+            // segments), so it skips the reachability walk below.
+            self.dependencies
+                .entry(element)
+                .or_default()
+                .insert(depends_on, value);
+            return true;
+        }
+
+        if self.depends_on(&depends_on, &element) {
+            // `depends_on` already (transitively) depends on `element`, so recording
+            // `element depends_on depends_on` would make the two contradict each other. The
+            // pre-existing edge is kept: dropping the new one is the only way to leave a
+            // usable order, and matches what the unordered leftovers used to degrade to.
+            log::warn!("Refusing dependency that would create a cycle in topological sort");
+            return false;
+        }
+
         self.dependencies
             .entry(element)
             .or_default()
             .insert(depends_on, value);
+        true
+    }
+
+    /// Whether `element` already depends on `target`, directly or through other elements.
+    fn depends_on(&self, element: &T, target: &T) -> bool {
+        let mut stack = vec![*element];
+        let mut seen = HashSet::with_capacity(self.dependencies.len());
+        while let Some(node) = stack.pop() {
+            if node == *target {
+                return true;
+            }
+            if !seen.insert(node) {
+                continue;
+            }
+            if let Some(deps) = self.dependencies.get(&node) {
+                stack.extend(deps.keys().copied());
+            }
+        }
+        false
     }
 
     /// Returns the elements `element` depends on, with the value stored per dependency.
@@ -212,6 +270,67 @@ mod tests {
         assert!(result.contains(&3));
     }
 
+    /// An edge that would close a cycle is rejected, so the graph stays a DAG and
+    /// `sort_elements` can always produce a total order.
+    #[test]
+    fn two_node_cycle_is_rejected() {
+        let mut topo: TopoSort<char, ()> = TopoSort::new();
+
+        assert!(topo.add_dependency('A', 'B', ()));
+        // 'B' already depends on 'A', so 'A' depending on 'B' contradicts it.
+        assert!(!topo.add_dependency('B', 'A', ()));
+
+        let elements = ['A', 'B'];
+        let result: Vec<_> = topo.sort_elements(&elements).collect();
+        assert_eq!(result, vec!['B', 'A']);
+    }
+
+    /// The rejection is transitive, not just for immediate two-way pairs.
+    #[test]
+    fn longer_cycle_is_rejected() {
+        let mut topo: TopoSort<i32, ()> = TopoSort::new();
+
+        assert!(topo.add_dependency(1, 2, ()));
+        assert!(topo.add_dependency(2, 3, ()));
+        // 3 transitively depends on 1 already, via 2.
+        assert!(!topo.add_dependency(3, 1, ()));
+
+        let elements = [1, 2, 3];
+        let result: Vec<_> = topo.sort_elements(&elements).collect();
+        assert_eq!(result, vec![3, 2, 1]);
+    }
+
+    /// A self-edge is a cycle of length one.
+    #[test]
+    fn self_dependency_is_rejected() {
+        let mut topo: TopoSort<i32, ()> = TopoSort::new();
+        assert!(!topo.add_dependency(7, 7, ()));
+        assert_eq!(
+            topo.sort_elements(&[7]).collect::<Vec<_>>(),
+            vec![7],
+            "a rejected self-edge must not make the element unordered",
+        );
+    }
+
+    /// Re-adding an existing edge overwrites its value and stays accepted, so the common
+    /// "many points moving between the same pair of segments" path does no reachability walk.
+    #[test]
+    fn existing_edge_is_overwritten_not_rejected() {
+        let mut topo: TopoSort<i32, i32> = TopoSort::new();
+        assert!(topo.add_dependency(1, 2, 10));
+        assert!(topo.add_dependency(1, 2, 20));
+        assert_eq!(
+            topo.dependencies_of(&1)
+                .map(|(_, v)| *v)
+                .collect::<Vec<_>>(),
+            vec![20]
+        );
+        assert_eq!(topo.dependencies_of(&1).count(), 1, "no duplicate edge");
+    }
+
+    /// The sort reader still tolerates a cyclic graph if one is ever forced in, so a caller can
+    /// never be handed a half-ordered list as if it were complete. `add_dependency` cannot build
+    /// one, so the field is written directly here to keep the reader covered.
     #[test]
     fn circular_dependency() {
         // A B C D
@@ -220,14 +339,15 @@ mod tests {
         //   <- D <- B
         let elements = ['A', 'B', 'C', 'D'];
 
-        let mut topo = TopoSort::new();
+        let mut topo: TopoSort<char, ()> = TopoSort::new();
         topo.add_dependency('B', 'A', ());
         topo.add_dependency('C', 'A', ());
         topo.add_dependency('D', 'A', ());
 
         topo.add_dependency('C', 'B', ());
         topo.add_dependency('D', 'C', ());
-        topo.add_dependency('B', 'D', ());
+        // Force the cycle in past `add_dependency`, which would reject it.
+        topo.dependencies.entry('B').or_default().insert('D', ());
 
         let mut iter = topo.sort_elements(&elements);
         let first = iter.next().unwrap();
