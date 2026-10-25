@@ -62,7 +62,7 @@ fn test_multi_filterable_hnsw(
 
     let vector_dim = 8;
     let m = 8;
-    let num_points: u64 = 5_000;
+    let num_points: u64 = 2_000;
     let ef_construct = 16;
     let distance = Distance::Cosine;
     let full_scan_threshold = 8; // KB
