@@ -11,7 +11,7 @@ use crate::settings::Settings;
 
 pub fn init_metrics(
     port: u16,
-    telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
+    telemetry_collector: Arc<TelemetryCollector>,
     settings: Settings,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
