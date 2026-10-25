@@ -173,6 +173,11 @@ impl<S: UniversalRead> GraphLinksFile<S> {
         ]
     }
 
+    /// Owned links metadata, excluding the file and the inline decoder state.
+    pub fn heap_size_bytes(&self) -> usize {
+        self.level_offsets.capacity() * size_of::<u64>() + self.offsets_data.capacity()
+    }
+
     pub fn num_points(&self) -> usize {
         self.point_count as usize
     }
@@ -396,5 +401,58 @@ impl<S: UniversalReadAsync> GraphLinksFile<S> {
             log::warn!("Failed to prefetch HNSW links offsets: {err}");
         }
         Ok(file)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::universal_io::{MmapFs, UniversalReadFs};
+    use tempfile::tempdir;
+
+    use super::*;
+    use crate::index::hnsw_index::graph_links::serialize_graph_links;
+
+    #[test]
+    fn test_heap_size_counts_allocated_metadata() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("links.bin");
+        let edges = (0..64)
+            .map(|id| vec![vec![(id + 1) % 64], vec![(id + 2) % 64]])
+            .collect();
+        let format = GraphLinksFormat::Compressed;
+        serialize_graph_links(
+            edges,
+            crate::index::hnsw_index::graph_links::GraphLinksFormatParam::Compressed,
+            HnswM::new2(4),
+            &mut fs_err::File::create(&path).unwrap(),
+        )
+        .unwrap();
+        let file = MmapFs
+            .open(
+                &path,
+                GraphLinksFile::<common::universal_io::MmapFile>::preopen_options(
+                    GraphLinksResidency::Cold,
+                ),
+                (),
+            )
+            .unwrap();
+        let mut links = GraphLinksFile::open(file, format).unwrap();
+        let initial = links.heap_size_bytes();
+        assert!(initial > links.offsets_data.len());
+
+        // Reserving unused space must count even though no metadata values change.
+        let before_offsets = links.offsets_data.capacity();
+        links.offsets_data.reserve_exact(4096);
+        let extra_offsets = links.offsets_data.capacity() - before_offsets;
+        assert!(extra_offsets > 0);
+        assert_eq!(links.heap_size_bytes(), initial + extra_offsets);
+        let before_levels = links.level_offsets.capacity();
+        links.level_offsets.reserve_exact(64);
+        let extra_levels = (links.level_offsets.capacity() - before_levels) * size_of::<u64>();
+        assert!(extra_levels > 0);
+        assert_eq!(
+            links.heap_size_bytes(),
+            initial + extra_offsets + extra_levels
+        );
     }
 }

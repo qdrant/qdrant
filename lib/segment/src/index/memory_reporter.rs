@@ -10,23 +10,15 @@ impl MemoryReporter for VectorIndexEnum {
             // HNSW: graph files, intent depends on how the links are actually held
             VectorIndexEnum::Hnsw(index) => {
                 let links_heap_bytes = index.links_heap_size_bytes() as u64;
+                // Batched graphs have heap metadata while their links remain file-backed.
+                let intent = index.links_file_storage_intent();
                 if links_heap_bytes > 0 {
-                    // Links are materialized in heap RAM (freshly built index,
-                    // or a non-borrowable universal-IO backend): files are
-                    // persistence only, not expected to be in page cache.
                     ComponentMemoryUsage::from_files_and_ram(
                         index.files(),
-                        FileStorageIntent::OnDisk,
+                        intent,
                         links_heap_bytes,
                     )
                 } else {
-                    // Links are backed by a live mmap handle: residency is
-                    // tracked via the page cache, intent depends on on_disk config.
-                    let intent = if index.is_cold() {
-                        FileStorageIntent::OnDisk
-                    } else {
-                        FileStorageIntent::Cached
-                    };
                     ComponentMemoryUsage::from_files(index.files(), intent)
                 }
             }

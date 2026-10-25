@@ -22,6 +22,7 @@ use super::graph_links::{GraphLinks, GraphLinksFile, GraphLinksFormat, GraphLink
 use super::hnsw::{LINK_COMPRESSION_CONVERT_EXISTING, graph_residency};
 use super::point_scorer::FilteredScorer;
 use crate::common::io_uring::{IoUringFallback, use_io_uring};
+use crate::common::memory_usage::FileStorageIntent;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{IoBackend, Memory};
 
@@ -409,7 +410,20 @@ impl<S: UniversalRead> HnswGraph<S> {
     pub fn links_heap_size_bytes(&self) -> usize {
         match self {
             HnswGraph::Direct(graph) => graph.links_heap_size_bytes(),
-            HnswGraph::Batched(_) => 0,
+            HnswGraph::Batched(graph) => graph.links_heap_size_bytes(),
+        }
+    }
+
+    /// File residency intent, independent of heap-owned metadata on batched graphs.
+    pub fn links_file_storage_intent(&self) -> FileStorageIntent {
+        let materialized = match self {
+            HnswGraph::Direct(graph) => graph.links_heap_size_bytes() > 0,
+            HnswGraph::Batched(_) => false,
+        };
+        if materialized || self.is_cold() {
+            FileStorageIntent::OnDisk
+        } else {
+            FileStorageIntent::Cached
         }
     }
 

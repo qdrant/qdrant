@@ -6,6 +6,7 @@ use common::universal_io::{MmapFs, Populate, UniversalReadFs};
 
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
+use crate::common::memory_usage::FileStorageIntent;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::config::HnswGraphConfig;
@@ -105,11 +106,14 @@ impl HNSWIndex {
 
     /// Heap RAM held by the graph links, in bytes.
     ///
-    /// Non-zero when the links are materialized in RAM rather than backed by
-    /// a live mmap handle (freshly built index, or a non-borrowable universal-IO
-    /// backend); such links are invisible to page-cache residency probes.
+    /// Includes owned metadata for batched graphs; file residency is reported separately.
     pub fn links_heap_size_bytes(&self) -> usize {
         self.graph.links_heap_size_bytes()
+    }
+
+    /// Residency intent for the graph's persisted files.
+    pub fn links_file_storage_intent(&self) -> FileStorageIntent {
+        self.graph.links_file_storage_intent()
     }
 
     #[cfg(test)]

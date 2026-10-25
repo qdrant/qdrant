@@ -251,6 +251,7 @@ mod tests {
     use common::universal_io::{MmapFs, UniversalKind as Kind};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
@@ -258,8 +259,13 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
     use crate::types::Distance;
 
-    #[test]
-    fn test_open_matrix() {
+    #[rstest]
+    #[case::mmap(MmapFs)]
+    #[cfg_attr(target_os = "linux", case::io_uring(common::universal_io::IoUringFs))]
+    fn test_open_matrix<Fs: UniversalReadFs>(#[case] fs: Fs)
+    where
+        Fs::File: 'static,
+    {
         let mut rng = StdRng::seed_from_u64(42);
 
         for format in [
@@ -286,9 +292,7 @@ mod tests {
                 )
                 .unwrap();
 
-            test_open_matrix_impl(&MmapFs, dir.path(), format);
-            #[cfg(target_os = "linux")]
-            test_open_matrix_impl(&common::universal_io::IoUringFs, dir.path(), format);
+            test_open_matrix_impl(&fs, dir.path(), format);
         }
     }
 
@@ -327,6 +331,15 @@ mod tests {
                 HnswGraph::Batched(_) => Batched,
             };
             assert_eq!(actual, expected, "{format:?} {residency:?}");
+            if expected == Batched {
+                assert!(graph.links_heap_size_bytes() > 0);
+            }
+            let expected_intent = if expected == Vec || residency == Cold {
+                crate::common::memory_usage::FileStorageIntent::OnDisk
+            } else {
+                crate::common::memory_usage::FileStorageIntent::Cached
+            };
+            assert_eq!(graph.links_file_storage_intent(), expected_intent);
         }
     }
 }

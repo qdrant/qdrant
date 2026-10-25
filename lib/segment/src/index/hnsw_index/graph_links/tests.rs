@@ -13,16 +13,21 @@ use common::universal_io::{
     MmapFs, UniversalRead, UniversalReadFs,
 };
 use fs_err as fs;
-use rand::RngExt;
+use rand::rngs::StdRng;
+use rand::{RngExt, SeedableRng};
 use rstest::rstest;
 use tempfile::Builder;
 
 use super::header::Header;
 use super::*;
+use crate::common::memory_usage::FileStorageIntent;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph::HnswGraph;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
+use crate::index::hnsw_index::graph_layers_batched::GraphLayersBatched;
+use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
+use crate::types::Distance;
 
 struct TestGraphLinksVectors {
     base_vectors: Vec<Vec<u8>>,
@@ -381,4 +386,56 @@ fn test_preopen_prefetches_offsets(#[case] preopen: bool) {
     let read = file.read_bytes(offsets.clone(), Random, 1).unwrap();
     let expected = &remote_bytes[offsets.start as usize..offsets.end as usize];
     assert_eq!(*read == *expected, preopen);
+}
+
+/// Batched heap metadata and file-backed links have independent residency.
+#[rstest]
+fn test_batched_heap_and_file_residency(
+    #[values(GraphLinksFormat::Compressed, GraphLinksFormat::CompressedWithVectors)]
+    format: GraphLinksFormat,
+    #[values(GraphLinksResidency::Cold, GraphLinksResidency::Cached)]
+    residency: GraphLinksResidency,
+) {
+    let mut rng = StdRng::seed_from_u64(42);
+    let dir = Builder::new().prefix("heap_graph").tempdir().unwrap();
+    let (vectors, builder) = create_graph_layer_builder_fixture(
+        100,
+        8,
+        8,
+        false,
+        format.is_with_vectors(),
+        Distance::Cosine,
+        &mut rng,
+    );
+    builder
+        .into_graph_layers(
+            dir.path(),
+            format.with_param_for_tests(vectors.graph_links_vectors().as_ref()),
+            true,
+        )
+        .unwrap();
+    let direct = GraphLayers::load(dir.path(), GraphLinksResidency::Pinned, false).unwrap();
+    let serialized_bytes = direct.links_heap_size_bytes();
+    // Mmap is a portable backing for the batched reader; normal backend selection
+    // uses batched graphs for asynchronous I/O.
+    let batched = GraphLayersBatched::open(&MmapFs, dir.path(), residency).unwrap();
+    let expected_heap = batched.links.heap_size_bytes();
+    let graph = HnswGraph::Batched(Arc::new(batched));
+    assert!(graph.links_heap_size_bytes() > 0);
+    assert_eq!(graph.links_heap_size_bytes(), expected_heap);
+    assert!(graph.links_heap_size_bytes() < serialized_bytes);
+    assert_eq!(
+        graph.links_file_storage_intent(),
+        if residency == GraphLinksResidency::Cold {
+            FileStorageIntent::OnDisk
+        } else {
+            FileStorageIntent::Cached
+        }
+    );
+    let direct = HnswGraph::<MmapFile>::Direct(Arc::new(direct));
+    assert_eq!(direct.links_heap_size_bytes(), serialized_bytes);
+    assert_eq!(
+        direct.links_file_storage_intent(),
+        FileStorageIntent::OnDisk
+    );
 }

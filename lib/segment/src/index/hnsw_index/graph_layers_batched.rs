@@ -67,6 +67,11 @@ impl<S: UniversalRead> GraphLayersBatched<S> {
         })
     }
 
+    /// Heap RAM owned by the batched links metadata.
+    pub fn links_heap_size_bytes(&self) -> usize {
+        self.links.heap_size_bytes()
+    }
+
     pub fn num_points(&self) -> usize {
         self.links.num_points()
     }
