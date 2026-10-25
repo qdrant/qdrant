@@ -25,7 +25,7 @@ use shard::segment_holder::{FlushMode, PostFlushOutcome, SegmentHolder};
 use shard::segment_manifest::SegmentsManifest;
 use shard::wal::SerdeWal;
 use uuid::Uuid;
-use wal::WalOptions;
+use wal::{Wal, WalOptions};
 
 use self::update_log::UpdateLog;
 use crate::config::optimizers::EdgeOptimizersConfig;
@@ -69,7 +69,8 @@ impl EdgeShard {
         })?;
 
         let update_log = if config.wal_enabled() {
-            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+            // Brand new shards always start at version 0
+            open_wal(path, config.wal_options.clone().unwrap_or_default(), 0)?
         } else {
             UpdateLog::Disabled {
                 last_operation_id: 0,
@@ -166,7 +167,12 @@ impl EdgeShard {
         ensure_appendable_segment(&mut segments, &segments_path, &config)?;
 
         let update_log = if config.wal_enabled() || path.join(WAL_PATH).exists() {
-            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+            let persisted_version = max_segment_version(&segments);
+            open_wal(
+                path,
+                config.wal_options.clone().unwrap_or_default(),
+                persisted_version,
+            )?
         } else {
             UpdateLog::Disabled {
                 last_operation_id: max_segment_version(&segments),
@@ -379,7 +385,11 @@ fn has_existing_segments(path: &Path) -> bool {
     false
 }
 
-fn open_wal(path: &Path, wal_options: WalOptions) -> OperationResult<UpdateLog> {
+fn open_wal(
+    path: &Path,
+    wal_options: WalOptions,
+    persisted_version: SeqNumberType,
+) -> OperationResult<UpdateLog> {
     let wal_path = path.join(WAL_PATH);
     if !wal_path.exists() {
         fs::create_dir(&wal_path).map_err(|err| {
@@ -387,9 +397,39 @@ fn open_wal(path: &Path, wal_options: WalOptions) -> OperationResult<UpdateLog> 
         })?;
     }
 
-    let wal = SerdeWal::new(&wal_path, wal_options).map_err(|err| {
-        OperationError::service_error(format!("failed to open WAL {}: {err}", wal_path.display(),))
+    // Check if there are actual open/closed WAL files, ignoring OS junk like .DS_Store
+    let has_valid_wal = match fs::read_dir(&wal_path) {
+        Ok(entries) => entries.flatten().any(|entry| {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            name_str.starts_with("open-") || name_str.starts_with("closed-")
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => {
+            return Err(OperationError::service_error(format!(
+                "failed to read WAL directory: {e}"
+            )));
+        }
+    };
+
+    if !has_valid_wal {
+        // If we don't have any valid WAL files yet (like on a fresh start),
+        // anchor it to the segments so we don't accidentally drop updates.
+        Wal::generate_empty_wal_starting_at_index(&wal_path, &wal_options, persisted_version)
+            .map_err(|e| {
+                OperationError::service_error(format!("failed to generate anchored WAL: {e}"))
+            })?;
+    }
+
+    let mut wal = SerdeWal::new(&wal_path, wal_options).map_err(|err| {
+        OperationError::service_error(format!("failed to open WAL {}: {err}", wal_path.display()))
     })?;
+
+    // Clean up any leftover unacked entries from before a crash or restart
+    wal.ack(persisted_version).map_err(|e| {
+        OperationError::service_error(format!("failed to ack WAL during load: {e}"))
+    })?;
+
     Ok(UpdateLog::Wal(Box::new(wal)))
 }
 
