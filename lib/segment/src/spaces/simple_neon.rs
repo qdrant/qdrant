@@ -120,16 +120,18 @@ pub(crate) unsafe fn cosine_preprocess_neon(mut vector: DenseVector) -> DenseVec
             i += 16;
         }
 
-        let mut length = vaddvq_f32(vaddq_f32(vaddq_f32(sum1, sum2), vaddq_f32(sum3, sum4)));
+        let mut length_squared =
+            vaddvq_f32(vaddq_f32(vaddq_f32(sum1, sum2), vaddq_f32(sum3, sum4)));
 
         for v in vector.iter().take(n).skip(m) {
-            length += v.powi(2);
+            length_squared += v.powi(2);
         }
+        let length = length_squared.sqrt();
         if is_length_zero_or_normalized(length) {
             return vector;
         }
 
-        let inv_length = 1.0 / length.sqrt();
+        let inv_length = 1.0 / length;
         let v_inv_length = vdupq_n_f32(inv_length);
         let mut_ptr: *mut f32 = vector.as_mut_ptr();
 
@@ -230,6 +232,12 @@ mod tests {
                 let tol = 1e-6_f32.max(8.0 * f32::EPSILON * a.abs().max(b.abs()).max(1.0));
                 assert!((a - b).abs() <= tol, "Cosine SIMD mismatch: {a} vs {b}",);
             }
+
+            let mut small_vector = vec![0.0; 16];
+            small_vector[0] = 1.0e-4;
+            let cosine_simd = unsafe { cosine_preprocess_neon(small_vector) };
+            assert_eq!(cosine_simd[0], 1.0);
+            assert!(cosine_simd[1..].iter().all(|&value| value == 0.0));
         } else {
             println!("neon test skipped");
         }
