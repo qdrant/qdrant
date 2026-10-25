@@ -685,9 +685,17 @@ impl Consensus {
                 idle_cycles = 0;
             }
 
-            // If Raft node was idle for 3 cycles, try to sync local state to consensus
+            // If Raft node was idle for 3 cycles, try to sync local state to consensus.
+            //
+            // Reset the counter after syncing. Otherwise, once `idle_cycles` reaches 3, every
+            // subsequent loop iteration would call `sync_local_state` again (often every ~10ms
+            // under load), re-proposing the same `Initializing -> Active` transitions until they
+            // apply. That floods the Raft log with duplicate ops, delays heartbeats, and can
+            // trigger leader elections that drop in-flight client proposals (seen as
+            // "Waiting for consensus operation commit failed" in CI).
             if idle_cycles >= 3 {
                 self.try_sync_local_state()?;
+                idle_cycles = 0;
             }
         }
     }
