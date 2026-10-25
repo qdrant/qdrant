@@ -1,0 +1,7 @@
+# Consumed by uniffi-bindgen-dart when (re)generating lib/src/qdrant_edge_ffi.dart
+# via `./build.sh`. `package_name` must equal this package's pubspec name so the
+# generated `@Native(assetId: "package:qdrant_edge/uniffi:qdrant_edge_ffi")`
+# resolves against the CodeAsset that hook/build.dart registers.
+[bindings.dart]
+package_name = "qdrant_edge"
+cdylib_name = "qdrant_edge_ffi"
