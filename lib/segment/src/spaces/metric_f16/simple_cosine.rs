@@ -22,7 +22,7 @@ use crate::types::Distance;
 
 impl Metric<VectorElementTypeHalf> for CosineMetric {
     fn distance() -> Distance {
-        Distance::Dot
+        Distance::Cosine
     }
 
     fn similarity(v1: &[VectorElementTypeHalf], v2: &[VectorElementTypeHalf]) -> ScoreType {
@@ -84,5 +84,21 @@ impl Metric<VectorElementTypeHalf> for CosineMetric {
         }
 
         cosine_preprocess(vector)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte};
+
+    #[test]
+    fn test_cosine_distance_consistency() {
+        let f32_dist = <CosineMetric as Metric<VectorElementType>>::distance();
+        let u8_dist = <CosineMetric as Metric<VectorElementTypeByte>>::distance();
+        let f16_dist = <CosineMetric as Metric<VectorElementTypeHalf>>::distance();
+        assert_eq!(f16_dist, Distance::Cosine);
+        assert_eq!(f16_dist, f32_dist);
+        assert_eq!(f16_dist, u8_dist);
     }
 }
