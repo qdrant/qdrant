@@ -30,6 +30,7 @@ use crate::shards::shard_holder::recovery_guard::{RecoveryProgressHandle, ShardR
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{SHARD_KEY_MAPPING_FILE, ShardHolder, shard_not_found_error};
 use crate::shards::shard_path;
+use crate::shards::transfer::RecoveryStage;
 
 impl Collection {
     pub fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
@@ -265,22 +266,18 @@ impl Collection {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        // `ShardHolder::recover_local_shard_from` is *not* cancel safe
-        // (see `ShardReplicaSet::restore_local_replica_from`)
-        let res = self
+        // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe.
+        let replica_set = self
             .shards_holder
             .read()
             .await
-            .recover_local_shard_from(
-                snapshot_shard_path,
-                recovery_type,
-                &self.path,
-                shard_id,
-                cancel,
-            )
-            .await?;
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        Ok(res)
+        replica_set
+            .restore_local_replica_from(snapshot_shard_path, recovery_type, &self.path, cancel)
+            .await
     }
 
     pub async fn list_shard_snapshots(
@@ -361,10 +358,9 @@ impl Collection {
         )
         .await?;
 
-        // Acquire the shard holder lock, check that the replica set was not removed or
-        // replaced during snapshot preparation, and hold the lock until the snapshot is
-        // recovered so the shard cannot be replaced or removed
-        let shard_holder = self.shards_holder.clone().read_owned().await;
+        // Verify that preparation did not replace the shard. Disk restoration is
+        // serialized with removal by the replica set's local lock and stopped flag.
+        let shard_holder = self.shards_holder.read().await;
 
         // Check that the replica set is unchanged
         let current_replica_set = shard_holder
@@ -376,21 +372,42 @@ impl Collection {
                 "Shard {shard_id} was replaced during snapshot preparation"
             )));
         }
+        drop(shard_holder);
 
-        // `ShardHolder::restore_shard_snapshot` is *not* cancel-safe,
-        // it must be spawned onto runtime
+        // Restoring the replica is not cancel safe, so it must run on the runtime.
         let collection_path = self.path.clone();
+        let shards_holder = self.shards_holder.clone();
         let restore = self.update_runtime.spawn(async move {
-            shard_holder
-                .restore_shard_snapshot(
+            if let Some(recovery_progress) = &recovery_progress {
+                recovery_progress.lock().set_stage(RecoveryStage::Restoring);
+            }
+
+            let recovered = replica_set
+                .restore_local_replica_from(
                     snapshot_temp_dir.path(),
                     recovery_type,
                     &collection_path,
-                    shard_id,
-                    recovery_progress,
                     cancel,
                 )
-                .await
+                .await?;
+            if !recovered {
+                return Err(CollectionError::bad_request("Invalid snapshot"));
+            }
+
+            if recovery_type.is_partial() {
+                shards_holder
+                    .read()
+                    .await
+                    .update_payload_index_schema()
+                    .await
+                    .map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "failed to update payload index schema after recovering partial snapshot: {err}"
+                        ))
+                    })?;
+            }
+
+            Ok(())
         });
 
         // Flatten nested `Result<Result<()>>` into `Result<()>`
