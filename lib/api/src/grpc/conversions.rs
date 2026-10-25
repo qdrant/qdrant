@@ -2472,10 +2472,14 @@ impl TryFrom<OrderBy> for segment::data_types::order_by::OrderBy {
         } = value;
 
         let direction = direction
-            .and_then(|x|
-                // XXX: Invalid values silently converted to None
-                Direction::try_from(x).ok())
-            .map(segment::data_types::order_by::Direction::from);
+            .map(|x| {
+                Direction::try_from(x)
+                    .map(segment::data_types::order_by::Direction::from)
+                    .map_err(|_| {
+                        Status::invalid_argument(format!("Unknown order by direction: {x}"))
+                    })
+            })
+            .transpose()?;
 
         let start_from = start_from
             .and_then(|value| value.value)
@@ -4006,5 +4010,55 @@ mod text_scoring_tests {
     fn unknown_text_scoring_type_is_refused() {
         let unknown = TextScoringParams { r#type: 42 };
         assert!(SegmentTextScoringParams::try_from(unknown).is_err());
+    }
+
+    /// An unrecognized `Direction` enum value must be reported, not silently
+    /// turned into the default (ascending) order.
+    #[test]
+    fn order_by_rejects_unknown_direction() {
+        let proto = crate::grpc::qdrant::OrderBy {
+            key: "a".to_string(),
+            direction: Some(42),
+            start_from: None,
+        };
+
+        let err = segment::data_types::order_by::OrderBy::try_from(proto)
+            .map(|order_by| order_by.direction())
+            .expect_err("unknown direction must be rejected");
+
+        assert!(
+            err.to_string().contains("42"),
+            "error should name the offending value, got: {err}",
+        );
+    }
+
+    /// Known directions keep converting, including the implicit default.
+    #[test]
+    fn order_by_accepts_known_deserialized_direction() {
+        use crate::grpc::qdrant::Direction as ProtoDirection;
+        use segment::data_types::order_by::Direction as SegmentDirection;
+
+        for (wire, expected) in [
+            (ProtoDirection::Asc, SegmentDirection::Asc),
+            (ProtoDirection::Desc, SegmentDirection::Desc),
+        ] {
+            let proto = crate::grpc::qdrant::OrderBy {
+                key: "a".to_string(),
+                direction: Some(wire as i32),
+                start_from: None,
+            };
+            let order_by = segment::data_types::order_by::OrderBy::try_from(proto)
+                .expect("known direction must convert");
+            assert_eq!(order_by.direction(), expected);
+        }
+
+        let proto = crate::grpc::qdrant::OrderBy {
+            key: "a".to_string(),
+            direction: None,
+            start_from: None,
+        };
+        let order_by = segment::data_types::order_by::OrderBy::try_from(proto)
+            .expect("absent direction must convert");
+        assert_eq!(order_by.direction(), SegmentDirection::Asc);
     }
 }
