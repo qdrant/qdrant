@@ -5,7 +5,7 @@ use std::arch::x86_64::*;
 
 use common::types::ScoreType;
 
-use super::tools::is_length_zero_or_normalized;
+use super::tools::{cosine_preprocess_underflowing_norm, is_length_zero_or_normalized};
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "sse")]
@@ -107,7 +107,7 @@ pub(crate) unsafe fn manhattan_similarity_sse(
 }
 
 #[target_feature(enable = "sse")]
-pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
+pub(crate) unsafe fn cosine_preprocess_sse(mut vector: DenseVector) -> DenseVector {
     unsafe {
         let n = vector.len();
         let m = n - (n % 16);
@@ -141,6 +141,10 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
             + hsum128_ps_sse(sum128_4);
         for i in 0..n - m {
             length += (*ptr.add(i)).powi(2);
+        }
+        if length == 0.0 {
+            cosine_preprocess_underflowing_norm(&mut vector);
+            return vector;
         }
         if is_length_zero_or_normalized(length) {
             return vector;
