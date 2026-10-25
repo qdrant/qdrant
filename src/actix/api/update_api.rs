@@ -41,6 +41,7 @@ async fn upsert_points(
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let operation = operation.into_inner();
+    let params = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -50,14 +51,14 @@ async fn upsert_points(
     );
 
     let timing = Instant::now();
-    let inference_params = InferenceParams::new(api_keys, params.timeout);
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let result_with_usage = do_upsert_points(
         StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
-        params.into_inner(),
+        params,
         auth,
         inference_params,
     )
@@ -121,6 +122,7 @@ async fn update_vectors(
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let operation = operation.into_inner();
+    let params = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -130,14 +132,14 @@ async fn update_vectors(
     );
     let timing = Instant::now();
 
-    let inference_params = InferenceParams::new(api_keys, params.timeout);
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
 
     let res = do_update_vectors(
         StrictModeCheckedTocProvider::new(&dispatcher),
         collection.into_inner().collection_name,
         operation,
         InternalUpdateParams::default(),
-        params.into_inner(),
+        params,
         auth,
         inference_params,
     )
@@ -333,6 +335,7 @@ async fn update_batch(
     api_keys: InferenceApiKeys,
 ) -> impl Responder {
     let operations = operations.into_inner();
+    let params = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -341,7 +344,7 @@ async fn update_batch(
         Some(params.wait),
     );
 
-    let inference_params = InferenceParams::new(api_keys, params.timeout);
+    let inference_params = InferenceParams::new(api_keys, params.timeout());
     let timing = Instant::now();
 
     let result_with_usage = do_batch_update_points(
@@ -349,7 +352,7 @@ async fn update_batch(
         collection.into_inner().collection_name,
         operations.operations,
         InternalUpdateParams::default(),
-        params.into_inner(),
+        params,
         auth,
         inference_params,
     )

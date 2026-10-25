@@ -1,3 +1,4 @@
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,7 +16,6 @@ use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
 use serde::{Deserialize, Serialize};
-use serde_with::DurationSeconds;
 use shard::operations::payload_ops::*;
 use shard::operations::*;
 use storage::content_manager::collection_meta_ops::*;
@@ -32,15 +32,14 @@ use crate::common::inference::update_requests::*;
 use crate::common::strict_mode::*;
 use crate::common::validate_vectors::validate_vector_dimensions;
 
-#[serde_with::serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
 pub struct UpdateParams {
     #[serde(default)]
     pub wait: bool,
     #[serde(default)]
     pub ordering: WriteOrdering,
-    #[serde_as(as = "Option<DurationSeconds<String>>")]
-    pub timeout: Option<Duration>,
+    #[serde(default)]
+    pub timeout: Option<NonZeroU64>,
 }
 
 impl UpdateParams {
@@ -49,17 +48,31 @@ impl UpdateParams {
         ordering: Option<api::grpc::qdrant::WriteOrdering>,
         timeout: Option<u64>,
     ) -> tonic::Result<Self> {
+        let timeout = match timeout {
+            Some(0) => {
+                return Err(tonic::Status::invalid_argument(
+                    "timeout must be 1 or larger".to_string(),
+                ));
+            }
+            Some(t) => NonZeroU64::new(t),
+            None => None,
+        };
+
         let params = Self {
             wait: wait.unwrap_or(false),
             ordering: write_ordering_from_proto(ordering)?,
-            timeout: timeout.map(Duration::from_secs),
+            timeout,
         };
 
         Ok(params)
     }
 
+    pub(crate) fn timeout(&self) -> Option<Duration> {
+        self.timeout.map(|num| Duration::from_secs(num.get()))
+    }
+
     pub(crate) fn timeout_as_secs(&self) -> Option<usize> {
-        self.timeout.map(|timeout| timeout.as_secs() as usize)
+        self.timeout.map(|i| i.get() as usize)
     }
 }
 
@@ -938,7 +951,7 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, auth, params.timeout)
+        .submit_collection_meta_op(consensus_op, auth, params.timeout())
         .await?;
 
     do_create_index_internal(
@@ -1030,7 +1043,7 @@ pub async fn do_delete_index(
             consensus_op,
             auth,
             // Use per-request timeout from params if provided
-            params.timeout,
+            params.timeout(),
         )
         .await?;
 
@@ -1105,7 +1118,7 @@ pub async fn do_create_vector_name(
         .submit_collection_meta_op(
             CollectionMetaOperations::CreateNamedVector(consensus_op),
             auth,
-            params.timeout,
+            params.timeout(),
         )
         .await?;
 
@@ -1169,7 +1182,7 @@ pub async fn do_delete_vector_name(
         .submit_collection_meta_op(
             CollectionMetaOperations::DeleteNamedVector(consensus_op),
             auth,
-            params.timeout,
+            params.timeout(),
         )
         .await?;
 
