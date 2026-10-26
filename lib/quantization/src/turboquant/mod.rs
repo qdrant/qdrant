@@ -128,7 +128,8 @@ pub struct EncodedQueryTQ {
     data: EncodedQueryTQData,
 
     // Store the original query's l2 norm for Dot and L2 distances, where we can compute it once and reuse for all distance computations.
-    l2_norm: Option<f32>,
+    // Keep it in f64 so squaring large but finite f32 components stays finite in L2 scoring.
+    l2_norm: Option<f64>,
 
     // Store the original query in pre-rotated form for L1 distance, where we need to dequantize vectors and apply inverse rotation to them.
     query: Option<Vec<f32>>,

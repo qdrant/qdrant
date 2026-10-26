@@ -562,7 +562,7 @@ impl TurboQuantizer {
 
         let l2_norm = match self.distance {
             DistanceType::L1 | DistanceType::L2 | DistanceType::Dot => {
-                Some(rotated.iter().map(|&i| i * i).sum::<f64>().sqrt() as f32)
+                Some(rotated.iter().map(|&i| i * i).sum::<f64>().sqrt())
             }
             DistanceType::Cosine => None,
         };
@@ -731,7 +731,11 @@ impl TurboQuantizer {
                 let scaling_factor = vector_extras.scaling_factor();
                 let l2 = vector_extras.l2_length();
                 let query_l2 = query.l2_norm.unwrap_or(1.0);
-                query_l2 * query_l2 + l2 * l2 - 2.0 * dot * scaling_factor
+                // Compute the squared-distance terms in f64: squaring a valid
+                // f32-scale norm can exceed f32::MAX, even when the final
+                // distance is small and representable.
+                (query_l2 * query_l2 + f64::from(l2) * f64::from(l2)
+                    - 2.0 * f64::from(dot) * f64::from(scaling_factor)) as f32
             }
             DistanceType::L1 => unreachable!("L1 is scored by `score_precomputed_l1`"),
         }
@@ -1646,6 +1650,25 @@ mod tests {
                 "score spread too small for {bits:?}/{distance:?}: self={self_score}, anti={anti_score}",
             );
         }
+    }
+
+    /// Large finite Euclidean query components must not turn the squared-distance
+    /// calculation into NaN when the query norm squared exceeds f32::MAX.
+    #[rstest::rstest]
+    #[case::bits8(TQBits::Bits8)]
+    #[case::bits16(TQBits::Bits16)]
+    fn score_precomputed_euclid_handles_large_finite_queries(#[case] bits: TQBits) {
+        let tq = make_tq_unpadded(2, bits, DistanceType::L2);
+        let query = [1.31e19_f32, 1.31e19_f32];
+        let mut buf = vec![0.0_f64; tq.padded_dim];
+        let quantized = tq.quantize(&query, &mut buf);
+
+        let score = asymmetric_score_helper(&tq, &query, &quantized);
+
+        assert!(
+            score.is_finite(),
+            "finite query should produce a finite TurboQuant Euclid score for {bits:?}, got {score}"
+        );
     }
 
     /// `score_precomputed_batch` must reproduce per-vector `score_precomputed`
