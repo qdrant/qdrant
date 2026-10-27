@@ -6776,8 +6776,10 @@ pub mod expression {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GeoDistance {
+    /// The origin geo point to measure from
     #[prost(message, optional, tag = "1")]
     pub origin: ::core::option::Option<GeoPoint>,
+    /// Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used
     #[prost(string, tag = "2")]
     pub to: ::prost::alloc::string::String,
 }
