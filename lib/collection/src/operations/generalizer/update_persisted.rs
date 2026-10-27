@@ -211,7 +211,7 @@ impl Generalizer for BatchPersisted {
                     multi
                         .iter()
                         .map(|v| {
-                            let dim = if v.is_empty() { 0 } else { v[0].len() };
+                            let dim = v.first().map_or(0, |v| v.len());
                             vec![vec![v.len() as f32, dim as f32]]
                         })
                         .collect(),
@@ -287,7 +287,7 @@ impl Generalizer for VectorStructPersisted {
                 VectorStructPersisted::Single(vec![dense.len() as f32])
             }
             VectorStructPersisted::MultiDense(multi) => {
-                let dim = if multi.is_empty() { 0 } else { multi[0].len() };
+                let dim = multi.first().map_or(0, |v| v.len());
                 VectorStructPersisted::MultiDense(vec![vec![multi.len() as f32, dim as f32]])
             }
             VectorStructPersisted::Named(named) => {
@@ -309,7 +309,7 @@ impl Generalizer for VectorPersisted {
                 SparseVector::new(vec![sparse.len() as DimId], vec![0.0]).unwrap(),
             ),
             VectorPersisted::MultiDense(multi) => {
-                let dim = if multi.is_empty() { 0 } else { multi[0].len() };
+                let dim = multi.first().map_or(0, |v| v.len());
                 VectorPersisted::MultiDense(vec![vec![multi.len() as f32, dim as f32]])
             }
         }
