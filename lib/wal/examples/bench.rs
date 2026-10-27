@@ -111,7 +111,7 @@ fn append(args: &Args) {
     let mut entries = 0usize;
     let mut time: u64 = precise_time_ns();
     let start_time: u64 = time;
-    while segment.append(&buf).is_some() {
+    while segment.append(&buf).unwrap().is_some() {
         entries += 1;
         if args.flag_batch != 0 && entries.is_multiple_of(args.flag_batch) {
             let start_sync = precise_time_ns();

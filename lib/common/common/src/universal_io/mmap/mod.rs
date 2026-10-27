@@ -8,7 +8,7 @@ use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use std::{fs, io, slice};
+use std::{io, slice};
 
 use memmap2::MmapRaw;
 use parking_lot::Mutex;
@@ -17,6 +17,7 @@ use self::pipeline::MmapReadPipeline;
 use super::traits::{UniversalReadFs, UniversalWriteFs};
 use super::*;
 use crate::ext::aligned_vec::ACow;
+use crate::fs::FallocatedPages;
 use crate::generic_consts::{AccessPattern, Random};
 use crate::mmap::{Advice, AdviceSetting, MULTI_MMAP_IS_SUPPORTED, Madviseable as _};
 
@@ -99,6 +100,9 @@ pub struct MmapFile {
     /// cannot disturb the mapping.
     append_file: Arc<OnceLock<fs_err::File>>,
 
+    /// Disk blocks reserved so far for writes through the mapping.
+    fallocated: FallocatedPages,
+
     // `mmap` and `mmap_seq` own the mmaps.
     mmap: Arc<Mutex<MmapRaw>>,
     mmap_seq: Option<Arc<Mutex<MmapRaw>>>,
@@ -160,6 +164,7 @@ impl MmapFile {
             populate,
             advice,
             append_file: Arc::new(OnceLock::new()),
+            fallocated: FallocatedPages::default(),
             mmap: Arc::new(Mutex::new(mmap)),
             mmap_seq: mmap_seq.map(|mmap_seq_| Arc::new(Mutex::new(mmap_seq_))),
             len,
@@ -297,19 +302,15 @@ impl UniversalRead for MmapFile {
 
 impl UniversalWrite for MmapFile {
     fn write<T: bytemuck::Pod>(&mut self, byte_offset: ByteOffset, items: &[T]) -> UioResult<()> {
-        let mmap = self.as_bytes_mut();
-        write(mmap, byte_offset, items)?;
-        Ok(())
+        self.write_bytes(byte_offset, bytemuck::cast_slice(items))
     }
 
     fn write_batch<'a, T: bytemuck::Pod>(
         &mut self,
         offset_data: impl IntoIterator<Item = (ByteOffset, &'a [T])>,
     ) -> UioResult<()> {
-        let mmap = self.as_bytes_mut();
-
         for (byte_offset, items) in offset_data {
-            write(mmap, byte_offset, items)?;
+            self.write_bytes(byte_offset, bytemuck::cast_slice(items))?;
         }
 
         Ok(())
@@ -523,7 +524,7 @@ fn open_mmap(
 ) -> UioResult<MmapRaw> {
     // TODO: `fs_err` can cause panic when run on a single-threaded Tokio runtime
     #[expect(clippy::disallowed_types)]
-    let file = fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .read(true)
         .write(write)
         .open(path)
@@ -611,6 +612,26 @@ impl MmapFile {
         // SAFETY: see `as_bytes`.
         unsafe { slice::from_raw_parts_mut(self.ptr.0, self.len) }
     }
+
+    #[inline]
+    fn write_bytes(&mut self, byte_offset: ByteOffset, bytes: &[u8]) -> UioResult<()> {
+        let start = byte_offset as usize;
+        let end = start + bytes.len();
+        if end > self.len {
+            return Err(UniversalIoError::OutOfBounds {
+                start: start as _,
+                end: end as _,
+                elements: self.len,
+            });
+        }
+        if bytes.is_empty() {
+            return Ok(());
+        }
+
+        self.fallocated.ensure(&self.path, self.len, start..end)?;
+        self.as_bytes_mut()[start..end].copy_from_slice(bytes);
+        Ok(())
+    }
 }
 
 #[inline]
@@ -645,30 +666,6 @@ pub(crate) fn read_bytemuck<T: Item>(bytes: &[u8], range: ReadRange) -> UioResul
     // `bytemuck::cast_slice` checks that `bytes` size and alignment match `T` requirements
     let items = bytemuck::cast_slice(bytes);
     Ok(items)
-}
-
-#[inline]
-fn write<T>(mmap: &mut [u8], byte_offset: ByteOffset, items: &[T]) -> UioResult<()>
-where
-    T: bytemuck::Pod,
-{
-    let start = byte_offset as usize;
-    let end = start + size_of_val(items);
-
-    let mmap_len_bytes = mmap.len();
-
-    let mmap = mmap
-        .get_mut(start..end)
-        .ok_or_else(|| UniversalIoError::OutOfBounds {
-            start: start as _,
-            end: end as _,
-            elements: mmap_len_bytes / size_of::<T>(),
-        })?;
-
-    let bytes = bytemuck::cast_slice(items);
-    mmap.copy_from_slice(bytes);
-
-    Ok(())
 }
 
 #[cfg(test)]

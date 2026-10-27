@@ -168,19 +168,25 @@ impl LocalState {
     /// overwritten; however, it is the same data, so it is fine.
     ///
     /// Assumes the bytes slice covers the entirety of `blocks_range`.
-    pub(super) unsafe fn write_mmap_bytes(&self, bytes: &[u8], blocks_range: Range<u32>) {
+    pub(super) unsafe fn write_mmap_bytes(
+        &self,
+        bytes: &[u8],
+        blocks_range: Range<u32>,
+    ) -> UioResult<()> {
         // SAFETY:
         // 1. The remote's existing bytes are immutable, so worst case, same
         //    data is overwritten.
         // 2. The `fetched` bitmap should track which blocks are already present.
+        // 3. `mmap.write` also mutates `MmapFile::fallocated`; every writer
+        //    takes `fetched` first, so that `&mut` is never shared between writers.
         let mmap = unsafe { self.mmap.get().as_mut_unchecked() };
         if self.fully_populated.load(Ordering::Acquire) {
-            return;
+            return Ok(());
         }
 
         let mut fetched = self.fetched.lock();
         if fetched.contains_range(blocks_range.clone()) {
-            return;
+            return Ok(());
         }
 
         let byte_offset = (blocks_range.start as usize * BLOCK_SIZE) as u64;
@@ -194,8 +200,7 @@ impl LocalState {
             max_len.min((blocks_range.len() * BLOCK_SIZE) as u64)
         );
 
-        mmap.write(byte_offset, bytes)
-            .expect("MmapFile::write is infallible");
+        mmap.write(byte_offset, bytes)?;
 
         fetched.insert_range(blocks_range);
 
@@ -207,5 +212,6 @@ impl LocalState {
         if fetched.len() == total_blocks {
             self.fully_populated.store(true, Ordering::Release);
         }
+        Ok(())
     }
 }

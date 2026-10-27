@@ -9080,6 +9080,7 @@ version = "0.1.4"
 dependencies = [
  "byteorder",
  "chrono",
+ "common",
  "crc",
  "crc32c",
  "criterion",

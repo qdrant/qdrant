@@ -40,6 +40,10 @@ struct StoredDocument {
 #[cfg(test)]
 mod tests;
 
+#[cfg_attr(
+    any(target_os = "linux", target_os = "android"),
+    expect(clippy::large_enum_variant)
+)]
 pub enum FullTextIndex {
     Mutable(MutableFullTextIndex),
     Immutable(ImmutableFullTextIndex),

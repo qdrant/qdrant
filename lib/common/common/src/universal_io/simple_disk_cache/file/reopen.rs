@@ -90,7 +90,7 @@ where
                 if !fetched.is_empty() {
                     // SAFETY: `fetched` covers `blocks_range` exactly
                     // (clamped to EOF)
-                    unsafe { local.write_mmap_bytes(&fetched, blocks_range) }
+                    unsafe { local.write_mmap_bytes(&fetched, blocks_range) }?;
                 }
 
                 // replace remote with the one that fetched the tail
@@ -122,7 +122,7 @@ where
                     let blocks_range = to_block_range(from..total_len);
                     // SAFETY: `fetched` covers `blocks_range` exactly
                     // (clamped to EOF)
-                    unsafe { local.write_mmap_bytes(&fetched, blocks_range) }
+                    unsafe { local.write_mmap_bytes(&fetched, blocks_range) }?;
                 }
 
                 // replace remote with the one that fetched the tail

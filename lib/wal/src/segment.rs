@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::{fmt, mem, ptr, thread};
 
 use byteorder::{ByteOrder, LittleEndian};
+use common::fs::FallocatedPages;
 use fs_err as fs;
 use fs_err::OpenOptions;
 #[cfg(not(unix))]
@@ -108,6 +109,8 @@ pub struct Segment {
     crc: u32,
     /// Offset of last flush.
     flush_offset: usize,
+    /// Disk blocks reserved so far for appends through the mapping.
+    fallocated: FallocatedPages,
 }
 
 impl Segment {
@@ -149,6 +152,7 @@ impl Segment {
             ));
         }
         let seed = rand::random();
+        let mut fallocated = FallocatedPages::default();
 
         {
             // Prepare properly formatted segment in a temporary file, so in case of failure it won't be corrupted.
@@ -174,6 +178,7 @@ impl Segment {
                 rustix::fs::ftruncate(&file, capacity as u64)?;
             }
 
+            fallocated.ensure(&tmp_file_path, capacity, 0..HEADER_LEN)?;
             let mut mmap = MmapViewSync::from_file(&file, 0, capacity)?;
             {
                 let segment = unsafe { &mut mmap.as_mut_slice() };
@@ -211,6 +216,7 @@ impl Segment {
             index: Vec::new(),
             crc: seed,
             flush_offset: 0,
+            fallocated,
         };
         debug!("{segment:?}: created");
         Ok(segment)
@@ -297,10 +303,15 @@ impl Segment {
             index,
             crc,
             flush_offset: 0,
+            fallocated: FallocatedPages::default(),
         };
 
         // Bump flush offset next to last entry, we don't need to flush any existing data
         segment.flush_offset = segment.size();
+        // Existing entries are allocated already
+        segment
+            .fallocated
+            .ensure(&segment.path, capacity, 0..segment.flush_offset)?;
 
         debug!("{segment:?}: opened");
         Ok(segment)
@@ -333,12 +344,12 @@ impl Segment {
     ///
     /// The entry may be immediately read from the log, but it is not guaranteed
     /// to be durably stored on disk until the segment is flushed.
-    pub fn append<T>(&mut self, entry: &T) -> Option<usize>
+    pub fn append<T>(&mut self, entry: &T) -> Result<Option<usize>>
     where
         T: Deref<Target = [u8]>,
     {
         if !self.sufficient_capacity(entry.len()) {
-            return None;
+            return Ok(None);
         }
         trace!("{:?}: appending {} byte entry", self, entry.len());
 
@@ -346,6 +357,10 @@ impl Segment {
         let padded_len = entry.len() + padding;
 
         let offset = self.size();
+
+        let end = offset + entry_size_disk(entry.len());
+        self.fallocated
+            .ensure(&self.path, self.capacity(), offset..end)?;
 
         let mut crc = self.crc;
 
@@ -371,7 +386,7 @@ impl Segment {
 
         self.crc = crc;
         self.index.push((offset + HEADER_LEN, entry.len()));
-        Some(self.index.len() - 1)
+        Ok(Some(self.index.len() - 1))
     }
 
     fn _read_seed_crc(&self) -> u32 {
@@ -389,13 +404,16 @@ impl Segment {
     ///
     /// The entries are not guaranteed to be removed until the segment is
     /// flushed.
-    pub fn truncate(&mut self, from: usize) {
+    pub fn truncate(&mut self, from: usize) -> Result<()> {
         if from >= self.index.len() {
-            return;
+            return Ok(());
         }
         trace!("{self:?}: truncating from position {from}");
 
         let zero_end = self.size();
+        let zero_start = self.index[..from].last().map_or(HEADER_LEN, entry_end);
+        self.fallocated
+            .ensure(&self.path, self.capacity(), zero_start..zero_end)?;
 
         // Remove the index entries.
         let deleted = self.index.drain(from..).count();
@@ -410,11 +428,11 @@ impl Segment {
         }
 
         // Zero all deleted entries so that we will not read the data back after a crash
-        let zero_start = self.size();
         self.as_mut_slice()[zero_start..zero_end].fill(0);
 
         // Move flush offset back to write new changes on next flush
         self.flush_offset = min(self.flush_offset, zero_start);
+        Ok(())
     }
 
     /// Flushes recently written entries to durable storage.
@@ -546,9 +564,7 @@ impl Segment {
     /// Returns the total number of bytes used to store existing entries,
     /// including header and padding overhead.
     pub fn size(&self) -> usize {
-        self.index.last().map_or(HEADER_LEN, |&(offset, len)| {
-            offset + len + padding(len) + CRC_LEN
-        })
+        self.index.last().map_or(HEADER_LEN, entry_end)
     }
 
     /// Returns `true` if the segment has sufficient remaining capacity to
@@ -614,6 +630,7 @@ impl Segment {
             index,
             crc: _,
             flush_offset,
+            fallocated: _,
         } = self;
         let mmap_len = mmap.len();
 
@@ -638,9 +655,7 @@ impl Segment {
                                 path,
                                 flush_offset,
                                 index.len(),
-                                index.last().map_or(HEADER_LEN, |&(offset, len)| {
-                                    offset + len + padding(len) + CRC_LEN
-                                }),
+                                index.last().map_or(HEADER_LEN, entry_end),
                                 mmap_len
                             ),
                             e
@@ -663,6 +678,7 @@ impl fmt::Debug for Segment {
             mmap: _,
             index: _,
             crc: _,
+            fallocated: _,
         } = self;
         f.debug_struct("Segment")
             .field("path", path)
@@ -702,9 +718,13 @@ fn padding(len: usize) -> usize {
 /// | data                         |      |
 /// | padding                      |      |
 /// | CRC(length + data + padding) | u32  |
-#[cfg(test)]
 pub fn entry_size_disk(len: usize) -> usize {
     len + entry_overhead(len)
+}
+
+/// Returns the end offset of an index entry.
+fn entry_end(&(offset, len): &(usize, usize)) -> usize {
+    offset + len + padding(len) + CRC_LEN
 }
 
 /// Returns the overhead of storing an entry of length `len`.
@@ -775,7 +795,7 @@ mod test {
             EntryGenerator::with_segment_capacity(segment.capacity()).collect();
 
         for (idx, entry) in entries.iter().enumerate() {
-            assert_eq!(idx, segment.append(entry).unwrap());
+            assert_eq!(idx, segment.append(entry).unwrap().unwrap());
             assert_eq!(&entry[..], &*segment.entry(idx).unwrap());
         }
 
@@ -803,14 +823,14 @@ mod test {
         init_logger();
         let (mut segment, dir) = create_segment(4096);
 
-        segment.append(&b"0".as_slice()).unwrap();
-        segment.append(&b"1".as_slice()).unwrap();
-        segment.append(&b"2".as_slice()).unwrap();
-        segment.append(&b"3".as_slice()).unwrap();
+        segment.append(&b"0".as_slice()).unwrap().unwrap();
+        segment.append(&b"1".as_slice()).unwrap().unwrap();
+        segment.append(&b"2".as_slice()).unwrap().unwrap();
+        segment.append(&b"3".as_slice()).unwrap().unwrap();
 
         // Truncate beyond the end is a no-op
         assert_eq!(segment.len(), 4);
-        segment.truncate(4);
+        segment.truncate(4).unwrap();
         assert_eq!(segment.len(), 4);
 
         // Until we flush, flush offset remains zero
@@ -819,13 +839,13 @@ mod test {
         assert_eq!(segment.flush_offset, HEADER_LEN + entry_size_disk(1) * 4);
 
         // Truncate to keep one entry
-        segment.truncate(1);
+        segment.truncate(1).unwrap();
         assert_eq!(segment.len(), 1);
         assert_eq!(segment.flush_offset, HEADER_LEN + entry_size_disk(1));
 
         // Add a new items (index 2, 3), flush offset remains at index 1 until we flush
-        segment.append(&b"12345".as_slice()).unwrap();
-        segment.append(&b"67890".as_slice()).unwrap();
+        segment.append(&b"12345".as_slice()).unwrap().unwrap();
+        segment.append(&b"67890".as_slice()).unwrap().unwrap();
         assert_eq!(segment.len(), 3);
         assert_eq!(segment.flush_offset, HEADER_LEN + entry_size_disk(1));
 
@@ -845,7 +865,7 @@ mod test {
         );
 
         // Truncate all (clear) and assert flush offset is bumped
-        segment.truncate(0);
+        segment.truncate(0).unwrap();
         assert_eq!(segment.len(), 0);
         assert_eq!(segment.flush_offset, HEADER_LEN);
 
@@ -883,7 +903,7 @@ mod test {
         ];
 
         for (index, entry) in entries.iter().enumerate() {
-            assert_eq!(index, segment.append(entry).unwrap());
+            assert_eq!(index, segment.append(entry).unwrap().unwrap());
         }
 
         for (index, entry) in entries.iter().enumerate() {
@@ -918,7 +938,7 @@ mod test {
             let segment_res = Segment::create(&path, capacity);
             if let Ok(mut segment) = segment_res {
                 for (i, entry) in entries.iter().enumerate() {
-                    let index = segment.append(entry).unwrap();
+                    let index = segment.append(entry).unwrap().unwrap();
                     assert_eq!(i, index);
                 }
                 segment.flush().unwrap();
@@ -951,7 +971,7 @@ mod test {
         {
             let mut segment = Segment::create(&path, 4096).unwrap();
             for (i, entry) in entries.iter().enumerate() {
-                let index = segment.append(entry).unwrap();
+                let index = segment.append(entry).unwrap().unwrap();
                 assert_eq!(i, index);
             }
         }
