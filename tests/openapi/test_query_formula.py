@@ -1,5 +1,5 @@
 import pytest
-from math import acosh, isclose
+from math import acosh, asin, cos, isclose, radians, sin, sqrt
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
@@ -17,6 +17,15 @@ def setup(on_disk_vectors, collection_name):
         path_params={"collection_name": collection_name},
         query_params={"wait": 'true'},
         body={"field_name": "price", "field_schema": "float"},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/index",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": 'true'},
+        body={"field_name": "indexed_locations", "field_schema": "geo"},
     )
     assert response.ok
     yield
@@ -317,3 +326,69 @@ def test_min_matches_the_arithmetic_workaround(collection_name):
         assert isclose(direct_scores[point_id], expected, rel_tol=1e-5), (
             f"point {point_id}: min gave {direct_scores[point_id]}, workaround gave {expected}"
         )
+
+
+COLOGNE = {"lat": 50.94, "lon": 6.96}
+BONN = {"lat": 50.73, "lon": 7.10}
+BERLIN = {"lat": 52.52, "lon": 13.40}
+MUNICH = {"lat": 48.14, "lon": 11.58}
+
+
+def haversine_meters(a, b):
+    # Same mean Earth radius as the `geo` crate
+    earth_radius = 6371008.8
+    d_lat = radians(b["lat"] - a["lat"])
+    d_lon = radians(b["lon"] - a["lon"])
+    h = sin(d_lat / 2) ** 2 + cos(radians(a["lat"])) * cos(radians(b["lat"])) * sin(d_lon / 2) ** 2
+    return 2 * earth_radius * asin(sqrt(h))
+
+
+@pytest.mark.parametrize("field", ["locations", "indexed_locations"])
+def test_geo_distance_to_multiple_points(collection_name, field):
+    """A point with several locations is scored by its nearest one, read from payload or geo index."""
+    group = f"geo_multi_{field}"
+    locations_by_id = {
+        1101: [COLOGNE],
+        1102: [BERLIN, BONN],
+        1103: [BERLIN, MUNICH],
+    }
+    points = [
+        {
+            "id": point_id,
+            "vector": [0.1, 0.2, 0.3, 0.4],
+            "payload": {field: locations if len(locations) > 1 else locations[0], "group": group},
+        }
+        for point_id, locations in locations_by_id.items()
+    ]
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={"points": points},
+    )
+    assert response.ok, response.json()
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": {"limit": 10},
+            "query": {"formula": {"mult": [-1, {"geo_distance": {"origin": COLOGNE, "to": field}}]}},
+            "filter": {"must": [{"key": "group", "match": {"value": group}}]},
+            "limit": 10,
+        },
+    )
+    assert response.ok, response.json()
+
+    points = response.json()["result"]["points"]
+    assert [point["id"] for point in points] == [1101, 1102, 1103]
+
+    expected_scores = {
+        1101: 0.0,
+        1102: -haversine_meters(COLOGNE, BONN),
+        1103: -haversine_meters(COLOGNE, MUNICH),
+    }
+    for point in points:
+        assert isclose(point["score"], expected_scores[point["id"]], rel_tol=1e-5), point
