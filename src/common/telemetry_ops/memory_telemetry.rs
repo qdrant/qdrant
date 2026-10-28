@@ -54,7 +54,10 @@ impl MemoryTelemetry {
         }
     }
 
-    #[cfg(target_env = "msvc")]
+    #[cfg(not(all(
+        not(target_env = "msvc"),
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )))]
     pub fn collect(_auth: &Auth) -> Option<MemoryTelemetry> {
         None
     }
@@ -70,7 +73,10 @@ pub fn resident_bytes() -> Option<usize> {
     stats::resident::read().ok()
 }
 
-#[cfg(target_env = "msvc")]
+#[cfg(not(all(
+    not(target_env = "msvc"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+)))]
 pub fn resident_bytes() -> Option<usize> {
     None
 }
