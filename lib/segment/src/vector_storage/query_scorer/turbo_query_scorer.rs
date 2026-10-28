@@ -44,6 +44,12 @@ impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
 }
 
 fn validate_query(query: &[f32], distance: Distance) -> OperationResult<()> {
+    if let Some(component) = query.iter().find(|component| !component.is_finite()) {
+        return Err(OperationError::ValidationError {
+            description: format!("TurboQuant query component must be finite, got {component}"),
+        });
+    }
+
     if distance != Distance::Euclid {
         return Ok(());
     }
@@ -79,6 +85,21 @@ mod tests {
         ));
         assert!(validate_query(&[1.30e19_f32, 1.30e19_f32], Distance::Euclid).is_ok());
         assert!(validate_query(&oversized, Distance::Dot).is_ok());
+    }
+
+    #[test]
+    fn non_finite_query_components_are_rejected_before_norm_validation() {
+        for distance in [Distance::Euclid, Distance::Dot] {
+            for component in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+                let error = validate_query(&[component], distance).unwrap_err();
+
+                assert!(matches!(
+                    error,
+                    OperationError::ValidationError { description }
+                        if description.starts_with("TurboQuant query component must be finite, got ")
+                ));
+            }
+        }
     }
 }
 
