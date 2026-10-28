@@ -134,6 +134,7 @@ fn err_invalid_path(path: &Path) -> io::Error {
 mod tests {
     use super::*;
 
+    /// The renamed directory remains intact until its temporary owner is closed.
     #[test]
     fn safe_delete_in_tmp_preserves_contents_until_close() -> io::Result<()> {
         let base = tempfile::tempdir()?;
@@ -154,6 +155,7 @@ mod tests {
         Ok(())
     }
 
+    /// A failed rename preserves the source and removes the temporary owner.
     #[test]
     fn failed_rename_does_not_remove_source_or_leave_trash() -> io::Result<()> {
         let base = tempfile::tempdir()?;
@@ -168,6 +170,7 @@ mod tests {
         Ok(())
     }
 
+    /// Suffix cleanup does not remove an unrelated pre-existing deleted directory.
     #[test]
     fn suffix_cleanup_preserves_unrelated_deleted_directory() -> io::Result<()> {
         let base = tempfile::tempdir()?;
@@ -185,6 +188,7 @@ mod tests {
         Ok(())
     }
 
+    /// Windows deletion always targets a new child, regardless of OS rename support.
     #[cfg(windows)]
     #[test]
     fn windows_safe_delete_moves_to_child_even_if_directory_replacement_is_supported()
