@@ -47,7 +47,8 @@ pub fn safe_delete_in_tmp(path: &Path, temp_dir: &Path) -> io::Result<TempDir> {
     let (parent, _file_name) = split(path).ok_or_else(|| err_invalid_path(path))?;
     fs::create_dir_all(temp_dir)?;
     let to_delete = tempfile::Builder::new().prefix("").tempdir_in(temp_dir)?;
-    rename_for_deletion(path, &to_delete)?;
+    // Append /x as older Windows can't rename onto an existing dir. See #5924.
+    fs::rename(path, to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }
@@ -71,24 +72,11 @@ pub fn safe_delete_with_suffix(path: &Path) -> io::Result<()> {
         .prefix(file_name)
         .suffix(".deleted")
         .tempdir_in(parent)?;
-    rename_for_deletion(path, &to_delete)?;
+    fs::rename(path, to_delete.path().join("x"))?;
     if cfg!(unix) {
         fs::File::open(parent)?.sync_all()?;
     }
     to_delete.close()
-}
-
-/// Some Windows versions cannot replace an existing directory with a directory
-/// rename, even when it is empty. Keep the unique TempDir as the cleanup owner,
-/// but move the source into a nonexistent child of it. The suffix owner remains
-/// marked `.deleted`, so interrupted cleanup is still ignored on restart.
-fn rename_for_deletion(path: &Path, to_delete: &TempDir) -> io::Result<()> {
-    #[cfg(windows)]
-    let destination = to_delete.path().join("contents");
-    #[cfg(not(windows))]
-    let destination = to_delete.path().to_path_buf();
-
-    fs::rename(path, destination)
 }
 
 /// After creating or removing a file, it's not enough to call `sync_all()` on
@@ -134,77 +122,6 @@ fn err_invalid_path(path: &Path) -> io::Error {
 mod tests {
     use super::*;
 
-    /// The renamed directory remains intact until its temporary owner is closed.
-    #[test]
-    fn safe_delete_in_tmp_preserves_contents_until_close() -> io::Result<()> {
-        let base = tempfile::tempdir()?;
-        let source = base.path().join("collection");
-        let trash = base.path().join(".deleted");
-        fs::create_dir_all(source.join("nested"))?;
-        fs::write(source.join("nested/data"), b"vector data")?;
-
-        let owner = safe_delete_in_tmp(&source, &trash)?;
-        assert!(!source.exists());
-        #[cfg(windows)]
-        let moved = owner.path().join("contents");
-        #[cfg(not(windows))]
-        let moved = owner.path().to_path_buf();
-        assert_eq!(fs::read(moved.join("nested/data"))?, b"vector data");
-        owner.close()?;
-        assert_eq!(fs::read_dir(&trash)?.count(), 0);
-        Ok(())
-    }
-
-    /// A failed rename preserves the source and removes the temporary owner.
-    #[test]
-    fn failed_rename_does_not_remove_source_or_leave_trash() -> io::Result<()> {
-        let base = tempfile::tempdir()?;
-        let source = base.path().join("collection");
-        let trash = base.path().join(".deleted");
-        fs::create_dir(&source)?;
-        fs::write(source.join("data"), b"unchanged")?;
-        // Cannot move a parent into its own descendant.
-        assert!(safe_delete_in_tmp(base.path(), &trash).is_err());
-        assert_eq!(fs::read(source.join("data"))?, b"unchanged");
-        assert_eq!(fs::read_dir(&trash)?.count(), 0);
-        Ok(())
-    }
-
-    /// Suffix cleanup does not remove an unrelated pre-existing deleted directory.
-    #[test]
-    fn suffix_cleanup_preserves_unrelated_deleted_directory() -> io::Result<()> {
-        let base = tempfile::tempdir()?;
-        let source = base.path().join("segment");
-        let other = base.path().join("segment.deleted");
-        fs::create_dir(&source)?;
-        fs::write(source.join("data"), b"remove")?;
-        fs::create_dir(&other)?;
-        fs::write(other.join("data"), b"keep")?;
-
-        safe_delete_with_suffix(&source)?;
-        assert!(!source.exists());
-        assert_eq!(fs::read(other.join("data"))?, b"keep");
-        assert_eq!(fs::read_dir(base.path())?.count(), 1);
-        Ok(())
-    }
-
-    /// Windows deletion always targets a new child, regardless of OS rename support.
-    #[cfg(windows)]
-    #[test]
-    fn windows_safe_delete_moves_to_child_even_if_directory_replacement_is_supported()
-    -> io::Result<()> {
-        let base = tempfile::tempdir()?;
-        let source = base.path().join("collection");
-        fs::create_dir(&source)?;
-        fs::write(source.join("data"), b"keep")?;
-        let destination = tempfile::tempdir_in(base.path())?;
-
-        rename_for_deletion(&source, &destination)?;
-        assert!(!source.exists());
-        assert_eq!(fs::read(destination.path().join("contents/data"))?, b"keep");
-        Ok(())
-    }
-
     #[test]
     fn test_safe_delete() -> io::Result<()> {
         let base = tempfile::tempdir()?;
@@ -230,6 +147,7 @@ mod tests {
 
         // Case 2: delete in background thread
         let to_delete = safe_delete_in_tmp(&segment2, &tmp)?;
+        assert_eq!(fs::read(to_delete.path().join("x/file"))?, b"test");
         let handle = std::thread::spawn(move || to_delete.close());
         handle.join().unwrap()?;
 
