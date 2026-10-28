@@ -477,7 +477,12 @@ impl TurboQuantizer {
                 // out of `sf` without `cn`.
                 let l2_a = extra_v1.l2_length();
                 let l2_b = extra_v2.l2_length();
-                l2_a * l2_a + l2_b * l2_b - 2.0 * v1_scale * v2_scale * raw_dot
+                let l2_a = f64::from(l2_a);
+                let l2_b = f64::from(l2_b);
+                let v1_scale = f64::from(v1_scale);
+                let v2_scale = f64::from(v2_scale);
+                let raw_dot = f64::from(raw_dot);
+                (l2_a * l2_a + l2_b * l2_b - 2.0 * v1_scale * v2_scale * raw_dot) as f32
             }
             DistanceType::L1 => {
                 // Fallback case for L1, where we need to fully dequantize both vectors.
@@ -1669,6 +1674,36 @@ mod tests {
             score.is_finite(),
             "finite query should produce a finite TurboQuant Euclid score for {bits:?}, got {score}"
         );
+    }
+
+    /// Symmetric Euclidean scoring keeps large squared norms in f64 until the
+    /// distance terms have been combined, avoiding `inf - inf` NaNs.
+    #[rstest::rstest]
+    #[case::bits8(TQBits::Bits8)]
+    #[case::bits16(TQBits::Bits16)]
+    fn score_symmetric_euclid_handles_large_vectors(#[case] bits: TQBits) {
+        let tq = make_tq_unpadded(2, bits, DistanceType::L2);
+        let mut buf = vec![0.0_f64; tq.padded_dim];
+
+        for magnitude in [1.30e19_f32, 1.31e19_f32] {
+            let vector = [magnitude, magnitude];
+            let nearby = [magnitude, f32::from_bits(magnitude.to_bits() + 1)];
+            let encoded = tq.quantize(&vector, &mut buf);
+            let encoded_nearby = tq.quantize(&nearby, &mut buf);
+
+            for (label, score) in [
+                ("same vector", tq.score_symmetric(&encoded, &encoded)),
+                (
+                    "nearby vector",
+                    tq.score_symmetric(&encoded, &encoded_nearby),
+                ),
+            ] {
+                assert!(
+                    score.is_finite(),
+                    "{label} score is non-finite for {bits:?} at {magnitude}: {score}"
+                );
+            }
+        }
     }
 
     /// `score_precomputed_batch` must reproduce per-vector `score_precomputed`

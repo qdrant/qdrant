@@ -792,7 +792,7 @@ fn nearest_scorer_ranks_self_first(
                 insert_all(&mut storage, &inputs);
 
                 for (q, query_vec) in inputs.iter().enumerate() {
-                    let scorer = TurboQueryScorer::new(query_vec.clone(), &storage);
+                    let scorer = TurboQueryScorer::new(query_vec.clone(), &storage).unwrap();
 
                     // Asymmetric path: the query must score best against its
                     // own stored (lossy) encoding.
@@ -863,7 +863,7 @@ fn score_bytes_matches_stored_score(
                 let inputs = make_vectors(dim, COUNT, seed);
                 insert_all(&mut storage, &inputs);
 
-                let nearest = TurboQueryScorer::new(inputs[0].clone(), &storage);
+                let nearest = TurboQueryScorer::new(inputs[0].clone(), &storage).unwrap();
                 let reco = TurboCustomQueryScorer::new(
                     RecoBestScoreQuery::from(RecoQuery::new(
                         vec![inputs[1].clone()],
@@ -1428,7 +1428,7 @@ fn score_stored_batch_matches_single_points(
         inputs: &[DenseVector],
         ids: &[PointOffsetType],
     ) {
-        let nearest = TurboQueryScorer::new(inputs[0].clone(), storage);
+        let nearest = TurboQueryScorer::new(inputs[0].clone(), storage).unwrap();
         let reco = TurboCustomQueryScorer::new(
             RecoBestScoreQuery::from(RecoQuery::new(
                 vec![inputs[1].clone()],
@@ -1618,7 +1618,7 @@ fn batch_scoring_accumulates_same_hw_counters(
     let per_point_ctx = AmbientContext::new();
     {
         let _scope = per_point_ctx.measure_guard();
-        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
+        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage).unwrap();
         for &id in &ids {
             score_one(&scorer, id);
         }
@@ -1627,7 +1627,7 @@ fn batch_scoring_accumulates_same_hw_counters(
     let batch_ctx = AmbientContext::new();
     {
         let _scope = batch_ctx.measure_guard();
-        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage);
+        let scorer = TurboQueryScorer::new(inputs[0].clone(), &storage).unwrap();
         let mut scores = vec![0.0; ids.len()];
         scorer.score_stored_batch(&ids, &mut scores).unwrap();
     }

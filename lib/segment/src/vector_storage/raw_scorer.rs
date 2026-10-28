@@ -315,7 +315,7 @@ pub fn raw_turbo_scorer_impl<'a, TStorage: TurboScoring>(
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            raw_scorer_from_query_scorer(TurboQueryScorer::new(vector.try_into()?, vector_storage))
+            raw_scorer_from_query_scorer(TurboQueryScorer::new(vector.try_into()?, vector_storage)?)
         }
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;

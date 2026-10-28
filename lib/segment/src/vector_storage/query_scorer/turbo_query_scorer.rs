@@ -3,8 +3,9 @@ use common::typelevel::True;
 use common::types::{PointOffsetType, ScoreType};
 use quantization::turboquant::EncodedQueryTQ;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::DenseVector;
+use crate::types::Distance;
 use crate::vector_storage::TurboScoring;
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -20,12 +21,14 @@ pub struct TurboQueryScorer<'a, TStorage: TurboScoring> {
 }
 
 impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
-    pub fn new(query: DenseVector, storage: &'a TStorage) -> Self {
+    pub fn new(query: DenseVector, storage: &'a TStorage) -> OperationResult<Self> {
+        validate_query(&query, storage.distance())?;
+
         // Preprocess (per distance) and precompute the query once, so the
         // Hadamard rotation runs here rather than per scored point.
         let query = storage.preprocess_query(query);
 
-        Self {
+        Ok(Self {
             hw: HwScale {
                 cpu: storage.quantized_vector_size(),
                 vector_io_read: if storage.is_cold() {
@@ -36,7 +39,46 @@ impl<'a, TStorage: TurboScoring> TurboQueryScorer<'a, TStorage> {
             },
             query,
             storage,
-        }
+        })
+    }
+}
+
+fn validate_query(query: &[f32], distance: Distance) -> OperationResult<()> {
+    if distance != Distance::Euclid {
+        return Ok(());
+    }
+
+    let squared_norm = query
+        .iter()
+        .map(|&component| f64::from(component).powi(2))
+        .sum::<f64>();
+    if !squared_norm.is_finite() || squared_norm > f64::from(f32::MAX) {
+        return Err(OperationError::ValidationError {
+            description: "TurboQuant Euclidean query squared norm must not exceed f32::MAX; reduce the query magnitude".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_query;
+    use crate::common::operation_error::OperationError;
+    use crate::types::Distance;
+
+    #[test]
+    fn euclidean_query_norm_must_fit_in_score_type() {
+        let oversized = [1.31e19_f32, 1.31e19_f32];
+        let error = validate_query(&oversized, Distance::Euclid).unwrap_err();
+
+        assert!(matches!(
+            error,
+            OperationError::ValidationError { description }
+                if description.contains("squared norm")
+        ));
+        assert!(validate_query(&[1.30e19_f32, 1.30e19_f32], Distance::Euclid).is_ok());
+        assert!(validate_query(&oversized, Distance::Dot).is_ok());
     }
 }
 
