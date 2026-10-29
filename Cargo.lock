@@ -46,9 +46,9 @@ dependencies = [
 
 [[package]]
 name = "actix-files"
-version = "0.7.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed87c765e9e5be096cc29b43d04b932209892ec871d05fe255f0ae1ccfed9a06"
+checksum = "db96438ec043d438f36bc211e260f0bec3de11dd0921feebe6b776e5a77ff3f9"
 dependencies = [
  "actix-http",
  "actix-service",
@@ -65,6 +65,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "v_htmlescape",
+ "winapi-util",
 ]
 
 [[package]]
@@ -237,9 +238,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web"
-version = "4.17.0"
+version = "4.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67756b0fc99e07b8702b9a856e3d6ec036387243c2ce6310070d1e8f02680bb0"
+checksum = "81f8da0d2ae4200dde8773d72ba47a65c220b251ba7b9248db5bd263c247e959"
 dependencies = [
  "actix-codec",
  "actix-http",
@@ -282,9 +283,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web-codegen"
-version = "4.4.0"
+version = "4.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b96b09c4878563f8ab4a5fd0c59f9f0d6e0e9f60eb9b748526a0b9604fd89c50"
+checksum = "f7c9f4c52b954a73c76757a3952d3437fca00a2fbcb49704f8a6ea9f767e73f0"
 dependencies = [
  "actix-router",
  "proc-macro2",
@@ -500,7 +501,7 @@ dependencies = [
  "chrono",
  "common",
  "itertools 0.15.0",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "prost 0.14.4",
  "prost-types 0.14.4",
@@ -532,9 +533,9 @@ dependencies = [
 
 [[package]]
 name = "arc-swap"
-version = "1.9.2"
+version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
+checksum = "380962b3d93b99642e50b9febf72c071e97e8b32d86eae9cf4ef582bb960ae6e"
 dependencies = [
  "rustversion",
 ]
@@ -1149,9 +1150,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.8.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6651c9ed80effdc7db0ff72512157f901af5e3549e341e24b1dd4887d836d838"
+checksum = "86e055fa6e3e40ad6187ba25b6855eeb635d5271f8e0f0e1e9a5826b8d75bea0"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1349,7 +1350,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "object_store",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "pprof",
  "proptest",
@@ -1407,7 +1408,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1448,7 +1449,7 @@ dependencies = [
  "nix 0.31.3",
  "num-traits",
  "num_cpus",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "ph",
  "pin-project-lite",
@@ -2325,7 +2326,7 @@ dependencies = [
  "futures",
  "itertools 0.15.0",
  "log",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "rand 0.10.3",
  "rayon",
@@ -2538,7 +2539,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2623,9 +2624,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "findshlibs"
@@ -3982,7 +3983,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4471,9 +4472,9 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "memmap2"
-version = "0.9.11"
+version = "0.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
+checksum = "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157"
 dependencies = [
  "libc",
 ]
@@ -4518,7 +4519,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "indexmap 2.14.2",
  "metrics",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "quanta",
  "radix_trie",
  "rand 0.9.3",
@@ -4852,7 +4853,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5129,9 +5130,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "5.5.0"
+version = "5.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0"
+checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
 dependencies = [
  "bytemuck",
  "num-traits",
@@ -5763,7 +5764,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.12.1",
  "log",
  "multimap",
@@ -5783,7 +5784,7 @@ version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -5885,7 +5886,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb5cd191fad9142d096efc97c64715db73db4adb60c38ebdf22f5b54cd6ea712"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "prost 0.14.4",
  "prost-build 0.14.4",
  "prost-types 0.14.4",
@@ -6027,17 +6028,17 @@ dependencies = [
 
 [[package]]
 name = "pyroscope"
-version = "2.1.2"
+version = "2.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357782a4af9b6b43bd3a9caa64dd802967498b1fce1d4e0bda552267d62de7cf"
+checksum = "47fac6c830e2cdcbaed360392220c9258e771d8630701a5fb4251a73dce257ca"
 dependencies = [
  "aligned-vec",
  "backtrace",
  "findshlibs",
+ "flate2",
  "framehop",
  "jemalloc_pprof",
  "libc",
- "libflate",
  "log",
  "memmap2",
  "nix 0.31.3",
@@ -6092,7 +6093,7 @@ dependencies = [
  "log",
  "mockito",
  "nix 0.31.3",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "procfs",
  "prometheus",
@@ -6146,7 +6147,7 @@ version = "0.9.0"
 dependencies = [
  "ahash",
  "edge",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "segment",
  "serde_json",
@@ -6176,7 +6177,7 @@ dependencies = [
  "edge-py-codegen",
  "fnv",
  "indexmap 2.14.2",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "pyo3",
  "segment",
  "serde_json",
@@ -6223,7 +6224,7 @@ dependencies = [
  "fs-err",
  "num-traits",
  "num_threads",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "quantization",
  "rand 0.10.3",
@@ -6863,14 +6864,14 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -6931,7 +6932,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7212,7 +7213,7 @@ dependencies = [
  "num-traits",
  "object_store",
  "once_cell",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "posting_list",
  "pprof",
@@ -7533,7 +7534,7 @@ dependencies = [
  "indexmap 2.14.2",
  "itertools 0.15.0",
  "log",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "proptest",
  "prost 0.14.4",
@@ -7695,9 +7696,9 @@ checksum = "88414a5ca1f85d82cc34471e975f0f74f6aa54c40f062efa42c0080e7f763f81"
 
 [[package]]
 name = "smallvec"
-version = "1.16.3"
+version = "1.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
+checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
 name = "smawk"
@@ -7733,7 +7734,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "memmap2",
- "ordered-float 5.5.0",
+ "ordered-float 5.5.1",
  "parking_lot",
  "pprof",
  "rand 0.10.3",
@@ -8084,7 +8085,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8249,9 +8250,9 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokio"
-version = "1.53.3"
+version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
 dependencies = [
  "bytes",
  "libc",
@@ -8982,9 +8983,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.28.0"
+version = "1.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
+checksum = "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
@@ -9338,7 +9339,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
