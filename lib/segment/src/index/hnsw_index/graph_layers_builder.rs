@@ -748,7 +748,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(windows))]
     fn parallel_graph_build<R>(
         num_vectors: usize,
         dim: usize,
@@ -838,7 +837,6 @@ mod tests {
         (vector_holder, graph_layers)
     }
 
-    #[cfg(not(windows))] // https://github.com/qdrant/qdrant/issues/1452
     #[rstest]
     #[case::uncompressed(GraphLinksFormat::Plain)]
     #[case::compressed(GraphLinksFormat::Compressed)]
