@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::{fs, io, slice};
 
@@ -91,6 +92,11 @@ pub struct MmapFile {
 
     writeable: bool,
     populate: bool,
+    /// Set by [`UniversalRead::populate`] after open, cleared when the pages may
+    /// have left RAM. Lets [`UniversalRead::will_need`] skip the
+    /// `thread_faulted` check, which contends on the process `mm` when many
+    /// threads score batches at once (e.g. during HNSW construction).
+    populated: AtomicBool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
 
@@ -158,6 +164,7 @@ impl MmapFile {
             path: path.as_ref().into(),
             writeable,
             populate,
+            populated: AtomicBool::new(false),
             advice,
             append_file: Arc::new(OnceLock::new()),
             mmap: Arc::new(Mutex::new(mmap)),
@@ -247,6 +254,7 @@ impl UniversalRead for MmapFile {
 
     fn populate(&self) -> UioResult<()> {
         self.mmap.lock().populate();
+        self.populated.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -255,7 +263,7 @@ impl UniversalRead for MmapFile {
     }
 
     fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
-        if self.populate {
+        if self.populate || self.populated.load(Ordering::Relaxed) {
             // Already in RAM
             return;
         }
@@ -271,6 +279,7 @@ impl UniversalRead for MmapFile {
     }
 
     fn clear_ram_cache(&self) -> UioResult<()> {
+        self.populated.store(false, Ordering::Relaxed);
         // `MADV_PAGEOUT` skips pages with more than one page-table reference,
         // `POSIX_FADV_DONTNEED` skips pages with any: with `need_sequential`'s two
         // mappings, pages faulted through both survive either call. Zapping the PTEs
@@ -408,6 +417,8 @@ impl MmapFile {
     /// `populate` only applies to the non-Linux path, which rebuilds the
     /// mapping from scratch; the Linux `mremap` keeps residency as is.
     fn remap_to(&mut self, new_len: usize, populate: bool) -> UioResult<()> {
+        // Grown range has not been populated.
+        *self.populated.get_mut() = false;
         let mut mmap = self.mmap.lock();
         let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
         cfg_select! {
@@ -675,6 +686,31 @@ where
 mod tests {
     #[cfg(target_os = "linux")]
     use super::*;
+
+    /// `will_need` skips the `thread_faulted` check once a file opened without
+    /// populate has been populated, until its RAM cache is cleared.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn populate_after_open_is_tracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("populated.dat");
+        fs_err::write(&path, vec![1u8; 64 * 1024]).unwrap();
+
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mmap = MmapFs.open(&path, options, ()).unwrap();
+        assert!(!mmap.populated.load(Ordering::Relaxed));
+
+        mmap.populate().unwrap();
+        assert!(mmap.populated.load(Ordering::Relaxed));
+
+        mmap.clear_ram_cache().unwrap();
+        assert!(!mmap.populated.load(Ordering::Relaxed));
+    }
 
     /// A `need_sequential` file is mapped twice, and `MADV_PAGEOUT` refuses pages
     /// carrying more than one page-table reference. Without zapping the page tables
