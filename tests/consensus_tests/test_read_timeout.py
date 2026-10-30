@@ -48,6 +48,7 @@ def test_remote_search_timeout_returns_408(tmp_path: pathlib.Path):
         assert response.status_code == 408, f"Expected 408, got {response.status_code}: {response.text}"
         error_msg = response.json()["status"]["error"]
         assert "timed out" in error_msg.lower() or "deadline exceeded" in error_msg.lower()
+        gate.wait_for_request(timeout=0)
         gate.release()
 
 
@@ -83,4 +84,5 @@ def test_remote_scroll_timeout_returns_408(tmp_path: pathlib.Path):
         assert response.status_code == 408, f"Expected 408, got {response.status_code}: {response.text}"
         error_msg = response.json()["status"]["error"]
         assert "timed out" in error_msg.lower() or "deadline exceeded" in error_msg.lower()
+        gate.wait_for_request(timeout=0)
         gate.release()

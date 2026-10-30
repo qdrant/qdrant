@@ -281,3 +281,58 @@ impl From<std::io::Error> for HttpError {
         HttpError(err.into()) // TODO: Is this good enough?.. 🤔
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use actix_web::ResponseError;
+    use collection::operations::types::CollectionError;
+
+    use super::*;
+
+    #[test]
+    fn test_timeout_maps_to_http_408_request_timeout() {
+        // Direct StorageError::Timeout maps to 408 Request Timeout
+        let storage_err = StorageError::timeout(Duration::from_secs(1), "Search");
+        let http_err = HttpError::from(storage_err.clone());
+        assert_eq!(http_err.status_code(), http::StatusCode::REQUEST_TIMEOUT);
+
+        let resp = process_response_error(storage_err, Instant::now(), None);
+        assert_eq!(resp.status(), actix_web::http::StatusCode::REQUEST_TIMEOUT);
+
+        // CollectionError::Timeout converted to StorageError maps to 408 Request Timeout
+        let collection_timeout = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let http_err_from_col = HttpError::from(collection_timeout.clone());
+        assert_eq!(
+            http_err_from_col.status_code(),
+            http::StatusCode::REQUEST_TIMEOUT
+        );
+
+        let resp_col = process_response_error(collection_timeout.into(), Instant::now(), None);
+        assert_eq!(
+            resp_col.status(),
+            actix_web::http::StatusCode::REQUEST_TIMEOUT
+        );
+
+        // Negative control: ServiceError maps to 500 Internal Server Error
+        let service_err = StorageError::service_error("internal database failure");
+        let http_err_service = HttpError::from(service_err.clone());
+        assert_eq!(
+            http_err_service.status_code(),
+            http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let resp_service = process_response_error(service_err, Instant::now(), None);
+        assert_eq!(
+            resp_service.status(),
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+
+        // Negative control: BadInput maps to 400 Bad Request
+        let bad_input_err = StorageError::bad_input("invalid parameter");
+        let http_err_bad = HttpError::from(bad_input_err.clone());
+        assert_eq!(http_err_bad.status_code(), http::StatusCode::BAD_REQUEST);
+        let resp_bad = process_response_error(bad_input_err, Instant::now(), None);
+        assert_eq!(resp_bad.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    }
+}

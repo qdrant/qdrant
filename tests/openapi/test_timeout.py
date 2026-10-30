@@ -1,4 +1,5 @@
 from random import random
+import shutil
 import subprocess
 import pytest
 
@@ -8,9 +9,10 @@ from .helpers.collection_setup import drop_collection
 num_vectors = 200000
 dims = 1024
 
-@pytest.skip("Too big for CI, requires bfb installed", allow_module_level=True)
 @pytest.fixture(autouse=True, scope='module')
 def setup(collection_name):
+    if shutil.which("bfb") is None:
+        pytest.skip("Too big for CI, requires bfb installed")
     drop_collection(collection_name)
     
     response = request_with_validation(
