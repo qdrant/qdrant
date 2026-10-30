@@ -59,7 +59,7 @@ def test_search_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
 
 def test_search_batch_timeout(collection_name):
@@ -93,7 +93,7 @@ def test_search_batch_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
     
@@ -136,7 +136,7 @@ def test_recommend_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
     
@@ -173,7 +173,7 @@ def test_recommend_batch_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
 
@@ -224,5 +224,5 @@ def test_discover_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
