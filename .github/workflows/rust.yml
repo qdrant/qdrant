@@ -86,6 +86,10 @@ jobs:
       shell: bash
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
+        # Cache breaks when paths to system libraries change,
+        # e.g. during Ubuntu 24.04→26.04 update.
+        # Related: https://github.com/Swatinem/rust-cache/issues/214
+        env-vars: ImageOS
         # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget.
         # Both partitions build the same thing, so one of them saves it.
         save-if: ${{ github.ref == 'refs/heads/dev' && matrix.partition == 1 }}
