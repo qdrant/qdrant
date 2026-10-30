@@ -31,7 +31,7 @@ jobs:
           persist-credentials: false
       - name: Install Protoc
         uses: ./.github/actions/setup-protoc
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: integration-tests
           # Only save the cache on dev; feature-branch caches would just get evicted under the 10 GB budget
@@ -230,7 +230,7 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: integration-tests
           # integration-tests is the broadest build in this group and owns saving the cache
