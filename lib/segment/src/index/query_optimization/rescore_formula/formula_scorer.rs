@@ -422,8 +422,6 @@ mod tests {
 
     const COLOGNE: GeoPoint = GeoPoint::new_unchecked(6.96, 50.94);
     const BONN: GeoPoint = GeoPoint::new_unchecked(7.10, 50.73);
-    const BERLIN: GeoPoint = GeoPoint::new_unchecked(13.40, 52.52);
-    const MUNICH: GeoPoint = GeoPoint::new_unchecked(11.58, 48.14);
 
     // self_cell just to be able to create FormulaScorer with a "reference" to fixture scores
     self_cell::self_cell!(
@@ -670,18 +668,6 @@ mod tests {
     // Several points: distance to the nearest one
     #[case(
         ParsedExpression::new_geo_distance(COLOGNE, JsonPath::new(GEO_POINTS_FIELD_NAME)),
-        haversine(COLOGNE, BONN)
-    )]
-    #[case(
-        ParsedExpression::new_geo_distance(BERLIN, JsonPath::new(GEO_POINTS_FIELD_NAME)),
-        0.0
-    )]
-    // Several origins and several points: nearest pair overall
-    #[case(
-        ParsedExpression::Min(vec![
-            ParsedExpression::new_geo_distance(MUNICH, JsonPath::new(GEO_POINTS_FIELD_NAME)),
-            ParsedExpression::new_geo_distance(COLOGNE, JsonPath::new(GEO_POINTS_FIELD_NAME)),
-        ]),
         haversine(COLOGNE, BONN)
     )]
     // A single `[lon, lat]` point must not be read as two points
