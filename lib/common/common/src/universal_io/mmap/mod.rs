@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::{fs, io, slice};
 
@@ -90,7 +91,12 @@ pub struct MmapFile {
     path: PathBuf,
 
     writeable: bool,
-    populate: bool,
+    /// The whole mapping was faulted into RAM, by a populating open or
+    /// [`UniversalRead::populate`], and not evicted or grown since.
+    /// While set, [`UniversalRead::will_need`] skips the `thread_faulted`
+    /// check, which contends on the process `mm` when many threads score
+    /// batches at once (e.g. during HNSW construction).
+    resident: AtomicBool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
 
@@ -157,7 +163,7 @@ impl MmapFile {
         let mmap = Self {
             path: path.as_ref().into(),
             writeable,
-            populate,
+            resident: AtomicBool::new(populate),
             advice,
             append_file: Arc::new(OnceLock::new()),
             mmap: Arc::new(Mutex::new(mmap)),
@@ -198,7 +204,8 @@ impl UniversalRead for MmapFile {
             return Ok(());
         }
 
-        self.remap_to(new_len as usize, self.populate)
+        let populate = *self.resident.get_mut();
+        self.remap_to(new_len as usize, populate)
     }
 
     fn read_bytes<P: AccessPattern>(
@@ -247,6 +254,7 @@ impl UniversalRead for MmapFile {
 
     fn populate(&self) -> UioResult<()> {
         self.mmap.lock().populate();
+        self.resident.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -255,7 +263,7 @@ impl UniversalRead for MmapFile {
     }
 
     fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
-        if self.populate {
+        if self.resident.load(Ordering::Relaxed) {
             // Already in RAM
             return;
         }
@@ -271,6 +279,7 @@ impl UniversalRead for MmapFile {
     }
 
     fn clear_ram_cache(&self) -> UioResult<()> {
+        self.resident.store(false, Ordering::Relaxed);
         // `MADV_PAGEOUT` skips pages with more than one page-table reference,
         // `POSIX_FADV_DONTNEED` skips pages with any: with `need_sequential`'s two
         // mappings, pages faulted through both survive either call. Zapping the PTEs
@@ -406,7 +415,9 @@ impl MmapFile {
     /// Remap both mmaps to `new_len` and refresh the cached pointers.
     ///
     /// `populate` only applies to the non-Linux path, which rebuilds the
-    /// mapping from scratch; the Linux `mremap` keeps residency as is.
+    /// mapping from scratch; the Linux `mremap` keeps the old pages resident
+    /// but leaves the grown tail unfaulted, so the handle stops being
+    /// [`resident`](Self::resident).
     fn remap_to(&mut self, new_len: usize, populate: bool) -> UioResult<()> {
         let mut mmap = self.mmap.lock();
         let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
@@ -438,11 +449,14 @@ impl MmapFile {
                     .map(|m| SendSyncPtr(m.as_mut_ptr()))
                     .unwrap_or(ptr);
                 let len = new_len;
+                // `mremap` doesn't fault in the grown tail.
+                let resident = false;
             }
             // otherwise, let's open again
             _ => {
                 let _ = new_len; // suppress unused variable lint.
                 *mmap = open_mmap(self.path.as_ref(), self.writeable, populate, self.advice)?;
+                let resident = populate;
                 let ptr = SendSyncPtr(mmap.as_mut_ptr());
 
                 let ptr_seq;
@@ -468,6 +482,7 @@ impl MmapFile {
         self.ptr = ptr;
         self.ptr_seq = ptr_seq;
         self.len = len;
+        *self.resident.get_mut() = resident;
 
         Ok(())
     }
@@ -675,6 +690,31 @@ where
 mod tests {
     #[cfg(target_os = "linux")]
     use super::*;
+
+    /// `will_need` skips the `thread_faulted` check once a file opened without
+    /// populate has been populated, until its RAM cache is cleared.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn populate_after_open_is_tracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("populated.dat");
+        fs_err::write(&path, vec![1u8; 64 * 1024]).unwrap();
+
+        let options = OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        };
+        let mmap = MmapFs.open(&path, options, ()).unwrap();
+        assert!(!mmap.resident.load(Ordering::Relaxed));
+
+        mmap.populate().unwrap();
+        assert!(mmap.resident.load(Ordering::Relaxed));
+
+        mmap.clear_ram_cache().unwrap();
+        assert!(!mmap.resident.load(Ordering::Relaxed));
+    }
 
     /// A `need_sequential` file is mapped twice, and `MADV_PAGEOUT` refuses pages
     /// carrying more than one page-table reference. Without zapping the page tables
