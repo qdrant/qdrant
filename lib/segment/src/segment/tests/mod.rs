@@ -2516,6 +2516,105 @@ fn test_deferred_point_estimation_with_filter() {
 }
 
 #[test]
+fn approximate_count_does_not_report_non_empty_compound_filter_as_zero() {
+    let _scope = ambient::test_guard();
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut segment = build_simple_segment(dir.path(), 1, Distance::Dot).unwrap();
+    let mut op_num = 0;
+
+    let create_index = |segment: &mut Segment, op_num: u64, path: &str, schema| {
+        segment
+            .create_field_index(op_num, &JsonPath::new(path), Some(&schema))
+            .unwrap();
+    };
+    create_index(
+        &mut segment,
+        0,
+        "nested[].x",
+        PayloadFieldSchema::FieldType(PayloadSchemaType::Integer).nested_in("nested"),
+    );
+    create_index(
+        &mut segment,
+        1,
+        "n",
+        PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+    );
+    create_index(
+        &mut segment,
+        2,
+        "color",
+        PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword),
+    );
+    op_num += 3;
+
+    for i in 0..200_u64 {
+        let mut nested = Vec::new();
+        if i < 20 {
+            nested.push(serde_json::json!({"x": 5}));
+        }
+        if i < 3 {
+            nested.push(serde_json::json!({"x": 1}));
+        }
+        let color = if matches!(i, 0..=2 | 190..=192) {
+            "green"
+        } else {
+            "red"
+        };
+        let payload: Payload = serde_json::from_value(serde_json::json!({
+            "n": i,
+            "nested": nested,
+            "color": color,
+        }))
+        .unwrap();
+
+        segment
+            .upsert_point(op_num, i.into(), only_default_vector(&[1.0]))
+            .unwrap();
+        segment
+            .set_full_payload(op_num, i.into(), &payload)
+            .unwrap();
+        op_num += 1;
+    }
+
+    let filter: Filter = serde_json::from_value(serde_json::json!({
+        "should": [
+            {
+                "nested": {
+                    "key": "nested",
+                    "filter": {
+                        "must": [{"key": "x", "match": {"value": 1}}]
+                    }
+                }
+            },
+            {"key": "n", "range": {"gte": 190}}
+        ],
+        "must": [{"key": "color", "match": {"value": "green"}}]
+    }))
+    .unwrap();
+
+    let exact = segment
+        .read_filtered(
+            None,
+            None,
+            Some(&filter),
+            &AtomicBool::new(false),
+            DeferredBehavior::VisibleOnly,
+        )
+        .unwrap()
+        .len();
+    assert_eq!(exact, 6);
+
+    let estimation = segment.estimate_point_count(Some(&filter)).unwrap();
+    assert!(estimation.max > 0);
+    assert!(
+        estimation.exp > 0,
+        "approximate count reported a non-empty filter as zero: {estimation:?}"
+    );
+    assert!(estimation.min <= estimation.exp);
+    assert!(estimation.exp <= estimation.max);
+}
+
+#[test]
 #[cfg_attr(target_os = "windows", ignore = "slow on Windows, not OS-specific")]
 fn test_deferred_point_read_operations() {
     init_logger();
