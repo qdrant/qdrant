@@ -46,6 +46,22 @@ impl UniversalKind {
         }
     }
 
+    /// Whether an append on this kind lands whole or not at all, so the size of an append-only file
+    /// always ends where an append ended. Local files can be left with a partial append on a crash.
+    pub fn appends_atomically(self) -> bool {
+        match self {
+            UniversalKind::S3
+            | UniversalKind::Gcs
+            | UniversalKind::Azure
+            | UniversalKind::CachedBlob => true,
+            UniversalKind::Mmap
+            | UniversalKind::IoUring
+            | UniversalKind::DiskCache
+            | UniversalKind::SimpleDiskCache
+            | UniversalKind::UioGrpc => false,
+        }
+    }
+
     pub fn can_be_async(self) -> bool {
         match self {
             UniversalKind::Mmap => false,
