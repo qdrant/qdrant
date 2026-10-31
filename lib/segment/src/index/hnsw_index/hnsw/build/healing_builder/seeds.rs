@@ -7,7 +7,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use rayon::ThreadPool;
 use rayon::prelude::*;
 
-use super::block::Block;
+use super::super::block::Block;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
