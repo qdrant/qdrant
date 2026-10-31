@@ -208,18 +208,28 @@ where
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let algorithm = self.filtered_graph_algorithm(query_cardinality, params);
         let _timer = ScopeDurationMeasurer::new(match algorithm {
-            SearchAlgorithm::Hnsw => &self.searches_telemetry.large_cardinality,
+            SearchAlgorithm::Hnsw | SearchAlgorithm::PathSeer => {
+                &self.searches_telemetry.large_cardinality
+            }
             SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
         });
         self.search_vectors_with_graph(vectors, Some(filter), top, params, algorithm, query_context)
     }
 
-    /// ACORN runs when it is enabled and the filter is selective enough.
+    /// PathSeer takes precedence over ACORN; ACORN needs a selective filter.
     fn filtered_graph_algorithm(
         &self,
         query_cardinality: &CardinalityEstimation,
         params: Option<&SearchParams>,
     ) -> SearchAlgorithm {
+        if self.config.m0 != 0
+            && params
+                .and_then(|params| params.pathseer)
+                .is_some_and(|pathseer| pathseer.enable)
+        {
+            return SearchAlgorithm::PathSeer;
+        }
+
         let Some(acorn) = params.and_then(|params| params.acorn) else {
             return SearchAlgorithm::Hnsw;
         };
