@@ -271,3 +271,46 @@ pub(super) async fn wait_for_optimizer(collection: &Collection) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
+
+/// Force-flush every local shard synchronously so all applied state is on disk.
+///
+/// The Edge follower's visibility contract is "flushed, then refreshed": segment files, the
+/// mutable id tracker, and payload data reach disk only on flush, so every edge checkpoint
+/// flushes first. Only meaningful at a quiescent boundary (op loop idle, background
+/// snapshot drained), same as [`collect_clock_ticks`].
+pub(super) async fn flush_all_local_shards(collection: &Collection) {
+    let holder = collection.shards_holder.read().await;
+    for (_shard_id, replica_set) in holder.get_shards() {
+        replica_set.full_flush_local().await;
+    }
+}
+
+/// Whether any local shard currently holds proxy segments, i.e. an optimization is in
+/// flight. Deletes against a proxied segment live only in the proxy's in-memory map (and
+/// the WAL) until the optimization finishes — no flush can put them into segment files —
+/// so edge checkpoints wait for this to clear before comparing.
+pub(super) async fn has_proxy_segments(collection: &Collection) -> bool {
+    let holder = collection.shards_holder.read().await;
+    for (_shard_id, replica_set) in holder.get_shards() {
+        if replica_set.local_has_proxy_segments().await {
+            return true;
+        }
+    }
+    false
+}
+
+/// Wait (bounded) for in-flight optimizations to finish, i.e. for proxy segments to
+/// disappear. Only meaningful at a quiescent boundary (op loop idle, same as
+/// [`has_proxy_segments`]): with no new updates arriving, in-flight optimizations
+/// converge on their own. Returns `false` if proxies are still present at the deadline,
+/// so a hung optimizer degrades to a recorded skip instead of stalling the run.
+pub(super) async fn wait_for_no_proxy_segments(collection: &Collection) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while has_proxy_segments(collection).await {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    true
+}
