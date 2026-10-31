@@ -156,7 +156,7 @@ pyroscope = { version = "2.1.0", features = ["backend-pprof-rs", "backend-jemall
 # Backtrace
 rstack-self = { version = "0.3.0", optional = true }
 
-# Jemalloc
+# Jemalloc. Keep the condition in sync with `build.rs`, which emits `cfg(jemalloc)` for the code.
 [target.'cfg(all(not(target_env = "msvc"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
 tikv-jemallocator = { version = "0.7.0", features = [
     "stats",
