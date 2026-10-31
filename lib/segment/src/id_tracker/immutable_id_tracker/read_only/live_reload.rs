@@ -1,3 +1,4 @@
+use common::bitmap_scan::newly_set;
 use common::bitvec::BitVec;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -54,11 +55,12 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         if let Some(mask) = &mask {
             // `mappings` already reflects every previously reported deletion, so
             // it is the diff baseline: a set bit not yet dropped there is new.
-            let newly_deleted: Vec<PointOffsetType> = mask
-                .iter_ones()
-                .map(|internal_id| internal_id as PointOffsetType)
-                .filter(|&internal_id| !self.mappings.is_deleted_point(internal_id))
-                .collect();
+            // Slots past the mappings hold no point.
+            let newly_deleted: Vec<PointOffsetType> = {
+                let baseline = self.mappings.deleted();
+                let mask = &mask[..mask.len().min(baseline.len())];
+                newly_set(mask, baseline).collect()
+            };
             for internal_id in newly_deleted {
                 if let Some(external_id) = self.mappings.external_id(internal_id) {
                     self.mappings.drop(external_id);
