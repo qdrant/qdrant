@@ -849,12 +849,17 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
             self.metadata.vector_parameters.distance_type,
             self.metadata.vector_parameters.invert,
         ) {
-            // So if `invert` is true we return XOR, otherwise we return (dim - XOR)
+            // Dot and cosine use centered bit agreement.
             (DistanceType::Dot | DistanceType::Cosine, true) => xor_product - zeros_count,
             (DistanceType::Dot | DistanceType::Cosine, false) => zeros_count - xor_product,
-            // This also results in exact ordering as L1 and L2 but reversed.
-            (DistanceType::L1 | DistanceType::L2, true) => zeros_count - xor_product,
-            (DistanceType::L1 | DistanceType::L2, false) => xor_product - zeros_count,
+            // Keep the legacy centered XOR representation for L1.
+            (DistanceType::L1, true) => zeros_count - xor_product,
+            (DistanceType::L1, false) => xor_product - zeros_count,
+            // A squared-distance proxy keeps Euclidean sqrt(abs(score)) monotonic.
+            // For symmetric one-bit encoding, 4 * XOR is the squared distance
+            // between sign vectors; other encodings retain only the proxy meaning.
+            (DistanceType::L2, true) => -4.0 * xor_product,
+            (DistanceType::L2, false) => 4.0 * xor_product,
         }
     }
 
