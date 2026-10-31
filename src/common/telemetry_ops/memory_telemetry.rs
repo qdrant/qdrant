@@ -1,16 +1,10 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 use storage::rbac::AccessRequirements;
 use storage::rbac::Auth;
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 use tikv_jemalloc_ctl::{epoch, stats};
 
 #[derive(Debug, Clone, Default, JsonSchema, Serialize, Anonymize)]
@@ -29,10 +23,7 @@ pub struct MemoryTelemetry {
 }
 
 impl MemoryTelemetry {
-    #[cfg(all(
-        not(target_env = "msvc"),
-        any(target_arch = "x86_64", target_arch = "aarch64")
-    ))]
+    #[cfg(jemalloc)]
     pub fn collect(auth: &Auth) -> Option<MemoryTelemetry> {
         let required_access = AccessRequirements::new();
         if epoch::advance().is_ok()
@@ -54,29 +45,20 @@ impl MemoryTelemetry {
         }
     }
 
-    #[cfg(not(all(
-        not(target_env = "msvc"),
-        any(target_arch = "x86_64", target_arch = "aarch64")
-    )))]
+    #[cfg(not(jemalloc))]
     pub fn collect(_auth: &Auth) -> Option<MemoryTelemetry> {
         None
     }
 }
 
 /// Reader for [`common::memory_usage`] — returns current jemalloc resident bytes.
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 pub fn resident_bytes() -> Option<usize> {
     epoch::advance().ok()?;
     stats::resident::read().ok()
 }
 
-#[cfg(not(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-)))]
+#[cfg(not(jemalloc))]
 pub fn resident_bytes() -> Option<usize> {
     None
 }
