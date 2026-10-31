@@ -93,8 +93,8 @@ pub struct FeatureFlags {
     pub combined_vector_storage: bool,
 
     /// In the serverless update-only writer, record every copy-on-write move of a point in the
-    /// move logs (`id_tracker.moves`) of both the source and the target segment. Only gates
-    /// writing: a reader that does not resolve moves never opens the logs.
+    /// move logs (`id_tracker.moves`) of both the source and the target segment, instead of
+    /// tombstoning the old copy. The read-only id trackers always read the logs.
     pub record_point_moves: bool,
 
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],

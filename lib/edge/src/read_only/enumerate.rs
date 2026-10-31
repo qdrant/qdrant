@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use common::universal_io::{UniversalReadFs, read_json_via};
 use segment::common::operation_error::OperationResult;
 use shard::files::{SEGMENTS_PATH, segment_manifest_path};
-use shard::segment_manifest::SegmentsManifest;
+use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 use uuid::Uuid;
 
 use crate::edge_shard::scan_segment_dirs;
@@ -25,6 +25,35 @@ use crate::edge_shard::scan_segment_dirs;
 /// [`ReadOnlySegment::open`]: segment::segment::read_only::ReadOnlySegment::open
 pub trait SegmentEnumerator: Send + Sync {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>>;
+
+    /// [`list_segments`](Self::list_segments), plus the listed segments a reader must not load,
+    /// with their state, from the same snapshot. A follower resolving point moves uses them to tell
+    /// a superseded move target from one that is not loadable yet. Without a manifest there are
+    /// none.
+    fn list_segments_with_states(&self) -> OperationResult<SegmentListing> {
+        Ok(SegmentListing {
+            usable: self.list_segments()?,
+            unusable: HashMap::new(),
+        })
+    }
+}
+
+/// One snapshot of the shard's segments, see [`SegmentEnumerator::list_segments_with_states`].
+#[derive(Clone, Debug, Default)]
+pub struct SegmentListing {
+    /// The segments a reader serves, as [`SegmentEnumerator::list_segments`] returns them.
+    pub usable: HashMap<Uuid, ListedSegment>,
+    /// The listed segments a reader must not load.
+    pub unusable: HashMap<Uuid, UnusableSegmentState>,
+}
+
+/// Why a listed segment must not be loaded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnusableSegmentState {
+    /// Being built, not ready to read.
+    UnderConstruction,
+    /// Superseded, pending removal: its replacement is listed as usable in the same snapshot.
+    Retiring,
 }
 
 /// An enumerated segment; `writable` gates write-target choice, readers ignore it.
@@ -68,18 +97,33 @@ impl<F: UniversalReadFs> ManifestSegmentEnumerator<F> {
 
 impl<F: UniversalReadFs + Send + Sync> SegmentEnumerator for ManifestSegmentEnumerator<F> {
     fn list_segments(&self) -> OperationResult<HashMap<Uuid, ListedSegment>> {
+        Ok(self.list_segments_with_states()?.usable)
+    }
+
+    fn list_segments_with_states(&self) -> OperationResult<SegmentListing> {
         let manifest: SegmentsManifest = read_json_via(&self.fs, &self.manifest_path)?;
-        Ok(manifest
-            .iter()
-            .filter(|(_, state)| state.is_usable())
-            .map(|(uuid, state)| {
+        let mut listing = SegmentListing::default();
+        for (uuid, state) in manifest.iter() {
+            if state.is_usable() {
                 let listed = ListedSegment {
                     path: self.segments_path.join(uuid.to_string()),
                     writable: state.is_writable(),
                 };
-                (*uuid, listed)
-            })
-            .collect())
+                listing.usable.insert(*uuid, listed);
+                continue;
+            }
+            let unusable = match state {
+                SegmentManifestState::UnderConstruction => UnusableSegmentState::UnderConstruction,
+                SegmentManifestState::Retiring { retired_at: _ } => UnusableSegmentState::Retiring,
+                SegmentManifestState::Active
+                | SegmentManifestState::Optimizing {
+                    holder: _,
+                    lease_until: _,
+                } => unreachable!("usable states are handled above"),
+            };
+            listing.unusable.insert(*uuid, unusable);
+        }
+        Ok(listing)
     }
 }
 
