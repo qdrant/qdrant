@@ -23,10 +23,11 @@ mod shard_read;
 #[cfg(test)]
 pub(crate) mod tests;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
 pub use live_reload::LiveReloadOutcome;
 use parking_lot::{Mutex, RwLock};
 use segment::data_types::load_profile::LoadProfile;
@@ -85,6 +86,9 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// duplicate the listing and load work, and could clear each other's staged
     /// prefetches between a segment's preload and apply.
     live_reload_lock: Mutex<()>,
+    /// Per segment, the copies the last live_reload found superseded by a moved point's new copy.
+    /// The next live_reload deletes them, see [`move_resolution`](crate::read_only::move_resolution).
+    superseded_to_delete: Mutex<HashMap<Uuid, Vec<PointOffsetType>>>,
     /// Move targets confirmed gone: absent from the manifest, and their directory removed. Such a
     /// target was superseded, so the moves into it count as settled once every listed segment is
     /// loaded.
@@ -104,5 +108,24 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Number of segments currently open in the follower.
     pub fn segments_count(&self) -> usize {
         self.segments.read().len()
+    }
+
+    /// The settled moved-in records the open segments keep, counted per source slot.
+    #[cfg(test)]
+    pub(crate) fn settled_moved_in_count(&self) -> u64 {
+        let holder = self.segments.read();
+        holder
+            .uuids()
+            .into_iter()
+            .filter_map(|uuid| holder.segment_arc(&uuid))
+            .map(|segment| {
+                segment
+                    .read()
+                    .id_tracker
+                    .borrow()
+                    .settled_moved_in()
+                    .map_or(0, |settled| settled.values().map(|slots| slots.len()).sum())
+            })
+            .sum()
     }
 }
