@@ -55,6 +55,30 @@ impl FriendlyName for DateTimePayloadType {
     }
 }
 
+/// One or more geo points stored under a single payload key.
+struct GeoPoints(Vec<GeoPoint>);
+
+impl FriendlyName for GeoPoints {
+    fn friendly_name() -> &'static str {
+        GeoPoint::friendly_name()
+    }
+}
+
+impl GeoPoints {
+    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+        // A single `[lon, lat]` point is also an array, but one of numbers only
+        let holds_several_points = value
+            .as_array()
+            .is_some_and(|values| !values.iter().all(Value::is_number));
+
+        if holds_several_points {
+            serde_json::from_value(value).map(GeoPoints)
+        } else {
+            serde_json::from_value(value).map(|point| GeoPoints(vec![point]))
+        }
+    }
+}
+
 impl<'a> FormulaScorer<'a> {
     pub(crate) fn new(
         formula: ParsedExpression,
@@ -121,13 +145,15 @@ impl FormulaScorer<'_> {
                 }
             },
             ParsedExpression::GeoDistance { origin, key } => {
-                let value = self.get_parsed_payload_value(
-                    key,
-                    point_id,
-                    serde_json::from_value::<GeoPoint>,
-                )?;
+                let GeoPoints(points) =
+                    self.get_parsed_payload_value(key, point_id, GeoPoints::from_value)?;
 
-                Ok(Haversine.distance((*origin).into(), value.into()))
+                Ok(points
+                    .into_iter()
+                    .map(|point| {
+                        Haversine.distance(geo::Point::from(*origin), geo::Point::from(point))
+                    })
+                    .fold(PreciseScore::INFINITY, PreciseScore::min))
             }
             ParsedExpression::Datetime(dt_expr) => {
                 let datetime = match dt_expr {
@@ -387,8 +413,15 @@ mod tests {
     const ARRAY_OF_ONE_FIELD_NAME: &str = "array_of_one";
     const ARRAY_FIELD_NAME: &str = "array";
     const GEO_FIELD_NAME: &str = "geo_point";
+    const GEO_POINTS_FIELD_NAME: &str = "geo_points";
+    const GEO_LON_LAT_FIELD_NAME: &str = "geo_lon_lat";
+    const GEO_LON_LAT_POINTS_FIELD_NAME: &str = "geo_lon_lat_points";
+    const GEO_POINTS_WITH_NUMBER_FIELD_NAME: &str = "geo_points_with_number";
     const NO_VALUE_GEO_POINT: &str = "no_value_geo_point";
     const NO_VALUE_DATETIME: &str = "no_value_datetime";
+
+    const COLOGNE: GeoPoint = GeoPoint::new_unchecked(6.96, 50.94);
+    const BONN: GeoPoint = GeoPoint::new_unchecked(7.10, 50.73);
 
     // self_cell just to be able to create FormulaScorer with a "reference" to fixture scores
     self_cell::self_cell!(
@@ -424,6 +457,28 @@ mod tests {
                 Box::new(|_| {
                     smallvec![json!({"lat": 25.628482424190565, "lon": -100.23881855976})]
                 }),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(GEO_POINTS_FIELD_NAME),
+                Box::new(|_| {
+                    smallvec![
+                        json!({"lat": 52.52, "lon": 13.40}),
+                        json!({"lat": 50.73, "lon": 7.10}),
+                    ]
+                }),
+            );
+            // A `[lon, lat]` payload reaches the scorer flattened into two numbers
+            payload_retrievers.insert(
+                JsonPath::new(GEO_LON_LAT_FIELD_NAME),
+                Box::new(|_| smallvec![json!(6.96), json!(50.94)]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(GEO_LON_LAT_POINTS_FIELD_NAME),
+                Box::new(|_| smallvec![json!([13.40, 52.52]), json!([7.10, 50.73])]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(GEO_POINTS_WITH_NUMBER_FIELD_NAME),
+                Box::new(|_| smallvec![json!({"lat": 52.52, "lon": 13.40}), json!(1.2)]),
             );
 
             let condition_checkers = vec![
@@ -597,6 +652,48 @@ mod tests {
     )]
     #[test]
     fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: PreciseScore) {
+        let defaults = HashMap::new();
+        let scorer_fixture = make_formula_scorer(&defaults);
+
+        let scorer = scorer_fixture.borrow_dependent();
+
+        assert_eq!(scorer.eval_expression(&expr, 0).unwrap(), expected);
+    }
+
+    fn haversine(origin: GeoPoint, point: GeoPoint) -> PreciseScore {
+        Haversine.distance(geo::Point::from(origin), geo::Point::from(point))
+    }
+
+    #[rstest]
+    // Several points: distance to the nearest one
+    #[case(
+        ParsedExpression::new_geo_distance(COLOGNE, JsonPath::new(GEO_POINTS_FIELD_NAME)),
+        haversine(COLOGNE, BONN)
+    )]
+    // A single `[lon, lat]` point must not be read as two points
+    #[case(
+        ParsedExpression::new_geo_distance(BONN, JsonPath::new(GEO_LON_LAT_FIELD_NAME)),
+        haversine(BONN, COLOGNE)
+    )]
+    #[case(
+        ParsedExpression::new_geo_distance(COLOGNE, JsonPath::new(GEO_LON_LAT_POINTS_FIELD_NAME)),
+        haversine(COLOGNE, BONN)
+    )]
+    #[should_panic(
+        expected = r#"VariableTypeError { field_name: JsonPath { first_key: "geo_points_with_number", rest: [] }, expected_type: "geo point", "#
+    )]
+    #[case(
+        ParsedExpression::new_geo_distance(
+            COLOGNE,
+            JsonPath::new(GEO_POINTS_WITH_NUMBER_FIELD_NAME)
+        ),
+        0.0
+    )]
+    #[test]
+    fn test_geo_distance_multiple_points(
+        #[case] expr: ParsedExpression,
+        #[case] expected: PreciseScore,
+    ) {
         let defaults = HashMap::new();
         let scorer_fixture = make_formula_scorer(&defaults);
 
