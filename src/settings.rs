@@ -681,6 +681,10 @@ mod tests {
         reason = "#[sealed_test] uses std::fs::copy"
     )]
     #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
+    #[cfg_attr(
+        target_os = "windows",
+        ignore = "sealed_test forks; fork is unavailable on Windows CI"
+    )]
     #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
     fn test_runtime_development_config() {
         unsafe { env::set_var("RUN_MODE", "development") };
