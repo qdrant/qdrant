@@ -1,6 +1,7 @@
 use std::alloc::Layout;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::ambient::hw::HwMetric;
@@ -21,6 +22,57 @@ use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
 pub const ALIGNMENT: usize = 16;
 // Each encoded vector stores an additional f32 at the beginning. Define it's size here.
 const ADDITIONAL_CONSTANT_SIZE: usize = std::mem::size_of::<f32>();
+
+/// Best SQ scoring backend on this CPU.
+///
+/// Detected once so `score_internal` / `score_bytes` hot paths (HNSW construction
+/// heuristic and neighbor search) do not re-run feature detection per vector.
+/// Preference: AVX-512 VNNI → AVX-VNNI → AVX2 → SSE → NEON → scalar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SqSimdBackend {
+    #[cfg(target_arch = "x86_64")]
+    Avx512Vnni,
+    #[cfg(target_arch = "x86_64")]
+    AvxVnni,
+    #[cfg(target_arch = "x86_64")]
+    Avx2,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    Sse,
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    Neon,
+    Scalar,
+}
+
+fn sq_simd_backend() -> SqSimdBackend {
+    static BACKEND: OnceLock<SqSimdBackend> = OnceLock::new();
+    *BACKEND.get_or_init(|| {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+                return SqSimdBackend::Avx512Vnni;
+            }
+            if is_x86_feature_detected!("avxvnni") {
+                return SqSimdBackend::AvxVnni;
+            }
+            if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+                return SqSimdBackend::Avx2;
+            }
+        }
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse4.1") {
+                return SqSimdBackend::Sse;
+            }
+        }
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                return SqSimdBackend::Neon;
+            }
+        }
+        SqSimdBackend::Scalar
+    })
+}
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum ScalarQuantizationMethod {
@@ -770,32 +822,19 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
                 * usize::from(self.encoded_vectors.is_cold()),
         );
 
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
-            return self.score_point_avx512_vnni_internal(i, j);
+        match sq_simd_backend() {
+            #[cfg(target_arch = "x86_64")]
+            SqSimdBackend::Avx512Vnni => self.score_point_avx512_vnni_internal(i, j),
+            #[cfg(target_arch = "x86_64")]
+            SqSimdBackend::AvxVnni => self.score_point_avx_vnni_internal(i, j),
+            #[cfg(target_arch = "x86_64")]
+            SqSimdBackend::Avx2 => self.score_point_avx_internal(i, j),
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            SqSimdBackend::Sse => self.score_point_sse_internal(i, j),
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            SqSimdBackend::Neon => self.score_point_neon_internal(i, j),
+            SqSimdBackend::Scalar => self.score_point_simple_internal(i, j),
         }
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avxvnni") {
-            return self.score_point_avx_vnni_internal(i, j);
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return self.score_point_avx_internal(i, j);
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            return self.score_point_sse_internal(i, j);
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            return self.score_point_neon_internal(i, j);
-        }
-
-        self.score_point_simple_internal(i, j)
     }
 
     fn quantized_vector_size(&self) -> usize {
@@ -860,32 +899,19 @@ impl<TStorage: EncodedStorage> EncodedVectors for EncodedVectorsU8<TStorage> {
         // byte slices without adding overhead to this hot path in release builds.
         debug_assert!(bytes.len() >= ADDITIONAL_CONSTANT_SIZE + self.metadata.actual_dim());
 
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
-            return self.score_point_avx512_vnni(query, bytes);
+        match sq_simd_backend() {
+            #[cfg(target_arch = "x86_64")]
+            SqSimdBackend::Avx512Vnni => self.score_point_avx512_vnni(query, bytes),
+            #[cfg(target_arch = "x86_64")]
+            SqSimdBackend::AvxVnni => self.score_point_avx_vnni(query, bytes),
+            #[cfg(target_arch = "x86_64")]
+            SqSimdBackend::Avx2 => self.score_point_avx(query, bytes),
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            SqSimdBackend::Sse => self.score_point_sse(query, bytes),
+            #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+            SqSimdBackend::Neon => self.score_point_neon(query, bytes),
+            SqSimdBackend::Scalar => self.score_point_simple(query, bytes),
         }
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avxvnni") {
-            return self.score_point_avx_vnni(query, bytes);
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return self.score_point_avx(query, bytes);
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if is_x86_feature_detected!("sse4.1") {
-            return self.score_point_sse(query, bytes);
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            return self.score_point_neon(query, bytes);
-        }
-
-        self.score_point_simple(query, bytes)
     }
 }
 
