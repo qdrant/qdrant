@@ -11,6 +11,7 @@ use crate::common::operation_error::OperationResult;
 use crate::id_tracker::delete_only_tracker_enum::DeleteOnlyIdTrackerEnum;
 use crate::id_tracker::disk_id_tracker::update_only::UpdateOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::update_only::UpdateOnlyImmutableIdTracker;
+use crate::id_tracker::point_moves::Retirement;
 use crate::types::PointIdType;
 
 /// A segment open for deletes: nothing in it can grow, so the only thing a
@@ -53,5 +54,11 @@ impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
         points: &[(PointIdType, PointOffsetType)],
     ) -> OperationResult<()> {
         self.id_tracker.tombstone_points(&self.fs, points)
+    }
+
+    /// [`tombstone_points`](Self::tombstone_points), recording the moves among `retirements` in the
+    /// segment's move log before the mask is replaced.
+    pub fn retire_points(&mut self, retirements: &[Retirement]) -> OperationResult<()> {
+        self.id_tracker.retire_points(&self.fs, retirements)
     }
 }
