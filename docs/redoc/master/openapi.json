@@ -15576,7 +15576,7 @@
             "$ref": "#/components/schemas/GeoPoint"
           },
           "to": {
-            "description": "Payload field with the destination geo point",
+            "description": "Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used",
             "type": "string"
           }
         }
