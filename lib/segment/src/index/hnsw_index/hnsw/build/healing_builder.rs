@@ -5,16 +5,13 @@ use std::sync::atomic::AtomicU64;
 
 use common::types::PointOffsetType;
 use log::debug;
-use rand::Rng;
-use rayon::ThreadPool;
 
 use self::seeds::BlockSeeds;
 use super::block::Block;
-use super::context::{GraphBuildContext, MainGraphProgress};
-use super::graph_builder::GraphBuilderMethod;
+use super::context::MainGraphProgress;
+use super::graph_builder::{GraphBuilderMethod, StepError};
 use super::hnsw_builder::HnswBuilder;
-use super::local_builder::{LocalBuilder, LocalMethod};
-use super::payload_blocks::FieldBlocks;
+use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
@@ -37,30 +34,34 @@ pub(super) struct HealingBuilder<'a> {
 }
 
 impl<'a> HealingBuilder<'a> {
-    /// Points keep their level from the old graph.
-    pub fn new(
-        ctx: GraphBuildContext<'a>,
-        pool: &'a ThreadPool,
-        rng: &'a mut dyn Rng,
-        old: &'a OldIndex<'a>,
-    ) -> OperationResult<Self> {
-        let hnsw = HnswBuilder(LocalBuilder::new(ctx, pool, rng, Some(old))?);
-
-        Ok(Self {
-            hnsw,
+    /// `local` must have the levels of `old`: points keep their level from the old graph.
+    pub fn from_local(local: LocalBuilder<'a>, old: &'a OldIndex<'a>) -> Self {
+        Self {
+            hnsw: HnswBuilder(local),
             old,
             seeds: None,
             block_points: 0,
             seeded_points: 0,
-        })
+        }
+    }
+
+    /// The state the method builds on.
+    pub fn local(&mut self) -> &mut LocalBuilder<'a> {
+        &mut self.hnsw.0
+    }
+
+    /// The state the method builds on, without the seeds kept across blocks.
+    #[cfg(feature = "gpu")]
+    pub fn into_local(self) -> LocalBuilder<'a> {
+        self.hnsw.0
     }
 }
 
-impl GraphBuilderMethod for HealingBuilder<'_> {
-    fn build_main(&mut self) -> OperationResult<()> {
+impl<'a> GraphBuilderMethod<'a> for HealingBuilder<'a> {
+    fn build_main(mut self) -> Result<Self, StepError<'a>> {
         if !self.hnsw.0.ctx.has_main_graph() {
             // No main graph
-            return Ok(());
+            return Ok(self);
         }
         let progress = self
             .hnsw
@@ -114,11 +115,8 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
         debug!("Migrated in {:?}", timer.elapsed());
         drop(migrate);
 
-        self.hnsw.insert(&missing_points, main_graph)
-    }
-
-    fn build_field_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
-        self.build_blocks(field)
+        self.hnsw.insert(&missing_points, main_graph)?;
+        Ok(self)
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
@@ -134,22 +132,17 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
     fn seeds_payload_blocks(&self) -> bool {
         payload_links_reusable(self.hnsw.0.ctx.block_params.hnsw_m, &self.old.index.config)
     }
-}
-
-impl<'a> LocalMethod<'a> for HealingBuilder<'a> {
-    fn local(&mut self) -> &mut LocalBuilder<'a> {
-        self.hnsw.local()
-    }
 
     /// Points that kept enough links to the block in the old graph start with them, the rest
     /// are inserted by search.
     fn build_block(
-        &mut self,
+        mut self,
         points: &[PointOffsetType],
         counter: &AtomicU64,
-    ) -> OperationResult<()> {
+    ) -> Result<Self, StepError<'a>> {
         if !self.seeds_payload_blocks() {
-            return self.hnsw.build_block(points, counter);
+            self.hnsw = self.hnsw.build_block(points, counter)?;
+            return Ok(self);
         }
         self.old.populate_links();
         let local = &mut self.hnsw.0;
@@ -167,6 +160,6 @@ impl<'a> LocalMethod<'a> for HealingBuilder<'a> {
         self.seeded_points += points.len() - to_insert.len();
         block.insert(&to_insert, local.pool, counter)?;
         block.merge_into(&mut local.graph);
-        Ok(())
+        Ok(self)
     }
 }
