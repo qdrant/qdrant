@@ -68,7 +68,7 @@ mod tests {
     fn test_freshly_written_file_is_resident() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("index.bin");
-        std::fs::write(&path, vec![1u8; 64 * 1024]).unwrap();
+        fs_err::write(&path, vec![1u8; 64 * 1024]).unwrap();
         assert!(mostly_resident(std::slice::from_ref(&path)));
 
         let missing = dir.path().join("missing.bin");
