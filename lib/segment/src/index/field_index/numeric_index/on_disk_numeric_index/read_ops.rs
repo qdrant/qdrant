@@ -35,18 +35,12 @@ impl<T: Encodable + Numericable + Default + StoredValue + 'static, S: UniversalR
         }
     }
 
-    fn for_each_matching_value<I, F, M, U>(
+    fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        check_fn: F,
-        mut on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&T) -> bool,
-        M: FnMut(U, bool),
-    {
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&T) -> bool,
+        mut on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
         self.storage.point_to_values.values_iter_batch(
             items,
             &self.storage.deleted,
