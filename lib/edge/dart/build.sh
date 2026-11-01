@@ -79,7 +79,7 @@ fi
 # export; a NEW exported free function must be added to this list to reach the
 # barrel.
 free_fns=""
-for fn in probeShard unpackSnapshot; do
+for fn in unpackSnapshot; do
   if grep -qE "^[A-Za-z_][A-Za-z0-9_<>,? ]* ${fn}\(" "$SCRIPT_DIR/lib/src/qdrant_edge_ffi.dart"; then
     free_fns="${free_fns}${fn}"$'\n'
   fi

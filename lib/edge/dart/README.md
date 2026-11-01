@@ -117,18 +117,21 @@ try {
 }
 ```
 
-To decide whether to open an existing store or start a fresh one *before*
-calling `load`, use `probeShard(path:)` — it reports `none` / `loadable` /
-`unreadable` by reading the directory, without opening the shard or taking its
-lock:
+To open an existing store, or find out there is none, call
+`EdgeShard.load(path:, config: null)` and branch on the outcome:
 
-- `none` → `EdgeShard.create(path:, config:)`, which also creates the directory
-  (`load` requires it to exist).
-- `loadable` → `EdgeShard.load(path:, config: null)`. It can still throw
-  `ShardLockedEdgeException` if another handle holds the shard.
-- `unreadable` → the shard will not load as it is; `reason` says why. A shard
-  created with `walEnabled: false` whose `edge_config.json` was deleted is
-  reported here, and loads with a config that sets `walEnabled: false`.
+- it returns → the shard is open, with whatever data it holds.
+- `UnreadableEdgeException` → data is present but will not open (a corrupt
+  config, segment or WAL); `reason` says why. **Never** start a fresh shard
+  over it: that destroys data you may still recover.
+- `ShardLockedEdgeException` → another handle holds it.
+- `InvalidArgumentEdgeException` → the `config` you passed contradicts the
+  stored segments; the data is fine, fix the config.
+- `OperationExceptionEdgeException` whose `reason` contains
+  `no segments were loaded` → nothing is stored here yet; start a shard with
+  `EdgeShard.load(path:, config: yourConfig)`, or with
+  `EdgeShard.create(path:, config:)`, which also creates a missing directory
+  (`load` requires the directory to exist).
 
 ## Isolates and threads
 

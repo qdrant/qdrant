@@ -26,19 +26,18 @@ Fixed in the SDK:
   negative `limit`) no longer leaks a reference to the shard. The shard used
   to keep its file lock after `dispose()`, so reopening it threw
   `ShardLockedEdgeException` until the process exited.
-- A second `EdgeShard.load` of a shard another handle holds now throws
-  `ShardLockedEdgeException` before anything on disk is read. Previously a
-  shard created with `walEnabled: false` took no lock, so a second load
-  succeeded and both handles wrote the same files; and a second load of a WAL
-  shard could delete segment directories an `optimize()` on the first handle
-  was still writing before it failed.
-- `load` refuses a shard created with `walEnabled: false` whose
-  `edge_config.json` is gone, unless the config passes `walEnabled: false`.
-  Loading it as a WAL shard numbered its operations below the stored versions,
-  so updates and deletes of existing points were skipped while reporting
-  success. `probeShard` reports such a shard as `unreadable` with that reason.
-- `probeShard` reports `none` for the empty directory a failed `load` leaves,
-  and ignores hidden directories and `.deleted` leftovers, as the loader does.
+- A second `EdgeShard.load` (or `create`) of a shard another handle holds now
+  throws `ShardLockedEdgeException` before anything on disk is read: the
+  engine locks the shard directory. Previously a shard created with
+  `walEnabled: false` took no lock, so a second load succeeded and both
+  handles wrote the same files; and a second load of a WAL shard could delete
+  segment directories an `optimize()` on the first handle was still writing
+  before it failed.
+- A shard created with `walEnabled: false` whose `edge_config.json` is gone,
+  or a shard whose `wal/` directory was deleted, now keeps applying updates
+  after `load`. The engine started a fresh WAL numbered below the versions
+  already stored, so updates and deletes of existing points were skipped
+  while reporting success.
 - Calling a method after `dispose()` throws `StateError`; it used to touch freed
   native memory. A second `dispose()` does nothing.
 - `EdgeShard`, `UpdateOperation` and `Expression` can no longer be sent to
@@ -63,6 +62,19 @@ Fixed in the SDK:
 
 Changed:
 
+- Breaking: `probeShard`, `ShardProbe` and `EdgeShardPresence` are removed.
+  `EdgeShard.load(path:, config: null)` answers the same question with its
+  own errors, so the answer cannot disagree with what `load` does: it returns
+  the shard; throws `UnreadableEdgeException` (new) when data is present but
+  will not open — never recreate over it; throws `ShardLockedEdgeException`
+  when another handle holds it; and throws `OperationExceptionEdgeException`
+  whose `reason` contains `no segments were loaded` when nothing is stored
+  there. A `config` that contradicts the stored segments is
+  `InvalidArgumentEdgeException`. This is the shape agreed for the shared
+  `qdrant-edge-ffi` crate in qdrant/qdrant#10336. Migration:
+  `probeShard(...).presence == none` → catch the "no segments were loaded"
+  `OperationExceptionEdgeException` from `load`; `unreadable` → catch
+  `UnreadableEdgeException`; `loadable` → `load` returns.
 - Breaking: `EdgeShard.queryBatch` takes a `QueryBatchRequest`
   (`queryBatch(request: QueryBatchRequest(queries: [...]))`) instead of
   `queryBatch(requests: [...])`, following the FFI change in
@@ -74,8 +86,8 @@ Changed:
 - The local prebuilt override is the `prebuilt_dir` user-define. The
   `QDRANT_EDGE_PREBUILT_DIR` environment variable it replaces never reached the
   hook.
-- `probeShard`'s `none` now points at `EdgeShard.create`, which creates the
-  directory; `load` requires an existing one.
+- `EdgeShard.load` requires an existing directory, as its documentation now
+  says; `EdgeShard.create` creates a missing one.
 - A failed `updateFromSnapshot` that gets past reading the archive leaves the
   shard unloaded and releases its lock; reopen it with `load`.
 

@@ -2,10 +2,12 @@
 // this package, each reproduced against a scratch directory with no network and
 // no fixtures:
 //
-//   §1  `probeShard` — classify a path as none / loadable / unreadable without
-//       opening the shard or taking its WAL lock (all four rows of the reported
-//       load-ambiguity table; row 3 — config deleted, segments intact — is the
-//       one that shipped as a data-loss bug).
+//   §1  `EdgeShard.load(path, config: null)` tells the rows of the reported
+//       load-ambiguity table apart by its outcome: no shard here (a plain
+//       `OperationExceptionEdgeException`), a shard that opens, or a shard that
+//       is present but will not open (`UnreadableEdgeException` — never recreate
+//       over it). Row 3 — config deleted, segments intact — is the one that
+//       shipped as a data-loss bug.
 //   §2  every exception crossing the API is catchable by name
 //       (`EdgeException` or `UniffiInternalError`).
 //   §3  a shard held by another handle throws the distinct
@@ -49,33 +51,46 @@ void main() {
   setUp(() => dir = Directory.systemTemp.createTempSync('qe_gaps'));
   tearDown(() => dir.deleteSync(recursive: true));
 
-  group('§1 probeShard — classify a path without opening the shard', () {
-    test('row 1: empty directory → none', () {
-      final probe = probeShard(path: dir.path);
-      expect(probe.presence, EdgeShardPresence.none);
-      expect(probe.reason, isNull);
+  group('§1 load(path, config: null) — what is at a path', () {
+    // "No shard here" is a plain OperationExceptionEdgeException; the engine's
+    // wording is pinned by the FFI tests, and hosts telling the rows apart rely
+    // on it.
+    Matcher noShard() => throwsA(isA<OperationExceptionEdgeException>().having(
+          (e) => e.reason,
+          'reason',
+          contains('no segments were loaded'),
+        ));
+
+    test('row 1: empty directory → no shard', () {
+      expect(() => EdgeShard.load(path: dir.path, config: null), noShard());
     });
 
-    test('absent path → none', () {
-      final probe = probeShard(path: '${dir.path}/does-not-exist');
-      expect(probe.presence, EdgeShardPresence.none);
+    test('absent path → load refuses it; create makes it', () {
+      final path = '${dir.path}/nested/store';
+      expect(
+        () => EdgeShard.load(path: path, config: null),
+        throwsA(isA<OperationExceptionEdgeException>()),
+      );
+      final shard = EdgeShard.create(path: path, config: _cfg());
+      shard.unload();
+      shard.dispose();
     });
 
-    test('row 2: unrelated files only → none', () {
+    test('row 2: unrelated files only → no shard', () {
       File('${dir.path}/hello.txt').writeAsStringSync('not ours');
-      final probe = probeShard(path: dir.path);
-      expect(probe.presence, EdgeShardPresence.none);
+      expect(() => EdgeShard.load(path: dir.path, config: null), noShard());
     });
 
-    test('a normally-persisted shard → loadable', () {
+    test('a normally-persisted shard → opens', () {
       _writePersistedShard(dir.path);
-      final probe = probeShard(path: dir.path);
-      expect(probe.presence, EdgeShardPresence.loadable);
-      expect(probe.reason, isNull);
+      final shard = EdgeShard.load(path: dir.path, config: null);
+      expect(shard.info().pointsCount, 1);
+      shard.unload();
+      shard.dispose();
     });
 
     test('row 3 (the one that cost a release): edge_config.json deleted, '
-        'segments intact → loadable, and load actually succeeds', () {
+        'segments intact → opens with the data', () {
       _writePersistedShard(dir.path);
       final cfg = File('${dir.path}/edge_config.json');
       expect(cfg.existsSync(), isTrue,
@@ -83,10 +98,7 @@ void main() {
       cfg.deleteSync();
 
       // The heuristic "no edge_config.json ⇒ empty store" reported a full corpus
-      // as empty. The probe must instead say loadable…
-      expect(probeShard(path: dir.path).presence, EdgeShardPresence.loadable);
-
-      // …and be telling the truth: the data reopens intact.
+      // as empty; load reads the shard from its segments.
       final shard = EdgeShard.load(path: dir.path, config: null);
       expect(shard.info().pointsCount, 1);
       shard.unload();
@@ -97,14 +109,10 @@ void main() {
       _writePersistedShard(dir.path);
       File('${dir.path}/edge_config.json').writeAsStringSync('{ not valid');
 
-      final probe = probeShard(path: dir.path);
-      expect(probe.presence, EdgeShardPresence.unreadable);
-      expect(probe.reason, isNotNull);
-
-      // The probe agreed with reality: load itself fails on the corrupt config.
       expect(
         () => EdgeShard.load(path: dir.path, config: null),
-        throwsA(isA<OperationExceptionEdgeException>()),
+        throwsA(isA<UnreadableEdgeException>()
+            .having((e) => e.reason, 'reason', isNotEmpty)),
       );
     });
   });
@@ -132,16 +140,6 @@ void main() {
       s2.dispose();
     });
 
-    test('probe never takes the lock: a held shard still reads as loadable', () {
-      final s1 = EdgeShard.load(path: dir.path, config: _cfg());
-      s1.update(operation: UpdateOperation.upsertPoints(points: [_pt(1)]));
-      try {
-        expect(probeShard(path: dir.path).presence, EdgeShardPresence.loadable);
-      } finally {
-        s1.unload();
-        s1.dispose();
-      }
-    });
   });
 
   group('§4 EdgeShard.clear', () {
@@ -273,14 +271,30 @@ void main() {
       }
     });
 
-    test('create starts a shard where probeShard reports none', () {
-      final path = '${dir.path}/nested/store';
-      expect(probeShard(path: path).presence, EdgeShardPresence.none);
-      final shard = EdgeShard.create(path: path, config: _cfg());
-      shard.update(operation: UpdateOperation.upsertPoints(points: [_pt(1)]));
-      shard.unload();
-      shard.dispose();
-      expect(probeShard(path: path).presence, EdgeShardPresence.loadable);
+    test('a WAL-less shard whose config was deleted keeps applying updates', () {
+      final s1 = EdgeShard.create(
+        path: dir.path,
+        config: EdgeConfig(
+          vectorData: {'': VectorDataConfig(size: 4, distance: Distance.cosine)},
+          walEnabled: false,
+        ),
+      );
+      s1.update(
+        operation: UpdateOperation.upsertPoints(points: [_pt(1), _pt(2)]),
+      );
+      s1.unload();
+      s1.dispose();
+      File('${dir.path}/edge_config.json').deleteSync();
+
+      // The engine used to start a fresh WAL numbered below the stored
+      // versions here, and silently skip this delete.
+      final s2 = EdgeShard.load(path: dir.path, config: null);
+      s2.update(
+        operation: UpdateOperation.deletePoints(pointIds: [NumIdPointId(2)]),
+      );
+      expect(s2.info().pointsCount, 1);
+      s2.unload();
+      s2.dispose();
     });
   });
 }
