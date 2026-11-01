@@ -318,7 +318,7 @@ impl FieldIndex {
         }
     }
 
-    fn get_storage_type(&self) -> StorageType {
+    pub(super) fn get_storage_type(&self) -> StorageType {
         match self {
             FieldIndex::IntIndex(index) => index.get_storage_type(),
             FieldIndex::DatetimeIndex(index) => index.get_storage_type(),
