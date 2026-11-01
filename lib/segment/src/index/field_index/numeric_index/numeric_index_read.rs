@@ -35,19 +35,13 @@ pub trait NumericIndexRead<T: Encodable + Numericable + Default + StoredValue> {
         &self,
         items: I,
         check_fn: F,
-        mut on_match: M,
+        on_match: M,
     ) -> OperationResult<()>
     where
         U: UserData,
         I: Iterator<Item = (U, PointOffsetType)>,
         F: Fn(&T) -> bool,
-        M: FnMut(U, bool),
-    {
-        for (tag, idx) in items {
-            on_match(tag, self.check_values_any(idx, &check_fn)?);
-        }
-        Ok(())
-    }
+        M: FnMut(U, bool);
 
     fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
 

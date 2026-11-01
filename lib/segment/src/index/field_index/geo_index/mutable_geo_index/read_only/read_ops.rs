@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::super::super::read_ops::GeoIndexRead;
 use super::ReadOnlyAppendableGeoIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::GeoHash;
+use crate::index::field_index::utils::check_each_sequential;
 use crate::index::payload_config::StorageType;
 use crate::types::GeoPoint;
 
@@ -37,6 +38,21 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyAppendableGeoIndex<S> {
         check_fn: &dyn Fn(&GeoPoint) -> bool,
     ) -> OperationResult<bool> {
         self.in_memory_index.check_values_any(idx, check_fn)
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&GeoPoint) -> bool,
+        M: FnMut(U, bool),
+    {
+        check_each_sequential(items, |idx| self.check_values_any(idx, &check_fn), on_match)
     }
 
     fn values_count(&self, idx: PointOffsetType) -> usize {

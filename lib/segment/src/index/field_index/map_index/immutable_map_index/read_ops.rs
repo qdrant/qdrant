@@ -3,12 +3,13 @@ use std::iter;
 
 use blobstore::Blob;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalRead;
+use common::universal_io::{UniversalRead, UserData};
 
 use super::super::read_ops::MapIndexRead;
 use super::super::{IdIter, MapIndexKey};
 use super::{ContainerSegment, ImmutableMapIndex};
 use crate::common::operation_error::OperationResult;
+use crate::index::field_index::utils::check_each_sequential;
 use crate::index::payload_config::{ImmutableLayout, StorageType};
 
 impl<'a, N, S> MapIndexRead<'a, N> for ImmutableMapIndex<N, S>
@@ -25,6 +26,21 @@ where
         Ok(self
             .point_to_values
             .check_values_any(idx, |v| check_fn(v.borrow())))
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&N) -> bool,
+        M: FnMut(U, bool),
+    {
+        check_each_sequential(items, |idx| self.check_values_any(idx, &check_fn), on_match)
     }
 
     fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
