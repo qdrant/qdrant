@@ -473,11 +473,45 @@ mod tests {
 
     #[test]
     fn test_format_read_operations_error_negative_control_cancelled() {
-        let cancelled = CollectionError::cancelled("request aborted");
+        let cancelled = CollectionError::Cancelled {
+            description: "client cancelled".to_string(),
+        };
         let err = ShardReplicaSet::format_read_operations_error(0, vec![cancelled]);
         assert!(
             matches!(err, CollectionError::ServiceError { .. }),
             "Expected ServiceError for cancellation, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_format_read_operations_error_partial_success_with_timeout() {
+        // e.g. read_consistency="all": 1 replica succeeded, but 1 timed out
+        let t1 = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let err = ShardReplicaSet::format_read_operations_error(1, vec![t1]);
+        assert!(
+            matches!(err, CollectionError::Timeout { .. }),
+            "Expected Timeout when all failures are timeouts, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_format_read_operations_error_partial_success_with_service_error() {
+        let s1 = CollectionError::service_error("peer crashed");
+        let err = ShardReplicaSet::format_read_operations_error(1, vec![s1]);
+        assert!(
+            matches!(err, CollectionError::ServiceError { .. }),
+            "Expected ServiceError, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_format_read_operations_error_partial_success_with_mixed_errors() {
+        let t1 = CollectionError::timeout(Duration::from_secs(1), "Search");
+        let s1 = CollectionError::service_error("peer crashed");
+        let err = ShardReplicaSet::format_read_operations_error(1, vec![t1, s1]);
+        assert!(
+            matches!(err, CollectionError::ServiceError { .. }),
+            "Expected ServiceError for mixed errors, got: {err:?}"
         );
     }
 }

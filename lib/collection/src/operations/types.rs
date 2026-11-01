@@ -2047,6 +2047,22 @@ mod tests {
             "Expected Cancelled, got: {err:?}"
         );
 
+        // Negative control: Substring match cancellation must remain CollectionError::Cancelled
+        let cancelled_partial = tonic::Status::cancelled("Timeout expired in custom handler");
+        let err = CollectionError::from(cancelled_partial);
+        assert!(
+            matches!(err, CollectionError::Cancelled { .. }),
+            "Expected Cancelled, got: {err:?}"
+        );
+
+        // Negative control: Other code with 'Timeout expired' must remain ServiceError
+        let internal_status = tonic::Status::internal("Timeout expired");
+        let err = CollectionError::from(internal_status);
+        assert!(
+            matches!(err, CollectionError::ServiceError { .. }),
+            "Expected ServiceError, got: {err:?}"
+        );
+
         // Negative control: Unavailable peer must remain CollectionError::ServiceError
         let unavail_status = tonic::Status::unavailable("peer unreachable");
         let err = CollectionError::from(unavail_status);

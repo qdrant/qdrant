@@ -52,11 +52,46 @@ pub enum RequestError<E: std::error::Error> {
     Tonic(#[from] TonicError),
 }
 
+#[derive(Debug)]
 enum RetryAction {
     Fail(Status),
     RetryOnce(Status),
     RetryWithBackoff(Status),
     RetryImmediately(Status),
+}
+
+impl RetryAction {
+    pub(crate) fn from_status(status: Status) -> Self {
+        match status.code() {
+            Code::Cancelled | Code::Unavailable => {
+                // Possible situations:
+                // - Server is frozen and will never respond.
+                // - Server is overloaded and will respond in the future.
+                RetryAction::RetryWithBackoff(status)
+            }
+            Code::Internal => {
+                // Something is broken, but let's retry anyway, but only once.
+                RetryAction::RetryOnce(status)
+            }
+            Code::Ok
+            | Code::Unknown
+            | Code::InvalidArgument
+            | Code::DeadlineExceeded
+            | Code::NotFound
+            | Code::AlreadyExists
+            | Code::PermissionDenied
+            | Code::ResourceExhausted
+            | Code::FailedPrecondition
+            | Code::Aborted
+            | Code::OutOfRange
+            | Code::Unimplemented
+            | Code::DataLoss
+            | Code::Unauthenticated => {
+                // No special handling, just fail already.
+                RetryAction::Fail(status)
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -356,37 +391,7 @@ impl TransportChannelPool {
                         }
                     }
                 }
-                RequestFailure::RequestError(status) => {
-                    match status.code() {
-                        Code::Cancelled | Code::Unavailable => {
-                            // Possible situations:
-                            // - Server is frozen and will never respond.
-                            // - Server is overloaded and will respond in the future.
-                            RetryAction::RetryWithBackoff(status)
-                        }
-                        Code::Internal => {
-                            // Something is broken, but let's retry anyway, but only once.
-                            RetryAction::RetryOnce(status)
-                        }
-                        Code::Ok
-                        | Code::Unknown
-                        | Code::InvalidArgument
-                        | Code::DeadlineExceeded
-                        | Code::NotFound
-                        | Code::AlreadyExists
-                        | Code::PermissionDenied
-                        | Code::ResourceExhausted
-                        | Code::FailedPrecondition
-                        | Code::Aborted
-                        | Code::OutOfRange
-                        | Code::Unimplemented
-                        | Code::DataLoss
-                        | Code::Unauthenticated => {
-                            // No special handling, just fail already.
-                            RetryAction::Fail(status)
-                        }
-                    }
-                }
+                RequestFailure::RequestError(status) => RetryAction::from_status(status),
                 RequestFailure::RequestConnection(error) => {
                     // Can't establish connection to the server during the request.
                     // Possible situation:
@@ -482,5 +487,77 @@ mod tests {
         let unavail = Status::unavailable("peer dead");
         let unchanged = normalize_timeout_status(unavail);
         assert_eq!(unchanged.code(), Code::Unavailable);
+
+        // Negative control: empty cancellation message must remain Cancelled
+        let empty_cancel = Status::cancelled("");
+        let unchanged_empty = normalize_timeout_status(empty_cancel);
+        assert_eq!(unchanged_empty.code(), Code::Cancelled);
+        assert_eq!(unchanged_empty.message(), "");
+
+        // Negative control: partial message match must NOT be converted
+        let partial_cancel = Status::cancelled("Timeout expired in user callback");
+        let unchanged_partial = normalize_timeout_status(partial_cancel);
+        assert_eq!(unchanged_partial.code(), Code::Cancelled);
+        assert_eq!(
+            unchanged_partial.message(),
+            "Timeout expired in user callback"
+        );
+
+        // Negative control: other code with "Timeout expired" must remain unchanged
+        let internal_err = Status::internal("Timeout expired");
+        let unchanged_internal = normalize_timeout_status(internal_err);
+        assert_eq!(unchanged_internal.code(), Code::Internal);
+        assert_eq!(unchanged_internal.message(), "Timeout expired");
+    }
+
+    #[test]
+    fn test_retry_classification_taxonomy() {
+        // 1. Client-side timeout normalized to DeadlineExceeded must FAIL (NOT retried)
+        let normalized_timeout = normalize_timeout_status(Status::cancelled("Timeout expired"));
+        let action = RetryAction::from_status(normalized_timeout);
+        assert!(
+            matches!(action, RetryAction::Fail(_)),
+            "Normalized timeout must fail immediately without retry, got {action:?}"
+        );
+
+        // 2. Unnormalized client-side timeout would be treated as RetryWithBackoff
+        let unnormalized_timeout = Status::cancelled("Timeout expired");
+        let action = RetryAction::from_status(unnormalized_timeout);
+        assert!(
+            matches!(action, RetryAction::RetryWithBackoff(_)),
+            "Unnormalized timeout is retried with backoff, proving necessity of normalization"
+        );
+
+        // 3. Genuine user cancellation received over wire is treated as RetryWithBackoff in transport pool
+        let user_cancel = Status::cancelled("client aborted request");
+        let action = RetryAction::from_status(normalize_timeout_status(user_cancel));
+        assert!(
+            matches!(action, RetryAction::RetryWithBackoff(_)),
+            "Genuine cancellation over wire gets RetryWithBackoff, got {action:?}"
+        );
+
+        // 4. Server-side DeadlineExceeded must FAIL (NOT retried)
+        let server_deadline = Status::deadline_exceeded("deadline exceeded by server");
+        let action = RetryAction::from_status(normalize_timeout_status(server_deadline));
+        assert!(
+            matches!(action, RetryAction::Fail(_)),
+            "Server DeadlineExceeded must fail immediately without retry"
+        );
+
+        // 5. Transport Unavailable is retried with backoff
+        let unavail = Status::unavailable("peer unreachable");
+        let action = RetryAction::from_status(normalize_timeout_status(unavail));
+        assert!(
+            matches!(action, RetryAction::RetryWithBackoff(_)),
+            "Transport Unavailable must retry with backoff"
+        );
+
+        // 6. Internal error is retried once
+        let internal = Status::internal("transient server failure");
+        let action = RetryAction::from_status(normalize_timeout_status(internal));
+        assert!(
+            matches!(action, RetryAction::RetryOnce(_)),
+            "Internal error must retry once"
+        );
     }
 }
