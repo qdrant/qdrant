@@ -22,6 +22,8 @@ use crate::common::operation_error::{OperationError, OperationResult};
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
 const NOT_ENOUGH_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with slice in file `point_to_values.bin`. Is the storage corrupted?";
 const PADDING_SIZE: usize = 4096;
+/// Smallest batch of per-point reads worth a prefetch hint.
+const MIN_PREFETCH_BATCH: usize = 64;
 
 /// Trait for values that can be stored in a file. It's used in `StoredPointToValues` to store values.
 pub trait StoredValue: ToOwned {
@@ -290,6 +292,7 @@ where
             let length = if point_id + 1 < points_count { 2 } else { 1 };
             Some((user_data, ReadRange::new(byte_offset, length)))
         });
+        let range_reads = self.prefetch::<MmapRange, _>(range_reads);
         self.store
             .read_batch(range_reads, Random, |user_data, ranges| {
                 let MmapRange { start, count } = ranges[0];
@@ -313,9 +316,11 @@ where
             })?;
 
         // Batch 2: Read and pass the values to the callback as `ValuesIter`s.
-        let value_reads = value_reads
-            .into_iter()
-            .map(|(user_data, count, range)| ((user_data, count), range));
+        let value_reads = self.prefetch::<u8, _>(
+            value_reads
+                .into_iter()
+                .map(|(user_data, count, range)| ((user_data, count), range)),
+        );
         self.store
             .read_batch(value_reads, Random, |(user_data, count), bytes| {
                 f(user_data, ValuesIter::new(Cow::Borrowed(bytes), count));
@@ -323,6 +328,28 @@ where
             })?;
 
         Ok(())
+    }
+
+    /// Collect a batch of reads and ask the storage to fetch all their pages before
+    /// they are read one by one, so a cold batch waits for overlapping IO instead of
+    /// one synchronous fault per item.
+    ///
+    /// Batches smaller than [`MIN_PREFETCH_BATCH`] (graph search checks a dozen
+    /// neighbours at a time) are passed through without a hint. The storage itself
+    /// skips the hint when the file is resident.
+    fn prefetch<Item: bytemuck::Pod, U>(
+        &self,
+        reads: impl Iterator<Item = (U, ReadRange)>,
+    ) -> impl Iterator<Item = (U, ReadRange)> {
+        let reads: Vec<_> = reads.collect();
+        if reads.len() >= MIN_PREFETCH_BATCH {
+            self.store.will_need(
+                reads
+                    .iter()
+                    .map(|(_, range)| range.into_byte_range::<Item>()),
+            );
+        }
+        reads.into_iter()
     }
 
     pub fn get_values_count(&self, point_id: PointOffsetType) -> OperationResult<Option<usize>> {
