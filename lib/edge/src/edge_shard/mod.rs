@@ -72,7 +72,8 @@ impl EdgeShard {
         })?;
 
         let update_log = if config.wal_enabled() {
-            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+            // A new shard has no stored versions to number after.
+            open_wal(path, config.wal_options.clone().unwrap_or_default(), 0)?
         } else {
             UpdateLog::Disabled {
                 last_operation_id: 0,
@@ -192,7 +193,11 @@ impl EdgeShard {
         ensure_appendable_segment(&mut segments, &segments_path, &config)?;
 
         let update_log = if config.wal_enabled() || path.join(WAL_PATH).exists() {
-            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+            open_wal(
+                path,
+                config.wal_options.clone().unwrap_or_default(),
+                max_segment_version(&segments),
+            )?
         } else {
             UpdateLog::Disabled {
                 last_operation_id: max_segment_version(&segments),
@@ -409,12 +414,31 @@ fn has_existing_segments(path: &Path) -> bool {
     false
 }
 
-fn open_wal(path: &Path, wal_options: WalOptions) -> OperationResult<UpdateLog> {
+/// Opens the shard's WAL, creating it if `wal/` does not exist yet.
+///
+/// A WAL created over segments that already store versions up to `stored_version` (a WAL-less
+/// shard whose config was lost, so the derived config enables the WAL; or a deleted `wal/`)
+/// starts numbering after them. An empty WAL would number from 0, below the stored versions, and
+/// every later update to a stored point would be skipped as older than the point.
+fn open_wal(
+    path: &Path,
+    wal_options: WalOptions,
+    stored_version: SeqNumberType,
+) -> OperationResult<UpdateLog> {
     let wal_path = path.join(WAL_PATH);
     if !wal_path.exists() {
         fs::create_dir(&wal_path).map_err(|err| {
             OperationError::service_error(format!("failed to create WAL directory: {err}"))
         })?;
+        if stored_version > 0 {
+            wal::Wal::generate_empty_wal_starting_at_index(&wal_path, &wal_options, stored_version)
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to create WAL {} after version {stored_version}: {err}",
+                        wal_path.display(),
+                    ))
+                })?;
+        }
     }
 
     let wal = SerdeWal::new(&wal_path, wal_options).map_err(|err| {

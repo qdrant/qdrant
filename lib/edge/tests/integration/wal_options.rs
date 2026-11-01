@@ -354,3 +354,64 @@ fn wal_less_load_applies_and_removes_existing_wal() {
     let shard = EdgeShard::load(dir.path(), None).unwrap();
     assert_eq!(shard.info().unwrap().points_count, 3);
 }
+
+/// A fresh WAL opened over existing segments must number its operations after the versions
+/// already stored, or every later update to a stored point is older than the point and skipped.
+/// `edge_config.json` deleted from a WAL-less shard: the derived config enables the WAL, which
+/// is created on this load.
+#[test]
+fn wal_created_over_existing_segments_numbers_after_them() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-created-on-load")
+        .tempdir()
+        .unwrap();
+
+    {
+        let shard = EdgeShard::new(dir.path(), base_builder().wal_enabled(false).build()).unwrap();
+        for id in 0..10 {
+            upsert(&shard, id);
+        }
+    }
+    fs_err::remove_file(dir.path().join("edge_config.json")).unwrap();
+    assert!(!dir.path().join(WAL_PATH).exists());
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert!(shard.config().wal_enabled());
+    shard
+        .update(PointOperation(DeletePoints {
+            ids: vec![ExtendedPointId::NumId(9)],
+        }))
+        .unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 9);
+    drop(shard);
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 9);
+}
+
+/// Same for a WAL shard whose `wal/` directory is gone.
+#[test]
+fn wal_recreated_after_deletion_numbers_after_segments() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-wal-recreated")
+        .tempdir()
+        .unwrap();
+
+    {
+        let shard = EdgeShard::new(dir.path(), default_config()).unwrap();
+        for id in 0..10 {
+            upsert(&shard, id);
+        }
+        shard.flush().unwrap();
+    }
+    fs_err::remove_dir_all(dir.path().join(WAL_PATH)).unwrap();
+
+    let shard = EdgeShard::load(dir.path(), None).unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 10);
+    shard
+        .update(PointOperation(DeletePoints {
+            ids: vec![ExtendedPointId::NumId(9)],
+        }))
+        .unwrap();
+    assert_eq!(shard.info().unwrap().points_count, 9);
+}
