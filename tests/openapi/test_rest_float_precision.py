@@ -264,8 +264,8 @@ def test_case_e_float_payload_integer_bound(collection_name, adjacent_points):
     assert points[0]["id"] == 11
 
 
-def test_case_f_unindexed_degenerate_range(collection_name, adjacent_points):
-    """Case F: Unindexed range filter across adjacent points."""
+def test_case_f_unindexed_inclusive_range(collection_name, adjacent_points):
+    """Case F: Unindexed inclusive range filter across adjacent points."""
     query_unindexed = """
     {
         "limit": 10,
@@ -514,8 +514,9 @@ def test_case_k_negative_zero(collection_name):
 
     # Read back point
     p60 = raw_get(f"/collections/{collection_name}/points/60").json()["result"]["payload"]["val"]
-    # In IEEE-754, -0.0 == 0.0
+    # In IEEE-754, -0.0 == 0.0 numerically, but sign bit must be preserved
     assert p60 == 0.0
+    assert float_to_bits(p60) == float_to_bits(-0.0)
 
     # Range query with -0.0 bounds
     query_neg = """
@@ -610,14 +611,21 @@ def test_case_l_exponent_ranges_and_subnormals(collection_name):
 
 
 def test_case_m_adjacent_representable_epsilon(collection_name):
-    """Case M: Adjacent representable floats separated by 1 ULP (1.0 vs 1.0 + EPSILON)."""
+    """Case M: Adjacent representable floats separated by 1 ULP (0.9999999999999999 vs 1.0 vs 1.0000000000000002)."""
+    val0 = 0.9999999999999999
     val1 = 1.0
     val2 = 1.0 + 2.220446049250313e-16  # 1.0000000000000002
+    assert float_to_bits(val1) == float_to_bits(val0) + 1
     assert float_to_bits(val2) == float_to_bits(val1) + 1
 
     raw_upsert = """
     {
         "points": [
+            {
+                "id": 79,
+                "vector": [0.1, 0.2, 0.3, 0.4],
+                "payload": {"v": 0.9999999999999999}
+            },
             {
                 "id": 80,
                 "vector": [0.1, 0.2, 0.3, 0.4],
@@ -634,11 +642,37 @@ def test_case_m_adjacent_representable_epsilon(collection_name):
     resp = raw_put(f"/collections/{collection_name}/points?wait=true", raw_upsert)
     assert resp.ok, resp.text
 
+    p79 = raw_get(f"/collections/{collection_name}/points/79").json()["result"]["payload"]["v"]
     p80 = raw_get(f"/collections/{collection_name}/points/80").json()["result"]["payload"]["v"]
     p81 = raw_get(f"/collections/{collection_name}/points/81").json()["result"]["payload"]["v"]
+    assert float_to_bits(p79) == float_to_bits(val0)
     assert float_to_bits(p80) == float_to_bits(val1)
     assert float_to_bits(p81) == float_to_bits(val2)
+    assert float_to_bits(p79) != float_to_bits(p80)
     assert float_to_bits(p80) != float_to_bits(p81)
+
+    # Degenerate range for 0.9999999999999999 must return ONLY point 79
+    scroll_79 = """
+    {
+        "limit": 10,
+        "filter": {
+            "must": [
+                {
+                    "key": "v",
+                    "range": {
+                        "gte": 0.9999999999999999,
+                        "lte": 0.9999999999999999
+                    }
+                }
+            ]
+        }
+    }
+    """
+    resp_79 = raw_post(f"/collections/{collection_name}/points/scroll", scroll_79)
+    assert resp_79.ok
+    pts_79 = resp_79.json()["result"]["points"]
+    assert len(pts_79) == 1
+    assert pts_79[0]["id"] == 79
 
     # Degenerate range for 1.0 must return ONLY point 80
     scroll_80 = """

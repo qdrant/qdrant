@@ -731,10 +731,16 @@ mod tests {
         let cond_one: FieldCondition = serde_json::from_str(cond_one_json).unwrap();
         let p_one: serde_json::Value = serde_json::from_str("1.0").unwrap();
         let p_one_plus_eps: serde_json::Value = serde_json::from_str("1.0000000000000002").unwrap();
+        let p_one_minus_eps: serde_json::Value =
+            serde_json::from_str("0.9999999999999999").unwrap();
         assert!(cond_one.check(&p_one), "1.0 must match its range");
         assert!(
             !cond_one.check(&p_one_plus_eps),
             "1.0 + EPSILON must NOT match [1.0, 1.0]"
+        );
+        assert!(
+            !cond_one.check(&p_one_minus_eps),
+            "0.9999999999999999 (largest f64 below 1.0) must NOT match [1.0, 1.0]"
         );
     }
 }
