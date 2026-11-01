@@ -33,23 +33,12 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
     ) -> OperationResult<bool>;
 
     /// Batched counterpart of [`Self::check_values_any`].
-    fn for_each_matching_value<I, F, M, U>(
+    fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        check_fn: F,
-        mut on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&N) -> bool,
-        M: FnMut(U, bool),
-    {
-        for (tag, idx) in items {
-            on_match(tag, self.check_values_any(idx, &check_fn)?);
-        }
-        Ok(())
-    }
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&N) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()>;
 
     fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a>;
 
@@ -302,6 +291,19 @@ where
             MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::OnDisk(index) => index.check_values_any(idx, check_fn),
+        }
+    }
+
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&N) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(index) => index.for_each_matching_value(items, check_fn, on_match),
+            MapIndex::Immutable(index) => index.for_each_matching_value(items, check_fn, on_match),
+            MapIndex::OnDisk(index) => index.for_each_matching_value(items, check_fn, on_match),
         }
     }
 

@@ -337,8 +337,13 @@ pub fn will_need_multiple_pages(region: &[u8]) {
     }
 }
 
+/// Default Linux readahead window (`read_ahead_kb`). One `MADV_WILLNEED` call
+/// is truncated to this size, so [`will_need`] splits larger regions.
+#[cfg(unix)]
+const WILL_NEED_CHUNK_BYTES: usize = 128 * 1024;
+
 /// Trigger readahead for a memory-mapped region by calling
-/// `madvise(MADV_WILLNEED)` on it.
+/// `madvise(MADV_WILLNEED)` on it, one readahead window at a time.
 pub fn will_need(region: &[u8]) {
     cfg_select! {
         unix => {
@@ -347,19 +352,28 @@ pub fn will_need(region: &[u8]) {
             };
             // `madvise()` requires the address to be page-aligned.
             let offset_in_page = region.as_ptr().addr() & page_mask;
-            let addr = region.as_ptr().map_addr(|addr| addr - offset_in_page);
+            let start = region.as_ptr().map_addr(|addr| addr - offset_in_page);
             let length = offset_in_page + region.len();
 
-            // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
-            // (not file-baked mmap or even if it is an arbitrary invalid address), it
-            // will return an error, but it won't crash or cause an undefined behavior.
-            let res =
-                unsafe { nix::libc::madvise(addr as *mut _, length, nix::libc::MADV_WILLNEED) };
-            if res != 0 {
-                #[cfg(debug_assertions)]
-                {
-                    let err = io::Error::last_os_error();
-                    panic!("Failed to call madvise(MADV_WILLNEED): {err}");
+            // Linux reads at most one readahead window per `MADV_WILLNEED` call
+            // (`force_page_cache_ra` caps it at `max(io_pages, ra_pages)`, 128 KiB by
+            // default) and silently drops the rest. Issue one call per window so the
+            // whole region is requested.
+            for chunk_start in (0..length).step_by(WILL_NEED_CHUNK_BYTES) {
+                let addr = start.wrapping_add(chunk_start);
+                let chunk_len = WILL_NEED_CHUNK_BYTES.min(length - chunk_start);
+                // Safety: madvise(MADV_WILLNEED) is harmless. If the address is not valid
+                // (not file-baked mmap or even if it is an arbitrary invalid address), it
+                // will return an error, but it won't crash or cause an undefined behavior.
+                let res = unsafe {
+                    nix::libc::madvise(addr as *mut _, chunk_len, nix::libc::MADV_WILLNEED)
+                };
+                if res != 0 {
+                    #[cfg(debug_assertions)]
+                    {
+                        let err = io::Error::last_os_error();
+                        panic!("Failed to call madvise(MADV_WILLNEED): {err}");
+                    }
                 }
             }
         }
