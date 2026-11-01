@@ -92,7 +92,7 @@ impl EdgeShard {
     /// # Errors
     ///
     /// - [`EdgeError::ShardLocked`] — another live handle already holds the
-    ///   shard's WAL lock; retry once it is released.
+    ///   shard; retry once it is released.
     /// - [`EdgeError::Unreadable`] — existing on-disk data is present but cannot
     ///   be read (corrupt, or not accessible). Do **not** recreate over it.
     /// - [`EdgeError::InvalidArgument`] — `config` is invalid, or contradicts
@@ -124,14 +124,21 @@ impl EdgeShard {
     ///
     /// # Errors
     ///
-    /// Returns an [`EdgeError::InvalidArgument`] if the config is invalid, or
-    /// an [`EdgeError::OperationError`] if the path is not writable or
-    /// already holds a shard.
+    /// Returns an [`EdgeError::InvalidArgument`] if the config is invalid,
+    /// [`EdgeError::ShardLocked`] if another handle holds `path`, or an
+    /// [`EdgeError::OperationError`] if the path is not writable or already
+    /// holds a shard.
     #[uniffi::constructor]
     pub fn create(path: String, config: EdgeConfig) -> Result<Arc<Self>> {
         config.validate()?;
         let edge_config = config.into_edge_config();
-        let shard = edge::EdgeShard::new(&PathBuf::from(path), edge_config)?;
+        let shard = edge::EdgeShard::new(&PathBuf::from(path), edge_config).map_err(|err| {
+            if edge::is_shard_locked(&err) {
+                EdgeError::ShardLocked
+            } else {
+                EdgeError::from(err)
+            }
+        })?;
         Ok(Arc::new(Self {
             inner: RwLock::new(Some(shard)),
         }))
@@ -464,6 +471,11 @@ fn map_shard_load_error(err: OperationError) -> EdgeError {
         return EdgeError::InvalidArgument {
             reason: description.clone(),
         };
+    }
+    // Another handle holds the shard's directory lock, which `load` takes before
+    // reading anything; the engine classifies it (and a held WAL lock).
+    if edge::is_shard_locked(&err) {
+        return EdgeError::ShardLocked;
     }
     // The one unavoidable string boundary: WAL-open failures come from the
     // third-party `wal` crate as a stringified io error, so the *kind* is lost and

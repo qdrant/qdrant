@@ -3323,10 +3323,18 @@ fn lifecycle_additions_work() {
     // `create` on an occupied path must fail; on a fresh path it must work.
     // `.err().expect()`: see note above — the Ok type is a non-`Debug`
     // UniFFI object.
+    // While `shard` holds the path, its directory lock refuses `create` first.
+    let err = EdgeShard::create(path_string.clone(), make_config())
+        .err()
+        .expect("create over a held shard must fail");
+    assert!(matches!(err, EdgeError::ShardLocked), "got {err:?}");
+    // Once it is released, the existing segments refuse it.
+    shard.unload().expect("unload failed");
+    drop(shard);
     let err = EdgeShard::create(path_string, make_config())
         .err()
         .expect("create over an existing shard must fail");
-    assert!(matches!(err, EdgeError::OperationError { .. }));
+    assert!(matches!(err, EdgeError::OperationError { .. }), "got {err:?}");
 
     let dir2 = tempfile::tempdir().expect("tempdir failed");
     let fresh = EdgeShard::create(dir2.path().to_string_lossy().into_owned(), make_config())
@@ -5096,4 +5104,29 @@ fn load_of_empty_dir_without_config_is_operation_error_not_unreadable() {
         0,
         "load(None) left files behind",
     );
+}
+
+/// The engine locks the shard directory for WAL-less shards too, and the FFI
+/// reports a held directory as `ShardLocked`.
+#[test]
+fn second_load_of_wal_less_shard_reports_shard_locked() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().to_str().unwrap().to_string();
+    let mut config = make_config();
+    config.wal_enabled = Some(false);
+
+    let first = EdgeShard::create(path.clone(), config).expect("create");
+    upsert_three(&first);
+
+    let Err(err) = EdgeShard::load(path.clone(), None) else {
+        panic!("a second load of a live WAL-less shard must fail");
+    };
+    assert!(
+        matches!(err, EdgeError::ShardLocked),
+        "expected ShardLocked, got {err:?}",
+    );
+
+    first.unload().expect("unload");
+    let reopened = EdgeShard::load(path, None).expect("load after unload");
+    assert_eq!(reopened.info().expect("info").points_count, 3);
 }
