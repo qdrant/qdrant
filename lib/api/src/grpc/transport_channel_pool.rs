@@ -560,4 +560,59 @@ mod tests {
             "Internal error must retry once"
         );
     }
+
+    #[tokio::test]
+    async fn test_with_channel_timeout_request_path_normalizes_timeout() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let uri: Uri = format!("http://{addr}").parse().unwrap();
+
+        // Spawn a background task to accept incoming connections so channel creation succeeds
+        let server_handle = tokio::spawn(async move {
+            while let Ok((_stream, _)) = listener.accept().await {
+                // keep the stream alive
+            }
+        });
+
+        let pool = TransportChannelPool::default();
+        let invocations = Arc::new(AtomicUsize::new(0));
+        let invocations_clone = invocations.clone();
+
+        let result: Result<(), _> = pool
+            .with_channel_timeout(
+                &uri,
+                move |_channel| {
+                    invocations_clone.fetch_add(1, Ordering::SeqCst);
+                    async move { Err(Status::cancelled("Timeout expired")) }
+                },
+                Some(Duration::from_secs(5)),
+                3,
+            )
+            .await;
+
+        server_handle.abort();
+
+        // 1. Assert precise normalized error: Code::DeadlineExceeded with "Timeout expired"
+        match result {
+            Err(RequestError::FromClosure(status)) => {
+                assert_eq!(status.code(), Code::DeadlineExceeded);
+                assert_eq!(status.message(), "Timeout expired");
+            }
+            other => {
+                panic!("Expected RequestError::FromClosure with DeadlineExceeded, got {other:?}")
+            }
+        }
+
+        // 2. Assert that closure was invoked exactly once (no retries)
+        assert_eq!(
+            invocations.load(Ordering::SeqCst),
+            1,
+            "Closure must be called exactly once because normalized timeout fails immediately"
+        );
+    }
 }

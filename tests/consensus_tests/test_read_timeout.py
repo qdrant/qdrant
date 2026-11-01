@@ -7,6 +7,7 @@ from .assertions import assert_http_ok
 from .fixtures import create_collection, upsert_points
 from .utils import (
     processes,
+    skip_if_no_feature,
     start_cluster,
     wait_collection_exists_and_active_on_all_peers,
 )
@@ -253,20 +254,24 @@ def test_single_peer_search_and_scroll_timeout(tmp_path: pathlib.Path):
     ]
     assert_http_ok(upsert_points(peer_api_uris[0], points, collection_name=COLLECTION_NAME))
 
-    # Test single-peer search timeout via staging delay if available
+    # The debug delay operation requires the server to be compiled with the 'staging' feature
+    skip_if_no_feature(peer_api_uris[0], "staging")
+
+    # Configure single-peer search timeout via staging debug delay
     delay_resp = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/debug",
         json={"delay": {"duration_sec": 3.0}},
     )
-    if delay_resp.ok:
-        search_resp = requests.post(
-            f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search?timeout=1",
-            json={"vector": [0.1, 0.2, 0.3, 0.4], "limit": 5},
-            timeout=10,
-        )
-        assert search_resp.status_code == 408, f"Expected 408, got {search_resp.status_code}: {search_resp.text}"
-        error_msg = search_resp.json()["status"]["error"]
-        assert "timed out" in error_msg.lower() or "deadline exceeded" in error_msg.lower()
+    assert_http_ok(delay_resp)
+
+    search_resp = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/points/search?timeout=1",
+        json={"vector": [0.1, 0.2, 0.3, 0.4], "limit": 5},
+        timeout=10,
+    )
+    assert search_resp.status_code == 408, f"Expected 408, got {search_resp.status_code}: {search_resp.text}"
+    error_msg = search_resp.json()["status"]["error"]
+    assert "timed out" in error_msg.lower() or "deadline exceeded" in error_msg.lower()
 
 
 def test_unrelated_rpc_negative_control(tmp_path: pathlib.Path):
