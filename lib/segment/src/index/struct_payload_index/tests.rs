@@ -690,14 +690,14 @@ fn materialized_conditions_match_per_point_checks() {
     let num_points = 6600u64;
     // `narrow = "n7"` holds 66 points, `small = "s"` holds 200: small enough to be
     // materialized for 66 checks with the in-RAM ratio. Both match 2607 and 5907.
-    let matches = |i: u64| i % 100 == 7 && i % 33 == 0;
+    let matches = |i: u64| i % 100 == 7 && i.is_multiple_of(33);
 
     let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
     for i in 0..num_points {
         segment
             .upsert_point(0, i.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
-        let small_value = if i % 33 == 0 { "s" } else { "t" };
+        let small_value = if i.is_multiple_of(33) { "s" } else { "t" };
         let payload: Payload = serde_json::from_value(serde_json::json!({
             "narrow": format!("n{}", i % 100),
             "small": small_value,
