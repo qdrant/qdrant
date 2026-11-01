@@ -2316,6 +2316,7 @@ dependencies = [
  "common",
  "core_affinity",
  "fs-err",
+ "fs4 1.1.0",
  "futures",
  "itertools 0.15.0",
  "log",

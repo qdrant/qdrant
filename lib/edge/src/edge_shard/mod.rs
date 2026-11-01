@@ -1,3 +1,4 @@
+mod dir_lock;
 mod optimize;
 #[cfg(feature = "serverless")]
 mod serverless;
@@ -29,6 +30,8 @@ use shard::wal::SerdeWal;
 use uuid::Uuid;
 use wal::WalOptions;
 
+use self::dir_lock::ShardDirLock;
+pub use self::dir_lock::is_shard_locked;
 use self::update_log::UpdateLog;
 use crate::config::optimizers::EdgeOptimizersConfig;
 use crate::config::shard::{EDGE_CONFIG_FILE, EdgeConfig};
@@ -49,27 +52,34 @@ pub struct EdgeShard {
     /// Fixed-size pool used to run per-segment reads in parallel. Sized from
     /// [`EdgeConfig::max_search_threads`].
     search_pool: Arc<rayon::ThreadPool>,
+    /// Exclusive lock on the shard directory, held for the shard's lifetime. Declared last so it
+    /// is released only after everything above is dropped.
+    _dir_lock: ShardDirLock,
 }
 
 impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
     ///
-    /// Creates `path` (and any missing parents) if it does not exist yet. Fails if the shard
-    /// already exists (i.e. the segments directory contains any segment).
+    /// Creates `path` (and any missing parents) if it does not exist yet. Fails if another handle
+    /// holds the directory ([`is_shard_locked`]), or if the shard already exists (i.e. the
+    /// segments directory contains any segment).
     /// Configuration is required and is persisted to `edge_config.json`. WAL
     /// behavior follows `config.wal_enabled` and `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        fs::create_dir_all(path).map_err(|err| {
+            OperationError::service_error(format!("failed to create edge shard directory: {err}"))
+        })?;
+        // Before the occupancy check: it normalizes segment directories, which deletes those a
+        // live handle may still be building.
+        let dir_lock = ShardDirLock::acquire(path)?;
+
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
                 "cannot create edge shard: path already contains segment data",
             ));
         }
-
-        fs::create_dir_all(path).map_err(|err| {
-            OperationError::service_error(format!("failed to create edge shard directory: {err}"))
-        })?;
 
         let update_log = if config.wal_enabled() {
             // A new shard has no stored versions to number after.
@@ -106,6 +116,7 @@ impl EdgeShard {
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
             search_pool,
+            _dir_lock: dir_lock,
         })
     }
 
@@ -121,8 +132,8 @@ impl EdgeShard {
     /// provided (non-empty), they are validated for compatibility against the loaded segments;
     /// if not, they are taken from the persisted config or the segments themselves.
     ///
-    /// Fails if `path` is not an existing directory, or if no segments exist and no config can be
-    /// loaded or inferred.
+    /// Fails if `path` is not an existing directory, if another handle holds it
+    /// ([`is_shard_locked`]), or if no segments exist and no config can be loaded or inferred.
     ///
     /// WAL operations not yet persisted by the segments, e.g. those left by a crash, are re-applied
     /// before the shard is returned. With the WAL disabled, an existing WAL (e.g. from a restored
@@ -155,6 +166,10 @@ impl EdgeShard {
         if resolved.is_none() && !path.join(SEGMENTS_PATH).exists() {
             return Err(OperationError::service_error(NO_CONFIG_AND_NO_SEGMENTS));
         }
+
+        // Before `segments/` is created, read or normalized: see `dir_lock`. Only the config file
+        // has been read so far.
+        let dir_lock = ShardDirLock::acquire(path)?;
 
         let segments_path = ensure_segments_dir(path)?;
         let (mut segments, derived) = load_segments(&segments_path).map_err(mark_unreadable)?;
@@ -225,6 +240,7 @@ impl EdgeShard {
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
             search_pool,
+            _dir_lock: dir_lock,
         };
 
         shard.replay_wal()?;
