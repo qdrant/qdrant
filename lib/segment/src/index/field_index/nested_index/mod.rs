@@ -544,8 +544,8 @@ impl PayloadFieldIndex for NestedFieldIndex {
 }
 
 impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex<I, M> {
-    fn is_on_disk(&self) -> bool {
-        self.inner.is_on_disk()
+    fn checks_read_disk(&self) -> bool {
+        self.inner.checks_read_disk()
     }
 
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {

@@ -13,18 +13,12 @@ use crate::index::query_estimator::{
     invert_estimation,
 };
 use crate::index::query_optimization::bits_checker::BitsConditionChecker;
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, FieldCondition, Filter, MinShould};
 use crate::vector_storage::VectorStorageRead;
-
-/// Largest posting list, relative to the expected number of checks, worth reading into
-/// a bitset for an on-disk index (a check is a random read when the page cache is cold).
-const DISK_POSTING_TO_CHECKS_RATIO: usize = 64;
-
-/// Same as [`DISK_POSTING_TO_CHECKS_RATIO`], for an index held in RAM.
-const RAM_POSTING_TO_CHECKS_RATIO: usize = 4;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
 where
@@ -49,8 +43,8 @@ where
     /// * `payload_provider` - provides the payload storage
     /// * `total` - total number of points in segment (used for cardinality estimation)
     /// * `expected_checks` - how many points the caller will check against the result,
-    ///   if known. A field condition whose posting list is small relative to that is read
-    ///   into a bitset up front instead of being checked through its index point by point.
+    ///   and how, if known. A field condition whose posting list is small relative to
+    ///   that is read into a bitset up front instead of being checked point by point.
     ///
     /// # Result
     ///
@@ -61,7 +55,7 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        expected_checks: Option<ExpectedChecks>,
     ) -> OperationResult<(OptimizedFilter<'b>, CardinalityEstimation)> {
         let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
         let Filter {
@@ -130,7 +124,7 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        expected_checks: Option<ExpectedChecks>,
     ) -> OperationResult<Vec<(ConditionCheckerEnum<'b>, CardinalityEstimation)>> {
         conditions
             .iter()
@@ -179,7 +173,7 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        expected_checks: Option<ExpectedChecks>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         if conditions.is_empty() {
             // Empty `should` => match every point.
@@ -207,7 +201,7 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        expected_checks: Option<ExpectedChecks>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         let mut converted = self.convert_conditions(
             conditions,
@@ -237,7 +231,7 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        expected_checks: Option<ExpectedChecks>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         let mut converted = self.convert_conditions(
             conditions,
@@ -259,7 +253,7 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        expected_checks: Option<ExpectedChecks>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         let mut converted = self.convert_conditions(
             conditions,
@@ -285,17 +279,13 @@ where
     }
 
     /// Read the posting list of `condition` into a bitset, if that is cheaper than
-    /// checking `expected_checks` points through the index one by one.
-    ///
-    /// A posting entry is 4 sequential bytes, while a per-point check is a lookup that,
-    /// on an on-disk index with a cold page cache, is a random read. So reading a posting
-    /// list pays off up to [`DISK_POSTING_TO_CHECKS_RATIO`] times the number of checks for
-    /// an on-disk index, and up to [`RAM_POSTING_TO_CHECKS_RATIO`] times for an in-RAM one.
+    /// checking the expected points through the index one by one
+    /// (see [`ExpectedChecks::max_posting_len`]).
     fn materialize(
         &self,
         condition: &FieldCondition,
         estimation: &CardinalityEstimation,
-        expected_checks: usize,
+        expected_checks: ExpectedChecks,
     ) -> OperationResult<Option<BitsConditionChecker>> {
         if !reads_posting_list(condition) {
             return Ok(None);
@@ -304,12 +294,7 @@ where
             return Ok(None);
         };
         for index in indexes {
-            let ratio = if index.is_on_disk() {
-                DISK_POSTING_TO_CHECKS_RATIO
-            } else {
-                RAM_POSTING_TO_CHECKS_RATIO
-            };
-            if estimation.exp > expected_checks.saturating_mul(ratio) {
+            if estimation.exp > expected_checks.max_posting_len(index.checks_read_disk()) {
                 continue;
             }
             if let Some(points) = index.filter(condition)? {

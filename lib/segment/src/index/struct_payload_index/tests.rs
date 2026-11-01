@@ -682,6 +682,8 @@ fn materialized_conditions_match_per_point_checks() {
     use common::condition_checker::ConditionChecker;
     use common::types::DeferredBehavior;
 
+    use crate::index::query_optimization::expected_checks::ExpectedChecks;
+
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let _scope = ambient::test_guard();
 
@@ -739,7 +741,11 @@ fn materialized_conditions_match_per_point_checks() {
             .optimized_filter(&filter, DeferredBehavior::VisibleOnly, None)
             .unwrap();
         let materialized = view
-            .optimized_filter(&filter, DeferredBehavior::VisibleOnly, Some(66))
+            .optimized_filter(
+                &filter,
+                DeferredBehavior::VisibleOnly,
+                Some(ExpectedChecks::plain(66)),
+            )
             .unwrap();
         for point in 0..num_points as u32 {
             assert_eq!(

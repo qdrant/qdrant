@@ -7,6 +7,7 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexRead, PrimaryCondition, ResolvedHasId,
 };
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::json_path::JsonPath;
@@ -90,7 +91,7 @@ where
         &'q self,
         filter: &'q Filter,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        expected_checks: Option<ExpectedChecks>,
     ) -> OperationResult<OptimizedFilter<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 

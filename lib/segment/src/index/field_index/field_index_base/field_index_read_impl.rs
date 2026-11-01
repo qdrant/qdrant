@@ -19,6 +19,7 @@ use crate::index::field_index::geo_index::GeoIndexRead;
 use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
+use crate::index::field_index::residency::mostly_resident;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
@@ -149,11 +150,11 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
-    fn is_on_disk(&self) -> bool {
+    fn checks_read_disk(&self) -> bool {
         match self.get_storage_type() {
             StorageType::Mmap {
                 layout: ImmutableLayout::Mmap,
-            } => true,
+            } => !mostly_resident(&self.files()),
             StorageType::Mmap {
                 layout: ImmutableLayout::Heap,
             }
