@@ -1,6 +1,7 @@
 import pytest
 import requests
 import struct
+import uuid
 
 from .helpers.collection_setup import drop_collection
 from .helpers.settings import QDRANT_HOST
@@ -34,12 +35,15 @@ def create_test_collection(name: str):
     assert resp.ok, f"Failed to create collection: {resp.text}"
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def collection_name():
-    name = "test_rest_float_precision"
+    """Isolated, function-scoped test collection with a unique name to avoid cross-worker collisions."""
+    name = f"test_rest_float_{uuid.uuid4().hex[:12]}"
     create_test_collection(name)
-    yield name
-    drop_collection(name)
+    try:
+        yield name
+    finally:
+        drop_collection(name)
 
 
 def test_case_a_float_payload_roundtrip(collection_name):
@@ -78,9 +82,9 @@ def test_case_a_float_payload_roundtrip(collection_name):
     assert "2251799813685247.25" not in get_resp.text
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def adjacent_points(collection_name):
-    """Upsert points 10 and 11 with adjacent float values."""
+    """Explicitly upsert points 10 and 11 with adjacent float values into the test's isolated collection."""
     raw_upsert = """
     {
         "points": [
@@ -260,34 +264,64 @@ def test_case_e_float_payload_integer_bound(collection_name, adjacent_points):
     assert points[0]["id"] == 11
 
 
-@pytest.fixture
-def indexed_collection():
-    name = "test_rest_float_precision_indexed"
-    create_test_collection(name)
-    raw_upsert = """
+def test_case_f_unindexed_degenerate_range(collection_name, adjacent_points):
+    """Case F: Unindexed range filter across adjacent points."""
+    query_unindexed = """
     {
-        "points": [
-            {
-                "id": 10,
-                "vector": [0.1, 0.2, 0.3, 0.4],
-                "payload": {"val": 2251799813685246.0}
-            },
-            {
-                "id": 11,
-                "vector": [0.1, 0.2, 0.3, 0.4],
-                "payload": {"val": 2251799813685247.0}
-            }
-        ]
+        "limit": 10,
+        "filter": {
+            "must": [
+                {
+                    "key": "val",
+                    "range": {
+                        "gte": 2251799813685246.0,
+                        "lte": 2251799813685247.0
+                    }
+                }
+            ]
+        }
     }
     """
-    resp = raw_put(f"/collections/{name}/points?wait=true", raw_upsert)
-    assert resp.ok, resp.text
-    yield name
-    drop_collection(name)
+    resp_unindexed = raw_post(
+        f"/collections/{collection_name}/points/scroll", query_unindexed
+    )
+    assert resp_unindexed.ok, resp_unindexed.text
+    pts_unindexed = resp_unindexed.json()["result"]["points"]
+    assert len(pts_unindexed) == 2
+    assert sorted([p["id"] for p in pts_unindexed]) == [10, 11]
+
+
+@pytest.fixture
+def indexed_collection():
+    """Independent collection dedicated to indexed operations, preventing any contamination of unindexed tests."""
+    name = f"test_rest_float_indexed_{uuid.uuid4().hex[:12]}"
+    create_test_collection(name)
+    try:
+        raw_upsert = """
+        {
+            "points": [
+                {
+                    "id": 10,
+                    "vector": [0.1, 0.2, 0.3, 0.4],
+                    "payload": {"val": 2251799813685246.0}
+                },
+                {
+                    "id": 11,
+                    "vector": [0.1, 0.2, 0.3, 0.4],
+                    "payload": {"val": 2251799813685247.0}
+                }
+            ]
+        }
+        """
+        resp = raw_put(f"/collections/{name}/points?wait=true", raw_upsert)
+        assert resp.ok, resp.text
+        yield name
+    finally:
+        drop_collection(name)
 
 
 def test_case_f_and_g_indexed_vs_unindexed(indexed_collection):
-    """Case F & G: Compare query results before and after creating numeric float index."""
+    """Case F & G: Compare query results before and after creating numeric float index on dedicated collection."""
     query_unindexed = """
     {
         "limit": 10,
@@ -460,3 +494,194 @@ def test_case_i_and_j_various_magnitudes(collection_name):
         pts = resp_scroll.json()["result"]["points"]
         assert len(pts) == 1, f"Failed degenerate range for {c_lit}: got {pts}"
         assert pts[0]["id"] == cid
+
+
+def test_case_k_negative_zero(collection_name):
+    """Case K: Negative zero (-0.0) representation and range query parity."""
+    raw_upsert = """
+    {
+        "points": [
+            {
+                "id": 60,
+                "vector": [0.1, 0.2, 0.3, 0.4],
+                "payload": {"val": -0.0}
+            }
+        ]
+    }
+    """
+    resp = raw_put(f"/collections/{collection_name}/points?wait=true", raw_upsert)
+    assert resp.ok, resp.text
+
+    # Read back point
+    p60 = raw_get(f"/collections/{collection_name}/points/60").json()["result"]["payload"]["val"]
+    # In IEEE-754, -0.0 == 0.0
+    assert p60 == 0.0
+
+    # Range query with -0.0 bounds
+    query_neg = """
+    {
+        "limit": 10,
+        "filter": {
+            "must": [
+                {
+                    "key": "val",
+                    "range": {
+                        "gte": -0.0,
+                        "lte": -0.0
+                    }
+                }
+            ]
+        }
+    }
+    """
+    resp_neg = raw_post(f"/collections/{collection_name}/points/scroll", query_neg)
+    assert resp_neg.ok, resp_neg.text
+    pts_neg = resp_neg.json()["result"]["points"]
+    assert len(pts_neg) == 1
+    assert pts_neg[0]["id"] == 60
+
+    # Range query with 0.0 bounds
+    query_pos = """
+    {
+        "limit": 10,
+        "filter": {
+            "must": [
+                {
+                    "key": "val",
+                    "range": {
+                        "gte": 0.0,
+                        "lte": 0.0
+                    }
+                }
+            ]
+        }
+    }
+    """
+    resp_pos = raw_post(f"/collections/{collection_name}/points/scroll", query_pos)
+    assert resp_pos.ok, resp_pos.text
+    pts_pos = resp_pos.json()["result"]["points"]
+    assert len(pts_pos) == 1
+    assert pts_pos[0]["id"] == 60
+
+
+def test_case_l_exponent_ranges_and_subnormals(collection_name):
+    """Case L: Extreme exponent ranges, large floats, and subnormal precision."""
+    cases = [
+        (70, 1e100, "1e100"),
+        (71, 1e-100, "1e-100"),
+        (72, 2.2250738585072014e-308, "2.2250738585072014e-308"),
+        (73, 5e-324, "5e-324"),
+    ]
+    points_json = ", ".join(
+        f'{{"id": {cid}, "vector": [0.1, 0.2, 0.3, 0.4], "payload": {{"exp": {c_lit}}}}}'
+        for cid, _, c_lit in cases
+    )
+    raw_upsert = f'{{"points": [{points_json}]}}'
+    resp = raw_put(f"/collections/{collection_name}/points?wait=true", raw_upsert)
+    assert resp.ok, resp.text
+
+    for cid, c_val, c_lit in cases:
+        get_resp = raw_get(f"/collections/{collection_name}/points/{cid}")
+        assert get_resp.ok
+        val = get_resp.json()["result"]["payload"]["exp"]
+        assert float_to_bits(val) == float_to_bits(c_val), f"Mismatch for {c_lit}"
+
+        scroll_body = f"""
+        {{
+            "limit": 10,
+            "filter": {{
+                "must": [
+                    {{
+                        "key": "exp",
+                        "range": {{
+                            "gte": {c_lit},
+                            "lte": {c_lit}
+                        }}
+                    }}
+                ]
+            }}
+        }}
+        """
+        resp_scroll = raw_post(f"/collections/{collection_name}/points/scroll", scroll_body)
+        assert resp_scroll.ok
+        pts = resp_scroll.json()["result"]["points"]
+        assert len(pts) == 1, f"Failed range for {c_lit}: got {pts}"
+        assert pts[0]["id"] == cid
+
+
+def test_case_m_adjacent_representable_epsilon(collection_name):
+    """Case M: Adjacent representable floats separated by 1 ULP (1.0 vs 1.0 + EPSILON)."""
+    val1 = 1.0
+    val2 = 1.0 + 2.220446049250313e-16  # 1.0000000000000002
+    assert float_to_bits(val2) == float_to_bits(val1) + 1
+
+    raw_upsert = """
+    {
+        "points": [
+            {
+                "id": 80,
+                "vector": [0.1, 0.2, 0.3, 0.4],
+                "payload": {"v": 1.0}
+            },
+            {
+                "id": 81,
+                "vector": [0.1, 0.2, 0.3, 0.4],
+                "payload": {"v": 1.0000000000000002}
+            }
+        ]
+    }
+    """
+    resp = raw_put(f"/collections/{collection_name}/points?wait=true", raw_upsert)
+    assert resp.ok, resp.text
+
+    p80 = raw_get(f"/collections/{collection_name}/points/80").json()["result"]["payload"]["v"]
+    p81 = raw_get(f"/collections/{collection_name}/points/81").json()["result"]["payload"]["v"]
+    assert float_to_bits(p80) == float_to_bits(val1)
+    assert float_to_bits(p81) == float_to_bits(val2)
+    assert float_to_bits(p80) != float_to_bits(p81)
+
+    # Degenerate range for 1.0 must return ONLY point 80
+    scroll_80 = """
+    {
+        "limit": 10,
+        "filter": {
+            "must": [
+                {
+                    "key": "v",
+                    "range": {
+                        "gte": 1.0,
+                        "lte": 1.0
+                    }
+                }
+            ]
+        }
+    }
+    """
+    resp_80 = raw_post(f"/collections/{collection_name}/points/scroll", scroll_80)
+    assert resp_80.ok
+    pts_80 = resp_80.json()["result"]["points"]
+    assert len(pts_80) == 1
+    assert pts_80[0]["id"] == 80
+
+    # Degenerate range for 1.0000000000000002 must return ONLY point 81
+    scroll_81 = """
+    {
+        "limit": 10,
+        "filter": {
+            "must": [
+                {
+                    "key": "v",
+                    "range": {
+                        "gte": 1.0000000000000002,
+                        "lte": 1.0000000000000002
+                    }
+                }
+            ]
+        }
+    }
+    """
+    resp_81 = raw_post(f"/collections/{collection_name}/points/scroll", scroll_81)
+    assert resp_81.ok
+    pts_81 = resp_81.json()["result"]["points"]
+    assert len(pts_81) == 1
+    assert pts_81[0]["id"] == 81

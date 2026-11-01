@@ -705,5 +705,36 @@ mod tests {
             !cond_9007.check(&p_9007_0),
             "9007199254740990.0 must NOT match range for 9007199254740991.0"
         );
+
+        // Test negative zero matching
+        let cond_zero_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 0.0,
+                "lte": 0.0
+            }
+        }"#;
+        let cond_zero: FieldCondition = serde_json::from_str(cond_zero_json).unwrap();
+        let p_neg_zero: serde_json::Value = serde_json::from_str("-0.0").unwrap();
+        let p_pos_zero: serde_json::Value = serde_json::from_str("0.0").unwrap();
+        assert!(cond_zero.check(&p_neg_zero), "-0.0 must match [0.0, 0.0]");
+        assert!(cond_zero.check(&p_pos_zero), "0.0 must match [0.0, 0.0]");
+
+        // Test 1 ULP adjacent matching around 1.0
+        let cond_one_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 1.0,
+                "lte": 1.0
+            }
+        }"#;
+        let cond_one: FieldCondition = serde_json::from_str(cond_one_json).unwrap();
+        let p_one: serde_json::Value = serde_json::from_str("1.0").unwrap();
+        let p_one_plus_eps: serde_json::Value = serde_json::from_str("1.0000000000000002").unwrap();
+        assert!(cond_one.check(&p_one), "1.0 must match its range");
+        assert!(
+            !cond_one.check(&p_one_plus_eps),
+            "1.0 + EPSILON must NOT match [1.0, 1.0]"
+        );
     }
 }
