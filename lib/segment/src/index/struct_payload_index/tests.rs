@@ -673,3 +673,85 @@ fn test_build_field_index_without_journal() {
         .unwrap();
     assert!(!has_journal(&segment, &second));
 }
+
+/// A secondary condition read into a bitset (`expected_checks` given) must accept
+/// exactly the points the per-point index check accepts, and the plain path built
+/// on it must return exactly the brute-force matches.
+#[test]
+fn materialized_conditions_match_per_point_checks() {
+    use common::condition_checker::ConditionChecker;
+    use common::types::DeferredBehavior;
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let narrow = JsonPath::from_str("narrow").unwrap();
+    let small = JsonPath::from_str("small").unwrap();
+    let num_points = 6600u64;
+    // `narrow = "n7"` holds 66 points, `small = "s"` holds 200: small enough to be
+    // materialized for 66 checks with the in-RAM ratio. Both match 2607 and 5907.
+    let matches = |i: u64| i % 100 == 7 && i % 33 == 0;
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for i in 0..num_points {
+        segment
+            .upsert_point(0, i.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let small_value = if i % 33 == 0 { "s" } else { "t" };
+        let payload: Payload = serde_json::from_value(serde_json::json!({
+            "narrow": format!("n{}", i % 100),
+            "small": small_value,
+        }))
+        .unwrap();
+        segment.set_full_payload(0, i.into(), &payload).unwrap();
+    }
+    for key in [&narrow, &small] {
+        segment
+            .create_field_index(
+                0,
+                key,
+                Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+            )
+            .unwrap();
+    }
+
+    let filter = Filter {
+        should: None,
+        min_should: None,
+        must: Some(vec![
+            Condition::Field(FieldCondition::new_match(
+                narrow.clone(),
+                Match::new_value(ValueVariants::String("n7".to_string())),
+            )),
+            Condition::Field(FieldCondition::new_match(
+                small.clone(),
+                Match::new_value(ValueVariants::String("s".to_string())),
+            )),
+        ]),
+        must_not: None,
+    };
+
+    let expected: Vec<u64> = (0..num_points).filter(|&i| matches(i)).collect();
+    assert!(!expected.is_empty());
+
+    segment.payload_index.borrow().with_view(|view| {
+        let per_point = view
+            .optimized_filter(&filter, DeferredBehavior::VisibleOnly, None)
+            .unwrap();
+        let materialized = view
+            .optimized_filter(&filter, DeferredBehavior::VisibleOnly, Some(66))
+            .unwrap();
+        for point in 0..num_points as u32 {
+            assert_eq!(
+                per_point.check(point).unwrap(),
+                materialized.check(point).unwrap(),
+                "point {point}",
+            );
+        }
+
+        let mut hits = view.query_points(&filter, &AtomicBool::new(false)).unwrap();
+        hits.sort_unstable();
+        let hits: Vec<u64> = hits.into_iter().map(u64::from).collect();
+        assert_eq!(hits, expected);
+    });
+}
