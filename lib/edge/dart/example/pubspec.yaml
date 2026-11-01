@@ -1,0 +1,8 @@
+name: qdrant_edge_example
+description: Minimal Qdrant Edge Dart example.
+publish_to: none
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+dependencies:
+  qdrant_edge:
+    path: ../
