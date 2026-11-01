@@ -248,18 +248,18 @@ where
                 if parsed.satisfies_kind(self.entry_kind) {
                     f(entry.user_data, Some(parsed))?;
                 } else {
-                    let expected_len = match parsed.values_len() {
+                    let expected_len = match parsed {
                         // The length is known: fetch the rest of the entry in one read.
-                        // The values start at most `size_of::<V>() - 1` padding bytes
-                        // after the buffer end.
-                        Some(values_len) => {
-                            buf.len() as u64
-                                + (size_of::<V>() as u64).saturating_sub(1)
-                                + u64::from(values_len) * size_of::<V>() as u64
-                        }
+                        MaybeIncompleteEntry::KeyAndValuesLen {
+                            key: _,
+                            values_len: _,
+                            entry_len,
+                        } => entry_len as u64,
                         // `+ 1` so the size strictly grows when `buf.len()` is already a
                         // power of two; otherwise the next refill reads 0 bytes and loops.
-                        None => (buf.len() as u64 + 1)
+                        MaybeIncompleteEntry::None
+                        | MaybeIncompleteEntry::Key(_)
+                        | MaybeIncompleteEntry::KeyAndValues(..) => (buf.len() as u64 + 1)
                             .next_power_of_two()
                             .max(K::KEY_SIZE_EST as u64),
                     };
