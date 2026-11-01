@@ -305,6 +305,25 @@ where
         }
     }
 
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&N) -> bool,
+        M: FnMut(U, bool),
+    {
+        match self {
+            MapIndex::Mutable(index) => index.for_each_matching_value(items, check_fn, on_match),
+            MapIndex::Immutable(index) => index.for_each_matching_value(items, check_fn, on_match),
+            MapIndex::OnDisk(index) => index.for_each_matching_value(items, check_fn, on_match),
+        }
+    }
+
     fn get_values(&'a self, idx: PointOffsetType) -> Option<impl Iterator<Item = Cow<'a, N>> + 'a> {
         let boxed: Box<dyn Iterator<Item = Cow<'a, N>> + 'a> = match self {
             MapIndex::Mutable(index) => Box::new(index.get_values(idx)?),

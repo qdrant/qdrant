@@ -9,6 +9,7 @@ use std::ops::Bound;
 
 use blobstore::Blob;
 use common::types::PointOffsetType;
+use common::universal_io::UserData;
 
 use super::super::Encodable;
 use super::super::numeric_index_read::NumericIndexRead;
@@ -33,6 +34,31 @@ where
             NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
             NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
             NumericIndexInner::OnDisk(index) => index.check_values_any(idx, check_fn),
+        }
+    }
+
+    fn for_each_matching_value<I, F, M, U>(
+        &self,
+        items: I,
+        check_fn: F,
+        on_match: M,
+    ) -> OperationResult<()>
+    where
+        U: UserData,
+        I: Iterator<Item = (U, PointOffsetType)>,
+        F: Fn(&T) -> bool,
+        M: FnMut(U, bool),
+    {
+        match self {
+            NumericIndexInner::Mutable(index) => {
+                index.for_each_matching_value(items, check_fn, on_match)
+            }
+            NumericIndexInner::Immutable(index) => {
+                index.for_each_matching_value(items, check_fn, on_match)
+            }
+            NumericIndexInner::OnDisk(index) => {
+                index.for_each_matching_value(items, check_fn, on_match)
+            }
         }
     }
 
