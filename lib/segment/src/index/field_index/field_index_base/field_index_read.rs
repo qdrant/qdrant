@@ -44,9 +44,10 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// materializes on demand.
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry>;
 
-    /// Whether per-point checks read the index's mmap files rather than heap memory,
-    /// so that on a cold page cache every check can be a disk read.
-    fn is_on_disk(&self) -> bool;
+    /// Whether per-point checks are expected to read from disk right now: the index
+    /// reads its mmap files rather than heap memory, and those files are not mostly
+    /// in the page cache. The residency part is refreshed at most once per second.
+    fn checks_read_disk(&self) -> bool;
 
     /// Number of values for `point_id`.
     fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize>;

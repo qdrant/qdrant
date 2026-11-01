@@ -176,9 +176,9 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
 }
 
 impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
-    fn is_on_disk(&self) -> bool {
+    fn checks_read_disk(&self) -> bool {
         // Read-only indexes always read through their storage files.
-        true
+        !crate::index::field_index::residency::mostly_resident(&self.files())
     }
 
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {

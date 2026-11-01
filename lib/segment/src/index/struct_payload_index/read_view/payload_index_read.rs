@@ -20,6 +20,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
 };
 use crate::index::query_estimator::estimate_filter;
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
@@ -197,7 +198,7 @@ where
             let optimized_filter = self.optimized_filter(
                 filter,
                 deferred_behavior,
-                Some(self.available_point_count()),
+                Some(ExpectedChecks::plain(self.available_point_count())),
             )?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
@@ -249,8 +250,11 @@ where
                     // Some conditions are primary clauses, some are not
                     // Every candidate of the primary clauses is checked once.
                     let expected_checks = self.primary_candidates(query_cardinality)?;
-                    let optimized_filter =
-                        self.optimized_filter(filter, deferred_behavior, Some(expected_checks))?;
+                    let optimized_filter = self.optimized_filter(
+                        filter,
+                        deferred_behavior,
+                        Some(ExpectedChecks::plain(expected_checks)),
+                    )?;
                     let iter = check_in_batches(
                         joined_primary_iterator
                             .filter(move |&id| !visited_list.check_and_update_visited(id)),
@@ -265,7 +269,7 @@ where
             let optimized_filter = self.optimized_filter(
                 filter,
                 deferred_behavior,
-                Some(self.available_point_count()),
+                Some(ExpectedChecks::plain(self.available_point_count())),
             )?;
 
             let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
@@ -300,6 +304,14 @@ where
 
     fn filter_context<'b>(&'b self, filter: &'b Filter) -> OperationResult<OptimizedFilter<'b>> {
         self.optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
+    }
+
+    fn filter_context_for_checks<'b>(
+        &'b self,
+        filter: &'b Filter,
+        expected_checks: ExpectedChecks,
+    ) -> OperationResult<OptimizedFilter<'b>> {
+        self.optimized_filter(filter, DeferredBehavior::VisibleOnly, Some(expected_checks))
     }
 
     fn for_each_payload_block(

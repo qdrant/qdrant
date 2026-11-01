@@ -16,6 +16,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -71,6 +72,18 @@ pub trait PayloadIndexRead {
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize>;
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> OperationResult<OptimizedFilter<'a>>;
+
+    /// [`Self::filter_context`] for a consumer expected to check about `expected_checks`
+    /// points, so small conditions can be read into bitsets up front. Indexes that can't
+    /// use the hint return the plain filter context.
+    fn filter_context_for_checks<'a>(
+        &'a self,
+        filter: &'a Filter,
+        expected_checks: ExpectedChecks,
+    ) -> OperationResult<OptimizedFilter<'a>> {
+        let _ = expected_checks;
+        self.filter_context(filter)
+    }
 
     /// Look up a numeric index for the given payload key, if one exists.
     ///
