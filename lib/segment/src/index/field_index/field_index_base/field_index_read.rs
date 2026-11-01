@@ -51,6 +51,11 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// [`Memory::Cold`]: crate::types::Memory::Cold
     fn is_cold(&self) -> bool;
 
+    /// Whether per-point checks are expected to read from disk right now: the index is
+    /// cold (`memory: cold`) and its files are not mostly in the page cache. The
+    /// residency part is refreshed at most once per second.
+    fn checks_read_disk(&self) -> bool;
+
     /// Number of values for `point_id`.
     fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize>;
 

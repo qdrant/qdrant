@@ -22,6 +22,7 @@ pub mod null_index;
 pub mod numeric_index;
 mod numeric_point;
 mod on_disk_point_to_values;
+mod residency;
 pub mod schema_transition;
 mod stat_tools;
 #[cfg(test)]

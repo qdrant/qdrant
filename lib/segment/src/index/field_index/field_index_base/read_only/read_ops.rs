@@ -176,6 +176,10 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
 }
 
 impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
+    fn checks_read_disk(&self) -> bool {
+        self.is_cold() && !crate::index::field_index::residency::mostly_resident(&self.files())
+    }
+
     fn is_cold(&self) -> bool {
         match self {
             ReadOnlyFieldIndex::IntMapIndex(index) => index.is_cold(),

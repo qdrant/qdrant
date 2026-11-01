@@ -9,21 +9,15 @@ use common::types::PointOffsetType;
 
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::types::{Condition, FieldCondition};
-
-/// Largest posting list, relative to the expected number of checks, worth reading up front
-/// for a cold index (`memory: cold`, a check is a random read when the page cache is cold).
-pub(super) const DISK_POSTING_TO_CHECKS_RATIO: usize = 64;
-
-/// Same as [`DISK_POSTING_TO_CHECKS_RATIO`], for an index held in RAM (cached or pinned).
-pub(super) const RAM_POSTING_TO_CHECKS_RATIO: usize = 4;
 
 /// What the caller of `optimize_filter` knows about how the filter will be used.
 #[derive(Debug, Clone, Copy)]
 pub struct MaterializationHint<'h> {
-    /// How many points the caller will check against the filter.
-    pub expected_checks: usize,
+    /// How many points the caller will check against the filter, and how.
+    pub expected_checks: ExpectedChecks,
     /// Estimation whose primary clauses produce the checked points, if any. Its primary
     /// conditions are never read up front: that would read their posting lists a second
     /// time just to confirm what the primary iterator already yielded.
@@ -39,7 +33,7 @@ impl MaterializationHint<'_> {
     pub(super) fn point_set_context(&self, total_points: usize) -> PointSetContext {
         PointSetContext {
             total_points,
-            expected_checks: self.expected_checks,
+            expected_checks: self.expected_checks.count,
         }
     }
 }

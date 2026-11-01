@@ -20,6 +20,7 @@ use crate::index::field_index::{
     CardinalityEstimation, FacetIndex, FieldIndexRead, PayloadBlockCondition,
 };
 use crate::index::query_estimator::estimate_filter;
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
@@ -200,7 +201,7 @@ where
                 filter,
                 deferred_behavior,
                 Some(MaterializationHint {
-                    expected_checks: self.available_point_count(),
+                    expected_checks: ExpectedChecks::plain(self.available_point_count()),
                     primary: None,
                 }),
             )?;
@@ -255,7 +256,9 @@ where
                     // Every candidate of the primary clauses is checked once. The primary
                     // conditions themselves are not read up front again.
                     let materialization = MaterializationHint {
-                        expected_checks: self.primary_candidates(query_cardinality)?,
+                        expected_checks: ExpectedChecks::plain(
+                            self.primary_candidates(query_cardinality)?,
+                        ),
                         primary: Some(query_cardinality),
                     };
                     let optimized_filter =
@@ -275,7 +278,7 @@ where
                 filter,
                 deferred_behavior,
                 Some(MaterializationHint {
-                    expected_checks: self.available_point_count(),
+                    expected_checks: ExpectedChecks::plain(self.available_point_count()),
                     primary: None,
                 }),
             )?;
@@ -312,6 +315,21 @@ where
 
     fn filter_context<'b>(&'b self, filter: &'b Filter) -> OperationResult<OptimizedFilter<'b>> {
         self.optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
+    }
+
+    fn filter_context_for_checks<'b>(
+        &'b self,
+        filter: &'b Filter,
+        expected_checks: ExpectedChecks,
+    ) -> OperationResult<OptimizedFilter<'b>> {
+        self.optimized_filter(
+            filter,
+            DeferredBehavior::VisibleOnly,
+            Some(MaterializationHint {
+                expected_checks,
+                primary: None,
+            }),
+        )
     }
 
     fn for_each_payload_block(

@@ -5,8 +5,7 @@ use itertools::Itertools;
 
 use super::StructPayloadIndexReadView;
 use super::materialization::{
-    ConvertedCondition, DISK_POSTING_TO_CHECKS_RATIO, MaterializationHint, PostingMerge,
-    RAM_POSTING_TO_CHECKS_RATIO, merge_postings, reads_posting_list,
+    ConvertedCondition, MaterializationHint, PostingMerge, merge_postings, reads_posting_list,
 };
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
@@ -16,6 +15,7 @@ use crate::index::query_estimator::{
     combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
     invert_estimation,
 };
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
@@ -349,18 +349,14 @@ where
         materialization.map(|hint| hint.point_set_context(self.id_tracker.total_point_count()))
     }
 
-    /// Read the posting list of `condition`, if that is cheaper than checking
-    /// `expected_checks` points through the index one by one.
-    ///
-    /// A posting entry is 4 sequential bytes, while a per-point check is a lookup that,
-    /// on a cold index (`memory: cold`), is a random disk read. So reading a posting
-    /// list pays off up to [`DISK_POSTING_TO_CHECKS_RATIO`] times the number of checks for
-    /// a cold index, and up to [`RAM_POSTING_TO_CHECKS_RATIO`] times for a cached or pinned one.
+    /// Read the posting list of `condition`, if that is cheaper than checking the
+    /// expected points through the index one by one
+    /// (see [`ExpectedChecks::max_posting_len`]).
     fn read_posting(
         &self,
         condition: &FieldCondition,
         estimation: &CardinalityEstimation,
-        expected_checks: usize,
+        expected_checks: ExpectedChecks,
     ) -> OperationResult<Option<Vec<PointOffsetType>>> {
         if !reads_posting_list(condition) {
             return Ok(None);
@@ -369,12 +365,7 @@ where
             return Ok(None);
         };
         for index in indexes {
-            let ratio = if index.is_cold() {
-                DISK_POSTING_TO_CHECKS_RATIO
-            } else {
-                RAM_POSTING_TO_CHECKS_RATIO
-            };
-            if estimation.exp > expected_checks.saturating_mul(ratio) {
+            if estimation.exp > expected_checks.max_posting_len(index.checks_read_disk()) {
                 continue;
             }
             if let Some(points) = index.filter(condition)? {

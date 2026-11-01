@@ -683,6 +683,7 @@ fn materialized_conditions_match_per_point_checks() {
     use common::condition_checker::ConditionChecker;
     use common::types::DeferredBehavior;
 
+    use crate::index::query_optimization::expected_checks::ExpectedChecks;
     use crate::index::struct_payload_index::MaterializationHint;
 
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
@@ -784,7 +785,7 @@ fn materialized_conditions_match_per_point_checks() {
                 .unwrap();
             for primary in [None, Some(&estimation)] {
                 let hint = MaterializationHint {
-                    expected_checks: 66,
+                    expected_checks: ExpectedChecks::plain(66),
                     primary,
                 };
                 let materialized = view

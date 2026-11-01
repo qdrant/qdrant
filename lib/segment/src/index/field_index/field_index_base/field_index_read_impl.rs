@@ -148,6 +148,10 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
+    fn checks_read_disk(&self) -> bool {
+        self.is_cold() && !crate::index::field_index::residency::mostly_resident(&self.files())
+    }
+
     fn is_cold(&self) -> bool {
         match self {
             FieldIndex::IntIndex(index) => index.is_cold(),
