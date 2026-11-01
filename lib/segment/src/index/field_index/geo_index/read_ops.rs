@@ -59,17 +59,12 @@ pub trait GeoIndexRead {
     ) -> OperationResult<bool>;
 
     /// Batched counterpart of [`Self::check_values_any`].
-    fn for_each_matching_value<I, F, M, U>(
+    fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        check_fn: F,
-        on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&GeoPoint) -> bool,
-        M: FnMut(U, bool);
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()>;
 
     fn values_count(&self, idx: PointOffsetType) -> usize;
 

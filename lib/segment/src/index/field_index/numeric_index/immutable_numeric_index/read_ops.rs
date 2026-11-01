@@ -48,18 +48,12 @@ where
         Ok(self.point_to_values.check_values_any(idx, |v| check_fn(v)))
     }
 
-    fn for_each_matching_value<I, F, M, U>(
+    fn for_each_matching_value<U: UserData>(
         &self,
-        items: I,
-        check_fn: F,
-        on_match: M,
-    ) -> OperationResult<()>
-    where
-        U: UserData,
-        I: Iterator<Item = (U, PointOffsetType)>,
-        F: Fn(&T) -> bool,
-        M: FnMut(U, bool),
-    {
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&T) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
         check_each_sequential(items, |idx| self.check_values_any(idx, &check_fn), on_match)
     }
 
