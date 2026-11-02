@@ -1007,117 +1007,6 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorageWrite> EncodedVector
     }
 }
 
-/// The score of two vectors from the number of their differing bits: the last step of
-/// [`EncodedVectorsBin::calculate_metric`], and of [`BinaryCombine`].
-#[inline(always)]
-fn xor_metric(params: &VectorParameters, xor_product: f32) -> f32 {
-    // Dot product in a range [-1; 1] is approximated by NXOR in a range [0; 1]
-    // L1 distance in range [-1; 1] (alpha=2) is approximated by alpha*XOR in a range [0; 1]
-    // L2 distance in range [-1; 1] (alpha=2) is approximated by alpha*sqrt(XOR) in a range [0; 1]
-    // For example:
-
-    // |  A   |  B   | Dot product | L1 | L2 |
-    // | -0.5 | -0.5 |  0.25       | 0  | 0  |
-    // | -0.5 |  0.5 | -0.25       | 1  | 1  |
-    // |  0.5 | -0.5 | -0.25       | 1  | 1  |
-    // |  0.5 |  0.5 |  0.25       | 0  | 0  |
-
-    // | A | B | NXOR | XOR
-    // | 0 | 0 | 1    | 0
-    // | 0 | 1 | 0    | 1
-    // | 1 | 0 | 0    | 1
-    // | 1 | 1 | 1    | 0
-
-    let dim = params.dim as f32;
-    let zeros_count = dim - xor_product;
-
-    let xor_first = match params.distance_type {
-        // So if `invert` is true we return XOR, otherwise we return (dim - XOR)
-        DistanceType::Dot | DistanceType::Cosine => params.invert,
-        // This also results in exact ordering as L1 and L2 but reversed.
-        DistanceType::L1 | DistanceType::L2 => !params.invert,
-    };
-    // One subtraction with the operands swapped, rather than one per case: the matrix kernels
-    // then branch once per block of pairs instead of blending both results per pair
-    if xor_first {
-        xor_product - zeros_count
-    } else {
-        zeros_count - xor_product
-    }
-}
-
-/// Binary quantized vectors as matrix operands: the stored bits, with no `aux`, combined by
-/// [`BinaryCombine`].
-///
-/// Covers every encoding: `score_internal` counts the differing bits over the whole stored
-/// vector, whether it holds one, one and a half, or two bits per dimension.
-pub struct BinaryOperands<'a, TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
-    vectors: &'a EncodedVectorsBin<TBitsStoreType, TStorage>,
-    depth: usize,
-}
-
-/// Combines the number of differing bits as `score_internal` does, through the same
-/// `xor_metric`.
-#[derive(Clone, Copy)]
-pub struct BinaryCombine(VectorParameters);
-
-impl Combine for BinaryCombine {
-    #[inline(always)]
-    fn score(self, dot: f32, _: f32, _: f32) -> f32 {
-        xor_metric(&self.0, dot)
-    }
-}
-
-impl<'a, TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
-    BinaryOperands<'a, TBitsStoreType, TStorage>
-{
-    pub fn new(vectors: &'a EncodedVectorsBin<TBitsStoreType, TStorage>) -> Self {
-        Self {
-            vectors,
-            depth: get_quantized_vector_size_from_params::<TBitsStoreType>(
-                vectors.metadata.vector_parameters.dim,
-                vectors.metadata.encoding,
-            ),
-        }
-    }
-}
-
-impl<TBitsStoreType, TStorage> MatrixOperands for BinaryOperands<'_, TBitsStoreType, TStorage>
-where
-    TBitsStoreType: BitsStoreType + Sync,
-    TStorage: EncodedStorage + Sync,
-{
-    type Elem = Bits;
-    type Combine = BinaryCombine;
-    type Error = std::io::Error;
-
-    /// Bytes per vector.
-    fn depth(&self) -> usize {
-        self.depth
-    }
-
-    fn combine(&self) -> BinaryCombine {
-        BinaryCombine(self.vectors.metadata.vector_parameters)
-    }
-
-    fn decode_batch(
-        &self,
-        ids: &[PointOffsetType],
-        out: &mut [Bits],
-        _aux: &mut [f32],
-    ) -> std::io::Result<()> {
-        let depth = self.depth;
-        self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {
-            for (o, &byte) in out[i * depth..(i + 1) * depth]
-                .iter_mut()
-                .zip(&data[..depth])
-            {
-                *o = Bits(byte);
-            }
-        })
-    }
-}
-
 #[cfg(target_arch = "x86_64")]
 unsafe extern "C" {
     fn impl_xor_popcnt_sse_uint128(query_ptr: *const u8, vector_ptr: *const u8, count: u32) -> u32;
@@ -1244,4 +1133,115 @@ unsafe fn impl_xor_popcnt_avx512_uint128(
     let high64 = _mm_extract_epi64(sum128, 1);
 
     (low64 + high64) as u32
+}
+
+/// The score of two vectors from the number of their differing bits: the last step of
+/// [`EncodedVectorsBin::calculate_metric`], and of [`BinaryCombine`].
+#[inline(always)]
+fn xor_metric(params: &VectorParameters, xor_product: f32) -> f32 {
+    // Dot product in a range [-1; 1] is approximated by NXOR in a range [0; 1]
+    // L1 distance in range [-1; 1] (alpha=2) is approximated by alpha*XOR in a range [0; 1]
+    // L2 distance in range [-1; 1] (alpha=2) is approximated by alpha*sqrt(XOR) in a range [0; 1]
+    // For example:
+
+    // |  A   |  B   | Dot product | L1 | L2 |
+    // | -0.5 | -0.5 |  0.25       | 0  | 0  |
+    // | -0.5 |  0.5 | -0.25       | 1  | 1  |
+    // |  0.5 | -0.5 | -0.25       | 1  | 1  |
+    // |  0.5 |  0.5 |  0.25       | 0  | 0  |
+
+    // | A | B | NXOR | XOR
+    // | 0 | 0 | 1    | 0
+    // | 0 | 1 | 0    | 1
+    // | 1 | 0 | 0    | 1
+    // | 1 | 1 | 1    | 0
+
+    let dim = params.dim as f32;
+    let zeros_count = dim - xor_product;
+
+    let xor_first = match params.distance_type {
+        // So if `invert` is true we return XOR, otherwise we return (dim - XOR)
+        DistanceType::Dot | DistanceType::Cosine => params.invert,
+        // This also results in exact ordering as L1 and L2 but reversed.
+        DistanceType::L1 | DistanceType::L2 => !params.invert,
+    };
+    // One subtraction with the operands swapped, rather than one per case: the matrix kernels
+    // then branch once per block of pairs instead of blending both results per pair
+    if xor_first {
+        xor_product - zeros_count
+    } else {
+        zeros_count - xor_product
+    }
+}
+
+/// Binary quantized vectors as matrix operands: the stored bits, with no `aux`, combined by
+/// [`BinaryCombine`].
+///
+/// Covers every encoding: `score_internal` counts the differing bits over the whole stored
+/// vector, whether it holds one, one and a half, or two bits per dimension.
+pub struct BinaryOperands<'a, TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> {
+    vectors: &'a EncodedVectorsBin<TBitsStoreType, TStorage>,
+    depth: usize,
+}
+
+/// Combines the number of differing bits as `score_internal` does, through the same
+/// `xor_metric`.
+#[derive(Clone, Copy)]
+pub struct BinaryCombine(VectorParameters);
+
+impl Combine for BinaryCombine {
+    #[inline(always)]
+    fn score(self, dot: f32, _: f32, _: f32) -> f32 {
+        xor_metric(&self.0, dot)
+    }
+}
+
+impl<'a, TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
+    BinaryOperands<'a, TBitsStoreType, TStorage>
+{
+    pub fn new(vectors: &'a EncodedVectorsBin<TBitsStoreType, TStorage>) -> Self {
+        Self {
+            vectors,
+            depth: get_quantized_vector_size_from_params::<TBitsStoreType>(
+                vectors.metadata.vector_parameters.dim,
+                vectors.metadata.encoding,
+            ),
+        }
+    }
+}
+
+impl<TBitsStoreType, TStorage> MatrixOperands for BinaryOperands<'_, TBitsStoreType, TStorage>
+where
+    TBitsStoreType: BitsStoreType + Sync,
+    TStorage: EncodedStorage + Sync,
+{
+    type Elem = Bits;
+    type Combine = BinaryCombine;
+    type Error = std::io::Error;
+
+    /// Bytes per vector.
+    fn depth(&self) -> usize {
+        self.depth
+    }
+
+    fn combine(&self) -> BinaryCombine {
+        BinaryCombine(self.vectors.metadata.vector_parameters)
+    }
+
+    fn decode_batch(
+        &self,
+        ids: &[PointOffsetType],
+        out: &mut [Bits],
+        _aux: &mut [f32],
+    ) -> std::io::Result<()> {
+        let depth = self.depth;
+        self.vectors.encoded_vectors.for_each_batch(ids, |i, data| {
+            for (o, &byte) in out[i * depth..(i + 1) * depth]
+                .iter_mut()
+                .zip(&data[..depth])
+            {
+                *o = Bits(byte);
+            }
+        })
+    }
 }
