@@ -1,5 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
+use common::progress_tracker::ProgressTracker;
+
 use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::HnswM;
 use crate::vector_storage::VectorStorageEnum;
@@ -11,11 +13,20 @@ pub(super) struct GraphBuildContext<'a> {
     pub id_tracker: &'a IdTrackerEnum,
     pub vector_storage: &'a VectorStorageEnum,
     pub quantized_vectors: Option<&'a QuantizedVectors>,
+    /// Progress of building this vector index. Builders add the phases of their work to it.
+    pub progress: &'a ProgressTracker,
     /// Main graph: `m`, `m0` and N entry points.
     pub main_params: GraphParams,
     /// Payload block graphs: `payload_m` and 1 entry point.
     pub block_params: GraphParams,
     pub stopped: &'a AtomicBool,
+}
+
+impl GraphBuildContext<'_> {
+    /// Whether the main graph gets built. Without it (`m == 0`), only payload blocks link points.
+    pub fn has_main_graph(&self) -> bool {
+        self.main_params.hnsw_m.m > 0
+    }
 }
 
 /// Parameters of one kind of graph.
