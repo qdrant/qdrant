@@ -302,6 +302,13 @@ pub trait TermCursors {
     /// Move the cursor for `term` past its current document.
     fn advance(&mut self, term: usize);
 
+    /// [`advance`](Self::advance), then [`current`](Self::current).
+    #[inline]
+    fn advance_current(&mut self, term: usize) -> Option<PointOffsetType> {
+        self.advance(term);
+        self.current(term)
+    }
+
     /// Entries in the posting list of `term`, as when the cursors were made.
     fn posting_len(&self, term: usize) -> usize;
 

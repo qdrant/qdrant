@@ -26,8 +26,8 @@ const DENSE_WINDOW: usize = 1 << 14;
 
 /// From this many essential terms on, a block finds its next candidate with a
 /// min-heap of their cursors keyed by current document, which costs
-/// `O(hits * log terms)` a candidate. Below it, scanning every essential
-/// cursor twice is cheaper than keeping the heap.
+/// `O(hits * log terms)` a candidate. Below it, one pass over the essential
+/// cursors' current documents is cheaper than keeping the heap.
 pub(super) const HEAP_MIN_ESSENTIAL: usize = 16;
 
 /// Posting entries per document of the segment from which a query is scored
@@ -181,6 +181,15 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
     let mut cursor_heap: BinaryHeap<Reverse<u64>> = BinaryHeap::new();
     let mut heap_essential = None;
 
+    // Without the heap: each essential cursor's current document, `EXHAUSTED`
+    // past its end, kept apart from the cursors so that a candidate costs one
+    // pass over a few contiguous integers, which also finds the next
+    // candidate, `scan_next`. Valid for the essential terms from
+    // `scan_essential` on.
+    let mut scan_current: Vec<u64> = vec![EXHAUSTED; term_count];
+    let mut scan_next = EXHAUSTED;
+    let mut scan_essential = None;
+
     while first_essential < term_count {
         // The essential terms of this block. Those below it are consulted by
         // seeking; `first_essential` only rises, so none of them turns
@@ -192,7 +201,16 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
         let use_heap = term_count - block_essential >= heap_min_essential;
         if !use_heap {
             heap_essential = None;
+            if scan_essential != Some(block_essential) {
+                let essential = &mut scan_current[block_essential..];
+                for (offset, current) in essential.iter_mut().enumerate() {
+                    *current = scan_key(cursors.current(block_essential + offset));
+                }
+                scan_next = essential.iter().copied().min().unwrap_or(EXHAUSTED);
+                scan_essential = Some(block_essential);
+            }
         } else if heap_essential != Some(block_essential) {
+            scan_essential = None;
             cursor_heap.clear();
             cursor_heap.extend((block_essential..term_count).filter_map(|term| {
                 cursors
@@ -210,10 +228,10 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
 
             let next = if use_heap {
                 cursor_heap.peek().map(|&Reverse(key)| key_doc(key))
+            } else if scan_next == EXHAUSTED {
+                None
             } else {
-                (block_essential..term_count)
-                    .filter_map(|term| cursors.current(term))
-                    .min()
+                Some(scan_next as PointOffsetType)
             };
             let Some(doc) = next else {
                 break;
@@ -245,14 +263,19 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
                     }
                 }
             } else {
-                for term in block_essential..term_count {
-                    if cursors.current(term) == Some(doc) {
+                let key = u64::from(doc);
+                let mut next_min = EXHAUSTED;
+                for (offset, current) in scan_current[block_essential..].iter_mut().enumerate() {
+                    if *current == key {
+                        let term = block_essential + offset;
                         if accepted {
                             hits.push((term, cursors.tf(term, doc)));
                         }
-                        cursors.advance(term);
+                        *current = scan_key(cursors.advance_current(term));
                     }
+                    next_min = next_min.min(*current);
                 }
+                scan_next = next_min;
             }
             if accepted {
                 debug_assert!(hits.len() > hits_start);
@@ -514,6 +537,15 @@ fn into_ranking(heap: BinaryHeap<Reverse<ScoredPointOffset>>) -> Vec<ScoredPoint
     let mut result: Vec<ScoredPointOffset> = heap.into_iter().map(|Reverse(hit)| hit).collect();
     result.sort_unstable_by(|a, b| b.score.total_cmp(&a.score).then(a.idx.cmp(&b.idx)));
     result
+}
+
+/// A cursor past the end of its posting list, in the scan's current documents:
+/// above every point offset.
+const EXHAUSTED: u64 = u64::MAX;
+
+#[inline]
+fn scan_key(doc: Option<PointOffsetType>) -> u64 {
+    doc.map_or(EXHAUSTED, u64::from)
 }
 
 /// A cursor's place in the heap: its current document, then its term.

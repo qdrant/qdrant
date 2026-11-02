@@ -103,6 +103,16 @@ impl<V: PostingValue> TermCursors for FrequencyCursors<'_, V> {
         }
     }
 
+    #[inline]
+    fn advance_current(&mut self, term: usize) -> Option<PointOffsetType> {
+        let slot = &mut self.cursors[term];
+        let next = slot.as_mut()?.ids.next().map(|elem| elem.id);
+        if next.is_none() {
+            *slot = None;
+        }
+        next
+    }
+
     fn posting_len(&self, term: usize) -> usize {
         self.lens[term]
     }
