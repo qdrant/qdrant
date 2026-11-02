@@ -227,6 +227,8 @@ mod store {
     use crate::read_view::EdgeShardRead as _;
     use crate::{QueryRequestBuilder, RetrieveRequestBuilder};
 
+    mod point_count;
+
     /// The leader writes its payload storage in mutable (Gridstore) mode, which an
     /// append-only writer refuses to append to. Recreate each segment's payload
     /// storage empty in append-only mode — the fixture points carry no payloads,
