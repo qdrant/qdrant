@@ -125,17 +125,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             Self::refresh_file(mappings, inner_fs, mappings_path(&self.segment_path)),
         )?;
 
-        // A lazily opened handle reports a file the writer has not created yet as `NotFound`.
-        let v_bytes = match versions {
-            Some(file) => file.len::<u8>().ok_not_found()?.unwrap_or(0),
-            None => 0,
-        };
-        let v_len = (v_bytes / VERSION_ELEMENT_SIZE) as usize;
-        let m_bytes = match mappings {
-            Some(file) => file.len::<u8>().ok_not_found()?.unwrap_or(0),
-            None => 0,
+        // Until the writer creates both files, no point can become visible.
+        let (Some(v_bytes), Some(m_bytes)) = (
+            Self::existing_len(versions.as_ref())?,
+            Self::existing_len(mappings.as_ref())?,
+        ) else {
+            return Ok(TrackerProbe::Unchanged {
+                max_committed_id: self.internal_to_version.len() as PointOffsetType,
+            });
         };
 
+        let v_len = (v_bytes / VERSION_ELEMENT_SIZE) as usize;
         let versions_changed = v_len != self.internal_to_version.len();
         let mappings_changed = m_bytes != self.mappings_read_to;
 
@@ -145,6 +145,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         } else {
             TrackerProbe::Unchanged { max_committed_id }
         })
+    }
+
+    /// Byte length of a tracker file, `None` if it does not exist yet.
+    ///
+    /// The file is absent either because no handle is held, or because the handle was opened
+    /// lazily (e.g. on an object store) and reports `NotFound` only on first access.
+    fn existing_len(file: Option<&S>) -> OperationResult<Option<u64>> {
+        match file {
+            Some(file) => Ok(file.len::<u8>().ok_not_found()?),
+            None => Ok(None),
+        }
     }
 
     /// Live-reload a held handle in place, or open it through `inner_fs` once the file exists.
