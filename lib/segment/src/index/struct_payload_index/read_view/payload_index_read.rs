@@ -196,9 +196,9 @@ where
             let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
-                check_in_batches(full_scan_iterator.stop_if(is_stopped), optimized_filter);
+                check_in_batches(full_scan_iterator.stop_if(is_stopped), &optimized_filter)?;
 
-            Ok(EitherVariant::A(matched_points))
+            Ok(EitherVariant::A(matched_points.into_iter()))
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(self.id_tracker.total_point_count());
@@ -243,12 +243,12 @@ where
                 } else {
                     // Some conditions are primary clauses, some are not
                     let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
-                    let iter = check_in_batches(
+                    let matched_points = check_in_batches(
                         joined_primary_iterator
-                            .filter(move |&id| !visited_list.check_and_update_visited(id)),
-                        optimized_filter,
-                    );
-                    EitherVariant::C(iter)
+                            .filter(|&id| !visited_list.check_and_update_visited(id)),
+                        &optimized_filter,
+                    )?;
+                    EitherVariant::C(matched_points.into_iter())
                 });
             }
 
@@ -258,15 +258,15 @@ where
 
             let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
-            let iter = check_in_batches(
+            let matched_points = check_in_batches(
                 id_tracker_iterator
                     .stop_if(is_stopped)
                     .measure_hw(HwMetric::Cpu, size_of::<PointOffsetType>())
-                    .filter(move |&id| !visited_list.check_and_update_visited(id)),
-                optimized_filter,
-            );
+                    .filter(|&id| !visited_list.check_and_update_visited(id)),
+                &optimized_filter,
+            )?;
 
-            Ok(EitherVariant::D(iter))
+            Ok(EitherVariant::D(matched_points.into_iter()))
         }
     }
 
@@ -338,24 +338,22 @@ where
 /// Large enough for on-disk indexes to overlap the reads of one batch.
 const CHECK_BATCH_SIZE: usize = 1024;
 
-/// Keep the `ids` that match `filter`, checking them [`CHECK_BATCH_SIZE`] at a time.
+/// Collect the `ids` that match `filter`, checking them [`CHECK_BATCH_SIZE`] at a time.
 ///
-/// Matches come out in batch order, not necessarily in input order within a batch.
-/// A batch whose check fails is dropped, like a failed per-id check.
-fn check_in_batches<'a>(
-    mut ids: impl Iterator<Item = PointOffsetType> + 'a,
-    filter: OptimizedFilter<'a>,
-) -> impl Iterator<Item = PointOffsetType> + 'a {
-    std::iter::from_fn(move || {
-        let mut batch: Vec<PointOffsetType> = ids.by_ref().take(CHECK_BATCH_SIZE).collect();
+/// Within a batch, matches can come out in a different order than the input.
+fn check_in_batches(
+    mut ids: impl Iterator<Item = PointOffsetType>,
+    filter: &OptimizedFilter<'_>,
+) -> OperationResult<Vec<PointOffsetType>> {
+    let mut matched = Vec::new();
+    let mut batch = Vec::with_capacity(CHECK_BATCH_SIZE);
+    loop {
+        batch.clear();
+        batch.extend(ids.by_ref().take(CHECK_BATCH_SIZE));
         if batch.is_empty() {
-            return None;
+            return Ok(matched);
         }
-        let matched = filter
-            .check_batched(&mut batch, Select::Matches, Rest::Discard)
-            .unwrap_or(0);
-        batch.truncate(matched);
-        Some(batch)
-    })
-    .flatten()
+        let matched_in_batch = filter.check_batched(&mut batch, Select::Matches, Rest::Discard)?;
+        matched.extend_from_slice(&batch[..matched_in_batch]);
+    }
 }
