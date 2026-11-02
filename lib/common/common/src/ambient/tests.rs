@@ -4,6 +4,7 @@ use std::task::{Context, Waker};
 use serde_json::json;
 
 use super::hw::{self, HwMetric};
+use super::net::NetMetric;
 use super::trace::testing::{file_sink, lines, run};
 use super::trace::{Sink, mark, span};
 use super::{
@@ -43,7 +44,7 @@ fn handoff_enters_on_another_thread() {
 #[test]
 fn future_enters_on_every_poll() {
     let (_file, sink) = file_sink();
-    let ctx = AmbientContext::root("root", None, Some(sink.clone()));
+    let ctx = AmbientContext::root("root", None, None, Some(sink.clone()));
     let mut future = Box::pin(
         async {
             HwMetric::Cpu.bump(1);
@@ -146,9 +147,9 @@ fn unmeasured_future_stays_in_the_span() {
 fn root_without_started_sink_is_untraced() {
     let file = tempfile::NamedTempFile::new().unwrap();
     let sink = Sink::file(file.path().to_owned()).unwrap();
-    assert!(!AmbientContext::root("stopped", None, Some(sink.clone())).is_traced());
+    assert!(!AmbientContext::root("stopped", None, None, Some(sink.clone())).is_traced());
     sink.start().unwrap();
-    let ctx = AmbientContext::root("started", None, Some(sink.clone()));
+    let ctx = AmbientContext::root("started", None, None, Some(sink.clone()));
     assert!(ctx.is_traced());
     drop(ctx);
     sink.stop();
@@ -256,4 +257,28 @@ fn out_of_order_drop_clears_the_context_before_panicking() {
     let result = catch_unwind(AssertUnwindSafe(|| drop(inner)));
     assert_eq!(result.is_err(), cfg!(debug_assertions));
     assert!(current().context().is_none());
+}
+
+#[test]
+fn net_bump_is_counted_in_unmeasured_scope() {
+    let ctx = AmbientContext::new();
+    ctx.measure(|| {
+        NetMetric::RemoteIoRead.bump(1);
+        ambient::unmeasured(reason("test"), || {
+            HwMetric::Cpu.bump(10);
+            NetMetric::RemoteIoRead.bump(10);
+        });
+    });
+    assert_eq!(ctx.hw_data()[HwMetric::Cpu], 0);
+    assert_eq!(ctx.net_data()[NetMetric::RemoteIoRead], 11);
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "in an unmeasured ambient scope without a context")
+)]
+fn contextless_net_bump_panics() {
+    test(|| NetMetric::CacheIoRead.bump(1));
+    ambient::unmeasured(reason("test"), || NetMetric::CacheIoRead.bump(1));
 }

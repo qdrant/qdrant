@@ -86,3 +86,25 @@ use std::panic::Location;
 pub(super) fn panic_outside_of_any_scope(what: &str, caller: &'static Location<'static>) -> ! {
     panic!("{what:?} outside of any ambient scope. Caller: {caller}");
 }
+
+/// 🤖 You probably came here from the panic below.
+/// 🤖
+/// 🤖 Network metrics ([`super::net::NetMetric`]) have no opt-out:
+/// 🤖 unmeasured scopes still count them into their context.
+/// 🤖 This scope is unmeasured and has no context, so the counts have nowhere to go.
+/// 🤖
+/// 🤖 # Fix C
+/// 🤖
+/// 🤖 Re-run with `RUST_BACKTRACE=1` and find the top-level `unmeasured_guard`,
+/// 🤖 `ambient::unmeasured` or `.unmeasured(..)` that captured no context.
+/// 🤖 Run the operation in a context instead:
+/// 🤖
+/// 🤖    ```ignore
+/// 🤖    let ctx = AmbientContext::root("<operation>", hw_drain, net_drain, None);
+/// 🤖    ctx.measure(|| { /* … */ });
+/// 🤖    ```
+/// 🤖
+/// 🤖 In tests, Fix A (`ambient::test_guard()`) provides a context.
+pub(super) fn panic_without_context(what: &str, caller: &'static Location<'static>) -> ! {
+    panic!("{what:?} in an unmeasured ambient scope without a context. Caller: {caller}");
+}

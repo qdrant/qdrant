@@ -6,6 +6,7 @@ use std::sync::Arc;
 use ecow::EcoString;
 
 use super::hw::{HardwareData, HwSharedDrain};
+use super::net::{NetSharedDrain, NetworkData};
 use super::trace::{self, Event, Sink, SpanId};
 use crate::cpu_utilization::CpuUtilization;
 
@@ -25,16 +26,26 @@ pub(super) struct Node {
 struct Root {
     hw: HwSharedDrain,
     collection: Option<Arc<HwSharedDrain>>,
+    network: NetSharedDrain,
+    collection_network: Option<Arc<NetSharedDrain>>,
     cpu_utilization: CpuUtilization,
     sink: Option<Sink>,
 }
 
 impl AmbientContext {
     /// The root of a new request. `collection` also receives its hardware usage.
-    pub fn root(name: &str, collection: Option<Arc<HwSharedDrain>>, sink: Option<Sink>) -> Self {
+    /// 🤖 `collection_network` also receives its network usage.
+    pub fn root(
+        name: &str,
+        collection: Option<Arc<HwSharedDrain>>,
+        collection_network: Option<Arc<NetSharedDrain>>,
+        sink: Option<Sink>,
+    ) -> Self {
         let root = Arc::new(Root {
             hw: HwSharedDrain::default(),
             collection,
+            network: NetSharedDrain::default(),
+            collection_network,
             cpu_utilization: CpuUtilization::new(),
             sink: sink.filter(Sink::is_started),
         });
@@ -44,12 +55,12 @@ impl AmbientContext {
     #[cfg(feature = "testing")]
     #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self::root("", None, None)
+        Self::root("", None, None, None)
     }
 
     /// A server request, traced as `name` into the global sink, see [`trace::install`].
     pub fn request(name: &str, collection: Arc<HwSharedDrain>) -> Self {
-        Self::root(name, Some(collection), trace::global().cloned())
+        Self::root(name, Some(collection), None, trace::global().cloned())
     }
 
     /// A child span, see [`super::trace::span!`].
@@ -78,6 +89,18 @@ impl AmbientContext {
 
     pub fn hw_data(&self) -> HardwareData {
         self.0.root.hw.load()
+    }
+
+    pub(super) fn accumulate_network(&self, src: NetworkData) {
+        let root = &self.0.root;
+        root.network.add(src);
+        if let Some(collection) = &root.collection_network {
+            collection.add(src);
+        }
+    }
+
+    pub fn net_data(&self) -> NetworkData {
+        self.0.root.network.load()
     }
 
     pub fn is_traced(&self) -> bool {

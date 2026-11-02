@@ -15,7 +15,7 @@ use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::{AccessPattern, Random, Sequential};
+use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
     ChunkSink, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
@@ -162,9 +162,7 @@ where
                 // (clamped to EOF), which covers `range`.
                 unsafe {
                     state.local.write_mmap_bytes(&bytes, blocks_range);
-                    Ok(ACow::Borrowed(
-                        state.local.read_mmap_bytes::<Random>(range)?,
-                    ))
+                    Ok(ACow::Borrowed(read_local::<R>(self, range, false)?))
                 }
             }
         }

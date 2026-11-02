@@ -6,6 +6,7 @@ mod handoff;
 pub mod hw;
 #[cfg(debug_assertions)]
 mod missing_scope;
+pub mod net;
 mod slot;
 #[cfg(any(test, feature = "testing"))]
 mod testing;

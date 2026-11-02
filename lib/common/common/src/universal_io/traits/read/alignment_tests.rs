@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::ambient;
 use crate::generic_consts::Random;
 use crate::universal_io::{
     DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, OpenOptions,
@@ -68,6 +69,7 @@ fn empty_cached_read_returns_typed_empty_slice() {
 
 #[test]
 fn unaligned_cached_read_returns_typed_values() {
+    let _scope = ambient::test_guard();
     let fixture = CachedFile::new(BYTES);
     for _ in 0..2 {
         let items = fixture
@@ -81,6 +83,7 @@ fn unaligned_cached_read_returns_typed_values() {
 
 #[test]
 fn aligned_cached_read_borrows_mmap() {
+    let _scope = ambient::test_guard();
     let fixture = CachedFile::new(BYTES);
     let bytes = fixture.file.read_bytes(0..8, Random, 1).unwrap();
     let items = fixture
@@ -94,6 +97,7 @@ fn aligned_cached_read_borrows_mmap() {
 
 #[test]
 fn cached_batch_reads_empty_and_unaligned_values() {
+    let _scope = ambient::test_guard();
     let fixture = CachedFile::new(BYTES);
     let mut count = 0;
     fixture
@@ -117,6 +121,7 @@ fn cached_batch_reads_empty_and_unaligned_values() {
 
 #[test]
 fn cached_iterator_reads_empty_and_unaligned_values() {
+    let _scope = ambient::test_guard();
     let fixture = CachedFile::new(BYTES);
     let mut iter = fixture
         .file
@@ -136,6 +141,7 @@ fn cached_iterator_reads_empty_and_unaligned_values() {
 
 #[test]
 fn owned_cached_pipeline_reads_empty_and_unaligned_values() {
+    let _scope = ambient::test_guard();
     let fixture = CachedFile::new(BYTES);
     let mut pipeline = OwnedPipeline::<_, ()>::new(fixture.file).unwrap();
     for (range, expected) in [(1..1, &[][..]), (1..9, &UNALIGNED[..])] {
@@ -148,6 +154,7 @@ fn owned_cached_pipeline_reads_empty_and_unaligned_values() {
 
 #[test]
 fn cached_pipeline_rejects_partial_typed_items() {
+    let _scope = ambient::test_guard();
     let fixture = CachedFile::new(BYTES);
     let mut pipeline =
         <DiskCache<MmapFile> as UniversalRead>::ReadPipeline::<'_, ()>::new().unwrap();
@@ -164,6 +171,7 @@ fn cached_pipeline_rejects_partial_typed_items() {
 
 #[test]
 fn owned_cached_pipeline_rejects_partial_typed_items() {
+    let _scope = ambient::test_guard();
     let fixture = CachedFile::new(BYTES);
     let mut pipeline = OwnedPipeline::<_, ()>::new(fixture.file).unwrap();
     pipeline.schedule::<Random>((), 1..4, 4).unwrap();

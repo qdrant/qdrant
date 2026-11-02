@@ -6,6 +6,7 @@ use std::sync::Arc;
 use slab::Slab;
 
 use super::placeholder::{Placeholder, PlaceholderGuard, PlaceholderResult, WaitResult};
+use crate::ambient::net::NetMetric;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::simple_disk_cache::local_state::LocalState;
@@ -126,6 +127,7 @@ where
     if range.is_empty() {
         return Ok(&[]);
     }
+    NetMetric::CacheIoRead.bump((range.end - range.start) as usize);
     let local = file.state()?.local;
     if is_sequential {
         unsafe { local.read_mmap_bytes::<Sequential>(range) }

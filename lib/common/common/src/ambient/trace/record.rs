@@ -70,6 +70,7 @@ mod tests {
     use crate::ambient;
     use crate::ambient::trace::install;
     use crate::ambient::trace::testing::{file_sink, lines, trace};
+    use crate::reason::reason;
 
     #[test]
     fn mark_and_sections() {
@@ -110,7 +111,7 @@ mod tests {
     #[test]
     fn span_ends_on_drop_after_children() {
         let (_file, sink) = file_sink();
-        let root = AmbientContext::root("root", None, Some(sink.clone()));
+        let root = AmbientContext::root("root", None, None, Some(sink.clone()));
         let (dropped, open) = root.measure(|| (span!("dropped"), span!("open")));
         drop(dropped);
         drop(root); // kept alive by `open`
@@ -138,7 +139,7 @@ mod tests {
         let (_file, sink) = file_sink();
         assert!(install(sink.clone()).is_ok());
         assert!(global().is_some());
-        ambient::test(|| {
+        ambient::unmeasured(reason("rootless"), || {
             mark!("rootless");
             // No context to hang a span on: a no-op.
             assert!(span!("rootless span").context().is_none());

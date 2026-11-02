@@ -1,14 +1,16 @@
 //! Testing utilities.
 
-use super::{Scope, unmeasured, unmeasured_guard};
-use crate::reason::reason;
+use super::{AmbientContext, Handoff, Scope};
 
 pub fn test<R>(f: impl FnOnce() -> R) -> R {
-    unmeasured(reason("Test code"), f)
+    let _scope = test_guard();
+    f()
 }
 
+/// 🤖 Unmeasured, but with a context for [`super::net`] metrics: the current one, or a disposable one.
 pub fn test_guard() -> Scope {
-    unmeasured_guard(reason("Test code"))
+    let ctx = Handoff::current_unchecked().into_context();
+    Handoff::Unmeasured(Some(ctx.unwrap_or_else(AmbientContext::new))).into_scope()
 }
 
 /// Similar to [`test_guard`], but for `#[tokio::test]`.

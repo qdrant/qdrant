@@ -9,6 +9,7 @@ use strum::EnumCount;
 use super::Handoff;
 use super::context::{AmbientContext, Node};
 use super::hw::{HardwareData, HwMetric};
+use super::net::{NetMetric, NetworkData};
 
 #[inline]
 #[cfg_attr(debug_assertions, track_caller)]
@@ -17,6 +18,17 @@ pub(super) fn bump(metric: HwMetric, delta: usize) {
     SLOT.with(|slot| {
         _ = slot.target("HwMetric::bump()", caller); // trigger `debug_assertions`
         let counter = &slot.counters[metric as usize];
+        counter.set(counter.get().wrapping_add(delta));
+    });
+}
+
+#[inline]
+#[cfg_attr(debug_assertions, track_caller)]
+pub(super) fn bump_net(metric: NetMetric, delta: usize) {
+    let caller = Location::caller();
+    SLOT.with(|slot| {
+        _ = slot.target_with_context("NetMetric::bump()", caller); // trigger `debug_assertions`
+        let counter = &slot.net[metric as usize];
         counter.set(counter.get().wrapping_add(delta));
     });
 }
@@ -71,6 +83,7 @@ thread_local! {
             target: Cell::new(Target::Unset),
             depth: Cell::new(0),
             counters: [const { Cell::new(0) }; HwMetric::COUNT],
+            net: [const { Cell::new(0) }; NetMetric::COUNT],
         }
     };
 }
@@ -80,6 +93,7 @@ struct Slot {
     /// Number of active scopes, to check they are exited in reverse order.
     depth: Cell<u64>,
     counters: [Cell<usize>; HwMetric::COUNT],
+    net: [Cell<usize>; NetMetric::COUNT],
 }
 
 impl Slot {
@@ -96,12 +110,24 @@ impl Slot {
         target
     }
 
+    /// [`Self::target`], also checked to have a context: network metrics have no opt-out.
+    fn target_with_context(&self, what: &str, caller: &'static Location<'static>) -> Target {
+        let target = self.target(what, caller);
+        #[cfg(debug_assertions)]
+        match target {
+            Target::Unmeasured(None) => super::missing_scope::panic_without_context(what, caller),
+            Target::Unset | Target::Unmeasured(Some(_)) | Target::Measured(_) => (),
+        }
+        target
+    }
+
     /// Drop the measurements and make every active scope stale.
     #[cold]
     fn poison(&self) {
         self.depth.set(self.depth.get() + (1 << 32));
         self.target.set(Target::Unmeasured(None));
         self.counters.iter().for_each(|c| c.set(0));
+        self.net.iter().for_each(|c| c.set(0));
     }
 }
 
@@ -188,6 +214,8 @@ pub struct Scope {
     outer_target: Target,
     /// Restored on drop.
     outer_counters: [usize; HwMetric::COUNT],
+    /// Restored on drop.
+    outer_net: [usize; NetMetric::COUNT],
     /// Keeps the target alive for owned guard scopes.
     _owned: Option<Handoff>,
 }
@@ -224,6 +252,7 @@ impl Scope {
             depth: slot.depth.replace(slot.depth.get() + 1),
             outer_target: slot.target.replace(target),
             outer_counters: std::array::from_fn(|i| slot.counters[i].take()),
+            outer_net: std::array::from_fn(|i| slot.net[i].take()),
             _owned: owned,
         })
     }
@@ -248,15 +277,20 @@ impl Drop for Scope {
             slot.depth.set(self.depth);
             let counters: [usize; HwMetric::COUNT] =
                 std::array::from_fn(|i| slot.counters[i].replace(self.outer_counters[i]));
-            match slot.target.replace(self.outer_target) {
-                Target::Measured(node) => {
-                    if counters.iter().any(|&c| c != 0) {
-                        // SAFETY: exited in order, so `node` belongs to this scope, which keeps it alive.
-                        unsafe { AmbientContext::borrow_ptr(node) }
-                            .accumulate(HardwareData(counters));
-                    }
-                }
-                Target::Unset | Target::Unmeasured(_) => {}
+            let net: [usize; NetMetric::COUNT] =
+                std::array::from_fn(|i| slot.net[i].replace(self.outer_net[i]));
+            let (node, measured) = match slot.target.replace(self.outer_target) {
+                Target::Measured(node) => (node, true),
+                Target::Unmeasured(Some(node)) => (node, false),
+                Target::Unset | Target::Unmeasured(None) => return,
+            };
+            // SAFETY: exited in order, so `node` belongs to this scope, which keeps it alive.
+            let ctx = unsafe { AmbientContext::borrow_ptr(node) };
+            if measured && counters.iter().any(|&c| c != 0) {
+                ctx.accumulate(HardwareData(counters));
+            }
+            if net.iter().any(|&c| c != 0) {
+                ctx.accumulate_network(NetworkData(net));
             }
         });
     }

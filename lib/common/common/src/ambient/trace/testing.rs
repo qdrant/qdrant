@@ -15,7 +15,7 @@ pub(crate) fn trace(f: impl FnOnce()) -> Vec<Value> {
 /// Run `f` measured into a traced root. Return the trace and hwdata.
 pub(crate) fn run(f: impl FnOnce()) -> (Vec<Value>, HardwareData) {
     let (_file, sink) = file_sink();
-    let ctx = AmbientContext::root("root", None, Some(sink.clone()));
+    let ctx = AmbientContext::root("root", None, None, Some(sink.clone()));
     ctx.measure(f);
     let hw = ctx.hw_data();
     drop(ctx);
