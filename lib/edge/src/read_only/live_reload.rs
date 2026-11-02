@@ -36,8 +36,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Leader-side segment churn is absorbed: a segment whose files vanish while its live-reload
     /// runs is checked against a re-read manifest, and if the leader indeed removed it, the segment
     /// is dropped and the live_reload re-runs (bounded) to pick up its replacements. A segment whose
-    /// reload fails after its files were fetched is reopened in place. `Err` therefore means the
-    /// shard genuinely needs attention:
+    /// reload fails after its files were fetched is reopened in place. In-place CreateIndex /
+    /// DropIndex on a surviving segment is applied via config reload before point-delta reload.
+    /// `Err` therefore means the shard genuinely needs attention:
     /// - a segment's files could not be fetched: its reload was skipped, it keeps serving its
     ///   previous state, and the next live_reload retries it;
     /// - a segment failed to reload and could not be reopened either, so it serves a partially
