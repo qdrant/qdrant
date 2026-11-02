@@ -173,16 +173,10 @@ impl LocalShard {
                 });
 
                 if let Some(threshold) = req.score_threshold {
-                    let is_distance_scored = req.query.is_distance_scored();
+                    let order = req.query.score_order(distance);
                     processed_res
                         .take_while(|scored_point| {
-                            if is_distance_scored {
-                                distance.check_threshold(scored_point.score, threshold)
-                            } else {
-                                // Custom scoring always produces larger-is-better scores,
-                                // regardless of the underlying distance.
-                                scored_point.score > threshold
-                            }
+                            order.check_threshold(scored_point.score, threshold)
                         })
                         .collect()
                 } else {

@@ -191,23 +191,13 @@ fn postprocess_scores(
     }
 
     if let Some(score_threshold) = search.score_threshold {
-        let is_distance_scored = search.query.is_distance_scored();
+        let order = search.query.score_order(distance);
 
-        debug_assert!(if is_distance_scored {
-            points.is_sorted_by(|left, right| distance.is_ordered(left.score, right.score))
-        } else {
-            points.is_sorted_by(|left, right| left.score >= right.score)
-        });
+        debug_assert!(points.is_sorted_by(|left, right| order.is_ordered(left.score, right.score)));
 
-        let below_threshold = points.iter().position(|point| {
-            if is_distance_scored {
-                !distance.check_threshold(point.score, score_threshold)
-            } else {
-                // Custom scoring always produces larger-is-better scores,
-                // regardless of the underlying distance.
-                point.score <= score_threshold
-            }
-        });
+        let below_threshold = points
+            .iter()
+            .position(|point| !order.check_threshold(point.score, score_threshold));
 
         if let Some(below_threshold_idx) = below_threshold {
             points.truncate(below_threshold_idx);

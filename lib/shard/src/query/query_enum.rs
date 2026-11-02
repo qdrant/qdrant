@@ -1,5 +1,5 @@
 use segment::data_types::vectors::*;
-use segment::types::VectorName;
+use segment::types::{Distance, Order, VectorName};
 use segment::vector_storage::query::*;
 use serde::Serialize;
 use sparse::common::sparse_vector::SparseVector;
@@ -36,6 +36,17 @@ impl QueryEnum {
             | QueryEnum::Discover(_)
             | QueryEnum::Context(_)
             | QueryEnum::FeedbackNaive(_) => false,
+        }
+    }
+
+    /// Order of the scores this query produces, given the distance of the queried vector.
+    ///
+    /// Custom scoring queries produce larger-is-better scores regardless of the distance.
+    pub fn score_order(&self, distance: Distance) -> Order {
+        if self.is_distance_scored() {
+            distance.distance_order()
+        } else {
+            Order::LargeBetter
         }
     }
 
