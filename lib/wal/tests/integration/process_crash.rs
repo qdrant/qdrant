@@ -41,6 +41,7 @@ fn test() {
     println!("Spawning subprocess; path: {path:?}; seed: {seed}");
 
     let exit_code = process::Command::new(env::current_exe().unwrap())
+        .args(["--exact", "process_crash::process_crash"])
         .env("SEED", seed.to_string())
         .env("SEGMENT_PATH", format!("{}", path.display()))
         .status()
