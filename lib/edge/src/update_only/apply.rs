@@ -23,12 +23,14 @@ use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::holder::LookupSegmentHolder;
 use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
+use crate::update_only::metering::{UpdateBytes, UpdateMetering};
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
 /// named by ten operations counts once.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct UpdateBatchOutcome {
+    pub usage: UpdateBytes,
     /// Points written: created, or rewritten into a fresh slot.
     pub stored: usize,
     /// Points removed.
@@ -119,8 +121,24 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// writer over the directory, which also retires whatever the failed
     /// batch left unpublished.
     pub fn apply_batch(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        self.apply_batch_inner(operations, None)
+    }
+
+    pub fn apply_batch_metered(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: &UpdateMetering,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        self.apply_batch_inner(operations, Some(metering))
+    }
+
+    fn apply_batch_inner(
         mut self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: Option<&UpdateMetering>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         const LOG_TARGET: &str = "apply_batch";
 
@@ -179,6 +197,9 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                     PointApplyKind::Missing
                 }
                 PointAction::Store(point) => {
+                    if let Some(metering) = metering {
+                        outcome.usage += metering.measure(&point)?;
+                    }
                     to_store.push(*point);
                     stored_records.push(outcome.points.len());
                     outcome.stored += 1;
