@@ -207,7 +207,7 @@ impl QuantizedVectors {
         }
     }
 
-    pub(crate) fn construct_vector_parameters(
+    pub(in crate::vector_storage::quantized) fn construct_vector_parameters(
         quantization_config: &QuantizationConfig,
         distance: Distance,
         dim: usize,
@@ -256,7 +256,7 @@ impl QuantizedVectors {
     /// read-only-open paths so they cannot disagree about how the data is laid out.
     /// `is_multi` selects the multi-vector layout — notably binary quantization packs
     /// multi-vector storage into `u8` words but single-vector storage into `u128`.
-    pub(crate) fn quantized_vector_size(
+    pub(in crate::vector_storage::quantized) fn quantized_vector_size(
         quantization_config: &QuantizationConfig,
         vector_parameters: &quantization::VectorParameters,
         is_multi: bool,

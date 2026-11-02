@@ -205,11 +205,15 @@ fn dense_datatypes_and_quantization_have_separate_byte_sizes() {
         );
     }
     config.vectors.get_mut(VECTOR_NAME).unwrap().datatype = Some(VectorStorageDatatype::Float16);
+    // Quantized rows are metered as bits * dim, without padding or extras.
     for (quantization, expected) in [
-        (r#"{"scalar":{"type":"int8"}}"#, 148),
+        (r#"{"scalar":{"type":"int8"}}"#, 129),
         (r#"{"product":{"compression":"x16"}}"#, 33),
-        (r#"{"binary":{}}"#, 32),
-        (r#"{"turbo":{"bits":"bits8"}}"#, 133),
+        (r#"{"product":{"compression":"x64"}}"#, 9),
+        (r#"{"binary":{}}"#, 17),
+        (r#"{"binary":{"encoding":"one_and_half_bits"}}"#, 25),
+        (r#"{"turbo":{"bits":"bits1_5"}}"#, 25),
+        (r#"{"turbo":{"bits":"bits8"}}"#, 129),
     ] {
         config.quantization_config = Some(serde_json::from_str(quantization).unwrap());
         assert_eq!(
@@ -265,13 +269,14 @@ fn multivectors_without_hnsw_have_no_indexing_charge_even_with_quantization() {
 }
 
 #[test]
-fn retained_vectors_are_counted_once_and_turbo_storage_uses_its_encoded_width() {
+fn retained_vectors_are_counted_once_and_turbo_meters_bits_per_dimension() {
     let mut config = test_config();
     config.vectors.get_mut(VECTOR_NAME).unwrap().size = 129;
-    for (datatype, vector_bytes) in [
-        (VectorStorageDatatype::Turbo4, 69),
-        (VectorStorageDatatype::Turbo8, 133),
-        (VectorStorageDatatype::Turbo16, 262),
+    // Raw records carry padding and extras; only bits * dim is metered.
+    for (datatype, vector_bytes, metered_bytes) in [
+        (VectorStorageDatatype::Turbo4, 69, 65),
+        (VectorStorageDatatype::Turbo8, 133, 129),
+        (VectorStorageDatatype::Turbo16, 262, 258),
     ] {
         config.vectors.get_mut(VECTOR_NAME).unwrap().datatype = Some(datatype);
         let meter = UpdateMetering::new(&config, []);
@@ -280,8 +285,8 @@ fn retained_vectors_are_counted_once_and_turbo_storage_uses_its_encoded_width() 
             .stored_vectors
             .push((VECTOR_NAME.into(), vec![0; vector_bytes]));
         let expected = UpdateBytes {
-            updated_bytes: vector_bytes as u64 + 2,
-            indexed_bytes: vector_bytes as u64,
+            updated_bytes: metered_bytes + 2,
+            indexed_bytes: metered_bytes,
         };
         assert_eq!(
             meter.measure(&point).unwrap(),
@@ -358,4 +363,17 @@ fn sparse_vectors_keep_logical_bytes_when_the_index_uses_smaller_values() {
             }
         );
     }
+}
+
+#[test]
+fn retained_vector_without_a_meter_is_rejected_before_decoding() {
+    let metering = UpdateMetering::new(&test_config(), []);
+    let mut point = resolved(VectorInternal::from(vec![1.0; 4]));
+    point.updated_vectors = NamedVectors::default();
+    point.stored_vectors.push(("unknown".into(), vec![0; 12]));
+    let err = metering.measure(&point).unwrap_err().to_string();
+    assert!(
+        err.contains("Missing update metering schema"),
+        "unknown name must not be decoded as sparse: {err}"
+    );
 }
