@@ -1,4 +1,5 @@
 use std::ops::Range;
+use std::sync::atomic::Ordering;
 
 use super::{MmapFile, read_bytes};
 use crate::ext::aligned_vec::ACow;
@@ -37,7 +38,7 @@ where
         let bytes = read_bytes(file.as_bytes::<P>(), range)?;
         // The random mapping has no readahead: reading a multi-page range would take
         // one synchronous fault per page. Request the whole range up front instead.
-        if !P::IS_SEQUENTIAL && !file.populate {
+        if !P::IS_SEQUENTIAL && !file.resident.load(Ordering::Relaxed) {
             crate::mmap::advice::will_need_multiple_pages(bytes);
         }
         self.result = Some((user_data, bytes));
