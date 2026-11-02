@@ -488,7 +488,13 @@ impl Collection {
                 .map(|(a, b)| a + b);
             info.points_count = info.points_count.zip(points_count).map(|(a, b)| a + b);
             info.segments_count += segments_count;
-            info.warnings.extend(warnings);
+
+            // Every shard reports the same config warnings, keep a single copy of each
+            for warning in warnings {
+                if !info.warnings.contains(&warning) {
+                    info.warnings.push(warning);
+                }
+            }
 
             if let Some(UpdateQueueInfo {
                 length,
