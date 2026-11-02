@@ -2551,6 +2551,7 @@ fn test_replaced_segments_do_not_create_cow_flush_dependency_cycle() {
         "flush dependency graph contains a cycle after segment replacement",
     );
 }
+
 /// A proxy segment must not hold back acknowledging the WAL. Flushing persists its buffered
 /// changes into the pending changes log, so the version returned by `flush_all` — which is what
 /// gets acknowledged in the WAL — advances past operations that only live in the proxy.
