@@ -43,10 +43,13 @@ impl QueryEnum {
     ///
     /// Custom scoring queries produce larger-is-better scores regardless of the distance.
     pub fn score_order(&self, distance: Distance) -> Order {
-        if self.is_distance_scored() {
-            distance.distance_order()
-        } else {
-            Order::LargeBetter
+        match self {
+            QueryEnum::Nearest(_) => distance.distance_order(),
+            QueryEnum::RecommendBestScore(_)
+            | QueryEnum::RecommendSumScores(_)
+            | QueryEnum::Discover(_)
+            | QueryEnum::Context(_)
+            | QueryEnum::FeedbackNaive(_) => Order::LargeBetter,
         }
     }
 
