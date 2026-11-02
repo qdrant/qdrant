@@ -214,7 +214,14 @@ impl MaybeIncompleteEntryKind {
 pub(super) enum MaybeIncompleteEntry<'a, K: Key + ?Sized, V> {
     None,
     Key(&'a K),
-    KeyAndValuesLen(&'a K, u32),
+    KeyAndValuesLen {
+        key: &'a K,
+        values_len: u32,
+        /// Byte length of the whole entry, counted from the start of the buffer
+        /// given to [`MaybeIncompleteEntry::partial_parse`]. A reader can fetch
+        /// the rest of the entry in one request up to this length.
+        entry_len: usize,
+    },
     /// Complete entry. Also contains the remaining bytes after this entry.
     KeyAndValues(&'a K, &'a [V], &'a [u8]),
 }
@@ -244,7 +251,11 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> MaybeIncompleteEntry<'a, K, 
         match self {
             MaybeIncompleteEntry::None => None,
             MaybeIncompleteEntry::Key(key) => Some(key),
-            MaybeIncompleteEntry::KeyAndValuesLen(key, _) => Some(key),
+            MaybeIncompleteEntry::KeyAndValuesLen {
+                key,
+                values_len: _,
+                entry_len: _,
+            } => Some(key),
             MaybeIncompleteEntry::KeyAndValues(key, _, _) => Some(key),
         }
     }
@@ -253,7 +264,11 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> MaybeIncompleteEntry<'a, K, 
         match self {
             MaybeIncompleteEntry::None => None,
             MaybeIncompleteEntry::Key(_) => None,
-            MaybeIncompleteEntry::KeyAndValuesLen(_, values_len) => Some(values_len),
+            MaybeIncompleteEntry::KeyAndValuesLen {
+                key: _,
+                values_len,
+                entry_len: _,
+            } => Some(values_len),
             MaybeIncompleteEntry::KeyAndValues(_, values, _) => Some(values.len() as u32),
         }
     }
@@ -262,21 +277,25 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> MaybeIncompleteEntry<'a, K, 
         match self {
             MaybeIncompleteEntry::None => None,
             MaybeIncompleteEntry::Key(_) => None,
-            MaybeIncompleteEntry::KeyAndValuesLen(_, _) => None,
+            MaybeIncompleteEntry::KeyAndValuesLen {
+                key: _,
+                values_len: _,
+                entry_len: _,
+            } => None,
             MaybeIncompleteEntry::KeyAndValues(_, values, _) => Some(values),
         }
     }
 
     /// Try to parse an entry from `buf`.
     /// If there are not enough bytes in the buf, return the partially parsed entry.
-    pub fn partial_parse(buf: &'a [u8]) -> io::Result<MaybeIncompleteEntry<'a, K, V>> {
+    pub fn partial_parse(entry: &'a [u8]) -> io::Result<MaybeIncompleteEntry<'a, K, V>> {
         // Entry structure:
         // ┌─1:pad─┬────2:key─────┬─3:pad─┬─4:len─┬─5:pad─┬─────6:vals─────┐
         // │ · · · │ "abcdef\xFF" │ · · · │   5   │ · · · │ 10 20 30 40 50 │
         // └───────┴──────────────┴───────┴───────┴───────┴────────────────┘
 
         // 1. padding for the key
-        let Some(buf) = align_slice_to(K::ALIGN, buf) else {
+        let Some(buf) = align_slice_to(K::ALIGN, entry) else {
             return Ok(MaybeIncompleteEntry::None);
         };
 
@@ -304,9 +323,16 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> MaybeIncompleteEntry<'a, K, 
             Err(ConvertError::Size(_)) => return Ok(MaybeIncompleteEntry::Key(key)),
         };
 
-        // 5. padding for values
+        // 5. padding for values. Its size depends only on the address, so the
+        // entry length is known even if the buffer ends inside the padding.
+        let values_start = (entry.len() - buf.len()) + buf.as_ptr().align_offset(size_of::<V>());
+        let partial = MaybeIncompleteEntry::KeyAndValuesLen {
+            key,
+            values_len,
+            entry_len: values_start + values_len as usize * size_of::<V>(),
+        };
         let Some(buf) = align_slice_to(size_of::<V>(), buf) else {
-            return Ok(MaybeIncompleteEntry::KeyAndValuesLen(key, values_len));
+            return Ok(partial);
         };
 
         // 6. values
@@ -315,9 +341,7 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> MaybeIncompleteEntry<'a, K, 
             Err(ConvertError::Alignment(_)) => {
                 return Err(read_err("Values are not properly aligned"));
             }
-            Err(ConvertError::Size(_)) => {
-                return Ok(MaybeIncompleteEntry::KeyAndValuesLen(key, values_len));
-            }
+            Err(ConvertError::Size(_)) => return Ok(partial),
         };
 
         Ok(MaybeIncompleteEntry::KeyAndValues(key, values, buf))
@@ -326,4 +350,57 @@ impl<'a, K: Key + ?Sized, V: FromBytes + Immutable> MaybeIncompleteEntry<'a, K, 
 
 fn align_slice_to(alignment: usize, data: &[u8]) -> Option<&[u8]> {
     data.get(data.as_ptr().align_offset(alignment)..)
+}
+
+#[cfg(test)]
+mod tests {
+    use zerocopy::IntoBytes;
+
+    use super::*;
+
+    /// Every prefix that parses up to `values_len` reports the full entry length.
+    fn check_entry_len<V: FromBytes + Immutable>(values_len: u32) {
+        let v = size_of::<V>();
+        // "abc\xFF", padded to `V`, then `values_len` padded to `V`, then values.
+        let key_end = 4usize.next_multiple_of(v);
+        let values_start = (key_end + 4).next_multiple_of(v);
+        let expected = values_start + values_len as usize * v;
+
+        let mut storage = vec![0u128; expected.div_ceil(16)];
+        let bytes = &mut storage.as_mut_bytes()[..expected];
+        bytes[..4].copy_from_slice(b"abc\xFF");
+        bytes[key_end..key_end + 4].copy_from_slice(&values_len.to_ne_bytes());
+
+        let mut seen = 0;
+        for prefix in 0..expected {
+            match MaybeIncompleteEntry::<str, V>::partial_parse(&bytes[..prefix]).unwrap() {
+                MaybeIncompleteEntry::KeyAndValuesLen {
+                    key,
+                    values_len: parsed_len,
+                    entry_len,
+                } => {
+                    assert_eq!(key, "abc");
+                    assert_eq!(parsed_len, values_len);
+                    assert_eq!(entry_len, expected, "prefix {prefix}");
+                    seen += 1;
+                }
+                MaybeIncompleteEntry::None
+                | MaybeIncompleteEntry::Key(_)
+                | MaybeIncompleteEntry::KeyAndValues(..) => {}
+            }
+        }
+        assert!(seen > 0);
+        let parsed = MaybeIncompleteEntry::<str, V>::partial_parse(bytes).unwrap();
+        assert!(parsed.values().is_some());
+    }
+
+    #[test]
+    fn partial_parse_entry_len() {
+        for values_len in [1, 7, 1000] {
+            check_entry_len::<u8>(values_len);
+            check_entry_len::<u32>(values_len);
+            check_entry_len::<u64>(values_len);
+            check_entry_len::<u128>(values_len);
+        }
+    }
 }
