@@ -62,12 +62,13 @@ pub(super) struct Strategy {
 ///
 /// `accept` decides which documents may be scored at all: deletions the
 /// posting lists do not know about, the points a query does not see, and any
-/// outer filter. With a `BLOCK` of 1 it is checked per document, before its
-/// term frequencies are read, and otherwise once per block, over the documents
-/// gathered for it: batching pays off where the filter may read storage, and
-/// the frequencies of the documents it drops are cheap to have read, which
-/// holds for the on-disk index and not for the mutable one. A failing check
-/// stops the query with its error.
+/// outer filter. With a `BLOCK` of 1 it is checked per document, once the
+/// document scores above the current `limit`-th best: most candidates never
+/// do, and a document that fails the check would not have changed the top
+/// `limit` anyway, so the ranking is the same as checking first. Otherwise it is
+/// checked once per block, over the documents gathered for it: batching pays
+/// off where the filter may read storage. A failing check stops the query with
+/// its error.
 ///
 /// Candidates are gathered in blocks of up to `BLOCK` before any of them
 /// is scored, so that `doc_lens` fetches their lengths in one batch, filling
@@ -219,12 +220,11 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
                 break;
             };
 
-            // Move every essential cursor standing on this document, whether
-            // or not it gets scored, keeping its frequency if it may be. In
-            // blocks, the check waits for the whole block. The heap yields
-            // hits in term order, as the scan does, so they are summed in the
-            // same order either way.
-            let accepted = BLOCK > 1 || accept.check(doc)?;
+            // Move every essential cursor standing on this document and keep
+            // its frequency. The check comes later: per block, or document at
+            // a time once the score could enter the top `limit`. The heap
+            // yields hits in term order, as the scan does, so they are summed
+            // in the same order either way.
             let hits_start = hits.len();
             if use_heap {
                 while let Some(mut top) = cursor_heap.peek_mut() {
@@ -233,9 +233,7 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
                     if key_doc(key) != doc {
                         break;
                     }
-                    if accepted {
-                        hits.push((term, cursors.tf(term, doc)));
-                    }
+                    hits.push((term, cursors.tf(term, doc)));
                     cursors.advance(term);
                     match cursors.current(term) {
                         Some(next) => *top = Reverse(heap_key(next, term)),
@@ -247,19 +245,15 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
             } else {
                 for term in block_essential..term_count {
                     if cursors.current(term) == Some(doc) {
-                        if accepted {
-                            hits.push((term, cursors.tf(term, doc)));
-                        }
+                        hits.push((term, cursors.tf(term, doc)));
                         cursors.advance(term);
                     }
                 }
             }
-            if accepted {
-                debug_assert!(hits.len() > hits_start);
-                candidates[count] = doc;
-                hits_end[count] = hits.len();
-                count += 1;
-            }
+            debug_assert!(hits.len() > hits_start);
+            candidates[count] = doc;
+            hits_end[count] = hits.len();
+            count += 1;
         }
         if count == 0 {
             break;
@@ -332,7 +326,8 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
                 }
             }
 
-            if score > threshold {
+            // Blocks were checked before scoring.
+            if score > threshold && (BLOCK > 1 || accept.check(doc)?) {
                 heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
                 if heap.len() > limit {
                     heap.pop();

@@ -442,6 +442,38 @@ fn accept_restricts_the_ranking() {
     }
 }
 
+/// Document at a time, a document is only checked once it scores into the
+/// top `limit`, so most matching documents are never checked, and the ranking
+/// is the one checking every document first gives.
+#[test]
+fn documents_are_checked_only_when_they_could_enter_the_top_k() {
+    let mutable = fixture(11, 400, &[]);
+    let immutable = ImmutableInvertedIndex::from(mutable.clone());
+    let query = query(&mutable, &["w0", "w1"], Bm25Params::default());
+    let even = |idx: PointOffsetType| idx.is_multiple_of(2);
+    let matching = reference(&mutable, &query, |_| true).len();
+    let expected = reference(&mutable, &query, even);
+    assert!(matching > 100, "{matching} matching documents");
+
+    let checks = std::cell::Cell::new(0);
+    let counted = |idx: PointOffsetType| {
+        checks.set(checks.get() + 1);
+        even(idx)
+    };
+    for actual in [
+        run(&mutable, &query, counted, 3),
+        run(&immutable, &query, counted, 3),
+    ] {
+        assert_top_k(&actual, &expected, 3);
+        assert!(
+            checks.get() < matching / 2,
+            "{} checks for {matching} matching documents",
+            checks.get(),
+        );
+        checks.set(0);
+    }
+}
+
 /// A filter condition whose every check fails, as a storage read can.
 struct FailingCondition;
 
