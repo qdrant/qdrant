@@ -359,21 +359,6 @@ impl Distance {
             Distance::Euclid | Distance::Manhattan => Order::SmallBetter,
         }
     }
-
-    pub fn is_ordered(&self, left: ScoreType, right: ScoreType) -> bool {
-        match self.distance_order() {
-            Order::LargeBetter => left >= right,
-            Order::SmallBetter => left <= right,
-        }
-    }
-
-    /// Checks if score satisfies threshold condition
-    pub fn check_threshold(&self, score: ScoreType, threshold: ScoreType) -> bool {
-        match self.distance_order() {
-            Order::LargeBetter => score > threshold,
-            Order::SmallBetter => score < threshold,
-        }
-    }
 }
 
 /// Map a segment [`Distance`] to the TurboQuant [`DistanceType`].
@@ -396,6 +381,23 @@ impl From<Distance> for quantization::DistanceType {
 pub enum Order {
     LargeBetter,
     SmallBetter,
+}
+
+impl Order {
+    pub fn is_ordered(self, left: ScoreType, right: ScoreType) -> bool {
+        match self {
+            Order::LargeBetter => left >= right,
+            Order::SmallBetter => left <= right,
+        }
+    }
+
+    /// Checks if score satisfies threshold condition
+    pub fn check_threshold(self, score: ScoreType, threshold: ScoreType) -> bool {
+        match self {
+            Order::LargeBetter => score > threshold,
+            Order::SmallBetter => score < threshold,
+        }
+    }
 }
 
 /// Search result

@@ -191,13 +191,13 @@ fn postprocess_scores(
     }
 
     if let Some(score_threshold) = search.score_threshold {
-        debug_assert!(
-            points.is_sorted_by(|left, right| distance.is_ordered(left.score, right.score)),
-        );
+        let order = search.query.score_order(distance);
+
+        debug_assert!(points.is_sorted_by(|left, right| order.is_ordered(left.score, right.score)));
 
         let below_threshold = points
             .iter()
-            .position(|point| !distance.check_threshold(point.score, score_threshold));
+            .position(|point| !order.check_threshold(point.score, score_threshold));
 
         if let Some(below_threshold_idx) = below_threshold {
             points.truncate(below_threshold_idx);
