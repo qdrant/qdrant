@@ -6,6 +6,8 @@ use collection::operations::cluster_ops::ReshardingDirection;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::resharding::ReshardState;
 use collection::shards::transfer::ShardTransferMethod;
+#[cfg(feature = "staging")]
+use uuid::Uuid;
 
 use super::*;
 use crate::content_manager::consensus_state_machine::*;
@@ -203,4 +205,63 @@ fn set_shard_replica_state_missing_shard_finishes_abort() {
             .resharding
             .is_none()
     );
+}
+
+#[cfg(feature = "staging")]
+#[test]
+fn scale_down_abort_hooks_precede_dead_write_and_are_omitted_on_replay() {
+    let mut state = auto_resharding_state(2);
+    let collection = state.collections.get_mut(COLLECTION).expect("collection");
+    collection.resharding = Some(ReshardState::new(
+        Uuid::nil(),
+        ReshardingDirection::Down,
+        PEER_ID,
+        1,
+        None,
+    ));
+    collection
+        .shards
+        .get_mut(&0)
+        .expect("shard")
+        .replicas
+        .insert(OTHER_PEER_ID, ReplicaState::ReshardingScaleDown);
+
+    let operation = set_replica_state_op(0, OTHER_PEER_ID, ReplicaState::Dead, None);
+    let mut machine = state_machine(state.clone());
+    let Ok(Plan { actions, .. }) = machine.apply(&operation) else {
+        panic!("marking a scale-down replica dead should be accepted");
+    };
+
+    let clear = actions
+        .iter()
+        .position(|action| matches!(action, Action::SetReshardingState { state: None, .. }))
+        .expect("resharding clear");
+    assert!(matches!(
+        &actions[clear + 1..],
+        [
+            Action::TestCrashAfterScaleDownStateClear,
+            Action::TestPauseReshardingAbort,
+            Action::SetReplicaState {
+                shard_id: 0,
+                peer_id: OTHER_PEER_ID,
+                state: ReplicaState::Dead,
+                ..
+            },
+        ]
+    ));
+
+    for action in &actions[..=clear] {
+        state.apply_action(action);
+    }
+
+    let mut replay = state_machine(state);
+    let Ok(Plan { actions, .. }) = replay.apply(&operation) else {
+        panic!("replay after clearing resharding state should be accepted");
+    };
+
+    assert!(matches!(
+        actions.as_slice(),
+        [Action::SetReplicaState { .. }]
+    ));
+    assert_eq!(replay.state(), machine.state());
 }
