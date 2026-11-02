@@ -1,15 +1,20 @@
-use common::bitvec::BitVec;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::common::operation_error::OperationResult;
+use common::ambient;
+use common::bitvec::BitVec;
+use common::reason::reason;
+use common::types::{PointOffsetType, ScoredPointOffset};
+use rayon::ThreadPool;
+use rayon::prelude::*;
+
+use super::block::Block;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_links::GraphLinks;
+use crate::index::hnsw_index::hnsw::HNSW_BUILD_MAX_PAR_LEN;
 use crate::index::hnsw_index::hnsw::old_index::OldIndex;
-use crate::index::hnsw_index::links_container::LinksContainer;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::vector_storage::VectorStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::index::hnsw_index::links_container::{ItemsBuffer, LinksContainer};
 
 /// Starts payload blocks from the graph of the index being healed.
 ///
@@ -43,7 +48,7 @@ pub(super) struct BlockSeeds<'a> {
     old_m0: usize,
     /// Position of each segment point in the current block, [`NOT_IN_BLOCK`] for the others.
     to_local: Vec<PointOffsetType>,
-    pub(super) payload_m0: usize,
+    payload_m0: usize,
 }
 
 const NOT_IN_BLOCK: PointOffsetType = PointOffsetType::MAX;
@@ -69,13 +74,13 @@ impl<'a> BlockSeeds<'a> {
         }
     }
 
-    pub(super) fn enter_block(&mut self, points: &[PointOffsetType]) {
+    fn enter_block(&mut self, points: &[PointOffsetType]) {
         for (local_id, &point_id) in points.iter().enumerate() {
             self.to_local[point_id as usize] = local_id as PointOffsetType;
         }
     }
 
-    pub(super) fn leave_block(&mut self, points: &[PointOffsetType]) {
+    fn leave_block(&mut self, points: &[PointOffsetType]) {
         for &point_id in points {
             self.to_local[point_id as usize] = NOT_IN_BLOCK;
         }
@@ -99,22 +104,91 @@ impl<'a> BlockSeeds<'a> {
     ///
     /// A block the old build had too gives about as many candidates as the point had links,
     /// while main graph links alone give a fraction proportional to the block size, which
-    /// [`super::build_additional_links`] keeps below a few links.
+    /// the block filter keeps below a few links.
     fn min_candidates(&self, old_links_count: usize) -> usize {
         old_links_count.min(self.old_m0).div_ceil(2).max(1)
     }
 
-    /// Add block point `local_id` to `block_graph` with its links from the old graph, if it
+    /// Add the points of `block` that kept enough links to the block in the old graph to the
+    /// block graph, with those links. `final_graph` is the graph the block will be merged into.
+    /// Returns the block points left to insert by search.
+    pub(super) fn seed_block(
+        &mut self,
+        block: &Block,
+        final_graph: &GraphLayersBuilder,
+        pool: &ThreadPool,
+        counter: &AtomicU64,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let stopped = block.ctx.stopped;
+        let num_points = block.points.len() as PointOffsetType;
+
+        self.enter_block(block.points);
+        let block_seeds = &*self;
+        let seeded = pool.install(|| {
+            (0..num_points)
+                .into_par_iter()
+                .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
+                .map(|local_id| {
+                    check_process_stopped(stopped)?;
+                    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
+                    let replacements = block_seeds.seed_point(local_id, block, final_graph)?;
+                    if replacements.is_some() {
+                        counter.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Ok::<_, OperationError>((local_id, replacements))
+                })
+                .collect::<OperationResult<Vec<_>>>()
+        });
+        self.leave_block(block.points);
+        let seeded = seeded?;
+
+        // Link the replacements of removed points back. Those that are not seeded get
+        // their links when they are inserted.
+        let payload_m0 = self.payload_m0;
+        let is_seeded: BitVec = seeded.iter().map(|(_, r)| r.is_some()).collect();
+        pool.install(|| {
+            seeded.par_iter().try_for_each(|(local_id, replacements)| {
+                let Some(replacements) = replacements.as_ref().filter(|r| !r.is_empty()) else {
+                    return Ok(());
+                };
+                check_process_stopped(stopped)?;
+                let _scope = ambient::unmeasured_guard(reason("Internal operation"));
+                let scorer = block.scorer(block.points[*local_id as usize])?;
+                let mut items = ItemsBuffer::default();
+                for &other in replacements {
+                    if !is_seeded[other as usize] {
+                        continue;
+                    }
+                    let mut links = block.graph.links_mut(other, 0);
+                    if !links.links().contains(local_id) {
+                        links.connect_with_heuristic(
+                            *local_id,
+                            other,
+                            payload_m0,
+                            |a, b| scorer.score_internal(a, b),
+                            &mut items,
+                        );
+                    }
+                }
+                Ok::<_, OperationError>(())
+            })
+        })?;
+        Ok(seeded
+            .into_iter()
+            .filter_map(|(local_id, replacements)| replacements.is_none().then_some(local_id))
+            .collect())
+    }
+
+    /// Add block point `local_id` to the block graph with its links from the old graph, if it
     /// has enough of them. `final_graph` is the graph the block will be merged into. Returns
     /// `None` if it did not, else the links it took in place of removed points.
-    pub(super) fn seed_point(
+    fn seed_point(
         &self,
         local_id: PointOffsetType,
-        block: &BlockContext,
-        block_graph: &GraphLayersBuilder,
+        block: &Block,
         final_graph: &GraphLayersBuilder,
     ) -> OperationResult<Option<Vec<PointOffsetType>>> {
-        let block_deleted = block.deleted;
+        let block_deleted = &block.deleted;
         if block_deleted[local_id as usize] {
             return Ok(None);
         }
@@ -187,31 +261,8 @@ impl<'a> BlockSeeds<'a> {
             candidates = select_links(places, &candidates, point_id, block)?;
         }
         replacements.retain(|r| candidates.contains(r));
-        block_graph.add_new_point(local_id, vec![candidates]);
+        block.graph.add_new_point(local_id, vec![candidates]);
         Ok(Some(replacements))
-    }
-}
-
-/// A payload block being built: its points, numbered by position, and what scores them.
-pub(super) struct BlockContext<'a> {
-    /// Segment ids of the block points.
-    pub(super) points: &'a [PointOffsetType],
-    /// One flag per block point.
-    pub(super) deleted: &'a BitVec,
-    pub(super) vector_storage: &'a VectorStorageEnum,
-    pub(super) quantized_vectors: &'a Option<QuantizedVectors>,
-}
-
-impl<'a> BlockContext<'a> {
-    /// Scorer against segment point `point_id`, taking block point ids.
-    pub(super) fn scorer(&self, point_id: PointOffsetType) -> OperationResult<FilteredScorer<'a>> {
-        FilteredScorer::new_block_scorer(
-            point_id,
-            self.points,
-            self.vector_storage,
-            self.quantized_vectors.as_ref(),
-            self.deleted,
-        )
     }
 }
 
@@ -221,7 +272,7 @@ fn select_links(
     count: usize,
     candidates: &[PointOffsetType],
     point_id: PointOffsetType,
-    block: &BlockContext,
+    block: &Block,
 ) -> OperationResult<Vec<PointOffsetType>> {
     let mut scorer = block.scorer(point_id)?;
     let mut scored: Vec<ScoredPointOffset> = scorer.score_points_unfiltered(candidates)?.collect();
