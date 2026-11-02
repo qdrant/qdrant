@@ -91,11 +91,8 @@ pub struct MmapFile {
     path: PathBuf,
 
     writeable: bool,
-    /// The whole mapping was faulted into RAM, by a populating open or
-    /// [`UniversalRead::populate`], and not evicted or grown since.
-    /// While set, [`UniversalRead::will_need`] skips the `thread_faulted`
-    /// check, which contends on the process `mm` when many threads score
-    /// batches at once (e.g. during HNSW construction).
+    /// The whole mapping was faulted into RAM.
+    /// Lets `will_need` skip its per-batch `thread_faulted` syscall.
     resident: AtomicBool,
     #[cfg_attr(target_os = "linux", expect(dead_code))]
     advice: AdviceSetting,
@@ -415,9 +412,7 @@ impl MmapFile {
     /// Remap both mmaps to `new_len` and refresh the cached pointers.
     ///
     /// `populate` only applies to the non-Linux path, which rebuilds the
-    /// mapping from scratch; the Linux `mremap` keeps the old pages resident
-    /// but leaves the grown tail unfaulted, so the handle stops being
-    /// [`resident`](Self::resident).
+    /// mapping from scratch; the Linux `mremap` keeps residency as is.
     fn remap_to(&mut self, new_len: usize, populate: bool) -> UioResult<()> {
         let mut mmap = self.mmap.lock();
         let mut mmap_seq = self.mmap_seq.as_ref().map(|m| m.lock());
@@ -691,8 +686,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     use super::*;
 
-    /// `will_need` skips the `thread_faulted` check once a file opened without
-    /// populate has been populated, until its RAM cache is cleared.
+    /// `populate` marks the file resident until its RAM cache is cleared or it grows.
     #[cfg(target_os = "linux")]
     #[test]
     fn populate_after_open_is_tracked() {
@@ -706,13 +700,19 @@ mod tests {
             populate: Populate::No,
             advice: AdviceSetting::Global,
         };
-        let mmap = MmapFs.open(&path, options, ()).unwrap();
+        let mut mmap = MmapFs.open(&path, options, ()).unwrap();
         assert!(!mmap.resident.load(Ordering::Relaxed));
 
         mmap.populate().unwrap();
         assert!(mmap.resident.load(Ordering::Relaxed));
 
         mmap.clear_ram_cache().unwrap();
+        assert!(!mmap.resident.load(Ordering::Relaxed));
+
+        mmap.populate().unwrap();
+        let mut file = fs_err::OpenOptions::new().append(true).open(&path).unwrap();
+        io::Write::write_all(&mut file, &[1u8; 64 * 1024]).unwrap();
+        mmap.live_reload().unwrap();
         assert!(!mmap.resident.load(Ordering::Relaxed));
     }
 
