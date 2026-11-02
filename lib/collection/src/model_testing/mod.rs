@@ -656,7 +656,11 @@ pub async fn run(
     // reproducible; each redraw is logged with its op tick so a failure is attributable to the
     // config that was live. (This consumes rng draws, so the op stream differs from a non-swarm
     // build for the same seed.)
-    let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
+    // Read once: feature flags are process-global and stable for the run. Edge-verify and
+    // `--append-only-mutations` both set this; masking DeleteVectors* must follow so the
+    // harness never emits Logstore-incompatible named-vector deletes.
+    let append_only = common::flags::feature_flags().append_only_mutations;
+    let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots, append_only);
     let initial_enabled = swarm.enabled_ops();
     trace.swarm(0, &initial_enabled);
     println!("model_testing: op:0 swarm -> {initial_enabled:?}");
@@ -728,7 +732,7 @@ pub async fn run(
         // Recompute the swarm config at each interval boundary (op 0 was drawn before the loop).
         if i > 0 && i.is_multiple_of(swarm_interval) {
             let prev = swarm.enabled_ops();
-            swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
+            swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots, append_only);
             let next = swarm.enabled_ops();
             // Trace keeps the full enabled set (for reproducibility); the console shows only the
             // delta vs. the previous config — that's what changed.
@@ -1483,12 +1487,12 @@ mod tests {
     /// Not run by default CI (needs the feature):
     /// `cargo nextest run -p collection --features edge-verify -E 'test(harness_edge_verify)'`
     ///
-    /// KNOWN BLOCKER, unrelated to the edge code: the serverless bundle's append-only
-    /// mode trips a pre-existing `debug_assert` in `segment::index::query_estimator`
-    /// (`available_vectors` exceeds `available_points` once clone-and-tombstone copies
-    /// accumulate), so this test currently flakes on that panic. It reproduces with
-    /// `edge_verify = false` under the same flags (e.g. seed 362077359617665433), so the
-    /// gate must not be wired into CI until that engine bug is fixed.
+    /// Append-only constraints for this cell:
+    /// - `DeleteVectors` / `DeleteVectorsByFilter` are masked by the swarm (Logstore rejects
+    ///   named-vector deletes under append-only).
+    /// - Cardinality adjustment clamps when clone-and-tombstone leaves
+    ///   `available_vectors > available_points` (see `adjust_to_available_vectors`).
+    /// Keep the gate out of required CI until a longer soak looks clean.
     #[cfg(feature = "edge-verify")]
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_edge_verify() {

@@ -464,6 +464,13 @@ impl Swarm {
     /// Must stay aligned with `NAMES`/`BASE`.
     const SNAPSHOT_OPS: [usize; 1] = [37];
 
+    /// Ops masked off under append-only mutations (`append_only_mutations` / serverless /
+    /// `--edge-verify`). Named-vector deletes call into Logstore `delete_value`, which is
+    /// unsupported in append-only mode (`Operation not supported in append-only mode: deleting
+    /// values`). Point-level `Delete` / `DeleteByFilter` stay enabled — those use the
+    /// clone-and-tombstone path. Must stay aligned with `NAMES`/`BASE`.
+    const APPEND_ONLY_OFF_OPS: [usize; 2] = [15, 16]; // DeleteVectors, DeleteVectorsByFilter
+
     /// Draw a per-run config: each non-forced op is included with probability 0.5 (keeping its
     /// base weight); omitted ops get weight 0.
     ///
@@ -473,13 +480,15 @@ impl Swarm {
     /// rng-draw count is identical regardless of the flag and a given seed reproduces the same op
     /// stream for the non-broken ops.
     ///
-    /// With `disable_snapshots`, the snapshot ops are forced to weight 0. The masking is applied
-    /// *after* the draw loop so each op (snapshots included) still draws its `random_bool` — the
-    /// rng-draw count is unchanged, so toggling the flag doesn't shift the other ops' swarm draws.
+    /// With `disable_snapshots` / `append_only`, the corresponding ops are forced to weight 0.
+    /// The masking is applied *after* the draw loop so each op still draws its `random_bool` —
+    /// the rng-draw count is unchanged, so toggling those flags doesn't shift the other ops'
+    /// swarm draws.
     pub(super) fn random(
         rng: &mut impl Rng,
         enable_force_off: bool,
         disable_snapshots: bool,
+        append_only: bool,
     ) -> Self {
         let mut weights = Self::BASE;
         for (i, w) in weights.iter_mut().enumerate() {
@@ -496,6 +505,11 @@ impl Swarm {
         }
         if disable_snapshots {
             for i in Self::SNAPSHOT_OPS {
+                weights[i] = 0;
+            }
+        }
+        if append_only {
+            for i in Self::APPEND_ONLY_OFF_OPS {
                 weights[i] = 0;
             }
         }
