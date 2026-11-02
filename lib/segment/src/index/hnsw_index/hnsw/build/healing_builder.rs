@@ -9,7 +9,7 @@ use log::debug;
 use self::seeds::BlockSeeds;
 use super::block::Block;
 use super::context::MainGraphProgress;
-use super::graph_builder::{GraphBuilderMethod, StepError};
+use super::graph_builder::GraphBuilderMethod;
 use super::hnsw_builder::HnswBuilder;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
@@ -49,19 +49,13 @@ impl<'a> HealingBuilder<'a> {
     pub fn local(&mut self) -> &mut LocalBuilder<'a> {
         &mut self.hnsw.0
     }
-
-    /// The state the method builds on, without the seeds kept across blocks.
-    #[cfg(feature = "gpu")]
-    pub fn into_local(self) -> LocalBuilder<'a> {
-        self.hnsw.0
-    }
 }
 
-impl<'a> GraphBuilderMethod<'a> for HealingBuilder<'a> {
-    fn build_main(mut self) -> Result<Self, StepError<'a>> {
+impl GraphBuilderMethod for HealingBuilder<'_> {
+    fn build_main(&mut self) -> OperationResult<()> {
         if !self.hnsw.0.ctx.has_main_graph() {
             // No main graph
-            return Ok(self);
+            return Ok(());
         }
         let progress = self
             .hnsw
@@ -115,8 +109,7 @@ impl<'a> GraphBuilderMethod<'a> for HealingBuilder<'a> {
         debug!("Migrated in {:?}", timer.elapsed());
         drop(migrate);
 
-        self.hnsw.insert(&missing_points, main_graph)?;
-        Ok(self)
+        self.hnsw.insert(&missing_points, main_graph)
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
@@ -136,13 +129,12 @@ impl<'a> GraphBuilderMethod<'a> for HealingBuilder<'a> {
     /// Points that kept enough links to the block in the old graph start with them, the rest
     /// are inserted by search.
     fn build_block(
-        mut self,
+        &mut self,
         points: &[PointOffsetType],
         counter: &AtomicU64,
-    ) -> Result<Self, StepError<'a>> {
+    ) -> OperationResult<()> {
         if !self.seeds_payload_blocks() {
-            self.hnsw = self.hnsw.build_block(points, counter)?;
-            return Ok(self);
+            return self.hnsw.build_block(points, counter);
         }
         self.old.populate_links();
         let local = &mut self.hnsw.0;
@@ -160,6 +152,6 @@ impl<'a> GraphBuilderMethod<'a> for HealingBuilder<'a> {
         self.seeded_points += points.len() - to_insert.len();
         block.insert(&to_insert, local.pool, counter)?;
         block.merge_into(&mut local.graph);
-        Ok(self)
+        Ok(())
     }
 }

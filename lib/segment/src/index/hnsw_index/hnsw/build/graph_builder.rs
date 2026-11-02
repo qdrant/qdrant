@@ -11,9 +11,7 @@ use super::healing_builder::HealingBuilder;
 use super::hnsw_builder::HnswBuilder;
 use super::local_builder::LocalBuilder;
 use super::payload_blocks::FieldBlocks;
-#[cfg(feature = "gpu")]
-use crate::common::operation_error::CancelledError;
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 #[cfg(feature = "gpu")]
@@ -31,20 +29,17 @@ pub(super) enum GraphBuilder<'a> {
 }
 
 /// The steps of a graph build. Implemented by every method.
-///
-/// A step takes the builder and returns it. A step the GPU can't build returns its state
-/// instead, and `GraphBuilder::run` builds it with another method.
-pub(super) trait GraphBuilderMethod<'a>: Sized {
+pub(super) trait GraphBuilderMethod {
     /// Build the main graph once, consuming its progress phases from the context.
     /// Without a main graph (`m == 0`), nothing is linked.
-    fn build_main(self) -> Result<Self, StepError<'a>>;
+    fn build_main(&mut self) -> OperationResult<()>;
 
     /// Link one payload block in its own id space and merge it into the graph.
     fn build_block(
-        self,
+        &mut self,
         points: &[PointOffsetType],
         counter: &AtomicU64,
-    ) -> Result<Self, StepError<'a>>;
+    ) -> OperationResult<()>;
 
     /// The finished graph, plus the number of indexed vectors.
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)>;
@@ -52,42 +47,6 @@ pub(super) trait GraphBuilderMethod<'a>: Sized {
     /// Whether payload blocks start from the links of the old graph. The shared code then
     /// keeps the block ranges of the old index, so that the blocks match the old ones.
     fn seeds_payload_blocks(&self) -> bool;
-}
-
-/// Why a step returned no builder.
-#[cfg(feature = "gpu")]
-pub(super) enum StepError<'a> {
-    /// Boxed: `LocalBuilder` is large enough to trip `clippy::result_large_err`.
-    Fallback(Box<Fallback<'a>>),
-    Failed(OperationError),
-}
-
-/// Without a GPU, no step falls back.
-#[cfg(not(feature = "gpu"))]
-pub(super) type StepError<'a> = OperationError;
-
-#[cfg(feature = "gpu")]
-impl From<OperationError> for StepError<'_> {
-    fn from(err: OperationError) -> Self {
-        StepError::Failed(err)
-    }
-}
-
-#[cfg(feature = "gpu")]
-impl From<CancelledError> for StepError<'_> {
-    fn from(err: CancelledError) -> Self {
-        StepError::Failed(OperationError::from(err))
-    }
-}
-
-/// A step the GPU couldn't build. Nothing was linked; the state comes back for the next method.
-#[cfg(feature = "gpu")]
-pub(super) struct Fallback<'a> {
-    pub local: LocalBuilder<'a>,
-    /// So that later steps still try the GPU.
-    pub gpu: GpuState,
-    /// Picks the next method, as in `select`.
-    pub old_index: Option<&'a OldIndex<'a>>,
 }
 
 /// What `select` decides with.
@@ -107,8 +66,8 @@ impl<'a> GraphBuilder<'a> {
     /// 1. Small segments, or nothing to build: HNSW, or healing if there is an old graph.
     ///    Nothing else would pay off.
     /// 2. A GPU: GPU, even if the old graph could be healed. Points keep their levels from the
-    ///    old graph, and what fails on the GPU is built by the method of rules 3 and 4, see
-    ///    [`Self::run`]: the old graph is healed if the GPU fails.
+    ///    old graph, and what fails on the GPU is built by the method of rules 3 and 4, which
+    ///    the GPU method keeps for the whole build: the old graph is healed if the GPU fails.
     /// 3. An old graph worth healing: healing.
     /// 4. Otherwise, HNSW.
     pub fn select(
@@ -132,9 +91,8 @@ impl<'a> GraphBuilder<'a> {
             && let Some(gpu) = GpuState::new(&local.ctx, gpu_device)?
         {
             return Ok(Self::Gpu(Box::new(GpuBuilder {
-                local,
+                cpu: Self::without_gpu(local, old_index),
                 gpu,
-                old_index,
             })));
         }
         #[cfg(not(feature = "gpu"))]
@@ -152,39 +110,9 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    /// Run `step`. A step the GPU can't build is built by the method `select` picks without the
-    /// GPU, on the state the GPU returns, and the next step tries the GPU again.
-    #[cfg(feature = "gpu")]
-    pub fn run(self, step: impl Fn(Self) -> Result<Self, StepError<'a>>) -> OperationResult<Self> {
-        match step(self) {
-            Ok(builder) => Ok(builder),
-            Err(StepError::Failed(err)) => Err(err),
-            Err(StepError::Fallback(fallback)) => {
-                let Fallback {
-                    local,
-                    gpu,
-                    old_index,
-                } = *fallback;
-                // Only the GPU falls back, so this runs `step` once more
-                let local = Self::without_gpu(local, old_index).run(step)?.into_local();
-                Ok(Self::Gpu(Box::new(GpuBuilder {
-                    local,
-                    gpu,
-                    old_index,
-                })))
-            }
-        }
-    }
-
-    /// Run `step`. Without a GPU, no step falls back.
-    #[cfg(not(feature = "gpu"))]
-    pub fn run(self, step: impl Fn(Self) -> Result<Self, StepError<'a>>) -> OperationResult<Self> {
-        step(self)
-    }
-
-    /// Link the blocks of one field worth building, given the graph built so far, each with
-    /// [`Self::run`]. Call once per field, in build order.
-    pub fn build_field_blocks(mut self, field: FieldBlocks<'_>) -> OperationResult<Self> {
+    /// Link the blocks of one field worth building, given the graph built so far. Call once per
+    /// field, in build order.
+    pub fn build_field_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
         let FieldBlocks {
             progress,
             skip,
@@ -202,61 +130,43 @@ impl<'a> GraphBuilder<'a> {
                 continue;
             };
             if self.local().should_build(&block, skip) {
-                self = self.run(|builder| builder.build_block(&block.points, &counter))?;
+                self.build_block(&block.points, &counter)?;
             }
         }
-        Ok(self)
+        Ok(())
     }
 
     /// The state the method builds on.
-    fn local(&mut self) -> &mut LocalBuilder<'a> {
+    pub(super) fn local(&mut self) -> &mut LocalBuilder<'a> {
         match self {
             GraphBuilder::Hnsw(builder) => &mut builder.0,
             GraphBuilder::Healing(builder) => builder.local(),
             #[cfg(feature = "gpu")]
-            GraphBuilder::Gpu(builder) => &mut builder.local,
-        }
-    }
-
-    /// The state the method builds on, for the GPU to build on again.
-    #[cfg(feature = "gpu")]
-    fn into_local(self) -> LocalBuilder<'a> {
-        match self {
-            GraphBuilder::Hnsw(builder) => builder.0,
-            GraphBuilder::Healing(builder) => builder.into_local(),
-            GraphBuilder::Gpu(builder) => builder.local,
+            GraphBuilder::Gpu(builder) => builder.cpu.local(),
         }
     }
 }
 
-impl<'a> GraphBuilderMethod<'a> for GraphBuilder<'a> {
-    fn build_main(self) -> Result<Self, StepError<'a>> {
+impl GraphBuilderMethod for GraphBuilder<'_> {
+    fn build_main(&mut self) -> OperationResult<()> {
         match self {
-            GraphBuilder::Hnsw(builder) => builder.build_main().map(GraphBuilder::Hnsw),
-            GraphBuilder::Healing(builder) => builder.build_main().map(GraphBuilder::Healing),
+            GraphBuilder::Hnsw(builder) => builder.build_main(),
+            GraphBuilder::Healing(builder) => builder.build_main(),
             #[cfg(feature = "gpu")]
-            GraphBuilder::Gpu(builder) => builder
-                .build_main()
-                .map(|builder| GraphBuilder::Gpu(Box::new(builder))),
+            GraphBuilder::Gpu(builder) => builder.build_main(),
         }
     }
 
     fn build_block(
-        self,
+        &mut self,
         points: &[PointOffsetType],
         counter: &AtomicU64,
-    ) -> Result<Self, StepError<'a>> {
+    ) -> OperationResult<()> {
         match self {
-            GraphBuilder::Hnsw(builder) => {
-                builder.build_block(points, counter).map(GraphBuilder::Hnsw)
-            }
-            GraphBuilder::Healing(builder) => builder
-                .build_block(points, counter)
-                .map(GraphBuilder::Healing),
+            GraphBuilder::Hnsw(builder) => builder.build_block(points, counter),
+            GraphBuilder::Healing(builder) => builder.build_block(points, counter),
             #[cfg(feature = "gpu")]
-            GraphBuilder::Gpu(builder) => builder
-                .build_block(points, counter)
-                .map(|builder| GraphBuilder::Gpu(Box::new(builder))),
+            GraphBuilder::Gpu(builder) => builder.build_block(points, counter),
         }
     }
 

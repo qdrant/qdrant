@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 use super::block::Block;
 use super::context::{GraphBuildContext, MainGraphProgress};
-use super::graph_builder::{GraphBuilderMethod, StepError};
+use super::graph_builder::GraphBuilderMethod;
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
@@ -91,23 +91,23 @@ impl HnswBuilder<'_> {
     }
 }
 
-impl<'a> GraphBuilderMethod<'a> for HnswBuilder<'a> {
+impl GraphBuilderMethod for HnswBuilder<'_> {
     fn build_block(
-        mut self,
+        &mut self,
         points: &[PointOffsetType],
         counter: &AtomicU64,
-    ) -> Result<Self, StepError<'a>> {
+    ) -> OperationResult<()> {
         let block = Block::new(&self.0.ctx, points);
         let local_ids = (0..points.len() as PointOffsetType).collect::<Vec<_>>();
         block.insert(&local_ids, self.0.pool, counter)?;
         block.merge_into(&mut self.0.graph);
-        Ok(self)
+        Ok(())
     }
 
-    fn build_main(mut self) -> Result<Self, StepError<'a>> {
+    fn build_main(&mut self) -> OperationResult<()> {
         if !self.0.ctx.has_main_graph() {
             // No main graph
-            return Ok(self);
+            return Ok(());
         }
         let progress = self.0.ctx.progress.take().expect("main graph built once");
         let MainGraphProgress {
@@ -116,8 +116,7 @@ impl<'a> GraphBuilderMethod<'a> for HnswBuilder<'a> {
         } = progress;
         // Nothing to heal
         drop(migrate);
-        self.insert(&self.0.points, main_graph)?;
-        Ok(self)
+        self.insert(&self.0.points, main_graph)
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {

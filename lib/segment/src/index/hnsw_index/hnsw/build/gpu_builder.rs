@@ -6,8 +6,7 @@ use common::reason::reason;
 use common::types::PointOffsetType;
 
 use super::context::{GraphBuildContext, GraphParams};
-use super::graph_builder::{Fallback, GraphBuilderMethod, StepError};
-use super::local_builder::LocalBuilder;
+use super::graph_builder::{GraphBuilder, GraphBuilderMethod};
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::HnswM;
@@ -19,22 +18,19 @@ use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
 use crate::index::hnsw_index::gpu::{get_gpu_force_half_precision, get_gpu_groups_count};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::hnsw::old_index::{OldIndex, payload_links_reusable};
 use crate::index::hnsw_index::hnsw::{
     FINISH_MAIN_GRAPH_LOG_MESSAGE, HNSW_USE_HEURISTIC, SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
 };
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::VectorStorageRead as _;
 
-/// Inserts points in batches on a GPU. A step the GPU fails to build returns the state as a
-/// [`Fallback`], and is built on the CPU by the method `select` picks without a GPU: the old
-/// graph is healed if there is one worth healing.
+/// Inserts points in batches on a GPU. What the GPU fails to build is built on the CPU by
+/// `cpu`, which also holds the graph: the old graph is healed if there is one worth healing.
 pub(super) struct GpuBuilder<'a> {
-    pub local: LocalBuilder<'a>,
+    /// What `select` picks without a GPU: builds what the GPU fails to build. Never `Gpu`.
+    /// Kept for the whole build, so it keeps its state across the steps it builds.
+    pub cpu: GraphBuilder<'a>,
     pub gpu: GpuState,
-    /// The old graph worth healing, if any: it picks the method that builds what the GPU fails
-    /// to build.
-    pub old_index: Option<&'a OldIndex<'a>>,
 }
 
 /// GPU vectors and block insert context, kept across blocks.
@@ -175,83 +171,53 @@ impl GpuState {
     }
 }
 
-impl<'a> GpuBuilder<'a> {
-    /// The GPU failed and nothing was linked: hand the state to the method `select` picks
-    /// without a GPU.
-    fn fall_back(self) -> StepError<'a> {
-        let GpuBuilder {
-            local,
-            gpu,
-            old_index,
-        } = self;
-        StepError::Fallback(Box::new(Fallback {
-            local,
-            gpu,
-            old_index,
-        }))
-    }
-}
-
-impl<'a> GraphBuilderMethod<'a> for GpuBuilder<'a> {
-    fn build_main(mut self) -> Result<Self, StepError<'a>> {
-        let GpuBuilder {
-            local,
-            gpu,
-            old_index: _,
-        } = &mut self;
+impl GraphBuilderMethod for GpuBuilder<'_> {
+    fn build_main(&mut self) -> OperationResult<()> {
+        let GpuBuilder { cpu, gpu } = self;
+        let local = cpu.local();
         if !local.ctx.has_main_graph() {
             // No main graph
-            return Ok(self);
+            return Ok(());
         }
         match gpu.build_main(&local.ctx, &local.graph, &local.points)? {
             Some(graph) => {
                 local.graph = graph;
                 // The phases only time CPU work, so they end unstarted
                 drop(local.ctx.progress.take());
-                Ok(self)
+                Ok(())
             }
             // The phases are untouched, so the CPU method runs them in order, as without a GPU
-            None => Err(self.fall_back()),
+            None => cpu.build_main(),
         }
     }
 
     /// Block points linked on the GPU are not counted.
     fn build_block(
-        mut self,
+        &mut self,
         points: &[PointOffsetType],
-        _counter: &AtomicU64,
-    ) -> Result<Self, StepError<'a>> {
-        let GpuBuilder {
-            local,
-            gpu,
-            old_index: _,
-        } = &mut self;
+        counter: &AtomicU64,
+    ) -> OperationResult<()> {
+        let GpuBuilder { cpu, gpu } = self;
+        let local = cpu.local();
         match gpu.build_block(&local.ctx, points)? {
             Some(block_graph) => {
                 local.graph.merge_from_other(block_graph);
-                Ok(self)
+                Ok(())
             }
-            None => Err(self.fall_back()),
+            None => cpu.build_block(points, counter),
         }
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
-        let GpuBuilder {
-            local,
-            gpu,
-            old_index: _,
-        } = self;
+        let GpuBuilder { cpu, gpu } = self;
         // Release the GPU memory before the graph is saved
         drop(gpu);
-        Ok(local.finalize())
+        cpu.finalize()
     }
 
     fn seeds_payload_blocks(&self) -> bool {
-        // The GPU does not, but the blocks it fails to build are built by the method `select`
-        // picks without a GPU: healing, which seeds them if it can
-        self.old_index.is_some_and(|old_index| {
-            payload_links_reusable(self.local.ctx.block_params.hnsw_m, &old_index.index.config)
-        })
+        // The GPU does not, but `cpu` builds the blocks it fails to build, and may seed them
+        self.cpu.seeds_payload_blocks()
     }
 }
 

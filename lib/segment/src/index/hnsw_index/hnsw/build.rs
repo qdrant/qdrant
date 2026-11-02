@@ -174,7 +174,7 @@ impl HNSWIndex {
         )?;
 
         // Links nothing when `m == 0`
-        builder = builder.run(GraphBuilder::build_main)?;
+        builder.build_main()?;
 
         check_process_stopped(stopped)?;
 
@@ -208,7 +208,7 @@ impl HNSWIndex {
                     BlockSkip::Never
                 };
 
-                builder = builder.build_field_blocks(FieldBlocks {
+                builder.build_field_blocks(FieldBlocks {
                     progress: field_progress,
                     skip,
                     blocks,
