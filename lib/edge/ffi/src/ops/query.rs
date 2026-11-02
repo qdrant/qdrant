@@ -112,6 +112,7 @@ impl From<SearchParams> for SegmentSearchParams {
             indexed_only,
             acorn: None,
             idf: None,
+            pathseer: None,
         }
     }
 }

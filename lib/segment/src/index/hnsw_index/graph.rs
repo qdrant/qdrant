@@ -183,6 +183,7 @@ impl<S: UniversalRead> HnswGraph<S> {
             custom_entry_points,
             filtered_points_reader,
             seeds_num,
+            algorithm == SearchAlgorithm::PathSeer,
         )?
         else {
             return Ok(Vec::new());
@@ -224,7 +225,25 @@ impl<S: UniversalRead> HnswGraph<S> {
         custom_entry_points: Option<&[PointOffsetType]>,
         filtered_points: Option<&FilteredPoints<'_>>,
         seeds_num: usize,
+        unfiltered: bool,
     ) -> OperationResult<Option<SearchEntry>> {
+        if unfiltered {
+            // PathSeer descends the upper graph using live points, regardless of payload filter.
+            let accepts = |point_id| scorer.filters().check_live(point_id);
+            let custom_best = custom_entry_points
+                .unwrap_or_default()
+                .iter()
+                .filter(|&&point_id| accepts(point_id))
+                .map(|&point_id| {
+                    let level = self.point_level(point_id)?;
+                    OperationResult::Ok(EntryPoint { point_id, level })
+                })
+                .process_results(|it| it.max_by_key(|ep| ep.level))?;
+            return Ok(custom_best
+                .or_else(|| self.entry_points().get_entry_point(accepts))
+                .map(SearchEntry::Point));
+        }
+
         // Custom entry points
         if let Some(custom_entry_points) = custom_entry_points {
             let mut point_ids = custom_entry_points.to_vec();

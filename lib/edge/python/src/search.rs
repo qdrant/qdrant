@@ -141,6 +141,7 @@ impl PySearchParams {
             indexed_only,
             acorn: acorn.map(AcornSearchParams::from),
             idf: idf.map(IdfParams::from),
+            pathseer: None,
         })
     }
 
@@ -189,6 +190,7 @@ impl PySearchParams {
             indexed_only: _,
             acorn: _,
             idf: _,
+            pathseer: _,
         } = self.0;
     }
 }
