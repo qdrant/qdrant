@@ -38,6 +38,7 @@ pub fn accepted_response(
         let u = Usage {
             hardware: hardware_usage,
             inference: inference_usage,
+            network: None,
         };
         if u.is_empty() { None } else { Some(u) }
     };
@@ -67,6 +68,7 @@ where
             usage: Some(Usage {
                 hardware: hardware_usage,
                 inference: inference_usage,
+                network: None,
             }),
         }),
         Err(err) => process_response_error_with_inference_usage(
@@ -107,6 +109,7 @@ pub fn process_response_error_with_inference_usage(
         usage: Some(Usage {
             hardware: hardware_usage,
             inference: inference_usage,
+            network: None,
         }),
     };
 

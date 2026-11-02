@@ -698,6 +698,7 @@ pub async fn update_batch(
         usage: Usage::new(
             request_hw_counter.to_grpc_api(),
             total_inference_usage.into_non_empty(),
+            None,
         )
         .into_non_empty(),
     }))

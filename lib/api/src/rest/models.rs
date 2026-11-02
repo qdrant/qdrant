@@ -58,6 +58,8 @@ pub struct Usage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hardware: Option<HardwareUsage>,
     pub inference: Option<InferenceUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<NetworkUsage>,
 }
 
 impl Usage {
@@ -65,9 +67,10 @@ impl Usage {
         let Usage {
             hardware,
             inference,
+            network,
         } = self;
 
-        hardware.is_none() && inference.is_none()
+        hardware.is_none() && inference.is_none() && network.is_none()
     }
 }
 
@@ -87,6 +90,19 @@ pub struct HardwareUsage {
     pub payload_index_io_write: usize,
     pub vector_io_read: usize,
     pub vector_io_write: usize,
+}
+
+/// Usage of the remote storage and its local disk cache, spent to process the request
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct NetworkUsage {
+    /// Bytes read from the remote storage
+    pub remote_io_read: usize,
+    /// Read requests to the remote storage
+    pub remote_requests: usize,
+    /// Bytes served by the local disk cache
+    pub cache_io_read: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

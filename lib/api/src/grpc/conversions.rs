@@ -10,6 +10,7 @@ use ahash::AHashSet;
 use chrono::{NaiveDateTime, Timelike};
 use common::ambient::AmbientContext;
 use common::ambient::hw::{HardwareData, HwMetric};
+use common::ambient::net::{NetMetric, NetworkData};
 use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
@@ -3042,6 +3043,7 @@ impl From<PointsOperationResponseInternal> for PointsOperationResponse {
             usage: Some(Usage {
                 hardware: hardware_usage,
                 inference: inference_usage,
+                network: None,
             }),
         }
     }
@@ -3058,6 +3060,7 @@ impl From<PointsOperationResponse> for PointsOperationResponseInternal {
         let Usage {
             hardware,
             inference,
+            network: _,
         } = usage.unwrap_or_default();
         Self {
             result: result.map(UpdateResult::into),
@@ -3608,6 +3611,17 @@ impl From<AmbientContext> for HardwareUsage {
             payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
             vector_io_read: m(HwMetric::VectorIoRead),
             vector_io_write: m(HwMetric::VectorIoWrite),
+        }
+    }
+}
+
+impl From<NetworkData> for grpc::NetworkUsage {
+    fn from(value: NetworkData) -> Self {
+        let m = |metric: NetMetric| value[metric] as u64;
+        Self {
+            remote_io_read: m(NetMetric::RemoteIoRead),
+            remote_requests: m(NetMetric::RemoteRequests),
+            cache_io_read: m(NetMetric::CacheIoRead),
         }
     }
 }

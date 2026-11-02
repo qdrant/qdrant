@@ -1671,6 +1671,7 @@ message PointStruct {
 message Usage {
   optional HardwareUsage hardware = 1;
   optional InferenceUsage inference = 2;
+  optional NetworkUsage network = 3;
 }
 
 // ---------------------------------------------
@@ -1688,6 +1689,16 @@ message ModelUsage {
 // ---------------------------------------------
 // ------------ Hardware measurements ----------
 // ---------------------------------------------
+
+// ---------------------------------------------
+// ------------ Network measurements -----------
+// ---------------------------------------------
+
+message NetworkUsage {
+  uint64 remote_io_read = 1; // Bytes read from the remote storage
+  uint64 remote_requests = 2; // Read requests to the remote storage
+  uint64 cache_io_read = 3; // Bytes served by the local disk cache
+}
 
 message HardwareUsage {
   uint64 cpu = 1;

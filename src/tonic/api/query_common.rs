@@ -843,7 +843,12 @@ pub async fn query(
     let response = QueryResponse {
         result: scored_points.into_iter().map(ScoredPoint::into).collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
+        usage: Usage::new(
+            request_hw_counter.to_grpc_api(),
+            Some(inference_usage),
+            None,
+        )
+        .into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -908,6 +913,7 @@ pub async fn query_batch(
         usage: Usage::new(
             request_hw_counter.to_grpc_api(),
             total_inference_usage.into_non_empty(),
+            None,
         )
         .into_non_empty(),
     };
@@ -966,7 +972,12 @@ pub async fn query_groups(
     let response = QueryGroupsResponse {
         result: Some(grpc_group_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
+        usage: Usage::new(
+            request_hw_counter.to_grpc_api(),
+            Some(inference_usage),
+            None,
+        )
+        .into_non_empty(),
     };
 
     Ok(Response::new(response))

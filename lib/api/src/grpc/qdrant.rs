@@ -7904,6 +7904,8 @@ pub struct Usage {
     pub hardware: ::core::option::Option<HardwareUsage>,
     #[prost(message, optional, tag = "2")]
     pub inference: ::core::option::Option<InferenceUsage>,
+    #[prost(message, optional, tag = "3")]
+    pub network: ::core::option::Option<NetworkUsage>,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7916,6 +7918,19 @@ pub struct InferenceUsage {
 pub struct ModelUsage {
     #[prost(uint64, tag = "1")]
     pub tokens: u64,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NetworkUsage {
+    /// Bytes read from the remote storage
+    #[prost(uint64, tag = "1")]
+    pub remote_io_read: u64,
+    /// Read requests to the remote storage
+    #[prost(uint64, tag = "2")]
+    pub remote_requests: u64,
+    /// Bytes served by the local disk cache
+    #[prost(uint64, tag = "3")]
+    pub cache_io_read: u64,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]

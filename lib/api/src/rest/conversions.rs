@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use common::ambient::net::{NetMetric, NetworkData};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorStructInternal};
 use uuid::Uuid;
 
@@ -10,7 +11,17 @@ use super::{
 };
 use crate::grpc;
 use crate::rest::NamedVectorStruct;
-use crate::rest::models::InferenceUsage;
+use crate::rest::models::{InferenceUsage, NetworkUsage};
+
+impl From<NetworkData> for NetworkUsage {
+    fn from(value: NetworkData) -> Self {
+        Self {
+            remote_io_read: value[NetMetric::RemoteIoRead],
+            remote_requests: value[NetMetric::RemoteRequests],
+            cache_io_read: value[NetMetric::CacheIoRead],
+        }
+    }
+}
 
 impl From<InferenceUsage> for grpc::InferenceUsage {
     fn from(value: InferenceUsage) -> Self {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::grpc::{HardwareUsage, InferenceUsage, ModelUsage, Usage};
+use crate::grpc::{HardwareUsage, InferenceUsage, ModelUsage, NetworkUsage, Usage};
 
 impl HardwareUsage {
     pub fn add(&mut self, other: Self) {
@@ -49,10 +49,15 @@ impl HardwareUsage {
 }
 
 impl Usage {
-    pub fn new(hardware: Option<HardwareUsage>, inference: Option<InferenceUsage>) -> Self {
+    pub fn new(
+        hardware: Option<HardwareUsage>,
+        inference: Option<InferenceUsage>,
+        network: Option<NetworkUsage>,
+    ) -> Self {
         Self {
             hardware,
             inference,
+            network,
         }
     }
 
@@ -60,12 +65,14 @@ impl Usage {
         let Usage {
             hardware,
             inference,
+            network,
         } = self;
 
         let hardware_empty = hardware.as_ref().is_none_or(|h| h.is_empty());
         let inference_empty = inference.as_ref().is_none_or(|i| i.is_empty());
+        let network_empty = network.as_ref().is_none_or(|n| n.is_empty());
 
-        hardware_empty && inference_empty
+        hardware_empty && inference_empty && network_empty
     }
 
     pub fn into_non_empty(self) -> Option<Self> {
@@ -76,7 +83,20 @@ impl Usage {
         Usage {
             hardware,
             inference: None,
+            network: None,
         }
+    }
+}
+
+impl NetworkUsage {
+    pub fn is_empty(&self) -> bool {
+        let Self {
+            remote_io_read,
+            remote_requests,
+            cache_io_read,
+        } = self;
+
+        *remote_io_read == 0 && *remote_requests == 0 && *cache_io_read == 0
     }
 }
 
