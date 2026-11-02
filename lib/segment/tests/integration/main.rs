@@ -1,5 +1,6 @@
 #![expect(clippy::wildcard_enum_match_arm, reason = "test code")]
 
+mod append_only_storages;
 mod batch_search_test;
 mod bm25_compare;
 mod byte_storage_hnsw_test;
