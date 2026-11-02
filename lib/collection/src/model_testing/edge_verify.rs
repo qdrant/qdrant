@@ -18,6 +18,7 @@ use std::path::Path;
 use common::universal_io::{MmapFile, MmapFs};
 #[cfg(feature = "edge-verify")]
 use edge::{EdgeShardRead, ReadOnlyEdgeShard, ScrollRequest};
+use segment::common::operation_error::OperationResult;
 #[cfg(feature = "edge-verify")]
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 #[cfg(feature = "edge-verify")]
@@ -89,33 +90,31 @@ impl EdgeVerifier {
     /// Refresh every follower and scroll the full collection into a model-shaped map.
     /// Only meaningful at a quiesced checkpoint: op loop idle, background snapshot
     /// drained, and every shard force-flushed — the follower sees flushed state only.
+    ///
+    /// Returns `Err` on follower IO / live_reload failures so the checkpoint can retry
+    /// transient not-found races (manifest still lists a segment whose files the leader
+    /// has already removed). Logic bugs (duplicate ids across shards) still panic.
     #[cfg(feature = "edge-verify")]
-    pub(super) fn observe(&self, ctx: &str) -> Model {
+    pub(super) fn try_observe(&self, ctx: &str) -> OperationResult<Model> {
         let mut out = Model::new();
         for follower in &self.shards {
-            follower.live_reload().unwrap_or_else(|e| {
-                panic!(
+            follower.live_reload().map_err(|e| {
+                log::warn!(
                     "{ctx}: follower live_reload of {} failed: {e}",
                     follower.path().display(),
-                )
-            });
+                );
+                e
+            })?;
             let mut offset = None;
             loop {
-                let (records, next) = follower
-                    .scroll(ScrollRequest {
-                        offset,
-                        limit: Some(SCROLL_PAGE),
-                        filter: None,
-                        with_payload: Some(WithPayloadInterface::Bool(true)),
-                        with_vector: WithVector::Bool(true),
-                        order_by: None,
-                    })
-                    .unwrap_or_else(|e| {
-                        panic!(
-                            "{ctx}: follower scroll of {} failed: {e}",
-                            follower.path().display(),
-                        )
-                    });
+                let (records, next) = follower.scroll(ScrollRequest {
+                    offset,
+                    limit: Some(SCROLL_PAGE),
+                    filter: None,
+                    with_payload: Some(WithPayloadInterface::Bool(true)),
+                    with_vector: WithVector::Bool(true),
+                    order_by: None,
+                })?;
                 for record in records {
                     let id = record.id;
                     if out.insert(id, record_to_model_entry(record, ctx)).is_some() {
@@ -128,13 +127,13 @@ impl EdgeVerifier {
                 }
             }
         }
-        out
+        Ok(out)
     }
 
     // `&self` mirrors the real method so call sites compile identically in both configs.
     #[allow(clippy::unused_self)]
     #[cfg(not(feature = "edge-verify"))]
-    pub(super) fn observe(&self, _ctx: &str) -> Model {
+    pub(super) fn try_observe(&self, _ctx: &str) -> OperationResult<Model> {
         unreachable!("EdgeVerifier cannot be constructed without the edge-verify feature")
     }
 }

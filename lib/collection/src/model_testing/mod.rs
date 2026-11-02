@@ -1030,9 +1030,14 @@ fn stage_breadcrumb(bar: &ProgressBar, msg: &str) {
 /// of waiting made optimizer-on runs silently compare nothing (every restart landed on a
 /// busy optimizer); waiting converges quickly here because the op loop is idle. If
 /// proxies persist past the deadline the checkpoint degrades to a skip, recorded in the
-/// trace as `EdgeVerifySkipped`. An optimization *starting* after the wait is benign:
-/// with the op loop idle a fresh proxy has no buffered deletes, and the follower's
-/// refresh absorbs segment churn, so the race with the flush + observe below is safe.
+/// trace as `EdgeVerifySkipped`.
+///
+/// After proxies clear, flush can still race the follower: the leader may remove segment
+/// files (or finish rewriting them) while the manifest briefly still lists the UUID.
+/// Edge escalates that as not-found; production hosts retry on the next tick. We do the
+/// same here under a shared budget — re-wait proxies if they reappear during flush, and
+/// retry `try_observe` on not-found until the deadline. Persistent not-found (or any
+/// other observe error) still panics.
 ///
 /// TODO(model tester): drop the wait/skip once proxy deletions are persisted.
 async fn edge_checkpoint(
@@ -1043,7 +1048,12 @@ async fn edge_checkpoint(
     tick: usize,
     ctx: &str,
 ) {
-    if !verify::wait_for_no_proxy_segments(collection).await {
+    use common::universal_io::IsNotFound as _;
+
+    let deadline = Instant::now() + EDGE_CHECKPOINT_BUDGET;
+
+    // Initial quiesce: no proxy segments.
+    if !wait_proxies_clear_until(collection, deadline).await {
         log::warn!(
             "{ctx}: optimizer still busy at deadline (proxy segments present), \
              skipping edge checkpoint"
@@ -1052,9 +1062,54 @@ async fn edge_checkpoint(
         return;
     }
     trace.edge_verify(tick, model.len());
-    verify::flush_all_local_shards(collection).await;
-    let observed = verifier.observe(ctx);
-    verify::assert_matches_model(&observed, model, ctx);
+
+    loop {
+        verify::flush_all_local_shards(collection).await;
+
+        // Flush may finish an optimization that started another, or leave the
+        // manifest briefly ahead of deleted files. Re-quiesce before observing.
+        if verify::has_proxy_segments(collection).await {
+            if !wait_proxies_clear_until(collection, deadline).await {
+                panic!(
+                    "{ctx}: optimizer still busy after flush within edge-checkpoint budget; \
+                     cannot observe a stable follower view",
+                );
+            }
+            continue;
+        }
+
+        match verifier.try_observe(ctx) {
+            Ok(observed) => {
+                verify::assert_matches_model(&observed, model, ctx);
+                return;
+            }
+            Err(err) if err.is_not_found() && Instant::now() < deadline => {
+                log::warn!(
+                    "{ctx}: follower observe hit not-found ({err}); \
+                     retrying within edge-checkpoint budget",
+                );
+                tokio::time::sleep(EDGE_CHECKPOINT_RETRY_SLEEP).await;
+            }
+            Err(err) => {
+                panic!("{ctx}: follower observe failed: {err}");
+            }
+        }
+    }
+}
+
+/// Shared wall-clock budget for proxy wait + flush/observe retries at one checkpoint.
+const EDGE_CHECKPOINT_BUDGET: Duration = Duration::from_secs(30);
+const EDGE_CHECKPOINT_RETRY_SLEEP: Duration = Duration::from_millis(100);
+
+/// Poll until no local shard holds proxy segments, or `deadline` is reached.
+async fn wait_proxies_clear_until(collection: &Collection, deadline: Instant) -> bool {
+    while verify::has_proxy_segments(collection).await {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(EDGE_CHECKPOINT_RETRY_SLEEP).await;
+    }
+    true
 }
 
 /// Upper bound on how long we wait for a background snapshot to finish when draining it, so a hung
