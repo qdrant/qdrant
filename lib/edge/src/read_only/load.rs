@@ -196,8 +196,10 @@ where
     // 2. Apply config diffs under exclusive locks. Segments whose config reload
     //    failed skip the point-delta phases and surface that error as their result.
     let mut results: Vec<Option<(Uuid, OperationResult<()>)>> = vec![None; segments.len()];
-    let mut pending: Vec<(usize, Uuid, Arc<RwLock<ReadOnlySegment<S>>>)> =
-        Vec::with_capacity(segments.len());
+    // Parallel index list keeps `pending` at the same shape as the input `segments`
+    // vec (avoids clippy::type_complexity on a 3-tuple of generics).
+    let mut pending_indices = Vec::with_capacity(segments.len());
+    let mut pending = Vec::with_capacity(segments.len());
     for (index, ((uuid, segment), (_, diff_res))) in
         segments.into_iter().zip(config_diffs).enumerate()
     {
@@ -206,7 +208,8 @@ where
                 if !diff.is_empty() {
                     segment.write().apply_config_reload(diff);
                 }
-                pending.push((index, uuid, segment));
+                pending_indices.push(index);
+                pending.push((uuid, segment));
             }
             Err(err) => {
                 if !matches!(err, OperationError::Cancelled { .. }) && !err.is_not_found() {
@@ -219,8 +222,8 @@ where
     check_process_stopped(is_stopped)?;
 
     // 3. Preload point-delta fetches concurrently on this thread.
-    let preloads = futures::executor::block_on(join_all(pending.iter().map(
-        |(_, uuid, segment)| async move {
+    let preloads =
+        futures::executor::block_on(join_all(pending.iter().map(|(uuid, segment)| async move {
             let res = segment.read().live_preload(is_stopped).await;
             if let Err(ref err) = res
                 && !matches!(err, OperationError::Cancelled { .. })
@@ -229,17 +232,20 @@ where
                 log::warn!("live_preload of segment {uuid} failed: {err}");
             }
             (*uuid, res)
-        },
-    )));
+        })));
     check_process_stopped(is_stopped)?;
 
     // 4. Apply point-delta reloads on the pool.
-    let reloads: Vec<_> = pending.into_iter().zip(preloads).collect();
+    let reloads: Vec<_> = pending_indices
+        .into_iter()
+        .zip(pending)
+        .zip(preloads)
+        .collect();
     let point_results = ambient::parallel(|handoff| {
         pool.install(|| {
             reloads
                 .into_par_iter()
-                .map(|((index, uuid, segment), (_, max_committed_id_res))| {
+                .map(|((index, (uuid, segment)), (_, max_committed_id_res))| {
                     check_process_stopped(is_stopped)?;
                     let _scope = handoff.enter_guard();
                     let result = max_committed_id_res.and_then(|max_committed_id| {
