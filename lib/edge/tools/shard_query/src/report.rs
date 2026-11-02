@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use common::ambient::net::{NetMetric, NetworkData};
 use io_bridge_object_store::RemoteIoStatsSnapshot;
 
 use crate::request::Row;
@@ -59,4 +60,13 @@ pub fn print_io_stats(phase: &str, stats: &RemoteIoStatsSnapshot) {
     if let Some(compact) = stats.format_compact() {
         eprintln!("IO stats ({phase}):\n{compact}");
     }
+}
+
+pub fn print_network_usage(net: &NetworkData) {
+    eprintln!(
+        "network usage: remote {} B in {} requests, cache {} B",
+        net[NetMetric::RemoteIoRead],
+        net[NetMetric::RemoteRequests],
+        net[NetMetric::CacheIoRead],
+    );
 }

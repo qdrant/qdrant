@@ -108,8 +108,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser as _;
-use common::ambient::{self, AmbientContext, trace};
-use common::reason::Reason;
+use common::ambient::{AmbientContext, trace};
 use common::universal_io::DiskCache;
 use edge::{EdgeConfig, ReadOnlyEdgeShard};
 use io_bridge_object_store::{AsyncRead, BlobFile, ObjectStoreSource};
@@ -119,7 +118,7 @@ use object_store::gcp::GoogleCloudStorage;
 
 use crate::backend::{build_aws_config, build_cached_fs, build_gcs_config, build_uio_config};
 use crate::cli::{Backend, Cli, ConnectionArgs, ReloadTrigger};
-use crate::report::{print_diff, print_io_stats};
+use crate::report::{print_diff, print_io_stats, print_network_usage};
 use crate::request::PreparedRequest;
 
 /// Open the read-only shard over backend `A` and dispatch the requested command.
@@ -264,16 +263,21 @@ fn main() -> Result<()> {
             run::<UioGrpcSource>(&cli, &prefix, &cache_dir, build_uio_config(conn)?)
         }
     };
-    let Some(trace_path) = &conn.uio_trace else {
-        return ambient::unmeasured(Reason::EDGE_UNMEASURED, run_backend);
+    let sink = conn.uio_trace.clone().map(trace::Sink::file).transpose()?;
+    let cpu_sampler = match &sink {
+        Some(sink) => {
+            sink.start()?;
+            Some(trace::CpuSampler::start()?)
+        }
+        None => None,
     };
-
-    let sink = trace::Sink::file(trace_path.clone())?;
-    sink.start()?;
-    let cpu_sampler = trace::CpuSampler::start()?;
-    let result = AmbientContext::root("shard_query", None, Some(sink.clone())).measure(run_backend);
-    sink.send(cpu_sampler.finish());
-    sink.stop();
+    let ctx = AmbientContext::root("shard_query", None, None, sink.clone());
+    let result = ctx.measure(run_backend);
+    if let (Some(sink), Some(cpu_sampler)) = (sink, cpu_sampler) {
+        sink.send(cpu_sampler.finish());
+        sink.stop();
+    }
+    print_network_usage(&ctx.net_data());
     result
 }
 
