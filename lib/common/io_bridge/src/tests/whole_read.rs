@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bytes::Bytes;
-use common::ambient;
+use common::ambient::net::NetMetric;
+use common::ambient::{self, AmbientContext};
 use common::generic_consts::Sequential;
 use common::universal_io::{
     ChunkSink, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, ListedFile, MmapFs,
@@ -266,6 +267,47 @@ fn disk_cache_read_whole_skips_remote_len() {
     assert_eq!(counters.whole.load(Ordering::Relaxed), 1);
     assert_eq!(counters.range.load(Ordering::Relaxed), 0);
     assert_eq!(counters.len.load(Ordering::Relaxed), 0);
+}
+
+/// 🤖 A cold read counts as remote and cached, a warm one as cached only.
+#[test]
+fn disk_cache_reads_are_counted_as_network_usage() {
+    let _scope = ambient::test_guard();
+    let tmp = tempfile::Builder::new()
+        .prefix("uio_whole_read")
+        .tempdir()
+        .unwrap();
+    let config = DiskCacheConfig::new(PathBuf::from("bucket"), tmp.path().to_path_buf()).unwrap();
+    let fs = DiskCacheFs::<BlobFile<CountingSource>>::from_context(DiskCacheFsContext {
+        config: Arc::new(config),
+        remote: CountingSource::new(DATA).config(),
+    })
+    .unwrap();
+    let file = fs
+        .open(
+            Path::new("bucket/data.bin"),
+            OpenOptions {
+                writeable: false,
+                populate: Populate::No,
+                ..OpenOptions::new_for_test()
+            },
+            Default::default(),
+        )
+        .unwrap();
+    let len = DATA.len();
+
+    let ctx = AmbientContext::new();
+    ctx.measure(|| file.read_whole::<u8>().expect("cold read"));
+    let net = ctx.net_data();
+    assert_eq!(net[NetMetric::RemoteRequests], 1);
+    assert_eq!(net[NetMetric::RemoteIoRead], len);
+    assert_eq!(net[NetMetric::CacheIoRead], len);
+
+    ctx.measure(|| file.read_whole::<u8>().expect("warm read"));
+    let net = ctx.net_data();
+    assert_eq!(net[NetMetric::RemoteRequests], 1);
+    assert_eq!(net[NetMetric::RemoteIoRead], len);
+    assert_eq!(net[NetMetric::CacheIoRead], 2 * len);
 }
 
 #[test]

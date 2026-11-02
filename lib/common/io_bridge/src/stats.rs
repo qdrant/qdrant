@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+use common::ambient::net::NetMetric;
 use common::ambient::trace::{IoRequest, Op, Outcome};
 use common::universal_io::{IsNotFound, OpGuard, OpStats, OpStatsSnapshot};
 use strum::{EnumCount as _, IntoEnumIterator as _};
@@ -36,6 +37,7 @@ impl RemoteIoStats {
             trace: IoRequest::new(op, path, range.clone()),
             stats: self.op(op).clone(),
             guard: None,
+            op,
             range,
         }
     }
@@ -96,6 +98,7 @@ pub(crate) struct RequestObserver {
     trace: IoRequest,
     stats: OpStats,
     guard: Option<OpGuard>,
+    op: Op,
     range: Range<u64>,
 }
 
@@ -104,6 +107,9 @@ impl RequestObserver {
         self.trace.start();
         if self.guard.is_none() {
             self.guard = Some(self.stats.start(Instant::now()));
+            if is_read(self.op) {
+                NetMetric::RemoteRequests.bump(1);
+            }
         }
     }
 
@@ -119,7 +125,20 @@ impl RequestObserver {
             return;
         };
         match outcome {
-            Outcome::Ok => guard.complete(self.range.end.saturating_sub(self.range.start) as usize),
+            Outcome::Ok => {
+                let len = self.range.end.saturating_sub(self.range.start) as usize;
+                match self.op {
+                    Op::Read | Op::ReadFrom => NetMetric::RemoteIoRead.bump(len),
+                    Op::List
+                    | Op::Exists
+                    | Op::Len
+                    | Op::Create
+                    | Op::Remove
+                    | Op::Save
+                    | Op::Append => {}
+                }
+                guard.complete(len);
+            }
             Outcome::NotFound => guard.not_found(),
             Outcome::Err => guard.failed(),
             Outcome::Cancelled => drop(guard),
@@ -149,5 +168,13 @@ impl RequestObserver {
         let result = future.await;
         self.set_result(&result);
         result
+    }
+}
+
+/// 🤖 Whether [`NetMetric`] counts `op`: only the read path is billed.
+fn is_read(op: Op) -> bool {
+    match op {
+        Op::List | Op::Exists | Op::Read | Op::ReadFrom | Op::Len => true,
+        Op::Create | Op::Remove | Op::Save | Op::Append => false,
     }
 }
