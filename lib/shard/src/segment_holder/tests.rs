@@ -2462,7 +2462,7 @@ fn test_flush_up_to_keeps_cow_dependency_past_the_bound() {
 #[test]
 fn test_replaced_segments_do_not_create_cow_flush_dependency_cycle() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hw_counter = HardwareCounterCell::new();
+    let _scope = ambient::test_guard();
 
     // A starts non-appendable and contains point 100.
     let mut segment_a = empty_segment(dir.path());
@@ -2471,7 +2471,6 @@ fn test_replaced_segments_do_not_create_cow_flush_dependency_cycle() {
             10,
             100.into(),
             segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-            &hw_counter,
         )
         .unwrap();
     segment_a.appendable_flag = false;
@@ -2492,7 +2491,6 @@ fn test_replaced_segments_do_not_create_cow_flush_dependency_cycle() {
             |_, _| unreachable!("A is non-appendable"),
             |_, _, _, _| {},
             None,
-            &hw_counter,
         )
         .unwrap();
 
@@ -2513,7 +2511,6 @@ fn test_replaced_segments_do_not_create_cow_flush_dependency_cycle() {
             20,
             200.into(),
             segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
-            &hw_counter,
         )
         .unwrap();
     replacement_b.appendable_flag = false;
@@ -2531,7 +2528,6 @@ fn test_replaced_segments_do_not_create_cow_flush_dependency_cycle() {
             |_, _| unreachable!("B is non-appendable"),
             |_, _, _, _| {},
             None,
-            &hw_counter,
         )
         .unwrap();
 
