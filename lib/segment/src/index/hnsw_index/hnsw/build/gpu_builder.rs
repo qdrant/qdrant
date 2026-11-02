@@ -10,6 +10,7 @@ use super::graph_builder::{Fallback, GraphBuilderMethod, StepError};
 use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
+use crate::index::hnsw_index::HnswM;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::gpu::gpu_graph_builder::{
     GPU_MAX_VISITED_FLAGS_FACTOR, build_hnsw_on_gpu,
@@ -41,8 +42,9 @@ pub(super) struct GpuState {
     /// Shared with the insert contexts, so the vector buffers outlive every one of them.
     vectors: Arc<GpuVectorStorage>,
     /// Created with the first block and reused for the rest: all blocks have the same
-    /// parameters.
-    blocks: Option<GpuBlocks>,
+    /// parameters. `None` before the first block, `Some(None)` if the GPU failed to create it,
+    /// so the remaining blocks are built on the CPU without trying again.
+    blocks: Option<Option<GpuBlocks>>,
 }
 
 struct GpuBlocks {
@@ -51,6 +53,35 @@ struct GpuBlocks {
     /// and level 0 for every point.
     reference: GraphLayersBuilder,
     insert_context: GpuInsertContext,
+}
+
+impl GpuBlocks {
+    /// `None` if the GPU fails to create the insert context.
+    fn new(
+        ctx: &GraphBuildContext<'_>,
+        vectors: &Arc<GpuVectorStorage>,
+    ) -> OperationResult<Option<Self>> {
+        let GraphParams {
+            hnsw_m,
+            ef_construct,
+            entry_points_num,
+        } = ctx.block_params;
+
+        let Some(insert_context) = new_insert_context(ctx, vectors, hnsw_m, ef_construct)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            reference: GraphLayersBuilder::new_with_params(
+                ctx.vector_storage.total_vector_count(),
+                hnsw_m,
+                ef_construct,
+                entry_points_num,
+                HNSW_USE_HEURISTIC,
+                false,
+            ),
+            insert_context,
+        }))
+    }
 }
 
 impl GpuState {
@@ -96,14 +127,11 @@ impl GpuState {
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         let timer = std::time::Instant::now();
 
-        let mut insert_context = GpuInsertContext::new(
-            self.vectors.clone(),
-            get_gpu_groups_count(),
-            graph.hnsw_m(),
-            graph.ef_construct(),
-            false,
-            1..=GPU_MAX_VISITED_FLAGS_FACTOR,
-        )?;
+        let Some(mut insert_context) =
+            new_insert_context(ctx, &self.vectors, graph.hnsw_m(), graph.ef_construct())?
+        else {
+            return Ok(None);
+        };
 
         let gpu_graph = build_graph_on_gpu(
             &mut insert_context,
@@ -126,32 +154,12 @@ impl GpuState {
         ctx: &GraphBuildContext<'_>,
         points: &[PointOffsetType],
     ) -> OperationResult<Option<GraphLayersBuilder>> {
-        let GraphParams {
-            hnsw_m,
-            ef_construct,
-            entry_points_num,
-        } = ctx.block_params;
-
         let blocks = match &mut self.blocks {
             Some(blocks) => blocks,
-            None => self.blocks.insert(GpuBlocks {
-                reference: GraphLayersBuilder::new_with_params(
-                    ctx.vector_storage.total_vector_count(),
-                    hnsw_m,
-                    ef_construct,
-                    entry_points_num,
-                    HNSW_USE_HEURISTIC,
-                    false,
-                ),
-                insert_context: GpuInsertContext::new(
-                    self.vectors.clone(),
-                    get_gpu_groups_count(),
-                    hnsw_m,
-                    ef_construct,
-                    false,
-                    1..=GPU_MAX_VISITED_FLAGS_FACTOR,
-                )?,
-            }),
+            None => self.blocks.insert(GpuBlocks::new(ctx, &self.vectors)?),
+        };
+        let Some(blocks) = blocks else {
+            return Ok(None);
         };
 
         // Searches start from block points and follow links between block points, so they cannot
@@ -160,7 +168,7 @@ impl GpuState {
             &mut blocks.insert_context,
             &blocks.reference,
             points.to_vec(),
-            entry_points_num,
+            ctx.block_params.entry_points_num,
             |point_id| scorer(ctx, point_id),
             ctx.stopped,
         )
@@ -259,6 +267,36 @@ fn scorer<'a>(
         None,
         ctx.id_tracker.deleted_point_bitslice(),
     )
+}
+
+/// Insert context for graphs with `hnsw_m` and `ef_construct`. `None` if the GPU fails to create
+/// it, so the graph is built on the CPU.
+fn new_insert_context(
+    ctx: &GraphBuildContext<'_>,
+    vectors: &Arc<GpuVectorStorage>,
+    hnsw_m: HnswM,
+    ef_construct: usize,
+) -> OperationResult<Option<GpuInsertContext>> {
+    let insert_context = GpuInsertContext::new(
+        vectors.clone(),
+        get_gpu_groups_count(),
+        hnsw_m,
+        ef_construct,
+        false,
+        1..=GPU_MAX_VISITED_FLAGS_FACTOR,
+    );
+
+    // GPU construction does not return an error. If it fails, it will fall back to CPU.
+    // To cover stopping case, we need to check stopping flag here.
+    check_process_stopped(ctx.stopped)?;
+
+    match insert_context {
+        Ok(insert_context) => Ok(Some(insert_context)),
+        Err(err) => {
+            log::warn!("Failed to create GPU insert context: {err}. Falling back to CPU.");
+            Ok(None)
+        }
+    }
 }
 
 fn build_graph_on_gpu<'a>(
