@@ -62,12 +62,10 @@ pub(super) struct Strategy {
 ///
 /// `accept` decides which documents may be scored at all: deletions the
 /// posting lists do not know about, the points a query does not see, and any
-/// outer filter. With a `BLOCK` of 1 it is checked per document: before the
-/// document is scored while the top `limit` is still filling, since every
-/// scored document enters it then, and afterwards only once the document
-/// scores above the current `limit`-th best. Most candidates never do, and a
-/// document that fails the check would not have changed the top `limit`
-/// anyway, so the ranking is the same as checking first. Otherwise it is
+/// outer filter. With a `BLOCK` of 1 it is checked per document, once the
+/// document scores above the current `limit`-th best: most candidates never
+/// do, and a document that fails the check would not have changed the top
+/// `limit` anyway, so the ranking is the same as checking first. Otherwise it is
 /// checked once per block, over the documents gathered for it: batching pays
 /// off where the filter may read storage. A failing check stops the query with
 /// its error.
@@ -190,9 +188,6 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
         // essential again and their cursors stay behind every candidate.
         let block_essential = first_essential;
         let mut count = 0;
-        // Document at a time: whether the block's one document was checked
-        // before it was scored.
-        let mut checked_first = false;
         hits.clear();
 
         let use_heap = term_count - block_essential >= heap_min_essential;
@@ -225,18 +220,11 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
                 break;
             };
 
-            // Until the top `limit` is full every scored document enters it, so
-            // checking after scoring saves no check and reading what then fails
-            // is wasted: check first. Once it is full, most candidates score
-            // under the threshold and are never checked. Blocks are checked as
-            // a whole, later.
-            checked_first = BLOCK == 1 && heap.len() < limit;
-            let accepted = !checked_first || accept.check(doc)?;
-
-            // Move every essential cursor standing on this document, whether
-            // or not it gets scored, keeping its frequency if it may be. The
-            // heap yields hits in term order, as the scan does, so they are
-            // summed in the same order either way.
+            // Move every essential cursor standing on this document and keep
+            // its frequency. The check comes later: per block, or document at
+            // a time once the score could enter the top `limit`. The heap
+            // yields hits in term order, as the scan does, so they are summed
+            // in the same order either way.
             let hits_start = hits.len();
             if use_heap {
                 while let Some(mut top) = cursor_heap.peek_mut() {
@@ -245,9 +233,7 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
                     if key_doc(key) != doc {
                         break;
                     }
-                    if accepted {
-                        hits.push((term, cursors.tf(term, doc)));
-                    }
+                    hits.push((term, cursors.tf(term, doc)));
                     cursors.advance(term);
                     match cursors.current(term) {
                         Some(next) => *top = Reverse(heap_key(next, term)),
@@ -259,19 +245,15 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
             } else {
                 for term in block_essential..term_count {
                     if cursors.current(term) == Some(doc) {
-                        if accepted {
-                            hits.push((term, cursors.tf(term, doc)));
-                        }
+                        hits.push((term, cursors.tf(term, doc)));
                         cursors.advance(term);
                     }
                 }
             }
-            if accepted {
-                debug_assert!(hits.len() > hits_start);
-                candidates[count] = doc;
-                hits_end[count] = hits.len();
-                count += 1;
-            }
+            debug_assert!(hits.len() > hits_start);
+            candidates[count] = doc;
+            hits_end[count] = hits.len();
+            count += 1;
         }
         if count == 0 {
             break;
@@ -344,9 +326,8 @@ pub(super) fn score_top_k_with<C: TermCursors, const BLOCK: usize>(
                 }
             }
 
-            // Blocks, and documents gathered while the top `limit` was
-            // filling, were checked before scoring.
-            if score > threshold && (BLOCK > 1 || checked_first || accept.check(doc)?) {
+            // Blocks were checked before scoring.
+            if score > threshold && (BLOCK > 1 || accept.check(doc)?) {
                 heap.push(Reverse(ScoredPointOffset { idx: doc, score }));
                 if heap.len() > limit {
                     heap.pop();
