@@ -126,7 +126,13 @@ pub(crate) unsafe fn cosine_preprocess_neon(mut vector: DenseVector) -> DenseVec
             length += v.powi(2);
         }
         if is_length_zero_or_normalized(length) {
+            if length == 0.0 {
+                return super::simple::cosine_preprocess(vector);
+            }
             return vector;
+        }
+        if !length.is_finite() {
+            return super::simple::cosine_preprocess(vector);
         }
 
         let inv_length = 1.0 / length.sqrt();

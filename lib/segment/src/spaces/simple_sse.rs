@@ -143,7 +143,13 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
             length += (*ptr.add(i)).powi(2);
         }
         if is_length_zero_or_normalized(length) {
+            if length == 0.0 {
+                return super::simple::cosine_preprocess(vector);
+            }
             return vector;
+        }
+        if !length.is_finite() {
+            return super::simple::cosine_preprocess(vector);
         }
         length = length.sqrt();
         vector.into_iter().map(|x| x / length).collect()
