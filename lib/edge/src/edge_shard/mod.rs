@@ -1,3 +1,4 @@
+mod dir_lock;
 mod optimize;
 mod shard_read;
 mod snapshots;
@@ -27,6 +28,8 @@ use shard::wal::SerdeWal;
 use uuid::Uuid;
 use wal::WalOptions;
 
+use self::dir_lock::ShardDirLock;
+pub use self::dir_lock::is_shard_locked;
 use self::update_log::UpdateLog;
 use crate::config::optimizers::EdgeOptimizersConfig;
 use crate::config::shard::{EDGE_CONFIG_FILE, EdgeConfig};
@@ -47,29 +50,37 @@ pub struct EdgeShard {
     /// Fixed-size pool used to run per-segment reads in parallel. Sized from
     /// [`EdgeConfig::max_search_threads`].
     search_pool: Arc<rayon::ThreadPool>,
+    /// Exclusive lock on the shard directory, held for the shard's lifetime. Declared last so it
+    /// is released only after everything above is dropped.
+    _dir_lock: ShardDirLock,
 }
 
 impl EdgeShard {
     /// Create a new edge shard at `path` with the given configuration.
     ///
-    /// Creates `path` (and any missing parents) if it does not exist yet. Fails if the shard
-    /// already exists (i.e. the segments directory contains any segment).
+    /// Creates `path` (and any missing parents) if it does not exist yet. Fails if another handle
+    /// holds the directory ([`is_shard_locked`]), or if the shard already exists (i.e. the
+    /// segments directory contains any segment).
     /// Configuration is required and is persisted to `edge_config.json`. WAL
     /// behavior follows `config.wal_enabled` and `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
+        fs::create_dir_all(path).map_err(|err| {
+            OperationError::service_error(format!("failed to create edge shard directory: {err}"))
+        })?;
+        // Before the occupancy check: it normalizes segment directories, which deletes those a
+        // live handle may still be building.
+        let dir_lock = ShardDirLock::acquire(path)?;
+
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
                 "cannot create edge shard: path already contains segment data",
             ));
         }
 
-        fs::create_dir_all(path).map_err(|err| {
-            OperationError::service_error(format!("failed to create edge shard directory: {err}"))
-        })?;
-
         let update_log = if config.wal_enabled() {
-            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+            // A new shard has no stored versions to number after.
+            open_wal(path, config.wal_options.clone().unwrap_or_default(), 0)?
         } else {
             UpdateLog::Disabled {
                 last_operation_id: 0,
@@ -102,6 +113,7 @@ impl EdgeShard {
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
             search_pool,
+            _dir_lock: dir_lock,
         })
     }
 
@@ -117,8 +129,8 @@ impl EdgeShard {
     /// provided (non-empty), they are validated for compatibility against the loaded segments;
     /// if not, they are taken from the persisted config or the segments themselves.
     ///
-    /// Fails if `path` is not an existing directory, or if no segments exist and no config can be
-    /// loaded or inferred.
+    /// Fails if `path` is not an existing directory, if another handle holds it
+    /// ([`is_shard_locked`]), or if no segments exist and no config can be loaded or inferred.
     ///
     /// WAL operations not yet persisted by the segments, e.g. those left by a crash, are re-applied
     /// before the shard is returned. With the WAL disabled, an existing WAL (e.g. from a restored
@@ -135,20 +147,48 @@ impl EdgeShard {
             )));
         }
 
-        let resolved = resolve_initial_config(path, config)?;
+        // Reading existing on-disk state can fail in ways that all mean "present
+        // but won't open": a persisted `edge_config.json` that exists but can't be
+        // read or parsed (corrupt, or inaccessible — permission/`ENOTDIR`/`ELOOP`),
+        // and segments that won't load. Tag both so the FFI surfaces `Unreadable`
+        // and the caller refuses to recreate over recoverable data. The WAL open
+        // after them is left untagged here because the `wal` crate stringifies
+        // its error — the FFI classifies it (a held lock -> `ShardLocked`, a
+        // corrupt WAL -> `Unreadable`).
+        let resolved = resolve_initial_config(path, config).map_err(mark_unreadable)?;
+
+        // Nothing to load and nothing to create from: fail before creating `segments/`, so asking
+        // "is there a shard here?" with `load(path, None)` leaves the directory as it was.
+        if resolved.is_none() && !path.join(SEGMENTS_PATH).exists() {
+            return Err(OperationError::service_error(NO_CONFIG_AND_NO_SEGMENTS));
+        }
+
+        // Before `segments/` is created, read or normalized: see `dir_lock`. Only the config file
+        // has been read so far.
+        let dir_lock = ShardDirLock::acquire(path)?;
 
         let segments_path = ensure_segments_dir(path)?;
-        let (mut segments, derived) = load_segments(&segments_path)?;
+        let (mut segments, derived) = load_segments(&segments_path).map_err(mark_unreadable)?;
 
         let config = match (resolved, derived) {
             (Some(resolved), Some(derived)) => {
                 let merged = resolved.fill_unspecified_from(&derived);
                 // The tunables converge to the merged config via the optimizers, but the vector
                 // definitions must actually match the stored data.
+                //
+                // Category: the data reads fine — it's the provided `config` that
+                // contradicts what's stored, so this is a bad-argument case ("fix
+                // your config"), NOT `Unreadable`. Do-not-overwrite would be the
+                // wrong advice here, but so is a generic error: a consumer following
+                // the "recreate unless `Unreadable`" contract would clobber intact,
+                // readable data on a mere config typo. Carried as a typed
+                // `ValidationError` so the FFI classifies it by variant into
+                // `InvalidArgument` ("fix your input, retry"), symmetric to the
+                // `InconsistentStorage`->`Unreadable` mapping.
                 merged
                     .check_compatible_with_segment_config(&derived.plain_segment_config())
                     .map_err(|err| {
-                        OperationError::service_error(format!(
+                        OperationError::validation_error(format!(
                             "config is incompatible with existing segments: {err}"
                         ))
                     })?;
@@ -157,16 +197,18 @@ impl EdgeShard {
             (Some(resolved), None) => resolved,
             (None, Some(derived)) => derived,
             (None, None) => {
-                return Err(OperationError::service_error(
-                    "edge config is not provided and no segments were loaded",
-                ));
+                return Err(OperationError::service_error(NO_CONFIG_AND_NO_SEGMENTS));
             }
         };
 
         ensure_appendable_segment(&mut segments, &segments_path, &config)?;
 
         let update_log = if config.wal_enabled() || path.join(WAL_PATH).exists() {
-            open_wal(path, config.wal_options.clone().unwrap_or_default())?
+            open_wal(
+                path,
+                config.wal_options.clone().unwrap_or_default(),
+                max_segment_version(&segments),
+            )?
         } else {
             UpdateLog::Disabled {
                 last_operation_id: max_segment_version(&segments),
@@ -194,6 +236,7 @@ impl EdgeShard {
             segments: LockedSegmentHolder::new(segments),
             segment_manifest,
             search_pool,
+            _dir_lock: dir_lock,
         };
 
         shard.replay_wal()?;
@@ -379,12 +422,31 @@ fn has_existing_segments(path: &Path) -> bool {
     false
 }
 
-fn open_wal(path: &Path, wal_options: WalOptions) -> OperationResult<UpdateLog> {
+/// Opens the shard's WAL, creating it if `wal/` does not exist yet.
+///
+/// A WAL created over segments that already store versions up to `stored_version` (a WAL-less
+/// shard whose config was lost, so the derived config enables the WAL; or a deleted `wal/`)
+/// starts numbering after them. An empty WAL would number from 0, below the stored versions, and
+/// every later update to a stored point would be skipped as older than the point.
+fn open_wal(
+    path: &Path,
+    wal_options: WalOptions,
+    stored_version: SeqNumberType,
+) -> OperationResult<UpdateLog> {
     let wal_path = path.join(WAL_PATH);
     if !wal_path.exists() {
         fs::create_dir(&wal_path).map_err(|err| {
             OperationError::service_error(format!("failed to create WAL directory: {err}"))
         })?;
+        if stored_version > 0 {
+            wal::Wal::generate_empty_wal_starting_at_index(&wal_path, &wal_options, stored_version)
+                .map_err(|err| {
+                    OperationError::service_error(format!(
+                        "failed to create WAL {} after version {stored_version}: {err}",
+                        wal_path.display(),
+                    ))
+                })?;
+        }
     }
 
     let wal = SerdeWal::new(&wal_path, wal_options).map_err(|err| {
@@ -410,6 +472,22 @@ fn max_segment_version(segments: &SegmentHolder) -> SeqNumberType {
         .map(|(_, segment)| segment.get().read().version())
         .max()
         .unwrap_or(0)
+}
+
+/// What `load` reports for a directory that holds no shard and got no config to start one.
+const NO_CONFIG_AND_NO_SEGMENTS: &str = "edge config is not provided and no segments were loaded";
+
+/// Tag an error from reading existing on-disk shard data so the FFI boundary
+/// classifies it as `EdgeError::Unreadable` — the caller must not recreate over
+/// data it cannot read. Covers both corrupt/unparseable data and the case where
+/// the path exists but cannot be accessed (permission, `ENOTDIR`, `ELOOP`, …):
+/// either way, overwriting would be the wrong reaction.
+///
+/// Carried as a typed [`OperationError::InconsistentStorage`] (not a marker
+/// string) so the FFI classifies it by variant and surfaces the underlying
+/// cause as the `reason`, with no internal sentinel text leaking to hosts.
+fn mark_unreadable(err: OperationError) -> OperationError {
+    OperationError::inconsistent_storage(err.to_string())
 }
 
 /// The provided → persisted layers of the config fallback chain (the derived-from-segments layer

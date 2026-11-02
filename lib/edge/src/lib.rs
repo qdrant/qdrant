@@ -30,7 +30,7 @@ pub use config::shard::EdgeConfig;
 pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 #[cfg(feature = "serverless")]
 pub use delete_only::DeleteOnlyEdgeShard;
-pub use edge_shard::EdgeShard;
+pub use edge_shard::{EdgeShard, is_shard_locked};
 #[cfg(feature = "serverless")]
 pub use read_only::{
     ListedSegment, LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator,

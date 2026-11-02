@@ -25,6 +25,7 @@ wal = { path = "../wal" }
 ahash = { workspace = true }
 core_affinity = { workspace = true }
 fs-err = { workspace = true }
+fs4 = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }

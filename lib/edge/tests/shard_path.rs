@@ -33,3 +33,21 @@ fn load_of_missing_directory_names_the_directory() {
     assert!(err.contains(&path.display().to_string()), "{err}");
     assert!(!path.exists(), "load must not create the directory");
 }
+
+/// `load(path, None)` of a directory that holds no shard is how a host asks "is there a shard
+/// here?", so the answer must leave the directory as it was: no `segments/`, no `wal/`.
+#[test]
+fn load_without_config_of_a_directory_without_a_shard_leaves_it_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    fs_err::write(dir.path().join("notes.txt"), "not a shard").unwrap();
+
+    let err = EdgeShard::load(dir.path(), None).unwrap_err().to_string();
+
+    assert!(err.contains("no segments were loaded"), "{err}");
+    let mut entries: Vec<_> = fs_err::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    entries.sort();
+    assert_eq!(entries, ["notes.txt"], "load(None) changed the directory");
+}
