@@ -358,6 +358,16 @@ pub trait InvertedIndex {
         f: impl FnMut(&str, usize) -> OperationResult<()>,
     ) -> OperationResult<()>;
 
+    /// Each vocabulary token's length times its posting length, summed.
+    fn token_bytes(&self) -> OperationResult<u64> {
+        let mut total = 0u64;
+        self.for_each_vocab_with_postings_len(|token, postings_len| {
+            total += (token.len() * postings_len) as u64;
+            Ok(())
+        })?;
+        Ok(total)
+    }
+
     fn for_each_payload_block(
         &self,
         threshold: usize,
@@ -1012,6 +1022,41 @@ mod tests {
                 Some(live_total),
                 "{backend} disagrees with the sum of its own lengths",
             );
+        }
+    }
+
+    #[rstest]
+    fn token_bytes_agree_across_backends(#[values(false, true)] phrase_matching: bool) {
+        let _scope = ambient::test_guard();
+        let mut mutable = MutableInvertedIndex::new(phrase_matching, false);
+        let docs = [vec!["ab", "c", "ab"], vec!["ab"], vec!["def"]];
+        for (idx, doc) in docs.iter().enumerate() {
+            let tokens: Vec<String> = doc.iter().map(|token| token.to_string()).collect();
+            mutable
+                .index_str_tokens(idx as PointOffsetType, &tokens, None)
+                .unwrap();
+        }
+        // "ab" in two documents, "c" and "def" in one: repeats within a document count once.
+        let expected = 2 * 2 + 1 + 3;
+
+        let mmap_dir = tempfile::tempdir().unwrap();
+        let immutable =
+            OnDiskInvertedIndex::create(mmap_dir.path().into(), mutable.clone()).unwrap();
+        let mmap: OnDiskInvertedIndex = OnDiskInvertedIndex::open(
+            &MmapFs,
+            mmap_dir.path().into(),
+            Populate::No,
+            phrase_matching,
+            &BitVec::new(),
+        )
+        .unwrap()
+        .unwrap();
+        for (backend, bytes) in [
+            ("mutable", mutable.token_bytes()),
+            ("immutable", immutable.token_bytes()),
+            ("mmap", mmap.token_bytes()),
+        ] {
+            assert_eq!(bytes.unwrap(), expected, "{backend}");
         }
     }
 

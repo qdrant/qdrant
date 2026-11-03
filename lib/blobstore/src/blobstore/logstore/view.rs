@@ -9,7 +9,7 @@ use super::page::AppendOnlyPages;
 use crate::Result;
 use crate::blob::Blob;
 use crate::blobstore::iter_batch_in_order;
-use crate::config::LogstoreConfig;
+use crate::config::{LogstoreConfig, decompressed_len};
 use crate::error::BlobstoreError;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
@@ -55,6 +55,51 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         pointer: ValuePointer,
     ) -> Result<Cow<'_, [u8]>> {
         self.pages.read_value::<P>(pointer)
+    }
+
+    /// Decompressed length of each value; reads at most its length prefix.
+    pub(crate) fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<bool, E>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+        let mut pointers = Vec::new();
+        for result in self.tracker.iter(point_offsets).map_err(E::from)? {
+            let ((user_data, point_offset), pointer) = result.map_err(E::from)?;
+            match pointer {
+                PointerItem::Valid(pointer) => pointers.push(((user_data, point_offset), pointer)),
+                PointerItem::Empty | PointerItem::OutOfRange => {
+                    if !callback(user_data, point_offset, None)? {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+
+        let Some(prefix) = self.config.compression.len_prefix() else {
+            for ((user_data, point_offset), pointer) in pointers {
+                if !callback(user_data, point_offset, Some(pointer.length as usize))? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
+        };
+        self.pages.read_batch_values::<P, _, _>(
+            pointers.into_iter().map(|(key, pointer)| {
+                let length = pointer.length.min(prefix);
+                (key, ValuePointer { length, ..pointer })
+            }),
+            |(user_data, point_offset), bytes| {
+                callback(user_data, point_offset, Some(decompressed_len(&bytes)?))
+            },
+        )
     }
 }
 

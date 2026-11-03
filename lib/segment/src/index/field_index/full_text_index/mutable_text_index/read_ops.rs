@@ -64,6 +64,10 @@ impl FullTextIndexRead for MutableFullTextIndex {
         self.inner.total_tokens()
     }
 
+    fn token_bytes(&self) -> OperationResult<u64> {
+        self.inner.token_bytes()
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,

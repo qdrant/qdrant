@@ -263,6 +263,52 @@ fn test_read_values_bytes(
 }
 
 #[rstest]
+fn test_read_value_lens(
+    #[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode,
+    #[values(Compression::None, Compression::LZ4)] compression: Compression,
+) {
+    let (dir, mut storage) = empty_storage_compression(mode, compression);
+
+    let _scope = ambient::test_guard();
+
+    let rng = &mut rand::make_rng::<rand::rngs::SmallRng>();
+    let payloads = (0..10).map(|_| random_payload(rng, 2)).collect::<Vec<_>>();
+    for (point_offset, payload) in payloads.iter().enumerate() {
+        storage
+            .put_value(
+                point_offset as PointOffset,
+                payload,
+                HwMetric::PayloadIoWrite,
+            )
+            .unwrap();
+    }
+    storage.flusher()().unwrap();
+
+    let reader =
+        BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
+            .unwrap();
+    let offsets: Vec<PointOffset> = (0..payloads.len() as PointOffset + 2).collect();
+    let mut lens: Vec<Option<usize>> = vec![None; offsets.len()];
+    reader
+        .view()
+        .read_value_lens::<Random, _, BlobstoreError>(
+            offsets.iter().copied().enumerate(),
+            |idx, _, len| {
+                lens[idx] = len;
+                Ok(true)
+            },
+        )
+        .unwrap();
+
+    for (idx, &point_offset) in offsets.iter().enumerate() {
+        let expected = payloads
+            .get(point_offset as usize)
+            .map(|payload| payload.to_bytes().len());
+        assert_eq!(lens[idx], expected, "mismatch at offset {point_offset}");
+    }
+}
+
+#[rstest]
 fn test_storage_files(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let (dir, mut storage) = empty_storage_mode(mode);
 
