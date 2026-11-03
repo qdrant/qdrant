@@ -27,7 +27,7 @@ mod wal_ops;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use std::{cmp, thread};
 
@@ -124,6 +124,12 @@ pub struct LocalShard {
     pub(super) optimizers: ArcSwap<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     pub(super) total_optimized_points: Arc<AtomicUsize>,
+    /// Number of WAL tail entries handed to the update queue by the last `load_from_wal` call.
+    ///
+    /// Set synchronously, before the update worker (already running concurrently) gets a
+    /// chance to drain them, so it is not racy the way re-reading the live queue length after
+    /// `load` returns is.
+    pub(super) wal_tail_queued: Arc<AtomicUsize>,
     pub(super) search_runtime: AdaptiveSearchHandle,
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
@@ -272,6 +278,7 @@ impl LocalShard {
         let locked_wal = Arc::new(Mutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
         let total_optimized_points = Arc::new(AtomicUsize::new(0));
+        let wal_tail_queued = Arc::new(AtomicUsize::new(0));
 
         // default to 2x the WAL capacity
         let disk_buffer_threshold_mb =
@@ -349,6 +356,7 @@ impl LocalShard {
             optimizers: ArcSwap::new(optimizers),
             optimizers_log,
             total_optimized_points,
+            wal_tail_queued,
             disk_usage_watcher,
             read_rate_limiter,
             write_rate_limiter,
@@ -1033,6 +1041,11 @@ impl LocalShard {
                 "Loading remaining {} WAL entries from:{to} into update queue",
                 last_wal_index - to
             );
+            // Record the tail size now, before any of it reaches the already-running update
+            // worker: that worker drains the channel concurrently, so re-deriving this count
+            // from live queue state after the sends below could observe it fully drained.
+            self.wal_tail_queued
+                .store((last_wal_index - to) as usize, Ordering::Relaxed);
             let update_sender = self.update_sender.load();
             for op_num in to..last_wal_index {
                 update_sender
