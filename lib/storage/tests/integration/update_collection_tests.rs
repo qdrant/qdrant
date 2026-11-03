@@ -4,24 +4,37 @@
 
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use api::rest::MaxOptimizationThreads;
 use collection::collection::Collection;
-use collection::operations::config_diff::HnswConfigDiff;
-use collection::operations::types::{VectorParamsDiff, VectorsConfigDiff};
+use collection::operations::CollectionUpdateOperations;
+use collection::operations::config_diff::{HnswConfigDiff, OptimizersConfigDiff};
+use collection::operations::point_ops::{
+    PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
+};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::types::{CollectionStatus, VectorParamsDiff, VectorsConfigDiff};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
+use collection::shards::replica_set::replica_set_state::ReplicaState;
+use collection::shards::shard_trait::WaitUntil;
+use common::ambient::{AmbientContext, AmbientFutureExt};
 use common::budget::ResourceBudget;
 use common::load_concurrency::LoadConcurrencyConfig;
 use common::mmap;
 use segment::types::Distance;
+use storage::content_manager::CollectionContainer as _;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollection, CreateCollectionOperation, UpdateCollection,
     UpdateCollectionOperation,
 };
 use storage::content_manager::consensus::operation_sender::OperationSender;
+use storage::content_manager::consensus_state_machine::Action;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -36,7 +49,7 @@ const FULL_ACCESS: Auth = Auth::new_internal(Access::full("For test"));
 fn update_collection_reject_mid_operation() {
     let (_storage_dir, handle, dispatcher) = new_dispatcher();
 
-    create_collection(&handle, &dispatcher, "test");
+    create_collection(&handle, &dispatcher, "test", None);
 
     let collection = get_collection(&handle, &dispatcher, "test");
     let hnsw_config = handle.block_on(collection.config()).hnsw_config;
@@ -86,12 +99,89 @@ fn update_collection_reject_mid_operation() {
     );
 }
 
-fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
+/// After a restart, optimizations wait for a trigger, so the collection is grey. Re-sending an
+/// unchanged config is how users trigger them: it must start them, although it doesn't recreate
+/// the optimizers.
+#[test]
+fn unchanged_update_triggers_optimizers_after_restart() {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
+    {
+        let (handle, dispatcher) = dispatcher_at(storage_dir.path());
+        // Optimizations are planned but never run, so they are still pending after the restart
+        let optimizers_config = OptimizersConfigDiff {
+            indexing_threshold: Some(10),
+            max_optimization_threads: Some(MaxOptimizationThreads::Threads(0)),
+            ..unchanged_optimizers()
+        };
+        create_collection(&handle, &dispatcher, "test", Some(optimizers_config));
+        // Consensus activates a new replica, and there is none here
+        let pass = new_unchecked_verification_pass();
+        dispatcher
+            .toc(&FULL_ACCESS, &pass)
+            .apply_action(Action::SetReplicaState {
+                collection: "test".into(),
+                shard_id: 0,
+                peer_id: 0,
+                state: ReplicaState::Active,
+            })
+            .unwrap();
+        upsert_points(&handle, &dispatcher, "test", 1000);
+    }
+
+    // Restart
+    let (handle, dispatcher) = dispatcher_at(storage_dir.path());
+    let collection = get_collection(&handle, &dispatcher, "test");
+    assert_eq!(
+        collection_status(&handle, &collection),
+        CollectionStatus::Grey
+    );
+
+    let update = UpdateCollection {
+        hnsw_config: None,
+        vectors: None,
+        params: None,
+        optimizers_config: Some(unchanged_optimizers()),
+        quantization_config: None,
+        sparse_vectors: None,
+        strict_mode_config: None,
+        metadata: None,
+    };
+    handle
+        .block_on(dispatcher.submit_collection_meta_op(
+            CollectionMetaOperations::UpdateCollection(
+                UpdateCollectionOperation::new("test".to_string(), update).unwrap(),
+            ),
+            FULL_ACCESS,
+            None,
+        ))
+        .unwrap();
+
+    // The trigger reaches the optimizers through the update worker, asynchronously
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut status = collection_status(&handle, &collection);
+    while status == CollectionStatus::Grey && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+        status = collection_status(&handle, &collection);
+    }
+    assert_eq!(
+        status,
+        CollectionStatus::Yellow,
+        "optimizations are pending and triggered"
+    );
+}
+
+fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
+    let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
+    let (handle, dispatcher) = dispatcher_at(storage_dir.path());
+    (storage_dir, handle, dispatcher)
+}
+
+/// A dispatcher over the storage at `storage_path`, loading the collections already there.
+fn dispatcher_at(storage_path: &Path) -> (Handle, Dispatcher) {
     let config = StorageConfig {
-        storage_path: storage_dir.path().to_path_buf(),
-        snapshots_path: storage_dir.path().join("snapshots"),
+        storage_path: storage_path.to_path_buf(),
+        snapshots_path: storage_path.join("snapshots"),
         snapshots_config: Default::default(),
         temp_path: None,
         on_disk_payload: false,
@@ -153,10 +243,15 @@ fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
     );
     let handle = toc.general_runtime_handle().clone();
 
-    (storage_dir, handle, Dispatcher::new(toc))
+    (handle, Dispatcher::new(toc))
 }
 
-fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str) {
+fn create_collection(
+    handle: &Handle,
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    optimizers_config: Option<OptimizersConfigDiff>,
+) {
     handle
         .block_on(
             dispatcher.submit_collection_meta_op(
@@ -170,7 +265,7 @@ fn create_collection(handle: &Handle, dispatcher: &Dispatcher, collection_name: 
                             sparse_vectors: None,
                             hnsw_config: None,
                             wal_config: None,
-                            optimizers_config: None,
+                            optimizers_config,
                             shard_number: Some(1),
                             on_disk_payload: None,
                             payload: None,
@@ -211,4 +306,54 @@ fn get_collection(
             ),
         )
         .unwrap()
+}
+
+/// Upserts `count` points with 10-dimensional vectors, waiting until they are visible.
+fn upsert_points(handle: &Handle, dispatcher: &Dispatcher, collection_name: &str, count: u64) {
+    let collection = get_collection(handle, dispatcher, collection_name);
+    let pass = new_unchecked_verification_pass();
+    let metrics = dispatcher
+        .toc(&FULL_ACCESS, &pass)
+        .get_collection_hw_metrics(collection_name.into());
+    let points = (0..count)
+        .map(|id| PointStructPersisted {
+            id: id.into(),
+            vector: VectorStructPersisted::Single(vec![
+                id as f32, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ]),
+            payload: None,
+        })
+        .collect();
+    let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+        PointInsertOperationsInternal::PointsList(points),
+    ));
+    handle
+        .block_on(
+            collection
+                .update_all_local(operation, WaitUntil::Visible, true)
+                .measured(AmbientContext::request("test", metrics)),
+        )
+        .unwrap();
+}
+
+/// A diff that changes nothing, as `{"optimizers_config": {}}`.
+fn unchanged_optimizers() -> OptimizersConfigDiff {
+    OptimizersConfigDiff {
+        deleted_threshold: None,
+        vacuum_min_vector_number: None,
+        default_segment_number: None,
+        max_segment_size: None,
+        memmap_threshold: None,
+        indexing_threshold: None,
+        flush_interval_sec: None,
+        max_optimization_threads: None,
+        prevent_unoptimized: None,
+    }
+}
+
+fn collection_status(handle: &Handle, collection: &Collection) -> CollectionStatus {
+    handle
+        .block_on(collection.info(&ShardSelectorInternal::All))
+        .unwrap()
+        .status
 }

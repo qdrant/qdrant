@@ -226,6 +226,11 @@ impl TableOfContent {
         // awaited), which would otherwise stall the consensus loop and can take down a cluster.
         if recreate_optimizers {
             collection.recreate_optimizers_background();
+        } else {
+            // Re-sending an unchanged config is also how users start optimizations that wait for
+            // a trigger, as they do after a restart. Trigger them without recreating, which would
+            // cancel the ones in flight.
+            collection.trigger_optimizers().await;
         }
         Ok(true)
     }
