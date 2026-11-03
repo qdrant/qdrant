@@ -293,7 +293,7 @@ where
             let length = if point_id + 1 < points_count { 2 } else { 1 };
             Some((user_data, ReadRange::new(byte_offset, length)))
         });
-        let range_reads = self.prefetch::<MmapRange, _>(range_reads);
+        let range_reads = self.prefetch::<PointValuesRange, _>(range_reads);
         self.store
             .read_batch(range_reads, Random, |user_data, ranges| {
                 let PointValuesRange { start, count } = ranges[0];
