@@ -70,6 +70,13 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
         })
     }
 
+    /// Record delete versions as `versioning` says, rather than as the feature flags do.
+    #[cfg(test)]
+    pub(crate) fn with_delete_versioning(mut self, versioning: DeleteVersioning) -> Self {
+        self.delete_versioning = versioning;
+        self
+    }
+
     /// Reload the id trackers to pick up changes written since the last open
     /// or reload.
     pub fn live_reload(&mut self) -> OperationResult<()> {

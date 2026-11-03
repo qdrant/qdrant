@@ -165,3 +165,39 @@ fn a_reload_keeps_deletes_made_after_open() {
     // Points 1 to 3 from the appendable, the rest but 5 from the immutable.
     assert_eq!(exact_count(&open_follower(dir.path())), 299);
 }
+
+/// The deletes record the version they are given.
+#[cfg_attr(
+    windows,
+    ignore = "the tombstone rewrite replaces id_tracker.deleted while the lookup holds it \
+              memory-mapped, which Windows refuses"
+)]
+#[test]
+fn deletes_record_the_given_version() {
+    use common::universal_io::MmapFile;
+    use segment::id_tracker::delete_versions::{DeleteLogReader, DeleteVersioning};
+
+    let (dir, immutable) = shadowed_leader("edge-delete-only-version");
+
+    let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable]))
+        .unwrap()
+        .with_delete_versioning(DeleteVersioning::Record);
+    let stale = outdated(&shard, NEWER);
+    assert_eq!(shard.delete_points(&stale, NEWER + 7).unwrap(), 3);
+
+    let segment_path = LocalSegmentEnumerator::new(dir.path())
+        .list_segments()
+        .unwrap()
+        .remove(&immutable)
+        .unwrap()
+        .path;
+    let mut log = DeleteLogReader::<MmapFile>::new(&segment_path);
+    let versions: Vec<SeqNumberType> = log
+        .read_new(&MmapFs)
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.version)
+        .filter(|&version| version != 0)
+        .collect();
+    assert_eq!(versions, [NEWER + 7; 3]);
+}

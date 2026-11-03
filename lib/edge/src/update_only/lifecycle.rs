@@ -105,6 +105,13 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             delete_versioning: DeleteVersioning::from_feature_flags(),
         })
     }
+
+    /// Record delete versions as `versioning` says, rather than as the feature flags do.
+    #[cfg(test)]
+    pub(crate) fn with_delete_versioning(mut self, versioning: DeleteVersioning) -> Self {
+        self.delete_versioning = versioning;
+        self
+    }
 }
 
 impl<Fs> UpdateOnlyEdgeShard<Fs>
