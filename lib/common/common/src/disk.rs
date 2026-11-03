@@ -7,14 +7,17 @@ use walkdir::WalkDir;
 ///
 /// Unlike [`dir_disk_size`], sparse and compressed files count at their full length.
 pub fn dir_apparent_size(path: impl AsRef<Path>) -> std::io::Result<u64> {
-    WalkDir::new(path).into_iter().try_fold(0, |acc, entry| {
-        let metadata = entry?.metadata()?;
-        Ok(if metadata.is_file() {
-            acc + metadata.len()
-        } else {
-            acc
+    WalkDir::new(path)
+        .follow_links(true)
+        .into_iter()
+        .try_fold(0, |acc, entry| {
+            let metadata = entry?.metadata()?;
+            Ok(if metadata.is_file() {
+                acc + metadata.len()
+            } else {
+                acc
+            })
         })
-    })
 }
 
 /// How many bytes a directory takes on disk.
@@ -84,5 +87,17 @@ mod tests {
         fs::write(dir.path().join("small"), b"abc").unwrap();
 
         assert_eq!(dir_apparent_size(dir.path()).unwrap(), 64 * 1024 * 1024 + 3);
+    }
+
+    /// Snapshots read collection data through symlinks, so sizing must count it too.
+    #[cfg(unix)]
+    #[test]
+    fn dir_apparent_size_follows_symlinked_dirs() {
+        let target = tempfile::tempdir().unwrap();
+        fs::write(target.path().join("data"), [0u8; 100]).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(target.path(), dir.path().join("linked")).unwrap();
+
+        assert_eq!(dir_apparent_size(dir.path()).unwrap(), 100);
     }
 }
