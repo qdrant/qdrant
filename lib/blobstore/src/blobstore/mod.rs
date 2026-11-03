@@ -210,7 +210,10 @@ where
     /// Append-only storages reject [`Self::delete_value`]; callers that only need a soft
     /// deletion marker must skip the hard delete themselves.
     pub fn is_append_only(&self) -> bool {
-        matches!(self.inner, BlobstoreInner::Logstore(_))
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => false,
+            BlobstoreInner::Logstore(_) => true,
+        }
     }
 
     /// Delete a value from the storage.

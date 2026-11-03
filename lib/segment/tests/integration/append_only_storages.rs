@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::flags::{FeatureFlags, init_feature_flags};
+use common::generic_consts::Random;
 use common::types::DeferredBehavior;
 use segment::common::memory_usage::MemoryReporter as _;
 use segment::data_types::named_vectors::NamedVectors;
@@ -26,7 +27,9 @@ use segment::types::{
     VectorStorageType,
 };
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
-use segment::vector_storage::{VectorStorage as _, VectorStorageRead as _};
+use segment::vector_storage::{
+    SparseVectorStorageRead as _, VectorStorage as _, VectorStorageRead as _,
+};
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
@@ -417,6 +420,9 @@ fn sparse_storage_is_append_only() {
     // Soft-delete a stored vector: bitflag only, no Logstore `delete_value`.
     assert!(storage.delete_vector(0).unwrap());
     assert!(storage.is_deleted_vector(0));
+    // The stored value stays readable at the storage level: the deleted flag alone
+    // decides visibility, segment reads filter it out via the deleted bitslice.
+    assert!(storage.get_sparse_opt::<Random>(0).unwrap().is_some());
 }
 
 /// Deleting a named sparse vector on an append-only segment goes through
