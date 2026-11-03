@@ -63,6 +63,11 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedUpdateBitSlice<S> {
         self.len
     }
 
+    /// The underlying storage, without the pending updates.
+    pub fn stored(&self) -> Arc<RwLock<StoredBitSlice<S>>> {
+        Arc::clone(&self.bitslice)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }

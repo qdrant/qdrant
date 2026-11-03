@@ -14,6 +14,7 @@
 //!   gates deletes has to: the mask and the log are separate files, and a fresh mask bit can be
 //!   read before the log entry that gives its version.
 
+mod buffered;
 mod log_format;
 mod log_reader;
 mod log_writer;
@@ -22,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 
+pub use self::buffered::BufferedDeletedSlots;
 pub use self::log_reader::DeleteLogReader;
 pub use self::log_writer::DeleteLogWriter;
 use crate::types::SeqNumberType;
@@ -32,6 +34,13 @@ pub const DELETE_LOG_FILE: &str = "id_tracker.deletes";
 
 pub fn delete_log_path(segment_path: &Path) -> PathBuf {
     segment_path.join(DELETE_LOG_FILE)
+}
+
+/// The delete log of the local segment at `segment_path`, if it has one: for the file lists of
+/// regular trackers, which snapshots and copies of the segment go by.
+pub fn existing_delete_log(segment_path: &Path) -> Option<PathBuf> {
+    let path = delete_log_path(segment_path);
+    path.exists().then_some(path)
 }
 
 /// One delete as the delete log records it.
