@@ -69,10 +69,10 @@ impl StoredValue for str {
     }
 }
 
-/// Flattened memmapped points-to-values map
-/// It's an analogue of `Vec<Vec<N>>` but in memmapped file.
+/// Flattened on-disk points-to-values map
+/// It's an analogue of `Vec<Vec<N>>` but in a file, read through `UniversalRead`.
 /// This structure is immutable.
-/// It's used in mmap field indices like `UniversalMapIndex`, `UniversalNumericIndex`, etc to store points-to-values map.
+/// It's used in on-disk field indices like `UniversalMapIndex`, `UniversalNumericIndex`, etc to store points-to-values map.
 /// This structure is not generic to avoid boxing lifetimes for `&str` values.
 pub struct OnDiskPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     file_name: PathBuf,
@@ -81,12 +81,12 @@ pub struct OnDiskPointToValues<T: StoredValue + ?Sized, S: UniversalRead> {
     phantom: std::marker::PhantomData<T>,
 }
 
-/// Memory and IO overhead of accessing mmap index.
-pub const MMAP_PTV_ACCESS_OVERHEAD: usize = size_of::<MmapRange>();
+/// Memory and IO overhead of reading one point's values range entry.
+pub const PTV_ACCESS_OVERHEAD: usize = size_of::<PointValuesRange>();
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
-struct MmapRange {
+struct PointValuesRange {
     start: u64,
     count: u64,
 }
@@ -129,7 +129,7 @@ where
             points_count = max(points_count, (point_id + 1) as usize);
             values_size += values.map(|v| T::stored_size(v)).sum::<usize>();
         }
-        let ranges_size = points_count * std::mem::size_of::<MmapRange>();
+        let ranges_size = points_count * std::mem::size_of::<PointValuesRange>();
         let file_size = PADDING_SIZE + ranges_size + values_size;
 
         // create new file and mmap
@@ -162,13 +162,13 @@ where
                 point_values_offset += T::stored_size(value);
             }
 
-            let range = MmapRange {
+            let range = PointValuesRange {
                 start: start as u64,
                 count: values_count as u64,
             };
             mmap.get_mut(
                 header.ranges_start as usize
-                    + point_id as usize * std::mem::size_of::<MmapRange>()..,
+                    + point_id as usize * std::mem::size_of::<PointValuesRange>()..,
             )
             .and_then(|bytes| range.write_to_prefix(bytes))
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGH_BYTES_ERROR_MESSAGE))?;
@@ -248,7 +248,7 @@ where
                 length: range.end - range.start,
             };
             // Measure IO overhead of `self.get_bytes_range()` and the length of the values
-            HwMetric::PayloadIndexIoRead.bump(MMAP_PTV_ACCESS_OVERHEAD + range.length as usize);
+            HwMetric::PayloadIndexIoRead.bump(PTV_ACCESS_OVERHEAD + range.length as usize);
 
             (range, count)
         }) else {
@@ -283,16 +283,17 @@ where
                 return None;
             }
 
-            let byte_offset = ranges_start + u64::from(point_id) * size_of::<MmapRange>() as u64;
+            let byte_offset =
+                ranges_start + u64::from(point_id) * size_of::<PointValuesRange>() as u64;
 
-            // Fetch 2 `MmapRange` entries per id, so we can get range start..end.
+            // Fetch 2 `PointValuesRange` entries per id, so we can get range start..end.
             // In case of being the last entry, we will do start..file_len
             let length = if point_id + 1 < points_count { 2 } else { 1 };
             Some((user_data, ReadRange::new(byte_offset, length)))
         });
         self.store
             .read_batch(range_reads, Random, |user_data, ranges| {
-                let MmapRange { start, count } = ranges[0];
+                let PointValuesRange { start, count } = ranges[0];
 
                 // Use next point's start as end offset for this one.
                 let end = ranges.get(1).map_or(file_len, |next| next.start);
@@ -300,7 +301,7 @@ where
 
                 // Mirror `values_iter`: account the per-point access overhead
                 // plus the length of the values.
-                HwMetric::PayloadIndexIoRead.bump(MMAP_PTV_ACCESS_OVERHEAD + length as usize);
+                HwMetric::PayloadIndexIoRead.bump(PTV_ACCESS_OVERHEAD + length as usize);
 
                 // Note: if `count == 0`, we'd better call `f` right away, but
                 // `f` is already mut-borrowed in the iterator above. So,
@@ -346,10 +347,10 @@ where
         0
     }
 
-    fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<MmapRange>> {
+    fn get_range(&self, point_id: PointOffsetType) -> OperationResult<Option<PointValuesRange>> {
         if point_id < self.header.points_count as PointOffsetType {
-            let range_offset =
-                (self.header.ranges_start as usize) + (point_id as usize) * size_of::<MmapRange>();
+            let range_offset = (self.header.ranges_start as usize)
+                + (point_id as usize) * size_of::<PointValuesRange>();
 
             let range = self
                 .store
@@ -365,7 +366,7 @@ where
         &self,
         point_id: PointOffsetType,
     ) -> OperationResult<Option<(Range<u64>, usize)>> {
-        let Some(MmapRange { start, count }) = self.get_range(point_id)? else {
+        let Some(PointValuesRange { start, count }) = self.get_range(point_id)? else {
             return Ok(None);
         };
 
