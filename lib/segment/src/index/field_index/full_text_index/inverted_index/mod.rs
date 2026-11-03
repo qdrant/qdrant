@@ -362,7 +362,7 @@ pub trait InvertedIndex {
     fn token_bytes(&self) -> OperationResult<u64> {
         let mut total = 0u64;
         self.for_each_vocab_with_postings_len(|token, postings_len| {
-            total += (token.len() * postings_len) as u64;
+            total += token.len() as u64 * postings_len as u64;
             Ok(())
         })?;
         Ok(total)

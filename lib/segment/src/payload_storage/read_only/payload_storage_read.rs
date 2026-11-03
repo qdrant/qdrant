@@ -68,10 +68,14 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     ) -> OperationResult<()> {
         self.storage
             .view()
-            .read_value_lens::<P, _, OperationError>(point_offsets, |user_data, _, len| {
-                callback(user_data, len)?;
-                Ok(true)
-            })?;
+            .read_value_lens::<P, _, OperationError>(
+                point_offsets,
+                |user_data, _, len| {
+                    callback(user_data, len)?;
+                    Ok(true)
+                },
+                Some(HwMetric::PayloadIoRead),
+            )?;
         Ok(())
     }
 

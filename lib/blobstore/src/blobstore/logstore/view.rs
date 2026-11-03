@@ -62,6 +62,7 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffset)>,
         mut callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
     ) -> Result<bool, E>
     where
         P: AccessPattern,
@@ -97,6 +98,9 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> LogstoreView<'a, V, S, T> {
                 (key, ValuePointer { length, ..pointer })
             }),
             |(user_data, point_offset), bytes| {
+                if let Some(hw_metric) = hw_metric {
+                    hw_metric.bump(bytes.len());
+                }
                 callback(user_data, point_offset, Some(decompressed_len(&bytes)?))
             },
         )

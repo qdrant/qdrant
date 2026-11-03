@@ -297,8 +297,22 @@ fn test_read_value_lens(
                 lens[idx] = len;
                 Ok(true)
             },
+            None,
         )
         .unwrap();
+
+    let mut writable_lens: Vec<Option<usize>> = vec![None; offsets.len()];
+    storage
+        .read_value_lens::<Random, _, BlobstoreError>(
+            offsets.iter().copied().enumerate(),
+            |idx, _, len| {
+                writable_lens[idx] = len;
+                Ok(())
+            },
+            None,
+        )
+        .unwrap();
+    assert_eq!(writable_lens, lens);
 
     for (idx, &point_offset) in offsets.iter().enumerate() {
         let expected = payloads

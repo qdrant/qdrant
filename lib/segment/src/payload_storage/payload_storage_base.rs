@@ -44,17 +44,13 @@ pub trait PayloadStorageRead {
         callback: impl FnMut(U, Option<&[u8]>) -> OperationResult<()>,
     ) -> OperationResult<()>;
 
-    /// Length of each payload's [`Self::read_payloads_raw`] bytes. Storages that know it
-    /// without decoding the payload override this.
+    /// Length of each payload's [`Self::read_payloads_raw`] bytes, without decoding the
+    /// payload where the storage knows it.
     fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
-        mut callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
-    ) -> OperationResult<()> {
-        self.read_payloads_raw::<P, U>(point_offsets, |user_data, bytes| {
-            callback(user_data, bytes.map(<[u8]>::len))
-        })
-    }
+        callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
+    ) -> OperationResult<()>;
 
     /// Iterate over all stored payload and apply the provided callback.
     /// Stop iteration if callback returns false or error.
