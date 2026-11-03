@@ -19,6 +19,7 @@ use common::universal_io::UniversalAppendFs;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::OperationResult;
+use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::segment::update_only::{TrackerLookup, UpdateOnlySegmentEnum};
 use segment::types::{PointIdType, SeqNumberType};
 use uuid::Uuid;
@@ -128,7 +129,7 @@ impl<Fs: UniversalAppendFs> DeleteOnlyEdgeShard<Fs> {
                 &segment.segment_config,
                 segment.writer_state(),
             )?
-            .tombstone_points(&points)?;
+            .tombstone_points(&points, 0, DeleteVersioning::Legacy)?;
             deleted += points.len();
         }
         Ok(deleted)

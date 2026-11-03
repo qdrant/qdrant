@@ -12057,6 +12057,11 @@
             "default": true,
             "type": "boolean"
           },
+          "versioned_deletes": {
+            "description": "Record the version of every delete a serverless writer makes, in formats older readers cannot parse: versioned delete entries in appendable mappings logs, and a delete log next to the deleted mask of immutable segments. Followers use the versions to never apply the delete of a moved point before they see its new copy. Gates writing only: both formats are always readable, and a delete log that exists is always appended to.",
+            "default": false,
+            "type": "boolean"
+          },
           "serverless_compatible": {
             "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`], [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,

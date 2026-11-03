@@ -33,8 +33,8 @@ use self::on_disk_format::{e2i_path, i2e_path, is_uuid_path};
 pub use self::read_only::ReadOnlyDiskIdTracker;
 use self::reader::DiskMappingReader;
 use self::versions_file::{VersionsFile, VersionsFormat};
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
+use crate::id_tracker::delete_versions::BufferedDeletedSlots;
 
 /// Writable, deletion-only disk-resident id tracker: the mapping is immutable
 /// and served from disk; only the `deleted` bitvec and `versions` are resident
@@ -48,7 +48,8 @@ pub struct DiskIdTracker<S: UniversalWrite> {
 
     /// Resident deleted set (read source for lookups/search); persisted via the wrapper.
     deleted: BitVec,
-    deleted_wrapper: BufferedUpdateBitSlice<S>,
+    /// The deleted mask, and the delete log a flush writes ahead of it.
+    deleted_wrapper: BufferedDeletedSlots<S>,
 
     /// Resident per-point versions; persisted via `versions_file`.
     internal_to_version: CompressedVersions,
