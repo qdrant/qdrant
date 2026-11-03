@@ -132,6 +132,27 @@ pub trait PayloadIndexRead {
         query_cardinality: &'a CardinalityEstimation,
         is_stopped: &'a AtomicBool,
         deferred_behavior: DeferredBehavior,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
+        self.iter_filtered_points_first(
+            filter,
+            query_cardinality,
+            is_stopped,
+            deferred_behavior,
+            None,
+        )
+    }
+
+    /// Same as [`Self::iter_filtered_points`], but yields at most `first` matches.
+    ///
+    /// Impls that collect matches up front stop checking once they have `first`
+    /// of them, instead of checking every candidate.
+    fn iter_filtered_points_first<'a>(
+        &'a self,
+        filter: &'a Filter,
+        query_cardinality: &'a CardinalityEstimation,
+        is_stopped: &'a AtomicBool,
+        deferred_behavior: DeferredBehavior,
+        first: Option<usize>,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`

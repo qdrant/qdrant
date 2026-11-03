@@ -69,15 +69,19 @@ impl<'a> OptimizedFilter<'a> {
     /// can come out in a different order than the input.
     ///
     /// Otherwise ids are checked lazily, one by one as they are pulled.
+    ///
+    /// `first` is how many matches the caller consumes at most: collecting stops
+    /// once that many are found.
     pub fn into_matches<I>(
         self,
         ids: I,
+        first: Option<usize>,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + use<'a, I>>
     where
         I: Iterator<Item = PointOffsetType>,
     {
         if self.reads_cold_index() {
-            Ok(Either::Left(self.collect_matches(ids)?.into_iter()))
+            Ok(Either::Left(self.collect_matches(ids, first)?.into_iter()))
         } else {
             Ok(Either::Right(
                 ids.filter(move |&id| self.check_infallible(id)),
@@ -88,19 +92,23 @@ impl<'a> OptimizedFilter<'a> {
     fn collect_matches(
         &self,
         mut ids: impl Iterator<Item = PointOffsetType>,
+        first: Option<usize>,
     ) -> OperationResult<Vec<PointOffsetType>> {
+        let first = first.unwrap_or(usize::MAX);
         let mut matched = Vec::new();
         let mut batch = Vec::with_capacity(CHECK_BATCH_SIZE);
-        loop {
+        while matched.len() < first {
             batch.clear();
             batch.extend(ids.by_ref().take(CHECK_BATCH_SIZE));
             if batch.is_empty() {
-                return Ok(matched);
+                break;
             }
             let matched_in_batch =
                 self.check_batched(&mut batch, Select::Matches, Rest::Discard)?;
             matched.extend_from_slice(&batch[..matched_in_batch]);
         }
+        matched.truncate(first);
+        Ok(matched)
     }
 }
 
@@ -356,9 +364,17 @@ mod tests {
             .clone()
             .filter(|&id| filter.check_infallible(id))
             .collect();
-        let mut collected = filter.collect_matches(ids).unwrap();
+        let mut collected = filter.collect_matches(ids.clone(), None).unwrap();
         collected.sort_unstable();
         assert_eq!(collected, expected);
+
+        let mut pulled = 0;
+        let first = filter
+            .collect_matches(ids.inspect(|_| pulled += 1), Some(5))
+            .unwrap();
+        assert_eq!(first.len(), 5);
+        assert!(first.iter().all(|&id| filter.check_infallible(id)));
+        assert_eq!(pulled, CHECK_BATCH_SIZE);
     }
 
     #[test]

@@ -180,14 +180,16 @@ where
         ))
     }
 
-    fn iter_filtered_points<'b>(
+    fn iter_filtered_points_first<'b>(
         &'b self,
         filter: &'b Filter,
         query_cardinality: &'b CardinalityEstimation,
         is_stopped: &'b AtomicBool,
         deferred_behavior: DeferredBehavior,
+        first: Option<usize>,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'b> {
         let point_mappings = self.id_tracker.point_mappings();
+        let first_n = first.unwrap_or(usize::MAX);
 
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
@@ -195,9 +197,9 @@ where
             let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
-                optimized_filter.into_matches(full_scan_iterator.stop_if(is_stopped))?;
+                optimized_filter.into_matches(full_scan_iterator.stop_if(is_stopped), first)?;
 
-            Ok(EitherVariant::A(matched_points))
+            Ok(EitherVariant::A(matched_points.take(first_n)))
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(self.id_tracker.total_point_count());
@@ -238,15 +240,16 @@ where
                     // We can avoid post-filtering
                     let iter = joined_primary_iterator
                         .filter(move |&id| !visited_list.check_and_update_visited(id));
-                    EitherVariant::B(iter)
+                    EitherVariant::B(iter.take(first_n))
                 } else {
                     // Some conditions are primary clauses, some are not
                     let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
                     let iter = optimized_filter.into_matches(
                         joined_primary_iterator
                             .filter(move |&id| !visited_list.check_and_update_visited(id)),
+                        first,
                     )?;
-                    EitherVariant::C(iter)
+                    EitherVariant::C(iter.take(first_n))
                 });
             }
 
@@ -261,9 +264,10 @@ where
                     .stop_if(is_stopped)
                     .measure_hw(HwMetric::Cpu, size_of::<PointOffsetType>())
                     .filter(move |&id| !visited_list.check_and_update_visited(id)),
+                first,
             )?;
 
-            Ok(EitherVariant::D(iter))
+            Ok(EitherVariant::D(iter.take(first_n)))
         }
     }
 
