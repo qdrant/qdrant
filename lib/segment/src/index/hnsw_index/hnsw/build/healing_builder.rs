@@ -5,16 +5,13 @@ use std::sync::atomic::AtomicU64;
 
 use common::types::PointOffsetType;
 use log::debug;
-use rand::Rng;
-use rayon::ThreadPool;
 
 use self::seeds::BlockSeeds;
 use super::block::Block;
-use super::context::{GraphBuildContext, MainGraphProgress};
+use super::context::MainGraphProgress;
 use super::graph_builder::GraphBuilderMethod;
 use super::hnsw_builder::HnswBuilder;
-use super::local_builder::{LocalBuilder, LocalMethod};
-use super::payload_blocks::FieldBlocks;
+use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
@@ -37,22 +34,20 @@ pub(super) struct HealingBuilder<'a> {
 }
 
 impl<'a> HealingBuilder<'a> {
-    /// Points keep their level from the old graph.
-    pub fn new(
-        ctx: GraphBuildContext<'a>,
-        pool: &'a ThreadPool,
-        rng: &'a mut dyn Rng,
-        old: &'a OldIndex<'a>,
-    ) -> OperationResult<Self> {
-        let hnsw = HnswBuilder(LocalBuilder::new(ctx, pool, rng, Some(old))?);
-
-        Ok(Self {
-            hnsw,
+    /// `local` must have the levels of `old`: points keep their level from the old graph.
+    pub fn from_local(local: LocalBuilder<'a>, old: &'a OldIndex<'a>) -> Self {
+        Self {
+            hnsw: HnswBuilder(local),
             old,
             seeds: None,
             block_points: 0,
             seeded_points: 0,
-        })
+        }
+    }
+
+    /// The state the method builds on.
+    pub fn local(&mut self) -> &mut LocalBuilder<'a> {
+        &mut self.hnsw.0
     }
 }
 
@@ -117,10 +112,6 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
         self.hnsw.insert(&missing_points, main_graph)
     }
 
-    fn build_field_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
-        self.build_blocks(field)
-    }
-
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {
         if self.seeds.is_some() {
             debug!(
@@ -133,12 +124,6 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
 
     fn seeds_payload_blocks(&self) -> bool {
         payload_links_reusable(self.hnsw.0.ctx.block_params.hnsw_m, &self.old.index.config)
-    }
-}
-
-impl<'a> LocalMethod<'a> for HealingBuilder<'a> {
-    fn local(&mut self) -> &mut LocalBuilder<'a> {
-        self.hnsw.local()
     }
 
     /// Points that kept enough links to the block in the old graph start with them, the rest
