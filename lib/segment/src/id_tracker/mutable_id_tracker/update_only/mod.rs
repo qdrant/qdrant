@@ -17,6 +17,7 @@ use super::mappings_storage::mappings_path;
 use super::versions_storage::{VERSION_ELEMENT_SIZE, versions_path, write_version};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::DELETED_POINT_VERSION;
+use crate::id_tracker::delete_versions::DeleteVersioning;
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A mapping mutation to record: claim a slot for an external id, or retire it.
@@ -28,6 +29,9 @@ pub enum MappingOperation {
     /// Retire this external id. Its slot is left as it is and never handed out again; tombstoning
     /// the data is the caller's business.
     Delete(PointIdType),
+    /// [`Delete`](Self::Delete), recording the version of the batch that deleted the point, see
+    /// [`delete_versions`](crate::id_tracker::delete_versions).
+    DeleteVersioned(PointIdType, SeqNumberType),
     /// Link this external id to a slot the log already claimed, which must hold the id's committed
     /// data, superseding its current mapping. Claims nothing.
     Relink(PointIdType, PointOffsetType),
@@ -261,6 +265,9 @@ impl UpdateOnlyAppendableIdTracker {
                     MappingChange::Insert(*external_id, internal_id)
                 }
                 MappingOperation::Delete(external_id) => MappingChange::Delete(*external_id),
+                MappingOperation::DeleteVersioned(external_id, version) => {
+                    MappingChange::DeleteVersioned(*external_id, *version)
+                }
                 MappingOperation::Relink(external_id, internal_id) => {
                     if self
                         .max_claimed_internal_id
@@ -354,14 +361,22 @@ impl UpdateOnlyAppendableIdTracker {
 
     /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never
     /// handed out again. Tombstoning that data is the caller's business.
+    ///
+    /// With [`DeleteVersioning::Record`], every delete records `version`, the version of the batch
+    /// that deleted the points, see [`delete_versions`](crate::id_tracker::delete_versions).
     pub fn delete_points<Fs: UniversalAppendFs>(
         &mut self,
         fs: &Fs,
         point_ids: impl IntoIterator<Item = PointIdType>,
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
     ) -> OperationResult<()> {
         let operations: Vec<MappingOperation> = point_ids
             .into_iter()
-            .map(MappingOperation::Delete)
+            .map(|point_id| match versioning {
+                DeleteVersioning::Record => MappingOperation::DeleteVersioned(point_id, version),
+                DeleteVersioning::Legacy => MappingOperation::Delete(point_id),
+            })
             .collect();
 
         // Deletes claim no slots, so the returned mappings are empty.

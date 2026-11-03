@@ -8,7 +8,8 @@ use common::universal_io::UniversalAppendFs;
 
 use super::{AppendableSegment, DeleteOnlySegment, WriterIdTrackerState};
 use crate::common::operation_error::OperationResult;
-use crate::types::{PointIdType, SegmentConfig};
+use crate::id_tracker::delete_versions::DeleteVersioning;
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType};
 
 /// A segment opened for writing: appendable, or accepting deletes only.
 pub enum UpdateOnlySegmentEnum<Fs: UniversalAppendFs> {
@@ -48,13 +49,18 @@ impl<Fs: UniversalAppendFs> UpdateOnlySegmentEnum<Fs> {
     /// slot it occupies here — the two formats need different halves of that
     /// pair, see [`DeleteOnlySegment::tombstone_points`] and
     /// [`AppendableSegment::tombstone_points`].
+    ///
+    /// `version` is the version of the batch that deletes the points, recorded
+    /// as [`delete_versions`](crate::id_tracker::delete_versions) describes.
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
     ) -> OperationResult<()> {
         match self {
-            Self::DeleteOnly(segment) => segment.tombstone_points(points),
-            Self::Appendable(segment) => segment.tombstone_points(points),
+            Self::DeleteOnly(segment) => segment.tombstone_points(points, version, versioning),
+            Self::Appendable(segment) => segment.tombstone_points(points, version, versioning),
         }
     }
 }
