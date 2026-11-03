@@ -216,12 +216,13 @@ impl PayloadIndexRead for PlainPayloadIndex {
         ))
     }
 
-    fn iter_filtered_points<'a>(
+    fn iter_filtered_points_first<'a>(
         &'a self,
         filter: &'a Filter,
         _query_cardinality: &'a CardinalityEstimation,
         is_stopped: &'a AtomicBool,
         deferred_behavior: DeferredBehavior,
+        first: Option<usize>,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a> {
         let filter_context = self.filter_context(filter)?;
         // `self.id_tracker` is an `Arc<AtomicRefCell<_>>`, so the mapping borrow is
@@ -233,6 +234,7 @@ impl PayloadIndexRead for PlainPayloadIndex {
             .iter_internal_with_behavior(deferred_behavior)
             .stop_if(is_stopped)
             .try_filter(|id| filter_context.check(*id))
+            .take(first.unwrap_or(usize::MAX))
             .collect::<OperationResult<_>>()?;
         Ok(matched.into_iter())
     }

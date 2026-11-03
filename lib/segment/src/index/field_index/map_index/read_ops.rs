@@ -581,6 +581,11 @@ where
 }
 
 impl<'a, N: MapIndexKey + ?Sized + 'a, T> MapConditionChecker<'a, N, T> {
+    /// The index whose values this checker reads.
+    pub fn index(&self) -> &'a T {
+        self.index
+    }
+
     /// Whether a single indexed `value` satisfies this checker's predicate.
     fn matches(&self, value: &N) -> bool {
         match &self.predicate {

@@ -325,6 +325,11 @@ impl<'a, G: ?Sized, F> GeoConditionChecker<'a, G, F> {
     pub(super) fn new(geo: &'a G, filter: F) -> Self {
         Self { geo, filter }
     }
+
+    /// The index whose values this checker reads.
+    pub fn index(&self) -> &'a G {
+        self.geo
+    }
 }
 
 impl<G, P> ConditionChecker for GeoConditionChecker<'_, G, P>

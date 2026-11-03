@@ -11,7 +11,9 @@ use crate::index::field_index::bool_index::{
 use crate::index::field_index::full_text_index::{
     FullTextConditionChecker, FullTextIndex, ReadOnlyFullTextIndex,
 };
-use crate::index::field_index::geo_index::{GeoConditionChecker, GeoIndex, ReadOnlyGeoIndex};
+use crate::index::field_index::geo_index::{
+    GeoConditionChecker, GeoIndex, GeoIndexRead as _, ReadOnlyGeoIndex,
+};
 use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
 use crate::index::field_index::map_index::{MapConditionChecker, MapIndex};
 use crate::index::field_index::null_index::{
@@ -88,6 +90,43 @@ pub enum ConditionCheckerEnum<'a> {
     MapIntRoMmap(MapRoCC<'a, MmapFile, IntPayloadType>),
     MapStrRoMmap(MapRoCC<'a, MmapFile, str>),
     MapUuidRoMmap(MapRoCC<'a, MmapFile, UuidIntType>),
+}
+
+impl ConditionCheckerEnum<'_> {
+    /// Whether checking a point reads its values from a cold on-disk index.
+    ///
+    /// Such indexes pay one synchronous page fault per point when checked one by
+    /// one; [`ConditionChecker::check_batched`] lets them prefetch a whole batch.
+    /// Every other checker answers from memory, so batching it gains nothing.
+    pub fn reads_cold_index(&self) -> bool {
+        match self {
+            Self::Filter(c) => c.reads_cold_index(),
+            Self::Constant(_) | Self::Dyn(_) | Self::Ids(_) => false,
+            #[cfg(feature = "testing")]
+            Self::Plain(_) | Self::TestBitOfId(_) => false,
+            Self::BoolImmutable(_) | Self::BoolMutable(_) | Self::BoolRoMmap(_) => false,
+            Self::NullImmutable(_) | Self::NullMutable(_) | Self::NullRoMmap(_) => false,
+            Self::FullTextWritable(_) | Self::FullTextRoMmap(_) => false,
+            Self::GeoRadiusWritable(c) => c.index().is_cold(),
+            Self::GeoBoundingBoxWritable(c) => c.index().is_cold(),
+            Self::GeoPolygonWritable(c) => c.index().is_cold(),
+            Self::GeoRadiusRoMmap(c) => c.index().is_cold(),
+            Self::GeoBoundingBoxRoMmap(c) => c.index().is_cold(),
+            Self::GeoPolygonRoMmap(c) => c.index().is_cold(),
+            Self::NumericFloatWritable(c) => c.index().is_cold(),
+            Self::NumericIntWritable(c) => c.index().is_cold(),
+            Self::NumericUuidWritable(c) => c.index().is_cold(),
+            Self::NumericFloatRoMmap(c) => c.index().is_cold(),
+            Self::NumericIntRoMmap(c) => c.index().is_cold(),
+            Self::NumericUuidRoMmap(c) => c.index().is_cold(),
+            Self::MapIntWritable(c) => c.index().is_cold(),
+            Self::MapStrWritable(c) => c.index().is_cold(),
+            Self::MapUuidWritable(c) => c.index().is_cold(),
+            Self::MapIntRoMmap(c) => c.index().is_cold(),
+            Self::MapStrRoMmap(c) => c.index().is_cold(),
+            Self::MapUuidRoMmap(c) => c.index().is_cold(),
+        }
+    }
 }
 
 impl ConditionChecker for ConditionCheckerEnum<'_> {
