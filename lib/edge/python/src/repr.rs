@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 pub use edge_py_codegen::pyclass_repr;
-use pyo3::PyTypeInfo;
+use pyo3::PyClass;
 
 /// Can be implemented using [macro pyclass_repr].
 pub trait Repr {
@@ -155,8 +155,7 @@ impl ReprStr for str {}
 impl ReprStr for String {}
 
 pub trait WriteExt: fmt::Write {
-    #[allow(deprecated)]
-    fn class<T: PyTypeInfo>(&mut self, fields: &[(&str, &dyn Repr)]) -> fmt::Result {
+    fn class<T: PyClass>(&mut self, fields: &[(&str, &dyn Repr)]) -> fmt::Result {
         write!(self, "{}(", T::NAME)?;
 
         let mut separator = "";
@@ -170,8 +169,7 @@ pub trait WriteExt: fmt::Write {
         Ok(())
     }
 
-    #[allow(deprecated)]
-    fn complex_enum<T: PyTypeInfo>(
+    fn complex_enum<T: PyClass>(
         &mut self,
         variant: &str,
         fields: &[(&str, &dyn Repr)],
@@ -189,8 +187,7 @@ pub trait WriteExt: fmt::Write {
         Ok(())
     }
 
-    #[allow(deprecated)]
-    fn simple_enum<T: PyTypeInfo>(&mut self, variant: &str) -> fmt::Result {
+    fn simple_enum<T: PyClass>(&mut self, variant: &str) -> fmt::Result {
         write!(self, "{}.{}", T::NAME, variant)
     }
 
