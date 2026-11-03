@@ -139,7 +139,10 @@ impl GpuState {
             ctx.stopped,
         )?;
         if gpu_graph.is_some() {
-            log::debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+            log::debug!(
+                "{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?} on GPU",
+                timer.elapsed()
+            );
         }
         Ok(gpu_graph)
     }
