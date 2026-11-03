@@ -163,18 +163,7 @@ impl TableOfContent {
         // reject the same ones. Once the state machine drives consensus, this call is the only
         // thing checking a diff on this path, and it goes with the code below it.
         let config_before = collection.config().await;
-        let mut config_after = config_before.clone();
-        apply_collection_config_diffs(&mut config_after, &operation.update_collection)?;
-
-        // Recreating optimizers cancels in-flight optimizations, so only do it when the update
-        // changes what optimizers are built from. Clients that re-send the same config on every
-        // run would otherwise keep cancelling optimizations, and every cancelled optimization
-        // under writes leaves an extra segment behind.
-        //
-        // Recreating also clears optimizer errors, and re-sending an unchanged config is how
-        // users restart failed optimizers, so keep doing it while an error is recorded.
-        let recreate_optimizers = config_before.is_core_config_updated(&config_after)
-            || collection.has_optimizer_errors().await;
+        apply_collection_config_diffs(&mut config_before.clone(), &operation.update_collection)?;
 
         let UpdateCollection {
             vectors,
@@ -218,20 +207,9 @@ impl TableOfContent {
         }
 
         collection.print_warnings().await;
-
-        // Recreate optimizers
-        //
-        // This runs in the background and does not block: this path is reached from consensus, and
-        // stopping the existing optimizers can take a long time (in-flight optimizations are
-        // awaited), which would otherwise stall the consensus loop and can take down a cluster.
-        if recreate_optimizers {
-            collection.recreate_optimizers_background();
-        } else {
-            // Re-sending an unchanged config is also how users start optimizations that wait for
-            // a trigger, as they do after a restart. Trigger them without recreating, which would
-            // cancel the ones in flight.
-            collection.trigger_optimizers().await;
-        }
+        collection
+            .recreate_or_trigger_optimizers(&config_before)
+            .await;
         Ok(true)
     }
 

@@ -34,7 +34,7 @@ use storage::content_manager::collection_meta_ops::{
     UpdateCollectionOperation,
 };
 use storage::content_manager::consensus::operation_sender::OperationSender;
-use storage::content_manager::consensus_state_machine::Action;
+use storage::content_manager::consensus_state_machine::{Action, CollectionConfigDiff};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -104,6 +104,50 @@ fn update_collection_reject_mid_operation() {
 /// the optimizers.
 #[test]
 fn unchanged_update_triggers_optimizers_after_restart() {
+    check_unchanged_update_triggers_optimizers_after_restart(|handle, dispatcher| {
+        let update = UpdateCollection {
+            hnsw_config: None,
+            vectors: None,
+            params: None,
+            optimizers_config: Some(unchanged_optimizers()),
+            quantization_config: None,
+            sparse_vectors: None,
+            strict_mode_config: None,
+            metadata: None,
+        };
+        handle
+            .block_on(dispatcher.submit_collection_meta_op(
+                CollectionMetaOperations::UpdateCollection(
+                    UpdateCollectionOperation::new("test".to_string(), update).unwrap(),
+                ),
+                FULL_ACCESS,
+                None,
+            ))
+            .unwrap();
+    });
+}
+
+/// As [`unchanged_update_triggers_optimizers_after_restart`], with the action consensus applies
+/// for the update in distributed mode.
+#[test]
+fn unchanged_update_action_triggers_optimizers_after_restart() {
+    check_unchanged_update_triggers_optimizers_after_restart(|_handle, dispatcher| {
+        let pass = new_unchecked_verification_pass();
+        dispatcher
+            .toc(&FULL_ACCESS, &pass)
+            .apply_action(Action::UpdateCollectionConfig {
+                collection: "test".into(),
+                diff: Box::new(CollectionConfigDiff::Optimizers(unchanged_optimizers())),
+            })
+            .unwrap();
+    });
+}
+
+/// Restarts a collection with pending optimizations, so that it's grey, then checks that
+/// `send_unchanged_update` starts them.
+fn check_unchanged_update_triggers_optimizers_after_restart(
+    send_unchanged_update: impl FnOnce(&Handle, &Dispatcher),
+) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
     {
@@ -127,6 +171,9 @@ fn unchanged_update_triggers_optimizers_after_restart() {
             })
             .unwrap();
         upsert_points(&handle, &dispatcher, "test", 1000);
+        // Stop the workers, so the shard releases its WAL for the restart
+        let collection = get_collection(&handle, &dispatcher, "test");
+        handle.block_on(collection.stop_gracefully());
     }
 
     // Restart
@@ -137,25 +184,7 @@ fn unchanged_update_triggers_optimizers_after_restart() {
         CollectionStatus::Grey
     );
 
-    let update = UpdateCollection {
-        hnsw_config: None,
-        vectors: None,
-        params: None,
-        optimizers_config: Some(unchanged_optimizers()),
-        quantization_config: None,
-        sparse_vectors: None,
-        strict_mode_config: None,
-        metadata: None,
-    };
-    handle
-        .block_on(dispatcher.submit_collection_meta_op(
-            CollectionMetaOperations::UpdateCollection(
-                UpdateCollectionOperation::new("test".to_string(), update).unwrap(),
-            ),
-            FULL_ACCESS,
-            None,
-        ))
-        .unwrap();
+    send_unchanged_update(&handle, &dispatcher);
 
     // The trigger reaches the optimizers through the update worker, asynchronously
     let deadline = Instant::now() + Duration::from_secs(10);
