@@ -30,7 +30,8 @@ pub(super) enum GraphBuilder<'a> {
 
 /// The steps of a graph build. Implemented by every method.
 pub(super) trait GraphBuilderMethod {
-    /// Build the main graph.
+    /// Build the main graph once, consuming its progress phases from the context.
+    /// Without a main graph (`m == 0`), nothing is linked.
     fn build_main(&mut self) -> OperationResult<()>;
 
     /// Link the blocks of one field. Call once per field, in build order.
@@ -85,6 +86,10 @@ impl<'a> GraphBuilder<'a> {
         } = options;
 
         let cpu = CpuBuilder::new(ctx, pool, rng, old_index)?;
+        #[cfg(feature = "gpu")]
+        let mut cpu = cpu;
+        #[cfg(feature = "gpu")]
+        let ctx = &cpu.local().ctx;
 
         #[cfg(feature = "gpu")]
         if let Some(gpu_device) = gpu_device
