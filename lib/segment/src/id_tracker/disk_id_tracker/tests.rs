@@ -7,6 +7,7 @@ use tempfile::Builder;
 
 use super::{DiskIdTracker, ReadOnlyDiskIdTracker, VersionsFormat, compact_versions};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
@@ -236,6 +237,7 @@ fn detect_and_load_selects_disk_format() {
         None,
         None,
         Populate::No,
+        DeleteGating::Immediate,
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only disk id tracker");
@@ -252,6 +254,7 @@ fn detect_and_load_selects_disk_format() {
         None,
         None,
         Populate::No,
+        DeleteGating::Immediate,
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only immutable id tracker");
@@ -264,6 +267,7 @@ fn detect_and_load_selects_disk_format() {
         None,
         None,
         Populate::No,
+        DeleteGating::Immediate,
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only appendable id tracker");
@@ -403,9 +407,12 @@ fn deletion_and_live_reload_disk_cache() {
     .unwrap();
     // Both trackers' `open` reads the whole pre-deletion deleted bitmap, so
     // the state this test must escape ends up in the readers' local caches.
-    let mut read_only_immutable =
-        ReadOnlyImmutableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &immutable_path)
-            .unwrap();
+    let mut read_only_immutable = ReadOnlyImmutableIdTracker::<DiskCache<MmapFile>>::open(
+        &cache_fs,
+        &immutable_path,
+        DeleteGating::Immediate,
+    )
+    .unwrap();
     let mut read_only_disk =
         ReadOnlyDiskIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &disk_path, Populate::No)
             .unwrap();

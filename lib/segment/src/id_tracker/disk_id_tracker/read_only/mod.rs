@@ -13,11 +13,13 @@ mod versions;
 use std::path::PathBuf;
 
 use common::bitvec::BitVec;
+use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
 use self::versions::ReadOnlyVersions;
 use super::on_disk_format::{e2i_path, i2e_path, is_uuid_path};
 use super::reader::DiskMappingReader;
+use crate::id_tracker::delete_versions::GatedDeleteLog;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 
 /// Read-only id tracker backed by the on-disk format files, read lazily
@@ -33,7 +35,13 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
     /// The deleted set, read whole at open and refreshed by every
     /// [`live_reload`](Self::live_reload). Searches need it whole, and at 1 bit
     /// per point it is cheap to hold.
+    ///
+    /// Once the delete log has started, the log decides it: the mask is not read.
     deleted: BitVec,
+
+    /// The delete log and the deletes held from it, `None` unless the tracker gates versioned
+    /// deletes, see [`GatedDeleteLog::for_gating`].
+    gated: Option<GatedDeleteLog<S>>,
 }
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
@@ -45,5 +53,22 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             self.versions.path(&self.path),
             deleted_path(&self.path),
         ]
+    }
+
+    /// Set `slots` in the deleted set the delete log decides, returning those that were not yet.
+    ///
+    /// The first call, as the log starts, adds to the deleted set from the mask as last read:
+    /// those deletes were applied already, and are in the log at version 0 too.
+    fn delete_logged(&mut self, slots: Vec<PointOffsetType>) -> Vec<PointOffsetType> {
+        let mut newly = Vec::with_capacity(slots.len());
+        for slot in slots {
+            if let Some(mut bit) = self.deleted.get_mut(slot as usize)
+                && !*bit
+            {
+                *bit = true;
+                newly.push(slot);
+            }
+        }
+        newly
     }
 }

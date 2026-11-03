@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -10,6 +11,7 @@ use common::universal_io::{CachedReadFs, OpenOptions, Populate, UniversalRead, U
 use super::ReadOnlyDiskIdTracker;
 use super::versions::ReadOnlyVersions;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::id_tracker::delete_versions::{DeleteGating, GatedDeleteLog};
 use crate::id_tracker::disk_id_tracker::reader::DiskMappingReader;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 
@@ -62,6 +64,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        gating: DeleteGating,
     ) -> OperationResult<bool> {
         if !DiskMappingReader::try_preopen(fs, segment_path, populate)? {
             return Ok(false);
@@ -73,6 +76,10 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             Some(Self::deleted_open_options()),
             None,
         );
+        match gating {
+            DeleteGating::Immediate => {}
+            DeleteGating::Held { gate: _ } => GatedDeleteLog::preopen(fs, segment_path),
+        }
 
         Ok(true)
     }
@@ -88,7 +95,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         segment_path: &Path,
         populate: Populate,
     ) -> OperationResult<Self> {
-        Self::try_open(fs, segment_path, populate)?.ok_or_else(|| {
+        Self::try_open(fs, segment_path, populate, DeleteGating::Immediate)?.ok_or_else(|| {
             OperationError::service_error(format!(
                 "on-disk id tracker not found in segment {}",
                 segment_path.display(),
@@ -97,11 +104,14 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     }
 
     /// Like [`open`](Self::open), but returns `Ok(None)` when the segment is
-    /// not in the on-disk format (`i2e` absent).
+    /// not in the on-disk format (`i2e` absent). With [`DeleteGating::Held`],
+    /// the deletes come from the segment's delete log once it holds any: those
+    /// at or below the gate are applied, newer ones held.
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        gating: DeleteGating,
     ) -> OperationResult<Option<Self>> {
         let Some(reader) = DiskMappingReader::try_open(fs, segment_path, populate)? else {
             return Ok(None);
@@ -109,20 +119,38 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
 
         let versions = ReadOnlyVersions::open(fs, segment_path, populate)?;
 
-        let deleted = StoredBitSlice::<S>::open(
+        let deleted_file = StoredBitSlice::<S>::open(
             fs,
             deleted_path(segment_path),
             Self::deleted_open_options(),
             Default::default(),
-        )?
-        .read_all()?
-        .into_owned();
+        )?;
+
+        let mut gated = GatedDeleteLog::for_gating(segment_path, gating);
+        let logged = match gated.as_mut() {
+            Some(gated) => gated.read_new(fs)?,
+            None => None,
+        };
+        let deleted = match logged {
+            // The log, once started, holds every delete: the mask is not read
+            Some(slots) => {
+                let mut deleted = BitVec::repeat(false, deleted_file.bit_len() as usize);
+                for slot in slots {
+                    if let Some(mut bit) = deleted.get_mut(slot as usize) {
+                        *bit = true;
+                    }
+                }
+                deleted
+            }
+            None => deleted_file.read_all()?.into_owned(),
+        };
 
         Ok(Some(Self {
             path: segment_path.to_path_buf(),
             reader,
             versions,
             deleted,
+            gated,
         }))
     }
 }

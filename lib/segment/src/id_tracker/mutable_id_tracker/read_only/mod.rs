@@ -1,3 +1,4 @@
+mod held_deletes;
 pub mod id_tracker_read;
 mod lifecycle;
 mod live_reload;
@@ -15,6 +16,7 @@ use common::universal_io::UniversalRead;
 use futures::lock::Mutex;
 use smallvec::SmallVec;
 
+use self::held_deletes::HeldMappingDeletes;
 pub use self::live_reload::{LiveReloadResult, TrackerProbe};
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
@@ -77,6 +79,10 @@ pub struct ReadOnlyAppendableIdTracker<S: UniversalRead> {
     /// we read the file from here onwards. It always points to the end of the last fully-read
     /// entry, so a partial trailing entry (a flush in progress) is re-read on the next reload.
     mappings_read_to: u64,
+
+    /// Versioned deletes read but not applied yet, `None` unless the tracker was opened with
+    /// [`DeleteGating::Held`](crate::id_tracker::delete_versions::DeleteGating::Held).
+    held_deletes: Option<HeldMappingDeletes>,
 
     /// Backing file handles, behind their own lock so [`Self::probe_committed`] can refresh them
     /// under shared access while readers use the tracker. Readers never touch them.

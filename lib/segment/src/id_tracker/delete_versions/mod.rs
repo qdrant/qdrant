@@ -15,6 +15,8 @@
 //!   read before the log entry that gives its version.
 
 mod buffered;
+mod gated_log;
+mod held;
 mod log_format;
 mod log_reader;
 mod log_writer;
@@ -28,6 +30,8 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 
 pub use self::buffered::BufferedDeletedSlots;
+pub use self::gated_log::GatedDeleteLog;
+pub use self::held::HeldDeletes;
 pub use self::log_reader::DeleteLogReader;
 pub use self::log_writer::DeleteLogWriter;
 use crate::types::SeqNumberType;
@@ -75,4 +79,16 @@ impl DeleteVersioning {
             Self::Legacy
         }
     }
+}
+
+/// How a read-only id tracker treats deletes that carry a version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeleteGating {
+    /// Apply every delete as soon as it is read, versioned or not, as a writer's own lookups do.
+    Immediate,
+    /// Apply a versioned delete once its version is at or below `gate`, and hold a newer one until
+    /// a release with a high enough gate. A held point stays visible, with its own version.
+    ///
+    /// Deletes without a version, written before versioned deletes, apply at once.
+    Held { gate: SeqNumberType },
 }
