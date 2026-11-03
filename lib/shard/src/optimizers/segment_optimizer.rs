@@ -337,9 +337,7 @@ pub trait SegmentOptimizer: Sync {
             self.hnsw_global_config(),
             feature_flags(),
         )?;
-        builder.set_payload_cache_after_build(
-            self.segment_optimizer_config().payload_cache_after_build,
-        );
+        builder.set_cache_after_build(self.segment_optimizer_config().cache_after_build);
         Ok(builder)
     }
 

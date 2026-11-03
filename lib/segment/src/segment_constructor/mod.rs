@@ -1,5 +1,5 @@
 pub(crate) mod batched_reader;
-pub mod payload_cache;
+pub mod cache_after_build;
 pub mod segment_builder;
 mod segment_constructor_base;
 #[cfg(any(test, feature = "testing"))]

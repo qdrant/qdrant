@@ -10,7 +10,7 @@ use common::types::PointOffsetType;
 use fs_err as fs;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::segment_constructor::payload_cache::PayloadCacheAfterBuild;
+use segment::segment_constructor::cache_after_build::CacheAfterBuild;
 use segment::types::{HnswConfig, HnswGlobalConfig, QuantizationConfig, VectorStorageDatatype};
 use serde::{Deserialize, Serialize};
 use shard::files::SEGMENTS_PATH;
@@ -260,7 +260,7 @@ pub fn build_segment_optimizer_config(
         dense_vectors,
         sparse_vectors,
         live_vector_names: None,
-        payload_cache_after_build: PayloadCacheAfterBuild::Drop,
+        cache_after_build: CacheAfterBuild::Drop,
     }
 }
 
