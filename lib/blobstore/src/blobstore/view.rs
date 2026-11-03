@@ -71,6 +71,29 @@ impl<'a, V, S: UniversalRead> BlobstoreView<'a, V, S> {
             ViewVariant::Logstore(view) => view.read_from_pages::<P>(pointer),
         }
     }
+
+    /// Decompressed length of each value, the length of its [`Blob`] encoding, without
+    /// reading the value: at most its compression's length prefix is read. `None` for
+    /// point offsets without a value.
+    ///
+    /// Return `false` from the callback to stop iteration early.
+    pub fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<bool, E>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        match &self.variant {
+            ViewVariant::Gridstore(view) => {
+                view.read_value_lens::<P, U, E>(point_offsets, callback)
+            }
+            ViewVariant::Logstore(view) => view.read_value_lens::<P, U, E>(point_offsets, callback),
+        }
+    }
 }
 
 impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
