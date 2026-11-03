@@ -385,4 +385,27 @@ mod tests {
         );
         assert_eq!(inverted_index_ram_built, inverted_index_ram_upserted);
     }
+
+    #[test]
+    fn upsert_with_old_vector_removes_dropped_dimensions() {
+        let old_vector: RemappedSparseVector = [(1, 10.0), (2, 10.0), (3, 10.0)].into();
+        let mut inverted_index_ram = InvertedIndexRam::empty();
+        inverted_index_ram.upsert(1, old_vector.clone(), None);
+
+        // Point 1 now keeps dimension 2, drops 1 and 3, and gains 4
+        let new_vector: RemappedSparseVector = [(2, 20.0), (4, 20.0)].into();
+        inverted_index_ram.upsert(1, new_vector, Some(old_vector));
+
+        assert_eq!(inverted_index_ram.vector_count, 1);
+        for dropped in [1, 3] {
+            assert!(!inverted_index_ram.get(dropped).unwrap().contains(1));
+        }
+        for kept in [2, 4] {
+            let posting_list = inverted_index_ram.get(kept).unwrap();
+            let posting_list = posting_list.elements.as_slice();
+            assert_eq!(posting_list.len(), 1);
+            assert_eq!(posting_list[0].record_id, 1);
+            assert_eq!(posting_list[0].weight, 20.0);
+        }
+    }
 }
