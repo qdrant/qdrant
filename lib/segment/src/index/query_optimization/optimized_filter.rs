@@ -1,10 +1,15 @@
 use common::condition_checker::{CheckItem, ConditionChecker, Rest, Select};
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use itertools::Either;
 use smallvec::SmallVec;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::condition_checker::ConditionCheckerEnum;
+
+/// Ids checked per [`ConditionChecker::check_batched`] call when collecting matches.
+/// Large enough for on-disk indexes to overlap the reads of one batch.
+const CHECK_BATCH_SIZE: usize = 1024;
 
 pub struct OptimizedFilter<'a> {
     /// At least one of those conditions should match, if not empty.
@@ -38,6 +43,64 @@ impl<'a> OptimizedFilter<'a> {
     /// A filter that matches a point iff the single given checker matches it.
     pub fn from_checker(checker: ConditionCheckerEnum<'a>) -> Self {
         Self::new(Vec::new(), Vec::new(), 0, vec![checker], Vec::new())
+    }
+
+    /// Whether any condition reads its values from a cold on-disk index.
+    /// See [`ConditionCheckerEnum::reads_cold_index`].
+    pub fn reads_cold_index(&self) -> bool {
+        let OptimizedFilter {
+            should,
+            min_should,
+            min_should_count: _,
+            must,
+            must_not,
+        } = self;
+        [should, min_should, must, must_not]
+            .into_iter()
+            .flatten()
+            .any(ConditionCheckerEnum::reads_cold_index)
+    }
+
+    /// The `ids` that match this filter.
+    ///
+    /// When a condition reads a cold on-disk index, all matches are collected up
+    /// front, checking [`CHECK_BATCH_SIZE`] ids per [`ConditionChecker::check_batched`]
+    /// call so the index can prefetch each batch's reads. Within a batch, matches
+    /// can come out in a different order than the input.
+    ///
+    /// Otherwise ids are checked lazily, one by one as they are pulled.
+    pub fn into_matches<I>(
+        self,
+        ids: I,
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + use<'a, I>>
+    where
+        I: Iterator<Item = PointOffsetType>,
+    {
+        if self.reads_cold_index() {
+            Ok(Either::Left(self.collect_matches(ids)?.into_iter()))
+        } else {
+            Ok(Either::Right(
+                ids.filter(move |&id| self.check_infallible(id)),
+            ))
+        }
+    }
+
+    fn collect_matches(
+        &self,
+        mut ids: impl Iterator<Item = PointOffsetType>,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let mut matched = Vec::new();
+        let mut batch = Vec::with_capacity(CHECK_BATCH_SIZE);
+        loop {
+            batch.clear();
+            batch.extend(ids.by_ref().take(CHECK_BATCH_SIZE));
+            if batch.is_empty() {
+                return Ok(matched);
+            }
+            let matched_in_batch =
+                self.check_batched(&mut batch, Select::Matches, Rest::Discard)?;
+            matched.extend_from_slice(&batch[..matched_in_batch]);
+        }
     }
 }
 
@@ -274,6 +337,28 @@ mod tests {
                 assert_congruence(&filter, 1 << total, &mut rng);
             }
         }
+    }
+
+    #[test]
+    fn collect_matches_agrees_with_check() {
+        let filter = OptimizedFilter::new(
+            vec![
+                ConditionCheckerEnum::TestBitOfId(TestBitOfId(0)),
+                ConditionCheckerEnum::TestBitOfId(TestBitOfId(3)),
+            ],
+            Vec::new(),
+            0,
+            vec![ConditionCheckerEnum::TestBitOfId(TestBitOfId(1))],
+            Vec::new(),
+        );
+        let ids = 0..(3 * CHECK_BATCH_SIZE as PointOffsetType + 17);
+        let expected: Vec<_> = ids
+            .clone()
+            .filter(|&id| filter.check_infallible(id))
+            .collect();
+        let mut collected = filter.collect_matches(ids).unwrap();
+        collected.sort_unstable();
+        assert_eq!(collected, expected);
     }
 
     #[test]

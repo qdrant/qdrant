@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 use common::ambient::hw::{HwMeasurementIteratorExt, HwMetric};
-use common::condition_checker::{ConditionChecker, Rest, Select};
 use common::either_variant::EitherVariant;
 use common::generic_consts::AccessPattern;
 use common::iterator_ext::IteratorExt;
@@ -196,9 +195,9 @@ where
             let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
-                check_in_batches(full_scan_iterator.stop_if(is_stopped), &optimized_filter)?;
+                optimized_filter.into_matches(full_scan_iterator.stop_if(is_stopped))?;
 
-            Ok(EitherVariant::A(matched_points.into_iter()))
+            Ok(EitherVariant::A(matched_points))
         } else {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(self.id_tracker.total_point_count());
@@ -243,12 +242,11 @@ where
                 } else {
                     // Some conditions are primary clauses, some are not
                     let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
-                    let matched_points = check_in_batches(
+                    let iter = optimized_filter.into_matches(
                         joined_primary_iterator
-                            .filter(|&id| !visited_list.check_and_update_visited(id)),
-                        &optimized_filter,
+                            .filter(move |&id| !visited_list.check_and_update_visited(id)),
                     )?;
-                    EitherVariant::C(matched_points.into_iter())
+                    EitherVariant::C(iter)
                 });
             }
 
@@ -258,15 +256,14 @@ where
 
             let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
-            let matched_points = check_in_batches(
+            let iter = optimized_filter.into_matches(
                 id_tracker_iterator
                     .stop_if(is_stopped)
                     .measure_hw(HwMetric::Cpu, size_of::<PointOffsetType>())
-                    .filter(|&id| !visited_list.check_and_update_visited(id)),
-                &optimized_filter,
+                    .filter(move |&id| !visited_list.check_and_update_visited(id)),
             )?;
 
-            Ok(EitherVariant::D(matched_points.into_iter()))
+            Ok(EitherVariant::D(iter))
         }
     }
 
@@ -331,29 +328,5 @@ where
         self.payload
             .borrow()
             .read_payloads_raw::<AP, _>(point_ids, callback)
-    }
-}
-
-/// Candidates checked per [`ConditionChecker::check_batched`] call on the plain path.
-/// Large enough for on-disk indexes to overlap the reads of one batch.
-const CHECK_BATCH_SIZE: usize = 1024;
-
-/// Collect the `ids` that match `filter`, checking them [`CHECK_BATCH_SIZE`] at a time.
-///
-/// Within a batch, matches can come out in a different order than the input.
-fn check_in_batches(
-    mut ids: impl Iterator<Item = PointOffsetType>,
-    filter: &OptimizedFilter<'_>,
-) -> OperationResult<Vec<PointOffsetType>> {
-    let mut matched = Vec::new();
-    let mut batch = Vec::with_capacity(CHECK_BATCH_SIZE);
-    loop {
-        batch.clear();
-        batch.extend(ids.by_ref().take(CHECK_BATCH_SIZE));
-        if batch.is_empty() {
-            return Ok(matched);
-        }
-        let matched_in_batch = filter.check_batched(&mut batch, Select::Matches, Rest::Discard)?;
-        matched.extend_from_slice(&batch[..matched_in_batch]);
     }
 }
