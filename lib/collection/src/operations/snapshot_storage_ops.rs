@@ -200,7 +200,7 @@ pub(crate) async fn multipart_upload_stream(
     // Unblocks a producer stuck on a full pipe before the slower cleanup below.
     drop(reader);
 
-    if !matches!(streamed, Ok(true)) {
+    if !streamed.as_ref().is_ok_and(|committed| *committed) {
         if let Err(abort_err) = write.abort().await {
             log::warn!("Failed to abort multipart upload: {abort_err}");
         }

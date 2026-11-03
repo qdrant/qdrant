@@ -10,8 +10,7 @@ use std::path::{Path, PathBuf};
 use collection::common::snapshots_manager::{SnapshotStorageCloud, SnapshotStorageManager};
 use collection::operations::snapshot_ops::{SnapshotDescription, unique_snapshot_timestamp};
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::disk::dir_disk_size;
-use common::disk_usage::disk_usage;
+use common::disk::dir_apparent_size;
 use common::tar_ext::BuilderExt;
 use fs_err as fs;
 use fs_err::tokio as tokio_fs;
@@ -146,15 +145,16 @@ async fn create_full_snapshot_streaming(
     let snapshot_name = format!("{FULL_SNAPSHOT_FILE_NAME}-{current_time}.snapshot");
     let full_snapshot_path = toc.snapshots_path().join(&snapshot_name);
 
-    // Sizes the upload parts and caps it at 10,000 of them; doubled for compression and growth.
-    let storage_path = toc.storage_config.storage_path.clone();
+    // Sizes the upload parts and caps it at 10,000 of them; doubled for growth during the snapshot.
+    let collections_path = toc.storage_config.storage_path.join(COLLECTIONS_DIR);
     let estimated_size = tokio::task::spawn_blocking(move || {
-        match dir_disk_size(storage_path.join(COLLECTIONS_DIR)) {
+        // Apparent size, since tar reads sparse and compressed files at full length
+        match dir_apparent_size(&collections_path) {
             Ok(size) => size.saturating_mul(2),
             Err(err) => {
-                // Files can vanish mid-scan; used disk space is a race-free upper bound.
-                log::warn!("Failed to measure collections, sizing parts from disk usage: {err}");
-                disk_usage(&storage_path).map_or(0, |usage| usage.used())
+                // Files can vanish mid-scan; fall back to parts that fit the max object size
+                log::warn!("Failed to measure collections, using max part size: {err}");
+                u64::MAX
             }
         }
     })
