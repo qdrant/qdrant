@@ -27,6 +27,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/SnapshotPriority"
+        - name: delete_after_restore
+          in: query
+          description: "If true, delete uploaded snapshot file after successful recovery. On failure the file is kept."
+          required: false
+          schema:
+            type: boolean
         - name: checksum
           in: query
           description: "Optional SHA256 checksum to verify snapshot integrity before recovery."
