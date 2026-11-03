@@ -7,6 +7,7 @@ use tempfile::Builder;
 
 use super::{DiskIdTracker, ReadOnlyDiskIdTracker, VersionsFormat, compact_versions};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
@@ -236,6 +237,7 @@ fn detect_and_load_selects_disk_format() {
         None,
         None,
         Populate::No,
+        DeleteGating::Immediate,
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only disk id tracker");
@@ -252,6 +254,7 @@ fn detect_and_load_selects_disk_format() {
         None,
         None,
         Populate::No,
+        DeleteGating::Immediate,
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only immutable id tracker");
@@ -264,6 +267,7 @@ fn detect_and_load_selects_disk_format() {
         None,
         None,
         Populate::No,
+        DeleteGating::Immediate,
     )
     .unwrap();
     assert_eq!(loaded.name(), "read-only appendable id tracker");
@@ -312,57 +316,6 @@ fn iter_random_yields_all_live_points() {
 }
 
 #[test]
-fn read_by_id_does_not_materialize_deleted_set() {
-    let (versions, mappings) = make_data(4);
-    let dir = Builder::new().prefix("disk").tempdir().unwrap();
-    let live: Vec<_> = {
-        let disk =
-            DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap();
-        disk.point_mappings().iter_from(None).collect()
-    };
-
-    let read_only =
-        ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
-
-    // Point lookups must not trigger the full deleted-set materialization.
-    for (external_id, offset) in live.iter().take(200) {
-        assert_eq!(
-            read_only.internal_id_with_behavior(*external_id, DeferredBehavior::VisibleOnly),
-            Some(*offset),
-        );
-        assert_eq!(read_only.external_id(*offset), Some(*external_id));
-        let _ = read_only.internal_version(*offset);
-        let _ = read_only.is_deleted_point(*offset);
-    }
-
-    // Batch read-by-id must stay lazy as well.
-    let probe_ids: Vec<PointIdType> = live.iter().take(200).map(|&(id, _)| id).collect();
-    let probe_offsets = live.iter().take(200).map(|&(_, offset)| offset);
-    read_only
-        .resolve_external_ids(
-            probe_ids.iter().copied(),
-            DeferredBehavior::VisibleOnly,
-            |_, _| {},
-        )
-        .unwrap();
-    read_only
-        .external_ids_batch(probe_offsets.clone(), |_, _| {})
-        .unwrap();
-    read_only
-        .internal_versions_batch(probe_offsets, |_, _| {})
-        .unwrap();
-
-    assert!(
-        read_only.deleted_full_if_materialized().is_none(),
-        "read-by-id lookups must not materialize the full deleted set",
-    );
-
-    // A search-style call (whole-slice access) does materialize it.
-    let _ = read_only.deleted_point_bitslice();
-    assert!(read_only.deleted_full_if_materialized().is_some());
-}
-
-#[test]
 fn deletion_and_live_reload() {
     let (versions, mappings) = make_data(5);
     let dir = Builder::new().prefix("disk").tempdir().unwrap();
@@ -372,9 +325,6 @@ fn deletion_and_live_reload() {
     // A reader opened before the deletions; it will pick them up via live_reload.
     let mut read_only =
         ReadOnlyDiskIdTracker::<MmapFile>::open(&MmapFs, dir.path(), Populate::No).unwrap();
-    // Establish the diff baseline (a search-style access) so the next reload
-    // reports only the incremental deletions, not every build-time deletion.
-    let _ = read_only.deleted_point_bitslice();
 
     let to_delete: Vec<(PointIdType, u32)> =
         disk.point_mappings().iter_from(None).take(50).collect();
@@ -455,19 +405,17 @@ fn deletion_and_live_reload_disk_cache() {
         remote: Default::default(),
     })
     .unwrap();
-    // The immutable tracker's `open` reads the whole pre-deletion deleted
-    // bitmap; the disk tracker caches it on the baseline materialization
-    // below — either way, the state this test must escape ends up in the
-    // readers' local caches.
-    let mut read_only_immutable =
-        ReadOnlyImmutableIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &immutable_path)
-            .unwrap();
+    // Both trackers' `open` reads the whole pre-deletion deleted bitmap, so
+    // the state this test must escape ends up in the readers' local caches.
+    let mut read_only_immutable = ReadOnlyImmutableIdTracker::<DiskCache<MmapFile>>::open(
+        &cache_fs,
+        &immutable_path,
+        DeleteGating::Immediate,
+    )
+    .unwrap();
     let mut read_only_disk =
         ReadOnlyDiskIdTracker::<DiskCache<MmapFile>>::open(&cache_fs, &disk_path, Populate::No)
             .unwrap();
-    // Establish the diff baseline (a search-style access) so the reload
-    // reports only the incremental deletions, not every build-time deletion.
-    let _ = read_only_disk.deleted_point_bitslice();
 
     let to_delete: Vec<(PointIdType, u32)> = immutable
         .point_mappings()

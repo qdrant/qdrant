@@ -8,6 +8,7 @@ use common::universal_io::{
 use strum::{EnumDiscriminants, EnumIter, IntoEnumIterator as _};
 
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::disk_id_tracker::ReadOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::read_only::ReadOnlyImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::read_only::{
@@ -28,16 +29,18 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// Schedule background prefetch for whichever id-tracker format is
     /// present, probing in the same order as [`Self::detect_and_load`].
     /// `populate` applies to the disk-resident format only: the other formats
-    /// hold their per-point data in RAM regardless.
+    /// hold their per-point data in RAM regardless. `gating` must be the one
+    /// [`Self::detect_and_load`] gets.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
+        gating: DeleteGating,
     ) -> OperationResult<()> {
-        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate)? {
+        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate, gating)? {
             return Ok(());
         }
-        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path)? {
+        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path, gating)? {
             return Ok(());
         }
         ReadOnlyAppendableIdTracker::preopen(fs, segment_path);
@@ -51,17 +54,20 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// the in-RAM immutable format, then the appendable/mutable format (whose
     /// open tolerates absent files, i.e. a fresh or empty segment).
     /// `populate` applies to the disk-resident format only, see [`Self::preopen`].
+    /// `gating` decides how versioned deletes are treated, see [`DeleteGating`].
     pub fn detect_and_load(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
         deferred_internal_id: Option<PointOffsetType>,
         max_committed_offset: Option<PointOffsetType>,
         populate: Populate,
+        gating: DeleteGating,
     ) -> OperationResult<Self> {
-        if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate)? {
+        if let Some(tracker) = ReadOnlyDiskIdTracker::try_open(fs, segment_path, populate, gating)?
+        {
             return Ok(Self::DiskResident(tracker));
         }
-        if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path)? {
+        if let Some(tracker) = ReadOnlyImmutableIdTracker::try_open(fs, segment_path, gating)? {
             return Ok(Self::Immutable(tracker));
         }
         Ok(Self::Appendable(ReadOnlyAppendableIdTracker::open_capped(
@@ -69,6 +75,7 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             segment_path,
             deferred_internal_id,
             max_committed_offset,
+            gating,
         )?))
     }
 
@@ -146,6 +153,26 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
             Self::Appendable(id_tracker) => id_tracker.live_reload(fs, max_committed_id),
             Self::Immutable(id_tracker) => id_tracker.live_reload(fs),
             Self::DiskResident(id_tracker) => id_tracker.live_reload(fs),
+        }
+    }
+
+    /// Whether [`Self::release_held_deletes`] with this gate would release anything.
+    pub fn releases_held_deletes(&self, gate: SeqNumberType) -> bool {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.releases_held_deletes(gate),
+            Self::Immutable(id_tracker) => id_tracker.releases_held_deletes(gate),
+            Self::DiskResident(id_tracker) => id_tracker.releases_held_deletes(gate),
+        }
+    }
+
+    /// Raise the gate to `gate` and apply the held deletes it now covers, see
+    /// [`DeleteGating::Held`]. Returns the offsets they removed, sorted ascending, for every
+    /// component to delete too.
+    pub fn release_held_deletes(&mut self, gate: SeqNumberType) -> Vec<PointOffsetType> {
+        match self {
+            Self::Appendable(id_tracker) => id_tracker.release_held_deletes(gate),
+            Self::Immutable(id_tracker) => id_tracker.release_held_deletes(gate),
+            Self::DiskResident(id_tracker) => id_tracker.release_held_deletes(gate),
         }
     }
 
