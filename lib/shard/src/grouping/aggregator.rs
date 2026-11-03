@@ -131,7 +131,11 @@ impl GroupsAggregator {
         for point in points {
             match self.add_point(point) {
                 Ok(()) | Err(AggregatorError::KeyNotFound | AggregatorError::BadKeyType) => {
-                    // ignore points that don't have the group_by field
+                    // Ignore points without a usable group_by value, but remember that they were
+                    // already fetched. Otherwise subsequent requests keep retrieving the same
+                    // rejected points and can exhaust the request budget before reaching any
+                    // valid group. See issue #11368.
+                    self.all_ids.insert(point.id);
                 }
             }
         }
@@ -180,7 +184,8 @@ impl GroupsAggregator {
         best_group_keys.intersection(&self.full_groups).count()
     }
 
-    /// Gets the ids of the already present points across all the groups
+    /// Gets the ids of the points that have already been processed, including the ones that
+    /// could not be added to any group.
     pub fn ids(&self) -> &AHashSet<ExtendedPointId> {
         &self.all_ids
     }
