@@ -163,7 +163,10 @@ impl TableOfContent {
         // reject the same ones. Once the state machine drives consensus, this call is the only
         // thing checking a diff on this path, and it goes with the code below it.
         let config_before = collection.config().await;
-        apply_collection_config_diffs(&mut config_before.clone(), &operation.update_collection)?;
+        let diffs = apply_collection_config_diffs(
+            &mut config_before.clone(),
+            &operation.update_collection,
+        )?;
 
         let UpdateCollection {
             vectors,
@@ -207,9 +210,13 @@ impl TableOfContent {
         }
 
         collection.print_warnings().await;
-        collection
-            .recreate_or_trigger_optimizers(&config_before)
-            .await;
+        // Consensus does this once per diff, see `ClusterState::plan_update_collection`, so an
+        // update without config diffs leaves the optimizers alone in both modes.
+        if !diffs.is_empty() {
+            collection
+                .recreate_or_trigger_optimizers(&config_before)
+                .await;
+        }
         Ok(true)
     }
 

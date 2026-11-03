@@ -104,49 +104,53 @@ fn update_collection_reject_mid_operation() {
 /// the optimizers.
 #[test]
 fn unchanged_update_triggers_optimizers_after_restart() {
-    check_unchanged_update_triggers_optimizers_after_restart(|handle, dispatcher| {
-        let update = UpdateCollection {
-            hnsw_config: None,
-            vectors: None,
-            params: None,
-            optimizers_config: Some(unchanged_optimizers()),
-            quantization_config: None,
-            sparse_vectors: None,
-            strict_mode_config: None,
-            metadata: None,
-        };
-        handle
-            .block_on(dispatcher.submit_collection_meta_op(
-                CollectionMetaOperations::UpdateCollection(
-                    UpdateCollectionOperation::new("test".to_string(), update).unwrap(),
-                ),
-                FULL_ACCESS,
-                None,
-            ))
-            .unwrap();
-    });
+    check_update_after_restart(
+        |handle, dispatcher| {
+            let update = UpdateCollection {
+                optimizers_config: Some(unchanged_optimizers()),
+                ..empty_update()
+            };
+            submit_update(handle, dispatcher, update);
+        },
+        CollectionStatus::Yellow,
+    );
 }
 
 /// As [`unchanged_update_triggers_optimizers_after_restart`], with the action consensus applies
 /// for the update in distributed mode.
 #[test]
 fn unchanged_update_action_triggers_optimizers_after_restart() {
-    check_unchanged_update_triggers_optimizers_after_restart(|_handle, dispatcher| {
-        let pass = new_unchecked_verification_pass();
-        dispatcher
-            .toc(&FULL_ACCESS, &pass)
-            .apply_action(Action::UpdateCollectionConfig {
-                collection: "test".into(),
-                diff: Box::new(CollectionConfigDiff::Optimizers(unchanged_optimizers())),
-            })
-            .unwrap();
-    });
+    check_update_after_restart(
+        |_handle, dispatcher| {
+            let pass = new_unchecked_verification_pass();
+            dispatcher
+                .toc(&FULL_ACCESS, &pass)
+                .apply_action(Action::UpdateCollectionConfig {
+                    collection: "test".into(),
+                    diff: Box::new(CollectionConfigDiff::Optimizers(unchanged_optimizers())),
+                })
+                .unwrap();
+        },
+        CollectionStatus::Yellow,
+    );
 }
 
-/// Restarts a collection with pending optimizations, so that it's grey, then checks that
-/// `send_unchanged_update` starts them.
-fn check_unchanged_update_triggers_optimizers_after_restart(
-    send_unchanged_update: impl FnOnce(&Handle, &Dispatcher),
+/// An update without any config diff never touched the optimizers, and in distributed mode,
+/// consensus plans no action for it. So it doesn't trigger them in either mode.
+#[test]
+fn empty_update_doesnt_trigger_optimizers_after_restart() {
+    check_update_after_restart(
+        |handle, dispatcher| submit_update(handle, dispatcher, empty_update()),
+        CollectionStatus::Grey,
+    );
+}
+
+/// Restarts a collection with pending optimizations, so that it's grey, sends an update with
+/// `send_update`, and checks the status it leaves: `Yellow` if the update starts the
+/// optimizations, `Grey` if it doesn't.
+fn check_update_after_restart(
+    send_update: impl FnOnce(&Handle, &Dispatcher),
+    expected: CollectionStatus,
 ) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 
@@ -184,20 +188,48 @@ fn check_unchanged_update_triggers_optimizers_after_restart(
         CollectionStatus::Grey
     );
 
-    send_unchanged_update(&handle, &dispatcher);
+    send_update(&handle, &dispatcher);
 
-    // The trigger reaches the optimizers through the update worker, asynchronously
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // A trigger reaches the optimizers through the update worker, asynchronously, within
+    // milliseconds. Without one, wait many times that long.
+    let timeout = if expected == CollectionStatus::Grey {
+        Duration::from_millis(500)
+    } else {
+        Duration::from_secs(10)
+    };
+    let deadline = Instant::now() + timeout;
     let mut status = collection_status(&handle, &collection);
     while status == CollectionStatus::Grey && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
         status = collection_status(&handle, &collection);
     }
-    assert_eq!(
-        status,
-        CollectionStatus::Yellow,
-        "optimizations are pending and triggered"
-    );
+    assert_eq!(status, expected);
+}
+
+/// An update with no diffs: `{}`.
+fn empty_update() -> UpdateCollection {
+    UpdateCollection {
+        hnsw_config: None,
+        vectors: None,
+        params: None,
+        optimizers_config: None,
+        quantization_config: None,
+        sparse_vectors: None,
+        strict_mode_config: None,
+        metadata: None,
+    }
+}
+
+fn submit_update(handle: &Handle, dispatcher: &Dispatcher, update: UpdateCollection) {
+    handle
+        .block_on(dispatcher.submit_collection_meta_op(
+            CollectionMetaOperations::UpdateCollection(
+                UpdateCollectionOperation::new("test".to_string(), update).unwrap(),
+            ),
+            FULL_ACCESS,
+            None,
+        ))
+        .unwrap();
 }
 
 fn new_dispatcher() -> (TempDir, Handle, Dispatcher) {
