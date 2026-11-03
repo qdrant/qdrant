@@ -120,7 +120,7 @@ fn deletes_the_copies_older_than_the_published_ones() {
     let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     let stale = outdated(&shard, NEWER);
     assert_eq!(stale, ids(1..=3));
-    assert_eq!(shard.delete_points(&stale).unwrap(), 3);
+    assert_eq!(shard.delete_points(&stale, 0).unwrap(), 3);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     assert!(outdated(&reopened, NEWER).is_empty());
@@ -158,7 +158,7 @@ fn a_reload_keeps_deletes_made_after_open() {
     shard.live_reload().unwrap();
     let stale = outdated(&shard, NEWER);
     assert_eq!(stale, ids([1, 3]));
-    assert_eq!(shard.delete_points(&stale).unwrap(), 2);
+    assert_eq!(shard.delete_points(&stale, 0).unwrap(), 2);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     assert!(outdated(&reopened, NEWER).is_empty());
