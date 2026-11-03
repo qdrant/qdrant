@@ -96,6 +96,7 @@ smallvec = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
 byteorder = { workspace = true }
+crc32c = "0.6.8"
 stumpalo = { workspace = true }
 zerocopy = { workspace = true }
 zstd = { workspace = true }
