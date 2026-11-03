@@ -748,6 +748,7 @@ fn failed_reload_reopens_segment() {
             injected,
             &MmapFs,
             None,
+            segment::id_tracker::delete_versions::DeleteGating::Immediate,
         )
         .unwrap();
     }
