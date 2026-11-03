@@ -47,8 +47,6 @@ impl HnswBuilder<'_> {
             stopped,
         } = local.ctx;
 
-        let timer = std::time::Instant::now();
-
         progress.start();
         let counter = progress.track_progress(Some(points.len() as u64));
         let counter = counter.deref();
@@ -86,7 +84,6 @@ impl HnswBuilder<'_> {
         }
 
         drop(progress);
-        debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
         Ok(())
     }
 }
@@ -116,7 +113,13 @@ impl GraphBuilderMethod for HnswBuilder<'_> {
         } = progress;
         // Nothing to heal
         drop(migrate);
-        self.insert(&self.0.points, main_graph)
+        let timer = std::time::Instant::now();
+        self.insert(&self.0.points, main_graph)?;
+        debug!(
+            "{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?} with HNSW",
+            timer.elapsed()
+        );
+        Ok(())
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {

@@ -72,7 +72,11 @@ impl<'a> PipnnBuilder<'a> {
             return Err(Box::new(local));
         }
         if local.points.len() < min_points() {
-            // Most segments, so not logged
+            debug!(
+                "No PiPNN: {} points, fewer than {}",
+                local.points.len(),
+                min_points(),
+            );
             return Err(Box::new(local));
         }
         let Some(scorer) = new_matrix_scorer(local.ctx.vector_storage, local.ctx.quantized_vectors)
@@ -128,10 +132,14 @@ impl GraphBuilderMethod for PipnnBuilder<'_> {
         // In point order: the entry points keep the first point they see of each top level, so
         // only a fixed order makes the graph independent of the threads
         for (&point, point_links) in std::iter::zip(points, links) {
+            check_process_stopped(ctx.stopped)?;
             graph.add_new_point(point, point_links);
         }
         drop(main_graph);
-        debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+        debug!(
+            "{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?} with PiPNN",
+            timer.elapsed()
+        );
         Ok(())
     }
 
