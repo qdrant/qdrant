@@ -17,6 +17,8 @@
 mod buffered;
 mod gated_log;
 mod held;
+#[cfg(test)]
+mod held_tests;
 mod log_format;
 mod log_reader;
 mod log_writer;
