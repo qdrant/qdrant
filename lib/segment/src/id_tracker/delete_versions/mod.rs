@@ -18,6 +18,8 @@ mod buffered;
 mod log_format;
 mod log_reader;
 mod log_writer;
+#[cfg(test)]
+mod tests;
 
 use std::path::{Path, PathBuf};
 
