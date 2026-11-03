@@ -22,7 +22,7 @@ use crate::vector_storage::VectorStorageRead;
 /// Block points are numbered `0..points.len()`, so the block graph's links and visited lists
 /// are sized to the block, not the segment, and a search can only reach block points.
 pub(super) struct Block<'a> {
-    pub ctx: GraphBuildContext<'a>,
+    pub ctx: &'a GraphBuildContext<'a>,
     /// Segment ids of the block points.
     pub points: &'a [PointOffsetType],
     /// One flag per block point: whether it has no vector, or is deleted.
@@ -32,7 +32,7 @@ pub(super) struct Block<'a> {
 }
 
 impl<'a> Block<'a> {
-    pub fn new(ctx: GraphBuildContext<'a>, points: &'a [PointOffsetType]) -> Self {
+    pub fn new(ctx: &'a GraphBuildContext<'a>, points: &'a [PointOffsetType]) -> Self {
         let vector_deleted = ctx.vector_storage.deleted_vector_bitslice();
         let point_deleted = ctx.id_tracker.deleted_point_bitslice();
         let deleted = points
