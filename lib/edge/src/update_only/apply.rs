@@ -14,7 +14,6 @@ use rayon::prelude::*;
 use segment::common::deferred_points::segment_deferred_internal_id;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
-use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::{PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
@@ -113,6 +112,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// error is returned, and re-applying a batch that partially landed skips
     /// the points that already carry its version.
     ///
+    /// Every delete the batch writes, of a deleted point or of the old copy a
+    /// stored point replaces, records the batch version: the highest operation
+    /// number in `operations`. A follower applies such a delete once it knows
+    /// every write up to that version is in view, so the caller publishes that
+    /// version as its cursor only after this returns.
+    ///
     /// Consumes the writer and hands it back on success, ready for the next
     /// batch: the lookup half of every segment this one wrote to is
     /// live-reloaded, so the next batch resolves against what this one
@@ -150,6 +155,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         }
 
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let version = plan.version();
         let segments = self.segments.read();
 
         // 1-3. Locate, read, materialize — the decision stage shared with
@@ -301,7 +307,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 tombstone_start = Some(std::time::Instant::now());
-                writer.tombstone_points(&points, 0, DeleteVersioning::Legacy)?;
+                writer.tombstone_points(&points, version, self.delete_versioning)?;
             }
             written.push(uuid);
         }
@@ -310,8 +316,8 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         for (uuid, points) in to_tombstone {
             get_writer(&mut self.writers, uuid)?.tombstone_points(
                 &points,
-                0,
-                DeleteVersioning::Legacy,
+                version,
+                self.delete_versioning,
             )?;
             written.push(uuid);
         }

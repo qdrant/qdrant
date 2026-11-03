@@ -20,7 +20,10 @@
 //! Storage is append-only throughout. Updating a point appends it in full and
 //! retires its old copy; a deletion writes no point data at all — it records
 //! a retirement in the appendable segment's mappings log, or marks the
-//! deleted-points bitmask of an immutable one.
+//! deleted-points bitmask of an immutable one. Every retirement carries the
+//! batch version, the highest operation number in the batch, so followers can
+//! tell when the copy that replaces a retired one is in view (see
+//! [`delete_versions`](segment::id_tracker::delete_versions)).
 //!
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
@@ -44,6 +47,7 @@ use common::universal_io::UniversalAppendFs;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
 use segment::id_tracker::IdTrackerRead as _;
+use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::SegmentConfig;
 use uuid::Uuid;
@@ -79,6 +83,12 @@ pub struct UpdateOnlyEdgeShard<Fs: UniversalAppendFs> {
     /// readers until a rebuild indexes them. `None` writes as if every point
     /// were visible.
     deferred_threshold_kb: Option<usize>,
+    /// Whether deletes are recorded with their batch version in the formats
+    /// older readers cannot parse, see [`delete_versions`]. From the
+    /// `versioned_deletes` feature flag.
+    ///
+    /// [`delete_versions`]: segment::id_tracker::delete_versions
+    delete_versioning: DeleteVersioning,
 }
 
 /// One segment's schema, as reported by
