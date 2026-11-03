@@ -9,6 +9,7 @@ use std::fmt;
 use bytemuck::TransparentWrapper;
 use derive_more::Into;
 use pyo3::IntoPyObjectExt as _;
+use pyo3::inspect::PyStaticExpr;
 use pyo3::prelude::*;
 use segment::data_types::index::*;
 use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType};
@@ -16,21 +17,28 @@ use segment::types::{PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType}
 pub use self::text_index::*;
 use crate::config::vector_data::PyMemory;
 use crate::repr::*;
+use crate::type_hint::Alias;
 use crate::types::json_path::PyJsonPath;
 
 #[derive(Clone, Debug, Into)]
 pub struct PyPayloadFieldSchema(PayloadFieldSchema);
 
+pub const PAYLOAD_FIELD_SCHEMA: Alias = Alias {
+    name: "PayloadFieldSchema",
+    definition: PayloadFieldSchemaHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject)]
+enum PayloadFieldSchemaHelper {
+    Type(PyPayloadSchemaType),
+    Params(PyPayloadSchemaParams),
+}
+
 impl FromPyObject<'_, '_> for PyPayloadFieldSchema {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = PAYLOAD_FIELD_SCHEMA.hint();
 
     fn extract(schema: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Type(PyPayloadSchemaType),
-            Params(PyPayloadSchemaParams),
-        }
-
         fn _variants(schema: PayloadFieldSchema) {
             match schema {
                 PayloadFieldSchema::FieldType(_) => {}
@@ -39,14 +47,19 @@ impl FromPyObject<'_, '_> for PyPayloadFieldSchema {
         }
 
         let schema = match schema.extract()? {
-            Helper::Type(schema_type) => PayloadFieldSchema::FieldType(schema_type.into()),
-            Helper::Params(schema_params) => PayloadFieldSchema::FieldParams(schema_params.into()),
+            PayloadFieldSchemaHelper::Type(schema_type) => {
+                PayloadFieldSchema::FieldType(schema_type.into())
+            }
+            PayloadFieldSchemaHelper::Params(schema_params) => {
+                PayloadFieldSchema::FieldParams(schema_params.into())
+            }
         };
 
         Ok(Self(schema))
     }
 }
 
+/// Payload field schema types.
 #[pyclass(name = "PayloadSchemaType", from_py_object)]
 #[derive(Copy, Clone, Debug)]
 pub enum PyPayloadSchemaType {
@@ -111,22 +124,28 @@ impl From<PyPayloadSchemaType> for PayloadSchemaType {
 #[repr(transparent)]
 pub struct PyPayloadSchemaParams(PayloadSchemaParams);
 
+pub const PAYLOAD_SCHEMA_PARAMS: Alias = Alias {
+    name: "PayloadSchemaParams",
+    definition: PayloadSchemaParamsHelper::INPUT_TYPE,
+};
+
+#[derive(FromPyObject, IntoPyObject)]
+enum PayloadSchemaParamsHelper {
+    Keyword(PyKeywordIndexParams),
+    Integer(PyIntegerIndexParams),
+    Float(PyFloatIndexParams),
+    Geo(PyGeoIndexParams),
+    Text(PyTextIndexParams),
+    Bool(PyBoolIndexParams),
+    Datetime(PyDatetimeIndexParams),
+    Uuid(PyUuidIndexParams),
+}
+
 impl FromPyObject<'_, '_> for PyPayloadSchemaParams {
     type Error = PyErr;
+    const INPUT_TYPE: PyStaticExpr = PAYLOAD_SCHEMA_PARAMS.hint();
 
     fn extract(schema_params: Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
-        #[derive(FromPyObject)]
-        enum Helper {
-            Keyword(PyKeywordIndexParams),
-            Integer(PyIntegerIndexParams),
-            Float(PyFloatIndexParams),
-            Geo(PyGeoIndexParams),
-            Text(PyTextIndexParams),
-            Bool(PyBoolIndexParams),
-            Datetime(PyDatetimeIndexParams),
-            Uuid(PyUuidIndexParams),
-        }
-
         fn _variants(schema_params: PayloadSchemaParams) {
             match schema_params {
                 PayloadSchemaParams::Keyword(_) => {}
@@ -141,14 +160,18 @@ impl FromPyObject<'_, '_> for PyPayloadSchemaParams {
         }
 
         let schema_params = match schema_params.extract()? {
-            Helper::Keyword(keyword) => PayloadSchemaParams::Keyword(keyword.into()),
-            Helper::Integer(int) => PayloadSchemaParams::Integer(int.into()),
-            Helper::Float(float) => PayloadSchemaParams::Float(float.into()),
-            Helper::Geo(geo) => PayloadSchemaParams::Geo(geo.into()),
-            Helper::Text(text) => PayloadSchemaParams::Text(text.into()),
-            Helper::Bool(bool) => PayloadSchemaParams::Bool(bool.into()),
-            Helper::Datetime(date_time) => PayloadSchemaParams::Datetime(date_time.into()),
-            Helper::Uuid(uuid) => PayloadSchemaParams::Uuid(uuid.into()),
+            PayloadSchemaParamsHelper::Keyword(keyword) => {
+                PayloadSchemaParams::Keyword(keyword.into())
+            }
+            PayloadSchemaParamsHelper::Integer(int) => PayloadSchemaParams::Integer(int.into()),
+            PayloadSchemaParamsHelper::Float(float) => PayloadSchemaParams::Float(float.into()),
+            PayloadSchemaParamsHelper::Geo(geo) => PayloadSchemaParams::Geo(geo.into()),
+            PayloadSchemaParamsHelper::Text(text) => PayloadSchemaParams::Text(text.into()),
+            PayloadSchemaParamsHelper::Bool(bool) => PayloadSchemaParams::Bool(bool.into()),
+            PayloadSchemaParamsHelper::Datetime(date_time) => {
+                PayloadSchemaParams::Datetime(date_time.into())
+            }
+            PayloadSchemaParamsHelper::Uuid(uuid) => PayloadSchemaParams::Uuid(uuid.into()),
         };
 
         Ok(Self(schema_params))
@@ -159,22 +182,34 @@ impl<'py> IntoPyObject<'py> for PyPayloadSchemaParams {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PAYLOAD_SCHEMA_PARAMS.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self.0 {
             PayloadSchemaParams::Keyword(keyword) => {
-                PyKeywordIndexParams(keyword).into_bound_py_any(py)
+                PayloadSchemaParamsHelper::Keyword(PyKeywordIndexParams(keyword))
             }
-            PayloadSchemaParams::Integer(int) => PyIntegerIndexParams(int).into_bound_py_any(py),
-            PayloadSchemaParams::Float(float) => PyFloatIndexParams(float).into_bound_py_any(py),
-            PayloadSchemaParams::Geo(geo) => PyGeoIndexParams(geo).into_bound_py_any(py),
-            PayloadSchemaParams::Text(text) => PyTextIndexParams(text).into_bound_py_any(py),
-            PayloadSchemaParams::Bool(bool) => PyBoolIndexParams(bool).into_bound_py_any(py),
+            PayloadSchemaParams::Integer(int) => {
+                PayloadSchemaParamsHelper::Integer(PyIntegerIndexParams(int))
+            }
+            PayloadSchemaParams::Float(float) => {
+                PayloadSchemaParamsHelper::Float(PyFloatIndexParams(float))
+            }
+            PayloadSchemaParams::Geo(geo) => PayloadSchemaParamsHelper::Geo(PyGeoIndexParams(geo)),
+            PayloadSchemaParams::Text(text) => {
+                PayloadSchemaParamsHelper::Text(PyTextIndexParams(text))
+            }
+            PayloadSchemaParams::Bool(bool) => {
+                PayloadSchemaParamsHelper::Bool(PyBoolIndexParams(bool))
+            }
             PayloadSchemaParams::Datetime(date_time) => {
-                PyDatetimeIndexParams(date_time).into_bound_py_any(py)
+                PayloadSchemaParamsHelper::Datetime(PyDatetimeIndexParams(date_time))
             }
-            PayloadSchemaParams::Uuid(uuid) => PyUuidIndexParams(uuid).into_bound_py_any(py),
+            PayloadSchemaParams::Uuid(uuid) => {
+                PayloadSchemaParamsHelper::Uuid(PyUuidIndexParams(uuid))
+            }
         }
+        .into_bound_py_any(py)
     }
 }
 
@@ -182,6 +217,7 @@ impl<'py> IntoPyObject<'py> for &PyPayloadSchemaParams {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
     type Error = PyErr;
+    const OUTPUT_TYPE: PyStaticExpr = PAYLOAD_SCHEMA_PARAMS.hint();
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         IntoPyObject::into_pyobject(self.clone(), py)
@@ -205,6 +241,19 @@ impl Repr for PyPayloadSchemaParams {
     }
 }
 
+/// Index parameters for keyword fields.
+///
+/// Args:
+///     is_tenant: Whether this field is used for tenant separation.
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     prefix: Whether to enable prefix matching for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].price". The field must be inside the array's
+///             elements, and `is_empty` on it matches a point when one of its
+///             elements lacks the field.
 #[pyclass(name = "KeywordIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -234,11 +283,13 @@ impl PyKeywordIndexParams {
         })
     }
 
+    /// Whether this field is used for tenant separation.
     #[getter]
     pub fn is_tenant(&self) -> Option<bool> {
         self.0.is_tenant
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -247,21 +298,25 @@ impl PyKeywordIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// Whether prefix matching is enabled.
     #[getter]
     pub fn prefix(&self) -> Option<bool> {
         self.0.prefix
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -283,6 +338,20 @@ impl PyKeywordIndexParams {
     }
 }
 
+/// Index parameters for integer fields.
+///
+/// Args:
+///     lookup: Enable exact match filtering.
+///     range: Enable range filtering.
+///     is_principal: Whether this field is a principal identifier.
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].price". The field must be inside the array's
+///             elements, and `is_empty` on it matches a point when one of its
+///             elements lacks the field.
 #[pyclass(name = "IntegerIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -314,21 +383,25 @@ impl PyIntegerIndexParams {
         })
     }
 
+    /// Enable exact match filtering.
     #[getter]
     pub fn lookup(&self) -> Option<bool> {
         self.0.lookup
     }
 
+    /// Enable range filtering.
     #[getter]
     pub fn range(&self) -> Option<bool> {
         self.0.range
     }
 
+    /// Whether this field is a principal identifier.
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -337,16 +410,19 @@ impl PyIntegerIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -369,6 +445,18 @@ impl PyIntegerIndexParams {
     }
 }
 
+/// Index parameters for float fields.
+///
+/// Args:
+///     is_principal: Whether this field is a principal identifier.
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].price". The field must be inside the array's
+///             elements, and `is_empty` on it matches a point when one of its
+///             elements lacks the field.
 #[pyclass(name = "FloatIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -396,11 +484,13 @@ impl PyFloatIndexParams {
         })
     }
 
+    /// Whether this field is a principal identifier.
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -409,16 +499,19 @@ impl PyFloatIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -439,6 +532,17 @@ impl PyFloatIndexParams {
     }
 }
 
+/// Index parameters for geo fields.
+///
+/// Args:
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].price". The field must be inside the array's
+///             elements, and `is_empty` on it matches a point when one of its
+///             elements lacks the field.
 #[pyclass(name = "GeoIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -464,6 +568,7 @@ impl PyGeoIndexParams {
         })
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -472,16 +577,19 @@ impl PyGeoIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -501,6 +609,17 @@ impl PyGeoIndexParams {
     }
 }
 
+/// Index parameters for boolean fields.
+///
+/// Args:
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].price". The field must be inside the array's
+///             elements, and `is_empty` on it matches a point when one of its
+///             elements lacks the field.
 #[pyclass(name = "BoolIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -526,6 +645,7 @@ impl PyBoolIndexParams {
         })
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -534,16 +654,19 @@ impl PyBoolIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -563,6 +686,18 @@ impl PyBoolIndexParams {
     }
 }
 
+/// Index parameters for datetime fields.
+///
+/// Args:
+///     is_principal: Whether this field is a principal identifier.
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].price". The field must be inside the array's
+///             elements, and `is_empty` on it matches a point when one of its
+///             elements lacks the field.
 #[pyclass(name = "DatetimeIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -590,11 +725,13 @@ impl PyDatetimeIndexParams {
         })
     }
 
+    /// Whether this field is a principal identifier.
     #[getter]
     pub fn is_principal(&self) -> Option<bool> {
         self.0.is_principal
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -603,16 +740,19 @@ impl PyDatetimeIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
@@ -633,6 +773,18 @@ impl PyDatetimeIndexParams {
     }
 }
 
+/// Index parameters for UUID fields.
+///
+/// Args:
+///     is_tenant: Whether this field is used for tenant separation.
+///     on_disk: Deprecated, use memory instead. Whether to store index on disk.
+///     enable_hnsw: Whether to enable HNSW index for this field.
+///     memory: Memory placement of the payload index. Overrides the deprecated
+///             on_disk flag if both are set.
+///     nested: Index every object of this array as a separate entry, e.g. "offers"
+///             for the field "offers[].price". The field must be inside the array's
+///             elements, and `is_empty` on it matches a point when one of its
+///             elements lacks the field.
 #[pyclass(name = "UuidIndexParams", from_py_object)]
 #[derive(Clone, Debug, Into, TransparentWrapper)]
 #[repr(transparent)]
@@ -660,11 +812,13 @@ impl PyUuidIndexParams {
         })
     }
 
+    /// Whether this field is used for tenant separation.
     #[getter]
     pub fn is_tenant(&self) -> Option<bool> {
         self.0.is_tenant
     }
 
+    /// Whether to store index on disk.
     #[getter]
     pub fn on_disk(&self) -> Option<bool> {
         #[allow(deprecated)]
@@ -673,16 +827,19 @@ impl PyUuidIndexParams {
         }
     }
 
+    /// Memory placement of the payload index, or None if not specified.
     #[getter]
     pub fn memory(&self) -> Option<PyMemory> {
         self.0.memory.map(PyMemory::from)
     }
 
+    /// Whether to enable HNSW index.
     #[getter]
     pub fn enable_hnsw(&self) -> Option<bool> {
         self.0.enable_hnsw
     }
 
+    /// The array whose objects are indexed as separate entries, or None if the field is indexed per point.
     #[getter]
     pub fn nested(&self) -> Option<PyJsonPath> {
         self.0.nested.clone().map(PyJsonPath)
