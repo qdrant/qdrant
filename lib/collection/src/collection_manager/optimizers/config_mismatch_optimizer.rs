@@ -17,6 +17,7 @@ mod tests {
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::{ReadSegmentEntry, StorageSegmentEntry};
     use segment::id_tracker::IdTrackerFormat;
+    use segment::segment_constructor::payload_cache::PayloadCacheAfterBuild;
     use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{
         CompressionRatio, HnswConfig, HnswGlobalConfig, Indexes, Memory, ProductQuantization,
@@ -93,6 +94,7 @@ mod tests {
             dense_vectors,
             sparse_vectors,
             live_vector_names: None,
+            payload_cache_after_build: PayloadCacheAfterBuild::Drop,
         }
     }
 

@@ -5,6 +5,7 @@ use std::path::Path;
 
 use common::fs::{atomic_save_json, read_json};
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::segment_constructor::payload_cache::PayloadCacheAfterBuild;
 use segment::types::{
     Distance, HnswConfig, Memory, PayloadStorageType, QuantizationConfig, SegmentConfig,
     VectorName, VectorNameBuf,
@@ -327,6 +328,12 @@ impl EdgeConfig {
             dense_vectors,
             sparse_vectors,
             live_vector_names: None,
+            // The serverless indexer reads the built payload to meter it
+            payload_cache_after_build: if cfg!(feature = "serverless") {
+                PayloadCacheAfterBuild::Keep
+            } else {
+                PayloadCacheAfterBuild::Drop
+            },
         }
     }
 

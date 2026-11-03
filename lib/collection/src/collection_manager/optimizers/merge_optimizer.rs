@@ -37,6 +37,7 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
+    use segment::segment_constructor::payload_cache::PayloadCacheAfterBuild;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::{Distance, HnswConfig, HnswGlobalConfig};
     use shard::locked_segment::LockedSegment;
@@ -76,6 +77,7 @@ mod tests {
             dense_vectors,
             sparse_vectors: Default::default(),
             live_vector_names: None,
+            payload_cache_after_build: PayloadCacheAfterBuild::Drop,
         }
     }
 

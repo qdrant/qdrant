@@ -46,6 +46,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::batched_reader::{PointData, merge_from};
+use crate::segment_constructor::payload_cache::PayloadCacheAfterBuild;
 use crate::segment_constructor::{
     VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
@@ -81,6 +82,8 @@ pub struct SegmentBuilder {
     // - absent here => a previously deleted vector whose data still lingers in older segment
     //   files, safe to prune. See the merge loop in `update`.
     live_vector_names: Option<HashSet<VectorNameBuf>>,
+
+    payload_cache_after_build: PayloadCacheAfterBuild,
 }
 
 struct VectorData {
@@ -158,6 +161,7 @@ impl SegmentBuilder {
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
+            payload_cache_after_build: PayloadCacheAfterBuild::Drop,
             live_vector_names: None,
         })
     }
@@ -176,6 +180,10 @@ impl SegmentBuilder {
     /// source-superset mismatch cancels (the conservative default).
     pub fn set_live_vector_names(&mut self, names: HashSet<VectorNameBuf>) {
         self.live_vector_names = Some(names);
+    }
+
+    pub fn set_payload_cache_after_build(&mut self, payload_cache: PayloadCacheAfterBuild) {
+        self.payload_cache_after_build = payload_cache;
     }
 
     pub fn remove_indexed_field(&mut self, field: &PayloadKeyType) {
@@ -575,6 +583,7 @@ impl SegmentBuilder {
                 indexed_fields,
                 defragment_keys: _,
                 live_vector_names: _,
+                payload_cache_after_build,
             } = self;
 
             let progress_quantization = progress_segment.subtask("quantization");
@@ -818,14 +827,19 @@ impl SegmentBuilder {
             }
             drop(progress_sparse_vector_index);
 
-            if payload_storage_arc.borrow().is_cold() {
-                // If payload storage is expected to be on-disk, we need to clear cache
-                // to avoid cache pollution
-                payload_storage_arc.borrow().clear_cache()?;
-            }
+            match payload_cache_after_build {
+                PayloadCacheAfterBuild::Drop => {
+                    if payload_storage_arc.borrow().is_cold() {
+                        // If payload storage is expected to be on-disk, we need to clear cache
+                        // to avoid cache pollution
+                        payload_storage_arc.borrow().clear_cache()?;
+                    }
 
-            // Clear cache for payload index to avoid cache pollution
-            payload_index_arc.borrow().clear_cache_if_on_disk()?;
+                    // Clear cache for payload index to avoid cache pollution
+                    payload_index_arc.borrow().clear_cache_if_on_disk()?;
+                }
+                PayloadCacheAfterBuild::Keep => {}
+            }
 
             // The id tracker is loaded into RAM but its on-disk files are written
             // during the build; drop their page cache to avoid cache pollution.

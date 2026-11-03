@@ -6,6 +6,7 @@ use std::sync::Arc;
 use segment::common::BYTES_IN_KB;
 use segment::data_types::modifier::Modifier;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::segment_constructor::payload_cache::PayloadCacheAfterBuild;
 use segment::types::{
     Distance, HnswConfig, Indexes, Memory, MultiVectorConfig, PayloadStorageType,
     QuantizationConfig, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
@@ -152,6 +153,8 @@ pub struct SegmentOptimizerConfig {
     /// Live read of the collection's vector names, when wired in via
     /// [`SegmentOptimizerConfig::with_live_vector_names`]. `None` if no live source is available.
     pub live_vector_names: Option<LiveVectorNamesProvider>,
+    /// See [`PayloadCacheAfterBuild`].
+    pub payload_cache_after_build: PayloadCacheAfterBuild,
 }
 
 impl SegmentOptimizerConfig {
