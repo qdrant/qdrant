@@ -28,6 +28,7 @@ pub use live_reload::LiveReloadOutcome;
 use parking_lot::{Mutex, RwLock};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
+use segment::types::SeqNumberType;
 
 use crate::EdgeConfig;
 pub use crate::read_only::enumerate::{
@@ -80,6 +81,22 @@ pub struct ReadOnlyEdgeShard<S: UniversalReadExt + 'static> {
     /// duplicate the listing and load work, and could clear each other's staged
     /// prefetches between a segment's preload and apply.
     live_reload_lock: Mutex<()>,
+    /// How far the follower may apply versioned deletes, for a follower opened with a waterline
+    /// ([`open_with_waterline`](Self::open_with_waterline)). `None` applies every delete as soon
+    /// as it is read.
+    waterline: Option<Mutex<Waterline>>,
+}
+
+/// The waterline state of a follower that gates deletes, see
+/// [`delete_versions`](segment::id_tracker::delete_versions).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Waterline {
+    /// The highest waterline a caller has passed: every write up to this version is durable, and
+    /// stored in a segment the manifest lists.
+    pub(crate) highest: SeqNumberType,
+    /// Deletes at or below this version are applied: the highest waterline of the last complete
+    /// reload, one that held and reloaded every listed segment. Until then 0.
+    pub(crate) gate: SeqNumberType,
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
