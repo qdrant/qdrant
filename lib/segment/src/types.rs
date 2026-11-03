@@ -1381,6 +1381,13 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
 
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to
+    /// tenants. Applies only when the collection has a payload index with `is_tenant: true`:
+    /// the top-level `must` of the request filter must then contain a `match` (`value` or `any`)
+    /// condition on one of the tenant keys. Reads by point id are not affected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_tenant_filter: Option<bool>,
+
     // Search
     /// Max HNSW ef value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1494,6 +1501,7 @@ impl Hash for StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         } = self;
         enabled.hash(state);
         max_query_limit.hash(state);
@@ -1515,6 +1523,7 @@ impl Hash for StrictModeConfig {
         sparse_config.hash(state);
         max_payload_index_count.hash(state);
         max_resident_memory_percent.hash(state);
+        require_tenant_filter.hash(state);
     }
 }
 
@@ -1543,6 +1552,13 @@ pub struct StrictModeConfigOutput {
     /// Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
+
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to
+    /// tenants. Applies only when the collection has a payload index with `is_tenant: true`:
+    /// the top-level `must` of the request filter must then contain a `match` (`value` or `any`)
+    /// condition on one of the tenant keys. Reads by point id are not affected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_tenant_filter: Option<bool>,
 
     // Search
     /// Max HNSW value allowed in search parameters.
@@ -1649,6 +1665,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         } = config;
 
         Self {
@@ -1673,6 +1690,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         }
     }
 }

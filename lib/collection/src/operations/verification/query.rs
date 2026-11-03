@@ -2,7 +2,7 @@ use itertools::Itertools;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{Filter, StrictModeConfig};
 
-use super::{StrictModeVerification, check_grouping_field};
+use super::{ReadScope, StrictModeVerification, check_grouping_field};
 use crate::collection::Collection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::{
@@ -177,6 +177,10 @@ impl StrictModeVerification for CollectionQueryRequest {
         None
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
+    }
+
     fn request_exact(&self) -> Option<bool> {
         None
     }
@@ -226,6 +230,10 @@ impl StrictModeVerification for CollectionPrefetch {
         None
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn request_exact(&self) -> Option<bool> {
         None
     }
@@ -271,6 +279,10 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {

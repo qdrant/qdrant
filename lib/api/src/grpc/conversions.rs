@@ -2656,6 +2656,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         } = value;
         Self {
             enabled,
@@ -2681,6 +2682,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             sparse_config: sparse_config.map(segment::types::StrictModeSparseConfig::from),
             max_payload_index_count: max_payload_index_count.map(|i| i as usize),
             max_resident_memory_percent: max_resident_memory_percent.map(|i| i as u8),
+            require_tenant_filter,
         }
     }
 }
@@ -2785,6 +2787,7 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         } = value;
         Self {
             enabled,
@@ -2808,6 +2811,7 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
             max_points_count: max_points_count.map(|i| i as u64),
             max_payload_index_count: max_payload_index_count.map(|i| i as u64),
             max_resident_memory_percent: max_resident_memory_percent.map(u32::from),
+            require_tenant_filter,
         }
     }
 }
@@ -2836,6 +2840,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         } = value;
         Self {
             enabled,
@@ -2861,6 +2866,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
             sparse_config: sparse_config.map(segment::types::StrictModeSparseConfigOutput::from),
             max_payload_index_count: max_payload_index_count.map(|i| i as usize),
             max_resident_memory_percent: max_resident_memory_percent.map(|i| i as u8),
+            require_tenant_filter,
         }
     }
 }

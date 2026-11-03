@@ -149,6 +149,10 @@ impl StrictModeVerification for UpdateOperation {
         None
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn request_exact(&self) -> Option<bool> {
         None
     }
@@ -233,6 +237,10 @@ impl StrictModeVerification for CreateFieldIndex {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn query_limit(&self) -> Option<usize> {

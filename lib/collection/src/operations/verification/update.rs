@@ -9,7 +9,7 @@ use segment::types::{
     VectorNameBuf,
 };
 
-use super::{StrictModeVerification, check_limit_opt};
+use super::{ReadScope, StrictModeVerification, check_limit_opt};
 use crate::collection::Collection;
 use crate::common::collection_size_stats::CollectionSizeAtomicStats;
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
@@ -34,6 +34,10 @@ impl StrictModeVerification for shard::operations::CreateVectorName {
         None
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn request_exact(&self) -> Option<bool> {
         None
     }
@@ -49,6 +53,10 @@ impl StrictModeVerification for PointsSelector {
             PointsSelector::FilterSelector(filter) => Some(&filter.filter),
             PointsSelector::PointIdsSelector(_) => None,
         }
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn query_limit(&self) -> Option<usize> {
@@ -79,6 +87,10 @@ impl StrictModeVerification for DeleteVectors {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -113,6 +125,10 @@ impl StrictModeVerification for SetPayload {
         self.filter.as_ref()
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn query_limit(&self) -> Option<usize> {
         None
     }
@@ -133,6 +149,10 @@ impl StrictModeVerification for SetPayload {
 impl StrictModeVerification for DeletePayload {
     fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn query_limit(&self) -> Option<usize> {
@@ -209,6 +229,10 @@ impl StrictModeVerification for PointInsertOperations {
         }
     }
 
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
+    }
+
     fn request_exact(&self) -> Option<bool> {
         None
     }
@@ -265,6 +289,10 @@ impl StrictModeVerification for UpdateVectors {
             update_filter: _,
         } = self;
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn request_exact(&self) -> Option<bool> {
