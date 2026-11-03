@@ -5,15 +5,16 @@ use std::sync::atomic::AtomicBool;
 use common::ambient;
 use common::reason::Reason;
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::data_types::load_profile::LoadProfile;
 use segment::index::UniversalReadExt;
+use segment::types::SeqNumberType;
 
 use crate::EdgeConfig;
 use crate::read_only::enumerate::{ManifestSegmentEnumerator, SegmentEnumerator};
 use crate::read_only::holder::ReadOnlySegmentHolder;
-use crate::read_only::{ReadOnlyEdgeShard, ReadOnlyEdgeShardPools};
+use crate::read_only::{ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, Waterline};
 
 impl ReadOnlyEdgeShard<MmapFile> {
     /// Open a read-only follower over local memory-mapped files, discovering segments from the
@@ -136,6 +137,39 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         )
     }
 
+    /// [`open_with_pools`](Self::open_with_pools) for a follower that gates versioned deletes, see
+    /// [`delete_versions`](segment::id_tracker::delete_versions).
+    ///
+    /// `waterline` is the newest version whose writes are all durable and stored in segments the
+    /// manifest lists: the serverless updater's committed cursor. The open applies the deletes up
+    /// to it, if it loads every listed segment, and holds newer ones. Later reloads take their
+    /// waterline through [`live_reload_up_to`](Self::live_reload_up_to).
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_with_waterline(
+        fs: S::Fs,
+        path: &Path,
+        config: Option<EdgeConfig>,
+        load_profile: Option<LoadProfile>,
+        pools: ReadOnlyEdgeShardPools,
+        is_stopped: Arc<AtomicBool>,
+        waterline: SeqNumberType,
+    ) -> OperationResult<Self>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
+        Self::open_with_enumerator_and_waterline(
+            fs,
+            path,
+            enumerator,
+            config,
+            load_profile,
+            pools,
+            &is_stopped,
+            Some(waterline),
+        )
+    }
+
     /// Open with an explicit segment [`enumerator`](SegmentEnumerator).
     ///
     /// Internal seam: [`open`](Self::open) always discovers via the manifest, but tests inject other
@@ -153,6 +187,34 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         load_profile: Option<LoadProfile>,
         pools: ReadOnlyEdgeShardPools,
         is_stopped: &AtomicBool,
+    ) -> OperationResult<Self>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        Self::open_with_enumerator_and_waterline(
+            fs,
+            path,
+            enumerator,
+            config,
+            load_profile,
+            pools,
+            is_stopped,
+            None,
+        )
+    }
+
+    /// [`open_with_enumerator`](Self::open_with_enumerator), gating versioned deletes when given a
+    /// `waterline`, see [`open_with_waterline`](Self::open_with_waterline).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn open_with_enumerator_and_waterline(
+        fs: S::Fs,
+        path: &Path,
+        enumerator: impl SegmentEnumerator + 'static,
+        config: Option<EdgeConfig>,
+        load_profile: Option<LoadProfile>,
+        pools: ReadOnlyEdgeShardPools,
+        is_stopped: &AtomicBool,
+        waterline: Option<SeqNumberType>,
     ) -> OperationResult<Self>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
@@ -189,8 +251,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             load_pool,
             load_profile,
             live_reload_lock: Default::default(),
+            waterline: waterline.map(|highest| Mutex::new(Waterline { highest, gate: 0 })),
         };
-        shard.live_reload_cancellable(is_stopped)?;
+        shard.live_reload_cancellable(is_stopped, waterline)?;
 
         // Open-only config overlay: caller-provided tunables win over the segment-derived ones
         // (`live_reload` re-derives from the segments alone — see the `config` field docs). For an
