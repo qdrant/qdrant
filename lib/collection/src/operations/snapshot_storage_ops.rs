@@ -434,10 +434,12 @@ mod tests {
         }
     }
 
-    /// Overestimated sizes must not produce parts above the 5 GB S3 part limit.
+    /// The unknown-size fallback must give parts that fit any object within S3 part limits.
     #[test]
-    fn chunk_size_for_respects_part_size_limit() {
-        assert!(chunk_size_for(usize::MAX) <= 5 * 1024 * 1024 * 1024);
+    fn chunk_size_for_unknown_size_fits_max_object() {
+        let chunk_size = chunk_size_for(usize::MAX);
+        assert!(chunk_size <= 5 * 1024 * 1024 * 1024);
+        assert!(chunk_size * MAX_PART_NUMBER >= MAX_UPLOAD_SIZE);
     }
 
     /// Committing before the producer finishes writing still stores the whole stream, in order.

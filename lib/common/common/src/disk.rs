@@ -5,19 +5,27 @@ use walkdir::WalkDir;
 
 /// Total apparent (logical) size of the files in a directory, as reading them would return.
 ///
-/// Unlike [`dir_disk_size`], sparse and compressed files count at their full length.
+/// Unlike [`dir_disk_size`], sparse and compressed files count at their full length, and
+/// symlinks are followed.
 pub fn dir_apparent_size(path: impl AsRef<Path>) -> std::io::Result<u64> {
-    WalkDir::new(path)
-        .follow_links(true)
-        .into_iter()
-        .try_fold(0, |acc, entry| {
-            let metadata = entry?.metadata()?;
-            Ok(if metadata.is_file() {
-                acc + metadata.len()
-            } else {
-                acc
-            })
-        })
+    let is_dangling_link = |err: &walkdir::Error| {
+        err.io_error()
+            .is_some_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+            && err.path().is_some_and(Path::is_symlink)
+    };
+    let mut size = 0;
+    for entry in WalkDir::new(path).follow_links(true) {
+        let metadata = match entry.and_then(|entry| entry.metadata()) {
+            Ok(metadata) => metadata,
+            // Link loops and dangling links add no data; other errors, like files vanishing mid-scan, fail
+            Err(err) if err.loop_ancestor().is_some() || is_dangling_link(&err) => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if metadata.is_file() {
+            size += metadata.len();
+        }
+    }
+    Ok(size)
 }
 
 /// How many bytes a directory takes on disk.
@@ -77,27 +85,23 @@ pub fn list_files(dir: impl AsRef<Path>) -> std::io::Result<Vec<PathBuf>> {
 mod tests {
     use super::*;
 
-    /// Tar reads sparse files at full length, so part sizing must not count only allocated blocks.
-    #[test]
-    fn dir_apparent_size_counts_sparse_files_at_full_length() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::create_dir(dir.path().join("nested")).unwrap();
-        let sparse = fs::File::create(dir.path().join("nested/sparse")).unwrap();
-        sparse.set_len(64 * 1024 * 1024).unwrap();
-        fs::write(dir.path().join("small"), b"abc").unwrap();
-
-        assert_eq!(dir_apparent_size(dir.path()).unwrap(), 64 * 1024 * 1024 + 3);
-    }
-
-    /// Snapshots read collection data through symlinks, so sizing must count it too.
+    /// Counts what a snapshot would read: sparse files at full length and data behind
+    /// symlinks. Dangling links hold no data and must not fail the scan.
     #[cfg(unix)]
     #[test]
-    fn dir_apparent_size_follows_symlinked_dirs() {
-        let target = tempfile::tempdir().unwrap();
-        fs::write(target.path().join("data"), [0u8; 100]).unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        std::os::unix::fs::symlink(target.path(), dir.path().join("linked")).unwrap();
+    fn dir_apparent_size_counts_readable_bytes() {
+        let linked = tempfile::tempdir().unwrap();
+        fs::write(linked.path().join("data"), [0u8; 100]).unwrap();
 
-        assert_eq!(dir_apparent_size(dir.path()).unwrap(), 100);
+        let dir = tempfile::tempdir().unwrap();
+        let sparse = fs::File::create(dir.path().join("sparse")).unwrap();
+        sparse.set_len(64 * 1024 * 1024).unwrap();
+        std::os::unix::fs::symlink(linked.path(), dir.path().join("linked")).unwrap();
+        std::os::unix::fs::symlink("/nonexistent", dir.path().join("dangling")).unwrap();
+
+        assert_eq!(
+            dir_apparent_size(dir.path()).unwrap(),
+            64 * 1024 * 1024 + 100
+        );
     }
 }
