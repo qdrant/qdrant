@@ -27,17 +27,11 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     }
 
     /// Re-read the on-disk deleted bitslice and report points deleted since the
-    /// last reload. Mappings are immutable, so nothing is ever inserted.
+    /// last read. Mappings are immutable, so nothing is ever inserted.
     ///
-    /// A *fresh* handle is opened rather than reusing the held one: the deleted
-    /// file is mutated in place, which a `reopen()` (append-only-growth
-    /// contract) never picks up on caching backends. A fresh open is guaranteed
-    /// to mirror the current remote bytes; per-point lookups read the fresh
-    /// state from then on too.
-    ///
-    /// `deleted_full` doubles as the diff baseline; when it was never
-    /// materialized, every currently-deleted offset is reported (an idempotent
-    /// replay downstream).
+    /// A *fresh* handle is opened: the deleted file is mutated in place, which a
+    /// `reopen()` (append-only-growth contract) never picks up on caching
+    /// backends. A fresh open is guaranteed to mirror the current remote bytes.
     pub fn live_reload(
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
@@ -57,22 +51,13 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         };
 
         let new: BitVec = fresh.read_all()?.into_owned();
-        self.deleted_file = fresh;
-
-        let baseline = self.deleted_full.take();
-        let deleted: Vec<PointOffsetType> = match baseline {
-            Some(old) => new
-                .iter_ones()
-                .filter(|&i| !old.get(i).is_some_and(|b| *b))
-                .map(|i| i as PointOffsetType)
-                .collect(),
-            None => new.iter_ones().map(|i| i as PointOffsetType).collect(),
-        };
+        let deleted: Vec<PointOffsetType> = new
+            .iter_ones()
+            .filter(|&i| !self.deleted.get(i).is_some_and(|b| *b))
+            .map(|i| i as PointOffsetType)
+            .collect();
         debug_assert!(deleted.is_sorted());
-
-        // `take` above emptied the cell, so this refreshes it to the new state
-        // and serves both the next search view and the next reload baseline.
-        let _ = self.deleted_full.set(new);
+        self.deleted = new;
 
         Ok(LiveReloadResult {
             inserted: Vec::new(),

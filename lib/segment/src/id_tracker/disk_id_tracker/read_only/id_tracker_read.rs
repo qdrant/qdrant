@@ -20,18 +20,18 @@ impl<S: UniversalRead> DiskMappingsSource for ReadOnlyDiskIdTracker<S> {
         &self.reader
     }
 
-    /// A single lazy `get_bit` on the on-disk deleted file — never loads the
-    /// full set. Out-of-range offsets count as deleted; storage errors
-    /// propagate.
+    /// Out-of-range offsets count as deleted.
     fn point_deleted(&self, offset: PointOffsetType) -> OperationResult<bool> {
         Ok(self
-            .deleted_file
-            .get_bit(u64::from(offset))?
+            .deleted
+            .get(offset as usize)
+            .as_deref()
+            .copied()
             .unwrap_or(true))
     }
 
     fn deleted_bitslice(&self) -> OperationResult<&BitSlice> {
-        Ok(self.deleted_full()?.as_bitslice())
+        Ok(self.deleted.as_bitslice())
     }
 
     fn resolve_internal_batch(
@@ -71,8 +71,8 @@ impl<S: UniversalRead> IdTrackerRead for ReadOnlyDiskIdTracker<S> {
         log_lookup_err(self.resolve_external(internal_id))
     }
 
-    /// Deleted offsets are dropped before any read is scheduled (the deleted
-    /// file is prefetched whole, so each check is an in-memory bit test), then
+    /// Deleted offsets are dropped before any read is scheduled (each check is
+    /// an in-memory bit test), then
     /// one pipelined mapping-read pass delivers each surviving `(offset, id)`
     /// in read-completion order; nothing is buffered.
     fn external_ids_batch(

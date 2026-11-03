@@ -1,7 +1,6 @@
 //! Opening and preopening (prefetch scheduling) of the read-only tracker.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
@@ -49,7 +48,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         OpenOptions {
             writeable: false,
             need_sequential: false,
-            // Prefetch because external_ids_batch checks point_deleted() one-by-one
+            // Prefetch, as the open reads it whole
             populate: Populate::PreferBackground,
             advice: AdviceSetting::Global,
         }
@@ -110,19 +109,20 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
 
         let versions = ReadOnlyVersions::open(fs, segment_path, populate)?;
 
-        let deleted_file = StoredBitSlice::open(
+        let deleted = StoredBitSlice::<S>::open(
             fs,
             deleted_path(segment_path),
             Self::deleted_open_options(),
             Default::default(),
-        )?;
+        )?
+        .read_all()?
+        .into_owned();
 
         Ok(Some(Self {
             path: segment_path.to_path_buf(),
             reader,
             versions,
-            deleted_file,
-            deleted_full: OnceLock::new(),
+            deleted,
         }))
     }
 }
