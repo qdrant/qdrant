@@ -14,6 +14,7 @@ use rayon::prelude::*;
 use segment::common::deferred_points::segment_deferred_internal_id;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::fully_qualified_point::{FullyQualifiedPoint, StoredPoint};
+use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::{PointIdType, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
@@ -300,14 +301,18 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 tombstone_start = Some(std::time::Instant::now());
-                writer.tombstone_points(&points)?;
+                writer.tombstone_points(&points, 0, DeleteVersioning::Legacy)?;
             }
             written.push(uuid);
         }
 
         let instant = tombstone_start.unwrap_or_else(std::time::Instant::now);
         for (uuid, points) in to_tombstone {
-            get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
+            get_writer(&mut self.writers, uuid)?.tombstone_points(
+                &points,
+                0,
+                DeleteVersioning::Legacy,
+            )?;
             written.push(uuid);
         }
         log::trace!(target: LOG_TARGET, "tombstone_points took {:?}", instant.elapsed());

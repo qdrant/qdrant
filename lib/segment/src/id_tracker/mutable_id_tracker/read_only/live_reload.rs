@@ -266,7 +266,8 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                             .push(internal_id);
                     }
                 }
-                MappingChange::Delete(external_id) => {
+                MappingChange::Delete(external_id)
+                | MappingChange::DeleteVersioned(external_id, _) => {
                     self.unversioned_inserts.remove(&external_id);
                     self.staged_inserts.remove(&external_id);
                     deleted.extend(self.mappings.drop(external_id));

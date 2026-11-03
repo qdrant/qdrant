@@ -4,23 +4,27 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitVec;
 use common::types::PointOffsetType;
-use common::universal_io::UniversalWriteFs;
+use common::universal_io::UniversalAppendFs;
 
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::delete_versions::{DeleteLogWriter, DeleteVersioning};
 use crate::id_tracker::immutable_id_tracker::tombstone_points_in_stored_mask;
-use crate::types::PointIdType;
+use crate::types::{PointIdType, SeqNumberType};
 
 /// The mapping is frozen, so the one thing to write is the stored deleted
 /// mask — which the disk-resident format keeps in the same file as the in-RAM
-/// immutable format, hence the shared implementation. Needs only reads plus
-/// [`atomic_save`] from the backend, so object stores qualify.
+/// immutable format, hence the shared implementation, and the delete log ahead
+/// of it. Needs only reads, appends and [`atomic_save`] from the backend, so
+/// object stores qualify.
 ///
-/// [`atomic_save`]: UniversalWriteFs::atomic_save
+/// [`atomic_save`]: common::universal_io::UniversalWriteFs::atomic_save
 pub struct UpdateOnlyDiskIdTracker {
     segment_path: PathBuf,
     /// Consumed by the first [`tombstone_points`](Self::tombstone_points) in
     /// place of reading the mask file.
     deleted: Option<BitVec>,
+    /// Records the deletes ahead of the mask.
+    log: DeleteLogWriter,
 }
 
 impl UpdateOnlyDiskIdTracker {
@@ -30,22 +34,35 @@ impl UpdateOnlyDiskIdTracker {
         Ok(Self {
             segment_path: segment_path.to_path_buf(),
             deleted,
+            log: DeleteLogWriter::new(segment_path),
         })
     }
 
     /// Retire the given points by marking the slots they occupy in the stored
-    /// deleted mask — the only thing written, the data on those slots stays.
-    /// The mask is replaced whole, see [`StoredBitSlice::atomic_update`].
+    /// deleted mask — the data on those slots stays. The mask is replaced
+    /// whole, see [`StoredBitSlice::atomic_update`]. The deletes go to the
+    /// delete log first, with `version`, see
+    /// [`delete_versions`](crate::id_tracker::delete_versions).
     ///
     /// [`StoredBitSlice::atomic_update`]: common::stored_bitslice::StoredBitSlice::atomic_update
     pub fn tombstone_points<Fs>(
         &mut self,
         fs: &Fs,
         points: &[(PointIdType, PointOffsetType)],
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
     ) -> OperationResult<()>
     where
-        Fs: UniversalWriteFs,
+        Fs: UniversalAppendFs,
     {
-        tombstone_points_in_stored_mask(fs, &self.segment_path, &mut self.deleted, points)
+        tombstone_points_in_stored_mask(
+            fs,
+            &self.segment_path,
+            &mut self.deleted,
+            &mut self.log,
+            points,
+            version,
+            versioning,
+        )
     }
 }
