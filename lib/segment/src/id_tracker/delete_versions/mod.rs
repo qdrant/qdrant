@@ -20,6 +20,8 @@ mod log_reader;
 mod log_writer;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tracker_tests;
 
 use std::path::{Path, PathBuf};
 
