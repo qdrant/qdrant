@@ -11,6 +11,7 @@ pub mod inference;
 pub mod metrics;
 pub mod pyroscope_state;
 pub mod query;
+pub mod quotas;
 pub mod snapshots;
 pub mod stacktrace;
 pub mod strict_mode;
