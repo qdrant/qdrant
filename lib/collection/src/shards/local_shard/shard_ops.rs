@@ -552,6 +552,10 @@ impl ShardOperation for LocalShard {
 
     /// Finishes ongoing update tasks
     async fn stop_gracefully(mut self) {
+        log::info!(
+            "stop_gracefully: signaling workers to stop ({})",
+            self.shard_path().display()
+        );
         {
             // Send stop signals to workers
             let mut update_handler = self.update_handler.lock().await;
