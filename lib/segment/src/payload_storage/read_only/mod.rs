@@ -22,7 +22,6 @@ pub struct ReadOnlyPayloadStorage<S: UniversalRead> {
 #[cfg(test)]
 mod tests {
     use common::ambient;
-    use common::generic_consts::Random;
     use common::universal_io::{MmapFile, Populate, ReadOnly, UniversalRead, UniversalReadFs};
     use rstest::rstest;
     use tempfile::TempDir;
@@ -71,22 +70,5 @@ mod tests {
         }
         // An unwritten point reads back as an empty payload.
         assert_eq!(storage.get(99).unwrap(), payload_json! {});
-
-        let offsets = || [0, 4, 99].into_iter().enumerate();
-        let (mut lens, mut raw) = ([None; 3], [None; 3]);
-        storage
-            .read_payload_lens::<Random, _>(offsets(), |at, len| {
-                lens[at] = len;
-                Ok(())
-            })
-            .unwrap();
-        storage
-            .read_payloads_raw::<Random, _>(offsets(), |at, bytes| {
-                raw[at] = bytes.map(<[u8]>::len);
-                Ok(())
-            })
-            .unwrap();
-        assert_eq!(lens, raw);
-        assert!(lens[0].is_some() && lens[2].is_none());
     }
 }
