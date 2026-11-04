@@ -6188,9 +6188,9 @@ dependencies = [
 
 [[package]]
 name = "qdrant-rust-stemmers"
-version = "1.2.2"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e61bd348ee10767d59d65d47ced0861921e8bb3ef0823aab63cc16c6c0f6d756"
+checksum = "69360f6ae1f89d8ec3df92a04b223b5cbfd6308bfc8f28317c8c4ac6d15658a1"
 dependencies = [
  "serde",
  "serde_derive",
