@@ -361,7 +361,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    leader = wait_peer_added(bootstrap_api_uri, headers=headers)
+    wait_peer_added(bootstrap_api_uri, headers=headers)
 
     port = None
     # Start other peers
@@ -370,8 +370,9 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
             port = port_seed + i * 100
         peer_api_uris.append(start_peer(peer_dirs[i], f"{log_file_prefix}peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env, use_peer_proxy=use_peer_proxy))
 
-    # Wait for cluster
-    wait_for_uniform_cluster_status(peer_api_uris, leader, headers=headers)
+    # Wait for cluster. Don't require the bootstrap peer to stay leader: a runner stall
+    # longer than the election timeout lets a joining peer win a new term during startup.
+    wait_for_uniform_cluster_status(peer_api_uris, headers=headers)
 
     return peer_api_uris, peer_dirs, bootstrap_uri
 
