@@ -4,6 +4,8 @@ use std::arch::aarch64::*;
 #[cfg(target_feature = "neon")]
 use common::types::ScoreType;
 
+#[cfg(target_feature = "neon")]
+use super::simple::cosine_preprocess_f64;
 use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::DenseVector;
 #[cfg(target_feature = "neon")]
@@ -124,6 +126,10 @@ pub(crate) unsafe fn cosine_preprocess_neon(mut vector: DenseVector) -> DenseVec
 
         for v in vector.iter().take(n).skip(m) {
             length += v.powi(2);
+        }
+        if !length.is_finite() {
+            // the f32 sum of squares overflowed; normalize with f64 instead
+            return cosine_preprocess_f64(vector);
         }
         if is_length_zero_or_normalized(length) {
             return vector;

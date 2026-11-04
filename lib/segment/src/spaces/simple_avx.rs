@@ -2,6 +2,7 @@ use std::arch::x86_64::*;
 
 use common::types::ScoreType;
 
+use super::simple::cosine_preprocess_f64;
 use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 
@@ -155,6 +156,10 @@ pub(crate) unsafe fn cosine_preprocess_avx(mut vector: DenseVector) -> DenseVect
 
         for i in 0..n - m {
             length += (*ptr.add(i)).powi(2);
+        }
+        if !length.is_finite() {
+            // the f32 sum of squares overflowed; normalize with f64 instead
+            return cosine_preprocess_f64(vector);
         }
         if is_length_zero_or_normalized(length) {
             return vector;
