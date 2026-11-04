@@ -46,6 +46,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{PayloadStorage, PayloadStorageRead};
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::batched_reader::{PointData, merge_from};
+use crate::segment_constructor::cache_after_build::CacheAfterBuild;
 use crate::segment_constructor::{
     VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
@@ -81,6 +82,8 @@ pub struct SegmentBuilder {
     // - absent here => a previously deleted vector whose data still lingers in older segment
     //   files, safe to prune. See the merge loop in `update`.
     live_vector_names: Option<HashSet<VectorNameBuf>>,
+
+    cache_after_build: CacheAfterBuild,
 }
 
 struct VectorData {
@@ -158,6 +161,7 @@ impl SegmentBuilder {
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
+            cache_after_build: CacheAfterBuild::Drop,
             live_vector_names: None,
         })
     }
@@ -176,6 +180,10 @@ impl SegmentBuilder {
     /// source-superset mismatch cancels (the conservative default).
     pub fn set_live_vector_names(&mut self, names: HashSet<VectorNameBuf>) {
         self.live_vector_names = Some(names);
+    }
+
+    pub fn set_cache_after_build(&mut self, cache_after_build: CacheAfterBuild) {
+        self.cache_after_build = cache_after_build;
     }
 
     pub fn remove_indexed_field(&mut self, field: &PayloadKeyType) {
@@ -575,6 +583,7 @@ impl SegmentBuilder {
                 indexed_fields,
                 defragment_keys: _,
                 live_vector_names: _,
+                cache_after_build,
             } = self;
 
             let progress_quantization = progress_segment.subtask("quantization");
@@ -752,19 +761,21 @@ impl SegmentBuilder {
                     },
                 )?;
 
-                if vector_storage.borrow().is_cold() {
-                    // If vector storage is expected to be on-disk, we need to clear cache
-                    // to avoid cache pollution
-                    vector_storage.borrow().clear_cache()?;
-                }
+                if cache_after_build.is_drop() {
+                    if vector_storage.borrow().is_cold() {
+                        // If vector storage is expected to be on-disk, we need to clear cache
+                        // to avoid cache pollution
+                        vector_storage.borrow().clear_cache()?;
+                    }
 
-                if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
-                    quantized_vectors.clear_cache()?;
-                }
+                    if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
+                        quantized_vectors.clear_cache()?;
+                    }
 
-                // Index if always loaded on-disk=true from build function
-                // So we may clear unconditionally
-                index.clear_cache()?;
+                    // Index if always loaded on-disk=true from build function
+                    // So we may clear unconditionally
+                    index.clear_cache()?;
+                }
 
                 if feature_flags.combined_vector_storage && vector_config.inline_vectors_in_graph()
                 {
@@ -803,14 +814,16 @@ impl SegmentBuilder {
                     tick_progress: || (),
                 })?;
 
-                if vector_storage_arc.borrow().is_cold() {
-                    // If vector storage is expected to be on-disk, we need to clear cache
-                    // to avoid cache pollution
-                    vector_storage_arc.borrow().clear_cache()?;
-                }
+                if cache_after_build.is_drop() {
+                    if vector_storage_arc.borrow().is_cold() {
+                        // If vector storage is expected to be on-disk, we need to clear cache
+                        // to avoid cache pollution
+                        vector_storage_arc.borrow().clear_cache()?;
+                    }
 
-                if index.is_cold() {
-                    index.clear_cache()?;
+                    if index.is_cold() {
+                        index.clear_cache()?;
+                    }
                 }
 
                 // Ensure we don't use the sparse vector index in future because it's missing proper setup of deferred points.
@@ -818,18 +831,20 @@ impl SegmentBuilder {
             }
             drop(progress_sparse_vector_index);
 
-            if payload_storage_arc.borrow().is_cold() {
-                // If payload storage is expected to be on-disk, we need to clear cache
-                // to avoid cache pollution
-                payload_storage_arc.borrow().clear_cache()?;
+            if cache_after_build.is_drop() {
+                if payload_storage_arc.borrow().is_cold() {
+                    // If payload storage is expected to be on-disk, we need to clear cache
+                    // to avoid cache pollution
+                    payload_storage_arc.borrow().clear_cache()?;
+                }
+
+                // Clear cache for payload index to avoid cache pollution
+                payload_index_arc.borrow().clear_cache_if_on_disk()?;
+
+                // The id tracker is loaded into RAM but its on-disk files are written
+                // during the build; drop their page cache to avoid cache pollution.
+                id_tracker_arc.borrow().clear_cache_if_on_disk()?;
             }
-
-            // Clear cache for payload index to avoid cache pollution
-            payload_index_arc.borrow().clear_cache_if_on_disk()?;
-
-            // The id tracker is loaded into RAM but its on-disk files are written
-            // during the build; drop their page cache to avoid cache pollution.
-            id_tracker_arc.borrow().clear_cache_if_on_disk()?;
 
             // We're done with CPU-intensive tasks, release CPU permit
             debug_assert_eq!(

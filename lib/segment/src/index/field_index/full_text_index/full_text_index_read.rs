@@ -261,6 +261,11 @@ pub trait FullTextIndexRead {
     /// [`Self::posting_len`] counts them.
     fn total_tokens(&self) -> Option<u64>;
 
+    /// Bytes of the tokens indexed per document: each vocabulary token's length times
+    /// [`Self::posting_len`], so a token repeated in a document counts once and deleted
+    /// documents count as `posting_len` counts them.
+    fn token_bytes(&self) -> OperationResult<u64>;
+
     /// The `limit` best documents for `query` by BM25, highest first, among
     /// those `accept` allows. `query` carries corpus-wide `IDF` and `avgdl`
     /// and this segment's token ids; see [`score_bm25`] for how it is built.

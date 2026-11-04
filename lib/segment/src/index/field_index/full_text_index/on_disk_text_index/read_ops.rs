@@ -65,6 +65,10 @@ impl<S: UniversalRead> FullTextIndexRead for OnDiskFullTextIndex<S> {
         self.inverted_index.total_tokens()
     }
 
+    fn token_bytes(&self) -> OperationResult<u64> {
+        self.inverted_index.token_bytes()
+    }
+
     fn for_each_token_id<'a, U: UserData>(
         &self,
         iter: impl Iterator<Item = (U, &'a str)>,

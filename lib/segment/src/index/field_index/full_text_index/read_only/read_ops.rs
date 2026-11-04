@@ -111,6 +111,14 @@ impl<S: UniversalRead> FullTextIndexRead for ReadOnlyFullTextIndex<S> {
         }
     }
 
+    fn token_bytes(&self) -> OperationResult<u64> {
+        match self {
+            ReadOnlyFullTextIndex::Appendable(index) => index.token_bytes(),
+            ReadOnlyFullTextIndex::OnDisk(index) => index.token_bytes(),
+            ReadOnlyFullTextIndex::Immutable(index) => index.token_bytes(),
+        }
+    }
+
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             ReadOnlyFullTextIndex::Appendable(index) => index.values_is_empty(point_id),

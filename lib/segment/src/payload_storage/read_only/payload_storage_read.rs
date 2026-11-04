@@ -3,7 +3,7 @@ use common::generic_consts::{AccessPattern, Random, Sequential};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalRead;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::payload_storage::PayloadStorageRead;
 use crate::payload_storage::read_only::ReadOnlyPayloadStorage;
 use crate::types::{IoBackend, OwnedPayloadRef, Payload};
@@ -59,6 +59,24 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
             |user_data, _, bytes| callback(user_data, bytes),
             Some(HwMetric::PayloadIoRead),
         )
+    }
+
+    fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.storage
+            .view()
+            .read_value_lens::<P, _, OperationError>(
+                point_offsets,
+                |user_data, _, len| {
+                    callback(user_data, len)?;
+                    Ok(true)
+                },
+                Some(HwMetric::PayloadIoRead),
+            )?;
+        Ok(())
     }
 
     fn iter<F>(&self, mut callback: F) -> OperationResult<()>
