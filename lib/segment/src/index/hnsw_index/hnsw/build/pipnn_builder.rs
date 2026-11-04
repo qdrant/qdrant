@@ -16,10 +16,9 @@ use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use crate::index::hnsw_index::pipnn::{self, PipnnParams};
 use crate::vector_storage::matrix_scorer::{MatrixScorer, new_matrix_scorer};
 
-/// Fewest points for a PiPNN main graph: the smallest size where PiPNN was measured to build
-/// faster than HNSW. At 5,000 points it was slower, and level 0 graphs of about 1,025 to
-/// 4,000 points come out much worse than HNSW's. Lower it once the crossover is measured.
-const PIPNN_MIN_POINTS: usize = 100_000;
+/// Fewest points for a PiPNN main graph. At 5,000 points PiPNN built slower than HNSW, and
+/// level 0 graphs of about 1,025 to 4,000 points come out much worse than HNSW's.
+const PIPNN_MIN_POINTS: usize = 30_000;
 
 #[cfg(feature = "testing")]
 thread_local! {
