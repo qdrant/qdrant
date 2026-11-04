@@ -460,6 +460,15 @@ def get_leader(peer_api_uri: str, headers={}) -> str:
     return r.json()["result"]["raft_info"]["leader"]
 
 
+def get_leader_index(peer_api_uris: [str], headers={}) -> int:
+    """Index in `peer_api_uris` of the current leader, as seen by the first peer."""
+    leader = get_leader(peer_api_uris[0], headers=headers)
+    return next(
+        index for index, uri in enumerate(peer_api_uris)
+        if get_cluster_info(uri, headers=headers)["peer_id"] == leader
+    )
+
+
 def check_leader(peer_api_uri: str, expected_leader: str, headers={}) -> bool:
     try:
         r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
