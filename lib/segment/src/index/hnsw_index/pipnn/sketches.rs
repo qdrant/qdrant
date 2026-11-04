@@ -29,12 +29,13 @@
 //! summation doesn't matter. A tie sets the bit both ways, as `>=` does in the paper.
 //!
 //! The same pass also takes a 64-bit fingerprint of every projected vector, a hash of its values'
-//! bits, 8 bytes per point, from which [`super::duplicates`] finds identical vectors. They are
+//! bits with -0.0 as 0.0, 8 bytes per point, from which [`super::duplicates`] finds identical vectors. They are
 //! returned apart from the sketches, so that the build can free them once the duplicates are
 //! found, before its peak. Identical vectors get identical fingerprints and projections. A vector with a NaN gets none: it scores
 //! NaN against every point, its copies too, so it's no duplicate to the scorer, and its
 //! projections of 0 would match the zero vector's.
 
+use std::hash::{BuildHasher as _, Hasher as _};
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicBool;
@@ -283,6 +284,9 @@ fn project(
 
 /// A hash of the bits of `vector`, the same in every build of this binary. Only compared for
 /// equality, so it needn't be stable across versions.
+///
+/// -0.0 hashes as 0.0: it scores and projects the same, so vectors that differ only in the sign
+/// of a zero are copies to the graph. `vector` has no NaN, which has no fingerprint.
 fn fingerprint(vector: &[f32]) -> NonZeroU64 {
     // Fixed seeds: the default random state would differ between processes
     let state = ahash::RandomState::with_seeds(
@@ -291,8 +295,19 @@ fn fingerprint(vector: &[f32]) -> NonZeroU64 {
         0xa409_3822_299f_31d0,
         0x082e_fa98_ec4e_6c89,
     );
-    let hash = state.hash_one(bytemuck::cast_slice::<f32, u8>(vector));
-    NonZeroU64::new(hash).unwrap_or(NonZeroU64::MIN)
+    // Canonicalized through a buffer on the stack, a chunk at a time: a branch-free add, about
+    // as fast as hashing the vector as it is, where searching for -0.0 first was not
+    let mut hasher = state.build_hasher();
+    let mut buffer = [0.0f32; 256];
+    for chunk in vector.chunks(buffer.len()) {
+        let canonical = &mut buffer[..chunk.len()];
+        for (canonical, &x) in canonical.iter_mut().zip(chunk) {
+            // -0.0 + 0.0 is 0.0, and every other value stays as it is
+            *canonical = x + 0.0;
+        }
+        hasher.write(bytemuck::cast_slice::<f32, u8>(canonical));
+    }
+    NonZeroU64::new(hasher.finish()).unwrap_or(NonZeroU64::MIN)
 }
 
 /// `1 / ‖vector‖`, or 0 for the zero vector, which Cosine scores 0 against everything.
@@ -1097,6 +1112,33 @@ mod tests {
         for c in [0, 9] {
             assert_eq!(sketches.hash(3, c) ^ sketches.hash(c, 3), ALL);
         }
+    }
+
+    /// Vectors that differ only in the sign of a zero score the same, so they are the same
+    /// vector, while one that differs in a value isn't.
+    #[rstest]
+    fn signed_zeros_are_the_same_vector(
+        #[values(Distance::Dot, Distance::Cosine)] distance: Distance,
+    ) {
+        let _scope = ambient::test_guard();
+        let mut vectors = random_vectors(Kind::F32, distance, 3, DIM, 21);
+        vectors[0][5] = 0.0;
+        vectors[1] = vectors[0].clone();
+        vectors[1][5] = -0.0;
+        vectors[2] = vectors[0].clone();
+        vectors[2][6] = f32::from_bits(vectors[2][6].to_bits() ^ 1);
+        let fixture = Fixture::new(Kind::F32, distance, &vectors);
+        assert!(original(&fixture.storage, 1)[5].is_sign_negative());
+
+        let points = [0, 1, 2];
+        let (sketches, fingerprints) =
+            Sketches::new(&fixture.storage, &points, SEED, &AtomicBool::new(false))
+                .unwrap()
+                .unwrap();
+        assert_eq!(fingerprints.get(0), fingerprints.get(1));
+        assert!(fingerprints.same_vector(&sketches, 0, 1));
+        assert_ne!(fingerprints.get(0), fingerprints.get(2));
+        assert!(!fingerprints.same_vector(&sketches, 0, 2));
     }
 
     /// The LSH property: two candidates of a point share a bit with probability `1 - θ/π`, for
