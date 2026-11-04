@@ -3029,6 +3029,46 @@ fn test_cow_move_skips_destinations_that_would_form_a_flush_cycle() {
     );
 }
 
+/// When every destination would close a cycle, the move still goes through instead of
+/// failing the update, keeping the behavior from before the cycle check.
+#[test]
+fn test_cow_move_falls_back_when_every_destination_would_form_a_cycle() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut source = build_segment_2(dir.path());
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let looping_id = holder.add_new(build_segment_1(dir.path()));
+    let source_id = holder.add_new(source);
+    holder
+        .flush_dependency
+        .lock()
+        .add_dependency(looping_id, source_id, 5);
+
+    let _scope = ambient::test_guard();
+    holder
+        .apply_points_with_conditional_move(
+            100,
+            &[11.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            None,
+        )
+        .unwrap();
+
+    // Not flushed: the topology is cyclic on purpose, which a debug flush asserts against.
+    assert!(
+        holder
+            .get(looping_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred),
+        "the move should land in the only destination",
+    );
+}
+
 /// An appendable segment that still waits on a move out of it (left from a time it was
 /// proxied) does not count as a usable destination, so a fresh one gets provisioned.
 #[test]
@@ -3040,14 +3080,18 @@ fn test_appendable_segment_with_outgoing_moves_does_not_count() {
 
     let mut holder = SegmentHolder::default();
     let appendable_id = holder.add_new(build_segment_1(dir.path()));
+    let below_cap = NonZeroUsize::new(segment_size(&holder, appendable_id) + 1);
     let source_id = holder.add_new(source);
     assert!(holder.has_appendable_segment_with_capacity(None));
+    assert!(holder.has_appendable_segment_with_capacity(below_cap));
 
     holder
         .flush_dependency
         .lock()
         .add_dependency(appendable_id, source_id, 5);
     assert!(!holder.has_appendable_segment_with_capacity(None));
+    // Being below the size cap does not make up for the outgoing move.
+    assert!(!holder.has_appendable_segment_with_capacity(below_cap));
 
     // Once a flush retires the edge, the segment counts again.
     holder.flush_dependency.lock().retain(|_, _, _| false);
