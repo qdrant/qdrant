@@ -2,7 +2,6 @@
 
 use std::path::{Path, PathBuf};
 
-use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::PointOffsetType;
@@ -64,7 +63,6 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
-        gating: DeleteGating,
     ) -> OperationResult<bool> {
         if !DiskMappingReader::try_preopen(fs, segment_path, populate)? {
             return Ok(false);
@@ -76,10 +74,7 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             Some(Self::deleted_open_options()),
             None,
         );
-        match gating {
-            DeleteGating::Immediate => {}
-            DeleteGating::Held { gate: _ } => GatedDeleteLog::preopen(fs, segment_path),
-        }
+        GatedDeleteLog::preopen(fs, segment_path);
 
         Ok(true)
     }
@@ -104,9 +99,9 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
     }
 
     /// Like [`open`](Self::open), but returns `Ok(None)` when the segment is
-    /// not in the on-disk format (`i2e` absent). With [`DeleteGating::Held`],
-    /// the deletes come from the segment's delete log once it holds any: those
-    /// at or below the gate are applied, newer ones held.
+    /// not in the on-disk format (`i2e` absent). The deletes are the union of
+    /// the mask and the delete log. With [`DeleteGating::Held`], the log's
+    /// deletes at or below the gate are applied, newer ones held.
     pub fn try_open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
@@ -126,31 +121,18 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
             Default::default(),
         )?;
 
-        let mut gated = GatedDeleteLog::for_gating(segment_path, gating);
-        let logged = match gated.as_mut() {
-            Some(gated) => gated.read_new(fs)?,
-            None => None,
-        };
-        let deleted = match logged {
-            // The log, once started, holds every delete: the mask is not read
-            Some(slots) => {
-                let mut deleted = BitVec::repeat(false, deleted_file.bit_len() as usize);
-                for slot in slots {
-                    if let Some(mut bit) = deleted.get_mut(slot as usize) {
-                        *bit = true;
-                    }
-                }
-                deleted
-            }
-            None => deleted_file.read_all()?.into_owned(),
-        };
+        let mut delete_log = GatedDeleteLog::new(segment_path, gating);
+        let logged = delete_log.read_new(fs)?;
+        let deleted = deleted_file.read_all()?.into_owned();
 
-        Ok(Some(Self {
+        let mut tracker = Self {
             path: segment_path.to_path_buf(),
             reader,
             versions,
             deleted,
-            gated,
-        }))
+            delete_log,
+        };
+        tracker.delete_slots(logged);
+        Ok(Some(tracker))
     }
 }

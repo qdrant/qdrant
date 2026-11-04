@@ -1161,17 +1161,7 @@ mod store {
 
         let segment_path = dir.path().join(SEGMENTS_PATH).join(source.to_string());
         let mut log = DeleteLogReader::<MmapFile>::new(&segment_path);
-        let entries = log.read_new(&MmapFs).unwrap();
-        assert!(log.is_started());
-        // The log starts with the deletes the segment already held, at version 0
-        let (baseline, batch): (Vec<_>, Vec<_>) =
-            entries.into_iter().partition(|entry| entry.version == 0);
-        assert!(
-            !baseline
-                .iter()
-                .any(|entry| [moved_slot, deleted_slot].contains(&entry.slot)),
-        );
-        let mut batch = batch;
+        let mut batch = log.read_new(&MmapFs).unwrap();
         batch.sort_by_key(|entry| entry.slot);
         let mut expected = vec![
             DeleteLogEntry {
@@ -1192,20 +1182,13 @@ mod store {
         assert!(!ids.contains(&ExtendedPointId::NumId(600)));
     }
 
-    /// A writer that does not record versions starts no delete log in a segment without one.
+    /// A writer that does not record versions starts no delete log.
     #[test]
     fn legacy_deletes_start_no_log() {
         use segment::id_tracker::delete_versions::{DeleteVersioning, delete_log_path};
 
         let dir = vacuumed_leader("edge-update-delete-legacy");
         recreate_payload_storages_append_only(dir.path());
-        // The leader starts the log of the segments it builds when it records versions
-        for segment in fs_err::read_dir(dir.path().join(SEGMENTS_PATH)).unwrap() {
-            let log = delete_log_path(&segment.unwrap().path());
-            if log.exists() {
-                fs_err::remove_file(log).unwrap();
-            }
-        }
 
         let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path())
             .unwrap()

@@ -210,7 +210,7 @@ impl<Fs: UniversalReadFsAsync> LookupSegment<Fs> {
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
 
         ReadOnlyPayloadStorage::preopen(fs, segment_path.to_path_buf(), WRITER_POPULATE)?;
-        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, WRITER_POPULATE, DeleteGating::Immediate)?;
+        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, WRITER_POPULATE)?;
 
         for (vector_name, vector_config) in &config.vector_data {
             let path = get_vector_storage_path(segment_path, vector_name);

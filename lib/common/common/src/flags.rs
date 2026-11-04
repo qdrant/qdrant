@@ -94,9 +94,10 @@ pub struct FeatureFlags {
 
     /// Record the version of every delete a serverless writer makes, in formats older readers
     /// cannot parse: versioned delete entries in appendable mappings logs, and a delete log next to
-    /// the deleted mask of immutable segments. Followers use the versions to never apply the delete
-    /// of a moved point before they see its new copy. Gates writing only: both formats are always
-    /// readable, and a delete log that exists is always appended to.
+    /// the deleted mask of immutable segments, which takes their deletes in place of the mask.
+    /// Followers use the versions to never apply the delete of a moved point before they see its
+    /// new copy. Gates writing only: both formats are always read, and the deletes of an immutable
+    /// segment are the union of its mask and its log.
     pub versioned_deletes: bool,
 
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],

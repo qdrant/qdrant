@@ -1,20 +1,22 @@
-//! Every writer of an immutable or disk-resident segment's deleted mask keeps the delete log
-//! holding every delete.
+//! A delete of an immutable or disk-resident segment goes to the delete log or to the mask, and
+//! regular trackers read the union of the two.
 
 use std::path::Path;
 
+use common::mmap::AdviceSetting;
+use common::stored_bitslice::StoredBitSlice;
 use common::types::{DeferredBehavior, PointOffsetType};
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate};
 use tempfile::Builder;
 
 use super::{DeleteLogEntry, DeleteLogReader, DeleteLogWriter, DeleteVersioning, delete_log_path};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::disk_id_tracker::DiskIdTracker;
 use crate::id_tracker::disk_id_tracker::update_only::UpdateOnlyDiskIdTracker;
-use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::immutable_id_tracker::update_only::UpdateOnlyImmutableIdTracker;
+use crate::id_tracker::immutable_id_tracker::{DELETED_FILE_NAME, ImmutableIdTracker};
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-use crate::id_tracker::{IdTracker, IdTrackerRead};
+use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerRead};
 use crate::types::{PointIdType, SeqNumberType};
 
 const POINTS: u64 = 10;
@@ -26,6 +28,14 @@ fn num(id: u64) -> PointIdType {
 fn entry(slot: PointOffsetType, version: SeqNumberType) -> DeleteLogEntry {
     DeleteLogEntry { slot, version }
 }
+
+#[derive(Clone, Copy, Debug)]
+enum Format {
+    Immutable,
+    DiskResident,
+}
+
+const FORMATS: [Format; 2] = [Format::Immutable, Format::DiskResident];
 
 /// Points 0 to 9 at slots 0 to 9, all at version 3, point 2 deleted.
 fn data() -> (Vec<SeqNumberType>, CompressedPointMappings) {
@@ -41,132 +51,180 @@ fn data() -> (Vec<SeqNumberType>, CompressedPointMappings) {
     (versions, CompressedPointMappings::from_mappings(mappings))
 }
 
-fn build_immutable(path: &Path) -> ImmutableIdTracker<MmapFile> {
+fn build(format: Format, path: &Path) {
     let (versions, mappings) = data();
-    ImmutableIdTracker::new(&MmapFs, path, &versions, mappings).unwrap()
-}
-
-fn build_disk(path: &Path) -> DiskIdTracker<MmapFile> {
-    let (versions, mappings) = data();
-    DiskIdTracker::new(&MmapFs, path, &versions, mappings).unwrap()
-}
-
-fn read_log(path: &Path) -> Vec<DeleteLogEntry> {
-    let mut reader = DeleteLogReader::<MmapFile>::new(path);
-    let entries = reader.read_new(&MmapFs).unwrap();
-    assert!(reader.is_started());
-    entries
-}
-
-fn start_log(path: &Path) {
-    // The mask's current deletes, as a recording writer would start the log with
-    let mut writer = DeleteLogWriter::new(path);
-    let mut mask = common::bitvec::BitVec::repeat(false, POINTS as usize);
-    mask.set(2, true);
-    writer
-        .append(&MmapFs, DeleteVersioning::Record, &mask, &[])
-        .unwrap();
-}
-
-/// An update-only writer that records versions starts the log with the mask's deletes, then logs
-/// its own with their version, and sets them in the mask too.
-#[test]
-fn update_only_trackers_log_ahead_of_the_mask() {
-    for disk in [false, true] {
-        let dir = Builder::new().prefix("deletes").tempdir().unwrap();
-        if disk {
-            drop(build_disk(dir.path()));
-        } else {
-            drop(build_immutable(dir.path()));
+    match format {
+        Format::Immutable => {
+            drop(ImmutableIdTracker::<MmapFile>::new(&MmapFs, path, &versions, mappings).unwrap())
         }
-        assert!(!delete_log_path(dir.path()).exists(), "built without a log");
-
-        let points = [(num(5), 5), (num(7), 7)];
-        if disk {
-            let mut writer = UpdateOnlyDiskIdTracker::new(dir.path(), None).unwrap();
-            writer
-                .tombstone_points(&MmapFs, &points, 11, DeleteVersioning::Record)
-                .unwrap();
-            writer
-                .tombstone_points(&MmapFs, &[(num(8), 8)], 12, DeleteVersioning::Legacy)
-                .unwrap();
-        } else {
-            let mut writer = UpdateOnlyImmutableIdTracker::new(dir.path(), None).unwrap();
-            writer
-                .tombstone_points(&MmapFs, &points, 11, DeleteVersioning::Record)
-                .unwrap();
-            writer
-                .tombstone_points(&MmapFs, &[(num(8), 8)], 12, DeleteVersioning::Legacy)
-                .unwrap();
+        Format::DiskResident => {
+            drop(DiskIdTracker::<MmapFile>::new(&MmapFs, path, &versions, mappings).unwrap())
         }
-
-        assert_eq!(
-            read_log(dir.path()),
-            [entry(2, 0), entry(5, 11), entry(7, 11), entry(8, 12)],
-            "disk: {disk}",
-        );
-        let reopened = ImmutableIdTracker::<MmapFile>::open(&MmapFs, dir.path());
-        let deleted: Vec<_> = if disk {
-            let reopened = DiskIdTracker::<MmapFile>::open(
-                &MmapFs,
-                dir.path(),
-                common::universal_io::Populate::No,
-            )
-            .unwrap();
-            (0..POINTS as PointOffsetType)
-                .filter(|&slot| reopened.is_deleted_point(slot))
-                .collect()
-        } else {
-            let reopened = reopened.unwrap();
-            (0..POINTS as PointOffsetType)
-                .filter(|&slot| reopened.is_deleted_point(slot))
-                .collect()
-        };
-        assert_eq!(deleted, [2, 5, 7, 8], "disk: {disk}");
     }
 }
 
-/// A legacy update-only writer leaves a segment without a log without one.
+fn open_regular(format: Format, path: &Path) -> IdTrackerEnum {
+    match format {
+        Format::Immutable => IdTrackerEnum::ImmutableIdTracker(
+            ImmutableIdTracker::<MmapFile>::open(&MmapFs, path).unwrap(),
+        ),
+        Format::DiskResident => IdTrackerEnum::DiskIdTracker(
+            DiskIdTracker::<MmapFile>::open(&MmapFs, path, Populate::No).unwrap(),
+        ),
+    }
+}
+
+fn deleted_slots(tracker: &impl IdTrackerRead) -> Vec<PointOffsetType> {
+    (0..POINTS as PointOffsetType)
+        .filter(|&slot| tracker.is_deleted_point(slot))
+        .collect()
+}
+
+/// The slots the mask file of the segment at `path` holds.
+fn mask(path: &Path) -> Vec<PointOffsetType> {
+    StoredBitSlice::<MmapFile>::open(
+        &MmapFs,
+        path.join(DELETED_FILE_NAME),
+        OpenOptions {
+            writeable: false,
+            need_sequential: false,
+            populate: Populate::No,
+            advice: AdviceSetting::Global,
+        },
+        (),
+    )
+    .unwrap()
+    .read_all()
+    .unwrap()
+    .iter_ones()
+    .map(|slot| slot as PointOffsetType)
+    .filter(|&slot| slot < POINTS as PointOffsetType)
+    .collect()
+}
+
+fn read_log(path: &Path) -> Vec<DeleteLogEntry> {
+    DeleteLogReader::<MmapFile>::new(path)
+        .read_new(&MmapFs)
+        .unwrap()
+}
+
+fn tombstone(
+    format: Format,
+    path: &Path,
+    points: &[(PointIdType, PointOffsetType)],
+    version: SeqNumberType,
+    versioning: DeleteVersioning,
+) {
+    match format {
+        Format::Immutable => UpdateOnlyImmutableIdTracker::new(path, None)
+            .unwrap()
+            .tombstone_points(&MmapFs, points, version, versioning)
+            .unwrap(),
+        Format::DiskResident => UpdateOnlyDiskIdTracker::new(path, None)
+            .unwrap()
+            .tombstone_points(&MmapFs, points, version, versioning)
+            .unwrap(),
+    }
+}
+
+/// An update-only writer that records versions appends to the log and leaves the mask alone, a
+/// legacy one sets the mask and writes no log. A regular tracker reads the union.
+#[test]
+fn update_only_trackers_write_the_log_or_the_mask() {
+    for format in FORMATS {
+        let dir = Builder::new().prefix("deletes").tempdir().unwrap();
+        build(format, dir.path());
+        assert!(!delete_log_path(dir.path()).exists(), "built without a log");
+
+        let points = [(num(5), 5), (num(7), 7)];
+        tombstone(format, dir.path(), &points, 11, DeleteVersioning::Record);
+        tombstone(
+            format,
+            dir.path(),
+            &[(num(8), 8)],
+            12,
+            DeleteVersioning::Legacy,
+        );
+
+        assert_eq!(
+            read_log(dir.path()),
+            [entry(5, 11), entry(7, 11)],
+            "{format:?}",
+        );
+        assert_eq!(mask(dir.path()), [2, 8], "{format:?}");
+        assert_eq!(
+            deleted_slots(&open_regular(format, dir.path())),
+            [2, 5, 7, 8],
+            "{format:?}",
+        );
+    }
+}
+
+/// A legacy update-only writer starts no log.
 #[test]
 fn legacy_update_only_writer_starts_no_log() {
     let dir = Builder::new().prefix("deletes").tempdir().unwrap();
-    drop(build_immutable(dir.path()));
-    let mut writer = UpdateOnlyImmutableIdTracker::new(dir.path(), None).unwrap();
-    writer
-        .tombstone_points(&MmapFs, &[(num(5), 5)], 11, DeleteVersioning::Legacy)
-        .unwrap();
+    build(Format::Immutable, dir.path());
+    tombstone(
+        Format::Immutable,
+        dir.path(),
+        &[(num(5), 5)],
+        11,
+        DeleteVersioning::Legacy,
+    );
     assert!(!delete_log_path(dir.path()).exists());
 }
 
-/// A regular tracker deleting in a segment with a log logs the delete on flush, with the version
-/// the delete stamped on the point, and lists the log among its files.
+/// A recording update-only writer refuses a slot beyond the segment.
 #[test]
-fn regular_trackers_log_their_deletes() {
-    let dir = Builder::new().prefix("deletes").tempdir().unwrap();
-    let tracker = build_immutable(dir.path());
-    assert_regular_tracker_logs(dir.path(), tracker);
-
-    let dir = Builder::new().prefix("deletes").tempdir().unwrap();
-    let tracker = build_disk(dir.path());
-    assert_regular_tracker_logs(dir.path(), tracker);
+fn recording_writer_checks_slots() {
+    for format in FORMATS {
+        let dir = Builder::new().prefix("deletes").tempdir().unwrap();
+        build(format, dir.path());
+        let result = match format {
+            Format::Immutable => UpdateOnlyImmutableIdTracker::new(dir.path(), None)
+                .unwrap()
+                .tombstone_points(&MmapFs, &[(num(99), 999)], 4, DeleteVersioning::Record),
+            Format::DiskResident => UpdateOnlyDiskIdTracker::new(dir.path(), None)
+                .unwrap()
+                .tombstone_points(&MmapFs, &[(num(99), 999)], 4, DeleteVersioning::Record),
+        };
+        assert!(result.is_err(), "{format:?}");
+        assert!(!delete_log_path(dir.path()).exists(), "{format:?}");
+    }
 }
 
-fn assert_regular_tracker_logs(path: &Path, mut tracker: impl IdTracker) {
-    assert!(!tracker.files().contains(&delete_log_path(path)));
-    start_log(path);
-    assert!(tracker.files().contains(&delete_log_path(path)));
+/// A regular tracker applies the log's deletes at open, writes its own to the mask only, and lists
+/// the log among its files.
+#[test]
+fn regular_trackers_read_the_union_and_write_the_mask() {
+    for format in FORMATS {
+        let dir = Builder::new().prefix("deletes").tempdir().unwrap();
+        build(format, dir.path());
+        DeleteLogWriter::new(dir.path())
+            .append(&MmapFs, &[entry(4, 5)])
+            .unwrap();
 
-    // As a segment deletes: drop the point, then stamp its slot with the operation number
-    let slot = tracker
-        .internal_id_with_behavior(num(6), DeferredBehavior::VisibleOnly)
-        .unwrap();
-    tracker.drop(num(6)).unwrap();
-    tracker.set_internal_version(slot, 21).unwrap();
-    tracker.mapping_flusher()().unwrap();
-    tracker.versions_flusher()().unwrap();
+        let mut tracker = open_regular(format, dir.path());
+        assert!(tracker.files().contains(&delete_log_path(dir.path())));
+        assert!(tracker.is_deleted_point(4), "{format:?}");
+        assert!(
+            tracker
+                .internal_id_with_behavior(num(4), DeferredBehavior::VisibleOnly)
+                .is_none()
+        );
 
-    // Nothing new, nothing logged
-    tracker.mapping_flusher()().unwrap();
+        tracker.drop(num(6)).unwrap();
+        tracker.mapping_flusher()().unwrap();
+        tracker.versions_flusher()().unwrap();
+        drop(tracker);
 
-    assert_eq!(read_log(path), [entry(2, 0), entry(6, 21)]);
+        assert_eq!(read_log(dir.path()), [entry(4, 5)], "{format:?}");
+        assert_eq!(mask(dir.path()), [2, 6], "{format:?}");
+        assert_eq!(
+            deleted_slots(&open_regular(format, dir.path())),
+            [2, 4, 6],
+            "{format:?}",
+        );
+    }
 }

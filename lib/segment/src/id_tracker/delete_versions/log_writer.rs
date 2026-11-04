@@ -1,19 +1,17 @@
-//! The write half of a delete log, used by every tracker that writes the deleted mask of an
-//! immutable or disk-resident segment.
+//! The write half of a delete log, used by the update-only trackers of immutable and
+//! disk-resident segments when they record delete versions.
 
 use std::path::{Path, PathBuf};
 
-use common::bitvec::BitSlice;
 use common::generic_consts::Sequential;
 use common::mmap::{Advice, AdviceSetting};
-use common::types::PointOffsetType;
 use common::universal_io::{
     IsNotFound as _, OkNotFound as _, OpenOptions, Populate, UniversalAppend, UniversalAppendFs,
     UniversalFlush as _, UniversalRead,
 };
 
 use super::log_format::{HEADER_LEN, decode_frames, encode_frame, encode_header, has_header};
-use super::{DeleteLogEntry, DeleteVersioning, delete_log_path};
+use super::{DeleteLogEntry, delete_log_path};
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// Appends frames of deletes to the delete log of one segment.
@@ -41,56 +39,25 @@ impl DeleteLogWriter {
         }
     }
 
-    /// Whether the log has a header, so the segment uses it.
-    pub fn is_started<Fs: UniversalAppendFs>(&mut self, fs: &Fs) -> OperationResult<bool> {
-        let end = match self.end {
-            Some(end) => end,
-            None => self.find_end(fs)?,
-        };
-        Ok(end > 0)
-    }
-
-    /// Durably append `entries` as one frame, if the segment uses a delete log.
-    ///
-    /// A segment uses one once its log has a header. Without one, [`DeleteVersioning::Record`]
-    /// starts the log: the header, then one entry at version 0 for every point already deleted in
-    /// `mask`, the segment's deleted mask before these deletes. That makes the log hold every
-    /// delete of the segment, so a reader can take them from the log alone. With
-    /// [`DeleteVersioning::Legacy`], a segment without a log keeps having none.
-    ///
-    /// Starting a log with no `entries` writes the header and the mask's deletes only.
+    /// Durably append `entries` as one frame, writing the header first if the log has none yet.
+    /// Nothing is written for no entries.
     pub fn append<Fs: UniversalAppendFs>(
         &mut self,
         fs: &Fs,
-        versioning: DeleteVersioning,
-        mask: &BitSlice,
         entries: &[DeleteLogEntry],
     ) -> OperationResult<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
         let end = match self.end {
             Some(end) => end,
             None => self.find_end(fs)?,
         };
-        let start_log = end == 0;
         let mut buffer = Vec::new();
-        if start_log {
-            match versioning {
-                DeleteVersioning::Record => {}
-                DeleteVersioning::Legacy => return Ok(()),
-            }
+        if end == 0 {
             encode_header(&mut buffer);
-            let baseline: Vec<DeleteLogEntry> = mask
-                .iter_ones()
-                .map(|slot| DeleteLogEntry {
-                    slot: slot as PointOffsetType,
-                    version: 0,
-                })
-                .collect();
-            encode_frame(&baseline, &mut buffer);
         }
         encode_frame(entries, &mut buffer);
-        if buffer.is_empty() {
-            return Ok(());
-        }
 
         let mut file = open_append(fs, &self.path)?;
         if let Err(err) = file.append(end, &buffer) {

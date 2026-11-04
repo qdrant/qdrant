@@ -12068,7 +12068,7 @@
             "type": "boolean"
           },
           "versioned_deletes": {
-            "description": "Record the version of every delete a serverless writer makes, in formats older readers cannot parse: versioned delete entries in appendable mappings logs, and a delete log next to the deleted mask of immutable segments. Followers use the versions to never apply the delete of a moved point before they see its new copy. Gates writing only: both formats are always readable, and a delete log that exists is always appended to.",
+            "description": "Record the version of every delete a serverless writer makes, in formats older readers cannot parse: versioned delete entries in appendable mappings logs, and a delete log next to the deleted mask of immutable segments, which takes their deletes in place of the mask. Followers use the versions to never apply the delete of a moved point before they see its new copy. Gates writing only: both formats are always read, and the deletes of an immutable segment are the union of its mask and its log.",
             "default": false,
             "type": "boolean"
           },

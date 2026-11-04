@@ -68,7 +68,7 @@ impl<Fs: UniversalReadFsAsync> TrackerLookup<Fs> {
             config,
         } = read_json_via(fs, segment_path.join(SEGMENT_STATE_FILE))?;
 
-        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, WRITER_POPULATE, DeleteGating::Immediate)?;
+        ReadOnlyIdTrackerEnum::preopen(fs, segment_path, WRITER_POPULATE)?;
 
         Ok(config)
     }

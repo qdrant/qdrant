@@ -12,7 +12,7 @@ use super::DiskIdTracker;
 use super::mappings::DiskMappingsSource as _;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::id_tracker::delete_versions::{DeleteLogEntry, DeleteVersioning, existing_delete_log};
+use crate::id_tracker::delete_versions::existing_delete_log;
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::{DELETED_POINT_VERSION, IdTracker};
 use crate::types::{PointIdType, SeqNumberType};
@@ -47,7 +47,7 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
             && !self.point_deleted(internal_id)?
         {
             self.deleted.set(internal_id as usize, true);
-            self.deleted_wrapper.delete(internal_id);
+            self.deleted_wrapper.set(internal_id as usize, true);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
@@ -55,28 +55,14 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
         self.deleted.set(internal_id as usize, true);
-        self.deleted_wrapper.delete(internal_id);
+        self.deleted_wrapper.set(internal_id as usize, true);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         Ok(())
     }
 
-    /// Only deletions are flushed, the mapping is immutable: to the delete log, if the segment
-    /// uses one, then to the mask. A deleted point's version is the one the delete stamped on it.
+    /// Only deletions are flushed; the mapping is immutable.
     fn mapping_flusher(&self) -> Flusher {
-        let entries = self
-            .deleted_wrapper
-            .unlogged()
-            .into_iter()
-            .map(|slot| DeleteLogEntry {
-                slot,
-                version: self
-                    .internal_to_version
-                    .get(slot)
-                    .unwrap_or(DELETED_POINT_VERSION),
-            })
-            .collect();
-        self.deleted_wrapper
-            .flusher(entries, DeleteVersioning::from_feature_flags())
+        self.deleted_wrapper.flusher()
     }
 
     fn versions_flusher(&self) -> Flusher {

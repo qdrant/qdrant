@@ -197,7 +197,6 @@ fn deletes_record_the_given_version() {
         .unwrap()
         .into_iter()
         .map(|entry| entry.version)
-        .filter(|&version| version != 0)
         .collect();
     assert_eq!(versions, [NEWER + 7; 3]);
 }

@@ -20,7 +20,7 @@ pub struct ReadOnlyImmutableIdTracker<S: UniversalRead> {
     deleted: StoredBitSlice<S>,
     internal_to_version: CompressedVersions,
     mappings: CompressedPointMappings,
-    /// The delete log and the deletes held from it, `None` unless the tracker gates versioned
-    /// deletes, see [`GatedDeleteLog::for_gating`].
-    gated: Option<GatedDeleteLog<S>>,
+    /// The delete log and the deletes held from it. The segment's deletes are the union of the
+    /// log and `deleted`.
+    delete_log: GatedDeleteLog<S>,
 }
