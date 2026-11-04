@@ -205,6 +205,17 @@ where
         }
     }
 
+    /// Whether this storage supports [`Self::delete_value`].
+    ///
+    /// Logstore rejects deletes; callers that only need a soft deletion marker must
+    /// skip the hard delete themselves.
+    pub fn supports_delete(&self) -> bool {
+        match &self.inner {
+            BlobstoreInner::Gridstore(_) => true,
+            BlobstoreInner::Logstore(_) => false,
+        }
+    }
+
     /// Delete a value from the storage.
     ///
     /// Returns None if the point_offset, page, or value was not found.
