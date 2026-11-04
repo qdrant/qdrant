@@ -2966,3 +2966,90 @@ fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
          changes log",
     );
 }
+
+/// A copy-on-write move must not pick a destination that already depends on the
+/// source in the flush topology: the new edge would close a cycle no flush order can
+/// honor (#11184). The move goes to another appendable segment instead, and only when
+/// every candidate would close a cycle does it fall back to the previous choice.
+#[test]
+fn test_cow_move_skips_destinations_that_would_form_a_flush_cycle() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut source = build_segment_2(dir.path());
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    // Added first, so `aloha_random_write` would pick it without the cycle check
+    let looping_id = holder.add_new(build_segment_1(dir.path()));
+    let free_id = holder.add_new(empty_segment(dir.path()));
+    let source_id = holder.add_new(source);
+
+    // `looping_id` still waits on `source_id`, e.g. an unflushed move out of it while it
+    // was proxied.
+    holder
+        .flush_dependency
+        .lock()
+        .add_dependency(looping_id, source_id, 5);
+
+    let _scope = ambient::test_guard();
+    holder
+        .apply_points_with_conditional_move(
+            100,
+            &[11.into()],
+            |_, _| unreachable!("the point's segment is non-appendable, it must be moved"),
+            |_, _, _, _| {},
+            None,
+        )
+        .unwrap();
+
+    let has_point = |id| {
+        holder
+            .get(id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(11.into(), common::types::DeferredBehavior::WithDeferred)
+    };
+    assert!(
+        has_point(free_id),
+        "the move should avoid the looping segment"
+    );
+    assert!(!has_point(looping_id));
+    let flush_dependency = holder.flush_dependency.lock();
+    assert!(!flush_dependency.reaches(&source_id, &source_id));
+    assert!(!flush_dependency.reaches(&looping_id, &looping_id));
+    drop(flush_dependency);
+
+    // With the looping segment as the only candidate, the move still happens.
+    assert_eq!(
+        holder
+            .acyclic_cow_destinations(source_id, &[looping_id])
+            .as_ref(),
+        &[looping_id],
+    );
+}
+
+/// An appendable segment that still waits on a move out of it (left from a time it was
+/// proxied) does not count as a usable destination, so a fresh one gets provisioned.
+#[test]
+fn test_appendable_segment_with_outgoing_moves_does_not_count() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut source = build_segment_2(dir.path());
+    source.appendable_flag = false;
+
+    let mut holder = SegmentHolder::default();
+    let appendable_id = holder.add_new(build_segment_1(dir.path()));
+    let source_id = holder.add_new(source);
+    assert!(holder.has_appendable_segment_with_capacity(None));
+
+    holder
+        .flush_dependency
+        .lock()
+        .add_dependency(appendable_id, source_id, 5);
+    assert!(!holder.has_appendable_segment_with_capacity(None));
+
+    // Once a flush retires the edge, the segment counts again.
+    holder.flush_dependency.lock().retain(|_, _, _| false);
+    assert!(holder.has_appendable_segment_with_capacity(None));
+}
