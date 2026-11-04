@@ -367,6 +367,34 @@ where
         }
     }
 
+    /// Length of each value's [`Self::read_values_bytes`] bytes, see
+    /// [`BlobstoreView::read_value_lens`].
+    pub fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<(), E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<(), E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let callback = |user_data, point_offset, len| -> Result<_, E> {
+            callback(user_data, point_offset, len)?;
+            Ok(true)
+        };
+        match &self.inner {
+            BlobstoreInner::Gridstore(storage) => storage.with_view(|view| {
+                view.read_value_lens::<P, U, E>(point_offsets, callback, hw_metric)
+            })?,
+            BlobstoreInner::Logstore(storage) => storage.with_view(|view| {
+                view.read_value_lens::<P, U, E>(point_offsets, callback, hw_metric)
+            })?,
+        };
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn get_pointer(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         match &self.inner {

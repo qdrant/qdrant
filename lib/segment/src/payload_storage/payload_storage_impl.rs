@@ -160,6 +160,18 @@ where
         )
     }
 
+    fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        self.storage.read_value_lens::<P, _, _>(
+            point_offsets,
+            |user_data, _, len| callback(user_data, len),
+            Some(HwMetric::PayloadIoRead),
+        )
+    }
+
     fn iter<F>(&self, mut callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
