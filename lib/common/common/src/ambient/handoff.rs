@@ -24,19 +24,9 @@ pub fn unmeasured<R>(reason: Reason, f: impl FnOnce() -> R) -> R {
     f()
 }
 
-/// Guard version of [`unmeasured`]. Don't hold it across `.await`.
+/// Guard version of [`unmeasured`].
 pub fn unmeasured_guard(_: Reason) -> Scope {
     Scope::unmeasured()
-}
-
-#[cfg(any(test, feature = "testing"))]
-pub fn test<R>(f: impl FnOnce() -> R) -> R {
-    unmeasured(crate::reason::reason("Test code"), f)
-}
-
-#[cfg(any(test, feature = "testing"))]
-pub fn test_guard() -> Scope {
-    unmeasured_guard(crate::reason::reason("Test code"))
 }
 
 /// A scope that can be entered elsewhere.
@@ -59,7 +49,7 @@ impl Handoff {
         slot::enter(self, f)
     }
 
-    /// Guard version of [`Self::enter`]. Don't hold it across `.await`.
+    /// Guard version of [`Self::enter`].
     pub fn enter_guard(&self) -> Scope {
         self.clone().into_scope()
     }

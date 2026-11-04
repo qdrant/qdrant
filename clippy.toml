@@ -1,3 +1,6 @@
+await-holding-invalid-types = [
+  { path = "common::ambient::Scope" },
+]
 
 disallowed-types = [
   # Use fs_err instead of std::fs and tokio::fs
