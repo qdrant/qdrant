@@ -118,10 +118,14 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
         }
     }
 
-    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
+    pub fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<Option<V>> {
         match self {
-            Self::Gridstore(reader) => reader.get_value::<P>(point_offset),
-            Self::Logstore(reader) => reader.get_value::<P>(point_offset),
+            Self::Gridstore(reader) => reader.get_value::<P>(point_offset, hw_metric),
+            Self::Logstore(reader) => reader.get_value::<P>(point_offset, hw_metric),
         }
     }
 
@@ -132,10 +136,11 @@ impl<V: Blob, S: UniversalRead> BlobstoreReader<V, S> {
     pub fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: Option<HwMetric>,
     ) -> Result<Option<Vec<u8>>> {
         match self {
-            Self::Gridstore(reader) => reader.get_value_bytes::<P>(point_offset),
-            Self::Logstore(reader) => reader.get_value_bytes::<P>(point_offset),
+            Self::Gridstore(reader) => reader.get_value_bytes::<P>(point_offset, hw_metric),
+            Self::Logstore(reader) => reader.get_value_bytes::<P>(point_offset, hw_metric),
         }
     }
 

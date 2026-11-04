@@ -183,7 +183,7 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc_len(&self, idx: PointOffsetType) -> Option<u32> {
         use common::generic_consts::Random;
-        ambient::test(|| self.storage.get_value::<Random>(idx))
+        ambient::test(|| self.storage.get_value::<Random>(idx, None))
             .unwrap()
             .and_then(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().doc_len)
     }
@@ -192,7 +192,7 @@ impl MutableFullTextIndex {
     #[cfg(test)]
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<Vec<String>> {
         use common::generic_consts::Random;
-        ambient::test(|| self.storage.get_value::<Random>(idx))
+        ambient::test(|| self.storage.get_value::<Random>(idx, None))
             .unwrap()
             .map(|bytes| FullTextIndex::deserialize_document(&bytes).unwrap().tokens)
     }
