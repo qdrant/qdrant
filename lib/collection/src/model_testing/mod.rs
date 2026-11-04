@@ -659,8 +659,7 @@ pub async fn run(
     // Read once: feature flags are process-global and stable for the run. Edge-verify and
     // `--append-only-mutations` both set this; masking DeleteVectors* must follow so the
     // harness never emits Logstore-incompatible named-vector deletes.
-    let append_only = common::flags::feature_flags().append_only_mutations;
-    let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots, append_only);
+    let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
     let initial_enabled = swarm.enabled_ops();
     trace.swarm(0, &initial_enabled);
     println!("model_testing: op:0 swarm -> {initial_enabled:?}");
@@ -732,7 +731,7 @@ pub async fn run(
         // Recompute the swarm config at each interval boundary (op 0 was drawn before the loop).
         if i > 0 && i.is_multiple_of(swarm_interval) {
             let prev = swarm.enabled_ops();
-            swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots, append_only);
+            swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
             let next = swarm.enabled_ops();
             // Trace keeps the full enabled set (for reproducibility); the console shows only the
             // delta vs. the previous config — that's what changed.
