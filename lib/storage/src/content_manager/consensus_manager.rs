@@ -53,8 +53,10 @@ pub mod prelude {
     pub type ConsensusState = super::ConsensusManager<TableOfContent>;
 }
 
-/// Allow us updating our peer metadata once every 60 seconds
-const CONSENSUS_PEER_METADATA_UPDATE_INTERVAL: Duration = Duration::from_secs(60);
+/// Minimum delay between proposals of our peer metadata while it is outdated in consensus.
+///
+/// A proposal is dropped if the leader changes before it commits, so this is also the retry delay.
+const CONSENSUS_PEER_METADATA_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotData {
