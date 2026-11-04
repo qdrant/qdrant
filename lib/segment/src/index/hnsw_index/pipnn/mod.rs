@@ -13,6 +13,11 @@
 //! 4. Final prune ([`prune`]): the HNSW heuristic cuts each reservoir down to the degree limit.
 //! 5. Fallback links ([`link_empty_lists`]): a point left without links, such as one with a NaN
 //!    in its vector, links the next point of its level that has links.
+//! 6. Backlinks ([`backlinks`]): every point is appended to the lists of its links that have
+//!    room, as HNSW links back every point it inserts.
+//!
+//! Identical vectors ([`duplicates`]) are built once per level, over the lowest point of each
+//! group, and the other copies are linked behind it as a chain, so that every copy is reachable.
 //!
 //! [`build_links`] builds each HNSW level this way, independently, from the levels the caller
 //! assigned. The paper builds one flat graph; the levels are our adaptation.
@@ -64,11 +69,15 @@
 //! | Partitioning, fanout 10 | about 100 | Partitioning, before the reservoirs |
 //! | Result, before the links | about 50 | Throughout |
 //! | Sketches | 48 | Throughout |
+//! | Fingerprints | 8 | Until the duplicates are found, before partitioning |
 //! | Links | 4 per link | From the final prune on |
+//! | Backlinks, sorted | 8 per link | Backlinks, after the reservoirs are freed |
 //!
 //! That's a peak of about 0.9 GB at 1M points, during the leaf k-NN of level 0, on top of the
 //! vectors. A reservoir factor of 4 doubles the reservoirs, to about 1.5 GB.
 
+mod backlinks;
+mod duplicates;
 mod hash_prune;
 mod leaf;
 mod partition;
@@ -76,6 +85,7 @@ mod progress;
 mod prune;
 mod sketches;
 
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -210,7 +220,9 @@ pub(super) fn build_links(
     // sketches and every level draw from different seeds, and a level's seed doesn't depend on
     // how many levels there are
     let mut seeds = StdRng::seed_from_u64(params.seed);
-    let Some(sketches) = Sketches::new(vector_storage, points, seeds.random(), stopped)? else {
+    let Some((sketches, fingerprints)) =
+        Sketches::new(vector_storage, points, seeds.random(), stopped)?
+    else {
         return Ok(None);
     };
     log::debug!(
@@ -227,18 +239,34 @@ pub(super) fn build_links(
     let levels = links.iter().map(Vec::len).max().unwrap_or(0);
     let level_seeds: Vec<u64> = (0..levels).map(|_| seeds.random()).collect();
 
-    // The points of each level, which fix the total of the progress
+    // Identical vectors of each level, of which only the first of each group is built. The
+    // fingerprints aren't needed after this, so they don't add to the peak.
+    let all_groups = duplicates::find(points, &sketches, &fingerprints);
+    drop(fingerprints);
+    let level_groups: Vec<_> = (0..levels)
+        .map(|level| match level {
+            0 => all_groups.clone(),
+            _ => duplicates::restrict(&all_groups, |point| point_level(point) >= level),
+        })
+        .collect();
+    drop(all_groups);
+
+    // The points of each level, and how many of them the level is built over, which fix the
+    // total of the progress
     let mut level_lens = vec![0; levels];
     for lists in &links {
         level_lens[..lists.len()]
             .iter_mut()
             .for_each(|len| *len += 1);
     }
-    // Without pairs or a degree limit, a level has no links
-    let has_links = |level: usize| level_lens[level] >= 2 && hnsw_m.level_m(level) > 0;
+    let built_lens: Vec<usize> = std::iter::zip(&level_lens, &level_groups)
+        .map(|(&len, groups)| len - duplicates::copies(groups))
+        .collect();
+    // Without pairs or a degree limit, a level isn't built
+    let has_links = |level: usize| built_lens[level] >= 2 && hnsw_m.level_m(level) > 0;
     let total = (0..levels)
         .filter(|&level| has_links(level))
-        .map(|level| LevelProgress::units(level_lens[level]))
+        .map(|level| LevelProgress::units(built_lens[level]))
         .sum();
     let counter = progress.track_progress(Some(total));
 
@@ -259,19 +287,42 @@ pub(super) fn build_links(
             .collect();
         debug_assert_eq!(level_points.len(), level_lens[level]);
         let level_m = hnsw_m.level_m(level);
-        if has_links(level) {
-            let progress = LevelProgress::new(&counter, level_points.len());
-            let level_links = build.level(level, &level_points, level_m, seed, progress)?;
-            debug_assert_eq!(level_links.len(), level_points.len());
-            let on_level = links.iter_mut().filter(|lists| lists.len() > level);
-            for (lists, level_links) in on_level.zip(level_links) {
-                lists[level] = level_links;
-            }
-        } else {
+        let groups = &level_groups[level];
+        if level_m == 0 || level_points.len() < 2 {
             log::debug!(
                 "PiPNN level {level}: {} points, level m {level_m}, no links",
                 level_points.len(),
             );
+            continue;
+        }
+
+        let built = if groups.is_empty() {
+            Cow::Borrowed(&level_points)
+        } else {
+            Cow::Owned(duplicates::representatives(&level_points, groups))
+        };
+        debug_assert_eq!(built.len(), built_lens[level]);
+        let built_links = if has_links(level) {
+            let progress = LevelProgress::new(&counter, built.len());
+            build.level(level, &built, level_m, seed, progress)?
+        } else {
+            // Copies of one vector only, which the chain links
+            vec![Vec::new(); built.len()]
+        };
+        let level_links = if groups.is_empty() {
+            built_links
+        } else {
+            log::debug!(
+                "PiPNN level {level}: {} copies of {} vectors linked as chains",
+                duplicates::copies(groups),
+                groups.len(),
+            );
+            duplicates::link_copies(&level_points, &built, built_links, groups, level_m)
+        };
+        debug_assert_eq!(level_links.len(), level_points.len());
+        let on_level = links.iter_mut().filter(|lists| lists.len() > level);
+        for (lists, level_links) in on_level.zip(level_links) {
+            lists[level] = level_links;
         }
     }
 
@@ -490,21 +541,32 @@ impl Build<'_, '_> {
         )?;
         drop(reservoirs);
         let not_deleted = self.vector_storage.not_deleted_checker(self.point_deleted);
+        // Points without candidates of their own get fallback links only, and no backlinks, nor
+        // do deleted points, which `points` shouldn't hold
+        let has_candidates: Vec<bool> = links.iter().map(|links| !links.is_empty()).collect();
         let fallbacks = link_empty_lists(&mut links, points, &not_deleted);
         let prune_time = timer.elapsed();
 
+        let timer = Instant::now();
+        let pruned: usize = links.iter().map(Vec::len).sum();
+        let backlinks = backlinks::add_backlinks(&mut links, points, level_m, |i| {
+            has_candidates[i] && not_deleted.check_infallible(points[i])
+        });
+        let backlinks_time = timer.elapsed();
+
         let len = points.len() as f64;
-        let linked: usize = links.iter().map(Vec::len).sum();
         log::debug!(
             "PiPNN level {level}: {} points, {} leaves of {:.1} points, each point in {:.1}, leaf \
-             k {}, {:.1} links per point, {fallbacks} fallback links; partitioning {:.2?}, leaf \
-             k-NN {:.2?}, final prune {prune_time:.2?}",
+             k {}, {:.1} links per point after the prune, {fallbacks} fallback links, {:.1} \
+             after {backlinks} backlinks; partitioning {:.2?}, leaf k-NN {:.2?}, final prune \
+             {prune_time:.2?}, backlinks {backlinks_time:.2?}",
             points.len(),
             stats.leaves,
             stats.memberships as f64 / stats.leaves as f64,
             stats.memberships as f64 / len,
             stats.leaf_k,
-            linked as f64 / len,
+            pruned as f64 / len,
+            (pruned + backlinks) as f64 / len,
             stats.partition_time,
             stats.leaf_knn_time,
         );
@@ -667,11 +729,20 @@ mod orchestration_tests {
         /// Makes the vectors of `points` NaN in every dimension. Only without quantization,
         /// whose vectors would keep the old values.
         fn set_nan(&mut self, points: impl IntoIterator<Item = PointOffsetType>) {
+            self.set_vector(points, &[VectorElementType::NAN; DIM]);
+        }
+
+        /// Gives all of `points` the vector `vector`. Only without quantization, whose vectors
+        /// would keep the old values.
+        fn set_vector(
+            &mut self,
+            points: impl IntoIterator<Item = PointOffsetType>,
+            vector: &[VectorElementType],
+        ) {
             assert!(self.quantized.is_none(), "quantized vectors aren't updated");
-            let nan = vec![VectorElementType::NAN; DIM];
             for point in points {
                 self.storage
-                    .insert_vector(point, VectorRef::from(&nan))
+                    .insert_vector(point, VectorRef::from(vector))
                     .unwrap();
             }
         }
@@ -716,13 +787,23 @@ mod orchestration_tests {
             let (done, total) = done_and_total(&view);
             match &links {
                 Ok(Some(_)) => {
-                    let want = Some(progress_total(points, levels, hnsw_m));
+                    let groups = self.groups(points);
+                    let want = Some(progress_total(points, levels, hnsw_m, &groups));
                     assert_eq!((done, total), (want, want), "progress");
                 }
                 Ok(None) => assert_eq!((done, total), (None, None), "progress"),
                 Err(_) => assert!(done <= total, "progress {done:?} of {total:?}"),
             }
             links
+        }
+
+        /// The groups of identical vectors among `points`, which aren't built but chained.
+        fn groups(&self, points: &[PointOffsetType]) -> Vec<Vec<PointOffsetType>> {
+            let stopped = AtomicBool::new(false);
+            let (sketches, fingerprints) = Sketches::new(&self.storage, points, 0, &stopped)
+                .unwrap()
+                .unwrap();
+            duplicates::find(points, &sketches, &fingerprints)
         }
 
         fn build(&self, points: &[PointOffsetType], levels: &[usize]) -> Links {
@@ -741,7 +822,7 @@ mod orchestration_tests {
             stats: &mut LevelStats,
         ) -> (Reservoirs, Sketches) {
             let stopped = AtomicBool::new(false);
-            let sketches = Sketches::new(&self.storage, points, 3, &stopped)
+            let (sketches, _) = Sketches::new(&self.storage, points, 3, &stopped)
                 .unwrap()
                 .unwrap();
             let scorer = self.scorer();
@@ -763,14 +844,18 @@ mod orchestration_tests {
     }
 
     /// Progress units of a build of `points` with `levels` by id: [`LevelProgress::units`] for
-    /// each level with at least 2 points and a degree limit.
-    fn progress_total(points: &[PointOffsetType], levels: &[usize], hnsw_m: HnswM) -> u64 {
+    /// each level with at least 2 points besides the copies of `groups` and a degree limit.
+    fn progress_total(
+        points: &[PointOffsetType],
+        levels: &[usize],
+        hnsw_m: HnswM,
+        groups: &[Vec<PointOffsetType>],
+    ) -> u64 {
         let top = points.iter().map(|&point| levels[point as usize]).max();
         let level_units = |level| {
-            let len = points
-                .iter()
-                .filter(|&&point| levels[point as usize] >= level)
-                .count();
+            let on_level = |point: PointOffsetType| levels[point as usize] >= level;
+            let copies = duplicates::copies(&duplicates::restrict(groups, on_level));
+            let len = points.iter().filter(|&&point| on_level(point)).count() - copies;
             if len >= 2 && hnsw_m.level_m(level) > 0 {
                 LevelProgress::units(len)
             } else {
@@ -1322,7 +1407,7 @@ mod orchestration_tests {
             links.unwrap().unwrap();
             sampler.join().unwrap()
         });
-        let total = progress_total(&fixture.points, &levels, hnsw_m());
+        let total = progress_total(&fixture.points, &levels, hnsw_m(), &[]);
         assert!(
             samples
                 .iter()
@@ -1396,7 +1481,7 @@ mod orchestration_tests {
         });
         let at_stop = at_stop.expect("the build ended before it made progress");
         assert!(matches!(result, Err(OperationError::Cancelled { .. })));
-        let total = progress_total(&fixture.points, &levels, hnsw_m());
+        let total = progress_total(&fixture.points, &levels, hnsw_m(), &[]);
         let (Some(done), Some(at)) = done_and_total(&view) else {
             panic!("no progress");
         };
@@ -1904,5 +1989,133 @@ mod orchestration_tests {
             (cases / 4..cases * 3 / 4).contains(&broken),
             "{broken} of {cases} broken",
         );
+    }
+
+    /// Groups of identical vectors for [`copies_are_reachable`]: one larger than the degree limit
+    /// of level 0, so it spans levels, a small one, and zero vectors. NaN points besides, which
+    /// have no copies, and must not be grouped with the zero vectors.
+    fn copy_groups() -> (Vec<Vec<PointOffsetType>>, Vec<PointOffsetType>) {
+        let large = (0..POINTS as PointOffsetType).step_by(13).collect();
+        let small = vec![5, 6, 1999];
+        // None of them in `large`
+        let zero = (100..122).filter(|point| point % 13 != 0).collect();
+        let nan = vec![7, 8, 1002];
+        (vec![large, small, zero], nan)
+    }
+
+    /// The points of `level` reachable from `from` in `links`, the links of `points`.
+    fn reachable_on(
+        links: &Links,
+        points: &[PointOffsetType],
+        level: usize,
+        from: PointOffsetType,
+    ) -> HashSet<PointOffsetType> {
+        let mut seen = HashSet::from([from]);
+        let mut stack = vec![from];
+        while let Some(point) = stack.pop() {
+            let lists = &links[points.binary_search(&point).unwrap()];
+            for &link in &lists[level] {
+                if seen.insert(link) {
+                    stack.push(link);
+                }
+            }
+        }
+        seen
+    }
+
+    /// On every level, every copy of a vector is reachable from the group's lowest point, and
+    /// leads out of the group, and some other point links the group, as HNSW only manages up to
+    /// a few hundred copies. NaN points stay out of the groups.
+    #[rstest]
+    fn copies_are_reachable(
+        #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
+    ) {
+        let _scope = ambient::test_guard();
+        let mut fixture = Fixture::new(distance, None);
+        let (groups, nan) = copy_groups();
+        let mut rng = StdRng::seed_from_u64(9);
+        for group in &groups[..2] {
+            let vector: Vec<VectorElementType> =
+                (0..DIM).map(|_| rng.random_range(-1.0..1.0)).collect();
+            let vector = distance.preprocess_vector::<VectorElementType>(vector);
+            fixture.set_vector(group.iter().copied(), &vector);
+        }
+        fixture.set_vector(groups[2].iter().copied(), &[0.0; DIM]);
+        fixture.set_nan(nan.iter().copied());
+        let levels = random_levels(3);
+        let links = fixture.build(&fixture.points, &levels);
+        check_links(&links, &fixture.points, &levels, hnsw_m());
+
+        let live = |&point: &PointOffsetType| !fixture.deleted[point as usize];
+        let top = fixture
+            .points
+            .iter()
+            .map(|&p| levels[p as usize])
+            .max()
+            .unwrap();
+        for level in 0..=top {
+            let on_level = |&point: &PointOffsetType| levels[point as usize] >= level;
+            for group in &groups {
+                let group: Vec<_> = group
+                    .iter()
+                    .copied()
+                    .filter(live)
+                    .filter(on_level)
+                    .collect();
+                let Some(&first) = group.first() else {
+                    continue;
+                };
+                let reached = reachable_on(&links, &fixture.points, level, first);
+                for &copy in &group {
+                    assert!(reached.contains(&copy), "{copy} on level {level}");
+                    let out = reachable_on(&links, &fixture.points, level, copy);
+                    assert!(
+                        out.iter().any(|point| !group.contains(point)),
+                        "{copy} doesn't lead out of its group on level {level}",
+                    );
+                }
+                let linked_from_outside = std::iter::zip(&fixture.points, &links)
+                    .filter(|(point, lists)| !group.contains(point) && lists.len() > level)
+                    .any(|(_, lists)| lists[level].iter().any(|link| group.contains(link)));
+                assert!(
+                    group.len() < 2 || linked_from_outside || level > 0,
+                    "no point links the group of {first} on level {level}",
+                );
+            }
+            // NaN points keep their fallback link, and only NaN points link them
+            for (&point, lists) in std::iter::zip(&fixture.points, &links) {
+                if lists.len() > level && !nan.contains(&point) {
+                    assert!(
+                        lists[level].iter().all(|link| !nan.contains(link)),
+                        "{point} links a NaN point on level {level}",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Groups of identical vectors don't make the links depend on the threads.
+    #[test]
+    fn copies_deterministic_across_thread_pools() {
+        let _scope = ambient::test_guard();
+        let mut fixture = Fixture::new(Distance::Cosine, None);
+        let (groups, nan) = copy_groups();
+        for group in &groups {
+            fixture.set_vector(group.iter().copied(), &[0.25; DIM]);
+        }
+        fixture.set_nan(nan.iter().copied());
+        let levels = random_levels(5);
+        let links = |threads| {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            pool.install(|| fixture.build(&fixture.points, &levels))
+        };
+        let expected = links(1);
+        check_links(&expected, &fixture.points, &levels, hnsw_m());
+        for threads in [2, 7] {
+            assert!(links(threads) == expected, "{threads} threads");
+        }
     }
 }
