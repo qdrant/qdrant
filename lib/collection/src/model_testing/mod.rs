@@ -1251,10 +1251,17 @@ fn replay_command(
     on_disk: bool,
     pre_restart_check: bool,
     enable_force_off: bool,
+    edge_verify: bool,
     duration_sec: Option<u64>,
 ) -> String {
+    // `--edge-verify` is only accepted by a binary built with the `edge-verify` feature.
+    let features = if edge_verify {
+        "service_debug,edge-verify"
+    } else {
+        "service_debug"
+    };
     let mut command = format!(
-        "cargo run --bin model_testing --features service_debug --profile perf -- \
+        "cargo run --bin model_testing --features {features} --profile perf -- \
          --seed {seed} \
          --op-num {op_num} \
          --shard-count {HARNESS_SHARD_COUNT} \
@@ -1272,6 +1279,7 @@ fn replay_command(
         (on_disk, "--on-disk"),
         (pre_restart_check, "--pre-restart-check"),
         (enable_force_off, "--enable-force-off"),
+        (edge_verify, "--edge-verify"),
     ] {
         if enabled {
             command.push(' ');
@@ -1387,6 +1395,7 @@ mod tests {
                 on_disk,
                 pre_restart_check,
                 enable_force_off,
+                edge_verify,
                 duration.map(|d| d.as_secs()),
             )
         );
@@ -1649,7 +1658,9 @@ mod seed_support_tests {
     /// reordered flag fails here too.
     #[test]
     fn replay_command_carries_the_full_harness_configuration() {
-        let command = replay_command(7, 2_000, 500, 0.002, false, true, false, false, false, None);
+        let command = replay_command(
+            7, 2_000, 500, 0.002, false, true, false, false, false, false, None,
+        );
         assert_eq!(
             command.split_whitespace().collect::<Vec<_>>(),
             vec![
@@ -1690,16 +1701,30 @@ mod seed_support_tests {
     /// Every conditional flag is emitted, in a stable order, exactly when its knob is on.
     #[test]
     fn replay_command_flags_follow_every_knob() {
-        let all_on = replay_command(1, 4_000, 500, 0.0, true, true, true, true, true, Some(30));
+        let all_on = replay_command(
+            1,
+            4_000,
+            500,
+            0.0,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            Some(30),
+        );
         let tokens: Vec<_> = all_on.split_whitespace().collect();
+        assert_eq!(&tokens[4..6], ["--features", "service_debug,edge-verify"]);
         assert_eq!(
-            &tokens[tokens.len() - 7..],
+            &tokens[tokens.len() - 8..],
             [
                 "--disable-optimizer",
                 "--disable-snapshots",
                 "--on-disk",
                 "--pre-restart-check",
                 "--enable-force-off",
+                "--edge-verify",
                 "--duration-sec",
                 "30",
             ]
