@@ -508,6 +508,10 @@ message StrictModeConfig {
   optional uint32 max_resident_memory_percent = 21 [deprecated = true];
   // 22 was `max_disk_usage_percent`, superseded by the global quota config
   reserved 22;
+  // Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants.
+  // Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must`
+  // of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys.
+  optional bool require_tenant_filter = 23;
 }
 
 message StrictModeSparseConfig {

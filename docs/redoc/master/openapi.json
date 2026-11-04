@@ -7530,6 +7530,11 @@
             "type": "boolean",
             "nullable": true
           },
+          "require_tenant_filter": {
+            "description": "Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants. Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must` of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys. Reads by point id are not affected.",
+            "type": "boolean",
+            "nullable": true
+          },
           "search_max_hnsw_ef": {
             "description": "Max HNSW value allowed in search parameters.",
             "type": "integer",
@@ -10052,6 +10057,11 @@
           },
           "unindexed_filtering_update": {
             "description": "Allow usage of unindexed fields in filtered updates (e.g. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "require_tenant_filter": {
+            "description": "Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants. Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must` of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys. Reads by point id are not affected.",
             "type": "boolean",
             "nullable": true
           },

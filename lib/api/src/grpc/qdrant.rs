@@ -1209,6 +1209,11 @@ pub struct StrictModeConfig {
     #[prost(uint32, optional, tag = "21")]
     #[validate(range(min = 1, max = 100))]
     pub max_resident_memory_percent: ::core::option::Option<u32>,
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants.
+    /// Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must`
+    /// of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys.
+    #[prost(bool, optional, tag = "23")]
+    pub require_tenant_filter: ::core::option::Option<bool>,
 }
 #[allow(clippy::all)]
 #[derive(validator::Validate)]
