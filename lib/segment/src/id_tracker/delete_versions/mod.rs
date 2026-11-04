@@ -59,7 +59,7 @@ pub fn existing_delete_log(segment_path: &Path) -> Option<PathBuf> {
 }
 
 /// The slots the delete log of the segment at `segment_path` holds, for a regular tracker that
-/// applies the union of its mask and the log. Empty when the segment has no log.
+/// applies the union of its mask and the log at open. Empty when the segment has no log.
 pub fn read_delete_log<Fs: UniversalReadFs>(
     fs: &Fs,
     segment_path: &Path,
