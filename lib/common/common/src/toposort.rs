@@ -303,4 +303,19 @@ mod tests {
         topo.add_dependency(3, 1, ());
         assert!(topo.reaches(&1, &1)); // cycle 1 -> 2 -> 3 -> 1
     }
+
+    /// Each target is behind a different branch, so a search that follows only one
+    /// branch misses one of them whatever the map iteration order.
+    #[test]
+    fn test_reaches_follows_all_branches() {
+        let mut topo = TopoSort::new();
+        topo.add_dependency(1, 2, ());
+        topo.add_dependency(2, 4, ());
+        topo.add_dependency(1, 3, ());
+        topo.add_dependency(3, 5, ());
+
+        assert!(topo.reaches(&1, &4)); // only through 1 -> 2
+        assert!(topo.reaches(&1, &5)); // only through 1 -> 3
+        assert!(!topo.reaches(&4, &5));
+    }
 }
