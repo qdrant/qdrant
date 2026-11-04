@@ -328,6 +328,10 @@ storage:
       # Allow usage of unindexed fields in filtered updates (eg. delete by payload).
       #unindexed_filtering_update: null
 
+      # Require filter-based reads (eg. search, scroll) to have a top-level `must` match condition
+      # on a tenant key, if the collection has a payload index with `is_tenant: true`.
+      #require_tenant_filter: null
+
       # Max HNSW value allowed in search parameters.
       #search_max_hnsw_ef: null
 

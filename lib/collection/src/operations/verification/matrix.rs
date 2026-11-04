@@ -1,6 +1,6 @@
 use api::rest::SearchMatrixRequestInternal;
 
-use super::StrictModeVerification;
+use super::{ReadScope, StrictModeVerification};
 use crate::collection::distance_matrix::CollectionSearchMatrixRequest;
 
 impl StrictModeVerification for SearchMatrixRequestInternal {
@@ -19,6 +19,10 @@ impl StrictModeVerification for SearchMatrixRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -41,6 +45,10 @@ impl StrictModeVerification for CollectionSearchMatrixRequest {
 
     fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {

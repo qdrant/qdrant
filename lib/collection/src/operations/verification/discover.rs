@@ -1,6 +1,6 @@
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 
-use super::StrictModeVerification;
+use super::{ReadScope, StrictModeVerification};
 use crate::collection::Collection;
 use crate::operations::types::{CollectionResult, DiscoverRequestBatch, DiscoverRequestInternal};
 
@@ -15,6 +15,10 @@ impl StrictModeVerification for DiscoverRequestInternal {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::Filtered(self.filter.as_ref())
     }
 
     fn request_exact(&self) -> Option<bool> {
@@ -51,6 +55,10 @@ impl StrictModeVerification for DiscoverRequestBatch {
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         None
+    }
+
+    fn read_scope(&self) -> ReadScope<'_> {
+        ReadScope::NotApplicable
     }
 
     fn request_exact(&self) -> Option<bool> {
