@@ -69,9 +69,11 @@ def test_dirty_shard_survives_update_collection(tmp_path: pathlib.Path):
     assert local_shard_ids, "Target node has no local shards"
 
     # Kill target and record its commit index before issuing UpdateCollection
+    target_peer_id = get_cluster_info(peer_api_uris[target_idx])["peer_id"]
     p = processes.pop(target_idx)
     restart_port = p.p2p_port
     p.kill()
+    wait_for_live_leader(peer_api_uris[0], target_peer_id)
 
     raft_state_path = peer_dirs[target_idx] / "storage" / "raft_state.json"
     raft_state = json.loads(raft_state_path.read_text())

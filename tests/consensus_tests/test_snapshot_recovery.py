@@ -104,6 +104,7 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     # Kill last peer
     p = processes.pop()
     p.kill()
+    wait_for_live_leader(peer_api_uris[0], process_peer_id)
 
     # Remove last peer from cluster
     res = requests.delete(f"{peer_api_uris[0]}/cluster/peer/{process_peer_id}?force=true")

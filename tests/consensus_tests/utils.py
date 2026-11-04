@@ -377,6 +377,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     return peer_api_uris, peer_dirs, bootstrap_uri
 
 
+
 def make_peer_folder(base_path: Path, peer_number: int) -> Path:
     peer_dir = base_path / f"peer{peer_number}"
     peer_dir.mkdir()
@@ -467,6 +468,15 @@ def get_leader_index(peer_api_uris: [str], headers={}) -> int:
         index for index, uri in enumerate(peer_api_uris)
         if get_cluster_info(uri, headers=headers)["peer_id"] == leader
     )
+
+
+def wait_for_live_leader(peer_api_uri: str, dead_peer_id: int, headers={}):
+    """Wait until `peer_api_uri` follows a leader other than `dead_peer_id`.
+
+    Raft drops proposals while there is no leader, so call this after killing a
+    peer that may have been the leader and before proposing through the survivors.
+    """
+    wait_for(lambda: get_leader(peer_api_uri, headers=headers) not in (None, 0, dead_peer_id))
 
 
 def check_leader(peer_api_uri: str, expected_leader: str, headers={}) -> bool:

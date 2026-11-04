@@ -83,10 +83,10 @@ def test_reinit_consensus(tmp_path: pathlib.Path):
     # `--reinit` founds a fresh single-member cluster: the old peers (and their
     # old addresses) are dropped from the address book, the other peers re-join
     # below and re-register their new addresses.
-    leader = wait_peer_added(bootstrap_api_uri, expected_size=1)
+    wait_peer_added(bootstrap_api_uri, expected_size=1)
     for i in range(1, len(peer_dirs)):
         peer_urls_new.append(start_peer(peer_dirs[i], f"peer_{i}_restarted.log", bootstrap_uri, reinit=True))
-    wait_for_uniform_cluster_status(peer_urls_new, leader)
+    wait_for_uniform_cluster_status(peer_urls_new)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls_new)
 
     compare_points(peer_urls_new[0])
@@ -97,6 +97,6 @@ def test_reinit_consensus(tmp_path: pathlib.Path):
     peer_url_additional = start_peer(peer_dir_additional, f"peer_{N_PEERS}_additional.log", bootstrap_uri)
     wait_peer_added(bootstrap_api_uri, expected_size=3)
     peer_urls_new.append(peer_url_additional)
-    wait_for_uniform_cluster_status(peer_urls_new, leader)
+    wait_for_uniform_cluster_status(peer_urls_new)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls_new)
     compare_points(peer_urls_new[1])
