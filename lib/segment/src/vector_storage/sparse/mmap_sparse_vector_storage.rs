@@ -215,7 +215,7 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
         self.storage
-            .get_value::<P>(key, None)?
+            .get_value::<P>(key, HwMetric::VectorIoRead)?
             .map(SparseVector::try_from)
             .transpose()
     }

@@ -34,7 +34,9 @@ impl Collection for ArcStorage<PayloadStorage> {
 impl SequentialCollectionHandle for PayloadStorage {
     fn get(&self, key: &u32) -> bool {
         let _scope = ambient::test_guard();
-        self.get_value::<Random>(*key, None).unwrap().is_some()
+        self.get_value::<Random>(*key, HwMetric::PayloadIoRead)
+            .unwrap()
+            .is_some()
     }
 
     fn insert(&mut self, key: u32, payload: &Payload) -> bool {

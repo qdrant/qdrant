@@ -361,7 +361,7 @@ where
     pub(super) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_metric: Option<HwMetric>,
+        hw_metric: HwMetric,
     ) -> Result<Option<V>> {
         self.with_view(|view| view.get_value::<P>(point_offset, hw_metric))
     }
@@ -372,7 +372,7 @@ where
     pub(super) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_metric: Option<HwMetric>,
+        hw_metric: HwMetric,
     ) -> Result<Option<Vec<u8>>> {
         self.with_view(|view| {
             let bytes = view.get_value_bytes::<P>(point_offset, hw_metric)?;

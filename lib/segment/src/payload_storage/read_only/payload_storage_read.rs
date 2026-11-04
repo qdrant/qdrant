@@ -16,7 +16,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     fn get(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
         match self
             .storage
-            .get_value::<Random>(point_offset, Some(HwMetric::PayloadIoRead))?
+            .get_value::<Random>(point_offset, HwMetric::PayloadIoRead)?
         {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
@@ -26,7 +26,7 @@ impl<S: UniversalRead> PayloadStorageRead for ReadOnlyPayloadStorage<S> {
     fn get_sequential(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
         match self
             .storage
-            .get_value::<Sequential>(point_offset, Some(HwMetric::PayloadIoRead))?
+            .get_value::<Sequential>(point_offset, HwMetric::PayloadIoRead)?
         {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),

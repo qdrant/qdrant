@@ -78,7 +78,7 @@ impl<'a, V: Blob, S: UniversalRead> BlobstoreView<'a, V, S> {
     pub fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_metric: Option<HwMetric>,
+        hw_metric: HwMetric,
     ) -> Result<Option<V>> {
         match &self.variant {
             ViewVariant::Gridstore(view) => view.get_value::<P>(point_offset, hw_metric),

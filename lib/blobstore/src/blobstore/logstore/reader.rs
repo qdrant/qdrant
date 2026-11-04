@@ -164,7 +164,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_metric: Option<HwMetric>,
+        hw_metric: HwMetric,
     ) -> Result<Option<V>> {
         self.view().get_value::<P>(point_offset, hw_metric)
     }
@@ -175,7 +175,7 @@ impl<V: Blob, S: UniversalRead, T: TrackerRead> LogstoreReader<V, S, T> {
     pub(crate) fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
-        hw_metric: Option<HwMetric>,
+        hw_metric: HwMetric,
     ) -> Result<Option<Vec<u8>>> {
         let view = self.view();
         let bytes = view.get_value_bytes::<P>(point_offset, hw_metric)?;
