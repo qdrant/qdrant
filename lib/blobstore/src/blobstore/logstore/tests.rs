@@ -38,7 +38,7 @@ fn tracker_file_len(dir: &TempDir) -> u64 {
 fn test_empty_storage() {
     let (dir, storage) = empty_storage_append_only();
 
-    assert_eq!(storage.get_value::<Random>(0).unwrap(), None);
+    assert_eq!(storage.get_value::<Random>(0, None).unwrap(), None);
     assert_eq!(storage.max_point_offset(), 0);
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 
@@ -92,7 +92,7 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
     assert_eq!(storage.max_point_offset(), 100);
 
     for (point_offset, payload) in &payloads {
-        let stored = storage.get_value::<Random>(*point_offset).unwrap();
+        let stored = storage.get_value::<Random>(*point_offset, None).unwrap();
         assert_eq!(stored.as_ref(), Some(payload));
     }
 
@@ -108,7 +108,7 @@ fn test_put_get_roundtrip(#[case] compression: Compression) {
     storage.as_logstore();
     assert_eq!(storage.max_point_offset(), 100);
     for (point_offset, payload) in &payloads {
-        let stored = storage.get_value::<Random>(*point_offset).unwrap();
+        let stored = storage.get_value::<Random>(*point_offset, None).unwrap();
         assert_eq!(stored.as_ref(), Some(payload));
     }
 }
@@ -148,7 +148,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 3 * 100);
     for point_offset in 0..3 {
         assert_eq!(
-            storage.get_value::<Random>(point_offset).unwrap(),
+            storage.get_value::<Random>(point_offset, None).unwrap(),
             Some(vec![point_offset as u8; 100]),
         );
     }
@@ -169,7 +169,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
     // The values remain readable, now served from the files, and survive a reopen
     for point_offset in 0..3 {
         assert_eq!(
-            storage.get_value::<Random>(point_offset).unwrap(),
+            storage.get_value::<Random>(point_offset, None).unwrap(),
             Some(vec![point_offset as u8; 100]),
         );
     }
@@ -179,7 +179,7 @@ fn test_put_buffers_value_and_mapping_until_flush() {
     assert_eq!(storage.max_point_offset(), 3);
     for point_offset in 0..3 {
         assert_eq!(
-            storage.get_value::<Random>(point_offset).unwrap(),
+            storage.get_value::<Random>(point_offset, None).unwrap(),
             Some(vec![point_offset as u8; 100]),
         );
     }
@@ -209,8 +209,14 @@ fn test_put_rejects_out_of_order_point_offsets() {
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 2 * 100);
 
     // The stored values are unaffected
-    assert_eq!(storage.get_value::<Random>(0).unwrap(), Some(vec![1; 100]));
-    assert_eq!(storage.get_value::<Random>(2).unwrap(), Some(vec![3; 100]));
+    assert_eq!(
+        storage.get_value::<Random>(0, None).unwrap(),
+        Some(vec![1; 100])
+    );
+    assert_eq!(
+        storage.get_value::<Random>(2, None).unwrap(),
+        Some(vec![3; 100])
+    );
 }
 
 #[test]
@@ -227,7 +233,7 @@ fn test_delete_is_rejected() {
 
     // The value is still there
     assert_eq!(
-        storage.get_value::<Random>(0).unwrap(),
+        storage.get_value::<Random>(0, None).unwrap(),
         Some(Payload::default()),
     );
 }
@@ -250,7 +256,10 @@ fn test_skipped_point_offsets_read_as_none() {
     assert_eq!(storage.max_point_offset(), 11);
 
     for point_offset in [1, 2, 5, 6, 7, 8, 9, 11] {
-        assert_eq!(storage.get_value::<Random>(point_offset).unwrap(), None);
+        assert_eq!(
+            storage.get_value::<Random>(point_offset, None).unwrap(),
+            None
+        );
     }
 
     // Iteration skips the gaps. Values are read in batches, so the callback may be invoked in
@@ -340,7 +349,7 @@ fn test_values_are_byte_packed() {
 
     for (point_offset, value) in [(0, vec![1; 100]), (1, vec![2; 50]), (2, vec![3; 300])] {
         assert_eq!(
-            storage.get_value::<Random>(point_offset).unwrap(),
+            storage.get_value::<Random>(point_offset, None).unwrap(),
             Some(value),
         );
     }
@@ -356,13 +365,13 @@ fn test_empty_and_huge_values() {
     // An empty value takes no space at all
     storage.put_value(0, &vec![], hw_metric).unwrap();
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
-    assert_eq!(storage.get_value::<Random>(0).unwrap(), Some(vec![]));
+    assert_eq!(storage.get_value::<Random>(0, None).unwrap(), Some(vec![]));
 
     // A huge value simply grows the page file, values never span pages
     let huge = (0..2_000_000).map(|i| i as u8).collect::<Vec<u8>>();
     storage.put_value(1, &huge, hw_metric).unwrap();
     assert_eq!(storage.get_storage_size_bytes().unwrap(), huge.len());
-    assert_eq!(storage.get_value::<Random>(1).unwrap(), Some(huge));
+    assert_eq!(storage.get_value::<Random>(1, None).unwrap(), Some(huge));
 }
 
 #[test]
@@ -389,14 +398,17 @@ fn test_unflushed_puts_are_lost_after_reopen() {
     let mut storage =
         Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 0);
-    assert_eq!(storage.get_value::<Random>(0).unwrap(), None);
+    assert_eq!(storage.get_value::<Random>(0, None).unwrap(), None);
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 
     // New puts start from a clean page file
     storage.put_value(0, &vec![9; 10], hw_metric).unwrap();
     storage.flusher()().unwrap();
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 10);
-    assert_eq!(storage.get_value::<Random>(0).unwrap(), Some(vec![9; 10]));
+    assert_eq!(
+        storage.get_value::<Random>(0, None).unwrap(),
+        Some(vec![9; 10])
+    );
 }
 
 #[test]
@@ -441,7 +453,7 @@ fn test_stale_flusher_is_noop() {
     assert_eq!(storage.max_point_offset(), 4);
     for point_offset in 0..4 {
         assert_eq!(
-            storage.get_value::<Random>(point_offset).unwrap(),
+            storage.get_value::<Random>(point_offset, None).unwrap(),
             Some(Payload::default()),
         );
     }
@@ -559,8 +571,11 @@ fn test_reader_on_append_only_storage() {
     assert_eq!(reader.get_storage_size_bytes(), 3 * 10);
     reader.clear_cache().unwrap();
 
-    assert_eq!(reader.get_value::<Random>(0).unwrap(), Some(vec![0; 10]));
-    assert_eq!(reader.get_value::<Random>(2).unwrap(), None);
+    assert_eq!(
+        reader.get_value::<Random>(0, None).unwrap(),
+        Some(vec![0; 10])
+    );
+    assert_eq!(reader.get_value::<Random>(2, None).unwrap(), None);
 
     // Reader files match the writer files
     let mut reader_files = reader.files();
@@ -604,7 +619,10 @@ fn test_reader_on_append_only_storage() {
     let view = reader.view();
     assert_eq!(view.max_point_offset().unwrap(), 5);
     assert_eq!(view.get_storage_size_bytes(), 3 * 10);
-    assert_eq!(view.get_value::<Random>(4).unwrap(), Some(vec![4; 10]));
+    assert_eq!(
+        view.get_value::<Random>(4, None).unwrap(),
+        Some(vec![4; 10])
+    );
 }
 
 /// Replace the append-only tracker file in `dir` with a compacted one holding the same mappings.
@@ -645,7 +663,10 @@ fn test_reader_on_compacted_tracker() {
         let expected = point_offsets
             .contains(&point_offset)
             .then(|| vec![point_offset as u8; 10]);
-        assert_eq!(reader.get_value::<Random>(point_offset).unwrap(), expected);
+        assert_eq!(
+            reader.get_value::<Random>(point_offset, None).unwrap(),
+            expected
+        );
     }
 
     let mut collected = Vec::new();
@@ -680,7 +701,10 @@ fn test_reader_on_compacted_tracker() {
     reader.clear_cache().unwrap();
     reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 10);
-    assert_eq!(reader.get_value::<Random>(9).unwrap(), Some(vec![9; 10]));
+    assert_eq!(
+        reader.get_value::<Random>(9, None).unwrap(),
+        Some(vec![9; 10])
+    );
 }
 
 /// A compacted storage opens writable, as every segment storage does, and keeps its tracker
@@ -702,13 +726,19 @@ fn test_writable_open_on_compacted_tracker() {
     let mut storage =
         Blobstore::<Vec<u8>>::open(MmapFs, dir.path().to_path_buf(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 5);
-    assert_eq!(storage.get_value::<Random>(4).unwrap(), Some(vec![4; 10]));
+    assert_eq!(
+        storage.get_value::<Random>(4, None).unwrap(),
+        Some(vec![4; 10])
+    );
     storage.populate().unwrap();
     storage.clear_cache().unwrap();
 
     storage.put_value(6, &vec![6; 10], hw_metric).unwrap();
     assert_eq!(storage.max_point_offset(), 7);
-    assert_eq!(storage.get_value::<Random>(6).unwrap(), Some(vec![6; 10]));
+    assert_eq!(
+        storage.get_value::<Random>(6, None).unwrap(),
+        Some(vec![6; 10])
+    );
     storage.flusher()().unwrap();
     let mut files = storage.files();
     files.sort();
@@ -745,7 +775,10 @@ fn test_writable_open_on_compacted_tracker() {
         let expected = [0, 1, 4, 6, 7]
             .contains(&point_offset)
             .then(|| vec![point_offset as u8; 10]);
-        assert_eq!(reader.get_value::<Random>(point_offset).unwrap(), expected);
+        assert_eq!(
+            reader.get_value::<Random>(point_offset, None).unwrap(),
+            expected
+        );
     }
 }
 
@@ -759,7 +792,10 @@ fn assert_reader_values(dir: &TempDir, count: PointOffset, present: &[PointOffse
         let expected = present
             .contains(&point_offset)
             .then(|| vec![point_offset as u8; 10]);
-        assert_eq!(reader.get_value::<Random>(point_offset).unwrap(), expected);
+        assert_eq!(
+            reader.get_value::<Random>(point_offset, None).unwrap(),
+            expected
+        );
     }
 }
 
@@ -784,7 +820,10 @@ fn test_make_immutable_is_persisted_by_flush() {
     assert!(storage.ram_usage_bytes() >= 6 * size_of::<Option<ValuePointer>>());
     assert!(!dir.path().join("log_tracker.dat").exists());
     assert!(!dir.path().join("compacted_tracker.dat").exists());
-    assert_eq!(storage.get_value::<Random>(5).unwrap(), Some(vec![5; 10]));
+    assert_eq!(
+        storage.get_value::<Random>(5, None).unwrap(),
+        Some(vec![5; 10])
+    );
     // Again changes nothing
     storage.make_immutable().unwrap();
 
@@ -865,7 +904,10 @@ fn test_compacted_flusher_skips_later_puts() {
         BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 3);
-    assert_eq!(reader.get_value::<Random>(2).unwrap(), Some(vec![2; 10]));
+    assert_eq!(
+        reader.get_value::<Random>(2, None).unwrap(),
+        Some(vec![2; 10])
+    );
 }
 
 /// Preopen schedules the compacted tracker file: once the prefetch is done, the open succeeds
@@ -904,7 +946,7 @@ async fn test_preopen_schedules_compacted_tracker() {
     )
     .unwrap();
     assert_eq!(
-        ambient::test(|| reader.get_value::<Random>(0)).unwrap(),
+        ambient::test(|| reader.get_value::<Random>(0, None)).unwrap(),
         Some(vec![7; 10]),
     );
 }
@@ -962,7 +1004,7 @@ async fn test_preopen_fetches_compacted_tracker_through_disk_cache() {
         BlobstoreReader::<Vec<u8>, DiskCache<MmapFile>>::open(&cached_fs, path, Populate::No)
             .unwrap();
     assert_eq!(
-        ambient::test(|| reader.get_value::<Random>(0)).unwrap(),
+        ambient::test(|| reader.get_value::<Random>(0, None)).unwrap(),
         Some(vec![7; 10]),
     );
 }
@@ -1007,7 +1049,7 @@ fn test_reader_live_reload() {
     assert_eq!(reader.get_storage_size_bytes(), 6 * 10);
     for point_offset in 0..6 {
         assert_eq!(
-            reader.get_value::<Random>(point_offset).unwrap(),
+            reader.get_value::<Random>(point_offset, None).unwrap(),
             Some(vec![point_offset as u8; 10]),
         );
     }
@@ -1110,7 +1152,7 @@ fn test_open_rejects_truncated_page_file() {
     let reader =
         BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
-    assert!(reader.get_value::<Random>(2).is_err());
+    assert!(reader.get_value::<Random>(2, None).is_err());
 }
 
 #[test]
@@ -1288,14 +1330,14 @@ fn test_tracker_pads_mapping_gap_with_zeroes() {
     );
 
     // The skipped points read as missing; the mapped ones round-trip
-    assert!(storage.get_value::<Random>(1).unwrap().is_none());
-    assert!(storage.get_value::<Random>(2).unwrap().is_none());
+    assert!(storage.get_value::<Random>(1, None).unwrap().is_none());
+    assert!(storage.get_value::<Random>(2, None).unwrap().is_none());
     assert_eq!(
-        storage.get_value::<Random>(0).unwrap().as_ref(),
+        storage.get_value::<Random>(0, None).unwrap().as_ref(),
         Some(&payload_0),
     );
     assert_eq!(
-        storage.get_value::<Random>(3).unwrap().as_ref(),
+        storage.get_value::<Random>(3, None).unwrap().as_ref(),
         Some(&payload_3),
     );
 
@@ -1304,9 +1346,9 @@ fn test_tracker_pads_mapping_gap_with_zeroes() {
     drop(storage);
     let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 4);
-    assert!(storage.get_value::<Random>(1).unwrap().is_none());
+    assert!(storage.get_value::<Random>(1, None).unwrap().is_none());
     assert_eq!(
-        storage.get_value::<Random>(3).unwrap().as_ref(),
+        storage.get_value::<Random>(3, None).unwrap().as_ref(),
         Some(&payload_3),
     );
 }
@@ -1341,7 +1383,7 @@ fn test_values_are_packed_back_to_back() {
         expected_start += u64::from(pointer.length);
 
         assert_eq!(
-            storage.get_value::<Random>(point_offset).unwrap(),
+            storage.get_value::<Random>(point_offset, None).unwrap(),
             Some(value(point_offset)),
         );
     }
@@ -1443,7 +1485,7 @@ fn test_flusher_persists_mappings_up_to_creation() {
     for (point_offset, payload) in payloads.iter().enumerate() {
         assert_eq!(
             storage
-                .get_value::<Random>(point_offset as u32)
+                .get_value::<Random>(point_offset as u32, None)
                 .unwrap()
                 .as_ref(),
             Some(payload),
@@ -1459,7 +1501,7 @@ fn test_flusher_persists_mappings_up_to_creation() {
         let expected = (point_offset < 3).then_some(payload);
         assert_eq!(
             storage
-                .get_value::<Random>(point_offset as u32)
+                .get_value::<Random>(point_offset as u32, None)
                 .unwrap()
                 .as_ref(),
             expected,
@@ -1551,7 +1593,7 @@ fn test_replayed_puts_leave_storage_intact() {
     for (point_offset, payload) in payloads.iter().enumerate() {
         assert_eq!(
             storage
-                .get_value::<Random>(point_offset as u32)
+                .get_value::<Random>(point_offset as u32, None)
                 .unwrap()
                 .as_ref(),
             Some(payload),
@@ -1598,8 +1640,8 @@ fn test_zero_extended_tracker_reads_none() {
     // The zeroed entries count as mappings without a value
     let mut storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 5);
-    assert!(storage.get_value::<Random>(3).unwrap().is_none());
-    assert!(storage.get_value::<Random>(4).unwrap().is_none());
+    assert!(storage.get_value::<Random>(3, None).unwrap().is_none());
+    assert!(storage.get_value::<Random>(4, None).unwrap().is_none());
 
     // They can never be put again, the storage continues past them
     assert!(
@@ -1617,7 +1659,7 @@ fn test_zero_extended_tracker_reads_none() {
     for (point_offset, payload) in payloads.iter().enumerate() {
         assert_eq!(
             storage
-                .get_value::<Random>(point_offset as u32)
+                .get_value::<Random>(point_offset as u32, None)
                 .unwrap()
                 .as_ref(),
             Some(payload),
@@ -1628,7 +1670,7 @@ fn test_zero_extended_tracker_reads_none() {
     drop(storage);
     let reader = BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 6);
-    assert!(reader.get_value::<Random>(4).unwrap().is_none());
+    assert!(reader.get_value::<Random>(4, None).unwrap().is_none());
 }
 
 /// The read-only reader must never modify the files: not on open (it must not truncate a
@@ -1678,7 +1720,7 @@ fn test_reader_never_writes() {
     for (point_offset, payload) in payloads.iter().enumerate() {
         assert_eq!(
             reader
-                .get_value::<Random>(point_offset as u32)
+                .get_value::<Random>(point_offset as u32, None)
                 .unwrap()
                 .as_ref(),
             Some(payload),
@@ -1764,7 +1806,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
         for (point_offset, payload) in flushed.iter().enumerate() {
             assert_eq!(
                 storage
-                    .get_value::<Random>(point_offset as u32)
+                    .get_value::<Random>(point_offset as u32, None)
                     .unwrap()
                     .as_ref(),
                 Some(payload),
@@ -1773,7 +1815,7 @@ fn test_reopen_always_exposes_flushed_prefix() {
         }
         assert!(
             storage
-                .get_value::<Random>(flushed.len() as u32)
+                .get_value::<Random>(flushed.len() as u32, None)
                 .unwrap()
                 .is_none(),
             "unflushed values must be gone after reopen",
@@ -1824,7 +1866,7 @@ fn test_full_page_rolls_over_to_new_page() {
     let assert_all_readable = |storage: &Blobstore<Vec<u8>>| {
         for point_offset in 0..5 {
             assert_eq!(
-                storage.get_value::<Random>(point_offset).unwrap(),
+                storage.get_value::<Random>(point_offset, None).unwrap(),
                 Some(vec![point_offset as u8; 100]),
             );
         }
@@ -1903,8 +1945,11 @@ fn test_value_larger_than_page_gets_own_page() {
         "the oversized value must get a page of its own",
     );
 
-    assert_eq!(storage.get_value::<Random>(1).unwrap(), Some(huge));
-    assert_eq!(storage.get_value::<Random>(2).unwrap(), Some(vec![2; 100]));
+    assert_eq!(storage.get_value::<Random>(1, None).unwrap(), Some(huge));
+    assert_eq!(
+        storage.get_value::<Random>(2, None).unwrap(),
+        Some(vec![2; 100])
+    );
 }
 
 /// The reader reads values across all pages, and a live reload adopts page files that were
@@ -1932,7 +1977,7 @@ fn test_reader_reads_across_pages_and_adopts_new_pages() {
     assert_eq!(reader.get_storage_size_bytes(), 3 * 100);
     for point_offset in 0..3 {
         assert_eq!(
-            reader.get_value::<Random>(point_offset).unwrap(),
+            reader.get_value::<Random>(point_offset, None).unwrap(),
             Some(vec![point_offset as u8; 100]),
         );
     }
@@ -1957,7 +2002,7 @@ fn test_reader_reads_across_pages_and_adopts_new_pages() {
     assert_eq!(reader.get_storage_size_bytes(), 7 * 100);
     for point_offset in 0..7 {
         assert_eq!(
-            reader.get_value::<Random>(point_offset).unwrap(),
+            reader.get_value::<Random>(point_offset, None).unwrap(),
             Some(vec![point_offset as u8; 100]),
             "value {point_offset} must be readable after the live reload",
         );
@@ -2010,7 +2055,7 @@ fn test_open_rejects_missing_page_file() {
     let reader =
         BlobstoreReader::<Vec<u8>, MmapFile>::open(&MmapFs, dir.path().to_path_buf(), Populate::No)
             .unwrap();
-    assert!(reader.get_value::<Random>(4).is_err());
+    assert!(reader.get_value::<Random>(4, None).is_err());
 }
 
 /// A page rollover only creates the new, empty page file: the buffered values still land on
@@ -2094,11 +2139,14 @@ fn test_live_reload_sees_late_flushed_tail_of_rolled_over_page() {
 
     assert_eq!(reader.max_point_offset().unwrap(), 3);
     assert_eq!(
-        reader.get_value::<Random>(1).unwrap(),
+        reader.get_value::<Random>(1, None).unwrap(),
         Some(vec![1u8; 100]),
         "value 1 lives in page 0's late-flushed tail",
     );
-    assert_eq!(reader.get_value::<Random>(2).unwrap(), Some(vec![2u8; 100]));
+    assert_eq!(
+        reader.get_value::<Random>(2, None).unwrap(),
+        Some(vec![2u8; 100])
+    );
 }
 
 /// Counterexample check: a flusher created before a rollover grows only the old page. A reader
@@ -2135,7 +2183,7 @@ fn test_live_reload_refreshes_old_page_behind_unchanged_empty_page() {
 
     assert_eq!(reader.max_point_offset().unwrap(), 2);
     assert_eq!(
-        reader.get_value::<Random>(1).unwrap(),
+        reader.get_value::<Random>(1, None).unwrap(),
         Some(vec![1u8; 100]),
         "value 1 lives in page 0's late-flushed tail, behind the unchanged empty page 1",
     );
@@ -2194,6 +2242,12 @@ fn test_failed_page_reload_does_not_publish_mappings() {
     reader.live_reload(&MmapFs).unwrap();
 
     assert_eq!(reader.max_point_offset().unwrap(), 2);
-    assert_eq!(reader.get_value::<Random>(0).unwrap(), Some(vec![0u8; 100]));
-    assert_eq!(reader.get_value::<Random>(1).unwrap(), Some(vec![1u8; 100]));
+    assert_eq!(
+        reader.get_value::<Random>(0, None).unwrap(),
+        Some(vec![0u8; 100])
+    );
+    assert_eq!(
+        reader.get_value::<Random>(1, None).unwrap(),
+        Some(vec![1u8; 100])
+    );
 }

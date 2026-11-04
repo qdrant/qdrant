@@ -214,11 +214,10 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        ambient::unmeasured(reason("Vector storage read IO not measured"), || {
-            self.storage.get_value::<P>(key)
-        })?
-        .map(SparseVector::try_from)
-        .transpose()
+        self.storage
+            .get_value::<P>(key, None)?
+            .map(SparseVector::try_from)
+            .transpose()
     }
 
     fn for_each_in_sparse_batch<F>(

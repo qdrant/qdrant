@@ -30,7 +30,7 @@ pub fn random_data_bench(c: &mut Criterion) {
         let _scope = ambient::test_guard();
         b.iter(|| {
             for i in 0..PAYLOAD_COUNT {
-                let res = storage.get_value::<Random>(i).unwrap();
+                let res = storage.get_value::<Random>(i, None).unwrap();
                 assert!(res.is_some());
             }
         });

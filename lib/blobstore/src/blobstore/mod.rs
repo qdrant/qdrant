@@ -285,10 +285,14 @@ where
         }
     }
 
-    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
+    pub fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<Option<V>> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.get_value::<P>(point_offset),
-            BlobstoreInner::Logstore(storage) => storage.get_value::<P>(point_offset),
+            BlobstoreInner::Gridstore(storage) => storage.get_value::<P>(point_offset, hw_metric),
+            BlobstoreInner::Logstore(storage) => storage.get_value::<P>(point_offset, hw_metric),
         }
     }
 
@@ -300,10 +304,15 @@ where
     pub fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: Option<HwMetric>,
     ) -> Result<Option<Vec<u8>>> {
         match &self.inner {
-            BlobstoreInner::Gridstore(storage) => storage.get_value_bytes::<P>(point_offset),
-            BlobstoreInner::Logstore(storage) => storage.get_value_bytes::<P>(point_offset),
+            BlobstoreInner::Gridstore(storage) => {
+                storage.get_value_bytes::<P>(point_offset, hw_metric)
+            }
+            BlobstoreInner::Logstore(storage) => {
+                storage.get_value_bytes::<P>(point_offset, hw_metric)
+            }
         }
     }
 

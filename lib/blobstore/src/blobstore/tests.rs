@@ -32,7 +32,7 @@ use crate::fixtures::{
 #[rstest]
 fn test_empty_payload_storage(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     let (_dir, storage) = empty_storage_mode(mode);
-    let payload = storage.get_value::<Random>(0).unwrap();
+    let payload = storage.get_value::<Random>(0, None).unwrap();
     assert!(payload.is_none());
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 }
@@ -57,7 +57,7 @@ fn test_put_single_empty_value(#[values(Mode::Mutable, Mode::AppendOnly)] mode: 
         );
     }
 
-    let stored_payload = storage.get_value::<Random>(0).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, None).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), Payload::default());
 
@@ -98,7 +98,7 @@ fn test_put_single_payload(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode
     assert_eq!(page_mapping.page_id, 0); // first page
     assert_eq!(page_mapping.block_offset, 0); // first cell
 
-    let stored_payload = storage.get_value::<Random>(0).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, None).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
 
@@ -149,23 +149,23 @@ fn test_put_get_value_bytes(
         .put_value_bytes(0, payload_0.to_bytes(), hw_metric)
         .unwrap();
     assert_eq!(
-        storage.get_value::<Random>(0).unwrap(),
+        storage.get_value::<Random>(0, None).unwrap(),
         Some(payload_0.clone()),
     );
 
     // Value put with `put_value` reads back with `get_value_bytes` as its `Blob` encoding
     storage.put_value(1, &payload_1, hw_metric).unwrap();
     assert_eq!(
-        storage.get_value_bytes::<Random>(1).unwrap(),
+        storage.get_value_bytes::<Random>(1, None).unwrap(),
         Some(payload_1.to_bytes()),
     );
     assert_eq!(
-        storage.get_value_bytes::<Random>(0).unwrap(),
+        storage.get_value_bytes::<Random>(0, None).unwrap(),
         Some(payload_0.to_bytes()),
     );
 
     // Missing point offset reads as None
-    assert_eq!(storage.get_value_bytes::<Random>(2).unwrap(), None);
+    assert_eq!(storage.get_value_bytes::<Random>(2, None).unwrap(), None);
 }
 
 #[rstest]
@@ -191,7 +191,7 @@ fn test_value_bytes_cross_compression(
     // Transfer stored bytes as-is, without parsing
     for point_offset in 0..payloads.len() as PointOffset {
         let bytes = source
-            .get_value_bytes::<Random>(point_offset)
+            .get_value_bytes::<Random>(point_offset, None)
             .unwrap()
             .unwrap();
         target
@@ -202,7 +202,7 @@ fn test_value_bytes_cross_compression(
     for (point_offset, payload) in payloads.iter().enumerate() {
         assert_eq!(
             target
-                .get_value::<Random>(point_offset as PointOffset)
+                .get_value::<Random>(point_offset as PointOffset, None)
                 .unwrap()
                 .as_ref(),
             Some(payload),
@@ -252,7 +252,9 @@ fn test_read_values_bytes(
 
     for (idx, &point_offset) in offsets.iter().enumerate() {
         // Agrees with the single-value byte read, and with the values as they were stored.
-        let single = storage.get_value_bytes::<Random>(point_offset).unwrap();
+        let single = storage
+            .get_value_bytes::<Random>(point_offset, None)
+            .unwrap();
         assert_eq!(batch[idx], single, "mismatch at offset {point_offset}");
         assert_eq!(
             batch[idx],
@@ -330,7 +332,7 @@ fn test_put_payload(
             .put_value(*point_offset, payload, HwMetric::PayloadIoWrite)
             .unwrap();
 
-        let stored_payload = storage.get_value::<Random>(*point_offset).unwrap();
+        let stored_payload = storage.get_value::<Random>(*point_offset, None).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(&stored_payload.unwrap(), payload);
     }
@@ -338,7 +340,7 @@ fn test_put_payload(
     // read randomly
     payloads.shuffle(rng);
     for (point_offset, payload) in &payloads {
-        let stored_payload = storage.get_value::<Random>(*point_offset).unwrap();
+        let stored_payload = storage.get_value::<Random>(*point_offset, None).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload.clone());
     }
@@ -364,7 +366,7 @@ fn test_delete_single_payload() {
     assert_eq!(page_mapping.page_id, 0); // first page
     assert_eq!(page_mapping.block_offset, 0); // first cell
 
-    let stored_payload = storage.get_value::<Random>(0).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, None).unwrap();
     assert_eq!(stored_payload, Some(payload));
     assert_eq!(
         storage.get_storage_size_bytes().unwrap(),
@@ -377,7 +379,7 @@ fn test_delete_single_payload() {
     assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
 
     // get payload again
-    let stored_payload = storage.get_value::<Random>(0).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, None).unwrap();
     assert!(stored_payload.is_none());
     storage.flusher()().unwrap();
     assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
@@ -409,7 +411,7 @@ fn test_update_single_payload() {
             assert_eq!(page_mapping.page_id, 0); // first page
             assert_eq!(page_mapping.block_offset, expected_block_offset);
 
-            let stored_payload = storage.get_value::<Random>(0).unwrap();
+            let stored_payload = storage.get_value::<Random>(0, None).unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
         };
@@ -623,8 +625,8 @@ fn test_behave_like_hashmap(
             }
             Operation::Get(point_offset) => {
                 log::debug!("op:{i} GET offset:{point_offset}");
-                let v1_seq = storage.get_value::<Sequential>(point_offset).unwrap();
-                let v1_rand = storage.get_value::<Random>(point_offset).unwrap();
+                let v1_seq = storage.get_value::<Sequential>(point_offset, None).unwrap();
+                let v1_rand = storage.get_value::<Random>(point_offset, None).unwrap();
                 let v2 = model_hashmap.get(&point_offset).cloned();
                 assert_eq!(
                     v1_seq, v2,
@@ -712,7 +714,7 @@ fn test_behave_like_hashmap(
 
     // validate storage and model_hashmap are the same
     for point_offset in 0..=max_point_offset {
-        let stored_payload = storage.get_value::<Random>(point_offset).unwrap();
+        let stored_payload = storage.get_value::<Random>(point_offset, None).unwrap();
         let model_payload = model_hashmap.get(&point_offset);
         assert_eq!(
             stored_payload.as_ref(),
@@ -741,7 +743,7 @@ fn test_behave_like_hashmap(
 
     // validate storage and model_hashmap are the same
     for point_offset in 0..=max_point_offset {
-        let stored_payload = storage.get_value::<Random>(point_offset).unwrap();
+        let stored_payload = storage.get_value::<Random>(point_offset, None).unwrap();
         let model_payload = model_hashmap.get(&point_offset);
         assert_eq!(
             stored_payload.as_ref(),
@@ -786,7 +788,7 @@ fn test_handle_huge_payload() {
     assert_eq!(page_mapping.page_id, 0); // first page
     assert_eq!(page_mapping.block_offset, 0); // first cell
 
-    let stored_payload = storage.get_value::<Random>(0).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, None).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
 
@@ -809,7 +811,7 @@ fn test_handle_huge_payload() {
         assert!(deleted.is_some());
         assert_eq!(storage.as_gridstore().pages.read().num_pages(), 2);
 
-        assert!(storage.get_value::<Random>(0).unwrap().is_none());
+        assert!(storage.get_value::<Random>(0, None).unwrap().is_none());
     }
 }
 
@@ -836,7 +838,7 @@ fn test_storage_persistence_basic(#[values(Mode::Mutable, Mode::AppendOnly)] mod
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value::<Random>(0).unwrap();
+        let stored_payload = storage.get_value::<Random>(0, None).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
 
@@ -848,7 +850,7 @@ fn test_storage_persistence_basic(#[values(Mode::Mutable, Mode::AppendOnly)] mod
     let storage = Blobstore::<Payload>::open(MmapFs, path, Populate::No).unwrap();
     assert_eq!(storage.max_point_offset(), 1);
 
-    let stored_payload = storage.get_value::<Random>(0).unwrap();
+    let stored_payload = storage.get_value::<Random>(0, None).unwrap();
     assert!(stored_payload.is_some());
     assert_eq!(stored_payload.unwrap(), payload);
 }
@@ -884,13 +886,13 @@ fn test_open_config_without_mode_as_mutable() {
     let storage = Blobstore::<Payload>::open(MmapFs, path.clone(), Populate::No).unwrap();
     storage.as_gridstore();
     assert_eq!(
-        storage.get_value::<Random>(0).unwrap(),
+        storage.get_value::<Random>(0, None).unwrap(),
         Some(minimal_payload()),
     );
 
     let reader = BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path, Populate::No).unwrap();
     assert_eq!(
-        reader.get_value::<Random>(0).unwrap(),
+        reader.get_value::<Random>(0, None).unwrap(),
         Some(minimal_payload()),
     );
 }
@@ -963,9 +965,12 @@ fn test_with_real_hm_data() {
         for (row_index, result) in rdr.records().enumerate() {
             let record = result.unwrap();
             let storage_index = row_index as u32 + right_shift_offset;
-            let first = storage.get_value::<Random>(storage_index).unwrap().unwrap();
+            let first = storage
+                .get_value::<Random>(storage_index, None)
+                .unwrap()
+                .unwrap();
             let second = storage
-                .get_value::<Random>(storage_index + EXPECTED_LEN as u32)
+                .get_value::<Random>(storage_index + EXPECTED_LEN as u32, None)
                 .unwrap()
                 .unwrap();
             assert_eq!(first, second);
@@ -1015,7 +1020,10 @@ fn test_with_real_hm_data() {
 
     let offset: u32 = 1;
     for i in (0..EXPECTED_LEN).rev() {
-        let payload = storage.get_value::<Random>(i as u32).unwrap().unwrap();
+        let payload = storage
+            .get_value::<Random>(i as u32, None)
+            .unwrap()
+            .unwrap();
         storage
             .put_value(i as u32 + offset, &payload, hw_metric)
             .unwrap();
@@ -1105,7 +1113,7 @@ fn test_different_block_sizes(
         }
     }
 
-    let stored_payload = storage.get_value::<Random>(last_point_id).unwrap();
+    let stored_payload = storage.get_value::<Random>(last_point_id, None).unwrap();
     assert_eq!(stored_payload, Some(payload));
 }
 
@@ -1122,7 +1130,7 @@ fn test_deferred_flush() {
     let _scope = ambient::test_guard();
     let get_payload = |storage: &Blobstore<Payload>| {
         storage
-            .get_value::<Random>(0)
+            .get_value::<Random>(0, None)
             .expect("no io error")
             .expect("offset exists")
             .0
@@ -1153,7 +1161,7 @@ fn test_deferred_flush() {
             assert_eq!(page_mapping.page_id, 0); // first page
             assert_eq!(page_mapping.block_offset, expected_block_offset);
 
-            let stored_payload = storage.get_value::<Random>(0).unwrap();
+            let stored_payload = storage.get_value::<Random>(0, None).unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
         };
@@ -1217,7 +1225,7 @@ fn test_deferred_flush_with_delete() {
     let get_payload = |storage: &Blobstore<Payload>| {
         Some(
             storage
-                .get_value::<Random>(0)
+                .get_value::<Random>(0, None)
                 .unwrap()?
                 .0
                 .get("key")
@@ -1248,7 +1256,7 @@ fn test_deferred_flush_with_delete() {
             assert_eq!(page_mapping.page_id, 0); // first page
             assert_eq!(page_mapping.block_offset, expected_block_offset);
 
-            let stored_payload = storage.get_value::<Random>(0).unwrap();
+            let stored_payload = storage.get_value::<Random>(0, None).unwrap();
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
         };
@@ -1347,7 +1355,7 @@ fn test_deferred_flush_with_delete() {
         let reader =
             BlobstoreReader::<Payload, MmapFile>::open(&MmapFs, path.clone(), Populate::No)
                 .unwrap();
-        let payload = reader.get_value::<Random>(0).unwrap()?;
+        let payload = reader.get_value::<Random>(0, None).unwrap()?;
         Some(
             payload.0["key"]
                 .as_str()
@@ -1422,14 +1430,14 @@ fn test_live_reload(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     assert_eq!(reader.max_point_offset().unwrap(), 2);
 
     // Step 3: Verify reader sees initial data
-    let v0 = reader.get_value::<Random>(0).unwrap();
+    let v0 = reader.get_value::<Random>(0, None).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
-    let v1 = reader.get_value::<Random>(1).unwrap();
+    let v1 = reader.get_value::<Random>(1, None).unwrap();
     assert_eq!(v1.as_ref(), Some(&payload_1));
 
     // Step 4: live_reload when nothing changed must keep serving the same data
     reader.live_reload(&MmapFs).unwrap();
-    let v0 = reader.get_value::<Random>(0).unwrap();
+    let v0 = reader.get_value::<Random>(0, None).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
 
     // Step 5: Write more data via writable storage and flush
@@ -1442,15 +1450,15 @@ fn test_live_reload(#[values(Mode::Mutable, Mode::AppendOnly)] mode: Mode) {
     // Step 6: live_reload should make new data accessible
     reader.live_reload(&MmapFs).unwrap();
     assert_eq!(reader.max_point_offset().unwrap(), 4);
-    let v2 = reader.get_value::<Random>(2).unwrap();
+    let v2 = reader.get_value::<Random>(2, None).unwrap();
     assert_eq!(v2.as_ref(), Some(&payload_2));
-    let v3 = reader.get_value::<Random>(3).unwrap();
+    let v3 = reader.get_value::<Random>(3, None).unwrap();
     assert_eq!(v3.as_ref(), Some(&payload_3));
 
     // Original data should still be readable
-    let v0 = reader.get_value::<Random>(0).unwrap();
+    let v0 = reader.get_value::<Random>(0, None).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
-    let v1 = reader.get_value::<Random>(1).unwrap();
+    let v1 = reader.get_value::<Random>(1, None).unwrap();
     assert_eq!(v1.as_ref(), Some(&payload_1));
 }
 
@@ -1516,7 +1524,7 @@ fn test_live_reload_disk_cache() {
     // locally — the staleness this test guards against only occurs once the
     // pre-write state is cached.
     assert_eq!(reader.max_point_offset().unwrap(), 1);
-    let v0 = reader.get_value::<Random>(0).unwrap();
+    let v0 = reader.get_value::<Random>(0, None).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
 
     // Write another value; the tracker header (and slot block 0) are
@@ -1528,9 +1536,9 @@ fn test_live_reload_disk_cache() {
     reader.live_reload(&cache_fs).unwrap();
 
     assert_eq!(reader.max_point_offset().unwrap(), 2);
-    let v1 = reader.get_value::<Random>(1).unwrap();
+    let v1 = reader.get_value::<Random>(1, None).unwrap();
     assert_eq!(v1.as_ref(), Some(&payload_1));
-    let v0 = reader.get_value::<Random>(0).unwrap();
+    let v0 = reader.get_value::<Random>(0, None).unwrap();
     assert_eq!(v0.as_ref(), Some(&payload_0));
 }
 
@@ -1578,7 +1586,7 @@ fn test_live_reload_across_pages() {
 
     // Verify reader can read all initial data
     for i in 0..first_batch {
-        let v = reader.get_value::<Random>(i).unwrap();
+        let v = reader.get_value::<Random>(i, None).unwrap();
         assert_eq!(v.as_ref(), Some(&payload), "missing point {i}");
     }
 
@@ -1609,7 +1617,7 @@ fn test_live_reload_across_pages() {
 
     // Verify all data is readable
     for i in 0..(first_batch + second_batch) {
-        let v = reader.get_value::<Random>(i).unwrap();
+        let v = reader.get_value::<Random>(i, None).unwrap();
         assert_eq!(v.as_ref(), Some(&payload), "missing point {i} after reload");
     }
 }
@@ -1637,7 +1645,7 @@ fn test_skip_deferred_flush_after_clear() {
             .unwrap();
         assert_eq!(storage.as_gridstore().pages.read().num_pages(), 1);
 
-        let stored_payload = storage.get_value::<Random>(point_offset).unwrap();
+        let stored_payload = storage.get_value::<Random>(point_offset, None).unwrap();
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
     };
@@ -1801,7 +1809,7 @@ fn test_for_each_in_batch_congruent_with_get_value(
 
     let single_results: Vec<Option<Payload>> = offsets
         .iter()
-        .map(|&o| storage.get_value::<Random>(o).unwrap())
+        .map(|&o| storage.get_value::<Random>(o, None).unwrap())
         .collect();
 
     let mut batch_results: Vec<Option<Payload>> = vec![None; offsets.len()];
@@ -1844,7 +1852,7 @@ fn test_batch_read_honors_pending_unset_of_flushed_value() {
     // persisted pointer — the exact precondition the batched read must respect.
     storage.delete_value(0).unwrap();
 
-    let single = storage.get_value::<Random>(0).unwrap();
+    let single = storage.get_value::<Random>(0, None).unwrap();
     assert_eq!(single, None, "single get must see the pending delete");
 
     let mut batch = [Some(Payload::default())];
@@ -1915,7 +1923,7 @@ async fn test_preopen_schedules_files_for_open(
     )
     .unwrap();
     assert_eq!(
-        ambient::test(|| reader.get_value::<Random>(0)).unwrap(),
+        ambient::test(|| reader.get_value::<Random>(0, None)).unwrap(),
         Some(payload),
     );
 }
@@ -1952,14 +1960,16 @@ fn read_only_reader_over_write_enforced_backend() {
     )
     .unwrap();
 
-    let stored = reader.get_value::<Random>(0).unwrap();
+    let stored = reader.get_value::<Random>(0, None).unwrap();
     assert_eq!(stored, Some(payload));
 }
 
 /// Assert that every value reads back byte-for-byte from the storage.
 fn assert_stored_bytes(storage: &Blobstore<Payload>, values: &[Vec<u8>]) {
     for (offset, expected) in values.iter().enumerate() {
-        let stored = storage.get_value_bytes::<Random>(offset as u32).unwrap();
+        let stored = storage
+            .get_value_bytes::<Random>(offset as u32, None)
+            .unwrap();
         assert_eq!(
             stored.as_deref(),
             Some(expected.as_slice()),
@@ -2220,7 +2230,7 @@ fn assert_corrupt_pointer_errors(
     let _scope = ambient::test_guard();
 
     for (offset, payload) in payloads.iter().enumerate() {
-        let stored = storage.get_value::<Random>(offset as PointOffset);
+        let stored = storage.get_value::<Random>(offset as PointOffset, None);
         if offset == corrupt_offset {
             assert!(
                 stored.is_err(),
@@ -2266,7 +2276,9 @@ fn test_torn_pointer_with_zero_length_reads_as_none() {
 
     // The torn pointer reads as no value, the other values are unaffected
     for (offset, payload) in payloads.iter().enumerate() {
-        let stored = storage.get_value::<Random>(offset as PointOffset).unwrap();
+        let stored = storage
+            .get_value::<Random>(offset as PointOffset, None)
+            .unwrap();
         let expected = (offset != torn_offset).then_some(payload);
         assert_eq!(stored.as_ref(), expected, "value {offset}");
     }
@@ -2339,7 +2351,9 @@ fn test_pointer_to_invalid_bytes_returns_error(
 fn assert_payloads(storage: &Blobstore<Payload>, payloads: &[Payload]) {
     let _scope = ambient::test_guard();
     for (offset, payload) in payloads.iter().enumerate() {
-        let stored = storage.get_value::<Random>(offset as PointOffset).unwrap();
+        let stored = storage
+            .get_value::<Random>(offset as PointOffset, None)
+            .unwrap();
         assert_eq!(stored.as_ref(), Some(payload), "value {offset}");
     }
 }
