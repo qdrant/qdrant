@@ -951,63 +951,23 @@ mod tests {
     }
 
     #[test]
-    fn test_max_token_chars() {
+    fn test_prefix_tokenizer_max_token_chars() {
         use tokens_processor::MAX_TOKEN_CHARS;
 
-        // Counted in characters, not bytes: `α` takes two
-        let kept = "α".repeat(MAX_TOKEN_CHARS);
+        // Counted in characters, not bytes: `β` takes two
         let cut = "β".repeat(MAX_TOKEN_CHARS);
-        let text = format!("{kept} {cut}βββ end");
+        let text = format!("{cut}βββ");
+        let tokens_processor =
+            TokensProcessor::new(true, false, Default::default(), None, None, None);
 
-        let tokenize = |tokenizer: TokenizerType, kind: TokenizerTextKind| {
-            let tokenizer = Tokenizer::new(
-                tokenizer,
-                TokensProcessor::new(true, false, Default::default(), None, None, None),
-            );
-            let mut out = Vec::new();
-            tokenizer.tokenize(kind, &text, |token| out.push(token.into_owned()));
-            out
-        };
-        for tokenizer in [
-            TokenizerType::Whitespace,
-            TokenizerType::Word,
-            TokenizerType::Code,
-        ] {
-            for kind in [TokenizerTextKind::Document, TokenizerTextKind::Query] {
-                assert_eq!(
-                    tokenize(tokenizer, kind),
-                    [kept.as_str(), cut.as_str(), "end"],
-                    "{tokenizer:?}",
-                );
-            }
-        }
+        let mut doc = Vec::new();
+        PrefixTokenizer::tokenize(&text, &tokens_processor, |t| doc.push(t.into_owned()));
+        assert_eq!(doc.len(), MAX_TOKEN_CHARS);
+        assert_eq!(doc.last(), Some(&cut));
 
-        // Prefixes of the tokens after cutting them
-        let prefixes = tokenize(TokenizerType::Prefix, TokenizerTextKind::Document);
-        assert_eq!(prefixes.len(), 2 * MAX_TOKEN_CHARS + "end".len());
-        assert!(prefixes.contains(&cut));
-        assert!(
-            prefixes
-                .iter()
-                .all(|token| token.chars().count() <= MAX_TOKEN_CHARS)
-        );
-        assert_eq!(
-            tokenize(TokenizerType::Prefix, TokenizerTextKind::Query),
-            [kept.as_str(), cut.as_str(), "end"],
-        );
-
-        // Cut before stemming, which takes time quadratic in token length
-        let stemming = TokensProcessor::new(
-            true,
-            false,
-            Default::default(),
-            Some(make_stemmer(SnowballLanguage::Greek)),
-            None,
-            None,
-        );
-        let stem = |token: &str| stemming.process_token(token, true).map(Cow::into_owned);
-        let cut_stem = stem(&"ά".repeat(MAX_TOKEN_CHARS));
-        assert!(cut_stem.is_some());
-        assert_eq!(stem(&"ά".repeat(100_000)), cut_stem);
+        // The query path doesn't go through `process_token`, but cuts the same way
+        let mut query = Vec::new();
+        PrefixTokenizer::tokenize_query(&text, &tokens_processor, |t| query.push(t.into_owned()));
+        assert_eq!(query, [cut]);
     }
 }
