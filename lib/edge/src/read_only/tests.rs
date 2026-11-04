@@ -761,3 +761,73 @@ fn failed_reload_reopens_segment() {
     assert_eq!(exact_count(&follower), 30);
     assert_follower_vectors(&follower, &[30]);
 }
+
+fn tagged_points(ids: impl IntoIterator<Item = u64>) -> Vec<PointStructPersisted> {
+    use segment::types::Payload;
+
+    ids.into_iter()
+        .map(|id| {
+            let mut p = point(id);
+            let payload = serde_json::json!({ "tag": format!("t{}", id % 3) });
+            p.payload = Some(Payload::from(payload.as_object().unwrap().clone()));
+            p
+        })
+        .collect()
+}
+
+fn tag_index_operation(create: bool) -> shard::operations::CollectionUpdateOperations {
+    use segment::types::{PayloadFieldSchema, PayloadSchemaType};
+    use shard::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+
+    let operation = if create {
+        FieldIndexOperations::CreateIndex(CreateIndex {
+            field_name: "tag".parse().unwrap(),
+            field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        })
+    } else {
+        FieldIndexOperations::DeleteIndex("tag".parse().unwrap())
+    };
+    CollectionUpdateOperations::FieldIndexOperation(operation)
+}
+
+/// DropIndex wipes a payload index's files in place while its segment stays listed. A
+/// follower that loaded the index must drop it from memory before the point-delta reload,
+/// or every later reload fails on the wiped files. CreateIndex on a surviving segment
+/// must be picked up the same way.
+#[test]
+fn live_reload_follows_create_and_drop_of_a_loaded_index() {
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-payload-index")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    leader
+        .update(PointOperation(UpsertPoints(PointsList(tagged_points(
+            1..=20,
+        )))))
+        .unwrap();
+    leader.update(tag_index_operation(true)).unwrap();
+    leader.flush().unwrap();
+
+    // The follower opens with the `tag` index loaded.
+    let follower = open_follower(dir.path());
+    assert_eq!(exact_count(&follower), 20);
+
+    for round in 0..3_u64 {
+        // Drop, then write: the point-delta reload has new data to stage.
+        leader.update(tag_index_operation(false)).unwrap();
+        let ids = (21 + round * 10)..=(30 + round * 10);
+        leader
+            .update(PointOperation(UpsertPoints(PointsList(tagged_points(ids)))))
+            .unwrap();
+        leader.flush().unwrap();
+        follower.live_reload().unwrap();
+        assert_eq!(exact_count(&follower), 30 + round as usize * 10);
+
+        leader.update(tag_index_operation(true)).unwrap();
+        leader.flush().unwrap();
+        follower.live_reload().unwrap();
+    }
+    assert_follower_vectors(&follower, &[1, 25, 50]);
+}
