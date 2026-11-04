@@ -38,7 +38,7 @@ mod local_builder;
 mod payload_blocks;
 
 use self::block_filter::BlockSkip;
-use self::context::{GraphBuildContext, GraphParams};
+use self::context::{GraphBuildContext, GraphParams, MainGraphProgress};
 use self::graph_builder::{GraphBuildOptions, GraphBuilder, GraphBuilderMethod};
 use self::payload_blocks::{BlockLoader, FieldBlocks, field_payload_blocks, payload_block_fields};
 
@@ -88,12 +88,54 @@ impl HNSWIndex {
         let total_vector_count = vector_storage_ref.total_vector_count();
         let mut config = derive_config(&hnsw_config, &*vector_storage_ref, total_vector_count);
 
-        if config.m == 0 {
+        let payload_m = payload_hnsw_m(&config);
+        let num_entries = std::cmp::max(
+            1,
+            total_vector_count
+                .checked_div(config.full_scan_threshold)
+                .unwrap_or(0)
+                * 10,
+        );
+        let mut ctx = GraphBuildContext {
+            id_tracker: &id_tracker_ref,
+            vector_storage: &vector_storage_ref,
+            quantized_vectors: quantized_vectors_ref.as_ref(),
+            progress: None,
+            main_params: GraphParams {
+                hnsw_m: HnswM::new(config.m, config.m0),
+                ef_construct: config.ef_construct,
+                entry_points_num: num_entries,
+            },
+            block_params: GraphParams {
+                hnsw_m: payload_m,
+                ef_construct: config.ef_construct,
+                entry_points_num: 1,
+            },
+            stopped,
+        };
+
+        if !ctx.has_main_graph() {
             debug!("skip building main HNSW graph");
         }
 
-        let payload_m = payload_hnsw_m(&config);
+        // Progress subtasks, created before any work so that every phase is listed from the start
+        ctx.progress = ctx.has_main_graph().then(|| MainGraphProgress {
+            migrate: progress.subtask("migrate"),
+            main_graph: progress.subtask("main_graph"),
+        });
         let payload_block_fields = payload_block_fields(&payload_index_ref, payload_m);
+        let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
+            let progress_additional_links = progress.subtask("additional_links");
+            let fields = payload_block_fields
+                .into_iter()
+                .map(|(field, payload_schema)| {
+                    let subtask_name = format!("{}:{field}", payload_schema.name());
+                    let field_progress = progress_additional_links.subtask(subtask_name);
+                    (field_progress, field, payload_schema)
+                })
+                .collect::<Vec<_>>();
+            (progress_additional_links, fields)
+        });
 
         let old_index = old_indices
             .iter()
@@ -116,33 +158,8 @@ impl HNSWIndex {
             permit.num_cpus,
         );
 
-        let num_entries = std::cmp::max(
-            1,
-            total_vector_count
-                .checked_div(config.full_scan_threshold)
-                .unwrap_or(0)
-                * 10,
-        );
-
         let pool = build_thread_pool(permit.num_cpus as usize)?;
 
-        let ctx = GraphBuildContext {
-            id_tracker: &id_tracker_ref,
-            vector_storage: &vector_storage_ref,
-            quantized_vectors: quantized_vectors_ref.as_ref(),
-            progress: &progress,
-            main_params: GraphParams {
-                hnsw_m: HnswM::new(config.m, config.m0),
-                ef_construct: config.ef_construct,
-                entry_points_num: num_entries,
-            },
-            block_params: GraphParams {
-                hnsw_m: payload_m,
-                ef_construct: config.ef_construct,
-                entry_points_num: 1,
-            },
-            stopped,
-        };
         // `R` may be unsized, while `&mut R` is not
         let mut rng = rng;
         let mut builder = GraphBuilder::select(
@@ -152,23 +169,9 @@ impl HNSWIndex {
             GraphBuildOptions {
                 old_index: old_index.as_ref(),
                 gpu_device,
-                has_payload_blocks: !payload_block_fields.is_empty(),
+                has_payload_blocks: progress_payload_blocks.is_some(),
             },
         )?;
-
-        // Progress subtasks of the payload blocks, after those of the builder
-        let progress_payload_blocks = (!payload_block_fields.is_empty()).then(|| {
-            let progress_additional_links = progress.subtask("additional_links");
-            let fields = payload_block_fields
-                .into_iter()
-                .map(|(field, payload_schema)| {
-                    let subtask_name = format!("{}:{field}", payload_schema.name());
-                    let field_progress = progress_additional_links.subtask(subtask_name);
-                    (field_progress, field, payload_schema)
-                })
-                .collect::<Vec<_>>();
-            (progress_additional_links, fields)
-        });
 
         // Links nothing when `m == 0`
         builder.build_main()?;

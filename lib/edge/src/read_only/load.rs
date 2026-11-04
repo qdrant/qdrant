@@ -12,6 +12,7 @@ use rayon::ThreadPool;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use segment::data_types::load_profile::LoadProfile;
+use segment::id_tracker::delete_versions::DeleteGating;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::{ReadOnlySegment, build_cached_fs_async};
 use uuid::Uuid;
@@ -40,6 +41,7 @@ pub(crate) fn load_segments_parallel<S>(
     fs: &S::Fs,
     segments: impl IntoIterator<Item = (Uuid, PathBuf)>,
     load_profile: Option<&LoadProfile>,
+    gating: DeleteGating,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<(Uuid, ReadOnlySegment<S>)>>
 where
@@ -74,6 +76,7 @@ where
                                 uuid,
                                 None,
                                 load_profile,
+                                gating,
                                 is_stopped,
                             )
                         })
@@ -169,6 +172,7 @@ pub(crate) fn reload_segments_parallel<S>(
     fs: &S::Fs,
     segments: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)>,
     load_profile: Option<&LoadProfile>,
+    gating: DeleteGating,
     is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<(Uuid, OperationResult<()>)>>
 where
@@ -252,7 +256,13 @@ where
                         let mut segment = segment.write();
                         segment.live_reload(max_committed_id).or_else(|err| {
                             if requires_reopen(&err) {
-                                reopen_after_failed_reload(&mut segment, err, fs, load_profile)
+                                reopen_after_failed_reload(
+                                    &mut segment,
+                                    err,
+                                    fs,
+                                    load_profile,
+                                    gating,
+                                )
                             } else {
                                 Err(err)
                             }
@@ -312,11 +322,15 @@ fn requires_reopen(err: &OperationError) -> bool {
 /// applied reload. The reopen is not cancellable for the same reason. If it
 /// fails, the segment keeps its partially applied state and the error is
 /// returned.
+///
+/// The segment is reopened with `gating`, like a newly loaded one, so it holds
+/// the versioned deletes the follower has not released yet.
 pub(super) fn reopen_after_failed_reload<S>(
     segment: &mut ReadOnlySegment<S>,
     reload_err: OperationError,
     fs: &S::Fs,
     load_profile: Option<&LoadProfile>,
+    gating: DeleteGating,
 ) -> OperationResult<()>
 where
     S: UniversalReadExt + 'static,
@@ -324,7 +338,7 @@ where
 {
     let uuid = segment.uuid;
     log::warn!("live_reload of segment {uuid} failed, reopening it: {reload_err}");
-    match ReadOnlySegment::open(fs, &segment.segment_path, uuid, None, load_profile) {
+    match ReadOnlySegment::open_gated(fs, &segment.segment_path, uuid, None, load_profile, gating) {
         Ok(reopened) => {
             *segment = reopened;
             Ok(())

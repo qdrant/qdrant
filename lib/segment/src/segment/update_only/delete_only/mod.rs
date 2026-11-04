@@ -9,9 +9,10 @@ use common::universal_io::UniversalAppendFs;
 use super::DeleteOnlyIdTrackerState;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::delete_only_tracker_enum::DeleteOnlyIdTrackerEnum;
+use crate::id_tracker::delete_versions::DeleteVersioning;
 use crate::id_tracker::disk_id_tracker::update_only::UpdateOnlyDiskIdTracker;
 use crate::id_tracker::immutable_id_tracker::update_only::UpdateOnlyImmutableIdTracker;
-use crate::types::PointIdType;
+use crate::types::{PointIdType, SeqNumberType};
 
 /// A segment open for deletes: nothing in it can grow, so the only thing a
 /// batch can do here is retire points that are already there. Where their
@@ -46,12 +47,16 @@ impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
     }
 
     /// Retire the given points by marking the slots they occupy in the id
-    /// tracker's stored deleted mask — the only thing written, the data on
-    /// those slots stays.
+    /// tracker's stored deleted mask — the data on those slots stays. They go
+    /// to the delete log first, with `version`, see
+    /// [`delete_versions`](crate::id_tracker::delete_versions).
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
     ) -> OperationResult<()> {
-        self.id_tracker.tombstone_points(&self.fs, points)
+        self.id_tracker
+            .tombstone_points(&self.fs, points, version, versioning)
     }
 }

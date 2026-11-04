@@ -8,8 +8,10 @@ use common::universal_io::{
 };
 use futures::lock::Mutex;
 
+use super::held_deletes::HeldMappingDeletes;
 use super::{ReadOnlyAppendableIdTracker, TrackerFiles};
 use crate::common::operation_error::OperationResult;
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::mutable_id_tracker::mappings_storage::mappings_path;
 use crate::id_tracker::mutable_id_tracker::update_only::PendingInsert;
 use crate::id_tracker::mutable_id_tracker::versions_storage::{
@@ -73,14 +75,23 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
     ) -> OperationResult<Self> {
-        Self::open_capped(fs, segment_path, deferred_internal_id, None)
+        Self::open_capped(
+            fs,
+            segment_path,
+            deferred_internal_id,
+            None,
+            DeleteGating::Immediate,
+        )
     }
 
+    /// [`Self::open`], committing points below `max_committed_offset` only, and treating versioned
+    /// deletes as `gating` says.
     pub fn open_capped(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: impl Into<PathBuf>,
         deferred_internal_id: Option<PointOffsetType>,
         max_committed_offset: Option<PointOffsetType>,
+        gating: DeleteGating,
     ) -> OperationResult<Self> {
         // The bootstrap below opens through the raw fs passed here, bypassing
         // any prefetch pool. Later reloads open through the fs their caller
@@ -99,6 +110,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             staged_inserts: Default::default(),
             max_claimed_internal_id: None,
             mappings_read_to: 0,
+            held_deletes: HeldMappingDeletes::for_gating(gating),
             // Opened lazily by `live_reload`: the files may not exist until the writer flushes.
             files: Mutex::new(TrackerFiles {
                 mappings: None,

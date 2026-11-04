@@ -231,7 +231,7 @@ where
             MappingChange::Insert(external_id, internal_id) => {
                 mappings.set_link(external_id, internal_id);
             }
-            MappingChange::Delete(external_id) => {
+            MappingChange::Delete(external_id) | MappingChange::DeleteVersioned(external_id, _) => {
                 mappings.drop(external_id);
             }
         }

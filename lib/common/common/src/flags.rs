@@ -92,9 +92,17 @@ pub struct FeatureFlags {
     /// Existing `GraphInline` segments are always readable, regardless of this flag.
     pub combined_vector_storage: bool,
 
+    /// Record the version of every delete a serverless writer makes, in formats older readers
+    /// cannot parse: versioned delete entries in appendable mappings logs, and a delete log next to
+    /// the deleted mask of immutable segments. Followers use the versions to never apply the delete
+    /// of a moved point before they see its new copy. Gates writing only: both formats are always
+    /// readable, and a delete log that exists is always appended to.
+    pub versioned_deletes: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
-    /// [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].
+    /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
+    /// [`Self::versioned_deletes`].
     ///
     /// Note that this will only be applied when passed into [`init_feature_flags`].
     pub serverless_compatible: bool,
@@ -118,6 +126,7 @@ impl Default for FeatureFlags {
             transfer_raw_payloads: true,
             persist_proxy_segments: false,
             combined_vector_storage: true,
+            versioned_deletes: false,
             serverless_compatible: false,
         }
     }
@@ -160,6 +169,8 @@ impl FeatureFlags {
             transfer_raw_payloads: true,
             persist_proxy_segments: true,
             combined_vector_storage: true,
+            // Deliberately not enabled by `all`: it changes the persisted storage format.
+            versioned_deletes: false,
             serverless_compatible: false,
         }
     }
@@ -179,6 +190,7 @@ impl FeatureFlags {
             self.append_only_storages = true;
             self.compact_logstore_tracker = true;
             self.persist_proxy_segments = true;
+            self.versioned_deletes = true;
         }
 
         // Append-only storages cannot rewrite slots.
@@ -240,6 +252,7 @@ mod tests {
         assert!(flags.append_only_storages);
         assert!(flags.compact_logstore_tracker);
         assert!(flags.persist_proxy_segments);
+        assert!(flags.versioned_deletes);
     }
 
     #[test]
@@ -257,6 +270,7 @@ mod tests {
         assert!(flags.append_only_storages);
         assert!(flags.compact_logstore_tracker);
         assert!(flags.persist_proxy_segments);
+        assert!(flags.versioned_deletes);
     }
 
     #[test]

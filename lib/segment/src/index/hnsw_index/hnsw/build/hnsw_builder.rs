@@ -9,10 +9,9 @@ use log::debug;
 use rayon::prelude::*;
 
 use super::block::Block;
-use super::context::GraphBuildContext;
+use super::context::{GraphBuildContext, MainGraphProgress};
 use super::graph_builder::GraphBuilderMethod;
-use super::local_builder::{LocalBuilder, LocalMethod};
-use super::payload_blocks::FieldBlocks;
+use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::id_tracker::IdTrackerRead;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -22,7 +21,7 @@ use crate::index::hnsw_index::hnsw::{
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 
 /// Inserts points one at a time, searching the graph built so far.
-/// Healing and GPU wrap it and use it for everything but their own main graph.
+/// Healing wraps it and uses it for everything but its own main graph.
 pub(super) struct HnswBuilder<'a>(pub LocalBuilder<'a>);
 
 impl HnswBuilder<'_> {
@@ -92,35 +91,32 @@ impl HnswBuilder<'_> {
     }
 }
 
-impl<'a> LocalMethod<'a> for HnswBuilder<'a> {
-    fn local(&mut self) -> &mut LocalBuilder<'a> {
-        &mut self.0
-    }
-
+impl GraphBuilderMethod for HnswBuilder<'_> {
     fn build_block(
         &mut self,
         points: &[PointOffsetType],
         counter: &AtomicU64,
     ) -> OperationResult<()> {
-        let block = Block::new(self.0.ctx, points);
+        let block = Block::new(&self.0.ctx, points);
         let local_ids = (0..points.len() as PointOffsetType).collect::<Vec<_>>();
         block.insert(&local_ids, self.0.pool, counter)?;
         block.merge_into(&mut self.0.graph);
         Ok(())
     }
-}
 
-impl GraphBuilderMethod for HnswBuilder<'_> {
     fn build_main(&mut self) -> OperationResult<()> {
         if !self.0.ctx.has_main_graph() {
+            // No main graph
             return Ok(());
         }
-        let progress = self.0.take_main_graph_progress();
-        self.insert(&self.0.points, progress)
-    }
-
-    fn build_field_blocks(&mut self, field: FieldBlocks<'_>) -> OperationResult<()> {
-        self.build_blocks(field)
+        let progress = self.0.ctx.progress.take().expect("main graph built once");
+        let MainGraphProgress {
+            migrate,
+            main_graph,
+        } = progress;
+        // Nothing to heal
+        drop(migrate);
+        self.insert(&self.0.points, main_graph)
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {

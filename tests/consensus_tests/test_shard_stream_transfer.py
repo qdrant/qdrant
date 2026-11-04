@@ -32,6 +32,27 @@ def run_update_points_in_background(peer_url, collection_name, num_points=None, 
     return p
 
 
+# Must be top-level: Python 3.14 defaults to the forkserver start method, which
+# pickles Process targets (nested locals are not picklable).
+def set_payload_in_loop(peer_url, point_id):
+    while True:
+        r = requests.post(
+            f"{peer_url}/collections/{COLLECTION_NAME}/points/payload?wait=true",
+            json={
+                "points": [point_id],
+                "payload": {"n": random.random()},
+            },
+        )
+        assert_http_ok(r)
+        sleep(0.1)
+
+
+def run_set_payload_in_background(peer_url, point_id):
+    p = multiprocessing.Process(target=set_payload_in_loop, args=(peer_url, point_id))
+    p.start()
+    return p
+
+
 def check_data_consistency(data):
 
     assert(len(data) > 1)
@@ -304,23 +325,6 @@ def test_transfer_change_pending_point(tmp_path: pathlib.Path):
 
     N_TRANSFERS = 5
     N_POINTS = 5000
-
-    def set_payload_in_loop(peer_url, point_id):
-        while True:
-            r = requests.post(
-                f"{peer_url}/collections/{COLLECTION_NAME}/points/payload?wait=true",
-                json={
-                    "points": [point_id],
-                    "payload": {"n": random.random()},
-                },
-            )
-            assert_http_ok(r)
-            sleep(0.1)
-
-    def run_set_payload_in_background(peer_url, point_id):
-        p = multiprocessing.Process(target=set_payload_in_loop, args=(peer_url, point_id))
-        p.start()
-        return p
 
     # seed port to reuse the same port for the restarted nodes
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)

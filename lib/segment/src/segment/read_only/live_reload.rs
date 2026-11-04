@@ -12,6 +12,7 @@ use crate::common::live_reload::LiveReload;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::id_tracker::mutable_id_tracker::read_only::LiveReloadResult;
 use crate::index::UniversalReadExt;
+use crate::types::SeqNumberType;
 
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
     /// Stage every component's next [`Self::live_reload`] under shared access:
@@ -159,7 +160,88 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     }
 }
 
+impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S> {
+    /// Whether [`Self::release_held_deletes`] with this gate would release anything.
+    pub fn releases_held_deletes(&self, gate: SeqNumberType) -> bool {
+        self.id_tracker.borrow().releases_held_deletes(gate)
+    }
+
+    /// Raise the gate of the held versioned deletes to `gate`, and apply the ones it now covers to
+    /// every component, see [`DeleteGating::Held`]. Does no IO.
+    ///
+    /// The id tracker deletes them first, so readers stop reaching them at once. If an earlier
+    /// reload left a delta unapplied, or a component fails here, the released offsets join that
+    /// delta, and the next [`Self::live_reload`] replays them with it.
+    ///
+    /// [`DeleteGating::Held`]: crate::id_tracker::delete_versions::DeleteGating::Held
+    pub fn release_held_deletes(&mut self, gate: SeqNumberType) -> OperationResult<()> {
+        let Self {
+            uuid: _,
+            segment_path: _,
+            id_tracker,
+            vector_data,
+            payload_index,
+            payload_storage,
+            pending_reload,
+            reload_fs: _,
+            segment_type: _,
+            segment_config: _,
+        } = self;
+
+        let released = id_tracker.borrow_mut().release_held_deletes(gate);
+        if released.is_empty() {
+            return Ok(());
+        }
+
+        let mut pending = pending_reload.borrow_mut();
+        if !pending.is_empty() {
+            pending.merge(LiveReloadResult {
+                inserted: Vec::new(),
+                deleted: released,
+            });
+            return Ok(());
+        }
+
+        let applied = {
+            // SAFETY: the tracker returns the released offsets sorted ascending.
+            let deleted = unsafe { SortedSlice::new_unchecked(&released) };
+            payload_storage
+                .borrow_mut()
+                .apply_deletions(&deleted)
+                .and_then(|()| payload_index.borrow_mut().apply_deletions(&deleted))
+                .and_then(|()| {
+                    vector_data
+                        .values()
+                        .try_for_each(|vector_data| vector_data.apply_deletions(&deleted))
+                })
+        };
+        if let Err(err) = applied {
+            pending.merge(LiveReloadResult {
+                inserted: Vec::new(),
+                deleted: released,
+            });
+            return Err(err);
+        }
+        Ok(())
+    }
+}
+
 impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlyVectorData<S> {
+    /// Apply `deleted` to this vector's storage, index and quantized vectors, without IO.
+    fn apply_deletions(&self, deleted: &SortedSlice<'_, PointOffsetType>) -> OperationResult<()> {
+        let Self {
+            vector_index,
+            vector_storage,
+            quantized_vectors,
+        } = self;
+        vector_storage.borrow_mut().apply_deletions(deleted)?;
+        vector_index.borrow_mut().apply_deletions(deleted)?;
+        if let Some(quantized_vectors) = quantized_vectors.borrow_mut().as_mut() {
+            quantized_vectors.apply_deletions(deleted)?;
+        }
+        Ok(())
+    }
+
     /// Stage this vector's next [`Self::live_reload`]. Shared access only.
     fn live_preload(
         &self,

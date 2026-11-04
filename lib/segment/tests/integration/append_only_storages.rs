@@ -1,32 +1,35 @@
-//! End-to-end check of the `append_only_storages` feature flag: a segment
-//! built with it holds Logstore-mode storages, and the ordinary write paths —
-//! upserts, payload updates, multi-step same-operation writes, deletes, index
-//! builds — run against them.
-//!
-//! A standalone test binary, because feature flags are process-global: this
-//! process runs with `serverless_compatible` on from the start, the way a
-//! serverless deployment would.
-
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
 use common::flags::{FeatureFlags, init_feature_flags};
+use common::generic_consts::Random;
 use common::types::DeferredBehavior;
-use segment::data_types::vectors::{VectorRef, only_default_vector};
+use segment::common::memory_usage::MemoryReporter as _;
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
 use segment::entry::entry_point::{
     NonAppendableSegmentEntry as _, ReadSegmentEntry as _, SegmentEntry as _,
     StorageSegmentEntry as _,
 };
 use segment::id_tracker::IdTrackerRead as _;
 use segment::index::field_index::PayloadFieldIndexRead as _;
+use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::payload_json;
 use segment::segment::Segment;
-use segment::segment_constructor::load_segment;
+use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, FieldCondition, PayloadFieldSchema, PayloadSchemaType};
-use segment::vector_storage::VectorStorage as _;
+use segment::segment_constructor::{build_segment, load_segment};
+use segment::types::{
+    Distance, FieldCondition, HnswGlobalConfig, Indexes, PayloadFieldSchema, PayloadSchemaType,
+    SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType, VectorDataConfig,
+    VectorStorageType,
+};
 use segment::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+use segment::vector_storage::{
+    SparseVectorStorageRead as _, VectorStorage as _, VectorStorageRead as _,
+};
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
@@ -43,6 +46,9 @@ fn storage_mode(dir: &Path) -> String {
 
 #[test]
 fn append_only_storages_serve_the_ordinary_write_paths() {
+    if !common::testing::is_process_isolated() {
+        return; // Feature flags are process-global
+    }
     // The field is private, set through the same route a config file takes.
     let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
     init_feature_flags(flags);
@@ -156,6 +162,9 @@ fn append_only_storages_serve_the_ordinary_write_paths() {
 #[case(false)]
 #[case(true)]
 fn nested_indexes_use_append_only_storage(#[case] build_before_points: bool) {
+    if !common::testing::is_process_isolated() {
+        return; // Feature flags are process-global
+    }
     let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
     init_feature_flags(flags);
     let _scope = ambient::test_guard();
@@ -382,10 +391,14 @@ fn nested_indexes_use_append_only_storage(#[case] build_before_points: bool) {
     }
 }
 
-/// The sparse vector storage created under the flag is append-only, deleting
-/// where nothing was stored is a no-op, and deleting a stored vector fails.
+/// The sparse vector storage created under the flag is append-only. Deletes are
+/// soft (deleted bitflag only): Logstore cannot reclaim a stored value, matching
+/// dense appendable storages and the clone-and-mutate write path.
 #[test]
 fn sparse_storage_is_append_only() {
+    if !common::testing::is_process_isolated() {
+        return; // Feature flags are process-global
+    }
     let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
     init_feature_flags(flags);
 
@@ -404,8 +417,85 @@ fn sparse_storage_is_append_only() {
     // Nothing was ever stored at key 5.
     storage.delete_vector(5).unwrap();
 
-    // Key 0 holds a vector; an append-only storage cannot remove it.
-    assert!(storage.delete_vector(0).is_err());
+    // Soft-delete a stored vector: bitflag only, no Logstore `delete_value`.
+    assert!(storage.delete_vector(0).unwrap());
+    assert!(storage.is_deleted_vector(0));
+    // The stored value stays readable at the storage level: the deleted flag alone
+    // decides visibility, segment reads filter it out via the deleted bitslice.
+    assert!(storage.get_sparse_opt::<Random>(0).unwrap().is_some());
+}
+
+/// Deleting a named sparse vector on an append-only segment goes through
+/// clone-and-mutate, which writes `None` at the fresh offset (insert placeholder
+/// + soft-delete). That path must not hit Logstore's hard `delete_value`.
+#[test]
+fn append_only_segment_deletes_sparse_vector() {
+    if !common::testing::is_process_isolated() {
+        return; // Feature flags are process-global
+    }
+    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
+    init_feature_flags(flags);
+
+    let dir = Builder::new()
+        .prefix("append_only_sparse_delete")
+        .tempdir()
+        .unwrap();
+    let _scope = ambient::test_guard();
+
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: DIM,
+                distance: Distance::Dot,
+                storage_type: VectorStorageType::default(),
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: HashMap::from([(
+            "sparse".to_owned(),
+            SparseVectorDataConfig {
+                index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None, None),
+                storage_type: SparseVectorStorageType::default(),
+                modifier: None,
+            },
+        )]),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+
+    let (mut segment, _token) = build_segment(dir.path(), &config, None, true).unwrap();
+    assert!(segment.append_only_mutations);
+
+    let dense = vec![1.0; DIM];
+    let sparse = SparseVector::new(vec![1, 3], vec![1.0, 2.0]).unwrap();
+    let mut vectors = NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(&dense));
+    vectors.insert_ref("sparse", VectorRef::Sparse(&sparse));
+    segment.upsert_point(1, 1.into(), vectors).unwrap();
+
+    assert!(segment.vector("sparse", 1.into()).unwrap().is_some());
+    assert!(segment.delete_vector(2, 1.into(), "sparse").unwrap());
+    assert!(segment.vector("sparse", 1.into()).unwrap().is_none());
+    assert!(
+        segment
+            .vector(DEFAULT_VECTOR_NAME, 1.into())
+            .unwrap()
+            .is_some()
+    );
+
+    // A follow-up mutation clones again and re-writes `None` for the missing
+    // sparse slot at yet another fresh offset.
+    segment
+        .set_full_payload(3, 1.into(), &payload_json! { "after": "sparse-delete" })
+        .unwrap();
+    assert!(segment.vector("sparse", 1.into()).unwrap().is_none());
+    assert_eq!(
+        segment.payload(1.into()).unwrap(),
+        payload_json! { "after": "sparse-delete" }
+    );
 }
 
 /// Tracker files under `dir` with the given name, at any depth.
@@ -428,19 +518,9 @@ fn count_files(dir: &Path, name: &str) -> usize {
 /// appendable segment, keep the appendable layout.
 #[test]
 fn optimizer_makes_non_appendable_payload_storage_immutable() {
-    use std::collections::HashMap;
-
-    use segment::common::memory_usage::MemoryReporter as _;
-    use segment::data_types::named_vectors::NamedVectors;
-    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-    use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
-    use segment::segment_constructor::build_segment;
-    use segment::segment_constructor::segment_builder::SegmentBuilder;
-    use segment::types::{
-        HnswGlobalConfig, Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
-        VectorDataConfig, VectorStorageType,
-    };
-
+    if !common::testing::is_process_isolated() {
+        return; // Feature flags are process-global
+    }
     let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
     init_feature_flags(flags);
     assert!(common::flags::feature_flags().compact_logstore_tracker);

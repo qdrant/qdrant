@@ -185,6 +185,10 @@ fn delete_batch_tombstones_points_in_immutable_segments() {
     assert!(ids.contains(&ExtendedPointId::NumId(501)));
 }
 
+/// Same Windows caveat as [`store`]: the writer's stores rewrite files its own lookups map.
+#[cfg(not(windows))]
+mod delete_versions;
+
 /// The store tests cannot run on Windows: the leader's writable storage
 /// preallocates chunk files, the append-only writer cuts them back to end at
 /// the data (its append offset is a compare-and-swap token), and Windows
@@ -227,12 +231,14 @@ mod store {
     use crate::read_view::EdgeShardRead as _;
     use crate::{QueryRequestBuilder, RetrieveRequestBuilder};
 
+    mod point_count;
+
     /// The leader writes its payload storage in mutable (Gridstore) mode, which an
     /// append-only writer refuses to append to. Recreate each segment's payload
     /// storage empty in append-only mode — the fixture points carry no payloads,
     /// so nothing is lost. Stands in for creating segments with append-only
     /// components from the start, which nothing does yet.
-    fn recreate_payload_storages_append_only(shard_dir: &Path) {
+    pub(super) fn recreate_payload_storages_append_only(shard_dir: &Path) {
         for segment in fs_err::read_dir(shard_dir.join(SEGMENTS_PATH)).unwrap() {
             let segment_path = segment.unwrap().path();
             let payload_storage = segment_path.join("payload_storage");
@@ -244,7 +250,7 @@ mod store {
         }
     }
 
-    fn store_batch(
+    pub(super) fn store_batch(
         op_num: SeqNumberType,
         points: Vec<PointStructPersisted>,
     ) -> [(SeqNumberType, CollectionUpdateOperations); 1] {
@@ -1114,6 +1120,100 @@ mod store {
                 "point {id}: stored {stored:?}, expected the unit vector {expected:?}",
             );
         }
+    }
+
+    /// The deletes of a batch in an immutable segment, of a moved point's old copy and of a deleted
+    /// point alike, land in the segment's delete log with the batch version, the highest operation
+    /// number of the batch. Followers that apply deletes at once serve the batch as before.
+    #[test]
+    fn deletes_record_the_batch_version() {
+        use segment::id_tracker::delete_versions::{
+            DeleteLogEntry, DeleteLogReader, DeleteVersioning,
+        };
+
+        let dir = vacuumed_leader("edge-update-delete-versions");
+        recreate_payload_storages_append_only(dir.path());
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path())
+            .unwrap()
+            .with_delete_versioning(DeleteVersioning::Record);
+        let moved = PointStructPersisted {
+            vector: point(7).vector,
+            ..point(500)
+        };
+        let batch = [
+            (200, PointOperation(UpsertPoints(PointsList(vec![moved])))),
+            (
+                203,
+                PointOperation(DeletePoints {
+                    ids: vec![ExtendedPointId::NumId(600)],
+                }),
+            ),
+        ];
+        let (_writer, outcome) = writer.apply_batch(batch).unwrap();
+        assert_eq!((outcome.stored, outcome.deleted), (1, 1));
+        let (source, moved_slot) = outcome.points[0].tombstoned[0];
+        let (deleted_source, deleted_slot) = outcome.points[1].tombstoned[0];
+        assert_eq!(
+            source, deleted_source,
+            "both lived in the immutable segment"
+        );
+
+        let segment_path = dir.path().join(SEGMENTS_PATH).join(source.to_string());
+        let mut log = DeleteLogReader::<MmapFile>::new(&segment_path);
+        let entries = log.read_new(&MmapFs).unwrap();
+        assert!(log.is_started());
+        // The log starts with the deletes the segment already held, at version 0
+        let (baseline, batch): (Vec<_>, Vec<_>) =
+            entries.into_iter().partition(|entry| entry.version == 0);
+        assert!(
+            !baseline
+                .iter()
+                .any(|entry| [moved_slot, deleted_slot].contains(&entry.slot)),
+        );
+        let mut batch = batch;
+        batch.sort_by_key(|entry| entry.slot);
+        let mut expected = vec![
+            DeleteLogEntry {
+                slot: moved_slot,
+                version: 203,
+            },
+            DeleteLogEntry {
+                slot: deleted_slot,
+                version: 203,
+            },
+        ];
+        expected.sort_by_key(|entry| entry.slot);
+        assert_eq!(batch, expected);
+
+        let follower = open_follower(dir.path());
+        let ids = scrolled_ids(&follower);
+        assert!(ids.contains(&ExtendedPointId::NumId(500)));
+        assert!(!ids.contains(&ExtendedPointId::NumId(600)));
+    }
+
+    /// A writer that does not record versions starts no delete log in a segment without one.
+    #[test]
+    fn legacy_deletes_start_no_log() {
+        use segment::id_tracker::delete_versions::{DeleteVersioning, delete_log_path};
+
+        let dir = vacuumed_leader("edge-update-delete-legacy");
+        recreate_payload_storages_append_only(dir.path());
+        // The leader starts the log of the segments it builds when it records versions
+        for segment in fs_err::read_dir(dir.path().join(SEGMENTS_PATH)).unwrap() {
+            let log = delete_log_path(&segment.unwrap().path());
+            if log.exists() {
+                fs_err::remove_file(log).unwrap();
+            }
+        }
+
+        let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path())
+            .unwrap()
+            .with_delete_versioning(DeleteVersioning::Legacy);
+        let (_writer, outcome) = writer.apply_batch(delete_batch([600])).unwrap();
+        let (segment, _) = outcome.points[0].tombstoned[0];
+        let segment_path = dir.path().join(SEGMENTS_PATH).join(segment.to_string());
+        assert!(!delete_log_path(&segment_path).exists());
     }
 }
 

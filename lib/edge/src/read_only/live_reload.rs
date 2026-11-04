@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -7,15 +8,18 @@ use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use segment::id_tracker::delete_versions::DeleteGating;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
+use segment::types::SeqNumberType;
 use uuid::Uuid;
 
 use crate::EdgeConfig;
-use crate::read_only::ReadOnlyEdgeShard;
 use crate::read_only::load::{load_segments_parallel, reload_segments_parallel};
+use crate::read_only::{ListedSegment, ReadOnlyEdgeShard};
 
 /// How a single [`live_reload_attempt`](ReadOnlyEdgeShard::live_reload_attempt) ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveReloadOutcome {
     /// The attempt fully converged on its manifest snapshot.
     Complete,
@@ -51,7 +55,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_cancellable(&AtomicBool::new(false))
+        self.live_reload_cancellable(&AtomicBool::new(false), None)
     }
 
     /// Cancellation-aware [`live_reload`](Self::live_reload). Set the shared flag to `true` to
@@ -72,7 +76,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_cancellable(&is_stopped)
+        self.live_reload_cancellable(&is_stopped, None)
     }
 
     /// [`live_reload`](Self::live_reload) with a caller-supplied hardware counter.
@@ -80,7 +84,39 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_impl(&AtomicBool::new(false))
+        self.live_reload_impl(&AtomicBool::new(false), None)
+    }
+
+    /// [`live_reload`](Self::live_reload) of a follower opened with a waterline
+    /// ([`open_with_waterline`](Self::open_with_waterline)), raising it to `waterline` first.
+    ///
+    /// `waterline` is the newest version whose writes are all durable and stored in segments the
+    /// manifest lists: the updater's committed cursor, taken before this call. Every segment file
+    /// the reload reads holds the writes up to it, so once the reload has held and reloaded every
+    /// listed segment, it applies the deletes up to it, as its last step. Newer deletes stay held.
+    /// A waterline lower than one passed before changes nothing, since waterlines can arrive out of
+    /// order. On a follower opened without one, the waterline is ignored and deletes apply at once.
+    ///
+    /// A plain [`live_reload`](Self::live_reload) of such a follower reuses the highest waterline
+    /// passed so far.
+    pub fn live_reload_up_to(&self, waterline: SeqNumberType) -> OperationResult<LiveReloadOutcome>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        self.live_reload_cancellable(&AtomicBool::new(false), Some(waterline))
+    }
+
+    /// Cancellation-aware [`live_reload_up_to`](Self::live_reload_up_to), see
+    /// [`live_reload_with_cancellation`](Self::live_reload_with_cancellation).
+    pub fn live_reload_up_to_with_cancellation(
+        &self,
+        waterline: SeqNumberType,
+        is_stopped: Arc<AtomicBool>,
+    ) -> OperationResult<LiveReloadOutcome>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        self.live_reload_cancellable(&is_stopped, Some(waterline))
     }
 
     /// Shared by the counter-less entry points and by [`open`](Self::open), which is a live_reload
@@ -88,15 +124,20 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     pub(super) fn live_reload_cancellable(
         &self,
         is_stopped: &AtomicBool,
+        waterline: Option<SeqNumberType>,
     ) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        self.live_reload_impl(is_stopped)
+        self.live_reload_impl(is_stopped, waterline)
     }
 
-    fn live_reload_impl(&self, is_stopped: &AtomicBool) -> OperationResult<LiveReloadOutcome>
+    fn live_reload_impl(
+        &self,
+        is_stopped: &AtomicBool,
+        waterline: Option<SeqNumberType>,
+    ) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
@@ -104,26 +145,147 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         let _live_reload_guard = self.live_reload_lock.lock();
         check_process_stopped(is_stopped)?;
 
+        // The waterline is taken before anything is read: every file read from here on holds the
+        // writes up to it
+        let waterline = self.waterline.as_ref().map(|state| {
+            let mut state = state.lock();
+            state.highest = state.highest.max(waterline.unwrap_or(0));
+            state.highest
+        });
+
         // A benign mid-attempt segment removal re-runs the attempt against the fresh manifest;
         // bound the re-runs so a leader churning segments faster than the follower converges
         // cannot spin this loop forever.
         const MAX_ATTEMPTS: usize = 3;
 
+        let mut listed = None;
+        let mut outcome = LiveReloadOutcome::ManifestChanged;
         for _ in 0..MAX_ATTEMPTS {
-            match self.live_reload_attempt(is_stopped)? {
-                LiveReloadOutcome::Complete => return Ok(LiveReloadOutcome::Complete),
+            let attempt = self.live_reload_attempt(is_stopped)?;
+            listed = Some(attempt.listed);
+            outcome = attempt.outcome;
+            match outcome {
+                LiveReloadOutcome::Complete => break,
                 LiveReloadOutcome::ManifestChanged => {}
             }
         }
 
-        // Attempts exhausted without converging. The shard is still consistent — every completed
-        // swap was atomic — it just may not reflect the newest segments yet; the next live_reload
-        // continues from here.
-        log::warn!(
-            "shard live_reload did not converge after {MAX_ATTEMPTS} attempts \
-             (leader keeps replacing segments); serving the state reached so far",
-        );
-        Ok(LiveReloadOutcome::ManifestChanged)
+        match outcome {
+            LiveReloadOutcome::Complete => {}
+            LiveReloadOutcome::ManifestChanged => {
+                // Attempts exhausted without converging. The shard is still consistent — every
+                // completed swap was atomic — it just may not reflect the newest segments yet;
+                // the next live_reload continues from here.
+                log::warn!(
+                    "shard live_reload did not converge after {MAX_ATTEMPTS} attempts \
+                     (leader keeps replacing segments); serving the state reached so far",
+                );
+            }
+        }
+
+        if let Some(waterline) = waterline {
+            let listed = listed.expect("at least one attempt ran");
+            self.finish_gated_reload(&outcome, &listed, waterline)?;
+        }
+        Ok(outcome)
+    }
+
+    /// The last steps of a reload of a follower that gates deletes. A complete reload, one that
+    /// converged and holds every listed segment, raises the gate to its `waterline` and drops the
+    /// segments the manifest no longer lists. Either way, the held deletes the gate covers are
+    /// released in every segment, now that all of them have loaded their new data.
+    fn finish_gated_reload(
+        &self,
+        outcome: &LiveReloadOutcome,
+        listed: &HashMap<Uuid, ListedSegment>,
+        waterline: SeqNumberType,
+    ) -> OperationResult<()>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        let complete = match outcome {
+            LiveReloadOutcome::Complete => {
+                let holder = self.segments.read();
+                listed.keys().all(|uuid| holder.contains(uuid))
+            }
+            LiveReloadOutcome::ManifestChanged => false,
+        };
+
+        let gate = {
+            let mut state = self
+                .waterline
+                .as_ref()
+                .expect("only a follower with a waterline gates deletes")
+                .lock();
+            if complete {
+                state.gate = state.gate.max(waterline);
+            }
+            state.gate
+        };
+
+        let mut first_error = None;
+        let segments = self.segments.read().read_handles();
+        for segment in segments {
+            if !segment.read().releases_held_deletes(gate) {
+                continue;
+            }
+            if let Err(err) = segment.write().release_held_deletes(gate) {
+                log::error!("releasing held deletes failed: {err}");
+                first_error.get_or_insert(err);
+            }
+        }
+
+        if complete {
+            let dropped = {
+                let mut holder = self.segments.write();
+                let before = holder.len();
+                holder.remove_missing(listed);
+                holder.len() != before
+            };
+            if dropped {
+                self.derive_config();
+            }
+        }
+
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
+    /// How segments opened now treat versioned deletes.
+    fn delete_gating(&self) -> DeleteGating {
+        match &self.waterline {
+            Some(state) => DeleteGating::Held {
+                gate: state.lock().gate,
+            },
+            None => DeleteGating::Immediate,
+        }
+    }
+
+    /// Re-derive the config from the current segments — a read-only follower has no
+    /// edge_config.json, so the segments are the source of truth. Folded over all segments in UUID
+    /// order, so the derivation is deterministic and a segment carrying no information about a
+    /// parameter never masks one that does. No-op for an empty shard (the previous snapshot stays
+    /// in place until segments appear).
+    fn derive_config(&self) {
+        let derived = {
+            let holder = self.segments.read();
+            let mut uuids = holder.uuids();
+            uuids.sort_unstable();
+            uuids
+                .into_iter()
+                .filter_map(|uuid| holder.segment_arc(&uuid))
+                .fold(None, |acc, segment| {
+                    Some(EdgeConfig::fold_from_segment_config(
+                        acc,
+                        &segment.read().segment_config,
+                    ))
+                })
+        };
+        if let Some(derived) = derived {
+            *self.config.write() = Arc::new(derived);
+        }
     }
 
     /// One live_reload pass over a single manifest snapshot.
@@ -134,11 +296,20 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// the leader removed mid-attempt is dropped and reported as [`LiveReloadOutcome::ManifestChanged`]
     /// so the caller re-runs against the fresh manifest; one whose files are missing while the
     /// manifest still lists it escalates. Any other reload failure escalates after the loop.
-    fn live_reload_attempt(&self, is_stopped: &AtomicBool) -> OperationResult<LiveReloadOutcome>
+    ///
+    /// A follower that gates deletes keeps the segments the manifest no longer lists, and reloads
+    /// them with the others, until a complete reload drops them, see
+    /// [`finish_gated_reload`](Self::finish_gated_reload).
+    fn live_reload_attempt(&self, is_stopped: &AtomicBool) -> OperationResult<Attempt>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         check_process_stopped(is_stopped)?;
+        let gating = self.delete_gating();
+        let keep_unlisted = match gating {
+            DeleteGating::Held { gate: _ } => true,
+            DeleteGating::Immediate => false,
+        };
 
         // 1. Snapshot the current on-disk segment set (backend-specific; see `SegmentEnumerator`).
         let on_disk = self.enumerator.list_segments()?;
@@ -163,6 +334,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             &self.fs,
             new_segments,
             self.load_profile.as_ref(),
+            gating,
             is_stopped,
         )?;
 
@@ -173,11 +345,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         let survivors: Vec<(Uuid, Arc<RwLock<ReadOnlySegment<S>>>)> = {
             let mut holder = self.segments.write();
 
-            // Segments present before this live_reload that still exist on disk.
+            // Segments present before this live_reload that still exist on disk, and the unlisted
+            // ones a follower that gates deletes keeps.
             let survivor_uuids: Vec<Uuid> = holder
                 .uuids()
                 .into_iter()
-                .filter(|uuid| on_disk.contains_key(uuid))
+                .filter(|uuid| keep_unlisted || on_disk.contains_key(uuid))
                 .collect();
 
             // Add before drop: when an optimization migrates points from old to new segments, both
@@ -187,7 +360,9 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
                 holder.insert(uuid, appendable, Arc::new(RwLock::new(segment)));
             }
 
-            holder.remove_missing(&on_disk);
+            if !keep_unlisted {
+                holder.remove_missing(&on_disk);
+            }
 
             survivor_uuids
                 .into_iter()
@@ -195,28 +370,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
                 .collect()
         };
 
-        // 3. Re-derive the config from the current segments — a read-only follower has no
-        //    edge_config.json, so the segments are the source of truth. Folded over all segments
-        //    in UUID order, so the derivation is deterministic and a segment carrying no
-        //    information about a parameter never masks one that does. No-op for an empty shard
-        //    (the previous snapshot stays in place until segments appear).
-        let derived = {
-            let holder = self.segments.read();
-            let mut uuids = holder.uuids();
-            uuids.sort_unstable();
-            uuids
-                .into_iter()
-                .filter_map(|uuid| holder.segment_arc(&uuid))
-                .fold(None, |acc, segment| {
-                    Some(EdgeConfig::fold_from_segment_config(
-                        acc,
-                        &segment.read().segment_config,
-                    ))
-                })
-        };
-        if let Some(derived) = derived {
-            *self.config.write() = Arc::new(derived);
-        }
+        // 3. Re-derive the config from the current segments, see `derive_config`.
+        self.derive_config();
         check_process_stopped(is_stopped)?;
 
         // 4. Live-reload survivors to assimilate new appends and deletes from data.
@@ -225,6 +380,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             &self.fs,
             survivors,
             self.load_profile.as_ref(),
+            gating,
             is_stopped,
         )?;
 
@@ -284,6 +440,16 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             return Err(err);
         }
         check_process_stopped(is_stopped)?;
-        Ok(outcome)
+        Ok(Attempt {
+            outcome,
+            listed: on_disk,
+        })
     }
+}
+
+/// What one [`live_reload_attempt`](ReadOnlyEdgeShard::live_reload_attempt) did.
+struct Attempt {
+    outcome: LiveReloadOutcome,
+    /// The segments the manifest listed for it.
+    listed: HashMap<Uuid, ListedSegment>,
 }

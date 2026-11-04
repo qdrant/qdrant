@@ -16,6 +16,7 @@ use uuid::Uuid;
 use super::{ReadOnlySegment, ReadOnlyVectorData};
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::load_profile::LoadProfile;
+use crate::id_tracker::delete_versions::DeleteGating;
 use crate::id_tracker::disk_id_tracker::on_disk_format::i2e_path;
 use crate::id_tracker::read_only_tracker_enum::ReadOnlyIdTrackerEnum;
 use crate::index::UniversalReadExt;
@@ -157,12 +158,33 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
     ) -> OperationResult<Self> {
-        Self::schedule_open(
+        Self::open_gated(
             fs,
             segment_path,
             uuid,
             deferred_internal_id,
             load_profile,
+            DeleteGating::Immediate,
+        )
+    }
+
+    /// [`open`](Self::open), treating versioned deletes as `gating` says, see [`DeleteGating`].
+    pub fn open_gated(
+        fs: &S::Fs,
+        segment_path: &Path,
+        uuid: Uuid,
+        deferred_internal_id: Option<PointOffsetType>,
+        load_profile: Option<&LoadProfile>,
+        gating: DeleteGating,
+    ) -> OperationResult<Self> {
+        let cached_fs = build_cached_fs(fs, segment_path)?;
+        Self::schedule_open_with_cached_fs(
+            cached_fs,
+            segment_path,
+            uuid,
+            deferred_internal_id,
+            load_profile,
+            gating,
             &AtomicBool::new(false),
         )?
         .finish(fs)
@@ -196,23 +218,26 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             uuid,
             deferred_internal_id,
             load_profile,
+            DeleteGating::Immediate,
             is_stopped,
         )
     }
 
     /// [`schedule_open`](Self::schedule_open) over a snapshot already taken by
-    /// [`build_cached_fs_async`].
+    /// [`build_cached_fs_async`], treating versioned deletes as `gating` says, see
+    /// [`DeleteGating`].
     pub fn schedule_open_with_cached_fs<'a>(
         fs: CachedFs<S::Fs>,
         segment_path: &Path,
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&'a LoadProfile>,
+        gating: DeleteGating,
         is_stopped: &'a AtomicBool,
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
         let (config, payload_config) =
-            Self::first_preopen(&fs, segment_path, load_profile, is_stopped)?;
+            Self::first_preopen(&fs, segment_path, load_profile, gating, is_stopped)?;
         Ok(StagedSegmentOpen {
             fs,
             segment_path: segment_path.to_path_buf(),
@@ -221,6 +246,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             config,
             payload_config,
             load_profile,
+            gating,
             is_stopped,
         })
     }
@@ -232,6 +258,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         load_profile: Option<&LoadProfile>,
+        gating: DeleteGating,
         is_stopped: &AtomicBool,
     ) -> OperationResult<(SegmentConfig, PayloadConfig)> {
         let SegmentState {
@@ -253,6 +280,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             fs,
             segment_path,
             id_tracker_populate(&config, fs, segment_path),
+            gating,
         )?;
 
         // Vector storages
@@ -346,6 +374,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         uuid: Uuid,
         deferred_internal_id: Option<PointOffsetType>,
         load_profile: Option<&LoadProfile>,
+        gating: DeleteGating,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         check_process_stopped(is_stopped)?;
@@ -386,6 +415,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             deferred_internal_id,
             max_committed_offset,
             id_tracker_populate(&config, &fs, segment_path),
+            gating,
         )?));
 
         // Open all vector storages up front: the payload index needs them.
@@ -504,6 +534,7 @@ pub struct StagedSegmentOpen<'a, S: UniversalReadExt + 'static> {
     config: SegmentConfig,
     payload_config: PayloadConfig,
     load_profile: Option<&'a LoadProfile>,
+    gating: DeleteGating,
     is_stopped: &'a AtomicBool,
 }
 
@@ -528,6 +559,7 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
             config,
             payload_config,
             load_profile,
+            gating,
             is_stopped,
         } = self;
         ReadOnlySegment::open_via(
@@ -539,6 +571,7 @@ impl<'a, S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> StagedSegmentO
             uuid,
             deferred_internal_id,
             load_profile,
+            gating,
             is_stopped,
         )
     }

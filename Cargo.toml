@@ -43,8 +43,8 @@ edge-verify = ["collection/edge-verify"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
-sealed_test = "1.1.0"
 
+common = { path = "lib/common/common", features = ["testing"] }
 mockito = { workspace = true }
 tempfile = { workspace = true }
 rusty-hook = "^0.11.2"

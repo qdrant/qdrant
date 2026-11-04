@@ -9,6 +9,7 @@ use parking_lot::RwLock;
 use rayon::prelude::*;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::{NonAppendableSegmentEntry as _, StorageSegmentEntry as _};
+use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::json_path::JsonPath;
 use segment::segment::update_only::{LookupSegment, UpdateOnlySegmentEnum};
 use segment::segment_constructor::build_segment;
@@ -101,7 +102,15 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             writers,
             pool,
             deferred_threshold_kb,
+            delete_versioning: DeleteVersioning::from_feature_flags(),
         })
+    }
+
+    /// Record delete versions as `versioning` says, rather than as the feature flags do.
+    #[cfg(test)]
+    pub(crate) fn with_delete_versioning(mut self, versioning: DeleteVersioning) -> Self {
+        self.delete_versioning = versioning;
+        self
     }
 }
 

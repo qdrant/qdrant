@@ -45,7 +45,7 @@ A request goes through the layers top to bottom:
 - Avoid `--release` locally: fat LTO makes it very slow to build. For benchmarks and
   profiling use `--profile perf`, which is release without LTO.
 - CI also enforces ast-grep rules: `sg scan --config tools/ast-grep/sgconfig.yml`.
-- Rust tests: `cargo test -p <crate>` is much faster than `--workspace`.
+- Rust tests: `cargo nextest run -p <crate>` is much faster than `--workspace`.
 - Python tests need `uv`, and most need a running server:
   `uv --project tests run pytest tests/openapi`, `tests/consensus_tests` (spawns its own cluster).
 - More detail (Docker, profiling, benchmarks): `docs/DEVELOPMENT.md`.

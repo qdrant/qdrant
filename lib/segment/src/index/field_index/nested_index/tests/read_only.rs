@@ -8,9 +8,11 @@
 
 use std::sync::atomic::AtomicBool;
 
+use common::sorted_slice::SortedSlice;
 use common::universal_io::{MmapFile, MmapFs};
 
 use super::*;
+use crate::common::live_reload::LiveReload as _;
 use crate::data_types::order_by::OrderValue;
 use crate::entry::entry_point::ReadSegmentEntry;
 use crate::index::field_index::ReadOnlyFieldIndex;
@@ -266,4 +268,86 @@ fn read_only_segment_live_reloads_nested_indexes() {
             skip_facets: &["offers[].available"],
         });
     }
+}
+
+/// Deletions applied apart from a reload leave the per-element indexes as a reload that brings
+/// them does, over mutable and immutable element maps alike.
+#[test]
+fn read_only_nested_indexes_apply_deletions_like_a_reload() {
+    let dir = Builder::new()
+        .prefix("nested_apply_deletions")
+        .tempdir()
+        .unwrap();
+    let mut rng = StdRng::seed_from_u64(7);
+    let _scope = ambient::test_guard();
+
+    let mut pair = Pair::new(dir.path());
+    // Deletes tombstone points, the mode read-only followers reload from
+    pair.nested.append_only_mutations = true;
+    pair.upsert(&mut rng, 0..NUM_POINTS);
+    pair.create_indexes(None);
+    let optimized = optimize(&pair.nested, &dir.path().join("nested_optimized"));
+
+    let mut op_num = pair.op_num;
+    for (mut writer, mutable_maps) in [(pair.nested, true), (optimized, false)] {
+        let mut reloaded = open_read_only(&writer);
+        let applied = open_read_only(&writer);
+
+        let deleted_ids: Vec<ExtendedPointId> =
+            (0..NUM_POINTS).step_by(7).map(Into::into).collect();
+        let mut deleted: Vec<PointOffsetType> = Vec::new();
+        applied
+            .id_tracker
+            .borrow()
+            .resolve_external_ids(
+                deleted_ids.iter().copied(),
+                DeferredBehavior::WithDeferred,
+                |_, offset| deleted.push(offset),
+            )
+            .unwrap();
+        assert_eq!(deleted.len(), deleted_ids.len());
+        deleted.sort_unstable();
+        for &id in &deleted_ids {
+            op_num += 1;
+            writer.delete_point(op_num, id).unwrap();
+        }
+
+        let before = nested_values(&applied);
+        reload(&mut reloaded, &writer);
+        applied
+            .payload_index
+            .borrow_mut()
+            .apply_deletions(&SortedSlice::new(&deleted).unwrap())
+            .unwrap();
+
+        let after = nested_values(&applied);
+        assert_eq!(after, nested_values(&reloaded));
+        // An immutable inner index keeps the values of deleted points, a mutable one drops them
+        if mutable_maps {
+            assert_ne!(before, after, "deletions must drop values");
+        }
+    }
+}
+
+/// Per index of each field: its indexed points count, and which points have values.
+fn nested_values(segment: &ReadOnlySegment<MmapFile>) -> Vec<(&'static str, usize, Vec<bool>)> {
+    let payload_index = segment.payload_index.borrow();
+    let mut values = Vec::new();
+    for &(field, _) in FIELDS {
+        for index in &payload_index.field_indexes[&JsonPath::from_str(field).unwrap()] {
+            let ReadOnlyFieldIndex::Nested(index) = index else {
+                panic!("{field} must be indexed per element in the read-only segment");
+            };
+            let points = index.element_map.points_upper_bound() as PointOffsetType;
+            let has_values = (0..points)
+                .map(|point| {
+                    index
+                        .has_values(index.element_map.point_elements(point))
+                        .unwrap()
+                })
+                .collect();
+            values.push((field, index.indexed_points, has_values));
+        }
+    }
+    values
 }

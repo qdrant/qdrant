@@ -23,12 +23,14 @@ use crate::update_only::UpdateOnlyEdgeShard;
 use crate::update_only::batch::UpdateBatchPlan;
 use crate::update_only::holder::LookupSegmentHolder;
 use crate::update_only::locate::{PointLocations, locate_in, merge_locations};
+use crate::update_only::metering::{UpdateBytes, UpdateMetering};
 use crate::update_only::preview::{PointAction, PointPreview, resolve_batch};
 
 /// What a batch did, counted per point rather than per operation: a point
 /// named by ten operations counts once.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct UpdateBatchOutcome {
+    pub usage: UpdateBytes,
     /// Points written: created, or rewritten into a fresh slot.
     pub stored: usize,
     /// Points removed.
@@ -110,6 +112,12 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// error is returned, and re-applying a batch that partially landed skips
     /// the points that already carry its version.
     ///
+    /// Every delete the batch writes, of a deleted point or of the old copy a
+    /// stored point replaces, records the batch version: the highest operation
+    /// number in `operations`. A follower applies such a delete once it knows
+    /// every write up to that version is in view, so the caller publishes that
+    /// version as its cursor only after this returns.
+    ///
     /// Consumes the writer and hands it back on success, ready for the next
     /// batch: the lookup half of every segment this one wrote to is
     /// live-reloaded, so the next batch resolves against what this one
@@ -119,8 +127,24 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// writer over the directory, which also retires whatever the failed
     /// batch left unpublished.
     pub fn apply_batch(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        self.apply_batch_inner(operations, None)
+    }
+
+    pub fn apply_batch_metered(
+        self,
+        operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: &UpdateMetering,
+    ) -> OperationResult<(Self, UpdateBatchOutcome)> {
+        self.apply_batch_inner(operations, Some(metering))
+    }
+
+    fn apply_batch_inner(
         mut self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
+        metering: Option<&UpdateMetering>,
     ) -> OperationResult<(Self, UpdateBatchOutcome)> {
         const LOG_TARGET: &str = "apply_batch";
 
@@ -131,6 +155,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         }
 
         let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let version = plan.version();
         let segments = self.segments.read();
 
         // 1-3. Locate, read, materialize — the decision stage shared with
@@ -179,6 +204,9 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
                     PointApplyKind::Missing
                 }
                 PointAction::Store(point) => {
+                    if let Some(metering) = metering {
+                        outcome.usage += metering.measure(&point)?;
+                    }
                     to_store.push(*point);
                     stored_records.push(outcome.points.len());
                     outcome.stored += 1;
@@ -279,14 +307,18 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
             // can lose a point outright if the process dies in between.
             if let Some(points) = to_tombstone.remove(&uuid) {
                 tombstone_start = Some(std::time::Instant::now());
-                writer.tombstone_points(&points)?;
+                writer.tombstone_points(&points, version, self.delete_versioning)?;
             }
             written.push(uuid);
         }
 
         let instant = tombstone_start.unwrap_or_else(std::time::Instant::now);
         for (uuid, points) in to_tombstone {
-            get_writer(&mut self.writers, uuid)?.tombstone_points(&points)?;
+            get_writer(&mut self.writers, uuid)?.tombstone_points(
+                &points,
+                version,
+                self.delete_versioning,
+            )?;
             written.push(uuid);
         }
         log::trace!(target: LOG_TARGET, "tombstone_points took {:?}", instant.elapsed());

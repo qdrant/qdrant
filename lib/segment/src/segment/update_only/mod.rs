@@ -48,8 +48,7 @@ pub enum WriterIdTrackerState {
 }
 
 impl WriterIdTrackerState {
-    /// Writer state taken from `id_tracker`'s last read. The deleted mask is
-    /// passed only if already in memory.
+    /// Writer state taken from `id_tracker`'s last read.
     pub(crate) fn of<S: UniversalRead>(id_tracker: &ReadOnlyIdTrackerEnum<S>) -> Self {
         match id_tracker {
             ReadOnlyIdTrackerEnum::Appendable(id_tracker) => {
@@ -65,9 +64,9 @@ impl WriterIdTrackerState {
                 )))
             }
             ReadOnlyIdTrackerEnum::DiskResident(id_tracker) => {
-                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::DiskResident(
-                    id_tracker.deleted_full_if_materialized().cloned(),
-                ))
+                WriterIdTrackerState::DeleteOnly(DeleteOnlyIdTrackerState::DiskResident(Some(
+                    id_tracker.deleted_point_bitslice().to_bitvec(),
+                )))
             }
         }
     }

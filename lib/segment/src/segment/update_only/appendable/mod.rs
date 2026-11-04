@@ -15,6 +15,7 @@ use super::AppendableIdTrackerState;
 use crate::common::check_named_vectors;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
+use crate::id_tracker::delete_versions::DeleteVersioning;
 use crate::id_tracker::mutable_id_tracker::update_only::{
     MappingOperation, UpdateOnlyAppendableIdTracker,
 };
@@ -344,13 +345,20 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     /// again needs no retirement — its new mapping supersedes the old slot —
     /// and asking for one here retires the point outright: a delete addresses
     /// the external id, so it takes the fresh slot along with the stale one.
+    ///
+    /// `version` is the version of the batch that deletes the points, recorded
+    /// as [`delete_versions`](crate::id_tracker::delete_versions) describes.
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
     ) -> OperationResult<()> {
         self.id_tracker.delete_points(
             &self.fs,
             points.iter().map(|(point_id, _internal_id)| *point_id),
+            version,
+            versioning,
         )
     }
 }

@@ -20,6 +20,9 @@ pub struct UpdateBatchPlan {
     /// appends are deterministic for a given batch.
     order: Vec<PointIdType>,
     updates: AHashMap<PointIdType, PointUpdates>,
+    /// The highest operation number in the batch, 0 for a batch without
+    /// operations.
+    version: SeqNumberType,
 }
 
 impl UpdateBatchPlan {
@@ -36,9 +39,11 @@ impl UpdateBatchPlan {
         let mut plan = Self {
             order: Vec::new(),
             updates: AHashMap::new(),
+            version: 0,
         };
 
         for (op_num, operation) in operations {
+            plan.version = plan.version.max(op_num);
             match operation {
                 CollectionUpdateOperations::PointOperation(operation) => {
                     plan.push_point_operation(op_num, operation)?;
@@ -254,6 +259,12 @@ impl UpdateBatchPlan {
 
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
+    }
+
+    /// The batch version: the highest operation number in the batch, which
+    /// every delete the batch writes records.
+    pub fn version(&self) -> SeqNumberType {
+        self.version
     }
 
     pub fn len(&self) -> usize {
