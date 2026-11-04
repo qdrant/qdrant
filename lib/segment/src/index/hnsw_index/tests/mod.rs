@@ -2,6 +2,7 @@ mod test_compact_graph_layer;
 mod test_graph_connectivity;
 mod test_heal_payload_links;
 mod test_pipnn_build;
+mod test_pipnn_duplicates;
 
 use common::ambient;
 use common::types::PointOffsetType;
