@@ -17,6 +17,7 @@
 //! Writers that record versions never set a mask bit after the segment is built, so no delete
 //! reaches a gated reader through the mask unversioned.
 
+mod buffered;
 mod gated_log;
 mod held;
 #[cfg(test)]
@@ -34,6 +35,7 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 use common::universal_io::UniversalReadFs;
 
+pub use self::buffered::BufferedDeletes;
 pub use self::gated_log::GatedDeleteLog;
 pub use self::held::HeldDeletes;
 pub use self::log_reader::DeleteLogReader;

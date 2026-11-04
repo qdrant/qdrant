@@ -47,7 +47,7 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
             && !self.point_deleted(internal_id)?
         {
             self.deleted.set(internal_id as usize, true);
-            self.deleted_wrapper.set(internal_id as usize, true);
+            self.deleted_wrapper.delete(internal_id);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
@@ -55,14 +55,19 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
 
     fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
         self.deleted.set(internal_id as usize, true);
-        self.deleted_wrapper.set(internal_id as usize, true);
+        self.deleted_wrapper.delete(internal_id);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         Ok(())
     }
 
-    /// Only deletions are flushed; the mapping is immutable.
+    /// Only deletions are flushed, the mapping is immutable: to the delete log, with the version
+    /// the segment stamped on each, or to the mask.
     fn mapping_flusher(&self) -> Flusher {
-        self.deleted_wrapper.flusher()
+        self.deleted_wrapper.flusher(|slot| {
+            self.internal_to_version
+                .get(slot)
+                .unwrap_or(DELETED_POINT_VERSION)
+        })
     }
 
     fn versions_flusher(&self) -> Flusher {
