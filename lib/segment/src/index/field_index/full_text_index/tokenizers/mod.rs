@@ -14,6 +14,7 @@ use code::CodeTokenizer;
 use multilingual::MultilingualTokenizer;
 pub use stemmer::Stemmer;
 pub use tokens_processor::TokensProcessor;
+use tokens_processor::truncate_to_max_token_chars;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::inverted_index::ARRAY_BOUNDARY_SENTINEL;
@@ -110,8 +111,10 @@ impl PrefixTokenizer {
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())
             .for_each(|word| {
+                let word_cow = truncate_to_max_token_chars(Cow::Borrowed(word));
+
                 // Apply ASCII folding if enabled
-                let mut word_cow = tokens_processor.fold_if_enabled(Cow::Borrowed(word));
+                let mut word_cow = tokens_processor.fold_if_enabled(word_cow);
 
                 // Handle lowercase
                 if tokens_processor.lowercase {
@@ -945,5 +948,66 @@ mod tests {
         tokens_processor.max_token_len = Some(4);
         PrefixTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["int", "inte", "pro", "proc", "liv", "live"]);
+    }
+
+    #[test]
+    fn test_max_token_chars() {
+        use tokens_processor::MAX_TOKEN_CHARS;
+
+        // Counted in characters, not bytes: `α` takes two
+        let kept = "α".repeat(MAX_TOKEN_CHARS);
+        let cut = "β".repeat(MAX_TOKEN_CHARS);
+        let text = format!("{kept} {cut}βββ end");
+
+        let tokenize = |tokenizer: TokenizerType, kind: TokenizerTextKind| {
+            let tokenizer = Tokenizer::new(
+                tokenizer,
+                TokensProcessor::new(true, false, Default::default(), None, None, None),
+            );
+            let mut out = Vec::new();
+            tokenizer.tokenize(kind, &text, |token| out.push(token.into_owned()));
+            out
+        };
+        for tokenizer in [
+            TokenizerType::Whitespace,
+            TokenizerType::Word,
+            TokenizerType::Code,
+        ] {
+            for kind in [TokenizerTextKind::Document, TokenizerTextKind::Query] {
+                assert_eq!(
+                    tokenize(tokenizer, kind),
+                    [kept.as_str(), cut.as_str(), "end"],
+                    "{tokenizer:?}",
+                );
+            }
+        }
+
+        // Prefixes of the tokens after cutting them
+        let prefixes = tokenize(TokenizerType::Prefix, TokenizerTextKind::Document);
+        assert_eq!(prefixes.len(), 2 * MAX_TOKEN_CHARS + "end".len());
+        assert!(prefixes.contains(&cut));
+        assert!(
+            prefixes
+                .iter()
+                .all(|token| token.chars().count() <= MAX_TOKEN_CHARS)
+        );
+        assert_eq!(
+            tokenize(TokenizerType::Prefix, TokenizerTextKind::Query),
+            [kept.as_str(), cut.as_str(), "end"],
+        );
+
+        // Cut before stemming, which takes time quadratic in token length
+        let stemming = TokensProcessor::new(
+            true,
+            false,
+            Default::default(),
+            Some(make_stemmer(SnowballLanguage::Greek)),
+            None,
+            None,
+        );
+        let stem = |token: &str| stemming.process_token(token, true).map(Cow::into_owned);
+        let cut_stem = stem(&"ά".repeat(MAX_TOKEN_CHARS));
+        assert!(cut_stem.is_some());
+        assert_eq!(stem(&"ά".repeat(100_000)), cut_stem);
     }
 }
