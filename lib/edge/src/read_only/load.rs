@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
+use common::ambient::{self, ThreadPoolExt};
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use futures::StreamExt;
 use futures::future::join_all;
@@ -113,26 +113,22 @@ where
     check_process_stopped(is_stopped)?;
 
     // Assemble from the resolved handles on the pool.
-    let loaded = ambient::parallel(|handoff| {
-        pool.install(|| {
-            staged
-                .into_par_iter()
-                .filter_map(|(uuid, staged)| match handoff.enter(|| staged.finish(fs)) {
-                    Ok(segment) => Some(Ok((uuid, segment))),
-                    Err(err) => {
-                        if err.is_not_found() {
-                            // The segment might not be well-formed yet, this follower can catch up next live-reload.
-                            log::debug!(
-                                "read-only open: skipping unloadable segment {uuid}: {err}"
-                            );
-                            None
-                        } else {
-                            Some(Err(err))
-                        }
+    let loaded = pool.ambient_install(|handoff| {
+        staged
+            .into_par_iter()
+            .filter_map(|(uuid, staged)| match handoff.enter(|| staged.finish(fs)) {
+                Ok(segment) => Some(Ok((uuid, segment))),
+                Err(err) => {
+                    if err.is_not_found() {
+                        // The segment might not be well-formed yet, this follower can catch up next live-reload.
+                        log::debug!("read-only open: skipping unloadable segment {uuid}: {err}");
+                        None
+                    } else {
+                        Some(Err(err))
                     }
-                })
-                .collect::<OperationResult<Vec<_>>>()
-        })
+                }
+            })
+            .collect::<OperationResult<Vec<_>>>()
     })?;
     check_process_stopped(is_stopped)?;
     Ok(loaded)
@@ -183,17 +179,15 @@ where
 
     // 1. Diff each survivor's on-disk config under shared locks, eagerly loading
     //    new/changed vectors and payload field indexes.
-    let config_diffs = ambient::parallel(|handoff| {
-        pool.install(|| {
-            segments
-                .par_iter()
-                .map(|(uuid, segment)| {
-                    check_process_stopped(is_stopped)?;
-                    let _scope = handoff.enter_guard();
-                    Ok((*uuid, segment.read().config_reload_diff(fs)))
-                })
-                .collect::<OperationResult<Vec<_>>>()
-        })
+    let config_diffs = pool.ambient_install(|handoff| {
+        segments
+            .par_iter()
+            .map(|(uuid, segment)| {
+                check_process_stopped(is_stopped)?;
+                let _scope = handoff.enter_guard();
+                Ok((*uuid, segment.read().config_reload_diff(fs)))
+            })
+            .collect::<OperationResult<Vec<_>>>()
     })?;
     check_process_stopped(is_stopped)?;
 
@@ -250,33 +244,25 @@ where
         .zip(pending)
         .zip(preloads)
         .collect();
-    let point_results = ambient::parallel(|handoff| {
-        pool.install(|| {
-            reloads
-                .into_par_iter()
-                .map(|((index, (uuid, segment)), (_, max_committed_id_res))| {
-                    check_process_stopped(is_stopped)?;
-                    let _scope = handoff.enter_guard();
-                    let result = max_committed_id_res.and_then(|max_committed_id| {
-                        let mut segment = segment.write();
-                        segment.live_reload(max_committed_id).or_else(|err| {
-                            if requires_reopen(&err) {
-                                reopen_after_failed_reload(
-                                    &mut segment,
-                                    err,
-                                    fs,
-                                    load_profile,
-                                    gating,
-                                )
-                            } else {
-                                Err(err)
-                            }
-                        })
-                    });
-                    Ok((index, uuid, result))
-                })
-                .collect::<OperationResult<Vec<_>>>()
-        })
+    let point_results = pool.ambient_install(|handoff| {
+        reloads
+            .into_par_iter()
+            .map(|((index, (uuid, segment)), (_, max_committed_id_res))| {
+                check_process_stopped(is_stopped)?;
+                let _scope = handoff.enter_guard();
+                let result = max_committed_id_res.and_then(|max_committed_id| {
+                    let mut segment = segment.write();
+                    segment.live_reload(max_committed_id).or_else(|err| {
+                        if requires_reopen(&err) {
+                            reopen_after_failed_reload(&mut segment, err, fs, load_profile, gating)
+                        } else {
+                            Err(err)
+                        }
+                    })
+                });
+                Ok((index, uuid, result))
+            })
+            .collect::<OperationResult<Vec<_>>>()
     })?;
     check_process_stopped(is_stopped)?;
 
