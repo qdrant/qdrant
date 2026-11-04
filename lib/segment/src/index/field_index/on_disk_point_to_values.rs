@@ -3,13 +3,11 @@ use std::cmp::max;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::bitvec::{BitVec, DeletedBitVec};
 use common::ext::ResultOptionExt;
 use common::generic_consts::Random;
 use common::mmap::{AdviceSetting, create_and_ensure_length, open_write_mmap};
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{
     self, CachedReadFs, OpenOptions, Populate, ReadOnly, ReadRange, UioResult, UniversalRead,
@@ -407,17 +405,15 @@ where
     ) -> OperationResult<()> {
         // Report deleted points with values too.
         let blank_bitmask = DeletedBitVec::new(BitVec::repeat(false, self.len()));
-        ambient::unmeasured(reason("TODO: Propagate counter upwards"), || {
-            self.values_iter_batch(
-                (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
-                &blank_bitmask,
-                |point_id, values| {
-                    if values.count > 0 {
-                        f(point_id, values);
-                    }
-                },
-            )
-        })
+        self.values_iter_batch(
+            (0..self.len() as PointOffsetType).map(|point_id| (point_id, point_id)),
+            &blank_bitmask,
+            |point_id, values| {
+                if values.count > 0 {
+                    f(point_id, values);
+                }
+            },
+        )
     }
 }
 
@@ -489,6 +485,7 @@ impl<'a, T: StoredValue + ?Sized + 'a> Iterator for ValuesIter<'a, T> {
 mod tests {
     use std::borrow::Borrow;
 
+    use common::ambient;
     #[cfg(target_os = "linux")]
     use common::universal_io::IoUringFs;
     use common::universal_io::MmapFs;

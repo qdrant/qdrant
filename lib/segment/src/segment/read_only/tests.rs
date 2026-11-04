@@ -256,6 +256,7 @@ fn assert_query_equivalence(reference: &impl ReadSegmentEntry, candidate: &impl 
 
 #[test]
 fn read_only_segment_matches_mutable() {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
 
@@ -276,6 +277,7 @@ fn read_only_segment_matches_mutable() {
 
 #[test]
 fn read_only_segment_graph_inline_matches_mutable() {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments_gi").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder_gi").tempdir().unwrap();
 
@@ -654,6 +656,7 @@ fn preload_then_reload(
 /// keeps answering queries identically to the reference.
 #[test]
 fn read_only_segment_config_reload_payload_index() {
+    let _scope = ambient::test_guard();
     use crate::index::payload_config::PayloadConfig;
     use crate::segment_constructor::get_payload_index_path;
 
@@ -729,6 +732,7 @@ fn read_only_segment_config_reload_payload_index() {
 /// re-check the segment manifest instead of escalating.
 #[test]
 fn vanished_segment_classifies_not_found() {
+    let _scope = ambient::test_guard();
     use common::universal_io::IsNotFound as _;
 
     let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
@@ -826,6 +830,7 @@ fn deferred_index_reads_nothing_at_open() {
 /// payload reads identically to an eagerly opened one.
 #[test]
 fn deferred_index_opens_on_first_search() {
+    let _scope = ambient::test_guard();
     use crate::data_types::load_profile::LoadProfile;
 
     let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
@@ -856,6 +861,7 @@ fn deferred_index_opens_on_first_search() {
 /// it, and an unset flag changes nothing.
 #[test]
 fn schedule_open_and_finish_observe_the_stop_flag() {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments_stop").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder_stop").tempdir().unwrap();
 
@@ -2346,6 +2352,7 @@ fn text_stats_ignore_load_history_optimized(
 /// opener's id tracker, for held and unknown points.
 #[test]
 fn read_only_segment_batched_lookups_match_single() {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder").tempdir().unwrap();
     let mutable = build_immutable_segment(segments_dir.path(), temp_dir.path(), false);
