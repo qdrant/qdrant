@@ -119,8 +119,11 @@ jobs:
       # other survives the same seed points at the io_uring read path (or rules it out), and
       # every failure so far has split that way. Rendered here rather than in the issue template
       # so the template stays a plain fill-in-the-blanks form.
+      #
+      # Also run on `cancelled()`: a hung soak used to sit silent until the ~6h job ceiling
+      # cancelled the step (`cancelled` ≠ `failure`), so no issue was filed and the seed was lost.
       - name: Describe which passes failed
-        if: ${{ failure() && github.event_name == 'schedule' }}
+        if: ${{ (failure() || cancelled()) && github.event_name == 'schedule' }}
         env:
           ASYNC: ${{ steps.async_scorer.conclusion }}
           PLAIN: ${{ steps.no_io_uring.conclusion }}
@@ -131,14 +134,21 @@ jobs:
             summary="async scorer only (no io_uring passed the same seed)"
           elif [ "$PLAIN" = failure ]; then
             summary="no io_uring only (async scorer passed the same seed)"
+          elif [ "$ASYNC" = cancelled ] && [ "$PLAIN" = skipped ]; then
+            summary="async scorer cancelled (hang or job/step timeout); no io_uring did not run"
+          elif [ "$ASYNC" = success ] && [ "$PLAIN" = cancelled ]; then
+            summary="no io_uring cancelled (hang or job/step timeout); async scorer passed the same seed"
+          elif [ "$ASYNC" = cancelled ] || [ "$PLAIN" = cancelled ]; then
+            summary="cancelled (async=$ASYNC, no-io-uring=$PLAIN)"
           else
-            summary="neither pass, the job broke around them (async=$ASYNC, no-io_uring=$PLAIN)"
+            summary="neither pass, the job broke around them (async=$ASYNC, no-io-uring=$PLAIN)"
           fi
           echo "FAILED_PASSES=$summary" >> "$GITHUB_ENV"
         shell: bash
       # Only alert for unattended nightly failures; dispatch/PR runs are watched live.
+      # `cancelled()` included: see the describe-step comment above.
       - name: Open issue on failure
-        if: ${{ failure() && github.event_name == 'schedule' }}
+        if: ${{ (failure() || cancelled()) && github.event_name == 'schedule' }}
         continue-on-error: true
         uses: JasonEtco/create-an-issue@1b14a70e4d8dc185e5cc76d3bec9eab20257b2c5 # v2.9.2
         env:

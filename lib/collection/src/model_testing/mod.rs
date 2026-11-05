@@ -5,6 +5,7 @@ mod trace;
 mod verify;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -790,7 +791,11 @@ pub async fn run(
             stage_breadcrumb(&bar, &format!("op:{i} restart: collect_clock_ticks"));
             let pre_clocks = verify::collect_clock_ticks(&collection).await;
             stage_breadcrumb(&bar, &format!("op:{i} restart: stop_gracefully"));
-            collection.stop_gracefully().await;
+            with_stage_timeout(
+                &format!("op:{i} restart: stop_gracefully"),
+                collection.stop_gracefully(),
+            )
+            .await;
             // `into_inner` makes the invariant checked, not assumed: if any background task still
             // holds an `Arc` clone here, panic loudly instead of reopening the same dir while the
             // old collection is silently kept alive.
@@ -799,16 +804,29 @@ pub async fn run(
                     .expect("collection still referenced at restart (undrained background task?)"),
             );
             stage_breadcrumb(&bar, &format!("op:{i} restart: reopen"));
-            collection =
-                Arc::new(fixture::reopen_collection(&collection_dir, &snapshots_dir).await);
+            collection = Arc::new(
+                with_stage_timeout(
+                    &format!("op:{i} restart: reopen"),
+                    fixture::reopen_collection(&collection_dir, &snapshots_dir),
+                )
+                .await,
+            );
             // `Collection::load` returns before tail-of-WAL ops queued to the
             // update worker have been applied — that's an intentional fast-start
             // feature. Wait for the queue to drain so the scroll below observes
             // all WAL-replayed state.
             stage_breadcrumb(&bar, &format!("op:{i} restart: wait_for_pending_updates"));
-            verify::wait_for_pending_updates(&collection).await;
+            with_stage_timeout(
+                &format!("op:{i} restart: wait_for_pending_updates"),
+                verify::wait_for_pending_updates(&collection),
+            )
+            .await;
             stage_breadcrumb(&bar, &format!("op:{i} restart: scroll + verify"));
-            let live = verify::collect_model_from_collection(&collection).await;
+            let live = with_stage_timeout(
+                &format!("op:{i} restart: scroll + verify"),
+                verify::collect_model_from_collection(&collection),
+            )
+            .await;
             verify::assert_matches_model(&live, &model, &format!("restart at op:{i}"));
             // Clock check AFTER the model check: a lost WAL tail trips both, and the model diff
             // (extra/missing ids) is the established postmortem signature for that class, so it
@@ -890,7 +908,11 @@ pub async fn run(
     }
     log::debug!("all ops applied, verifying live collection against model");
     stage_breadcrumb(&bar, "live: scroll + verify");
-    let live = verify::collect_model_from_collection(&collection).await;
+    let live = with_stage_timeout(
+        "live: scroll + verify",
+        verify::collect_model_from_collection(&collection),
+    )
+    .await;
     let (live_extra, live_missing) = verify::id_diff(&live, &model);
     let (mut segments, mut optimized) = verify::run_summary(&collection).await;
     if optimized > 0 {
@@ -932,20 +954,32 @@ pub async fn run(
     // Same clock-durability capture as the mid-run restart path, for the final reload.
     let pre_clocks = verify::collect_clock_ticks(&collection).await;
     stage_breadcrumb(&bar, "reload: stop_gracefully");
-    collection.stop_gracefully().await;
+    with_stage_timeout("reload: stop_gracefully", collection.stop_gracefully()).await;
     // Checked close-before-reopen, same as the mid-run restart path.
     drop(
         Arc::into_inner(collection)
             .expect("collection still referenced at final reload (undrained background task?)"),
     );
     stage_breadcrumb(&bar, "reload: reopen");
-    let collection = fixture::reopen_collection(&collection_dir, &snapshots_dir).await;
+    let collection = with_stage_timeout(
+        "reload: reopen",
+        fixture::reopen_collection(&collection_dir, &snapshots_dir),
+    )
+    .await;
     // Same reason as the mid-run restart above — drain deferred WAL ops before scrolling.
     stage_breadcrumb(&bar, "reload: wait_for_pending_updates");
-    verify::wait_for_pending_updates(&collection).await;
+    with_stage_timeout(
+        "reload: wait_for_pending_updates",
+        verify::wait_for_pending_updates(&collection),
+    )
+    .await;
 
     stage_breadcrumb(&bar, "reload: scroll + verify");
-    let reloaded = verify::collect_model_from_collection(&collection).await;
+    let reloaded = with_stage_timeout(
+        "reload: scroll + verify",
+        verify::collect_model_from_collection(&collection),
+    )
+    .await;
     let (reload_extra, reload_missing) = verify::id_diff(&reloaded, &model);
     trace.reload_verify(
         applied,
@@ -972,6 +1006,31 @@ fn stage_breadcrumb(bar: &ProgressBar, msg: &str) {
 /// `create_snapshot` fails loudly instead of stalling the run forever.
 const SNAPSHOT_HANG_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Upper bound on a single restart/reload await (stop, reopen, wait-for-updates, scroll).
+///
+/// Background snapshots already have [`SNAPSHOT_HANG_TIMEOUT`]. These other stages previously had
+/// no deadline: a hung post-restart `scroll + verify` on the nightly soak sat silent until the
+/// GitHub Actions ~6h job ceiling cancelled the run (`cancelled` ≠ `failure`, so no issue was
+/// filed). Five minutes is well above healthy restart scrolls (seconds) and large reopen
+/// recoveries (tens of seconds), while still failing the soak long before the job ceiling.
+const STAGE_HANG_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Await `fut`, panicking with `stage` in the message if it exceeds [`STAGE_HANG_TIMEOUT`].
+/// Pair with a preceding [`stage_breadcrumb`] so logs name the stage that never returned.
+async fn with_stage_timeout<T, F>(stage: &str, fut: F) -> T
+where
+    F: Future<Output = T>,
+{
+    tokio::time::timeout(STAGE_HANG_TIMEOUT, fut)
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "model_testing stage `{stage}` did not finish within {STAGE_HANG_TIMEOUT:?} \
+                 (possible hang; reproduce with the run's --seed)"
+            )
+        })
+}
+
 /// Finish the in-flight background snapshot (if any): await the task, panic if `create_snapshot`
 /// errored or the task panicked, then delete the archive (we don't recover it). Called per-iteration
 /// once the task reports finished, and unconditionally before any close+reopen — the task holds an
@@ -982,18 +1041,30 @@ async fn drain_snapshot(
     pending: &mut Option<JoinHandle<CollectionResult<SnapshotDescription>>>,
     tick: usize,
 ) {
-    let Some(handle) = pending.take() else {
+    let Some(mut handle) = pending.take() else {
         return;
     };
-    let description = tokio::time::timeout(SNAPSHOT_HANG_TIMEOUT, handle)
-        .await
-        .unwrap_or_else(|_| {
+    // Await via `&mut handle` so a timeout can still `abort()` the same handle. Dropping a
+    // `JoinHandle` only *detaches* the task: without abort, a timed-out `create_snapshot` would
+    // keep holding an `Arc<Collection>` and keep writing while the soak continues into
+    // stop_gracefully / reopen / scroll — the failure mode seen when nightlies hung after
+    // `restart: scroll + verify` with concurrent "Creating collection snapshot" logs.
+    let join = match tokio::time::timeout(SNAPSHOT_HANG_TIMEOUT, &mut handle).await {
+        Ok(join) => join,
+        Err(_elapsed) => {
+            handle.abort();
+            // Observe the abort so the task's `Arc<Collection>` is dropped before the caller
+            // proceeds to close+reopen the same directory.
+            let _ = handle.await;
             panic!(
                 "background snapshot did not finish within {SNAPSHOT_HANG_TIMEOUT:?} (op:{tick})"
-            )
-        })
+            );
+        }
+    };
+    let description = join
         // Re-raise the task's own panic payload so the original assertion message (not an opaque
-        // `JoinError`) reaches the log; `run` never cancels the task, so a join error is a panic.
+        // `JoinError`) reaches the log. After an abort we panic above, so a join error here is a
+        // panic inside `create_snapshot`.
         .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()))
         .unwrap_or_else(|e| panic!("concurrent create_snapshot (op:{tick}) failed: {e:?}"));
 
