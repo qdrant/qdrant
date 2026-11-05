@@ -992,6 +992,29 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         Ok(res)
     }
 
+    /// Current applied consensus state, in the same form a Raft snapshot carries it
+    pub fn consensus_state_data(&self) -> SnapshotData {
+        let _apply_guard = self.apply_lock.lock();
+
+        let collections_data = self.toc.collections_snapshot();
+        let persistent = self.persistent.read();
+        self.snapshot_data(collections_data, &persistent)
+    }
+
+    fn snapshot_data(
+        &self,
+        collections_data: CollectionsSnapshot,
+        persistent: &Persistent,
+    ) -> SnapshotData {
+        SnapshotData {
+            collections_data,
+            address_by_id: persistent.peer_address_by_id(),
+            metadata_by_id: persistent.peer_metadata_by_id(),
+            cluster_metadata: persistent.cluster_metadata.clone(),
+            quota_config: Some(self.toc.quota_config()),
+        }
+    }
+
     pub fn peer_address_by_id(&self) -> PeerAddressById {
         self.persistent.read().peer_address_by_id()
     }
@@ -1372,13 +1395,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
             ));
         }
 
-        let data = SnapshotData {
-            collections_data,
-            address_by_id: persistent.peer_address_by_id(),
-            metadata_by_id: persistent.peer_metadata_by_id(),
-            cluster_metadata: persistent.cluster_metadata.clone(),
-            quota_config: Some(self.toc.quota_config()),
-        };
+        let data = self.snapshot_data(collections_data, &persistent);
 
         let raft_state = persistent.state();
 
