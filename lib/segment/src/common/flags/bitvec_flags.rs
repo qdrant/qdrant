@@ -48,7 +48,9 @@ where
     ) -> OperationResult<Self> {
         match FlagsMode::detect(&fs, directory)?.unwrap_or(mode_if_create) {
             FlagsMode::Dynamic => {
-                let dynamic_flags = DynamicStoredFlags::open(&fs, directory, populate)?;
+                // Contents are copied into RAM and the page cache is dropped right after,
+                // so populating the file (sized to at least `MINIMAL_MMAP_SIZE`) is wasted work.
+                let dynamic_flags = DynamicStoredFlags::open(&fs, directory, Populate::No)?;
                 Self::new(fs, dynamic_flags)
             }
             FlagsMode::Compact => {
