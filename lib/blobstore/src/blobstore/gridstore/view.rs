@@ -121,8 +121,12 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     }
 
     /// Get the value for a given point offset.
-    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
-        let bytes = self.get_value_bytes::<P>(point_offset)?;
+    pub fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<V>> {
+        let bytes = self.get_value_bytes::<P>(point_offset, hw_metric)?;
         bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
     }
 
@@ -132,13 +136,14 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     pub fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: HwMetric,
     ) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(pointer) = self.get_pointer(point_offset)? else {
             return Ok(None);
         };
 
         let raw = self.read_from_pages::<P>(pointer)?;
-        HwMetric::PayloadIoRead.bump(raw.len());
+        hw_metric.bump(raw.len());
 
         Ok(Some(self.decompress(raw)?))
     }
