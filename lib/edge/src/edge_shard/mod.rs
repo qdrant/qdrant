@@ -1,4 +1,6 @@
 mod optimize;
+#[cfg(feature = "serverless")]
+mod serverless;
 mod shard_read;
 mod snapshots;
 mod update;
