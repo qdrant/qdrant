@@ -59,13 +59,16 @@ pub fn euclid_similarity_bytes(
     v1: &[VectorElementTypeByte],
     v2: &[VectorElementTypeByte],
 ) -> ScoreType {
+    // Same reasoning as the dot product: one squared difference is at most
+    // `255 * 255`, so a single `i32` accumulator wraps from dimension `33_027`
+    // on, while the accepted maximum is `65_536`.
     -v1.iter()
         .zip(v2)
         .map(|(a, b)| {
-            let diff = i32::from(*a) - i32::from(*b);
+            let diff = i64::from(*a) - i64::from(*b);
             diff * diff
         })
-        .sum::<i32>() as ScoreType
+        .sum::<i64>() as ScoreType
 }
 
 #[cfg(test)]
@@ -85,5 +88,29 @@ mod tests {
             VectorElementTypeByte::slice_from_float_cow(Cow::from(preprocessed_vector));
         let expected: TypedDenseVector<VectorElementTypeByte> = vec![0, 1, 2, 3, 255, 255];
         assert_eq!(typed_dense_vector, expected);
+    }
+
+    /// One squared difference is at most `255 * 255`, so a single `i32`
+    /// accumulator leaves `i32` from dimension `33_027` on. `VectorParams.size`
+    /// accepts up to `65_536` (`lib/api/build.rs`), where the exact sum is
+    /// `1.98 * i32::MAX` and used to wrap into a positive score.
+    #[test]
+    fn test_max_diff_does_not_overflow() {
+        // the last dimension below the i32 boundary, and the highest accepted one
+        for dim in [33_026, 65_536] {
+            let zeros = vec![0u8; dim];
+            let max = vec![255u8; dim];
+            let expected = 255.0 * 255.0 * dim as ScoreType;
+            assert_eq!(
+                euclid_similarity_bytes(&zeros, &max),
+                -expected,
+                "dim {dim}"
+            );
+            assert_eq!(
+                euclid_similarity_bytes(&max, &zeros),
+                -expected,
+                "dim {dim}"
+            );
+        }
     }
 }
