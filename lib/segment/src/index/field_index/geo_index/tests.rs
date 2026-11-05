@@ -302,6 +302,7 @@ fn test_polygon_interior_exceeds_exterior_cardinality(#[case] index_type: IndexT
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn test_polygon_with_exclusion(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let europe = GeoLineString {
         points: vec![
             GeoPoint::new_unchecked(19.415558242000287, 69.18533258102943),
@@ -351,6 +352,7 @@ fn test_polygon_with_exclusion(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn match_cardinality(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let r_meters = 500_000.0;
     let geo_radius = GeoRadius {
         center: NYC,
@@ -401,6 +403,7 @@ fn check_cardinality_match(
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn geo_indexed_filtering(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     fn check_geo_indexed_filtering<F>(
         field_condition: FieldCondition,
         check_fn: F,
@@ -464,6 +467,7 @@ fn geo_indexed_filtering(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn test_payload_blocks(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let (field_index, _, _) = build_random_index(1000, 5, index_type);
     let _scope = ambient::test_guard();
     let top_level_points = field_index.points_of_hash(Default::default()).unwrap();
@@ -526,6 +530,7 @@ fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: Inde
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn load_from_disk(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
@@ -557,6 +562,7 @@ fn load_from_disk(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
@@ -590,6 +596,7 @@ fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn same_geo_index_between_points_with_dups_test(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
@@ -862,6 +869,7 @@ fn test_frequent_add_remove_geo_points(#[case] index_type: IndexType) {
 #[case(&[IndexType::Mutable, IndexType::OnDisk, IndexType::Immutable], false)]
 #[case(&[IndexType::Mutable, IndexType::Immutable], true)]
 fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
+    let _scope = ambient::test_guard();
     const POINT_COUNT: usize = 500;
 
     let (mut indices, _data): (Vec<_>, Vec<_>) = types
@@ -967,6 +975,7 @@ fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
 /// point set as the mutable and immutable index implementations.
 #[test]
 fn test_all_points_congruence() {
+    let _scope = ambient::test_guard();
     const POINT_COUNT: usize = 500;
 
     let (mut mutable_index, _mutable_tmp, _) =
@@ -1099,6 +1108,7 @@ fn test_all_points_congruence() {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn test_geo_index_reload(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
@@ -1164,6 +1174,7 @@ fn test_geo_index_reload(#[case] index_type: IndexType) {
 #[case(IndexType::OnDisk)]
 #[case(IndexType::Immutable)]
 fn test_geo_index_reload_short_deleted_bitslice(#[case] index_type: IndexType) {
+    let _scope = ambient::test_guard();
     let temp_dir = {
         let (mut builder, temp_dir, _) = create_builder(index_type);
 
