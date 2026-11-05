@@ -251,21 +251,37 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop(external_id),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id, version),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id, version),
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id, version),
+            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop(external_id, version),
         }
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         match self {
-            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
-            IdTrackerEnum::DiskIdTracker(id_tracker) => id_tracker.drop_internal(internal_id),
+            IdTrackerEnum::MutableIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, version)
+            }
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, version)
+            }
+            IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, version)
+            }
+            IdTrackerEnum::DiskIdTracker(id_tracker) => {
+                id_tracker.drop_internal(internal_id, version)
+            }
         }
     }
 

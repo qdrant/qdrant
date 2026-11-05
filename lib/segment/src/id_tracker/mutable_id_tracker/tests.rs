@@ -113,7 +113,9 @@ fn test_load_store() {
 
     assert_eq!(old_mappings, loaded_id_tracker.mappings);
 
-    loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
+    loaded_id_tracker
+        .drop(PointIdType::NumId(180), None)
+        .unwrap();
 }
 
 /// Mutates an ID tracker and stores it to disk. Tests whether loading results in the exact same
@@ -135,7 +137,7 @@ fn test_store_load_mutated() {
             }
 
             if index % 3 == 0 {
-                id_tracker.drop(*point).unwrap();
+                id_tracker.drop(*point, None).unwrap();
                 dropped_points.insert(*point);
                 continue;
             }
@@ -224,7 +226,7 @@ fn test_point_deletion_correctness() {
         Some(0)
     );
 
-    id_tracker.drop(point_to_delete).unwrap();
+    id_tracker.drop(point_to_delete, None).unwrap();
 
     let point_exists = id_tracker
         .internal_id_with_behavior(
@@ -263,7 +265,7 @@ fn test_point_deletion_persists_reload() {
             )
             .expect("Point to delete exists.");
         assert!(!id_tracker.is_deleted_point(intetrnal_id));
-        id_tracker.drop(point_to_delete).unwrap();
+        id_tracker.drop(point_to_delete, None).unwrap();
         id_tracker.mapping_flusher()().unwrap();
         id_tracker.versions_flusher()().unwrap();
         id_tracker.mappings
@@ -602,7 +604,7 @@ fn in_memory_id_tracker_vs_mutable_tracker_congruence() {
             .internal_id_with_behavior(point_id, common::types::DeferredBehavior::VisibleOnly)
             .is_some()
         {
-            mutable_id_tracker.drop(point_id).unwrap();
+            mutable_id_tracker.drop(point_id, None).unwrap();
         }
         mutable_id_tracker
             .set_link(point_id, internal_id_mmap)
@@ -615,7 +617,7 @@ fn in_memory_id_tracker_vs_mutable_tracker_congruence() {
             .internal_id_with_behavior(point_id, common::types::DeferredBehavior::VisibleOnly)
             .is_some()
         {
-            in_memory_id_tracker.drop(point_id).unwrap();
+            in_memory_id_tracker.drop(point_id, None).unwrap();
         }
         in_memory_id_tracker
             .set_link(point_id, internal_id_in_memory)
@@ -821,4 +823,55 @@ fn shadow_visible_head_survives_mapping_flush_reload() {
     // (a VisibleOnly scroll would still surface this stale copy)
     assert_eq!(id_tracker.external_id(2), Some(p7));
     assert!(!id_tracker.is_deleted_point(2));
+}
+
+/// With versioned deletes, a delete is persisted with the version it was dropped with, and a
+/// delete without a version as a plain delete. Unversioned, every delete is plain.
+#[test]
+fn deletes_persist_the_version_they_are_given() {
+    use super::mappings_storage::read_mappings_iter;
+    use crate::id_tracker::delete_versions::DeleteVersioning;
+
+    for (versioning, expected) in [
+        (
+            DeleteVersioning::Versioned,
+            [
+                MappingChange::DeleteVersioned(PointIdType::NumId(1), 7),
+                MappingChange::Delete(PointIdType::NumId(2)),
+            ],
+        ),
+        (
+            DeleteVersioning::Unversioned,
+            [
+                MappingChange::Delete(PointIdType::NumId(1)),
+                MappingChange::Delete(PointIdType::NumId(2)),
+            ],
+        ),
+    ] {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut tracker =
+            MutableIdTracker::open_with_delete_versioning(dir.path(), None, versioning).unwrap();
+        for id in 0..3 {
+            tracker
+                .set_link(PointIdType::NumId(id), id as PointOffsetType)
+                .unwrap();
+            tracker
+                .set_internal_version(id as PointOffsetType, 3)
+                .unwrap();
+        }
+        tracker.drop(PointIdType::NumId(1), Some(7)).unwrap();
+        tracker.drop_internal(2, None).unwrap();
+        // The slot's version changing before the flush does not change the persisted one
+        tracker.set_internal_version(1, 99).unwrap();
+        tracker.mapping_flusher()().unwrap();
+        tracker.versions_flusher()().unwrap();
+        drop(tracker);
+
+        let file = fs::File::open(mappings_path(dir.path())).unwrap();
+        let deletes: Vec<MappingChange> = read_mappings_iter(file)
+            .map(Result::unwrap)
+            .filter(|change| !matches!(change, MappingChange::Insert(..)))
+            .collect();
+        assert_eq!(deletes, expected, "{versioning:?}");
+    }
 }

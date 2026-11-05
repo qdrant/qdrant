@@ -113,7 +113,9 @@ fn test_load_store() {
 
     assert_eq!(old_mappings, loaded_id_tracker.mappings);
 
-    loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
+    loaded_id_tracker
+        .drop(PointIdType::NumId(180), None)
+        .unwrap();
 }
 
 /// Mutates an ID tracker and stores it to disk. Tests whether loading results in the exact same
@@ -135,7 +137,7 @@ fn test_store_load_mutated() {
             }
 
             if index % 3 == 0 {
-                id_tracker.drop(*point).unwrap();
+                id_tracker.drop(*point, None).unwrap();
                 dropped_points.insert(*point);
                 continue;
             }
@@ -219,7 +221,7 @@ fn test_point_deletion_correctness() {
         Some(0)
     );
 
-    id_tracker.drop(point_to_delete).unwrap();
+    id_tracker.drop(point_to_delete, None).unwrap();
 
     let point_exists = id_tracker
         .internal_id_with_behavior(
@@ -258,7 +260,7 @@ fn test_point_deletion_persists_reload() {
             )
             .expect("Point to delete exists.");
         assert!(!id_tracker.is_deleted_point(intetrnal_id));
-        id_tracker.drop(point_to_delete).unwrap();
+        id_tracker.drop(point_to_delete, None).unwrap();
         id_tracker.mapping_flusher()().unwrap();
         id_tracker.versions_flusher()().unwrap();
         id_tracker.mappings

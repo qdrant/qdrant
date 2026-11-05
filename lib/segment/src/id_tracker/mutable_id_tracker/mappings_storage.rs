@@ -240,9 +240,9 @@ where
     Ok(mappings)
 }
 
-pub(super) fn reconcile_persisted_mapping_changes<T: PartialEq>(
-    pending: &Mutex<Vec<T>>,
-    changes: &[T],
+pub(super) fn reconcile_persisted_mapping_changes(
+    pending: &Mutex<Vec<MappingChange>>,
+    changes: &[MappingChange],
 ) {
     let mut pending = pending.lock();
 

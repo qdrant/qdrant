@@ -537,7 +537,11 @@ fn test_check_consistency() {
         .unwrap();
 
     // make id_tracker inconsistent
-    segment.id_tracker.borrow_mut().drop(6.into()).unwrap();
+    segment
+        .id_tracker
+        .borrow_mut()
+        .drop(6.into(), None)
+        .unwrap();
 
     let search_result = segment
         .search(

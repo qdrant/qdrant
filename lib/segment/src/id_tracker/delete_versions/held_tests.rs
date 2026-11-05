@@ -45,7 +45,7 @@ fn segment(format: Format) -> TempDir {
             .set_internal_version(id as PointOffsetType, 3)
             .unwrap();
     }
-    in_memory.drop(num(2)).unwrap();
+    in_memory.drop(num(2), None).unwrap();
     let (versions, mappings) = in_memory.into_internal();
     let mappings = CompressedPointMappings::from_mappings(mappings);
     match format {

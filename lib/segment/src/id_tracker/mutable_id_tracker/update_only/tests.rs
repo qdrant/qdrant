@@ -708,13 +708,13 @@ fn matches_the_mutable_tracker() {
         mutable.set_link(*external_id, *slot).unwrap();
         mutable.set_internal_version(*slot, *version).unwrap();
     }
-    mutable.drop(num(99)).unwrap();
+    mutable.drop(num(99), None).unwrap();
 
     // Then retire a live point through both.
     writer
         .insert_operations(&MmapFs, &[Delete(uuid(11))])
         .unwrap();
-    mutable.drop(uuid(11)).unwrap();
+    mutable.drop(uuid(11), None).unwrap();
 
     mutable.mapping_flusher()().unwrap();
     mutable.versions_flusher()().unwrap();

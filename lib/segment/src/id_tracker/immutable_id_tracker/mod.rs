@@ -357,37 +357,41 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
         panic!("Trying to call a mutating function (`set_link`) of an immutable id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
 
         if let Some(internal_id) = internal_id {
-            self.deleted_wrapper.delete(internal_id);
+            self.deleted_wrapper.delete(internal_id, version);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
 
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
 
-        self.deleted_wrapper.delete(internal_id);
+        self.deleted_wrapper.delete(internal_id, version);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
 
         Ok(())
     }
 
     /// Creates a flusher function, that writes the deleted points to the delete log, with the
-    /// version the segment stamped on each, or to the bitvec on disk.
+    /// version each was deleted at, or to the bitvec on disk.
     fn mapping_flusher(&self) -> Flusher {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher(|slot| {
-            self.internal_to_version
-                .get(slot)
-                .unwrap_or(DELETED_POINT_VERSION)
-        })
+        self.deleted_wrapper.flusher()
     }
 
     /// Creates a flusher function, that writes the points versions to disk.

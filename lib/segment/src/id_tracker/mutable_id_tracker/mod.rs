@@ -1,6 +1,5 @@
 mod change;
 mod mappings_storage;
-mod pending;
 mod versions_storage;
 
 #[cfg(test)]
@@ -25,7 +24,6 @@ use self::change::MappingChange;
 use self::mappings_storage::{
     load_mappings, mappings_path, reconcile_persisted_mapping_changes, store_mapping_changes,
 };
-use self::pending::PendingMappingChange;
 use self::versions_storage::{
     load_versions, reconcile_persisted_version_changes, store_version_changes, versions_path,
 };
@@ -58,7 +56,7 @@ pub struct MutableIdTracker {
     pending_versions: Arc<Mutex<BTreeMap<PointOffsetType, SeqNumberType>>>,
 
     /// List of point mappings pending to be persisted, will be persisted on flush
-    pending_mappings: Arc<Mutex<Vec<PendingMappingChange>>>,
+    pending_mappings: Arc<Mutex<Vec<MappingChange>>>,
 
     /// Whether deletes are persisted with their version, see
     /// [`delete_versions`](crate::id_tracker::delete_versions).
@@ -191,6 +189,23 @@ impl MutableIdTracker {
             .filter(|path| path.is_file())
             .collect()
     }
+
+    /// The mapping change that persists the delete of `external_id`: with
+    /// [`DeleteVersioning::Versioned`], a versioned entry when the delete has a `version`.
+    fn delete_change(
+        &self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> MappingChange {
+        match (self.delete_versioning, version) {
+            (DeleteVersioning::Versioned, Some(version)) => {
+                MappingChange::DeleteVersioned(external_id, version)
+            }
+            (DeleteVersioning::Versioned, None) | (DeleteVersioning::Unversioned, _) => {
+                MappingChange::Delete(external_id)
+            }
+        }
+    }
 }
 
 impl IdTrackerRead for MutableIdTracker {
@@ -309,33 +324,35 @@ impl IdTracker for MutableIdTracker {
         self.mappings.set_link(external_id, internal_id);
         self.pending_mappings
             .lock()
-            .push(PendingMappingChange::Insert(external_id, internal_id));
+            .push(MappingChange::Insert(external_id, internal_id));
         Ok(())
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
         self.pending_mappings
             .lock()
-            .push(PendingMappingChange::Delete {
-                external_id,
-                slot: internal_id,
-            });
+            .push(self.delete_change(external_id, version));
         if let Some(internal_id) = internal_id {
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
             self.pending_mappings
                 .lock()
-                .push(PendingMappingChange::Delete {
-                    external_id,
-                    slot: Some(internal_id),
-                });
+                .push(self.delete_change(external_id, version));
         }
 
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
@@ -344,30 +361,18 @@ impl IdTracker for MutableIdTracker {
     }
 
     /// Creates a flusher function, that persists the removed points in the mapping database
-    /// and flushes the mapping to disk. A delete carries the version the segment stamped on its
-    /// slot when deletes are versioned.
+    /// and flushes the mapping to disk.
     /// This function should be called _before_ flushing the version database.
     fn mapping_flusher(&self) -> Flusher {
         let mappings_path = mappings_path(&self.segment_path);
 
-        let pending = {
+        let changes = {
             let changes_guard = self.pending_mappings.lock();
             if changes_guard.is_empty() {
                 return Box::new(|| Ok(()));
             }
             changes_guard.clone()
         };
-        let changes: Vec<MappingChange> = pending
-            .iter()
-            .map(|change| {
-                change.resolve(self.delete_versioning, |slot| {
-                    self.internal_to_version
-                        .get(slot as usize)
-                        .copied()
-                        .unwrap_or(DELETED_POINT_VERSION)
-                })
-            })
-            .collect();
 
         let is_alive_handle = self.is_alive_lock.handle();
         let pending_mappings_weak = Arc::downgrade(&self.pending_mappings);
@@ -400,7 +405,7 @@ impl IdTracker for MutableIdTracker {
                 return Err(err);
             }
 
-            reconcile_persisted_mapping_changes(&pending_mappings_arc, &pending);
+            reconcile_persisted_mapping_changes(&pending_mappings_arc, &changes);
 
             drop(is_alive_guard);
 

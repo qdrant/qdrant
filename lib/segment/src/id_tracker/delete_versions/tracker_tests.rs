@@ -46,7 +46,7 @@ fn data() -> (Vec<SeqNumberType>, CompressedPointMappings) {
             .set_internal_version(id as PointOffsetType, 3)
             .unwrap();
     }
-    in_memory.drop(num(2)).unwrap();
+    in_memory.drop(num(2), None).unwrap();
     let (versions, mappings) = in_memory.into_internal();
     (versions, CompressedPointMappings::from_mappings(mappings))
 }
@@ -214,7 +214,7 @@ fn regular_trackers_read_the_union_and_write_the_mask() {
                 .is_none()
         );
 
-        tracker.drop(num(6)).unwrap();
+        tracker.drop(num(6), None).unwrap();
         tracker.mapping_flusher()().unwrap();
         tracker.versions_flusher()().unwrap();
         drop(tracker);
@@ -226,5 +226,72 @@ fn regular_trackers_read_the_union_and_write_the_mask() {
             [2, 4, 6],
             "{format:?}",
         );
+    }
+}
+
+fn open_regular_with(format: Format, path: &Path, versioning: DeleteVersioning) -> IdTrackerEnum {
+    match format {
+        Format::Immutable => IdTrackerEnum::ImmutableIdTracker(
+            ImmutableIdTracker::<MmapFile>::open_with_delete_versioning(&MmapFs, path, versioning)
+                .unwrap(),
+        ),
+        Format::DiskResident => IdTrackerEnum::DiskIdTracker(
+            DiskIdTracker::<MmapFile>::open_with_delete_versioning(
+                &MmapFs,
+                path,
+                Populate::No,
+                versioning,
+            )
+            .unwrap(),
+        ),
+    }
+}
+
+/// A versioned regular tracker appends its deletes to the log with the version they were dropped
+/// with, not whatever version the slot holds at flush, and leaves the mask alone. A delete without
+/// a version is logged at version 0.
+#[test]
+fn versioned_regular_trackers_log_the_version_they_are_given() {
+    for format in FORMATS {
+        let dir = Builder::new().prefix("deletes").tempdir().unwrap();
+        build(format, dir.path());
+
+        let mut tracker = open_regular_with(format, dir.path(), DeleteVersioning::Versioned);
+        tracker.drop(num(6), Some(7)).unwrap();
+        tracker.drop_internal(8, None).unwrap();
+        // The slot's version changing before the flush does not change the logged one
+        tracker.set_internal_version(6, 99).unwrap();
+        tracker.mapping_flusher()().unwrap();
+        tracker.versions_flusher()().unwrap();
+        drop(tracker);
+
+        assert_eq!(
+            read_log(dir.path()),
+            [entry(6, 7), entry(8, 0)],
+            "{format:?}"
+        );
+        assert_eq!(mask(dir.path()), [2], "{format:?}");
+        assert_eq!(
+            deleted_slots(&open_regular(format, dir.path())),
+            [2, 6, 8],
+            "{format:?}",
+        );
+    }
+}
+
+/// A slot deleted twice before a flush is logged once, with its first delete's version.
+#[test]
+fn versioned_regular_trackers_log_a_slot_once() {
+    for format in FORMATS {
+        let dir = Builder::new().prefix("deletes").tempdir().unwrap();
+        build(format, dir.path());
+
+        let mut tracker = open_regular_with(format, dir.path(), DeleteVersioning::Versioned);
+        tracker.drop_internal(5, Some(7)).unwrap();
+        tracker.drop_internal(5, Some(9)).unwrap();
+        tracker.mapping_flusher()().unwrap();
+        drop(tracker);
+
+        assert_eq!(read_log(dir.path()), [entry(5, 7)], "{format:?}");
     }
 }

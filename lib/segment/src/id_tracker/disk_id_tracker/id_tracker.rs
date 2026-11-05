@@ -41,33 +41,37 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for DiskIdTrac
         panic!("Trying to call a mutating function (`set_link`) of a disk id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         // Mutating path: propagate lookup/deletion-check errors instead of swallowing.
         if let Some(internal_id) = self.reader.lookup(external_id)?
             && !self.point_deleted(internal_id)?
         {
             self.deleted.set(internal_id as usize, true);
-            self.deleted_wrapper.delete(internal_id);
+            self.deleted_wrapper.delete(internal_id, version);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         self.deleted.set(internal_id as usize, true);
-        self.deleted_wrapper.delete(internal_id);
+        self.deleted_wrapper.delete(internal_id, version);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         Ok(())
     }
 
     /// Only deletions are flushed, the mapping is immutable: to the delete log, with the version
-    /// the segment stamped on each, or to the mask.
+    /// each was deleted at, or to the mask.
     fn mapping_flusher(&self) -> Flusher {
-        self.deleted_wrapper.flusher(|slot| {
-            self.internal_to_version
-                .get(slot)
-                .unwrap_or(DELETED_POINT_VERSION)
-        })
+        self.deleted_wrapper.flusher()
     }
 
     fn versions_flusher(&self) -> Flusher {
