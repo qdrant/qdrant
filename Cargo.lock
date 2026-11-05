@@ -502,7 +502,7 @@ dependencies = [
  "common",
  "itertools 0.15.0",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "prost 0.14.4",
  "prost-types 0.14.4",
  "prost-wkt-types",
@@ -914,7 +914,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "lz4_flex",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "rand 0.10.3",
  "rstest",
@@ -1351,7 +1351,7 @@ dependencies = [
  "log",
  "object_store",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pprof",
  "proptest",
  "rand 0.10.3",
@@ -1450,7 +1450,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "ph",
  "pin-project-lite",
  "procfs",
@@ -1529,7 +1529,7 @@ dependencies = [
  "hdrhistogram",
  "humantime",
  "hyper-util",
- "parking_lot",
+ "parking_lot 0.12.5",
  "prost 0.14.4",
  "prost-types 0.14.4",
  "serde",
@@ -1960,9 +1960,9 @@ dependencies = [
  "cfg-if",
  "crossbeam-utils",
  "hashbrown 0.14.5",
- "lock_api",
+ "lock_api 0.4.14",
  "once_cell",
- "parking_lot_core",
+ "parking_lot_core 0.9.12",
 ]
 
 [[package]]
@@ -2327,7 +2327,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "rand 0.10.3",
  "rayon",
  "segment",
@@ -2754,7 +2754,7 @@ dependencies = [
  "cfg-if",
  "foyer-tokio",
  "mixtrics",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project",
  "twox-hash",
 ]
@@ -2786,7 +2786,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "itertools 0.15.0",
  "mixtrics",
- "parking_lot",
+ "parking_lot 0.12.5",
  "paste",
  "pin-project",
  "serde",
@@ -2817,7 +2817,7 @@ dependencies = [
  "itertools 0.15.0",
  "libc",
  "lz4",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project",
  "rand 0.10.3",
  "tracing",
@@ -3185,7 +3185,7 @@ dependencies = [
  "ash",
  "gpu-allocator",
  "log",
- "parking_lot",
+ "parking_lot 0.13.0",
  "shaderc",
  "zerocopy",
 ]
@@ -4219,9 +4219,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
-version = "0.2.186"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libflate"
@@ -4324,6 +4324,15 @@ name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+dependencies = [
+ "scopeguard",
+]
+
+[[package]]
+name = "lock_api"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65d91b22da179613dcf4d6ec8349563f52a363f6849e03b00dd0a185ec4a59af"
 dependencies = [
  "scopeguard",
  "serde",
@@ -4692,7 +4701,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb252c728b9d77c6ef9103f0c81524fa0a3d3b161d0a936295d7fbeff6e04c11"
 dependencies = [
  "itertools 0.14.0",
- "parking_lot",
+ "parking_lot 0.12.5",
 ]
 
 [[package]]
@@ -5076,7 +5085,7 @@ dependencies = [
  "itertools 0.15.0",
  "md-5",
  "nix 0.31.3",
- "parking_lot",
+ "parking_lot 0.12.5",
  "percent-encoding",
  "quick-xml 0.41.0",
  "rand 0.10.3",
@@ -5181,8 +5190,18 @@ version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
 dependencies = [
- "lock_api",
- "parking_lot_core",
+ "lock_api 0.4.14",
+ "parking_lot_core 0.9.12",
+]
+
+[[package]]
+name = "parking_lot"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9cf937ca4e1d0b7578784559063422fc39ae7c5a00f02471f2614d5486fd226"
+dependencies = [
+ "lock_api 0.5.0",
+ "parking_lot_core 0.10.0",
 ]
 
 [[package]]
@@ -5191,11 +5210,23 @@ version = "0.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
 dependencies = [
- "backtrace",
  "cfg-if",
  "libc",
- "petgraph 0.6.5",
  "redox_syscall 0.5.18",
+ "smallvec",
+ "windows-link",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cfff060068cc18aa7815010fcaf80c68c7fb9e85fc7f5c0f9bf142c21d19826"
+dependencies = [
+ "backtrace",
+ "libc",
+ "petgraph 0.8.3",
+ "redox_syscall 0.9.5",
  "smallvec",
  "windows-link",
 ]
@@ -5338,6 +5369,7 @@ dependencies = [
  "fixedbitset 0.5.7",
  "hashbrown 0.15.5",
  "indexmap 2.14.2",
+ "serde",
 ]
 
 [[package]]
@@ -5685,7 +5717,7 @@ dependencies = [
  "fnv",
  "lazy_static",
  "memchr",
- "parking_lot",
+ "parking_lot 0.12.5",
  "thiserror 2.0.21",
 ]
 
@@ -6094,7 +6126,7 @@ dependencies = [
  "mockito",
  "nix 0.31.3",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "procfs",
  "prometheus",
  "prost 0.11.9",
@@ -6147,7 +6179,7 @@ dependencies = [
  "ahash",
  "edge",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "segment",
  "serde_json",
  "shard",
@@ -6224,7 +6256,7 @@ dependencies = [
  "num-traits",
  "num_threads",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "quantization",
  "rand 0.10.3",
  "rand_distr",
@@ -6264,7 +6296,7 @@ dependencies = [
  "equivalent",
  "foldhash 0.2.0",
  "hashbrown 0.17.1",
- "parking_lot",
+ "parking_lot 0.12.5",
 ]
 
 [[package]]
@@ -6574,6 +6606,15 @@ name = "redox_syscall"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce70a74e890531977d37e532c34d45e9055d2409ed08ddba14529471ed0be16"
+dependencies = [
+ "bitflags 2.11.0",
+]
+
+[[package]]
+name = "redox_syscall"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "580c875845b41ecb1564ad1ae4703044cef774145e3d7a94dc2b3fa7c97868fd"
 dependencies = [
  "bitflags 2.11.0",
 ]
@@ -7174,7 +7215,7 @@ dependencies = [
  "object_store",
  "once_cell",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "posting_list",
  "pprof",
  "procfs",
@@ -7408,7 +7449,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6df5ed973ad8d834e09f824f9e9f449af6b9a3745f78dec7cc752770bd3bf11"
 dependencies = [
  "once_cell",
- "parking_lot",
+ "parking_lot 0.12.5",
  "serial_test_derive",
 ]
 
@@ -7495,7 +7536,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "prost 0.14.4",
  "rand 0.10.3",
@@ -7695,7 +7736,7 @@ dependencies = [
  "log",
  "memmap2",
  "ordered-float 5.5.1",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pprof",
  "rand 0.10.3",
  "schemars",
@@ -7721,7 +7762,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
 dependencies = [
- "lock_api",
+ "lock_api 0.4.14",
 ]
 
 [[package]]
@@ -7730,7 +7771,7 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1527984ca054dfca79333baec451042863f485fbee01b7bf6d911de915cac865"
 dependencies = [
- "lock_api",
+ "lock_api 0.4.14",
 ]
 
 [[package]]
@@ -7778,7 +7819,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "mockito",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "prost 0.11.9",
  "raft",
@@ -8217,7 +8258,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -8550,7 +8591,7 @@ dependencies = [
  "matchers",
  "nu-ansi-term",
  "once_cell",
- "parking_lot",
+ "parking_lot 0.12.5",
  "regex-automata",
  "serde",
  "serde_json",
@@ -8603,7 +8644,7 @@ dependencies = [
  "criterion",
  "foyer",
  "itertools 0.15.0",
- "parking_lot",
+ "parking_lot 0.13.0",
  "quick_cache",
  "rand 0.10.3",
  "rand_distr",
