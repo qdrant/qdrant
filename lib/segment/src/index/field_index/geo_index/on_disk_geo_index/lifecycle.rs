@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::binary_search::binary_search_by;
 use common::bitvec::{BitSlice, DeletedBitVec};
@@ -10,7 +9,6 @@ use common::fs::{atomic_save_json, clear_disk_cache};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
 use common::mmap::{AdviceSetting, MmapSlice, create_and_ensure_length};
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{
     CachedReadFs, OkNotFound, OpenOptions, Populate, ReadRange, SortedBlockIndex, TypedStorage,
@@ -297,11 +295,11 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
-        ambient::unmeasured(reason("TODO: propagate counter upwards"), || {
-            self.storage.point_to_values.values_iter(idx)
-        })
-        .ok()?
-        .map(|iter| iter.map(Cow::into_owned))
+        self.storage
+            .point_to_values
+            .values_iter(idx)
+            .ok()?
+            .map(|iter| iter.map(Cow::into_owned))
     }
 
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
