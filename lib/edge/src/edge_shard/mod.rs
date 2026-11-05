@@ -10,6 +10,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
+use common::flags::init_feature_flags_if_needed;
+use common::fs::check_mmap_functionality;
+use common::mmap::MULTI_MMAP_SUPPORT_CHECK_RESULT;
 use common::reason::Reason;
 use common::save_on_disk::SaveOnDisk;
 use fs_err as fs;
@@ -57,6 +60,9 @@ impl EdgeShard {
     /// Configuration is required and is persisted to `edge_config.json`. WAL
     /// behavior follows `config.wal_enabled` and `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
+    ///
+    /// Initializes process-wide feature flags and checks multi-mmap support if unset.
+    /// Configure custom global values before opening the first shard.
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
@@ -67,6 +73,8 @@ impl EdgeShard {
         fs::create_dir_all(path).map_err(|err| {
             OperationError::service_error(format!("failed to create edge shard directory: {err}"))
         })?;
+
+        initialize_globals(path);
 
         let update_log = if config.wal_enabled() {
             open_wal(path, config.wal_options.clone().unwrap_or_default())?
@@ -127,6 +135,9 @@ impl EdgeShard {
     /// To override WAL options (e.g. for embedded/mobile deployments where
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
+    ///
+    /// Initializes process-wide feature flags and checks multi-mmap support if unset.
+    /// Configure custom global values before opening the first shard.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error(format!(
@@ -136,6 +147,8 @@ impl EdgeShard {
         }
 
         let resolved = resolve_initial_config(path, config)?;
+
+        initialize_globals(path);
 
         let segments_path = ensure_segments_dir(path)?;
         let (mut segments, derived) = load_segments(&segments_path)?;
@@ -377,6 +390,19 @@ fn has_existing_segments(path: &Path) -> bool {
         }
     }
     false
+}
+
+fn initialize_globals(path: &Path) {
+    init_feature_flags_if_needed();
+    MULTI_MMAP_SUPPORT_CHECK_RESULT.get_or_init(|| {
+        check_mmap_functionality(path).unwrap_or_else(|err| {
+            log::warn!(
+                "Failed to check multi-mmap support at {}: {err}; disabling multi-mmap",
+                path.display(),
+            );
+            false
+        })
+    });
 }
 
 fn open_wal(path: &Path, wal_options: WalOptions) -> OperationResult<UpdateLog> {
