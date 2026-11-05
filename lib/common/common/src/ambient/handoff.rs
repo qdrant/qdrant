@@ -12,6 +12,9 @@ pub fn current() -> Handoff {
 
 /// Run rayon (or any other work-stealing) calls.
 /// Closures passed to rayon must enter the provided scope, see [`Handoff::enter`].
+///
+/// Look at [`super::tests::masked_context_prevents_misattributing`] for an
+/// example of an issue that this function prevents.
 pub fn parallel<R>(f: impl FnOnce(&Handoff) -> R) -> R {
     let handoff = current();
     let _scope = Scope::masked();
