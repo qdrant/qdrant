@@ -174,8 +174,6 @@ where
     }
 
     /// Max of [`Self::available_vectors_size_in_bytes`] over all vector names.
-    ///
-    /// Iterates `vector_data` directly instead of looking up each name.
     pub fn max_available_vectors_size_in_bytes(&self) -> usize {
         self.vector_data
             .values()
