@@ -44,6 +44,7 @@ use crate::types::{
 };
 
 mod action_applier;
+pub mod local_patch;
 pub mod state_machine;
 mod validation;
 
