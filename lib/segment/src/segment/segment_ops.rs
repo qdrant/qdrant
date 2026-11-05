@@ -841,6 +841,7 @@ impl Segment {
     ///
     /// Returns an error if any inconsistency is found
     pub fn check_data_consistency(&self) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let id_tracker = self.id_tracker.borrow();
 
         // dangling internal ids

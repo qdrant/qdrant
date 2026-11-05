@@ -115,14 +115,20 @@ where
     S::Fs: Default,
 {
     fn get(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
-        match self.storage.get_value::<Random>(point_offset)? {
+        match self
+            .storage
+            .get_value::<Random>(point_offset, HwMetric::PayloadIoRead)?
+        {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
     }
 
     fn get_sequential(&self, point_offset: PointOffsetType) -> OperationResult<Payload> {
-        match self.storage.get_value::<Sequential>(point_offset)? {
+        match self
+            .storage
+            .get_value::<Sequential>(point_offset, HwMetric::PayloadIoRead)?
+        {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
@@ -203,7 +209,10 @@ where
     }
 
     fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        match self.storage.get_value::<Random>(point_id)? {
+        match self
+            .storage
+            .get_value::<Random>(point_id, HwMetric::PayloadIoRead)?
+        {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
                 self.storage
@@ -223,7 +232,10 @@ where
         payload: &Payload,
         key: &JsonPath,
     ) -> OperationResult<()> {
-        match self.storage.get_value::<Random>(point_id)? {
+        match self
+            .storage
+            .get_value::<Random>(point_id, HwMetric::PayloadIoRead)?
+        {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
                 self.storage
@@ -244,7 +256,10 @@ where
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Vec<Value>> {
-        match self.storage.get_value::<Random>(point_id)? {
+        match self
+            .storage
+            .get_value::<Random>(point_id, HwMetric::PayloadIoRead)?
+        {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
