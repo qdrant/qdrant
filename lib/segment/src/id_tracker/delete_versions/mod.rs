@@ -80,24 +80,28 @@ pub struct DeleteLogEntry {
     pub version: SeqNumberType,
 }
 
-/// Whether a writer records versioned deletes in formats that older readers cannot parse.
+/// Whether a writer records the version of each delete.
+///
+/// [`Unversioned`](Self::Unversioned) is the default, and what regular deployments use.
+/// [`Versioned`](Self::Versioned) is for serverless, where followers gate deletes by version; its
+/// formats cannot be parsed by readers that predate versioned deletes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeleteVersioning {
     /// Write versioned delete entries in appendable mappings logs, and append the deletes of
     /// immutable and disk-resident segments to their delete log, leaving the mask as it is.
-    Record,
+    Versioned,
     /// Write plain delete entries in appendable mappings logs, and set the deletes of immutable and
     /// disk-resident segments in their mask.
-    Legacy,
+    Unversioned,
 }
 
 impl DeleteVersioning {
-    /// [`Record`](Self::Record) when the `versioned_deletes` feature flag is set.
+    /// [`Versioned`](Self::Versioned) when the `versioned_deletes` feature flag is set.
     pub fn from_feature_flags() -> Self {
         if common::flags::feature_flags().versioned_deletes {
-            Self::Record
+            Self::Versioned
         } else {
-            Self::Legacy
+            Self::Unversioned
         }
     }
 }

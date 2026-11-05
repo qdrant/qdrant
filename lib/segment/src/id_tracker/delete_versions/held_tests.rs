@@ -67,7 +67,7 @@ fn delete(path: &Path, slots: &[PointOffsetType], version: SeqNumberType) {
         .collect();
     UpdateOnlyImmutableIdTracker::new(path, None)
         .unwrap()
-        .tombstone_points(&MmapFs, &points, version, DeleteVersioning::Record)
+        .tombstone_points(&MmapFs, &points, version, DeleteVersioning::Versioned)
         .unwrap();
 }
 
@@ -163,8 +163,8 @@ fn immediate_trackers_apply_the_log() {
     }
 }
 
-/// A legacy writer's deletes reach the mask and apply at once, a recording one's reach the log and
-/// wait for their gate.
+/// An unversioned writer's deletes reach the mask and apply at once, a versioned one's reach the log
+/// and wait for their gate.
 #[cfg_attr(
     windows,
     ignore = "the mask rewrite replaces id_tracker.deleted while the reader holds it \
@@ -179,7 +179,7 @@ fn mask_and_log_apply_as_a_union() {
 
         UpdateOnlyImmutableIdTracker::new(dir.path(), None)
             .unwrap()
-            .tombstone_points(&MmapFs, &[(num(3), 3)], 5, DeleteVersioning::Legacy)
+            .tombstone_points(&MmapFs, &[(num(3), 3)], 5, DeleteVersioning::Unversioned)
             .unwrap();
         assert_eq!(reload(&mut tracker), [3], "{format:?}");
 

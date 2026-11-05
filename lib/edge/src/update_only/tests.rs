@@ -1136,7 +1136,7 @@ mod store {
 
         let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path())
             .unwrap()
-            .with_delete_versioning(DeleteVersioning::Record);
+            .with_delete_versioning(DeleteVersioning::Versioned);
         let moved = PointStructPersisted {
             vector: point(7).vector,
             ..point(500)
@@ -1184,15 +1184,15 @@ mod store {
 
     /// A writer that does not record versions starts no delete log.
     #[test]
-    fn legacy_deletes_start_no_log() {
+    fn unversioned_deletes_start_no_log() {
         use segment::id_tracker::delete_versions::{DeleteVersioning, delete_log_path};
 
-        let dir = vacuumed_leader("edge-update-delete-legacy");
+        let dir = vacuumed_leader("edge-update-delete-unversioned");
         recreate_payload_storages_append_only(dir.path());
 
         let writer = UpdateOnlyEdgeShard::<MmapFs>::open_mmap(dir.path())
             .unwrap()
-            .with_delete_versioning(DeleteVersioning::Legacy);
+            .with_delete_versioning(DeleteVersioning::Unversioned);
         let (_writer, outcome) = writer.apply_batch(delete_batch([600])).unwrap();
         let (segment, _) = outcome.points[0].tombstoned[0];
         let segment_path = dir.path().join(SEGMENTS_PATH).join(segment.to_string());

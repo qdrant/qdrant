@@ -746,7 +746,7 @@ fn matches_the_mutable_tracker() {
     assert_eq!(from_appended.internal_version(2), Some(102));
 }
 
-/// A recording writer logs its deletes with their version, a legacy one as plain deletes. Every
+/// A versioned writer logs its deletes with their version, an unversioned one as plain deletes. Every
 /// reader that does not gate deletes applies both at once, the regular tracker included.
 #[test]
 fn versioned_deletes_read_as_deletes() {
@@ -765,10 +765,10 @@ fn versioned_deletes_read_as_deletes() {
         .unwrap();
 
     tracker
-        .delete_points(&MmapFs, [num(1), uuid(2)], 7, DeleteVersioning::Record)
+        .delete_points(&MmapFs, [num(1), uuid(2)], 7, DeleteVersioning::Versioned)
         .unwrap();
     tracker
-        .delete_points(&MmapFs, [num(3)], 8, DeleteVersioning::Legacy)
+        .delete_points(&MmapFs, [num(3)], 8, DeleteVersioning::Unversioned)
         .unwrap();
 
     let file = fs_err::File::open(mappings_path(dir.path())).unwrap();

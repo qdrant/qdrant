@@ -18,7 +18,7 @@ pub(super) enum PendingMappingChange {
 }
 
 impl PendingMappingChange {
-    /// The change to persist: with [`DeleteVersioning::Record`], a delete carries the version of
+    /// The change to persist: with [`DeleteVersioning::Versioned`], a delete carries the version of
     /// its slot.
     pub(super) fn resolve(
         self,
@@ -30,8 +30,8 @@ impl PendingMappingChange {
                 MappingChange::Insert(external_id, internal_id)
             }
             Self::Delete { external_id, slot } => match versioning {
-                DeleteVersioning::Legacy => MappingChange::Delete(external_id),
-                DeleteVersioning::Record => MappingChange::DeleteVersioned(
+                DeleteVersioning::Unversioned => MappingChange::Delete(external_id),
+                DeleteVersioning::Versioned => MappingChange::DeleteVersioned(
                     external_id,
                     slot.map_or(DELETED_POINT_VERSION, version_of),
                 ),

@@ -362,7 +362,7 @@ impl UpdateOnlyAppendableIdTracker {
     /// Retire `point_ids`: each stops resolving, and the slot it held keeps its data and is never
     /// handed out again. Tombstoning that data is the caller's business.
     ///
-    /// With [`DeleteVersioning::Record`], every delete records `version`, the version of the batch
+    /// With [`DeleteVersioning::Versioned`], every delete records `version`, the version of the batch
     /// that deleted the points, see [`delete_versions`](crate::id_tracker::delete_versions).
     pub fn delete_points<Fs: UniversalAppendFs>(
         &mut self,
@@ -374,8 +374,8 @@ impl UpdateOnlyAppendableIdTracker {
         let operations: Vec<MappingOperation> = point_ids
             .into_iter()
             .map(|point_id| match versioning {
-                DeleteVersioning::Record => MappingOperation::DeleteVersioned(point_id, version),
-                DeleteVersioning::Legacy => MappingOperation::Delete(point_id),
+                DeleteVersioning::Versioned => MappingOperation::DeleteVersioned(point_id, version),
+                DeleteVersioning::Unversioned => MappingOperation::Delete(point_id),
             })
             .collect();
 

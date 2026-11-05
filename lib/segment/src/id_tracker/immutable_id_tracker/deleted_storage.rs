@@ -28,10 +28,10 @@ fn mask_options() -> OpenOptions {
 /// Retire `points` in the segment at `segment_path`, see
 /// [`delete_versions`](crate::id_tracker::delete_versions).
 ///
-/// With [`DeleteVersioning::Record`], the deletes are appended to the segment's delete log, each
+/// With [`DeleteVersioning::Versioned`], the deletes are appended to the segment's delete log, each
 /// with `version`, the version of the batch that deleted the points; the mask stays as it is.
 ///
-/// With [`DeleteVersioning::Legacy`], the slots are set in the stored deleted mask, which is
+/// With [`DeleteVersioning::Unversioned`], the slots are set in the stored deleted mask, which is
 /// replaced whole, see [`StoredBitSlice::atomic_update`]. `seed` is consumed in place of reading
 /// the mask file when the caller held it in memory, and kept for a later call when nothing is
 /// written.
@@ -52,7 +52,7 @@ where
     }
 
     match versioning {
-        DeleteVersioning::Record => {
+        DeleteVersioning::Versioned => {
             let slot_count = match seed {
                 Some(mask) => mask.len(),
                 None => open_mask(fs, segment_path)?.bit_len() as usize,
@@ -64,7 +64,7 @@ where
                 .collect();
             log.append(fs, &entries)
         }
-        DeleteVersioning::Legacy => {
+        DeleteVersioning::Unversioned => {
             let mask = match seed.take() {
                 Some(mask) => mask,
                 // Dropped before the save: Windows cannot replace a mapped file.

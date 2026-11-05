@@ -127,8 +127,8 @@ fn tombstone(
     }
 }
 
-/// An update-only writer that records versions appends to the log and leaves the mask alone, a
-/// legacy one sets the mask and writes no log. A regular tracker reads the union.
+/// A versioned update-only writer appends to the log and leaves the mask alone, an
+/// unversioned one sets the mask and writes no log. A regular tracker reads the union.
 #[test]
 fn update_only_trackers_write_the_log_or_the_mask() {
     for format in FORMATS {
@@ -137,13 +137,13 @@ fn update_only_trackers_write_the_log_or_the_mask() {
         assert!(!delete_log_path(dir.path()).exists(), "built without a log");
 
         let points = [(num(5), 5), (num(7), 7)];
-        tombstone(format, dir.path(), &points, 11, DeleteVersioning::Record);
+        tombstone(format, dir.path(), &points, 11, DeleteVersioning::Versioned);
         tombstone(
             format,
             dir.path(),
             &[(num(8), 8)],
             12,
-            DeleteVersioning::Legacy,
+            DeleteVersioning::Unversioned,
         );
 
         assert_eq!(
@@ -160,9 +160,9 @@ fn update_only_trackers_write_the_log_or_the_mask() {
     }
 }
 
-/// A legacy update-only writer starts no log.
+/// An unversioned update-only writer starts no log.
 #[test]
-fn legacy_update_only_writer_starts_no_log() {
+fn unversioned_update_only_writer_starts_no_log() {
     let dir = Builder::new().prefix("deletes").tempdir().unwrap();
     build(Format::Immutable, dir.path());
     tombstone(
@@ -170,24 +170,24 @@ fn legacy_update_only_writer_starts_no_log() {
         dir.path(),
         &[(num(5), 5)],
         11,
-        DeleteVersioning::Legacy,
+        DeleteVersioning::Unversioned,
     );
     assert!(!delete_log_path(dir.path()).exists());
 }
 
-/// A recording update-only writer refuses a slot beyond the segment.
+/// A versioned update-only writer refuses a slot beyond the segment.
 #[test]
-fn recording_writer_checks_slots() {
+fn versioned_writer_checks_slots() {
     for format in FORMATS {
         let dir = Builder::new().prefix("deletes").tempdir().unwrap();
         build(format, dir.path());
         let result = match format {
             Format::Immutable => UpdateOnlyImmutableIdTracker::new(dir.path(), None)
                 .unwrap()
-                .tombstone_points(&MmapFs, &[(num(99), 999)], 4, DeleteVersioning::Record),
+                .tombstone_points(&MmapFs, &[(num(99), 999)], 4, DeleteVersioning::Versioned),
             Format::DiskResident => UpdateOnlyDiskIdTracker::new(dir.path(), None)
                 .unwrap()
-                .tombstone_points(&MmapFs, &[(num(99), 999)], 4, DeleteVersioning::Record),
+                .tombstone_points(&MmapFs, &[(num(99), 999)], 4, DeleteVersioning::Versioned),
         };
         assert!(result.is_err(), "{format:?}");
         assert!(!delete_log_path(dir.path()).exists(), "{format:?}");

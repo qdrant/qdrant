@@ -50,7 +50,7 @@ fn delete(writer: &mut UpdateOnlyAppendableIdTracker, ids: &[u64], version: SeqN
             &MmapFs,
             ids.iter().map(|&id| num(id)),
             version,
-            DeleteVersioning::Record,
+            DeleteVersioning::Versioned,
         )
         .unwrap();
 }

@@ -22,9 +22,9 @@ use crate::types::SeqNumberType;
 #[derive(Debug)]
 pub struct BufferedDeletes<S> {
     versioning: DeleteVersioning,
-    /// The deleted mask, written by [`DeleteVersioning::Legacy`] flushes only.
+    /// The deleted mask, written by [`DeleteVersioning::Unversioned`] flushes only.
     mask: BufferedUpdateBitSlice<S>,
-    /// The delete log, written by [`DeleteVersioning::Record`] flushes only.
+    /// The delete log, written by [`DeleteVersioning::Versioned`] flushes only.
     log: Arc<Mutex<DeleteLogWriter>>,
     /// Slots deleted since the last flush that reached the log.
     unlogged: Arc<Mutex<Vec<PointOffsetType>>>,
@@ -49,7 +49,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedDeletes<S> {
     /// Panics if the slot is beyond the mask.
     pub fn delete(&self, slot: PointOffsetType) {
         match self.versioning {
-            DeleteVersioning::Record => {
+            DeleteVersioning::Versioned => {
                 assert!(
                     (slot as usize) < self.mask.len(),
                     "slot {slot} out of range: {}",
@@ -57,7 +57,7 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedDeletes<S> {
                 );
                 self.unlogged.lock().push(slot);
             }
-            DeleteVersioning::Legacy => self.mask.set(slot as usize, true),
+            DeleteVersioning::Unversioned => self.mask.set(slot as usize, true),
         }
     }
 
@@ -69,8 +69,8 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedDeletes<S> {
     /// last flush that reached the log; it is only asked when deletes go to the log.
     pub fn flusher(&self, version_of: impl Fn(PointOffsetType) -> SeqNumberType) -> Flusher {
         match self.versioning {
-            DeleteVersioning::Legacy => self.mask.flusher(),
-            DeleteVersioning::Record => self.log_flusher(version_of),
+            DeleteVersioning::Unversioned => self.mask.flusher(),
+            DeleteVersioning::Versioned => self.log_flusher(version_of),
         }
     }
 
