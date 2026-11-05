@@ -386,6 +386,7 @@ mod tests {
         assert_eq!(inverted_index_ram_built, inverted_index_ram_upserted);
     }
 
+    /// Upserting with the old vector removes the point from the dimensions it dropped and leaves other points there.
     #[test]
     fn upsert_with_old_vector_removes_dropped_dimensions() {
         let old_vector = RemappedSparseVector::from([(1, 10.0), (2, 10.0), (3, 10.0)]);
