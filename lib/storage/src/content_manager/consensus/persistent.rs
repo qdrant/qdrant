@@ -69,8 +69,8 @@ impl Persistent {
         &mut self,
         meta: &SnapshotMetadata,
         address_by_id: PeerAddressById,
-        mut metadata_by_id: PeerMetadataById,
-        new_cluster_metadata: HashMap<String, serde_json::Value>,
+        metadata_by_id: PeerMetadataById,
+        cluster_metadata: HashMap<String, serde_json::Value>,
     ) -> Result<(), StorageError> {
         // IF YOU ADD NEW DATA INTO `PERSISTENT` STATE, DON'T FORGET TO ALSO ADD IT INTO RAFT SNAPSHOT!
         let Self {
@@ -78,9 +78,10 @@ impl Persistent {
             latest_snapshot_meta,
             apply_progress_queue,
             first_voter: _,
-            peer_address_by_id,
-            peer_metadata_by_id,
-            cluster_metadata,
+            // Replaced by `replace_cluster_state` below
+            peer_address_by_id: _,
+            peer_metadata_by_id: _,
+            cluster_metadata: _,
             this_peer_id: _,
             path: _,
             dirty: _,
@@ -93,12 +94,6 @@ impl Persistent {
         apply_progress_queue.set_from_snapshot(meta.index);
         *latest_snapshot_meta = meta.into();
 
-        metadata_by_id.retain(|peer_id, _| address_by_id.contains_key(peer_id));
-
-        *peer_address_by_id.write() = address_by_id;
-        *peer_metadata_by_id.write() = metadata_by_id;
-        *cluster_metadata = new_cluster_metadata;
-
         // Last Raft commit and last snapshot index must be equal and persisted in one operation
         // Our `ConsensusManager::new` function relies on this for reconciling WAL clears
         debug_assert_eq!(
@@ -106,7 +101,33 @@ impl Persistent {
             "applied Raft commit and last snapshot index must be equal",
         );
 
+        self.replace_cluster_state(address_by_id, metadata_by_id, cluster_metadata);
+
         self.save()
+    }
+
+    /// Replace peer addresses, peer metadata and cluster metadata, without touching Raft state
+    pub fn update_cluster_state(
+        &mut self,
+        address_by_id: PeerAddressById,
+        metadata_by_id: PeerMetadataById,
+        cluster_metadata: HashMap<String, serde_json::Value>,
+    ) -> Result<(), StorageError> {
+        self.replace_cluster_state(address_by_id, metadata_by_id, cluster_metadata);
+        self.save()
+    }
+
+    fn replace_cluster_state(
+        &mut self,
+        address_by_id: PeerAddressById,
+        mut metadata_by_id: PeerMetadataById,
+        new_cluster_metadata: HashMap<String, serde_json::Value>,
+    ) {
+        metadata_by_id.retain(|peer_id, _| address_by_id.contains_key(peer_id));
+
+        *self.peer_address_by_id.write() = address_by_id;
+        *self.peer_metadata_by_id.write() = metadata_by_id;
+        self.cluster_metadata = new_cluster_metadata;
     }
 
     /// Returns state and if it was initialized for the first time
