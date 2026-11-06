@@ -321,9 +321,16 @@ mod arm {
         for chunk in chunks {
             // SAFETY: `chunk` holds 2 values.
             let x = unsafe { vld1q_f64(chunk.as_ptr()) };
-            // FMAXNM returns the number if one operand is NaN, as `f64::max`
-            max = vmaxnmq_f64(max, vabsq_f64(x));
-            not_nan = vandq_u64(not_nan, vceqq_f64(x, x));
+            // NaN lanes become +0.0 before the maximum, so they are skipped as
+            // `f64::max` skips them: FMAXNM alone would turn a signaling NaN
+            // into a quiet NaN and lose the running maximum. All magnitudes
+            // are at least +0.0, the start value, so the mask changes nothing
+            // else.
+            let ok = vceqq_f64(x, x);
+            let magnitude =
+                vreinterpretq_f64_u64(vandq_u64(vreinterpretq_u64_f64(vabsq_f64(x)), ok));
+            max = vmaxnmq_f64(max, magnitude);
+            not_nan = vandq_u64(not_nan, ok);
         }
         let mut abs_max = vgetq_lane_f64::<0>(max).max(vgetq_lane_f64::<1>(max));
         let mut has_nan = (vgetq_lane_u64::<0>(not_nan) & vgetq_lane_u64::<1>(not_nan)) == 0;
