@@ -100,7 +100,7 @@ crc32c = "0.6.8"
 stumpalo = { workspace = true }
 zerocopy = { workspace = true }
 zstd = { workspace = true }
-vaporetto = { version = "0.6.5" }
+vaporetto = { version = "0.7.0" }
 rust-stemmers = { package = "qdrant-rust-stemmers", version = "~1.2.3" }
 # Memory only; disable `user` so macOS does not pull objc2 via open-directory
 # (objc2::Retained's IntoIterator blanket impl overflows trait resolution).
