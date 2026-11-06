@@ -85,6 +85,9 @@ pub fn top_k_with<F: MatrixOperands>(
         #[cfg(target_arch = "x86_64")]
         Kernel::Avx512 => unsafe { F::Elem::top_k_avx512(operands, rows, cols, out) },
         // SAFETY: as above
+        #[cfg(target_arch = "x86_64")]
+        Kernel::Avx512Vnni => unsafe { F::Elem::top_k_avx512_vnni(operands, rows, cols, out) },
+        // SAFETY: as above
         #[cfg(target_arch = "aarch64")]
         Kernel::Neon => unsafe { F::Elem::top_k_neon(operands, rows, cols, out) },
     }
