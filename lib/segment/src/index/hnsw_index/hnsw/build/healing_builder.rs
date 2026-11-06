@@ -15,6 +15,7 @@ use super::local_builder::LocalBuilder;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_layers_healer::GraphLayersHealer;
+use crate::index::hnsw_index::hnsw::FINISH_MAIN_GRAPH_LOG_MESSAGE;
 use crate::index::hnsw_index::hnsw::old_index::{OldIndex, payload_links_reusable};
 use crate::vector_storage::VectorStorageRead as _;
 
@@ -109,7 +110,13 @@ impl GraphBuilderMethod for HealingBuilder<'_> {
         debug!("Migrated in {:?}", timer.elapsed());
         drop(migrate);
 
-        self.hnsw.insert(&missing_points, main_graph)
+        let timer = std::time::Instant::now();
+        self.hnsw.insert(&missing_points, main_graph)?;
+        debug!(
+            "{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?} with healing",
+            timer.elapsed()
+        );
+        Ok(())
     }
 
     fn finalize(self) -> OperationResult<(GraphLayersBuilder, usize)> {

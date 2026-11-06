@@ -69,12 +69,6 @@
 //! That's a peak of about 0.9 GB at 1M points, during the leaf k-NN of level 0, on top of the
 //! vectors. A reservoir factor of 4 doubles the reservoirs, to about 1.5 GB.
 
-// TODO: remove once the graph build calls into this module.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Not connected to the graph build yet")
-)]
-
 mod hash_prune;
 mod leaf;
 mod partition;

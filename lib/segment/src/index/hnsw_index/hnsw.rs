@@ -4,6 +4,8 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::universal_io::{MmapFs, Populate, UniversalReadFs};
 
+#[cfg(feature = "testing")]
+pub use self::build::with_pipnn_min_points;
 use self::telemetry::HNSWSearchesTelemetry;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
