@@ -990,3 +990,83 @@ fn test_try_from_text_carries_the_idf_corpus() {
         assert_eq!(stages.shard_level.as_ref().unwrap().params, Some(params));
     }
 }
+
+#[test]
+fn test_try_from_leaf_prefetch_mmr_rejected() {
+    let dummy_vector = vec![1.0, 2.0, 3.0];
+    let request = ShardQueryRequest {
+        prefetches: vec![ShardPrefetch {
+            prefetches: vec![],
+            query: Some(ScoringQuery::Mmr(MmrInternal {
+                vector: VectorInternal::Dense(dummy_vector.clone()),
+                using: "dense".to_owned(),
+                lambda: OrderedFloat(0.5),
+                candidates_limit: 100,
+            })),
+            limit: 10,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        }],
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(dummy_vector),
+            "dense",
+        )))),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+
+    assert_matches!(
+        PlannedQuery::try_from(vec![request]),
+        Err(OperationError::ValidationError { description }) if description == "cannot apply Mmr without prefetches",
+    );
+}
+
+#[test]
+fn test_try_from_nested_prefetch_mmr_accepted() {
+    let dummy_vector = vec![1.0, 2.0, 3.0];
+    let request = ShardQueryRequest {
+        prefetches: vec![ShardPrefetch {
+            prefetches: vec![ShardPrefetch {
+                prefetches: vec![],
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+                    VectorInternal::Dense(dummy_vector.clone()),
+                    "dense",
+                )))),
+                limit: 50,
+                params: None,
+                filter: None,
+                score_threshold: None,
+            }],
+            query: Some(ScoringQuery::Mmr(MmrInternal {
+                vector: VectorInternal::Dense(dummy_vector.clone()),
+                using: "dense".to_owned(),
+                lambda: OrderedFloat(0.5),
+                candidates_limit: 50,
+            })),
+            limit: 10,
+            params: None,
+            filter: None,
+            score_threshold: None,
+        }],
+        query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::Dense(dummy_vector),
+            "dense",
+        )))),
+        filter: None,
+        score_threshold: None,
+        limit: 10,
+        offset: 0,
+        params: None,
+        with_vector: WithVector::Bool(false),
+        with_payload: WithPayloadInterface::Bool(false),
+    };
+
+    let planned_query = PlannedQuery::try_from(vec![request]);
+    assert!(planned_query.is_ok());
+}

@@ -365,6 +365,12 @@ fn recurse_prefetches(
         let filter = Filter::merge_opts(propagate_filter.clone(), filter);
 
         let source = if prefetches.is_empty() {
+            if matches!(query, Some(ScoringQuery::Mmr(_))) {
+                return Err(OperationError::validation_error(
+                    "cannot apply Mmr without prefetches".to_string(),
+                ));
+            }
+
             // This is a leaf prefetch. Fetch this info from the segments
             leaf_source_from_scoring_query(
                 core_searches,
