@@ -330,7 +330,7 @@ fn deletion_and_live_reload() {
         disk.point_mappings().iter_from(None).take(50).collect();
 
     for (external_id, _) in &to_delete {
-        disk.drop(*external_id).unwrap();
+        disk.drop(*external_id, None).unwrap();
     }
     // Writable tracker: deletions are hidden immediately.
     for (external_id, offset) in &to_delete {
@@ -423,8 +423,8 @@ fn deletion_and_live_reload_disk_cache() {
         .take(50)
         .collect();
     for (external_id, _) in &to_delete {
-        immutable.drop(*external_id).unwrap();
-        disk.drop(*external_id).unwrap();
+        immutable.drop(*external_id, None).unwrap();
+        disk.drop(*external_id, None).unwrap();
     }
     immutable.mapping_flusher()().unwrap();
     immutable.versions_flusher()().unwrap();
@@ -539,7 +539,7 @@ fn compact_versions_roundtrip() {
     let (updated, dropped) = (live.next().unwrap(), live.next().unwrap());
     drop(live);
     disk.set_internal_version(updated, 1_000_000).unwrap();
-    disk.drop_internal(dropped).unwrap();
+    disk.drop_internal(dropped, None).unwrap();
     disk.versions_flusher()().unwrap();
     disk.mapping_flusher()().unwrap();
 

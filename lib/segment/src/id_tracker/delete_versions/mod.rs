@@ -8,11 +8,14 @@
 //!
 //! Where the version is stored depends on the id tracker format:
 //! - appendable trackers record it in the delete entry of their mappings log;
-//! - immutable and disk-resident trackers keep their deleted mask, and next to it an append-only
-//!   [delete log](DELETE_LOG_FILE) with one entry per deleted slot. Every writer of the mask writes
-//!   the log first, so a reader can take the segment's deletes from the log alone. A reader that
-//!   gates deletes has to: the mask and the log are separate files, and a fresh mask bit can be
-//!   read before the log entry that gives its version.
+//! - immutable and disk-resident trackers have their deleted mask, and next to it an append-only
+//!   [delete log](DELETE_LOG_FILE) with one entry per deleted slot. A delete goes to one of them,
+//!   never both: a writer that records versions appends to the log, any other sets the bit in the
+//!   mask. The segment's deletes are the union of the two, and every reader reads both.
+//!
+//! A reader that gates deletes applies the mask's deletes at once, and the log's by their version.
+//! Writers that record versions never set a mask bit after the segment is built, so no delete
+//! reaches a gated reader through the mask unversioned.
 
 mod buffered;
 mod gated_log;
@@ -30,12 +33,14 @@ mod tracker_tests;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
+use common::universal_io::UniversalReadFs;
 
-pub use self::buffered::BufferedDeletedSlots;
+pub use self::buffered::BufferedDeletes;
 pub use self::gated_log::GatedDeleteLog;
 pub use self::held::HeldDeletes;
 pub use self::log_reader::DeleteLogReader;
 pub use self::log_writer::DeleteLogWriter;
+use crate::common::operation_error::OperationResult;
 use crate::types::SeqNumberType;
 
 /// File name of the delete log of immutable and disk-resident id trackers, in the segment
@@ -53,6 +58,20 @@ pub fn existing_delete_log(segment_path: &Path) -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+/// The slots the delete log of the segment at `segment_path` holds, for a regular tracker that
+/// applies the union of its mask and the log at open. Empty when the segment has no log.
+pub fn read_delete_log<Fs: UniversalReadFs>(
+    fs: &Fs,
+    segment_path: &Path,
+) -> OperationResult<Vec<PointOffsetType>> {
+    let mut reader = DeleteLogReader::<Fs::File>::new(segment_path);
+    Ok(reader
+        .read_new(fs)?
+        .into_iter()
+        .map(|entry| entry.slot)
+        .collect())
+}
+
 /// One delete as the delete log records it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DeleteLogEntry {
@@ -61,24 +80,28 @@ pub struct DeleteLogEntry {
     pub version: SeqNumberType,
 }
 
-/// Whether a writer records versioned deletes in formats that older readers cannot parse.
+/// Whether a writer records the version of each delete.
+///
+/// [`Unversioned`](Self::Unversioned) is the default, and what regular deployments use.
+/// [`Versioned`](Self::Versioned) is for serverless, where followers gate deletes by version; its
+/// formats cannot be parsed by readers that predate versioned deletes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeleteVersioning {
-    /// Write versioned delete entries in appendable mappings logs, and start the delete log of a
-    /// segment that has none.
-    Record,
-    /// Write plain delete entries in appendable mappings logs. A delete log is still appended to
-    /// where one exists, so it keeps holding every delete of its segment.
-    Legacy,
+    /// Write versioned delete entries in appendable mappings logs, and append the deletes of
+    /// immutable and disk-resident segments to their delete log, leaving the mask as it is.
+    Versioned,
+    /// Write plain delete entries in appendable mappings logs, and set the deletes of immutable and
+    /// disk-resident segments in their mask.
+    Unversioned,
 }
 
 impl DeleteVersioning {
-    /// [`Record`](Self::Record) when the `versioned_deletes` feature flag is set.
+    /// [`Versioned`](Self::Versioned) when the `versioned_deletes` feature flag is set.
     pub fn from_feature_flags() -> Self {
         if common::flags::feature_flags().versioned_deletes {
-            Self::Record
+            Self::Versioned
         } else {
-            Self::Legacy
+            Self::Unversioned
         }
     }
 }
@@ -91,6 +114,17 @@ pub enum DeleteGating {
     /// Apply a versioned delete once its version is at or below `gate`, and hold a newer one until
     /// a release with a high enough gate. A held point stays visible, with its own version.
     ///
-    /// Deletes without a version, written before versioned deletes, apply at once.
+    /// Deletes without a version apply at once: plain delete entries of appendable mappings logs,
+    /// and the deleted mask of immutable and disk-resident segments.
     Held { gate: SeqNumberType },
+}
+
+impl DeleteGating {
+    /// The gate deletes are held above: none are under [`Immediate`](Self::Immediate).
+    pub fn gate(self) -> SeqNumberType {
+        match self {
+            Self::Immediate => SeqNumberType::MAX,
+            Self::Held { gate } => gate,
+        }
+    }
 }

@@ -643,9 +643,10 @@ impl Segment {
         Ok(applied)
     }
 
-    /// `op_num` is only used to bump the payload-storage entry in
-    /// `Segment::version_tracker`, so pass `None` when there is no
-    /// associated operation (e.g. repair on load).
+    /// `op_num` is the version the id tracker records the delete with, if it
+    /// records delete versions, and bumps the payload-storage entry in
+    /// `Segment::version_tracker`. Pass `None` when there is no associated
+    /// operation (e.g. repair on load).
     pub fn delete_point_internal(
         &mut self,
         internal_id: PointOffsetType,
@@ -658,7 +659,10 @@ impl Segment {
             // deleted bitslice (see
             // `PointMappingsRefEnum::filter_deferred_and_deleted`). Payload
             // storage is untouched, so the version tracker is not bumped.
-            return self.id_tracker.borrow_mut().drop_internal(internal_id);
+            return self
+                .id_tracker
+                .borrow_mut()
+                .drop_internal(internal_id, op_num);
         }
 
         // Mark point as deleted, drop mapping
@@ -669,7 +673,7 @@ impl Segment {
         // `drop_internal` updates the id tracker's deferred-deleted counter when
         // the point sits at or above the deferred threshold, with double-delete
         // protection inside `PointMappings::drop`.
-        id_tracker.drop_internal(internal_id)?;
+        id_tracker.drop_internal(internal_id, op_num)?;
         drop(id_tracker);
 
         self.version_tracker.set_payload(op_num);

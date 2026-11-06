@@ -29,18 +29,16 @@ impl<S: UniversalRead> ReadOnlyIdTrackerEnum<S> {
     /// Schedule background prefetch for whichever id-tracker format is
     /// present, probing in the same order as [`Self::detect_and_load`].
     /// `populate` applies to the disk-resident format only: the other formats
-    /// hold their per-point data in RAM regardless. `gating` must be the one
-    /// [`Self::detect_and_load`] gets.
+    /// hold their per-point data in RAM regardless.
     pub fn preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         populate: Populate,
-        gating: DeleteGating,
     ) -> OperationResult<()> {
-        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate, gating)? {
+        if ReadOnlyDiskIdTracker::try_preopen(fs, segment_path, populate)? {
             return Ok(());
         }
-        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path, gating)? {
+        if ReadOnlyImmutableIdTracker::try_preopen(fs, segment_path)? {
             return Ok(());
         }
         ReadOnlyAppendableIdTracker::preopen(fs, segment_path);

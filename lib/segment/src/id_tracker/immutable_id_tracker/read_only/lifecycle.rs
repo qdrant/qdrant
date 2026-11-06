@@ -50,7 +50,6 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     pub fn try_preopen(
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
-        gating: DeleteGating,
     ) -> OperationResult<bool> {
         if !UniversalReadFs::exists(fs, &mappings_path(segment_path))? {
             return Ok(false);
@@ -61,10 +60,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         fs.schedule_open(&deleted_path(segment_path), Some(options), None);
         fs.schedule_open(&version_mapping_path(segment_path), Some(options), None);
         fs.schedule_open(&mappings_path(segment_path), Some(options), None);
-        match gating {
-            DeleteGating::Immediate => {}
-            DeleteGating::Held { gate: _ } => GatedDeleteLog::preopen(fs, segment_path),
-        }
+        GatedDeleteLog::preopen(fs, segment_path);
 
         Ok(true)
     }
@@ -93,8 +89,8 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         Ok(Some(Self::open(fs, segment_path, gating)?))
     }
 
-    /// With [`DeleteGating::Held`], the deletes come from the segment's delete log once it holds
-    /// any: those at or below the gate are applied, newer ones held.
+    /// The deletes are the union of the mask and the delete log. With [`DeleteGating::Held`], the
+    /// log's deletes at or below the gate are applied, newer ones held.
     pub fn open(
         fs: &impl UniversalReadFs<File = S>,
         segment_path: &Path,
@@ -102,23 +98,13 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     ) -> OperationResult<Self> {
         let options = Self::open_options();
 
-        let mut gated = GatedDeleteLog::for_gating(segment_path, gating);
-        let logged_deletes = match gated.as_mut() {
-            Some(gated) => gated.read_new(fs)?,
-            None => None,
-        };
+        let mut delete_log = GatedDeleteLog::new(segment_path, gating);
+        let logged_deletes = delete_log.read_new(fs)?;
 
         let deleted =
             StoredBitSlice::open(fs, deleted_path(segment_path), options, Default::default())?;
-        // The log, once started, holds every delete: the mask is not read then
-        let deleted_bitvec = match logged_deletes {
-            Some(_) => None,
-            None => {
-                let mut deleted_bitvec = BitVec::new();
-                deleted_bitvec.extend_from_bitslice(deleted.read_all()?.as_ref());
-                Some(deleted_bitvec)
-            }
-        };
+        let mut deleted_bitvec = BitVec::new();
+        deleted_bitvec.extend_from_bitslice(deleted.read_all()?.as_ref());
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::new(fs.open(
             version_mapping_path(segment_path),
@@ -131,8 +117,9 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         let mappings_file = fs.open(mappings_path(segment_path), options, Default::default())?;
         let mappings_bytes = mappings_file
             .read::<_, u8>(ReadRange::new(0, mappings_file.len::<u8>()?), Sequential)?;
-        let mut mappings = load_mapping(Cursor::new(mappings_bytes.as_ref()), deleted_bitvec)?;
-        for slot in logged_deletes.into_iter().flatten() {
+        let mut mappings =
+            load_mapping(Cursor::new(mappings_bytes.as_ref()), Some(deleted_bitvec))?;
+        for slot in logged_deletes {
             if let Some(external_id) = mappings.external_id(slot) {
                 mappings.drop(external_id);
             }
@@ -143,7 +130,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
             deleted,
             internal_to_version,
             mappings,
-            gated,
+            delete_log,
         })
     }
 }

@@ -32,16 +32,14 @@ pub struct ReadOnlyDiskIdTracker<S: UniversalRead> {
 
     versions: ReadOnlyVersions<S>,
 
-    /// The deleted set, read whole at open and refreshed by every
+    /// The deleted set, the union of the mask and the applied deletes of the
+    /// delete log, read whole at open and refreshed by every
     /// [`live_reload`](Self::live_reload). Searches need it whole, and at 1 bit
     /// per point it is cheap to hold.
-    ///
-    /// Once the delete log has started, the log decides it: the mask is not read.
     deleted: BitVec,
 
-    /// The delete log and the deletes held from it, `None` unless the tracker gates versioned
-    /// deletes, see [`GatedDeleteLog::for_gating`].
-    gated: Option<GatedDeleteLog<S>>,
+    /// The delete log and the deletes held from it.
+    delete_log: GatedDeleteLog<S>,
 }
 
 impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
@@ -55,11 +53,8 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         ]
     }
 
-    /// Set `slots` in the deleted set the delete log decides, returning those that were not yet.
-    ///
-    /// The first call, as the log starts, adds to the deleted set from the mask as last read:
-    /// those deletes were applied already, and are in the log at version 0 too.
-    fn delete_logged(&mut self, slots: Vec<PointOffsetType>) -> Vec<PointOffsetType> {
+    /// Set `slots` in the deleted set, returning those that were not yet.
+    fn delete_slots(&mut self, slots: Vec<PointOffsetType>) -> Vec<PointOffsetType> {
         let mut newly = Vec::with_capacity(slots.len());
         for slot in slots {
             if let Some(mut bit) = self.deleted.get_mut(slot as usize)

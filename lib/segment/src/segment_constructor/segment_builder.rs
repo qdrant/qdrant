@@ -489,7 +489,7 @@ impl SegmentBuilder {
                     let remove_id = if existing_external_version < point_data.version {
                         // Other version is the newest, remove the existing one and replace
                         self.id_tracker
-                            .drop(ExtendedPointId::from(point_data.external_id))?;
+                            .drop(ExtendedPointId::from(point_data.external_id), None)?;
                         self.id_tracker.set_link(
                             ExtendedPointId::from(point_data.external_id),
                             new_internal_id,

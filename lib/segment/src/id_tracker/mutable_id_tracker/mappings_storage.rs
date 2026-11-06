@@ -242,7 +242,7 @@ where
 
 pub(super) fn reconcile_persisted_mapping_changes(
     pending: &Mutex<Vec<MappingChange>>,
-    changes: &Vec<MappingChange>,
+    changes: &[MappingChange],
 ) {
     let mut pending = pending.lock();
 

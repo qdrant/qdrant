@@ -46,10 +46,9 @@ impl<Fs: UniversalAppendFs> DeleteOnlySegment<Fs> {
         Ok(Self { fs, id_tracker })
     }
 
-    /// Retire the given points by marking the slots they occupy in the id
-    /// tracker's stored deleted mask — the data on those slots stays. They go
-    /// to the delete log first, with `version`, see
-    /// [`delete_versions`](crate::id_tracker::delete_versions).
+    /// Retire the given points — the data on their slots stays — in the delete
+    /// log with `version`, or in the stored deleted mask without delete
+    /// versions, see [`delete_versions`](crate::id_tracker::delete_versions).
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
