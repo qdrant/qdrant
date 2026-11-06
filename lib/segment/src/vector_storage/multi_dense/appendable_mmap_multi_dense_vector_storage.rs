@@ -108,13 +108,17 @@ pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     deleted_count: usize,
+    /// Points that own no rows (see [`Self::insert_empty`]). Always deleted.
+    empty_count: usize,
 }
 
 impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
-        if !deleted && self.vectors.len() <= key as usize {
+        // Guards on the point count: points without a vector own no rows, so
+        // there can be fewer rows than points.
+        if !deleted && self.offsets.len() <= key as usize {
             return false;
         }
 
@@ -142,10 +146,16 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
     ) -> OperationResult<()> {
         assert_eq!(multi_vector.dim, self.vectors.dim());
 
-        let mut offset = self
-            .offsets
-            .get::<Random>(key as VectorOffsetType)
-            .unwrap_or_default();
+        let previous = self.offsets.get::<Random>(key as VectorOffsetType);
+        let was_empty = previous.is_some_and(|offset| offset.count == 0);
+        let is_empty = multi_vector.vectors_count() == 0;
+        match (was_empty, is_empty) {
+            (true, false) => self.empty_count -= 1,
+            (false, true) => self.empty_count += 1,
+            _ => {}
+        }
+
+        let mut offset = previous.unwrap_or_default();
 
         if multi_vector.vectors_count() > offset.capacity as usize {
             // append vector to the end
@@ -168,6 +178,29 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
         )?;
         self.offsets.set(key as VectorOffsetType, offset);
         self.set_deleted(key, false);
+
+        Ok(())
+    }
+
+    /// Give `key` a slot without a vector: an offset entry that owns no rows,
+    /// flagged deleted. A point without this vector takes only its offset entry,
+    /// where a placeholder multi-vector would take a full row.
+    pub fn insert_empty(&mut self, key: PointOffsetType) -> OperationResult<()> {
+        if self.vectors.len() == 0 {
+            // Releases before empty slots read even a zero-length run through
+            // the chunk at its offset, and no chunk exists before the first
+            // row. Writing no rows at 0 allocates that chunk, as their own
+            // writes of an empty multi-vector do.
+            self.vectors.insert_many(0, &[], 0)?;
+        }
+
+        let previous = self.offsets.get::<Random>(key as VectorOffsetType);
+        if previous.is_none_or(|offset| offset.count != 0) {
+            self.empty_count += 1;
+        }
+        self.offsets
+            .set(key as VectorOffsetType, MultivectorMmapOffset::default());
+        self.set_deleted(key, true);
 
         Ok(())
     }
@@ -209,6 +242,7 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
             distance: _,
             multi_vector_config: _,
             deleted_count: _,
+            empty_count: _,
         } = self;
 
         vectors.clear_cache()?;
@@ -300,8 +334,12 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             let new_id = self.offsets.len() as PointOffsetType;
-            self.insert_multi_native(new_id, other_vector.as_ref())?;
-            self.set_deleted(new_id, other_deleted);
+            if other_deleted {
+                // A deleted vector is never read again, so its rows are not copied
+                self.insert_empty(new_id)?;
+            } else {
+                self.insert_multi_native(new_id, other_vector.as_ref())?;
+            }
         }
         let end_index = self.offsets.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -310,10 +348,12 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
 
 impl<T: PrimitiveVectorElement> VectorStorageRead for AppendableMmapMultiDenseVectorStorage<T> {
     fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
+        // Rows are shared out among the points that own any: empty slots own none.
+        let points_with_rows = self.total_vector_count() - self.empty_count;
+        if points_with_rows > 0 {
             let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
-            (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
+            (total_size as u128 * self.available_vector_count() as u128 / points_with_rows as u128)
+                as usize
         } else {
             0
         }
@@ -616,6 +656,15 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         Populate::from(populate),
     )?;
     let deleted_count = deleted.count_trues();
+    // Empty slots are always deleted, so only the deleted points need a look
+    let empty_count = deleted
+        .iter_trues()
+        .filter(|&key| {
+            offsets
+                .get::<Sequential>(key as VectorOffsetType)
+                .is_some_and(|offset| offset.count == 0)
+        })
+        .count();
 
     Ok(AppendableMmapMultiDenseVectorStorage {
         vectors,
@@ -624,6 +673,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         distance,
         multi_vector_config,
         deleted_count,
+        empty_count,
     })
 }
 
@@ -872,5 +922,217 @@ mod tests {
             read.as_vec_ref().flattened_vectors,
             padded.flattened_vectors.as_slice(),
         );
+    }
+
+    fn open_f32(
+        path: &Path,
+        dim: usize,
+    ) -> AppendableMmapMultiDenseVectorStorage<VectorElementType> {
+        open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
+            path,
+            dim,
+            Distance::Dot,
+            MultiVectorConfig::default(),
+            AdviceSetting::Global,
+            false,
+        )
+        .unwrap()
+    }
+
+    fn row_bytes(dim: usize) -> usize {
+        dim * std::mem::size_of::<VectorElementType>()
+    }
+
+    /// Points without a vector take an offset entry and no rows. They read back
+    /// deleted and empty, and the size estimate counts only the points with
+    /// rows, before and after a reload.
+    #[test]
+    fn missing_points_own_no_rows() {
+        const DIM: usize = 4;
+        const POINTS: PointOffsetType = 20;
+        let dir = Builder::new().prefix("empty_slots").tempdir().unwrap();
+        let _scope = ambient::test_guard();
+
+        let check = |storage: &AppendableMmapMultiDenseVectorStorage<VectorElementType>| {
+            assert_eq!(storage.total_vector_count(), POINTS as usize);
+            assert_eq!(storage.vectors.len(), POINTS as usize / 2);
+            assert_eq!(storage.deleted_vector_count(), POINTS as usize / 2);
+            assert_eq!(
+                storage.size_of_available_vectors_in_bytes(),
+                POINTS as usize / 2 * row_bytes(DIM),
+            );
+            for key in 0..POINTS {
+                let read = storage.get_multi_opt::<Random>(key).unwrap();
+                if key % 2 == 0 {
+                    assert!(!storage.is_deleted_vector(key));
+                    assert_eq!(
+                        read.as_vec_ref().flattened_vectors,
+                        multivec(1, key as VectorElementType, DIM).flattened_vectors,
+                    );
+                } else {
+                    assert!(storage.is_deleted_vector(key));
+                    assert!(read.as_vec_ref().flattened_vectors.is_empty());
+                }
+            }
+            let mut lens = vec![None; POINTS as usize];
+            storage
+                .for_each_flat_multi::<Random, _>(
+                    (0..POINTS).map(|key| (key as usize, key)),
+                    |i, _, flat| lens[i] = Some(flat.len()),
+                )
+                .unwrap();
+            for (key, len) in lens.into_iter().enumerate() {
+                assert_eq!(len, Some(if key % 2 == 0 { DIM } else { 0 }), "{key}");
+            }
+        };
+
+        {
+            let mut storage = open_f32(dir.path(), DIM);
+            for key in 0..POINTS {
+                if key % 2 == 0 {
+                    let vector = multivec(1, key as VectorElementType, DIM);
+                    storage
+                        .insert_vector(key, VectorRef::from(&vector))
+                        .unwrap();
+                } else {
+                    storage.insert_empty(key).unwrap();
+                }
+            }
+            check(&storage);
+            storage.flusher()().unwrap();
+        }
+        check(&open_f32(dir.path(), DIM));
+    }
+
+    /// A point without a vector gets one: it must stop being deleted, although
+    /// the storage holds fewer rows than points.
+    #[test]
+    fn vector_set_on_empty_slot_is_visible() {
+        const DIM: usize = 4;
+        let dir = Builder::new().prefix("empty_slots").tempdir().unwrap();
+        let _scope = ambient::test_guard();
+
+        let mut storage = open_f32(dir.path(), DIM);
+        for key in 0..=10 {
+            storage.insert_empty(key).unwrap();
+        }
+        assert_eq!(storage.deleted_vector_count(), 11);
+
+        let vector = multivec(2, 3.0, DIM);
+        storage.insert_vector(10, VectorRef::from(&vector)).unwrap();
+        assert!(!storage.is_deleted_vector(10));
+        assert_eq!(storage.deleted_vector_count(), 10);
+        assert_eq!(
+            storage
+                .get_multi::<Random>(10)
+                .as_vec_ref()
+                .flattened_vectors,
+            vector.flattened_vectors,
+        );
+        assert_eq!(
+            storage.size_of_available_vectors_in_bytes(),
+            2 * row_bytes(DIM)
+        );
+    }
+
+    /// The optimizer copies storages with `update_from`. A deleted vector lands
+    /// as an empty slot whether the source holds rows for it (a vector deleted
+    /// after insert, or the placeholder older releases stored for a missing
+    /// one) or not.
+    #[test]
+    fn update_from_drops_rows_of_deleted_vectors() {
+        const DIM: usize = 4;
+        const POINTS: PointOffsetType = 30;
+        let source_dir = Builder::new().prefix("source").tempdir().unwrap();
+        let target_dir = Builder::new().prefix("target").tempdir().unwrap();
+        let _scope = ambient::test_guard();
+
+        let mut source = open_f32(source_dir.path(), DIM);
+        for key in 0..POINTS {
+            match key % 3 {
+                0 => {
+                    let vector = multivec(2, key as VectorElementType, DIM);
+                    source.insert_vector(key, VectorRef::from(&vector)).unwrap();
+                }
+                1 => {
+                    let placeholder = multivec(1, 0.0, DIM);
+                    source
+                        .insert_vector(key, VectorRef::from(&placeholder))
+                        .unwrap();
+                    source.delete_vector(key).unwrap();
+                }
+                _ => source.insert_empty(key).unwrap(),
+            }
+        }
+
+        let mut target = open_f32(target_dir.path(), DIM);
+        let mut other = (0..POINTS).map(|key| {
+            (
+                source.get_multi::<Random>(key),
+                source.is_deleted_vector(key),
+            )
+        });
+        let range = target
+            .update_from(&mut other, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(range, 0..POINTS);
+
+        let live = POINTS as usize / 3;
+        assert_eq!(target.total_vector_count(), POINTS as usize);
+        assert_eq!(target.vectors.len(), live * 2);
+        assert_eq!(target.deleted_vector_count(), POINTS as usize - live);
+        assert_eq!(
+            target.size_of_available_vectors_in_bytes(),
+            live * 2 * row_bytes(DIM)
+        );
+        for key in 0..POINTS {
+            let read = target.get_multi::<Random>(key);
+            if key % 3 == 0 {
+                assert!(!target.is_deleted_vector(key));
+                assert_eq!(
+                    read.as_vec_ref().flattened_vectors,
+                    multivec(2, key as VectorElementType, DIM).flattened_vectors,
+                );
+            } else {
+                assert!(target.is_deleted_vector(key));
+                assert!(read.as_vec_ref().flattened_vectors.is_empty());
+            }
+        }
+    }
+
+    /// When no point has the vector, the storage still allocates its first
+    /// chunk, without rows: releases before empty slots read even a
+    /// zero-length run through the chunk at its offset.
+    #[test]
+    fn storage_of_empty_slots_keeps_a_chunk() {
+        const DIM: usize = 4;
+        let dir = Builder::new().prefix("empty_slots").tempdir().unwrap();
+        let _scope = ambient::test_guard();
+
+        let chunks = |storage: &AppendableMmapMultiDenseVectorStorage<VectorElementType>| {
+            storage
+                .vectors
+                .files()
+                .iter()
+                .filter(|file| file.to_string_lossy().contains("chunk"))
+                .count()
+        };
+
+        {
+            let mut storage = open_f32(dir.path(), DIM);
+            assert_eq!(chunks(&storage), 0);
+            for key in 0..5 {
+                storage.insert_empty(key).unwrap();
+            }
+            assert_eq!(chunks(&storage), 1);
+            assert_eq!(storage.vectors.len(), 0);
+            assert_eq!(storage.available_vector_count(), 0);
+            assert_eq!(storage.size_of_available_vectors_in_bytes(), 0);
+            storage.flusher()().unwrap();
+        }
+        let storage = open_f32(dir.path(), DIM);
+        assert_eq!(chunks(&storage), 1);
+        assert_eq!(storage.total_vector_count(), 5);
+        assert_eq!(storage.deleted_vector_count(), 5);
     }
 }

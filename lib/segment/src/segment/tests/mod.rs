@@ -1660,10 +1660,10 @@ fn internal_id(segment: &Segment, id: u64) -> PointOffsetType {
 
 /// Points without a named vector must not change how the other points are quantized.
 ///
-/// A point upserted without `VECTOR1_NAME` still gets a slot in that storage, filled with a
-/// placeholder and marked deleted: `[1.0; dim]` for dense vectors, which for Cosine is not even
-/// unit length, and a single zero vector for multivectors. The segment builder copies the
-/// placeholder verbatim into the optimized segment. Quantization must fit its parameters
+/// A point upserted without `VECTOR1_NAME` still gets a slot in that storage, marked deleted.
+/// A dense slot holds a placeholder, `[1.0; dim]`, which for Cosine is not even unit length, and
+/// the segment builder copies it verbatim into the optimized segment. A multivector slot holds no
+/// inner vector at all. Quantization must fit its parameters
 /// (value range, centroids, per-coordinate stats, TQ+ correction) on the real vectors only, so
 /// the quantized scores between the very same valid vectors must not change when a few points
 /// lack the vector.
@@ -1733,9 +1733,10 @@ fn test_quantization_ignores_missing_named_vectors(
     }
 }
 
-/// Quantizing a vector that no point has: every slot holds a deleted placeholder, so there is
-/// nothing to fit the quantization on. Every slot must still be encoded, since the quantized
-/// storage is addressed by offset.
+/// Quantizing a vector that no point has: there is nothing to fit the quantization on. Every
+/// dense slot holds a deleted placeholder and must still be encoded, since the quantized storage
+/// is addressed by offset; its score must be finite. A multivector slot holds no inner vector, so
+/// it matches nothing: -inf, never NaN.
 #[rstest]
 fn test_quantization_of_vector_missing_from_all_points(
     #[values(
@@ -1768,7 +1769,11 @@ fn test_quantization_of_vector_missing_from_all_points(
         .unwrap();
     for id in 0..num_missing {
         let score = scorer.score_point(internal_id(&segment, id)).unwrap();
-        assert!(score.is_finite(), "{case}: score of point {id} is {score}");
+        if multivector {
+            assert_eq!(score, f32::NEG_INFINITY, "{case}: score of point {id}");
+        } else {
+            assert!(score.is_finite(), "{case}: score of point {id} is {score}");
+        }
     }
 }
 
