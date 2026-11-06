@@ -384,7 +384,8 @@ mod sysinfo_mem {
         pub fn new() -> Self {
             let system = System::new_with_specifics(
                 RefreshKind::nothing().with_memory(MemoryRefreshKind::everything()),
-            );
+            )
+            .expect("failed to initialize sysinfo System");
             Self { system }
         }
 
