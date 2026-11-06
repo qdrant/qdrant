@@ -172,7 +172,7 @@ fn get_system_data(storage_path: &Path) -> RunningEnvironmentTelemetry {
     // `ID` from `/etc/os-release` on Linux (e.g. "ubuntu"); the OS name on
     // other platforms.
     let distribution = Some(sysinfo::System::distribution_id());
-    let distribution_version = sysinfo::System::os_version();
+    let distribution_version = sysinfo::System::os_version().ok();
     #[allow(unused_mut)]
     let mut cpu_flags: Vec<&str> = vec![];
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
