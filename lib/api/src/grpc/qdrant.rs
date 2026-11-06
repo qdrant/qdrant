@@ -8253,20 +8253,24 @@ pub struct ModelUsage {
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct HardwareUsage {
-    #[prost(uint64, tag = "1")]
-    pub cpu: u64,
-    #[prost(uint64, tag = "2")]
-    pub payload_io_read: u64,
-    #[prost(uint64, tag = "3")]
-    pub payload_io_write: u64,
-    #[prost(uint64, tag = "4")]
-    pub payload_index_io_read: u64,
-    #[prost(uint64, tag = "5")]
-    pub payload_index_io_write: u64,
-    #[prost(uint64, tag = "6")]
-    pub vector_io_read: u64,
-    #[prost(uint64, tag = "7")]
-    pub vector_io_write: u64,
+    #[prost(uint64, optional, tag = "1")]
+    pub cpu: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "2")]
+    pub payload_io_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "3")]
+    pub payload_io_write: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "4")]
+    pub payload_index_io_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "5")]
+    pub payload_index_io_write: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "6")]
+    pub vector_io_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "7")]
+    pub vector_io_write: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "8")]
+    pub remote_io_cached_read: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "9")]
+    pub remote_io_non_cached_read: ::core::option::Option<u64>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
