@@ -54,16 +54,20 @@ impl SimdBackend {
     pub(crate) fn detect() -> Self {
         #[cfg(target_arch = "x86_64")]
         {
-            if std::is_x86_feature_detected!("avx512f")
+            // Every wider backend's kernels also enable these, for their 128-bit helpers
+            let sse =
+                std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3");
+            if sse
+                && std::is_x86_feature_detected!("avx512f")
                 && std::is_x86_feature_detected!("avx512bw")
                 && std::is_x86_feature_detected!("avx512vnni")
             {
                 return SimdBackend::Avx512Vnni;
             }
-            if std::is_x86_feature_detected!("avx2") {
+            if sse && std::is_x86_feature_detected!("avx2") {
                 return SimdBackend::Avx2;
             }
-            if std::is_x86_feature_detected!("sse4.1") && std::is_x86_feature_detected!("ssse3") {
+            if sse {
                 return SimdBackend::Sse;
             }
         }
@@ -78,6 +82,54 @@ impl SimdBackend {
         SimdBackend::Scalar
     }
 }
+
+/// A TQ+ code's signed codebook value `value` scaled by its coordinate's Q15 factor `factor`:
+/// `value · factor / 2¹⁵`, rounded half up. That's what `pmulhrsw` on x86_64 and `vqrdmulh` on
+/// aarch64 compute, so the scalar and SIMD paths of the folded kernels agree bit for bit. With
+/// `|value| ≤ 128` and `0 ≤ factor < 2¹⁵` the result stays an i8.
+#[inline(always)]
+pub(crate) fn fold_q15(value: i64, factor: i16) -> i64 {
+    (value * i64::from(factor) + (1 << 14)) >> 15
+}
+
+/// The folded values of TQ+ codes of `BITS` (2 or 4) each, one per position of `out`, as
+/// bytes XORed with `flip`: 0 for the values as `i8`, 0x80 for `value + 128` as the 8-bit grid
+/// stores them. `value` is a code's signed codebook value. `simd` folds whole groups from the
+/// start, with the slices as given here, and returns the positions done.
+///
+/// # Panics
+///
+/// If `codes` hold fewer than `out.len()` codes, or `factors` fewer factors.
+#[inline]
+pub(crate) fn fold_codes<const BITS: usize>(
+    codes: &[u8],
+    factors: &[i16],
+    out: &mut [u8],
+    flip: u8,
+    value: fn(u8) -> i64,
+    simd: impl FnOnce(&[u8], &[i16], &mut [u8], u8) -> usize,
+) {
+    let per_byte = 8 / BITS;
+    assert!(out.len() <= per_byte * codes.len() && out.len() <= factors.len());
+    let done = simd(codes, factors, out, flip);
+    debug_assert!(done.is_multiple_of(per_byte));
+    let mask = (1 << BITS) - 1;
+    let rest = out[done..]
+        .chunks_mut(per_byte)
+        .zip(factors[done..].chunks(per_byte))
+        .zip(&codes[done / per_byte..]);
+    for ((out, factors), &byte) in rest {
+        for (k, (o, &factor)) in out.iter_mut().zip(factors).enumerate() {
+            let code = (byte >> (BITS * k)) & mask;
+            // The low byte of the value, an i8
+            *o = fold_q15(value(code), factor) as u8 ^ flip;
+        }
+    }
+}
+
+/// The longest vectors the folded kernels take: they sum products of at most 128² in i32,
+/// which holds 2¹⁶ coordinates (Qdrant's largest dimension) with room to spare.
+pub(crate) const FOLDED_MAX_DIM: usize = 1 << 16;
 
 // Re-exports below include the runtime-dispatching entry points used by the
 // crate's scoring paths (`Query{N}bitSimd`, `score_{N}bit_internal`) plus
@@ -97,7 +149,7 @@ pub use query1bit::{
 };
 pub use query2bit::{
     CODEBOOK_SCALE_SQ as CODEBOOK_SCALE_SQ_2BIT, Query2bitSimd, score_2bit_internal,
-    score_2bit_internal_scalar, score_2bit_internal_weighted, score_2bit_internal_weighted_scalar,
+    score_2bit_internal_folded, score_2bit_internal_folded_scalar, score_2bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 pub use query2bit::{
@@ -107,7 +159,7 @@ pub use query2bit::{
 pub use query2bit::{score_2bit_internal_neon, score_2bit_internal_neon_sdot};
 pub use query4bit::{
     CODEBOOK_SCALE_SQ as CODEBOOK_SCALE_SQ_4BIT, Query4bitSimd, score_4bit_internal,
-    score_4bit_internal_scalar, score_4bit_internal_weighted, score_4bit_internal_weighted_scalar,
+    score_4bit_internal_folded, score_4bit_internal_folded_scalar, score_4bit_internal_scalar,
 };
 #[cfg(target_arch = "x86_64")]
 pub use query4bit::{
