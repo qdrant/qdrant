@@ -324,6 +324,10 @@ impl Consensus {
             id: state_ref.this_peer_id(),
             applied: state_ref.last_applied_entry().unwrap_or_default(),
             batch_append: true,
+            // A follower that stops hearing from a busy leader must not depose it with a stale
+            // log. Peers without pre-vote still answer pre-vote requests, so mixed-version
+            // clusters are fine.
+            pre_vote: true,
             ..Default::default()
         };
 
