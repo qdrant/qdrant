@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use super::TokensProcessor;
+use super::tokens_processor::MAX_TOKEN_CHARS;
 
 /// Tokenizer for source code.
 ///
@@ -143,6 +144,8 @@ impl<'p> PartProcessor<'p> {
         if !self.ascii_lowercase_only {
             return self.tokens_processor.process_token(part, true);
         }
+        // ASCII, so bytes are characters
+        let part = &part[..part.len().min(MAX_TOKEN_CHARS)];
         if has_upper && self.tokens_processor.lowercase {
             Some(Cow::Owned(part.to_ascii_lowercase()))
         } else {
@@ -167,11 +170,15 @@ impl<'p> PartProcessor<'p> {
             .iter()
             .any(|&b| b == b'_' || (lowercase && b.is_ascii_uppercase()))
         {
-            return Some(Cow::Borrowed(word));
+            return Some(Cow::Borrowed(&word[..word.len().min(MAX_TOKEN_CHARS)]));
         }
 
-        let mut joined = String::with_capacity(word.len());
+        // Cut to `MAX_TOKEN_CHARS` like the general path, which cuts after removing `_`
+        let mut joined = String::with_capacity(word.len().min(MAX_TOKEN_CHARS));
         for &byte in bytes {
+            if joined.len() == MAX_TOKEN_CHARS {
+                break;
+            }
             if byte != b'_' {
                 joined.push(char::from(if lowercase {
                     byte.to_ascii_lowercase()
@@ -554,6 +561,34 @@ mod tests {
             let mut general_tokens = Vec::new();
             CodeTokenizer::tokenize_with_joined(text, &general, |t, _| general_tokens.push(t));
             assert_eq!(fast_tokens, general_tokens, "lowercase: {lowercase}");
+        }
+    }
+
+    #[test]
+    fn test_max_token_chars_on_fast_path() {
+        let long = MAX_TOKEN_CHARS + 3;
+        // A number literal is cut after removing its `_` separators
+        let text = format!(
+            "{} {} {}",
+            "a".repeat(long),
+            "B".repeat(long),
+            "1_".repeat(long)
+        );
+        for lowercase in [true, false] {
+            // `min_token_len: Some(1)` drops nothing, but disables the fast path
+            let fast = TokensProcessor::new(lowercase, false, Default::default(), None, None, None);
+            let general =
+                TokensProcessor::new(lowercase, false, Default::default(), None, Some(1), None);
+
+            let upper = if lowercase { "b" } else { "B" };
+            let expected = ["a", upper, "1"].map(|c| c.repeat(MAX_TOKEN_CHARS));
+            for processor in [&fast, &general] {
+                let mut tokens = Vec::new();
+                CodeTokenizer::tokenize_with_joined(&text, processor, |t, _| {
+                    tokens.push(t.into_owned())
+                });
+                assert_eq!(tokens, expected, "lowercase: {lowercase}");
+            }
         }
     }
 }
