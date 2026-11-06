@@ -28,10 +28,10 @@ use crate::shards::shard_holder::SharedShardHolder;
 /// Before this function, this has happened:
 ///
 /// - An empty shard is initialized on the remote
-/// - Set the remote shard state to `PartialSnapshot`
-///   In `PartialSnapshot` state, the remote shard will ignore all operations and other nodes will
-///   prevent sending operations to it. This is critical not to modify the shard while it is being
-///   recovered from the snapshot.
+/// - Set the remote shard state to `Recovery`
+///   In `Recovery` state, the remote shard rejects all operations without the force flag and
+///   other nodes will prevent sending operations to it. This is critical not to modify the shard
+///   while it is being recovered from the snapshot.
 ///
 /// During this function, this happens in order:
 ///
@@ -44,7 +44,7 @@ use crate::shards::shard_holder::SharedShardHolder;
 /// - Recover shard snapshot on remote
 ///   Instruct the remote to download the snapshot from this node over HTTP, then recover it.
 /// - Set shard state to `Partial`
-///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We propose an
+///   After recovery, we set the shard state from `Recovery` to `Partial`. We propose an
 ///   operation to consensus for this. Our logic explicitly confirms that the remote reaches the
 ///   `Partial` state. That is critical for the remote to accept incoming operations, that also
 ///   confirms consensus has accepted accepted our proposal. If this fails it will be retried up to
@@ -84,7 +84,7 @@ use crate::shards::shard_holder::SharedShardHolder;
 ///       |  start transfer       |                         |
 /// ────►┌─┬──────────────────────|────────────────────────►|──┐
 ///      │ │                      |                         |  │ shard state:
-///      │ │ start transfer       |  init transfer          |  │ Dead→PartialSnapshot
+///      │ │ start transfer       |  init transfer          |  │ Dead→Recovery
 ///      └─┴────────────────────►┬─┬──────────────────────►┌─┐◄┘
 ///       |                      │X│                       │ │
 ///       |                      │X│                       │ ├─┐
@@ -115,9 +115,9 @@ use crate::shards::shard_holder::SharedShardHolder;
 ///      │ │ continue transfer │ │X│                        |
 ///      │ ├──────────────────·│ │X│·─────────────────────►┌─┬─┐
 ///      │ │ continue transfer │ │X│                       │ │ │ shard state:
-///      └─┴───────────────────┤►│X├─┐                     │ │ │ PartialSnapshot→Partial
+///      └─┴───────────────────┤►│X├─┐                     │ │ │ Recovery→Partial
 ///       |                    │ │X│ │ shard state:        └─┘◄┘
-///       |                    │ │X│ │ PartialSnpst→Partial |
+///       |                    │ │X│ │ Recovery→Partial     |
 ///       |                    └►│X│◄┘                      |
 ///       |                      │ │                        |
 ///       |                      │ │ transfer queue ops     |

@@ -133,9 +133,9 @@ async fn test_abandoned_snapshot_recovery_does_not_roll_back_the_retry() {
         Arc::new(new_shard_replica_set(&target_collection_dir, TEST_TARGET_SHARD_ID).await);
 
     // `clear_local_for_snapshot_recovery` refuses to run on a source-of-truth replica.
-    // The receiving replica of a snapshot transfer sits in `PartialSnapshot`.
+    // The receiving replica of a snapshot transfer sits in `Recovery`.
     target_replica_set
-        .set_replica_state(TEST_PEER_ID, ReplicaState::PartialSnapshot)
+        .set_replica_state(TEST_PEER_ID, ReplicaState::Recovery)
         .await
         .unwrap();
 
