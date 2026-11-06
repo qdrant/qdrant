@@ -1,5 +1,6 @@
 mod test_facets;
 mod test_immutable_payload_index_files;
+mod test_max_available_vectors_size;
 mod test_vector_name_ops;
 
 use std::assert_matches;
