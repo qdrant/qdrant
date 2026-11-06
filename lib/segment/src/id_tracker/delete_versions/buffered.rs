@@ -21,26 +21,35 @@ use crate::types::SeqNumberType;
 ///
 /// Regular trackers work on local files, so the log is written through [`MmapFs`].
 #[derive(Debug)]
-pub struct BufferedDeletes<S> {
-    versioning: DeleteVersioning,
-    /// The deleted mask, written by [`DeleteVersioning::Unversioned`] flushes only.
-    mask: BufferedUpdateBitSlice<S>,
-    /// The delete log, written by [`DeleteVersioning::Versioned`] flushes only.
-    log: Arc<Mutex<DeleteLogWriter>>,
-    /// Deletes made since the last flush that reached the log, with their versions.
-    unlogged: Arc<Mutex<Vec<DeleteLogEntry>>>,
-    /// Lock to prevent concurrent flush and drop
-    is_alive_flush_lock: IsAliveLock,
+pub enum BufferedDeletes<S> {
+    /// Deletes set in the deleted mask.
+    Unversioned { mask: BufferedUpdateBitSlice<S> },
+    /// Deletes appended to the delete log with their versions. The mask is left as it is; only
+    /// its length is kept, to bound the slots.
+    Versioned {
+        mask_len: u64,
+        log: Arc<Mutex<DeleteLogWriter>>,
+        /// Deletes made since the last flush that reached the log, with their versions.
+        unlogged: Arc<Mutex<Vec<DeleteLogEntry>>>,
+        /// Lock to prevent concurrent flush and drop
+        is_alive_flush_lock: IsAliveLock,
+    },
 }
 
 impl<S: UniversalWrite + Send + Sync + 'static> BufferedDeletes<S> {
     pub fn new(mask: StoredBitSlice<S>, segment_path: &Path, versioning: DeleteVersioning) -> Self {
-        Self {
-            versioning,
-            mask: BufferedUpdateBitSlice::new(mask),
-            log: Arc::new(Mutex::new(DeleteLogWriter::new(segment_path))),
-            unlogged: Arc::new(Mutex::new(Vec::new())),
-            is_alive_flush_lock: IsAliveLock::new(),
+        match versioning {
+            DeleteVersioning::Unversioned => Self::Unversioned {
+                mask: BufferedUpdateBitSlice::new(mask),
+            },
+            // The tracker read the mask whole at open and versioned deletes never write it, so
+            // the handle drops here.
+            DeleteVersioning::Versioned => Self::Versioned {
+                mask_len: mask.bit_len(),
+                log: Arc::new(Mutex::new(DeleteLogWriter::new(segment_path))),
+                unlogged: Arc::new(Mutex::new(Vec::new())),
+                is_alive_flush_lock: IsAliveLock::new(),
+            },
         }
     }
 
@@ -51,64 +60,84 @@ impl<S: UniversalWrite + Send + Sync + 'static> BufferedDeletes<S> {
     /// ## Panics
     /// Panics if the slot is beyond the mask.
     pub fn delete(&self, slot: PointOffsetType, version: Option<SeqNumberType>) {
-        match self.versioning {
-            DeleteVersioning::Versioned => {
+        match self {
+            Self::Unversioned { mask } => mask.set(slot as usize, true),
+            Self::Versioned {
+                mask_len,
+                log: _,
+                unlogged,
+                is_alive_flush_lock: _,
+            } => {
                 assert!(
-                    (slot as usize) < self.mask.len(),
-                    "slot {slot} out of range: {}",
-                    self.mask.len(),
+                    u64::from(slot) < *mask_len,
+                    "slot {slot} out of range: {mask_len}",
                 );
-                self.unlogged.lock().push(DeleteLogEntry {
+                unlogged.lock().push(DeleteLogEntry {
                     slot,
                     version: version.unwrap_or(DELETED_POINT_VERSION),
                 });
             }
-            DeleteVersioning::Unversioned => self.mask.set(slot as usize, true),
         }
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        self.mask.clear_cache()
+        match self {
+            Self::Unversioned { mask } => mask.clear_cache(),
+            Self::Versioned {
+                mask_len: _,
+                log: _,
+                unlogged: _,
+                is_alive_flush_lock: _,
+            } => Ok(()),
+        }
     }
 
     /// Flush the buffered deletes, to the log or the mask.
     pub fn flusher(&self) -> Flusher {
-        match self.versioning {
-            DeleteVersioning::Unversioned => self.mask.flusher(),
-            DeleteVersioning::Versioned => self.log_flusher(),
+        match self {
+            Self::Unversioned { mask } => mask.flusher(),
+            Self::Versioned {
+                mask_len: _,
+                log,
+                unlogged,
+                is_alive_flush_lock,
+            } => log_flusher(log, unlogged, is_alive_flush_lock),
         }
     }
+}
 
-    fn log_flusher(&self) -> Flusher {
-        let mut entries: Vec<DeleteLogEntry> = self.unlogged.lock().clone();
-        if entries.is_empty() {
-            return Box::new(|| Ok(()));
-        }
-        // A slot deleted twice keeps its first delete: stable sort, then dedup keeps the first.
-        entries.sort_by_key(|entry| entry.slot);
-        entries.dedup_by_key(|entry| entry.slot);
-
-        let log = Arc::clone(&self.log);
-        let unlogged = Arc::downgrade(&self.unlogged);
-        let is_alive_flush_lock = self.is_alive_flush_lock.handle();
-        Box::new(move || {
-            let (Some(is_alive_flush_guard), Some(unlogged)) =
-                (is_alive_flush_lock.lock_if_alive(), unlogged.upgrade())
-            else {
-                return Err(OperationError::cancelled(
-                    "Aborted flushing on a dropped BufferedDeletes instance",
-                ));
-            };
-
-            log.lock().append(&MmapFs, &entries)?;
-            drop(is_alive_flush_guard);
-
-            let logged: AHashSet<PointOffsetType> =
-                entries.iter().map(|entry| entry.slot).collect();
-            unlogged
-                .lock()
-                .retain(|entry| !logged.contains(&entry.slot));
-            Ok(())
-        })
+fn log_flusher(
+    log: &Arc<Mutex<DeleteLogWriter>>,
+    unlogged: &Arc<Mutex<Vec<DeleteLogEntry>>>,
+    is_alive_flush_lock: &IsAliveLock,
+) -> Flusher {
+    let mut entries: Vec<DeleteLogEntry> = unlogged.lock().clone();
+    if entries.is_empty() {
+        return Box::new(|| Ok(()));
     }
+    // A slot deleted twice keeps its first delete: stable sort, then dedup keeps the first.
+    entries.sort_by_key(|entry| entry.slot);
+    entries.dedup_by_key(|entry| entry.slot);
+
+    let log = Arc::clone(log);
+    let unlogged = Arc::downgrade(unlogged);
+    let is_alive_flush_lock = is_alive_flush_lock.handle();
+    Box::new(move || {
+        let (Some(is_alive_flush_guard), Some(unlogged)) =
+            (is_alive_flush_lock.lock_if_alive(), unlogged.upgrade())
+        else {
+            return Err(OperationError::cancelled(
+                "Aborted flushing on a dropped BufferedDeletes instance",
+            ));
+        };
+
+        log.lock().append(&MmapFs, &entries)?;
+        drop(is_alive_flush_guard);
+
+        let logged: AHashSet<PointOffsetType> = entries.iter().map(|entry| entry.slot).collect();
+        unlogged
+            .lock()
+            .retain(|entry| !logged.contains(&entry.slot));
+        Ok(())
+    })
 }
