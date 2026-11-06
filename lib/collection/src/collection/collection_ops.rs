@@ -13,6 +13,7 @@ use shard::operations::optimization::{OptimizationsRequestOptions, Optimizations
 
 use super::Collection;
 use super::shard_transfer::AbortShardTransferScope;
+use crate::config::CollectionConfigInternal;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -332,6 +333,41 @@ impl Collection {
         Ok(())
     }
 
+    /// Whether any local shard of this collection has an optimizer error recorded.
+    pub async fn has_optimizer_errors(&self) -> bool {
+        let shard_holder = self.shards_holder.read().await;
+        for replica_set in shard_holder.all_shards() {
+            if replica_set.has_local_optimizer_errors().await {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Applies a collection update, made since the config was `config_before`, to the optimizers.
+    /// Every path that updates the collection config calls this, so they all treat optimizers
+    /// alike.
+    ///
+    /// Recreates the optimizers if the update changed what they are built from (see
+    /// [`CollectionConfigInternal::is_core_config_updated`]), or if an optimizer error is
+    /// recorded: re-sending the config is how users restart failed optimizers.
+    ///
+    /// Otherwise only triggers them. Recreating cancels in-flight optimizations, and clients that
+    /// re-send the same config on every run would keep cancelling them, each one leaving an extra
+    /// segment behind under writes. Re-sending an unchanged config is also how users start
+    /// optimizations that wait for a trigger, as they do after a restart.
+    ///
+    /// Doesn't wait for the recreation, see [`Self::recreate_optimizers_background`].
+    pub async fn recreate_or_trigger_optimizers(&self, config_before: &CollectionConfigInternal) {
+        let config_after = self.config().await;
+        if config_before.is_core_config_updated(&config_after) || self.has_optimizer_errors().await
+        {
+            self.recreate_optimizers_background();
+        } else {
+            self.trigger_optimizers().await;
+        }
+    }
+
     /// Recreate the optimizers on all shards for this collection, in the background.
     ///
     /// Returns immediately and performs all the work - stopping the existing workers and starting
@@ -350,17 +386,6 @@ impl Collection {
     /// recreation has already been applied and persisted by the time we get here, so there is no
     /// caller left to propagate them to. Failures are also surfaced as optimizer errors per shard
     /// (see `LocalShard::on_optimizer_config_update`).
-    /// Whether any local shard of this collection has an optimizer error recorded.
-    pub async fn has_optimizer_errors(&self) -> bool {
-        let shard_holder = self.shards_holder.read().await;
-        for replica_set in shard_holder.all_shards() {
-            if replica_set.has_local_optimizer_errors().await {
-                return true;
-            }
-        }
-        false
-    }
-
     pub fn recreate_optimizers_background(&self) {
         // Single-flight: only spawn a task if none is running. Otherwise the request is coalesced
         // into a queued re-run handled by the task that is already running.

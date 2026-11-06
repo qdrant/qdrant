@@ -74,16 +74,10 @@ impl TableOfContent {
                     }
                 }
 
-                let config_after = collection.config().await;
-                // Repeating unchanged config must preserve ongoing optimizations, while
-                // repeating it after an optimizer error must restart failed optimizers.
-                let recreate_optimizers = config_before.is_core_config_updated(&config_after)
-                    || collection.has_optimizer_errors().await;
-
                 collection.print_warnings().await;
-                if recreate_optimizers {
-                    collection.recreate_optimizers_background();
-                }
+                collection
+                    .recreate_or_trigger_optimizers(&config_before)
+                    .await;
 
                 Ok(())
             }
