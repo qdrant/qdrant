@@ -385,4 +385,36 @@ mod tests {
         );
         assert_eq!(inverted_index_ram_built, inverted_index_ram_upserted);
     }
+
+    /// Upserting with the old vector removes the point from the dimensions it dropped and leaves other points there.
+    #[test]
+    fn upsert_with_old_vector_removes_dropped_dimensions() {
+        let old_vector = RemappedSparseVector::from([(1, 10.0), (2, 10.0), (3, 10.0)]);
+        let other_vector = RemappedSparseVector::from([(1, 5.0), (2, 5.0), (3, 5.0)]);
+        let mut inverted_index_ram = InvertedIndexRam::empty();
+        inverted_index_ram.upsert(1, old_vector.clone(), None);
+        inverted_index_ram.upsert(2, other_vector, None);
+
+        // Point 1 now keeps dimension 2, drops 1 and 3, and gains 4; point 2 is untouched
+        let new_vector = RemappedSparseVector::from([(2, 20.0), (4, 20.0)]);
+        inverted_index_ram.upsert(1, new_vector, Some(old_vector));
+
+        assert_eq!(inverted_index_ram.vector_count, 2);
+        for dropped in [1, 3] {
+            // Only point 1 leaves the dropped dimensions; the shared posting list keeps point 2
+            let posting_list = inverted_index_ram.get(dropped).unwrap();
+            assert!(!posting_list.contains(1));
+            let posting_list = posting_list.elements.as_slice();
+            assert_eq!(posting_list.len(), 1);
+            assert_eq!(posting_list[0].record_id, 2);
+        }
+        let shared = inverted_index_ram.get(2).unwrap().elements.as_slice();
+        assert_eq!(shared.len(), 2);
+        assert!(shared.iter().any(|e| e.record_id == 1 && e.weight == 20.0));
+        assert!(shared.iter().any(|e| e.record_id == 2 && e.weight == 5.0));
+        let gained = inverted_index_ram.get(4).unwrap().elements.as_slice();
+        assert_eq!(gained.len(), 1);
+        assert_eq!(gained[0].record_id, 1);
+        assert_eq!(gained[0].weight, 20.0);
+    }
 }
