@@ -5,7 +5,7 @@ use vaporetto::{Model, Predictor, Sentence};
 
 use super::TokensProcessor;
 
-/// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto-models/releases/tag/v0.5.0
+/// Vaporetto prediction model. Source: https://github.com/daac-tools/vaporetto/releases/tag/v0.7.0
 const MODEL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tokenizer/bccwj-suw_c1.0.model"
@@ -14,10 +14,10 @@ const MODEL: &[u8] = include_bytes!(concat!(
 /// Sha512 checksum of the model to ensure integrity and make modifications or corrupt model file easier to detect.
 #[cfg(test)]
 const MODEL_CHECKSUM: [u8; 64] = [
-    34, 108, 156, 130, 7, 199, 31, 24, 147, 156, 119, 202, 98, 129, 109, 101, 114, 8, 250, 182,
-    159, 28, 112, 122, 214, 50, 51, 191, 118, 112, 143, 237, 70, 15, 96, 45, 78, 76, 90, 62, 178,
-    14, 86, 194, 87, 33, 19, 79, 55, 50, 212, 99, 98, 65, 102, 171, 123, 150, 110, 229, 88, 224,
-    43, 203,
+    23, 12, 203, 97, 78, 144, 136, 139, 184, 118, 79, 117, 241, 78, 232, 10, 14, 38, 153, 237, 46,
+    78, 87, 29, 239, 70, 92, 126, 18, 172, 30, 23, 29, 160, 130, 132, 162, 163, 131, 31, 114, 213,
+    47, 61, 39, 236, 59, 131, 209, 207, 60, 84, 206, 61, 191, 119, 1, 91, 157, 94, 211, 216, 1,
+    158,
 ];
 
 // Global initialization of the Japanese tokenizer.
