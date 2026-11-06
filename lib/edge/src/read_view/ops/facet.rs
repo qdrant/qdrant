@@ -178,9 +178,13 @@ mod tests {
             .facet(FacetRequest::new("group".parse().unwrap()))
             .unwrap()
             .hits;
-        assert!(
-            exact.iter().all(|h| h.count > 0),
-            "zero-count hit: {exact:?}"
+        assert_eq!(
+            exact,
+            vec![FacetValueHit {
+                value: FacetValue::Keyword("c".to_string()),
+                count: 2,
+            }]
         );
+        assert_eq!(exact, approx);
     }
 }
