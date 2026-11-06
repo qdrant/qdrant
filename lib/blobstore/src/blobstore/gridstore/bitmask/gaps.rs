@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use common::mmap::{Advice, AdviceSetting, create_and_ensure_length};
+use common::mmap::{Advice, AdviceSetting, create_and_ensure_length_allocated};
 use common::universal_io::{
     Flusher, OpenOptions, Populate, TypedStorage, UniversalReadFs, UniversalWrite,
 };
@@ -103,7 +103,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
 
         let data: Vec<RegionGaps> = iter.collect();
         let length_in_bytes = data.len() * size_of::<RegionGaps>();
-        create_and_ensure_length(&path, length_in_bytes)?;
+        create_and_ensure_length_allocated(&path, length_in_bytes)?;
 
         let options = OpenOptions {
             writeable: true,
@@ -164,7 +164,7 @@ impl<S: UniversalWrite> BitmaskGaps<S> {
         let new_slice_len = prev_len + data.len();
         let new_length_in_bytes = new_slice_len * size_of::<RegionGaps>();
 
-        create_and_ensure_length(&self.path, new_length_in_bytes)?;
+        create_and_ensure_length_allocated(&self.path, new_length_in_bytes)?;
 
         self.slice_store.live_reload()?;
 
