@@ -3,6 +3,7 @@ use num_traits::AsPrimitive;
 use crate::DistanceType;
 use crate::turboquant::encoding::TqVectorExtras;
 use crate::turboquant::rotation::HadamardRotation;
+use crate::turboquant::simd::grid::{GridSimd, GridWidth, WriteBack};
 use crate::turboquant::simd::{
     CODEBOOK_SCALE_SQ_2BIT, CODEBOOK_SCALE_SQ_4BIT, Query1bitSimd, Query1bitWideSimd,
     Query2bitSimd, Query4bitSimd, Query8bitSimd, Query16bitSimd, score_1bit_internal,
@@ -185,14 +186,13 @@ impl TurboQuantizer {
         debug_assert!(vec.len() <= self.padded_dim);
         debug_assert_eq!(buf.len(), self.padded_dim);
 
-        // Convert to f64 and zero-pad up to `padded_dim`.
-        let padded = vec
-            .iter()
-            .map(|&x| f64::from(x))
-            .chain(std::iter::repeat(0.0));
-        for (b, v) in buf.iter_mut().zip(padded) {
-            *b = v;
+        // Convert to f64 and zero-pad up to `padded_dim`. Plain slice loops,
+        // which the compiler vectorizes.
+        let (head, tail) = buf.split_at_mut(vec.len().min(buf.len()));
+        for (b, &x) in head.iter_mut().zip(vec) {
+            *b = f64::from(x);
         }
+        tail.fill(0.0);
 
         // Rotate the vector, unless the input is already rotated (re-quantizing a
         // TQ-as-datatype storage). For an unpadded rotation only the original
@@ -233,6 +233,18 @@ impl TurboQuantizer {
 
     fn quantize_impl(&self, vec: &[f32], buf: &mut [f64], rotate: bool) -> Vec<u8> {
         let l2_length = self.preprocess_into(vec, buf, rotate);
+        if self.error_correction.is_none()
+            && let Some(width) = GridWidth::of(self.bits)
+            && let Some(simd) = GridSimd::detect()
+        {
+            return self.finish_grid_simd(simd, width, buf, l2_length);
+        }
+        self.finish_quantize(buf, l2_length)
+    }
+
+    /// The rest of [`Self::quantize_impl`] after `preprocess_into`: error
+    /// correction, the grid scale, the centroid norm, and packing.
+    fn finish_quantize(&self, buf: &mut [f64], l2_length: Option<f32>) -> Vec<u8> {
         // After `preprocess_into` the rescale is already in `buf`; from here on
         // we treat `buf` as the rescaled vector and don't re-multiply by
         // `scale`. Centroid-norm and packing operate on `buf` directly.
@@ -310,6 +322,54 @@ impl TurboQuantizer {
 
         // Encode and return packed vector.
         self.pack_vector(buf.iter().map(|&val| val * scale), extras)
+    }
+
+    /// [`Self::finish_quantize`] for the grid widths (8 and 16 bits) without
+    /// error correction, with SIMD: the same bytes and the same scratch
+    /// buffer, bit for bit, in two passes over `buf` instead of seven.
+    ///
+    /// The Cosine guard needs no sum: it fires if the scaled squares add up
+    /// to less than 1e-12. With a nonzero largest magnitude, that value is
+    /// scaled to the grid limit (or the sum is NaN or infinite), so the guard
+    /// can't fire; with a zero largest magnitude nothing is scaled, and the
+    /// sum is 0 unless a NaN makes it NaN.
+    fn finish_grid_simd(
+        &self,
+        simd: GridSimd,
+        width: GridWidth,
+        buf: &mut [f64],
+        l2_length: Option<f32>,
+    ) -> Vec<u8> {
+        let (abs_max, has_nan) = simd.abs_max(buf);
+        let (grid_scale, write_back) = if abs_max > 0.0 {
+            (width.grid_max() / abs_max, WriteBack::Yes)
+        } else {
+            (1.0, WriteBack::No)
+        };
+        let codes = buf.len() * width.code_bytes();
+        let mut out = vec![0_u8; codes];
+        out.reserve_exact(self.quantized_size() - codes);
+        let sq_sum = simd.scale_encode(buf, grid_scale, width, write_back, &mut out);
+        let norm = || {
+            if sq_sum > 0.0 {
+                sq_sum.sqrt() as f32
+            } else {
+                1.0
+            }
+        };
+        let centroid_norm = match self.distance {
+            DistanceType::Dot | DistanceType::L2 => Some(norm()),
+            DistanceType::Cosine => {
+                if abs_max == 0.0 && !has_nan {
+                    Some((self.padded_dim as f32).sqrt())
+                } else {
+                    Some(norm())
+                }
+            }
+            DistanceType::L1 => None,
+        };
+        self.pack_extras_into(l2_length, centroid_norm, None, &mut out);
+        out
     }
 
     /// L2 norm of the centroid vector chosen by quantizing `buf * scale`.
@@ -861,6 +921,97 @@ mod tests {
                         assert!(
                             idx < n_centroids,
                             "dim={dim}, index {idx} out of range for {bits:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The SIMD path for 8 and 16 bits gives the same bytes and leaves the
+    /// same scratch buffer as the scalar steps, bit for bit, including
+    /// rounding ties, zeros, NaN, infinities, and values whose grid scale
+    /// overflows.
+    #[test]
+    fn grid_simd_matches_scalar() {
+        let Some(simd) = GridSimd::detect() else {
+            return;
+        };
+        let mut rng = StdRng::seed_from_u64(11);
+        for dim in [1, 3, 4, 15, 16, 17, 100, 1536] {
+            let mut cases: Vec<Vec<f64>> = vec![vec![0.0; dim], vec![-0.0; dim]];
+            for magnitude in [1e-300, 1e-30, 1.0, 1e30] {
+                cases.push(
+                    (0..dim)
+                        .map(|_| rng.random_range(-1.0..1.0) * magnitude)
+                        .collect(),
+                );
+            }
+            // 127 first keeps the grid scale at exactly 1, so the others stay ties
+            let ties: Vec<f64> = [127.0, 126.5, -126.5, 0.5, -0.5, 1.5, -1.5, 2.5, -2.5]
+                .into_iter()
+                .chain([
+                    0.499_999_999_999_999_94,
+                    -0.499_999_999_999_999_94,
+                    0.0,
+                    -0.0,
+                ])
+                .chain((-127..127).map(|k| f64::from(k) + 0.5))
+                .collect();
+            cases.push(ties.iter().copied().cycle().take(dim).collect());
+            let specials = [
+                f64::NAN,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::MIN_POSITIVE / 1e10,
+                -f64::MIN_POSITIVE / 1e10,
+            ];
+            for special in specials {
+                let mut one = cases[4].clone();
+                one[dim / 2] = special;
+                cases.push(one);
+                cases.push(vec![special; dim]);
+                let mut with_zeros = vec![0.0; dim];
+                with_zeros[0] = special;
+                cases.push(with_zeros);
+            }
+            for (bits, distance) in [TQBits::Bits8, TQBits::Bits16]
+                .into_iter()
+                .flat_map(|bits| {
+                    [
+                        DistanceType::Cosine,
+                        DistanceType::Dot,
+                        DistanceType::L2,
+                        DistanceType::L1,
+                    ]
+                    .map(|distance| (bits, distance))
+                })
+            {
+                let tq = make_tq(dim, bits, distance);
+                let width = GridWidth::of(bits).unwrap();
+                assert_eq!(tq.padded_dim, dim);
+                for (case, values) in cases.iter().enumerate() {
+                    // `preprocess_into` gives a length for every distance but Cosine
+                    let lengths = match distance {
+                        DistanceType::Cosine => vec![None],
+                        DistanceType::Dot | DistanceType::L2 | DistanceType::L1 => {
+                            vec![Some(0.0), Some(2.5)]
+                        }
+                    };
+                    for l2_length in lengths {
+                        let mut scalar_buf = values.clone();
+                        let mut simd_buf = values.clone();
+                        let scalar = tq.finish_quantize(&mut scalar_buf, l2_length);
+                        let simd = tq.finish_grid_simd(simd, width, &mut simd_buf, l2_length);
+                        assert_eq!(
+                            scalar, simd,
+                            "{simd:?}, {bits:?}, dim {dim}, {distance:?}, case {case}, l2 {l2_length:?}: codes"
+                        );
+                        let raw = |b: &[f64]| b.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+                        assert_eq!(
+                            raw(&scalar_buf),
+                            raw(&simd_buf),
+                            "{simd:?}, {bits:?}, dim {dim}, {distance:?}, case {case}, l2 {l2_length:?}: buffer"
                         );
                     }
                 }

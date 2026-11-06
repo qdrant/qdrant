@@ -21,6 +21,7 @@
 //!
 //! On any other target the scalar reference kernels take over.
 
+pub(crate) mod grid;
 pub mod hadamard;
 pub mod query;
 pub mod query16bit;
