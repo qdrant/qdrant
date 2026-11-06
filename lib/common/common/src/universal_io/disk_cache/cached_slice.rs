@@ -138,6 +138,23 @@ impl CachedSlice {
         Ok(())
     }
 
+    pub fn will_need(&self, byte_ranges: impl Iterator<Item = Range<usize>>) {
+        if !crate::mmap::advice::thread_faulted().unwrap_or(false) {
+            return;
+        }
+        for range in byte_ranges {
+            if range.is_empty() || range.end > self.len_bytes {
+                continue;
+            }
+            if let Some(slice) = self
+                .controller
+                .get_contiguous_from_cache(self.blocks_for(range))
+            {
+                crate::mmap::advice::will_need(slice);
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn get<T: bytemuck::Pod>(&self, idx: usize) -> io::Result<Cow<'_, T>> {
         let slice = self.get_range::<T>(idx..idx + 1)?;

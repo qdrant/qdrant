@@ -172,8 +172,15 @@ impl MmapSparseVectorStorage {
                 HwMetric::VectorIoWrite,
             )?;
         } else if (key as usize) < self.next_point_offset {
-            // delete vector
-            self.storage.delete_value(key)?;
+            // Soft-delete is already recorded on the deleted bitflag by
+            // `delete_vector`. Hard-delete reclaims Gridstore space; Logstore
+            // forbids it, and the bitflag alone is enough for append-only
+            // correctness (same contract as dense appendable storages).
+            // Skipping the call matters for clone-and-mutate: writing `None`
+            // at a fresh offset inserts a placeholder then soft-deletes it.
+            if self.storage.supports_delete() {
+                self.storage.delete_value(key)?;
+            }
         }
         // else: nothing was ever stored at this key, nothing to delete
 
@@ -214,11 +221,10 @@ impl SparseVectorStorageRead for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> OperationResult<Option<SparseVector>> {
-        ambient::unmeasured(reason("Vector storage read IO not measured"), || {
-            self.storage.get_value::<P>(key)
-        })?
-        .map(SparseVector::try_from)
-        .transpose()
+        self.storage
+            .get_value::<P>(key, HwMetric::VectorIoRead)?
+            .map(SparseVector::try_from)
+            .transpose()
     }
 
     fn for_each_in_sparse_batch<F>(

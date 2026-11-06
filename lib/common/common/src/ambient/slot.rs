@@ -181,6 +181,11 @@ impl Target {
 }
 
 /// An active scope. Restores the outer one on drop/panic.
+///
+/// Do not hold it across `.await` as it could lead to misattribution or lost
+/// measurements. Instead:
+/// - Inside `#[tokio::test]` use [`crate::ambient::async_test_guard()`].
+/// - In any other future, use [`crate::ambient::AmbientFutureExt`].
 #[must_use]
 pub struct Scope {
     depth: u64,
@@ -226,6 +231,11 @@ impl Scope {
             outer_counters: std::array::from_fn(|i| slot.counters[i].take()),
             _owned: owned,
         })
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub(super) fn is_outermost(&self) -> bool {
+        self.depth == 0
     }
 }
 

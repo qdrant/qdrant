@@ -331,12 +331,14 @@ pub trait SegmentOptimizer: Sync {
             id_tracker_memory: segment_optimizer_config.id_tracker_memory,
         };
 
-        SegmentBuilder::new(
+        let mut builder = SegmentBuilder::new(
             self.temp_path(),
             &optimized_config,
             self.hnsw_global_config(),
             feature_flags(),
-        )
+        )?;
+        builder.set_cache_after_build(self.segment_optimizer_config().cache_after_build);
+        Ok(builder)
     }
 
     /// Test wrapper for [`SegmentOptimizer::optimize`].

@@ -321,14 +321,15 @@ where
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointOffsetType>> {
         let cardinality = self.payload_index.estimate_cardinality(filter)?;
-        let points = self.payload_index.iter_filtered_points(
+        let points = self.payload_index.iter_filtered_points_first(
             filter,
             &cardinality,
             is_stopped,
             // HNSW is built on non-appendable segments, which have no deferred points.
             DeferredBehavior::WithDeferred,
+            Some(n),
         )?;
-        Ok(points.take(n).collect())
+        Ok(points.collect())
     }
 
     fn discover_search_with_graph(

@@ -105,6 +105,20 @@ impl PayloadStorageRead for PayloadStorageEnum {
         }
     }
 
+    fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemory(s) => s.read_payload_lens::<P, _>(point_offsets, callback),
+            PayloadStorageEnum::Mmap(s) => s.read_payload_lens::<P, _>(point_offsets, callback),
+            #[cfg(target_os = "linux")]
+            PayloadStorageEnum::IoUring(s) => s.read_payload_lens::<P, _>(point_offsets, callback),
+        }
+    }
+
     fn iter<F>(&self, callback: F) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,

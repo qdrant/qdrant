@@ -187,6 +187,9 @@ fn test_cached_slice_vectors_random_access() {
         let vec_idx = rng.random_range(0..NUM_VECTORS);
         let start = vec_idx * VECTOR_DIM;
         let end = start + VECTOR_DIM;
+        cached_slice.will_need(std::iter::once(
+            start * size_of::<f32>()..end * size_of::<f32>(),
+        ));
         let cached_vec = cached_slice.get_range::<f32>(start..end).unwrap();
         assert_eq!(
             cached_vec.as_ref(),
@@ -210,6 +213,10 @@ fn test_cached_slice_vectors_random_access() {
             "Sub-range mismatch at [{a}..{b}]",
         );
     }
+
+    // Empty and past-EOF hints are ignored.
+    let len_bytes = TOTAL_FLOATS * size_of::<f32>();
+    cached_slice.will_need([0..0, len_bytes - 8..len_bytes + 8].into_iter());
 }
 
 /// Concurrent access test: multiple threads exhaust the pool faster.

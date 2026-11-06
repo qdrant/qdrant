@@ -106,6 +106,14 @@ impl FullTextIndexRead for FullTextIndex {
         }
     }
 
+    fn token_bytes(&self) -> OperationResult<u64> {
+        match self {
+            Self::Mutable(index) => index.token_bytes(),
+            Self::Immutable(index) => index.token_bytes(),
+            Self::OnDisk(index) => index.token_bytes(),
+        }
+    }
+
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             Self::Mutable(index) => index.values_is_empty(point_id),

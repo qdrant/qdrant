@@ -81,6 +81,9 @@ async fn upsert_point(collection: &Collection, id: u64, wait: bool) {
 /// into the snapshot are not ahead of the snapshotted segment data.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wal_less_snapshot_clocks_not_ahead_of_data() {
+    if !common::testing::is_process_isolated() {
+        return; // Env vars are process-global
+    }
     let _ = env_logger::builder().is_test(true).try_init();
 
     // Short flush interval so background updates persist the advanced clocks to disk during the

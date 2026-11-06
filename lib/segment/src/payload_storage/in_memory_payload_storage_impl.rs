@@ -74,6 +74,22 @@ impl PayloadStorageRead for InMemoryPayloadStorage {
         Ok(())
     }
 
+    fn read_payload_lens<P: AccessPattern, U: common::universal_io::UserData>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
+        mut callback: impl FnMut(U, Option<usize>) -> OperationResult<()>,
+    ) -> OperationResult<()> {
+        for (user_data, point_offset) in point_offsets {
+            let len = self
+                .payload
+                .get(&point_offset)
+                .map(|payload| payload.to_bytes().len());
+            callback(user_data, len)?;
+        }
+
+        Ok(())
+    }
+
     fn get_storage_size_bytes(&self) -> OperationResult<usize> {
         let mut estimated_size = 0;
         for (_p_id, val) in &self.payload {

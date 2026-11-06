@@ -1,4 +1,5 @@
 pub mod compressed;
+pub mod delete_versions;
 pub mod disk_id_tracker;
 pub mod format_detection;
 pub mod id_tracker_base;

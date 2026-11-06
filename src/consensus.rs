@@ -14,7 +14,9 @@ use api::HTTP_HEADER_API_KEY;
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
-use api::grpc::transport_channel_pool::TransportChannelPool;
+use api::grpc::transport_channel_pool::{
+    DEFAULT_KEEPALIVE_INTERVAL, DEFAULT_KEEPALIVE_TIMEOUT, TransportChannelPool,
+};
 use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 #[cfg(target_os = "linux")]
@@ -471,6 +473,8 @@ impl Consensus {
             Duration::from_secs(config.bootstrap_timeout_sec),
             cluster_uri,
             tls_config,
+            DEFAULT_KEEPALIVE_INTERVAL,
+            DEFAULT_KEEPALIVE_TIMEOUT,
         )
         .await
         .context("Failed to create timeout channel")?;
@@ -1565,6 +1569,8 @@ impl RaftMessageSender {
             bootstrap_timeout,
             bootstrap_uri,
             self.tls_config.clone(),
+            DEFAULT_KEEPALIVE_INTERVAL,
+            DEFAULT_KEEPALIVE_TIMEOUT,
         )
         .await
         .context("Failed to create who-is channel")?;

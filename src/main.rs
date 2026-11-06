@@ -42,10 +42,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 use tikv_jemallocator::Jemalloc;
 
 use crate::common::helpers::load_tls_client_config;
@@ -58,10 +55,7 @@ use crate::settings::Settings;
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::startup::{remove_started_file_indicator, touch_started_file_indicator};
 
-#[cfg(all(
-    not(target_env = "msvc"),
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
+#[cfg(jemalloc)]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
@@ -325,6 +319,8 @@ fn init_channel_service(
             settings.cluster.p2p.connection_pool_size,
             tls_config,
             api_key,
+            Duration::from_millis(settings.cluster.p2p.keepalive_interval_ms),
+            Duration::from_millis(settings.cluster.p2p.keepalive_timeout_ms),
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
         channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
@@ -590,7 +586,6 @@ fn main() -> anyhow::Result<()> {
             storage_path,
         )
         .expect("initialize consensus manager")
-        .with_shadow(settings.cluster.consensus.shadow_state_machine)
         .into();
         let is_new_deployment = consensus_state.is_new_deployment();
 

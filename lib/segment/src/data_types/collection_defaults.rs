@@ -29,11 +29,16 @@ pub struct CollectionConfigDefaults {
 }
 
 impl CollectionConfigDefaults {
-    pub fn get_shard_number(&self, number_of_peers: u32) -> u32 {
+    /// `default_shard_number_per_node` applies when the config sets neither shard number.
+    pub fn get_shard_number(
+        &self,
+        number_of_peers: u32,
+        default_shard_number_per_node: u32,
+    ) -> u32 {
         match (self.shard_number, self.shard_number_per_node) {
             (Some(shard_number), None) => shard_number,
             (None, Some(shard_number_per_node)) => shard_number_per_node * number_of_peers,
-            (None, None) => number_of_peers,
+            (None, None) => default_shard_number_per_node * number_of_peers,
             (Some(shard_number), Some(_)) => {
                 log::warn!(
                     "Both shard_number and shard_number_per_node are set. Using shard_number: {shard_number}"

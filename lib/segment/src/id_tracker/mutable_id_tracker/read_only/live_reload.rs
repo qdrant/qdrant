@@ -125,15 +125,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
             Self::refresh_file(mappings, inner_fs, mappings_path(&self.segment_path)),
         )?;
 
-        let v_len = match versions {
-            Some(file) => (file.len::<u8>()? / VERSION_ELEMENT_SIZE) as usize,
-            None => 0,
-        };
-        let m_bytes = match mappings {
-            Some(file) => file.len::<u8>()?,
-            None => 0,
+        // Until the writer creates both files, no point can become visible.
+        let (Some(v_bytes), Some(m_bytes)) = (
+            Self::existing_len(versions.as_ref())?,
+            Self::existing_len(mappings.as_ref())?,
+        ) else {
+            return Ok(TrackerProbe::Unchanged {
+                max_committed_id: self.internal_to_version.len() as PointOffsetType,
+            });
         };
 
+        let v_len = (v_bytes / VERSION_ELEMENT_SIZE) as usize;
         let versions_changed = v_len != self.internal_to_version.len();
         let mappings_changed = m_bytes != self.mappings_read_to;
 
@@ -143,6 +145,17 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         } else {
             TrackerProbe::Unchanged { max_committed_id }
         })
+    }
+
+    /// Byte length of a tracker file, `None` if it does not exist yet.
+    ///
+    /// The file is absent either because no handle is held, or because the handle was opened
+    /// lazily (e.g. on an object store) and reports `NotFound` only on first access.
+    fn existing_len(file: Option<&S>) -> OperationResult<Option<u64>> {
+        match file {
+            Some(file) => Ok(file.len::<u8>().ok_not_found()?),
+            None => Ok(None),
+        }
     }
 
     /// Live-reload a held handle in place, or open it through `inner_fs` once the file exists.
@@ -205,7 +218,7 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let committed = self.reload_versions(fs, max_committed_id, preloaded)? as PointOffsetType;
 
         // Consume new mapping changes. Inserts are buffered until committed (their version exists);
-        // deletes act on the committed mapping immediately, or cancel a still-pending insert.
+        // deletes act on the committed mapping immediately, and cancel still-pending inserts.
         let changes = self.read_new_mapping_changes(fs, preloaded)?;
 
         for change in &changes {
@@ -218,10 +231,19 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
         let mut deleted = Vec::new();
 
         // Pending inserts whose versions landed since the last reload go first: they precede
-        // `changes` in the log.
-        let versioned = self
-            .unversioned_inserts
-            .extract_if(|_, &mut internal_id| internal_id < committed);
+        // `changes` in the log. A point's pending offsets are fresh slots in log order, so
+        // ascending: its newest landed insert is its last covered one, and the covered ones before
+        // it are superseded and never reported. A newer insert not covered yet stays pending.
+        let mut versioned = Vec::new();
+        self.unversioned_inserts
+            .retain(|&external_id, internal_ids| {
+                let covered = internal_ids.partition_point(|&internal_id| internal_id < committed);
+                if let Some(&internal_id) = internal_ids[..covered].last() {
+                    versioned.push((external_id, internal_id));
+                }
+                internal_ids.drain(..covered);
+                !internal_ids.is_empty()
+            });
         self.staged_inserts.extend(versioned);
 
         for change in &changes {
@@ -230,16 +252,30 @@ impl<S: UniversalRead> ReadOnlyAppendableIdTracker<S> {
                     self.max_claimed_internal_id =
                         self.max_claimed_internal_id.max(Some(internal_id));
                     if internal_id < committed {
-                        // Complete: replaces the point's pending insert and its staged offset.
+                        // Complete: replaces the point's pending inserts and its staged offset.
                         self.unversioned_inserts.remove(&external_id);
                         self.staged_inserts.insert(external_id, internal_id);
                     } else {
                         // Withheld until its version lands. Until then the point keeps serving
-                        // its complete copy, staged or linked.
-                        self.unversioned_inserts.insert(external_id, internal_id);
+                        // its complete copy, staged or linked. A pending insert before it stays
+                        // too: a reload reads the versions before the mappings, so that one may be
+                        // complete already, and is staged once a reload sees its version.
+                        self.unversioned_inserts
+                            .entry(external_id)
+                            .or_default()
+                            .push(internal_id);
                     }
                 }
-                MappingChange::Delete(external_id) => {
+                MappingChange::DeleteVersioned(external_id, version)
+                    if self
+                        .held_deletes
+                        .as_ref()
+                        .is_some_and(|held| !held.covers(version)) =>
+                {
+                    self.hold_delete(external_id, version);
+                }
+                MappingChange::Delete(external_id)
+                | MappingChange::DeleteVersioned(external_id, _) => {
                     self.unversioned_inserts.remove(&external_id);
                     self.staged_inserts.remove(&external_id);
                     deleted.extend(self.mappings.drop(external_id));

@@ -104,11 +104,14 @@ impl Dispatcher {
                                 let collection_defaults =
                                     self.toc.storage_config.collection.as_ref();
 
-                                let shard_distribution = self.toc.suggest_shard_distribution(
-                                    &op,
-                                    collection_defaults,
-                                    number_of_peers,
-                                );
+                                let shard_distribution = self
+                                    .toc
+                                    .suggest_shard_distribution(
+                                        &op,
+                                        collection_defaults,
+                                        number_of_peers,
+                                    )
+                                    .await;
 
                                 // Expect all replicas to become active eventually
                                 for (shard_id, peer_ids) in &shard_distribution.distribution {

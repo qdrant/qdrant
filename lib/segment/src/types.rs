@@ -359,21 +359,6 @@ impl Distance {
             Distance::Euclid | Distance::Manhattan => Order::SmallBetter,
         }
     }
-
-    pub fn is_ordered(&self, left: ScoreType, right: ScoreType) -> bool {
-        match self.distance_order() {
-            Order::LargeBetter => left >= right,
-            Order::SmallBetter => left <= right,
-        }
-    }
-
-    /// Checks if score satisfies threshold condition
-    pub fn check_threshold(&self, score: ScoreType, threshold: ScoreType) -> bool {
-        match self.distance_order() {
-            Order::LargeBetter => score > threshold,
-            Order::SmallBetter => score < threshold,
-        }
-    }
 }
 
 /// Map a segment [`Distance`] to the TurboQuant [`DistanceType`].
@@ -396,6 +381,23 @@ impl From<Distance> for quantization::DistanceType {
 pub enum Order {
     LargeBetter,
     SmallBetter,
+}
+
+impl Order {
+    pub fn is_ordered(self, left: ScoreType, right: ScoreType) -> bool {
+        match self {
+            Order::LargeBetter => left >= right,
+            Order::SmallBetter => left <= right,
+        }
+    }
+
+    /// Checks if score satisfies threshold condition
+    pub fn check_threshold(self, score: ScoreType, threshold: ScoreType) -> bool {
+        match self {
+            Order::LargeBetter => score > threshold,
+            Order::SmallBetter => score < threshold,
+        }
+    }
 }
 
 /// Search result
@@ -1379,6 +1381,13 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
 
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to
+    /// tenants. Applies only when the collection has a payload index with `is_tenant: true`:
+    /// the top-level `must` of the request filter must then contain a `match` (`value` or `any`)
+    /// condition on one of the tenant keys. Reads by point id are not affected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_tenant_filter: Option<bool>,
+
     // Search
     /// Max HNSW ef value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1492,6 +1501,7 @@ impl Hash for StrictModeConfig {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         } = self;
         enabled.hash(state);
         max_query_limit.hash(state);
@@ -1513,6 +1523,7 @@ impl Hash for StrictModeConfig {
         sparse_config.hash(state);
         max_payload_index_count.hash(state);
         max_resident_memory_percent.hash(state);
+        require_tenant_filter.hash(state);
     }
 }
 
@@ -1541,6 +1552,13 @@ pub struct StrictModeConfigOutput {
     /// Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
+
+    /// Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to
+    /// tenants. Applies only when the collection has a payload index with `is_tenant: true`:
+    /// the top-level `must` of the request filter must then contain a `match` (`value` or `any`)
+    /// condition on one of the tenant keys. Reads by point id are not affected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_tenant_filter: Option<bool>,
 
     // Search
     /// Max HNSW value allowed in search parameters.
@@ -1647,6 +1665,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config,
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         } = config;
 
         Self {
@@ -1671,6 +1690,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
             max_payload_index_count,
             max_resident_memory_percent,
+            require_tenant_filter,
         }
     }
 }
@@ -1753,9 +1773,9 @@ impl PayloadStorageType {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vector_name_map")]
     pub vector_data: HashMap<VectorNameBuf, VectorDataConfig>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_vector_name_map")]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     /// Defines payload storage type
@@ -1764,6 +1784,23 @@ pub struct SegmentConfig {
     /// default: `cold` in serverless-compatible mode, `pinned` otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id_tracker_memory: Option<Memory>,
+}
+
+/// Reject vector names that would escape the segment directory, see
+/// [`crate::segment_constructor::check_vector_name_path`]. Covers every reader of `segment.json`.
+fn deserialize_vector_name_map<'de, D, V>(
+    deserializer: D,
+) -> Result<HashMap<VectorNameBuf, V>, D::Error>
+where
+    D: Deserializer<'de>,
+    V: Deserialize<'de>,
+{
+    let map = HashMap::<VectorNameBuf, V>::deserialize(deserializer)?;
+    for name in map.keys() {
+        crate::segment_constructor::check_vector_name_path(name)
+            .map_err(serde::de::Error::custom)?;
+    }
+    Ok(map)
 }
 
 impl SegmentConfig {
@@ -6592,6 +6629,18 @@ mod tests {
         let cbor_bytes = serde_cbor::to_vec(&filter).unwrap();
         let deserialized: Filter = serde_cbor::from_slice(&cbor_bytes).unwrap();
         assert_eq!(filter, deserialized);
+    }
+
+    #[rstest]
+    #[case::traversal("x/../../tmp/pwned", false)]
+    #[case::absolute("/tmp/pwned", false)]
+    #[case::default("", true)]
+    #[case::plain("image", true)]
+    #[case::legacy_nested("a/b", true)]
+    fn vector_name_map_rejects_escaping_names(#[case] name: &str, #[case] ok: bool) {
+        let result =
+            deserialize_vector_name_map::<_, serde_json::Value>(serde_json::json!({ name: {} }));
+        assert_eq!(result.is_ok(), ok, "{name:?}: {result:?}");
     }
 }
 

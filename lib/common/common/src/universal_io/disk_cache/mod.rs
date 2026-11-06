@@ -171,6 +171,14 @@ impl UniversalRead for CachedSlice {
         false
     }
 
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        self.will_need(byte_ranges.map(|range| {
+            let start = usize::try_from(range.start).expect("range.start is within usize");
+            let end = usize::try_from(range.end).expect("range.end is within usize");
+            start..end
+        }));
+    }
+
     fn clear_ram_cache(&self) -> UioResult<()> {
         // TODO: issue fadvise DONTNEED on the cache file's backing mmap region.
         Ok(())

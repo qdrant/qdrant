@@ -7,7 +7,7 @@ use common::universal_io::{UniversalRead, UserData};
 use super::pages::Pages;
 use crate::Result;
 use crate::blob::Blob;
-use crate::config::GridstoreConfig;
+use crate::config::{GridstoreConfig, decompressed_len};
 use crate::error::BlobstoreError;
 use crate::tracker::{PointOffset, PointerItem, TrackerRead, ValuePointer};
 
@@ -59,6 +59,56 @@ impl<'a, V, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     ) -> Result<Cow<'_, [u8]>> {
         self.pages.read_from_pages::<P>(pointer, self.config)
     }
+
+    /// Decompressed length of each value; reads at most its length prefix.
+    pub fn read_value_lens<P, U, E>(
+        &self,
+        point_offsets: impl Iterator<Item = (U, PointOffset)>,
+        mut callback: impl FnMut(U, PointOffset, Option<usize>) -> Result<bool, E>,
+        hw_metric: Option<HwMetric>,
+    ) -> Result<bool, E>
+    where
+        P: AccessPattern,
+        U: UserData,
+        E: From<BlobstoreError>,
+    {
+        let point_offsets = point_offsets
+            .map(|(user_data, point_offset)| ((user_data, point_offset), point_offset));
+        let mut pointers = Vec::new();
+        for result in self.tracker.iter(point_offsets)? {
+            let ((user_data, point_offset), pointer) = result?;
+            match pointer {
+                PointerItem::Valid(pointer) => pointers.push(((user_data, point_offset), pointer)),
+                PointerItem::Empty | PointerItem::OutOfRange => {
+                    if !callback(user_data, point_offset, None)? {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+
+        let Some(prefix) = self.config.compression.len_prefix() else {
+            for ((user_data, point_offset), pointer) in pointers {
+                if !callback(user_data, point_offset, Some(pointer.length as usize))? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
+        };
+        self.pages.read_batch_from_pages::<P, _, _>(
+            self.config,
+            pointers.into_iter().map(|(key, pointer)| {
+                let length = pointer.length.min(prefix);
+                (key, ValuePointer { length, ..pointer })
+            }),
+            |(user_data, point_offset), bytes| {
+                if let Some(hw_metric) = hw_metric {
+                    hw_metric.bump(bytes.len());
+                }
+                callback(user_data, point_offset, Some(decompressed_len(&bytes)?))
+            },
+        )
+    }
 }
 
 impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
@@ -71,8 +121,12 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     }
 
     /// Get the value for a given point offset.
-    pub fn get_value<P: AccessPattern>(&self, point_offset: PointOffset) -> Result<Option<V>> {
-        let bytes = self.get_value_bytes::<P>(point_offset)?;
+    pub fn get_value<P: AccessPattern>(
+        &self,
+        point_offset: PointOffset,
+        hw_metric: HwMetric,
+    ) -> Result<Option<V>> {
+        let bytes = self.get_value_bytes::<P>(point_offset, hw_metric)?;
         bytes.map(|bytes| V::from_bytes(&bytes)).transpose()
     }
 
@@ -82,13 +136,14 @@ impl<'a, V: Blob, S: UniversalRead, T: TrackerRead> GridstoreView<'a, V, S, T> {
     pub fn get_value_bytes<P: AccessPattern>(
         &self,
         point_offset: PointOffset,
+        hw_metric: HwMetric,
     ) -> Result<Option<Cow<'_, [u8]>>> {
         let Some(pointer) = self.get_pointer(point_offset)? else {
             return Ok(None);
         };
 
         let raw = self.read_from_pages::<P>(pointer)?;
-        HwMetric::PayloadIoRead.bump(raw.len());
+        hw_metric.bump(raw.len());
 
         Ok(Some(self.decompress(raw)?))
     }

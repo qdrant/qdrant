@@ -219,6 +219,10 @@ where
         false
     }
 
+    fn will_need(&self, byte_ranges: impl Iterator<Item = Range<u64>>) {
+        self.cache.will_need(byte_ranges);
+    }
+
     fn clear_ram_cache(&self) -> UioResult<()> {
         self.cache.clear_ram_cache()
     }

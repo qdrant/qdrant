@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use common::bitvec::BitSlice;
 use common::types::PointOffsetType;
-use common::universal_io::{MmapFile, MmapFs, Populate};
+use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use mutable_geo_index::InMemoryGeoIndex;
 
 pub use self::builders::{GeoIndexGridstoreBuilder, GeoIndexMmapBuilder};
@@ -145,6 +145,23 @@ impl GeoIndexRead for GeoIndex {
             GeoIndex::Mutable(index) => GeoIndexRead::check_values_any(index, idx, check_fn),
             GeoIndex::Immutable(index) => GeoIndexRead::check_values_any(index, idx, check_fn),
             GeoIndex::OnDisk(index) => index.check_values_any(idx, check_fn),
+        }
+    }
+
+    fn for_each_matching_value<U: UserData>(
+        &self,
+        items: impl Iterator<Item = (U, PointOffsetType)>,
+        check_fn: impl Fn(&GeoPoint) -> bool,
+        on_match: impl FnMut(U, bool),
+    ) -> OperationResult<()> {
+        match self {
+            GeoIndex::Mutable(index) => {
+                GeoIndexRead::for_each_matching_value(index, items, check_fn, on_match)
+            }
+            GeoIndex::Immutable(index) => {
+                GeoIndexRead::for_each_matching_value(index, items, check_fn, on_match)
+            }
+            GeoIndex::OnDisk(index) => index.for_each_matching_value(items, check_fn, on_match),
         }
     }
 

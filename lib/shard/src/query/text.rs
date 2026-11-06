@@ -74,8 +74,8 @@ impl TextSearchRequestInternal {
 
 impl TextScoringQuery {
     /// The query terms, tokenized as the field's text index tokenizes a
-    /// query. A field the schema holds no text index for is an error: there
-    /// is nothing to score it with.
+    /// ranking query. A field the schema holds no text index for is an error:
+    /// there is nothing to score it with.
     pub fn tokenize(&self, schema: &PayloadIndexSchema) -> OperationResult<Vec<String>> {
         self.tokenize_field(schema.schema.get(&self.field))
     }
@@ -101,7 +101,7 @@ impl TextScoringQuery {
         };
         let tokenizer = Tokenizer::new_from_text_index_params(&params);
         let mut terms = Vec::new();
-        tokenizer.tokenize_query(&self.text, |token| terms.push(token.into_owned()));
+        tokenizer.tokenize_ranking_query(&self.text, |token| terms.push(token.into_owned()));
         Ok(terms)
     }
 }

@@ -986,7 +986,9 @@ message Expression {
 }
 
 message GeoDistance {
+  // The origin geo point to measure from
   GeoPoint origin = 1;
+  // Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used
   string to = 2;
 }
 

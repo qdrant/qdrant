@@ -86,17 +86,18 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
         Ok(Self { field_indexes })
     }
 
-    /// Index a batch of points and persist modified indexes in parallel.
+    /// Index a run of payloads at consecutive slots, starting at `start_slot`,
+    /// and persist modified indexes in parallel.
     ///
-    /// Slots must be in strictly increasing order and strictly greater than any
-    /// previously indexed slot.
-    pub fn par_append_many<'a>(
+    /// `start_slot` must be above every previously indexed slot.
+    pub fn append_many<'a>(
         &mut self,
         fs: &impl UniversalAppendFs<AppendFile = S>,
-        points: impl IntoIterator<Item = (PointOffsetType, &'a Payload)>,
+        start_slot: PointOffsetType,
+        payloads: impl IntoIterator<Item = &'a Payload>,
     ) -> OperationResult<()> {
         // Every index walks the whole run
-        let points: Vec<(PointOffsetType, &Payload)> = points.into_iter().collect();
+        let payloads: Vec<&Payload> = payloads.into_iter().collect();
         // Each index owns its files, so none of them waits on another
         let indexes = self
             .field_indexes
@@ -106,9 +107,10 @@ impl<S: UniversalAppend + 'static> UpdateOnlyStructPayloadIndex<S> {
         ambient::parallel(|handoff| {
             indexes.into_par_iter().try_for_each(|(field, index)| {
                 let _scope = handoff.enter_guard();
-                for (slot, payload) in &points {
+                for (offset, payload) in payloads.iter().enumerate() {
                     let values = payload.get_value(index.input_path(field));
-                    index.add_point(fs, *slot, &values)?;
+                    let slot = start_slot + offset as PointOffsetType;
+                    index.add_point(fs, slot, &values)?;
                 }
 
                 // Once per index per batch: for the bitmask-backed indexes a flush

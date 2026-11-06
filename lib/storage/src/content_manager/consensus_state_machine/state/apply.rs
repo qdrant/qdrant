@@ -335,9 +335,13 @@ impl ClusterState {
                 self.quota_config = *config;
             }
 
-            // Sleep on a peer, or fail at random. Neither changes the state.
+            // Staging actions only pause or interrupt application, without changing the state.
             #[cfg(feature = "staging")]
-            Action::TestSlowDown(_) | Action::TestTransientError(_) => {}
+            Action::TestSlowDown(_)
+            | Action::TestTransientError(_)
+            | Action::TestPauseShardTransferStart
+            | Action::TestPauseReshardingAbort
+            | Action::TestCrashAfterScaleDownStateClear => {}
         }
     }
 

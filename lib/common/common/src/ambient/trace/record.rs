@@ -131,10 +131,8 @@ mod tests {
 
     #[test]
     fn rootless_events_go_to_the_global_sink() {
-        if std::env::var_os("NEXTEST").is_none() {
-            // `install()` is not hermetic (touches global var). So, allow only
-            // in nextest, which runs each test in a separate process.
-            return;
+        if !crate::testing::is_process_isolated() {
+            return; // `install()` is not hermetic
         }
 
         let (_file, sink) = file_sink();

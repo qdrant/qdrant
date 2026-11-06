@@ -14,8 +14,8 @@ use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::segment::VectorData;
 use crate::segment_constructor::{
-    create_sparse_vector_storage, get_vector_index_path, get_vector_storage_path,
-    open_or_create_sparse_vector_index, open_vector_storage,
+    check_vector_name_path, create_sparse_vector_storage, get_vector_index_path,
+    get_vector_storage_path, open_or_create_sparse_vector_index, open_vector_storage,
 };
 use crate::types::{
     SeqNumberType, SparseVectorDataConfig, VectorDataConfig, VectorName, VectorStorageType,
@@ -36,6 +36,9 @@ impl Segment {
         if self.vector_data.contains_key(vector_name) {
             return Ok(false);
         }
+
+        // Replayed from WAL or pending changes, which may come from an untrusted snapshot.
+        check_vector_name_path(vector_name)?;
 
         // Start from a clean slate. A prior `delete_vector_name` removes the
         // storage/index directories, but that removal is best-effort: it logs a

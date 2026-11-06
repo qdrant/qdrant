@@ -71,7 +71,7 @@ jobs:
           target: x86_64-unknown-linux-musl
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # Namespace cache per target/profile so musl perf doesn't collide with gnu/release caches
           key: ${{ env.TARGET }}-${{ env.PROFILE }}

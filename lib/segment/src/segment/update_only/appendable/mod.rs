@@ -15,13 +15,14 @@ use super::AppendableIdTrackerState;
 use crate::common::check_named_vectors;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::fully_qualified_point::FullyQualifiedPoint;
+use crate::id_tracker::delete_versions::DeleteVersioning;
 use crate::id_tracker::mutable_id_tracker::update_only::{
     MappingOperation, UpdateOnlyAppendableIdTracker,
 };
 use crate::index::struct_payload_index::update_only::UpdateOnlyStructPayloadIndex;
 use crate::payload_storage::update_only::UpdateOnlyPayloadStorage;
 use crate::segment_constructor::get_vector_storage_path;
-use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorNameBuf};
+use crate::types::{PointIdType, SegmentConfig, SeqNumberType, VectorName, VectorNameBuf};
 use crate::vector_storage::quantized::update_only::UpdateOnlyQuantizedVectors;
 use crate::vector_storage::update_only::{UpdateOnlyVectorStorage, VectorToStore};
 
@@ -62,12 +63,12 @@ impl<Fs: UniversalAppendFs> VectorComponents<Fs> {
     /// Appends many points to the original and quantized (if any) storages in parallel
     fn append_many(
         &mut self,
-        pool: &rayon::ThreadPool,
-        points: &[FullyQualifiedPoint],
-        start_slot: u32,
         fs: &Fs,
+        start_slot: PointOffsetType,
+        points: &[FullyQualifiedPoint],
+        vector_name: &VectorName,
+        pool: &rayon::ThreadPool,
         handoff: &Handoff,
-        vector_name: &String,
     ) -> OperationResult<()> {
         let vectors: Vec<VectorToStore> = points
             .iter()
@@ -283,12 +284,7 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
 
         let (fs, store) = self.store_components(pool)?;
 
-        let slot_payloads = || {
-            inserted
-                .iter()
-                .zip(points)
-                .map(|((_, slot), point)| (*slot, &point.payload))
-        };
+        let payloads = || points.iter().map(|point| &point.payload);
 
         // Each component owns its files, so none of them waits on another
         let mut vectors_res = Ok(());
@@ -303,24 +299,28 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
                             .par_iter_mut()
                             .try_for_each(|(vector_name, components)| {
                                 components.append_many(
-                                    pool,
-                                    points,
-                                    start_slot,
                                     fs,
-                                    handoff,
+                                    start_slot,
+                                    points,
                                     vector_name,
+                                    pool,
+                                    handoff,
                                 )
                             });
                 });
 
                 s.spawn(|_| {
                     let _scope = handoff.enter_guard();
-                    payload_res = store.payload_storage.append_many(fs, slot_payloads());
+                    payload_res = store
+                        .payload_storage
+                        .append_many(fs, start_slot, payloads());
                 });
 
                 s.spawn(|_| {
                     let _scope = handoff.enter_guard();
-                    indexes_res = store.payload_indexes.par_append_many(fs, slot_payloads());
+                    indexes_res = store
+                        .payload_indexes
+                        .append_many(fs, start_slot, payloads());
                 });
             });
         });
@@ -345,13 +345,20 @@ impl<Fs: UniversalAppendFs> AppendableSegment<Fs> {
     /// again needs no retirement — its new mapping supersedes the old slot —
     /// and asking for one here retires the point outright: a delete addresses
     /// the external id, so it takes the fresh slot along with the stale one.
+    ///
+    /// `version` is the version of the batch that deletes the points, recorded
+    /// as [`delete_versions`](crate::id_tracker::delete_versions) describes.
     pub fn tombstone_points(
         &mut self,
         points: &[(PointIdType, PointOffsetType)],
+        version: SeqNumberType,
+        versioning: DeleteVersioning,
     ) -> OperationResult<()> {
         self.id_tracker.delete_points(
             &self.fs,
             points.iter().map(|(point_id, _internal_id)| *point_id),
+            version,
+            versioning,
         )
     }
 }

@@ -29,7 +29,24 @@ where
             self.init_state()?;
         }
 
-        // SAFETY: self.ready tracks whether `state` is `State::Ready`, to make reads "lock-free".
+        // SAFETY: is_ready is true
+        Ok(unsafe { self.unchecked_ready_state() })
+    }
+
+    /// Return [`State::Ready`] or None if not yet materialized.
+    pub(crate) fn maybe_ready(&self) -> Option<ReadyRef<'_, R>> {
+        if !self.is_ready() {
+            return None;
+        }
+        // SAFETY: is_ready is true
+        Some(unsafe { self.unchecked_ready_state() })
+    }
+
+    /// # Safety
+    ///
+    /// Should only be called when [`Self::is_ready`] is true: `self.ready` tracks
+    /// whether `self.state` is [`State::Ready`], to make reads "lock-free".
+    unsafe fn unchecked_ready_state(&self) -> ReadyRef<'_, R> {
         let State::Ready {
             remote,
             local,
@@ -38,7 +55,7 @@ where
         else {
             unreachable!("the `ready` flag guarantees the `Ready` variant")
         };
-        Ok(ReadyRef { remote, local })
+        ReadyRef { remote, local }
     }
 
     /// Whether the local mirror has been materialized. Cheap, lock-free; lets

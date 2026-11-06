@@ -31,10 +31,12 @@ pub use self::versions_storage::VERSION_MAPPING_FILE_NAME;
 use self::versions_storage::mmap_size;
 pub(crate) use self::versions_storage::version_mapping_path;
 use crate::common::Flusher;
-use crate::common::buffered_update_bitslice::BufferedUpdateBitSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
+use crate::id_tracker::delete_versions::{
+    BufferedDeletedSlots, DeleteLogEntry, DeleteVersioning, existing_delete_log,
+};
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{
     DELETED_POINT_VERSION, IdTracker, IdTrackerRead, PointMappingsRefEnum,
@@ -46,7 +48,8 @@ use crate::types::{PointIdType, SeqNumberType};
 pub struct ImmutableIdTracker<S: UniversalWrite> {
     path: PathBuf,
 
-    deleted_wrapper: BufferedUpdateBitSlice<S>,
+    /// The deleted mask, and the delete log a flush writes ahead of it.
+    deleted_wrapper: BufferedDeletedSlots<S>,
 
     pub(super) internal_to_version: CompressedVersions,
     internal_to_version_wrapper: SliceBufferedUpdateWrapper<S, SeqNumberType>,
@@ -103,7 +106,7 @@ where
         let mut deleted_bitvec = BitVec::new();
         deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
 
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
+        let deleted_wrapper = BufferedDeletedSlots::new(deleted_storage, segment_path);
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             fs,
@@ -175,7 +178,7 @@ where
 
         deleted_storage.flusher()()?;
 
-        let deleted_wrapper = BufferedUpdateBitSlice::new(deleted_storage);
+        let deleted_wrapper = BufferedDeletedSlots::new(deleted_storage, path);
 
         // Create mmap file for internal-to-version list
         let version_filepath = version_mapping_path(path);
@@ -224,7 +227,8 @@ where
         let file = writer.into_inner().unwrap();
         file.sync_all()?;
 
-        deleted_wrapper.flusher()()?;
+        deleted_wrapper.flusher(Vec::new(), DeleteVersioning::Legacy)()?;
+        deleted_wrapper.start_log(DeleteVersioning::from_feature_flags())?;
         internal_to_version_wrapper.flusher()()?;
 
         Ok(Self {
@@ -339,7 +343,7 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
         let internal_id = self.mappings.drop(external_id);
 
         if let Some(internal_id) = internal_id {
-            self.deleted_wrapper.set(internal_id as usize, true);
+            self.deleted_wrapper.delete(internal_id);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
 
@@ -351,16 +355,31 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
             self.mappings.drop(external_id);
         }
 
-        self.deleted_wrapper.set(internal_id as usize, true);
+        self.deleted_wrapper.delete(internal_id);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
 
         Ok(())
     }
 
-    /// Creates a flusher function, that writes the deleted points bitvec to disk.
+    /// Creates a flusher function, that writes the deleted points to the delete log, if the
+    /// segment uses one, and then the bitvec to disk. A deleted point's version is the one the
+    /// delete stamped on it.
     fn mapping_flusher(&self) -> Flusher {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher()
+        let entries = self
+            .deleted_wrapper
+            .unlogged()
+            .into_iter()
+            .map(|slot| DeleteLogEntry {
+                slot,
+                version: self
+                    .internal_to_version
+                    .get(slot)
+                    .unwrap_or(DELETED_POINT_VERSION),
+            })
+            .collect();
+        self.deleted_wrapper
+            .flusher(entries, DeleteVersioning::from_feature_flags())
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
@@ -370,11 +389,13 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![
+        let mut files = vec![
             deleted_path(&self.path),
             mappings_path(&self.path),
             version_mapping_path(&self.path),
-        ]
+        ];
+        files.extend(existing_delete_log(&self.path));
+        files
     }
 
     fn immutable_files(&self) -> Vec<PathBuf> {

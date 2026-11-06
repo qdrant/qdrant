@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use common::ambient::AmbientFutureExt;
 use common::reason::reason;
 use common::save_on_disk::SaveOnDisk;
+use itertools::Itertools;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadFieldSchema};
+use segment::types::{Condition, Filter, Match, PayloadFieldSchema};
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
 pub use shard::payload_index_schema::PayloadIndexSchema;
 
@@ -36,12 +37,6 @@ impl Collection {
     ) -> CollectionResult<Option<UpdateResult>> {
         // This function is called from consensus, so we use `wait = false`,
         // because we can't afford to wait for the result as indexing may take a long time
-        //
-        // TODO: Bypass the user write limiter here while retaining hardware measurements.
-        //
-        // This call saves the schema, then submits index updates to local shards.
-        // Those updates share the write limiter used by point writes.
-        // An exhausted limiter can reject an index update before it reaches the shard's WAL.
         self.create_payload_index_with_wait(field_name, field_schema, false)
             .await
     }
@@ -114,6 +109,68 @@ impl Collection {
     ) -> Option<(JsonPath, Vec<PayloadFieldSchema>)> {
         one_unindexed_expression_key(&self.payload_index_schema.read(), expr)
     }
+
+    /// Returns the tenant keys of the collection if `filter` does not restrict a read to tenants,
+    /// sorted. Returns `None` if it does, or if the collection has no tenant index.
+    ///
+    /// A filter restricts a read to tenants if its top-level `must` contains a `value` or `any`
+    /// match on a key indexed with `is_tenant: true`.
+    pub fn tenant_keys_if_unscoped(&self, filter: Option<&Filter>) -> Option<Vec<JsonPath>> {
+        let schema = self.payload_index_schema.read();
+
+        let mut tenant_keys = schema
+            .schema
+            .iter()
+            .filter(|(_, field_schema)| field_schema.is_tenant())
+            .map(|(key, _)| key)
+            .peekable();
+        tenant_keys.peek()?;
+
+        let scoped = filter
+            .and_then(|filter| filter.must.as_ref())
+            .into_iter()
+            .flatten()
+            .any(|condition| is_tenant_match(condition, &schema));
+        if scoped {
+            return None;
+        }
+
+        Some(tenant_keys.cloned().sorted().collect())
+    }
+}
+
+/// Whether `condition` selects specific values of a tenant-indexed key.
+fn is_tenant_match(condition: &Condition, schema: &PayloadIndexSchema) -> bool {
+    let field = match condition {
+        Condition::Field(field) => field,
+        Condition::IsEmpty(_)
+        | Condition::IsNull(_)
+        | Condition::HasId(_)
+        | Condition::HasVector(_)
+        | Condition::Slice(_)
+        | Condition::Nested(_)
+        | Condition::Filter(_)
+        | Condition::CustomIdChecker(_) => return false,
+    };
+
+    let selects_values = match &field.r#match {
+        Some(Match::Value(_) | Match::Any(_)) => true,
+        Some(
+            Match::Text(_)
+            | Match::TextAny(_)
+            | Match::Phrase(_)
+            | Match::Prefix(_)
+            | Match::Substring(_)
+            | Match::Except(_),
+        )
+        | None => false,
+    };
+
+    selects_values
+        && schema
+            .schema
+            .get(&field.key)
+            .is_some_and(PayloadFieldSchema::is_tenant)
 }
 
 enum PotentiallyUnindexed<'a> {

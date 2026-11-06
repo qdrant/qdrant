@@ -51,7 +51,7 @@ impl TableOfContent {
 
                             let number_of_peers = 1; // this is a single node deployment
                             let suggested_shard_number = collection_defaults
-                                .map(|config| config.get_shard_number(number_of_peers));
+                                .map(|config| config.get_shard_number(number_of_peers, 1));
 
                             let shard_number = operation
                                 .create_collection

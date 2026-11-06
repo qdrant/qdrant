@@ -223,7 +223,7 @@ where
         let Some(acorn) = params.and_then(|params| params.acorn) else {
             return SearchAlgorithm::Hnsw;
         };
-        if !acorn.enable || self.config.m0 == 0 {
+        if !acorn.enable {
             return SearchAlgorithm::Hnsw;
         }
         // NOTE: technically we also might want to use ACORN for unfiltered

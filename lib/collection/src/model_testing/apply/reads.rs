@@ -1424,7 +1424,7 @@ pub(super) async fn apply_query_text(
     // Query terms count once: the scorer deduplicates them. Tokenized as the shard does.
     let tokenizer = text_tokenizer(collection);
     let mut terms: Vec<String> = Vec::new();
-    tokenizer.tokenize_query(text, |token| terms.push(token.into_owned()));
+    tokenizer.tokenize_ranking_query(text, |token| terms.push(token.into_owned()));
     terms.sort();
     terms.dedup();
     let docs: AHashMap<PointIdType, TextDoc> = model

@@ -358,6 +358,16 @@ pub trait InvertedIndex {
         f: impl FnMut(&str, usize) -> OperationResult<()>,
     ) -> OperationResult<()>;
 
+    /// Each vocabulary token's length times its posting length, summed.
+    fn token_bytes(&self) -> OperationResult<u64> {
+        let mut total = 0u64;
+        self.for_each_vocab_with_postings_len(|token, postings_len| {
+            total += token.len() as u64 * postings_len as u64;
+            Ok(())
+        })?;
+        Ok(total)
+    }
+
     fn for_each_payload_block(
         &self,
         threshold: usize,

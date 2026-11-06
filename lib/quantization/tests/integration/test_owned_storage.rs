@@ -14,11 +14,10 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use common::ambient;
-    use common::mmap::Flusher;
     use common::types::PointOffsetType;
     use quantization::encoded_storage::{
-        EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, TestEncodedStorage,
-        TestEncodedStorageBuilder, default_for_each_batch,
+        EncodedStorage, EncodedStorageBuilder, TestEncodedStorage, TestEncodedStorageBuilder,
+        default_for_each_batch,
     };
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8;
@@ -30,7 +29,7 @@ mod tests {
     /// Wraps a storage so every read returns a freshly allocated `Cow::Owned` buffer.
     struct OwnedStorage(TestEncodedStorage);
 
-    impl EncodedStorageWrite for OwnedStorage {
+    impl EncodedStorage for OwnedStorage {
         fn is_in_ram_or_mmap() -> bool {
             TestEncodedStorage::is_in_ram_or_mmap()
         }
@@ -40,28 +39,16 @@ mod tests {
             inner.is_cold()
         }
 
-        fn upsert_vector(&mut self, id: PointOffsetType, vector: &[u8]) -> std::io::Result<()> {
-            let Self(inner) = self;
-            inner.upsert_vector(id, vector)
-        }
-
         fn vectors_count(&self) -> usize {
             let Self(inner) = self;
             inner.vectors_count()
-        }
-
-        fn flusher(&self) -> Flusher {
-            let Self(inner) = self;
-            inner.flusher()
         }
 
         fn heap_size_bytes(&self) -> usize {
             let Self(inner) = self;
             inner.heap_size_bytes()
         }
-    }
 
-    impl EncodedStorage for OwnedStorage {
         fn get_vector_data(&self, index: PointOffsetType) -> Cow<'_, [u8]> {
             let Self(inner) = self;
             Cow::Owned(inner.get_vector_data(index).into_owned())

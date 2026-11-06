@@ -5,7 +5,6 @@ use std::mem::{align_of, size_of};
 use std::path::PathBuf;
 
 use common::generic_consts::AccessPattern;
-use common::mmap::Flusher;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::UniversalRead;
 use quantization::turboquant::EncodedQueryTQ;
@@ -117,10 +116,6 @@ impl<S: UniversalRead> TurboVectorBlob for GraphVectors<u8, S> {
         // Files are shared with the graph. Not reporting there, assuming the
         // graph reports them.
         Vec::new()
-    }
-
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
     }
 
     fn score_query_batch(

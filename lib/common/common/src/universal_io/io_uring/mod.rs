@@ -238,6 +238,10 @@ impl UniversalRead for IoUringFile {
         false
     }
 
+    fn will_need(&self, _byte_ranges: impl Iterator<Item = Range<u64>>) {
+        // io_uring reads in parallel already, so no point for this hint.
+    }
+
     fn clear_ram_cache(&self) -> UioResult<()> {
         crate::fs::clear_disk_cache(self.file.path())?;
         Ok(())

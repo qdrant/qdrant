@@ -120,7 +120,7 @@ fn deletes_the_copies_older_than_the_published_ones() {
     let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     let stale = outdated(&shard, NEWER);
     assert_eq!(stale, ids(1..=3));
-    assert_eq!(shard.delete_points(&stale).unwrap(), 3);
+    assert_eq!(shard.delete_points(&stale, 0).unwrap(), 3);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     assert!(outdated(&reopened, NEWER).is_empty());
@@ -158,10 +158,103 @@ fn a_reload_keeps_deletes_made_after_open() {
     shard.live_reload().unwrap();
     let stale = outdated(&shard, NEWER);
     assert_eq!(stale, ids([1, 3]));
-    assert_eq!(shard.delete_points(&stale).unwrap(), 2);
+    assert_eq!(shard.delete_points(&stale, 0).unwrap(), 2);
 
     let reopened = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable])).unwrap();
     assert!(outdated(&reopened, NEWER).is_empty());
     // Points 1 to 3 from the appendable, the rest but 5 from the immutable.
     assert_eq!(exact_count(&open_follower(dir.path())), 299);
+}
+
+/// The deletes record the version they are given.
+#[cfg_attr(
+    windows,
+    ignore = "the tombstone rewrite replaces id_tracker.deleted while the lookup holds it \
+              memory-mapped, which Windows refuses"
+)]
+#[test]
+fn deletes_record_the_given_version() {
+    use common::universal_io::MmapFile;
+    use segment::id_tracker::delete_versions::{DeleteLogReader, DeleteVersioning};
+
+    let (dir, immutable) = shadowed_leader("edge-delete-only-version");
+
+    let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable]))
+        .unwrap()
+        .with_delete_versioning(DeleteVersioning::Record);
+    let stale = outdated(&shard, NEWER);
+    assert_eq!(shard.delete_points(&stale, NEWER + 7).unwrap(), 3);
+
+    let segment_path = LocalSegmentEnumerator::new(dir.path())
+        .list_segments()
+        .unwrap()
+        .remove(&immutable)
+        .unwrap()
+        .path;
+    let mut log = DeleteLogReader::<MmapFile>::new(&segment_path);
+    let versions: Vec<SeqNumberType> = log
+        .read_new(&MmapFs)
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.version)
+        .filter(|&version| version != 0)
+        .collect();
+    assert_eq!(versions, [NEWER + 7; 3]);
+}
+
+/// A follower whose waterline is below the dedup's version keeps serving the outdated copies next
+/// to the newer ones, and drops them once a waterline covers the dedup. The points stay served
+/// throughout.
+#[cfg_attr(
+    windows,
+    ignore = "the tombstone rewrite replaces id_tracker.deleted while the lookup holds it \
+              memory-mapped, which Windows refuses"
+)]
+#[test]
+fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
+    use std::sync::atomic::AtomicBool;
+
+    use common::universal_io::MmapFile;
+    use segment::id_tracker::delete_versions::DeleteVersioning;
+
+    use crate::read_only::ReadOnlyEdgeShard;
+    use crate::read_view::EdgeShardRead as _;
+    use crate::requests::count::CountRequest;
+
+    let approximate_count = |follower: &ReadOnlyEdgeShard<MmapFile>| {
+        follower
+            .count(CountRequest {
+                filter: None,
+                exact: false,
+            })
+            .unwrap()
+    };
+
+    let (dir, immutable) = shadowed_leader("edge-delete-only-gated");
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator_and_waterline(
+        MmapFs,
+        dir.path(),
+        LocalSegmentEnumerator::new(dir.path()),
+        None,
+        None,
+        Default::default(),
+        &AtomicBool::new(false),
+        Some(NEWER),
+    )
+    .unwrap();
+    assert_eq!(approximate_count(&follower), 303, "both copies of 1-3");
+
+    let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable]))
+        .unwrap()
+        .with_delete_versioning(DeleteVersioning::Record);
+    let stale = outdated(&shard, NEWER);
+    assert_eq!(shard.delete_points(&stale, NEWER + 1).unwrap(), 3);
+
+    follower.live_reload_up_to(NEWER).unwrap();
+    assert_eq!(exact_count(&follower), 300);
+    assert_eq!(approximate_count(&follower), 303, "held");
+
+    follower.live_reload_up_to(NEWER + 1).unwrap();
+    assert_eq!(exact_count(&follower), 300);
+    assert_eq!(approximate_count(&follower), 300);
 }

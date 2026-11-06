@@ -2,7 +2,8 @@ use std::borrow::Cow;
 use std::{env, io};
 
 use api::grpc::transport_channel_pool::{
-    DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
+    DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_KEEPALIVE_INTERVAL,
+    DEFAULT_KEEPALIVE_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::common::snapshots_manager::SnapshotsStorageConfig;
 use collection::operations::validation;
@@ -10,7 +11,6 @@ use collection::shards::shard::PeerId;
 use common::flags::FeatureFlags;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
-use storage::content_manager::consensus_shadow::ShadowMode;
 use storage::types::StorageConfig;
 use validator::{Validate, ValidationError};
 
@@ -169,6 +169,12 @@ pub struct P2pConfig {
     pub connection_pool_size: usize,
     #[serde(default)]
     pub enable_tls: bool,
+    #[serde(default = "default_keepalive_interval_ms")]
+    #[validate(range(min = 1))]
+    pub keepalive_interval_ms: u64,
+    #[serde(default = "default_keepalive_timeout_ms")]
+    #[validate(range(min = 1))]
+    pub keepalive_timeout_ms: u64,
 }
 
 impl Default for P2pConfig {
@@ -178,6 +184,8 @@ impl Default for P2pConfig {
             port: None,
             connection_pool_size: default_connection_pool_size(),
             enable_tls: false,
+            keepalive_interval_ms: default_keepalive_interval_ms(),
+            keepalive_timeout_ms: default_keepalive_timeout_ms(),
         }
     }
 }
@@ -198,9 +206,6 @@ pub struct ConsensusConfig {
     /// Compact WAL when it grows to enough applied entries
     #[serde(default = "default_compact_wal_entries")]
     pub compact_wal_entries: u64,
-    /// Compare consensus state machine with operation handlers
-    #[serde(default)]
-    pub shadow_state_machine: ShadowMode,
 }
 
 impl Default for ConsensusConfig {
@@ -211,7 +216,6 @@ impl Default for ConsensusConfig {
             bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
             message_timeout_ticks: default_message_timeout_tics(),
             compact_wal_entries: default_compact_wal_entries(),
-            shadow_state_machine: ShadowMode::default(),
         }
     }
 }
@@ -597,6 +601,14 @@ const fn default_connection_pool_size() -> usize {
     DEFAULT_POOL_SIZE
 }
 
+const fn default_keepalive_interval_ms() -> u64 {
+    DEFAULT_KEEPALIVE_INTERVAL.as_millis() as u64
+}
+
+const fn default_keepalive_timeout_ms() -> u64 {
+    DEFAULT_KEEPALIVE_TIMEOUT.as_millis() as u64
+}
+
 const fn default_message_timeout_tics() -> u64 {
     10
 }
@@ -663,10 +675,10 @@ fn validate_path_prefix(prefix: &str) -> Result<(), ValidationError> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::path::Path;
 
     use fs_err as fs;
-    use sealed_test::prelude::*;
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -692,27 +704,31 @@ mod tests {
             config.service.http_client_disconnect_timeout_sec,
             default_http_client_disconnect_timeout_sec()
         );
+        assert_eq!(
+            config.cluster.p2p.keepalive_interval_ms,
+            default_keepalive_interval_ms()
+        );
+        assert_eq!(
+            config.cluster.p2p.keepalive_timeout_ms,
+            default_keepalive_timeout_ms()
+        );
 
         config
             .validate()
             .expect("failed to validate default config");
     }
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "#[sealed_test] uses std::fs::copy"
-    )]
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
+    #[test]
     fn test_runtime_development_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         unsafe { env::set_var("RUN_MODE", "development") };
 
-        // `sealed_test` copies files into the same directory as the test runs in.
-        // We need them in a subdirectory.
-        fs::create_dir("config").expect("failed to create `config` subdirectory.");
-        fs::copy("config.yaml", "config/config.yaml").expect("failed to copy `config.yaml`.");
-        fs::copy("development.yaml", "config/development.yaml")
-            .expect("failed to copy `development.yaml`.");
+        for name in ["config.yaml", "development.yaml"] {
+            let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("config")
+                .join(name);
+            fs::copy(src, Path::new("config").join(name)).unwrap();
+        }
 
         // Read config
         let config = Settings::new(None).expect("failed to load development config at runtime");
@@ -724,23 +740,9 @@ mod tests {
         assert!(config.load_errors.is_empty(), "must not have load errors")
     }
 
-    /// Ensure environment variable used by consensus tests enables state machine validation
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
-    fn shadow_state_machine_from_env() {
-        unsafe { env::set_var("QDRANT__CLUSTER__CONSENSUS__SHADOW_STATE_MACHINE", "panic") };
-
-        let settings = Settings::new(None).expect("failed to load config");
-
-        assert_eq!(
-            settings.cluster.consensus.shadow_state_machine,
-            ShadowMode::Panic,
-        );
-    }
-
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn path_prefix_from_env() {
+        let Some(_cwd) = sealed_cwd() else { return };
         unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", "/qdrant/") };
 
         let settings = Settings::new(None).expect("failed to load config");
@@ -748,9 +750,9 @@ mod tests {
         assert_eq!(settings.service.path_prefix(), Some("/qdrant"));
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn invalid_path_prefix_from_env_is_ignored() {
+        let Some(_cwd) = sealed_cwd() else { return };
         for prefix in ["qdrant", "/qdrant//"] {
             unsafe { env::set_var("QDRANT__SERVICE__PATH_PREFIX", prefix) };
 
@@ -788,9 +790,9 @@ mod tests {
         }
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_no_config_files() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let non_existing_config_path = "config/non_existing_config".to_string();
 
         // Read config
@@ -804,18 +806,17 @@ mod tests {
         assert!(!config.load_errors.is_empty(), "must have load errors")
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_custom_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let path = "config/custom.yaml";
-
-        // Create custom config file
-        {
-            fs::create_dir("config").unwrap();
-            let mut custom = fs::File::create(path).unwrap();
-            write!(&mut custom, "service:\n    http_port: 9999").unwrap();
-            custom.flush().unwrap();
-        }
+        fs::write(
+            path,
+            "service:\n\
+             \x20   http_port: 9999\n\
+            ",
+        )
+        .unwrap();
 
         // Load settings with custom config
         let config = Settings::new(Some(path.into())).unwrap();
@@ -836,21 +837,19 @@ mod tests {
         );
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_custom_http_transport_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let path = "config/custom_http_transport.yaml";
-
-        {
-            fs::create_dir("config").unwrap();
-            let mut custom = fs::File::create(path).unwrap();
-            write!(
-                &mut custom,
-                "service:\n    http_keep_alive_timeout_sec: 120\n    http_client_request_timeout_sec: 45\n    http_client_disconnect_timeout_sec: 60"
-            )
-            .unwrap();
-            custom.flush().unwrap();
-        }
+        fs::write(
+            path,
+            "service:\n\
+             \x20   http_keep_alive_timeout_sec: 120\n\
+             \x20   http_client_request_timeout_sec: 45\n\
+             \x20   http_client_disconnect_timeout_sec: 60\n\
+            ",
+        )
+        .unwrap();
 
         let config = Settings::new(Some(path.into())).unwrap();
         config
@@ -862,26 +861,34 @@ mod tests {
         assert_eq!(config.service.http_client_disconnect_timeout_sec, 60);
     }
 
-    #[expect(clippy::disallowed_types, reason = "#[sealed_test] uses std::fs::File")]
-    #[sealed_test]
+    #[test]
     fn test_invalid_http_transport_config() {
+        let Some(_cwd) = sealed_cwd() else { return };
         let path = "config/invalid_http_transport.yaml";
-
-        {
-            fs::create_dir("config").unwrap();
-            let mut custom = fs::File::create(path).unwrap();
-            write!(
-                &mut custom,
-                "service:\n    http_keep_alive_timeout_sec: 0\n    http_client_request_timeout_sec: 0\n    http_client_disconnect_timeout_sec: 0"
-            )
-            .unwrap();
-            custom.flush().unwrap();
-        }
+        fs::write(
+            path,
+            "service:\n\
+             \x20   http_keep_alive_timeout_sec: 0\n\
+             \x20   http_client_request_timeout_sec: 0\n\
+             \x20   http_client_disconnect_timeout_sec: 0\n\
+            ",
+        )
+        .unwrap();
 
         let config = Settings::new(Some(path.into())).unwrap();
         assert!(
             config.validate().is_err(),
             "zero timeout values must fail validation"
         );
+    }
+
+    fn sealed_cwd() -> Option<TempDir> {
+        if !common::testing::is_process_isolated() {
+            return None; // set_current_dir is process-wide
+        }
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("config")).unwrap();
+        env::set_current_dir(dir.path()).unwrap();
+        Some(dir)
     }
 }

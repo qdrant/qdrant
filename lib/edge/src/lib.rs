@@ -49,6 +49,6 @@ pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 #[cfg(feature = "serverless")]
 pub use update_only::{
     PointAction, PointApplyKind, PointApplyRecord, PointCopy, PointPreview, PointUpdates,
-    SegmentConfigInfo, UpdateBatchOutcome, UpdateBatchPlan, UpdateBatchPreview,
-    UpdateOnlyEdgeShard,
+    SegmentConfigInfo, UpdateBatchOutcome, UpdateBatchPlan, UpdateBatchPreview, UpdateBytes,
+    UpdateMetering, UpdateOnlyEdgeShard,
 };

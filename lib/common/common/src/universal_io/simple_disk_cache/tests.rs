@@ -692,6 +692,10 @@ mod tests_mod {
         assert!(!expected_local.exists());
         assert!(!file.is_ready());
 
+        // A read hint must not force initialization either.
+        file.will_need(std::iter::once(0..16));
+        assert!(!file.is_ready());
+
         // A read within the prefetched range is served from the local mirror.
         let bytes = file
             .read::<_, u8>(ReadRange::new(10, 20), Sequential)
@@ -709,8 +713,13 @@ mod tests_mod {
             assert!(!local.fetched.lock().contains(3));
         }
 
-        // A read outside the prefetched range faults its block in on demand.
+        // Hints on cached, uncached and past-EOF ranges: only block 0 is advised.
         let start = (BLOCK_SIZE * 2) as u64;
+        let len = scn.data.len() as u64;
+        file.will_need([0..16, start..start + 30, len..len + 16].into_iter());
+        assert!(!file.state().unwrap().local.fetched.lock().contains(2));
+
+        // A read outside the prefetched range faults its block in on demand.
         let bytes = file
             .read::<_, u8>(ReadRange::new(start, 30), Sequential)
             .unwrap();
@@ -1407,6 +1416,8 @@ mod tests_async {
             false
         }
 
+        fn will_need(&self, _byte_ranges: impl Iterator<Item = Range<u64>>) {}
+
         fn clear_ram_cache(&self) -> UioResult<()> {
             Ok(())
         }
@@ -1427,6 +1438,10 @@ mod tests_async {
             tokio::task::yield_now().await;
             self.async_reads.fetch_add(1, Ordering::Relaxed);
             self.inner.read_bytes(range, access_pattern, align)
+        }
+
+        async fn populate_range_async(&self, _range: Range<u64>) -> UioResult<()> {
+            Ok(())
         }
 
         fn read_from_into_async<W, I>(

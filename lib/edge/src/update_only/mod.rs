@@ -20,7 +20,10 @@
 //! Storage is append-only throughout. Updating a point appends it in full and
 //! retires its old copy; a deletion writes no point data at all — it records
 //! a retirement in the appendable segment's mappings log, or marks the
-//! deleted-points bitmask of an immutable one.
+//! deleted-points bitmask of an immutable one. Every retirement carries the
+//! batch version, the highest operation number in the batch, so followers can
+//! tell when the copy that replaces a retired one is in view (see
+//! [`delete_versions`](segment::id_tracker::delete_versions)).
 //!
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
@@ -29,6 +32,9 @@ mod batch;
 mod holder;
 mod lifecycle;
 pub(crate) mod locate;
+mod metering;
+#[cfg(test)]
+mod metering_tests;
 mod preview;
 #[cfg(test)]
 mod tests;
@@ -40,6 +46,8 @@ use std::sync::Arc;
 use common::universal_io::UniversalAppendFs;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
+use segment::id_tracker::IdTrackerRead as _;
+use segment::id_tracker::delete_versions::DeleteVersioning;
 use segment::segment::update_only::UpdateOnlySegmentEnum;
 use segment::types::SegmentConfig;
 use uuid::Uuid;
@@ -47,6 +55,7 @@ use uuid::Uuid;
 pub use self::apply::{PointApplyKind, PointApplyRecord, UpdateBatchOutcome};
 pub use self::batch::{PointUpdates, UpdateBatchPlan};
 use self::holder::LookupSegmentHolder;
+pub use self::metering::{UpdateBytes, UpdateMetering};
 pub use self::preview::{PointAction, PointCopy, PointPreview, UpdateBatchPreview};
 
 /// A batch writer over the segments of one shard directory.
@@ -74,6 +83,12 @@ pub struct UpdateOnlyEdgeShard<Fs: UniversalAppendFs> {
     /// readers until a rebuild indexes them. `None` writes as if every point
     /// were visible.
     deferred_threshold_kb: Option<usize>,
+    /// Whether deletes are recorded with their batch version in the formats
+    /// older readers cannot parse, see [`delete_versions`]. From the
+    /// `versioned_deletes` feature flag.
+    ///
+    /// [`delete_versions`]: segment::id_tracker::delete_versions
+    delete_versioning: DeleteVersioning,
 }
 
 /// One segment's schema, as reported by
@@ -99,6 +114,16 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
     /// Number of segments the writer has open.
     pub fn segments_count(&self) -> usize {
         self.segments.read().len()
+    }
+
+    /// Live points summed over every segment, deferred ones included. A point whose older copy
+    /// stays live beside a deferred one, or after an interrupted move, counts once per copy.
+    pub fn available_point_count(&self) -> usize {
+        self.segments
+            .read()
+            .iter()
+            .map(|(_, segment)| segment.read().id_tracker.borrow().available_point_count())
+            .sum()
     }
 
     /// The append target; `None` when every appendable is claimed by a rebuild.

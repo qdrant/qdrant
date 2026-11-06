@@ -180,6 +180,8 @@ impl<A: AsyncRead + Clone> UniversalRead for BlobFile<A> {
         false
     }
 
+    fn will_need(&self, _byte_ranges: impl Iterator<Item = Range<u64>>) {}
+
     fn clear_ram_cache(&self) -> UioResult<()> {
         Ok(())
     }
@@ -840,7 +842,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_select_files_async() {
-        let _scope = ambient::test_guard();
+        let _scope = ambient::async_test_guard();
         let source = MultiMockSource::default();
         source.insert(Path::new("file1.dat"), b"hello".to_vec());
         source.insert(Path::new("file2.dat"), b"world".to_vec());

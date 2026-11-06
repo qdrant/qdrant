@@ -7530,6 +7530,11 @@
             "type": "boolean",
             "nullable": true
           },
+          "require_tenant_filter": {
+            "description": "Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants. Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must` of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys. Reads by point id are not affected.",
+            "type": "boolean",
+            "nullable": true
+          },
           "search_max_hnsw_ef": {
             "description": "Max HNSW value allowed in search parameters.",
             "type": "integer",
@@ -9763,7 +9768,7 @@
             "$ref": "#/components/schemas/VectorsConfig"
           },
           "shard_number": {
-            "description": "For auto sharding: Number of shards in collection. - Default is 1 for standalone, otherwise equal to the number of nodes - Minimum is 1\n\nFor custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
+            "description": "For auto sharding: Number of shards in collection. - If not specified, selected automatically - Minimum is 1\n\nFor custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
             "default": null,
             "type": "integer",
             "format": "uint32",
@@ -10052,6 +10057,11 @@
           },
           "unindexed_filtering_update": {
             "description": "Allow usage of unindexed fields in filtered updates (e.g. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "require_tenant_filter": {
+            "description": "Require filter-based reads (e.g. search, scroll, count, facet) to restrict results to tenants. Applies only when the collection has a payload index with `is_tenant: true`: the top-level `must` of the request filter must then contain a `match` (`value` or `any`) condition on one of the tenant keys. Reads by point id are not affected.",
             "type": "boolean",
             "nullable": true
           },
@@ -12057,8 +12067,13 @@
             "default": true,
             "type": "boolean"
           },
+          "versioned_deletes": {
+            "description": "Record the version of every delete a serverless writer makes, in formats older readers cannot parse: versioned delete entries in appendable mappings logs, and a delete log next to the deleted mask of immutable segments. Followers use the versions to never apply the delete of a moved point before they see its new copy. Gates writing only: both formats are always readable, and a delete log that exists is always appended to.",
+            "default": false,
+            "type": "boolean"
+          },
           "serverless_compatible": {
-            "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`], [`Self::compact_logstore_tracker`] and [`Self::persist_proxy_segments`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
+            "description": "Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`], [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`], [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and [`Self::versioned_deletes`].\n\nNote that this will only be applied when passed into [`init_feature_flags`].",
             "default": false,
             "type": "boolean"
           }
@@ -15576,7 +15591,7 @@
             "$ref": "#/components/schemas/GeoPoint"
           },
           "to": {
-            "description": "Payload field with the destination geo point",
+            "description": "Payload field with the destination geo point. If the field holds several geo points, the distance to the nearest one is used",
             "type": "string"
           }
         }

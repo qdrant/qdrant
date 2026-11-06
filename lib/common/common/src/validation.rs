@@ -160,8 +160,12 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
 ///
 /// Vector names become directory components on disk (see
 /// `segment_constructor::get_vector_storage_path`), so they are subject to the same
-/// rules as collection names: at most 200 bytes, and free of the
-/// filesystem-unsafe characters listed in [`INVALID_NAME_CHARS`].
+/// rules as collection names: at most 200 bytes, free of the
+/// filesystem-unsafe characters listed in [`INVALID_NAME_CHARS`], and not a dot
+/// segment (`.`, `..`). Segments refuse to load a vector named `..` (see
+/// `segment_constructor::check_vector_name_path`), so the API must not create one.
+///
+/// Unlike a collection name, a vector name may be empty: that is the unnamed vector.
 pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
     const MAX_LEN: usize = 200;
 
@@ -174,7 +178,11 @@ pub fn validate_vector_name(value: &str) -> Result<(), ValidationError> {
         return Err(err);
     }
 
-    check_invalid_name_chars(value, "vector name")
+    check_invalid_name_chars(value, "vector name")?;
+    if value.is_empty() {
+        return Ok(());
+    }
+    check_plain_dir_name(value, "vector name")
 }
 
 /// Validate the collection name contains no illegal characters, legacy edition
@@ -521,6 +529,48 @@ mod tests {
             assert!(
                 validate_collection_name_legacy(name).is_ok(),
                 "collection name {name:?} does not traverse and must stay valid",
+            );
+        }
+    }
+
+    /// The API must reject every vector name that segment loading rejects
+    /// (`segment_constructor::check_vector_name_path`). Otherwise the name is stored in the
+    /// collection config while the segments refuse it, and the shard fails to load.
+    #[test]
+    fn test_validate_vector_name() {
+        let too_long = "v".repeat(201);
+        for name in [
+            "..",
+            ".",
+            "x/../../escaped",
+            "../escaped",
+            "a/b",
+            "/abs",
+            "a\\b",
+            "a\0b",
+            too_long.as_str(),
+        ] {
+            assert!(
+                validate_vector_name(name).is_err(),
+                "vector name {name:?} must be rejected",
+            );
+        }
+
+        // The empty name is the unnamed vector. Names merely containing dots are plain
+        // directory names.
+        let longest = "v".repeat(200);
+        for name in [
+            "",
+            "image",
+            "v1.2",
+            ".hidden",
+            "..dots",
+            "...",
+            longest.as_str(),
+        ] {
+            assert!(
+                validate_vector_name(name).is_ok(),
+                "vector name {name:?} must stay valid",
             );
         }
     }

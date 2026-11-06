@@ -745,3 +745,55 @@ fn matches_the_mutable_tracker() {
     );
     assert_eq!(from_appended.internal_version(2), Some(102));
 }
+
+/// A recording writer logs its deletes with their version, a legacy one as plain deletes. Every
+/// reader that does not gate deletes applies both at once, the regular tracker included.
+#[test]
+fn versioned_deletes_read_as_deletes() {
+    use crate::id_tracker::delete_versions::DeleteVersioning;
+    use crate::id_tracker::mutable_id_tracker::change::MappingChange;
+    use crate::id_tracker::mutable_id_tracker::mappings_storage::read_mappings_iter;
+
+    let dir = Builder::new().prefix("update_only").tempdir().unwrap();
+    let mut tracker = Tracker::new(&MmapFs, dir.path(), None, [], 0).unwrap();
+    let inserted = tracker
+        .insert_operations(&MmapFs, &[Insert(num(1)), Insert(uuid(2)), Insert(num(3))])
+        .unwrap();
+    let slots: Vec<PointOffsetType> = inserted.iter().map(|(_, slot)| *slot).collect();
+    tracker
+        .set_internal_versions(&MmapFs, &slots, &[4, 4, 4])
+        .unwrap();
+
+    tracker
+        .delete_points(&MmapFs, [num(1), uuid(2)], 7, DeleteVersioning::Record)
+        .unwrap();
+    tracker
+        .delete_points(&MmapFs, [num(3)], 8, DeleteVersioning::Legacy)
+        .unwrap();
+
+    let file = fs_err::File::open(mappings_path(dir.path())).unwrap();
+    let changes: Vec<MappingChange> = read_mappings_iter(std::io::BufReader::new(file))
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        &changes[3..],
+        [
+            MappingChange::DeleteVersioned(num(1), 7),
+            MappingChange::DeleteVersioned(uuid(2), 7),
+            MappingChange::Delete(num(3)),
+        ],
+    );
+
+    let regular = MutableIdTracker::open(dir.path(), None).unwrap();
+    let reader = ReadOnlyTracker::open(&MmapFs, dir.path(), None).unwrap();
+    for id in [num(1), uuid(2), num(3)] {
+        assert_eq!(
+            regular.internal_id_with_behavior(id, DeferredBehavior::VisibleOnly),
+            None,
+        );
+        assert_eq!(
+            reader.internal_id_with_behavior(id, DeferredBehavior::VisibleOnly),
+            None,
+        );
+    }
+}
