@@ -18,6 +18,7 @@ cd "$(dirname "$0")/../"
 GENERATED=(
     ./lib/api/src/grpc/qdrant.rs
     ./lib/uio-grpc-client/src/generated/qdrant.rs
+    ./lib/uio-grpc-client/proto/storage_read_service.proto
 )
 TRIGGERS=(
     ./lib/api/src/grpc/proto/.build-trigger.proto
