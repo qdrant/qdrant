@@ -2055,9 +2055,9 @@ dependencies = [
 
 [[package]]
 name = "dial9"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11185c62245c5ff61c753ec8ec3d56341a13fe4195344ecc100ce94f780533cc"
+checksum = "2f3298a54fd82af243c9f122595762f5b0e48bd3d1ea8fe3f3eb5e95c130e881"
 dependencies = [
  "bon",
  "dial9-core",
@@ -4331,9 +4331,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.34"
+version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "loom"
