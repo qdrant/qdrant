@@ -181,7 +181,7 @@ fn deletes_record_the_given_version() {
 
     let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable]))
         .unwrap()
-        .with_delete_versioning(DeleteVersioning::Record);
+        .with_delete_versioning(DeleteVersioning::Versioned);
     let stale = outdated(&shard, NEWER);
     assert_eq!(shard.delete_points(&stale, NEWER + 7).unwrap(), 3);
 
@@ -197,7 +197,6 @@ fn deletes_record_the_given_version() {
         .unwrap()
         .into_iter()
         .map(|entry| entry.version)
-        .filter(|&version| version != 0)
         .collect();
     assert_eq!(versions, [NEWER + 7; 3]);
 }
@@ -246,7 +245,7 @@ fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
 
     let mut shard = DeleteOnlyEdgeShard::open(MmapFs, only(&dir, &[immutable]))
         .unwrap()
-        .with_delete_versioning(DeleteVersioning::Record);
+        .with_delete_versioning(DeleteVersioning::Versioned);
     let stale = outdated(&shard, NEWER);
     assert_eq!(shard.delete_points(&stale, NEWER + 1).unwrap(), 3);
 

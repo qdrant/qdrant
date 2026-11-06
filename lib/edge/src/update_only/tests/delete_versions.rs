@@ -73,7 +73,7 @@ fn delete_batch(
 fn writer(shard: &Path) -> UpdateOnlyEdgeShard<MmapFs> {
     UpdateOnlyEdgeShard::<MmapFs>::open_mmap(shard)
         .unwrap()
-        .with_delete_versioning(DeleteVersioning::Record)
+        .with_delete_versioning(DeleteVersioning::Versioned)
 }
 
 /// Move [`MOVED`] out of the immutable segment, returning that segment and the write target.

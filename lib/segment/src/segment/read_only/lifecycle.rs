@@ -237,7 +237,7 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
     ) -> OperationResult<StagedSegmentOpen<'a, S>> {
         check_process_stopped(is_stopped)?;
         let (config, payload_config) =
-            Self::first_preopen(&fs, segment_path, load_profile, gating, is_stopped)?;
+            Self::first_preopen(&fs, segment_path, load_profile, is_stopped)?;
         Ok(StagedSegmentOpen {
             fs,
             segment_path: segment_path.to_path_buf(),
@@ -258,7 +258,6 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
         fs: &impl CachedReadFs<File = S>,
         segment_path: &Path,
         load_profile: Option<&LoadProfile>,
-        gating: DeleteGating,
         is_stopped: &AtomicBool,
     ) -> OperationResult<(SegmentConfig, PayloadConfig)> {
         let SegmentState {
@@ -280,7 +279,6 @@ impl<S: UniversalReadExt<Fs: UniversalReadFsAsync> + 'static> ReadOnlySegment<S>
             fs,
             segment_path,
             id_tracker_populate(&config, fs, segment_path),
-            gating,
         )?;
 
         // Vector storages

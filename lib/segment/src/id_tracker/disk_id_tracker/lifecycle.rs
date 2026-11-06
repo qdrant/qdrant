@@ -16,7 +16,7 @@ use super::versions_file::VersionsFile;
 use super::{DiskIdTracker, VersionsFormat};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
-use crate::id_tracker::delete_versions::{BufferedDeletedSlots, DeleteVersioning};
+use crate::id_tracker::delete_versions::{BufferedDeletes, DeleteVersioning, read_delete_log};
 use crate::id_tracker::immutable_id_tracker::deleted_path;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::types::SeqNumberType;
@@ -39,6 +39,22 @@ where
     /// read into RAM (small, mutated in place), the mapping stays on disk;
     /// `populate` says whether to prime the page cache with it.
     pub fn open(fs: &S::Fs, segment_path: &Path, populate: Populate) -> OperationResult<Self> {
+        Self::open_with_delete_versioning(
+            fs,
+            segment_path,
+            populate,
+            DeleteVersioning::from_feature_flags(),
+        )
+    }
+
+    /// Like [`open`](Self::open), with deletes written as `versioning` says rather than as the
+    /// feature flags do.
+    pub(crate) fn open_with_delete_versioning(
+        fs: &S::Fs,
+        segment_path: &Path,
+        populate: Populate,
+        versioning: DeleteVersioning,
+    ) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
@@ -52,7 +68,12 @@ where
         )?;
         let mut deleted = BitVec::new();
         deleted.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
-        let deleted_wrapper = BufferedDeletedSlots::new(deleted_storage, segment_path);
+        for slot in read_delete_log(fs, segment_path)? {
+            if let Some(mut bit) = deleted.get_mut(slot as usize) {
+                *bit = true;
+            }
+        }
+        let deleted_wrapper = BufferedDeletes::new(deleted_storage, segment_path, versioning);
 
         let (internal_to_version, versions_file) = VersionsFile::open(fs, segment_path)?;
 
@@ -121,7 +142,11 @@ where
         deleted.extend_from_bitslice(mappings.deleted());
         deleted.resize(total, true);
 
-        let deleted_wrapper = BufferedDeletedSlots::new(deleted_storage, path);
+        let deleted_wrapper = BufferedDeletes::new(
+            deleted_storage,
+            path,
+            DeleteVersioning::from_feature_flags(),
+        );
 
         // Versions: one per point.
         let versions_count = internal_to_version.len().max(total);
@@ -138,9 +163,6 @@ where
         write_mapping_file(i2e_path(path), |writer| store_i2e(&mappings, writer))?;
         write_mapping_file(e2i_path(path), |writer| store_e2i(&mappings, writer))?;
         store_is_uuid(fs, path, &mappings)?;
-
-        deleted_wrapper.flusher(Vec::new(), DeleteVersioning::Legacy)()?;
-        deleted_wrapper.start_log(DeleteVersioning::from_feature_flags())?;
 
         // Just written, so cached already; the configured placement applies
         // when the built segment is loaded.

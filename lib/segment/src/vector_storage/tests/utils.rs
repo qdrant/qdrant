@@ -45,7 +45,7 @@ pub fn delete_random_vectors(
 
     for offset in offsets {
         storage.delete_vector(offset)?;
-        id_tracker.drop(crate::types::ExtendedPointId::NumId(offset.into()))?;
+        id_tracker.drop(crate::types::ExtendedPointId::NumId(offset.into()), None)?;
     }
 
     Ok(())

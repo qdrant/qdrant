@@ -42,11 +42,23 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
     ) -> OperationResult<()>;
 
     /// Drop mapping
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()>;
+    ///
+    /// `version` is the version of the operation that deletes the point, `None` for a delete no
+    /// operation made, such as a repair at load. Trackers that record delete versions store it
+    /// with the delete, see [`delete_versions`](crate::id_tracker::delete_versions).
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()>;
 
     /// Same as `drop`, but by internal ID
     /// If mapping doesn't exist, still removes( unsets ) version.
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()>;
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()>;
 
     /// Flush id mapping to disk
     fn mapping_flusher(&self) -> Flusher;
@@ -88,7 +100,7 @@ pub trait IdTracker: IdTrackerRead + fmt::Debug {
             }
         }
         for external_id in to_remove {
-            self.drop(external_id)?;
+            self.drop(external_id, None)?;
             #[cfg(debug_assertions)]
             log::debug!("dropped mapping for point {external_id} without version");
         }

@@ -1,17 +1,16 @@
-//! Read-only immutable and disk-resident trackers that gate deletes: they take deletes from the
-//! delete log once it has started, apply those at or below the gate, and hold newer ones until a
-//! release covers them.
+//! Read-only immutable and disk-resident trackers apply the union of the mask and the delete log.
+//! Gating ones apply the log's deletes at or below the gate, and hold newer ones until a release
+//! covers them.
 
 use std::path::Path;
 
-use common::bitvec::BitVec;
 use common::mmap::AdviceSetting;
 use common::stored_bitslice::StoredBitSlice;
 use common::types::{DeferredBehavior, PointOffsetType};
 use common::universal_io::{MmapFile, MmapFs, OpenOptions, Populate};
 use tempfile::{Builder, TempDir};
 
-use super::{DeleteGating, DeleteLogWriter, DeleteVersioning};
+use super::{DeleteGating, DeleteVersioning};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::disk_id_tracker::{DiskIdTracker, ReadOnlyDiskIdTracker};
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
@@ -36,9 +35,8 @@ enum Format {
 
 const FORMATS: [Format; 2] = [Format::Immutable, Format::DiskResident];
 
-/// A segment of points 0 to 9 at slots 0 to 9, point 2 deleted at build time. With `log`, its
-/// delete log is started as a recording builder starts it.
-fn segment(format: Format, log: bool) -> TempDir {
+/// A segment of points 0 to 9 at slots 0 to 9, point 2 deleted at build time.
+fn segment(format: Format) -> TempDir {
     let dir = Builder::new().prefix("held").tempdir().unwrap();
     let mut in_memory = InMemoryIdTracker::new();
     for id in 0..POINTS {
@@ -47,7 +45,7 @@ fn segment(format: Format, log: bool) -> TempDir {
             .set_internal_version(id as PointOffsetType, 3)
             .unwrap();
     }
-    in_memory.drop(num(2)).unwrap();
+    in_memory.drop(num(2), None).unwrap();
     let (versions, mappings) = in_memory.into_internal();
     let mappings = CompressedPointMappings::from_mappings(mappings);
     match format {
@@ -57,13 +55,6 @@ fn segment(format: Format, log: bool) -> TempDir {
         Format::DiskResident => {
             drop(DiskIdTracker::<MmapFile>::new(&MmapFs, dir.path(), &versions, mappings).unwrap())
         }
-    }
-    if log {
-        let mut mask = BitVec::repeat(false, POINTS as usize);
-        mask.set(2, true);
-        DeleteLogWriter::new(dir.path())
-            .append(&MmapFs, DeleteVersioning::Record, &mask, &[])
-            .unwrap();
     }
     dir
 }
@@ -76,7 +67,7 @@ fn delete(path: &Path, slots: &[PointOffsetType], version: SeqNumberType) {
         .collect();
     UpdateOnlyImmutableIdTracker::new(path, None)
         .unwrap()
-        .tombstone_points(&MmapFs, &points, version, DeleteVersioning::Record)
+        .tombstone_points(&MmapFs, &points, version, DeleteVersioning::Versioned)
         .unwrap();
 }
 
@@ -118,7 +109,7 @@ fn reload(tracker: &mut ReadOnlyIdTrackerEnum<MmapFile>) -> Vec<PointOffsetType>
 }
 
 /// Deletes at or below the gate apply at open and on reload, newer ones are held until a release
-/// covers them. The deletes from before the log apply at once.
+/// covers them. The deletes in the mask apply at once.
 #[cfg_attr(
     windows,
     ignore = "the mask rewrite replaces id_tracker.deleted while the reader holds it \
@@ -127,7 +118,7 @@ fn reload(tracker: &mut ReadOnlyIdTrackerEnum<MmapFile>) -> Vec<PointOffsetType>
 #[test]
 fn deletes_wait_for_their_gate() {
     for format in FORMATS {
-        let dir = segment(format, true);
+        let dir = segment(format);
         delete(dir.path(), &[5], 7);
         delete(dir.path(), &[6], 9);
 
@@ -153,16 +144,16 @@ fn deletes_wait_for_their_gate() {
     }
 }
 
-/// An immediate tracker applies every delete as read, like the mask says.
+/// An immediate tracker applies every delete of the log as read.
 #[cfg_attr(
     windows,
     ignore = "the mask rewrite replaces id_tracker.deleted while the reader holds it \
               memory-mapped, which Windows refuses"
 )]
 #[test]
-fn immediate_trackers_follow_the_mask() {
+fn immediate_trackers_apply_the_log() {
     for format in FORMATS {
-        let dir = segment(format, true);
+        let dir = segment(format);
         delete(dir.path(), &[5], 7);
         let mut tracker = open(format, dir.path(), DeleteGating::Immediate);
         assert_eq!(deleted(&tracker), [2, 5], "{format:?}");
@@ -172,27 +163,26 @@ fn immediate_trackers_follow_the_mask() {
     }
 }
 
-/// A gating tracker over a segment without a log follows its mask, until the log starts.
+/// An unversioned writer's deletes reach the mask and apply at once, a versioned one's reach the log
+/// and wait for their gate.
 #[cfg_attr(
     windows,
     ignore = "the mask rewrite replaces id_tracker.deleted while the reader holds it \
               memory-mapped, which Windows refuses"
 )]
 #[test]
-fn segments_without_a_log_follow_the_mask() {
+fn mask_and_log_apply_as_a_union() {
     for format in FORMATS {
-        let dir = segment(format, false);
+        let dir = segment(format);
         let mut tracker = open(format, dir.path(), DeleteGating::Held { gate: 0 });
         assert_eq!(deleted(&tracker), [2], "{format:?}");
 
-        // A legacy writer leaves the segment without a log
         UpdateOnlyImmutableIdTracker::new(dir.path(), None)
             .unwrap()
-            .tombstone_points(&MmapFs, &[(num(3), 3)], 5, DeleteVersioning::Legacy)
+            .tombstone_points(&MmapFs, &[(num(3), 3)], 5, DeleteVersioning::Unversioned)
             .unwrap();
         assert_eq!(reload(&mut tracker), [3], "{format:?}");
 
-        // A recording one starts the log, with the mask's deletes at version 0
         delete(dir.path(), &[7], 6);
         assert_eq!(reload(&mut tracker), Vec::<u32>::new());
         assert_eq!(deleted(&tracker), [2, 3], "{format:?}");
@@ -200,18 +190,21 @@ fn segments_without_a_log_follow_the_mask() {
     }
 }
 
-/// Once the log has started, a delete set in the mask without its log entry is ignored: its
-/// version is unknown, the entry comes with a later read.
+/// A delete set in the mask applies at once, also for a slot whose versioned delete is held: a
+/// later release does not report it again.
 #[cfg_attr(
     windows,
     ignore = "the mask rewrite replaces id_tracker.deleted while the reader holds it \
               memory-mapped, which Windows refuses"
 )]
 #[test]
-fn started_logs_ignore_the_mask() {
+fn mask_deletes_apply_at_once() {
     for format in FORMATS {
-        let dir = segment(format, true);
+        let dir = segment(format);
+        delete(dir.path(), &[6], 200);
         let mut tracker = open(format, dir.path(), DeleteGating::Held { gate: 100 });
+        assert_eq!(deleted(&tracker), [2], "{format:?}");
+
         StoredBitSlice::<MmapFile>::atomic_update(
             &MmapFs,
             dir.path().join("id_tracker.deleted"),
@@ -225,24 +218,26 @@ fn started_logs_ignore_the_mask() {
             None,
             |mask| {
                 mask.set(5, true);
+                mask.set(6, true);
                 Ok::<_, std::convert::Infallible>(())
             },
         )
         .unwrap()
         .unwrap();
-        assert_eq!(reload(&mut tracker), Vec::<u32>::new());
-        assert_eq!(deleted(&tracker), [2], "{format:?}");
+        assert_eq!(reload(&mut tracker), [5, 6], "{format:?}");
+        assert_eq!(deleted(&tracker), [2, 5, 6], "{format:?}");
+        assert_eq!(tracker.release_held_deletes(200), Vec::<u32>::new());
 
         let fresh = open(format, dir.path(), DeleteGating::Held { gate: 100 });
-        assert_eq!(deleted(&fresh), [2], "{format:?}");
+        assert_eq!(deleted(&fresh), [2, 5, 6], "{format:?}");
     }
 }
 
-/// A disk-resident tracker's mask file is padded past its point count: taking deletes from the
-/// log, it serves the same deleted set and counts as one reading the mask.
+/// A disk-resident tracker's mask file is padded past its point count: applying deletes from the
+/// log, it serves the same deleted set and counts whether it gates them or not.
 #[test]
 fn padded_disk_mask_reads_like_the_log() {
-    let dir = segment(Format::DiskResident, true);
+    let dir = segment(Format::DiskResident);
     delete(dir.path(), &[5, 9], 7);
     let from_log = open(
         Format::DiskResident,
@@ -264,4 +259,37 @@ fn padded_disk_mask_reads_like_the_log() {
         from_mask.deleted_point_count(),
     );
     assert!(from_log.deleted_point_bitslice().len() > POINTS as usize);
+}
+
+/// A reload that fails to read the mask consumes none of the log: the next reload applies the
+/// deletes the failed one read from the log, and the held ones it ingested still release.
+#[cfg_attr(
+    windows,
+    ignore = "renames id_tracker.deleted while the reader holds it memory-mapped, which Windows \
+              refuses"
+)]
+#[test]
+fn failed_reload_keeps_the_log_deletes() {
+    for format in FORMATS {
+        let dir = segment(format);
+        let mut tracker = open(format, dir.path(), DeleteGating::Held { gate: 7 });
+        assert_eq!(deleted(&tracker), [2], "{format:?}");
+
+        delete(dir.path(), &[5], 7);
+        delete(dir.path(), &[6], 9);
+
+        let mask = dir.path().join("id_tracker.deleted");
+        let moved = dir.path().join("id_tracker.deleted.moved");
+        fs_err::rename(&mask, &moved).unwrap();
+        assert!(
+            tracker.live_reload(&MmapFs, None).is_err(),
+            "{format:?}: a reload without its mask fails",
+        );
+        assert_eq!(deleted(&tracker), [2], "{format:?}");
+        fs_err::rename(&moved, &mask).unwrap();
+
+        assert_eq!(reload(&mut tracker), [5], "{format:?}");
+        assert_eq!(deleted(&tracker), [2, 5], "{format:?}");
+        assert_eq!(tracker.release_held_deletes(9), [6], "{format:?}");
+    }
 }

@@ -7,15 +7,16 @@ use common::bitvec::BitVec;
 use common::types::PointOffsetType;
 use common::universal_io::UniversalAppendFs;
 
-use super::deleted_storage::tombstone_points_in_stored_mask;
+use super::deleted_storage::tombstone_points_in_segment;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::delete_versions::{DeleteLogWriter, DeleteVersioning};
 use crate::types::{PointIdType, SeqNumberType};
 
-/// The mapping is frozen, so the one thing to write is the stored deleted
-/// mask ([`DELETED_FILE_NAME`](super::DELETED_FILE_NAME)), and the delete log
-/// ahead of it. Needs only reads, appends and [`atomic_save`] from the
-/// backend, so object stores qualify.
+/// The mapping is frozen, so the one thing to write is the deletes: to the
+/// delete log, or the stored deleted mask
+/// ([`DELETED_FILE_NAME`](super::DELETED_FILE_NAME)) without delete versions.
+/// Needs only reads, appends and [`atomic_save`] from the backend, so object
+/// stores qualify.
 ///
 /// [`atomic_save`]: common::universal_io::UniversalWriteFs::atomic_save
 pub struct UpdateOnlyImmutableIdTracker {
@@ -23,7 +24,7 @@ pub struct UpdateOnlyImmutableIdTracker {
     /// Consumed by the first [`tombstone_points`](Self::tombstone_points) in
     /// place of reading the mask file.
     deleted: Option<BitVec>,
-    /// Records the deletes ahead of the mask.
+    /// Records the deletes with their versions.
     log: DeleteLogWriter,
 }
 
@@ -38,13 +39,8 @@ impl UpdateOnlyImmutableIdTracker {
         })
     }
 
-    /// Retire the given points by marking the slots they occupy in the stored
-    /// deleted mask — the data on those slots stays. The mask is replaced
-    /// whole, see [`StoredBitSlice::atomic_update`]. The deletes go to the
-    /// delete log first, with `version`, see
-    /// [`delete_versions`](crate::id_tracker::delete_versions).
-    ///
-    /// [`StoredBitSlice::atomic_update`]: common::stored_bitslice::StoredBitSlice::atomic_update
+    /// Retire the given points — the data on their slots stays — in the delete
+    /// log or the deleted mask, see [`tombstone_points_in_segment`].
     pub fn tombstone_points<Fs>(
         &mut self,
         fs: &Fs,
@@ -55,7 +51,7 @@ impl UpdateOnlyImmutableIdTracker {
     where
         Fs: UniversalAppendFs,
     {
-        tombstone_points_in_stored_mask(
+        tombstone_points_in_segment(
             fs,
             &self.segment_path,
             &mut self.deleted,

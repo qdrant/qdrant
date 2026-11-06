@@ -12,23 +12,18 @@ use crate::types::SeqNumberType;
 
 impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     /// Stage the fresh deleted-bitslice handle [`live_reload`](Self::live_reload) swaps in, and the
-    /// next read of the delete log when deletes are gated.
+    /// next read of the delete log.
     pub fn live_preload(
         &self,
         fs: &impl CachedReadFs<File = S>,
     ) -> OperationResult<Vec<PreloadFuture>> {
-        let mut preloads = Vec::new();
-        if let Some(gated) = &self.gated {
-            preloads.extend(gated.live_preload(fs)?);
-            if gated.is_started() {
-                return Ok(preloads);
-            }
-        }
+        let preloads = self.delete_log.live_preload(fs)?;
         fs.reschedule_open(&deleted_path(&self.path), Some(Self::open_options()), None);
         Ok(preloads)
     }
 
-    /// Re-read the on-disk `deleted` bitslice and apply points deleted since the last reload.
+    /// Apply points deleted since the last reload, in the delete log or in the on-disk `deleted`
+    /// bitslice.
     ///
     /// The bitslice is a fixed-size bitmap whose bits the writer flips in
     /// place, which the held handle's `reopen()` — an append-only-growth
@@ -36,8 +31,7 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     /// opened instead (a fresh open always mirrors the current remote bytes),
     /// diffed against the tracker's current state, and swapped in.
     ///
-    /// A tracker that gates deletes reads the delete log instead, once it holds any entry: deletes
-    /// at or below the gate apply, newer ones are held until
+    /// The log's deletes at or below the gate apply, newer ones are held until
     /// [`release_held_deletes`](Self::release_held_deletes).
     ///
     /// An immutable tracker only ever loses points (no inserts), so `inserted` is always empty.
@@ -46,41 +40,37 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
     ) -> OperationResult<LiveReloadResult> {
-        if let Some(gated) = self.gated.as_mut()
-            && let Some(slots) = gated.read_new(fs)?
-        {
-            return Ok(LiveReloadResult {
-                inserted: Vec::new(),
-                deleted: self.delete_slots(slots),
-            });
-        }
-
-        let Some(fresh) = StoredBitSlice::<S>::open(
+        // Every fallible read comes before any state changes, and the log, whose read advances
+        // its cursor, comes last: a failed reload consumes nothing, and the next one reads the
+        // same deletes again.
+        let fresh = StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
             Self::open_options(),
             Default::default(),
         )
-        .ok_unchanged()?
-        else {
-            return Ok(LiveReloadResult {
-                inserted: Vec::new(),
-                deleted: Vec::new(),
-            });
-        };
+        .ok_unchanged()?;
 
         // `mappings` already reflects every previously reported deletion, so
         // it is the diff baseline: a set bit not yet dropped there is new.
-        let newly_deleted: Vec<PointOffsetType> = {
-            let deleted = fresh.read_all()?;
-            deleted
+        let mut newly_deleted: Vec<PointOffsetType> = match &fresh {
+            Some(fresh) => fresh
+                .read_all()?
                 .iter_ones()
                 .map(|internal_id| internal_id as PointOffsetType)
                 .filter(|&internal_id| !self.mappings.is_deleted_point(internal_id))
-                .collect()
+                .collect(),
+            None => Vec::new(),
         };
-        self.deleted = fresh;
 
+        newly_deleted.extend(self.delete_log.read_new(fs)?);
+
+        if let Some(fresh) = fresh {
+            self.deleted = fresh;
+        }
+
+        newly_deleted.sort_unstable();
+        newly_deleted.dedup();
         Ok(LiveReloadResult {
             inserted: Vec::new(),
             deleted: self.delete_slots(newly_deleted),
@@ -90,18 +80,13 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
     /// Whether [`release_held_deletes`](Self::release_held_deletes) with this gate would release
     /// anything.
     pub fn releases_held_deletes(&self, gate: SeqNumberType) -> bool {
-        self.gated
-            .as_ref()
-            .is_some_and(|gated| gated.releases_any(gate))
+        self.delete_log.releases_any(gate)
     }
 
     /// Raise the gate to `gate` and apply the held deletes it now covers. Returns the offsets they
     /// removed, sorted ascending.
     pub fn release_held_deletes(&mut self, gate: SeqNumberType) -> Vec<PointOffsetType> {
-        let Some(gated) = self.gated.as_mut() else {
-            return Vec::new();
-        };
-        let slots = gated.release(gate);
+        let slots = self.delete_log.release(gate);
         self.delete_slots(slots)
     }
 

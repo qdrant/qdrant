@@ -18,7 +18,7 @@ use crate::common::operation_error::OperationResult;
 /// the last complete frame, so a frame still in flight is picked up by a later read.
 ///
 /// The file may be absent, or hold an incomplete header while its first append is in flight: the
-/// segment then uses no delete log yet, see [`is_started`](Self::is_started).
+/// log then holds no deletes yet.
 #[derive(Debug)]
 pub struct DeleteLogReader<S: UniversalRead> {
     path: PathBuf,
@@ -37,7 +37,7 @@ impl<S: UniversalRead> DeleteLogReader<S> {
         }
     }
 
-    /// Whether the header was read: from then on the segment's deletes are all in the log.
+    /// Whether the header was read.
     pub fn is_started(&self) -> bool {
         self.read_to > 0
     }

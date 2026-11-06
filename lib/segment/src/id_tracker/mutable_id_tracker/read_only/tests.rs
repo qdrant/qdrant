@@ -82,7 +82,7 @@ fn test_open_matches_mutable_tracker() {
     insert(&mut mutable, 100.into(), 0, 10);
     insert(&mut mutable, 200.into(), 1, 11);
     insert(&mut mutable, 300.into(), 2, 12);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
@@ -149,7 +149,7 @@ fn test_live_reload_reports_inserts_and_deletes() {
     // Append more changes: insert two new points, delete one existing point
     insert(&mut mutable, 400.into(), 3, 13);
     insert(&mut mutable, 500.into(), 4, 14);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let result = reload(&mut read_only, None);
@@ -177,7 +177,7 @@ fn test_live_reload_insert_then_delete_within_batch() {
 
     // Insert a brand-new point and delete it again, all before the read-only view reloads.
     insert(&mut mutable, 200.into(), 1, 11);
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let result = reload(&mut read_only, None);
@@ -703,7 +703,7 @@ fn test_upsert_keeps_old_offset_until_publish() {
     let mut read_only = ReadOnlyTracker::open(&MmapFs, segment_dir.path(), None).unwrap();
 
     // Move point 100 from offset 0 to offset 1
-    mutable.drop(100.into()).unwrap();
+    mutable.drop(100.into(), None).unwrap();
     insert(&mut mutable, 100.into(), 1, 11);
     flush(&mutable);
 
@@ -768,7 +768,7 @@ fn test_retry_after_unpublished_insert_was_deleted() {
     assert_eq!(pending.inserted, vec![1]);
 
     // The writer deletes the point before the retry
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     // The staged offset is reported as deleted, so a component that already ingested it drops it
@@ -847,7 +847,7 @@ fn test_probe_changes_anchors_max_committed_id_and_detects_pure_delete() {
     assert_eq!(read_only.available_point_count(), 3);
 
     // 3. Pure delete without inserts: versions.dat does not grow, but mappings.dat changed
-    mutable.drop(200.into()).unwrap();
+    mutable.drop(200.into(), None).unwrap();
     flush(&mutable);
 
     let probe = futures::executor::block_on(read_only.probe_committed(&MmapFs)).unwrap();

@@ -24,7 +24,7 @@ use common::universal_io::{
 use fs_err::File;
 
 pub use self::deleted_storage::DELETED_FILE_NAME;
-pub(crate) use self::deleted_storage::{deleted_path, tombstone_points_in_stored_mask};
+pub(crate) use self::deleted_storage::{deleted_path, tombstone_points_in_segment};
 pub use self::mappings_storage::{MAPPINGS_FILE_NAME, mappings_path};
 use self::mappings_storage::{load_mapping, store_mapping};
 pub use self::versions_storage::VERSION_MAPPING_FILE_NAME;
@@ -35,7 +35,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::delete_versions::{
-    BufferedDeletedSlots, DeleteLogEntry, DeleteVersioning, existing_delete_log,
+    BufferedDeletes, DeleteVersioning, existing_delete_log, read_delete_log,
 };
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{
@@ -48,8 +48,9 @@ use crate::types::{PointIdType, SeqNumberType};
 pub struct ImmutableIdTracker<S: UniversalWrite> {
     path: PathBuf,
 
-    /// The deleted mask, and the delete log a flush writes ahead of it.
-    deleted_wrapper: BufferedDeletedSlots<S>,
+    /// The deletes made since the last flush, for the delete log or the mask. The segment's
+    /// deletes are the union of the two.
+    deleted_wrapper: BufferedDeletes<S>,
 
     pub(super) internal_to_version: CompressedVersions,
     internal_to_version_wrapper: SliceBufferedUpdateWrapper<S, SeqNumberType>,
@@ -91,6 +92,16 @@ where
     }
 
     pub fn open(fs: &S::Fs, segment_path: &Path) -> OperationResult<Self> {
+        Self::open_with_delete_versioning(fs, segment_path, DeleteVersioning::from_feature_flags())
+    }
+
+    /// Like [`open`](Self::open), with deletes written as `versioning` says rather than as the
+    /// feature flags do.
+    pub(crate) fn open_with_delete_versioning(
+        fs: &S::Fs,
+        segment_path: &Path,
+        versioning: DeleteVersioning,
+    ) -> OperationResult<Self> {
         let deleted_storage = StoredBitSlice::open(
             fs,
             deleted_path(segment_path),
@@ -105,8 +116,13 @@ where
 
         let mut deleted_bitvec = BitVec::new();
         deleted_bitvec.extend_from_bitslice(deleted_storage.read_all()?.as_ref());
+        for slot in read_delete_log(fs, segment_path)? {
+            if let Some(mut bit) = deleted_bitvec.get_mut(slot as usize) {
+                *bit = true;
+            }
+        }
 
-        let deleted_wrapper = BufferedDeletedSlots::new(deleted_storage, segment_path);
+        let deleted_wrapper = BufferedDeletes::new(deleted_storage, segment_path, versioning);
 
         let internal_to_version_file = TypedStorage::<S, SeqNumberType>::open(
             fs,
@@ -178,7 +194,11 @@ where
 
         deleted_storage.flusher()()?;
 
-        let deleted_wrapper = BufferedDeletedSlots::new(deleted_storage, path);
+        let deleted_wrapper = BufferedDeletes::new(
+            deleted_storage,
+            path,
+            DeleteVersioning::from_feature_flags(),
+        );
 
         // Create mmap file for internal-to-version list
         let version_filepath = version_mapping_path(path);
@@ -227,8 +247,6 @@ where
         let file = writer.into_inner().unwrap();
         file.sync_all()?;
 
-        deleted_wrapper.flusher(Vec::new(), DeleteVersioning::Legacy)()?;
-        deleted_wrapper.start_log(DeleteVersioning::from_feature_flags())?;
         internal_to_version_wrapper.flusher()()?;
 
         Ok(Self {
@@ -339,47 +357,41 @@ impl<S: UniversalWrite + Debug + Send + Sync + 'static> IdTracker for ImmutableI
         panic!("Trying to call a mutating function (`set_link`) of an immutable id tracker");
     }
 
-    fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
+    fn drop(
+        &mut self,
+        external_id: PointIdType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         let internal_id = self.mappings.drop(external_id);
 
         if let Some(internal_id) = internal_id {
-            self.deleted_wrapper.delete(internal_id);
+            self.deleted_wrapper.delete(internal_id, version);
             self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
         }
 
         Ok(())
     }
 
-    fn drop_internal(&mut self, internal_id: PointOffsetType) -> OperationResult<()> {
+    fn drop_internal(
+        &mut self,
+        internal_id: PointOffsetType,
+        version: Option<SeqNumberType>,
+    ) -> OperationResult<()> {
         if let Some(external_id) = self.mappings.external_id(internal_id) {
             self.mappings.drop(external_id);
         }
 
-        self.deleted_wrapper.delete(internal_id);
+        self.deleted_wrapper.delete(internal_id, version);
         self.set_internal_version(internal_id, DELETED_POINT_VERSION)?;
 
         Ok(())
     }
 
-    /// Creates a flusher function, that writes the deleted points to the delete log, if the
-    /// segment uses one, and then the bitvec to disk. A deleted point's version is the one the
-    /// delete stamped on it.
+    /// Creates a flusher function, that writes the deleted points to the delete log, with the
+    /// version each was deleted at, or to the bitvec on disk.
     fn mapping_flusher(&self) -> Flusher {
         // Only flush deletions because mappings are immutable
-        let entries = self
-            .deleted_wrapper
-            .unlogged()
-            .into_iter()
-            .map(|slot| DeleteLogEntry {
-                slot,
-                version: self
-                    .internal_to_version
-                    .get(slot)
-                    .unwrap_or(DELETED_POINT_VERSION),
-            })
-            .collect();
-        self.deleted_wrapper
-            .flusher(entries, DeleteVersioning::from_feature_flags())
+        self.deleted_wrapper.flusher()
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
