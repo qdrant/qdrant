@@ -144,15 +144,20 @@ impl GroupByDriver {
 
                     // Construct filter to only include unsatisfied groups
                     let unsatisfied_groups = self.aggregator.keys_of_unfilled_best_groups();
-                    let match_any = match_on(&self.group_by, &unsatisfied_groups);
-                    if !match_any.is_empty() {
-                        merge_filter(
-                            &mut request.filter,
-                            Filter {
-                                must: Some(match_any),
-                                ..Default::default()
-                            },
-                        );
+                    let mut match_any = match_on(&self.group_by, &unsatisfied_groups);
+                    // `match_on` yields one `Match::Any` per key type. With mixed keys a point
+                    // belongs to an unsatisfied group when it matches any one of them, so they
+                    // are joined with `should`, nested to stay apart from the caller's clauses.
+                    let condition = match match_any.len() {
+                        0 => None,
+                        1 => match_any.pop(),
+                        _ => Some(Condition::Filter(Filter {
+                            should: Some(match_any),
+                            ..Default::default()
+                        })),
+                    };
+                    if let Some(condition) = condition {
+                        merge_filter(&mut request.filter, Filter::new_must(condition));
                     }
 
                     self.exclude_aggregated_points(&mut request);
@@ -339,6 +344,47 @@ mod tests {
 
         let groups = driver.distill();
         assert_eq!(groups.len(), 2);
+    }
+
+    #[test]
+    fn filling_matches_any_key_type() {
+        let mut driver = driver(RequestBudget {
+            collect: 1,
+            fill: 1,
+        });
+
+        // Collect round: a string-keyed and an integer-keyed group, neither full.
+        driver.next_request().unwrap();
+        driver.add_points(&[
+            point(1, 2.0, "a"),
+            ScoredPoint {
+                payload: Some(payload_json! { "g": 1 }),
+                ..point(2, 1.0, "")
+            },
+        ]);
+
+        // The filling request has to accept a point from either group: the two
+        // per-type matches are alternatives, not a conjunction.
+        let request = driver.next_request().unwrap();
+        let must = request.filter.unwrap().must.unwrap();
+        let group_by: JsonPath = "g".parse().unwrap();
+        let group_keys = must
+            .iter()
+            .find_map(|condition| match condition {
+                Condition::Filter(filter) => filter.should.as_ref(),
+                _ => None,
+            })
+            .expect("group keys joined with should");
+        assert_eq!(group_keys.len(), 2);
+        assert!(group_keys.iter().all(|condition| matches!(
+            condition,
+            Condition::Field(field) if field.key == group_by
+        )));
+        assert!(
+            !must
+                .iter()
+                .any(|condition| matches!(condition, Condition::Field(_)))
+        );
     }
 
     #[test]
