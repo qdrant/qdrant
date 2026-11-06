@@ -30,6 +30,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::quota::QuotaStatus;
 use storage::types::ClusterStatus;
 
+use crate::actix::api::quota_api::request::UpdateQuotas;
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::distributed_telemetry::DistributedTelemetryData;
 use crate::common::update::{CreateFieldIndex, UpdateOperations};
@@ -93,6 +94,7 @@ struct AllDefinitions {
     bq: DistributedTelemetryData,
     br: segment::data_types::vector_name_config::VectorNameConfig,
     bs: QuotaStatus,
+    bt: UpdateQuotas,
 }
 
 fn save_schema<T: JsonSchema>() {

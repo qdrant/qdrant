@@ -1042,7 +1042,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/QuotaConfig"
+                "$ref": "#/components/schemas/UpdateQuotas"
               }
             }
           }
@@ -17407,6 +17407,43 @@
             "description": "Used space of this node's storage filesystem, as a percentage of its capacity.",
             "type": "integer",
             "format": "uint8",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "UpdateQuotas": {
+        "description": "Cluster-wide limits on node resources, replacing the current configuration.\n\nLimits are enforced only while `enabled` is true, and an unset limit is not enforced. A node that reaches either limit refuses all writes except point deletes. Unknown fields are ignored for forward compatibility.",
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "description": "Whether the limits below are enforced.",
+            "type": "boolean"
+          },
+          "max_resident_memory_percent": {
+            "description": "Limit on process resident memory, as a percentage of total memory (of the cgroup memory limit on Linux, if one is set). `100` trips only when memory is full.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_disk_usage_percent": {
+            "description": "Limit on used space of the filesystem holding the storage directory, as a percentage of its capacity. `100` trips only when the disk is full.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
+            "minimum": 1,
+            "nullable": true
+          },
+          "release_margin_percent": {
+            "description": "How many percentage points below a limit usage must fall before a node that reached it accepts writes again. `0` accepts writes as soon as usage is under the limit. Unset uses the built-in default, currently 5.",
+            "type": "integer",
+            "format": "uint8",
+            "maximum": 100,
             "minimum": 0,
             "nullable": true
           }

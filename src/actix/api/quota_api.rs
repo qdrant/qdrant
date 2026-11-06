@@ -15,8 +15,11 @@ use storage::quota::{PeerQuotaUsage, QuotaConfig, QuotaUsage};
 use storage::rbac::AccessRequirements;
 use validator::Validate;
 
+use crate::actix::api::quota_api::request::UpdateQuotas;
 use crate::actix::auth::ActixAuth;
 use crate::actix::helpers;
+
+pub mod request;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct QuotaParams {
@@ -110,7 +113,7 @@ async fn update_quotas(
     dispatcher: web::Data<Dispatcher>,
     ActixAuth(auth): ActixAuth,
     Query(params): Query<QuotaParams>,
-    Json(config): Json<QuotaConfig>,
+    Json(request): Json<UpdateQuotas>,
 ) -> HttpResponse {
     // Not a collection level request.
     let pass = new_unchecked_verification_pass();
@@ -120,7 +123,7 @@ async fn update_quotas(
 
         dispatcher
             .toc(&auth, &pass)
-            .update_quota_config(config, params.wait)
+            .update_quota_config(QuotaConfig::from(request), params.wait)
             .await?;
 
         Ok(true)
