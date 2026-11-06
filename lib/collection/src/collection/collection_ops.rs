@@ -446,6 +446,17 @@ impl Collection {
         self.collection_config.read().await.params.vectors.clone()
     }
 
+    pub async fn sparse_vectors_config(
+        &self,
+    ) -> Option<std::collections::BTreeMap<segment::types::VectorNameBuf, SparseVectorParams>> {
+        self.collection_config
+            .read()
+            .await
+            .params
+            .sparse_vectors
+            .clone()
+    }
+
     pub async fn info(
         &self,
         shard_selection: &ShardSelectorInternal,
