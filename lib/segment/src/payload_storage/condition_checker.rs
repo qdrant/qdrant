@@ -648,4 +648,99 @@ mod tests {
         assert!(is_not_null.check(&number));
         assert!(is_not_null.check(&bool));
     }
+
+    #[test]
+    fn test_float_range_precision_matching() {
+        // Test float payload + float range
+        let condition_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 2251799813685247.0,
+                "lte": 2251799813685247.0
+            }
+        }"#;
+        let condition: FieldCondition = serde_json::from_str(condition_json).unwrap();
+
+        let payload_exact: serde_json::Value = serde_json::from_str("2251799813685247.0").unwrap();
+        let payload_adjacent: serde_json::Value =
+            serde_json::from_str("2251799813685246.0").unwrap();
+        let payload_int: serde_json::Value = serde_json::from_str("2251799813685247").unwrap();
+        let payload_int_adjacent: serde_json::Value =
+            serde_json::from_str("2251799813685246").unwrap();
+
+        assert!(
+            condition.check(&payload_exact),
+            "exact float payload must match"
+        );
+        assert!(
+            !condition.check(&payload_adjacent),
+            "adjacent float payload must not match"
+        );
+        assert!(
+            condition.check(&payload_int),
+            "exact int payload must match float range"
+        );
+        assert!(
+            !condition.check(&payload_int_adjacent),
+            "adjacent int payload must not match float range"
+        );
+
+        // Test 9007199254740991 boundary
+        let cond_9007_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 9007199254740991.0,
+                "lte": 9007199254740991.0
+            }
+        }"#;
+        let cond_9007: FieldCondition = serde_json::from_str(cond_9007_json).unwrap();
+        let p_9007_1: serde_json::Value = serde_json::from_str("9007199254740991.0").unwrap();
+        let p_9007_0: serde_json::Value = serde_json::from_str("9007199254740990.0").unwrap();
+
+        assert!(
+            cond_9007.check(&p_9007_1),
+            "9007199254740991.0 must match its own range"
+        );
+        assert!(
+            !cond_9007.check(&p_9007_0),
+            "9007199254740990.0 must NOT match range for 9007199254740991.0"
+        );
+
+        // Test negative zero matching
+        let cond_zero_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 0.0,
+                "lte": 0.0
+            }
+        }"#;
+        let cond_zero: FieldCondition = serde_json::from_str(cond_zero_json).unwrap();
+        let p_neg_zero: serde_json::Value = serde_json::from_str("-0.0").unwrap();
+        let p_pos_zero: serde_json::Value = serde_json::from_str("0.0").unwrap();
+        assert!(cond_zero.check(&p_neg_zero), "-0.0 must match [0.0, 0.0]");
+        assert!(cond_zero.check(&p_pos_zero), "0.0 must match [0.0, 0.0]");
+
+        // Test 1 ULP adjacent matching around 1.0
+        let cond_one_json = r#"{
+            "key": "num",
+            "range": {
+                "gte": 1.0,
+                "lte": 1.0
+            }
+        }"#;
+        let cond_one: FieldCondition = serde_json::from_str(cond_one_json).unwrap();
+        let p_one: serde_json::Value = serde_json::from_str("1.0").unwrap();
+        let p_one_plus_eps: serde_json::Value = serde_json::from_str("1.0000000000000002").unwrap();
+        let p_one_minus_eps: serde_json::Value =
+            serde_json::from_str("0.9999999999999999").unwrap();
+        assert!(cond_one.check(&p_one), "1.0 must match its range");
+        assert!(
+            !cond_one.check(&p_one_plus_eps),
+            "1.0 + EPSILON must NOT match [1.0, 1.0]"
+        );
+        assert!(
+            !cond_one.check(&p_one_minus_eps),
+            "0.9999999999999999 (largest f64 below 1.0) must NOT match [1.0, 1.0]"
+        );
+    }
 }
