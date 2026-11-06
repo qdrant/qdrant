@@ -28,7 +28,7 @@ pub fn total_memory_bytes() -> u64 {
 pub struct Mem {
     #[cfg(target_os = "linux")]
     cgroups: Option<cgroups_mem::CgroupsMem>,
-    sysinfo: sysinfo_mem::SysinfoMem,
+    sysinfo: Option<sysinfo_mem::SysinfoMem>,
 }
 
 impl Mem {
@@ -47,7 +47,9 @@ impl Mem {
             cgroups.refresh();
         }
 
-        self.sysinfo.refresh();
+        if let Some(sysinfo) = &mut self.sysinfo {
+            sysinfo.refresh();
+        }
     }
 
     pub fn total_memory_bytes(&self) -> u64 {
@@ -58,7 +60,9 @@ impl Mem {
             return memory_limit_bytes;
         }
 
-        self.sysinfo.total_memory_bytes()
+        self.sysinfo
+            .as_ref()
+            .map_or(0, sysinfo_mem::SysinfoMem::total_memory_bytes)
     }
 
     pub fn available_memory_bytes(&self) -> u64 {
@@ -69,7 +73,9 @@ impl Mem {
             return memory_limit_bytes.saturating_sub(cgroups.used_memory_bytes());
         }
 
-        self.sysinfo.available_memory_bytes()
+        self.sysinfo
+            .as_ref()
+            .map_or(0, sysinfo_mem::SysinfoMem::available_memory_bytes)
     }
 }
 
@@ -381,12 +387,12 @@ mod sysinfo_mem {
     }
 
     impl SysinfoMem {
-        pub fn new() -> Self {
+        pub fn new() -> Option<Self> {
             let system = System::new_with_specifics(
                 RefreshKind::nothing().with_memory(MemoryRefreshKind::everything()),
             )
-            .expect("failed to initialize sysinfo System");
-            Self { system }
+            .ok()?;
+            Some(Self { system })
         }
 
         pub fn refresh(&mut self) {
