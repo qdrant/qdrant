@@ -14,6 +14,7 @@ use code::CodeTokenizer;
 use multilingual::MultilingualTokenizer;
 pub use stemmer::Stemmer;
 pub use tokens_processor::TokensProcessor;
+use tokens_processor::truncate_to_max_token_chars;
 
 use crate::data_types::index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::inverted_index::ARRAY_BOUNDARY_SENTINEL;
@@ -110,8 +111,10 @@ impl PrefixTokenizer {
         text.split(|c| !char::is_alphanumeric(c))
             .filter(|token| !token.is_empty())
             .for_each(|word| {
+                let word_cow = truncate_to_max_token_chars(Cow::Borrowed(word));
+
                 // Apply ASCII folding if enabled
-                let mut word_cow = tokens_processor.fold_if_enabled(Cow::Borrowed(word));
+                let mut word_cow = tokens_processor.fold_if_enabled(word_cow);
 
                 // Handle lowercase
                 if tokens_processor.lowercase {
@@ -945,5 +948,26 @@ mod tests {
         tokens_processor.max_token_len = Some(4);
         PrefixTokenizer::tokenize(input, &tokens_processor, |i| out.push(i.to_string()));
         assert_eq!(out, vec!["int", "inte", "pro", "proc", "liv", "live"]);
+    }
+
+    #[test]
+    fn test_prefix_tokenizer_max_token_chars() {
+        use tokens_processor::MAX_TOKEN_CHARS;
+
+        // Counted in characters, not bytes: `β` takes two
+        let cut = "β".repeat(MAX_TOKEN_CHARS);
+        let text = format!("{cut}βββ");
+        let tokens_processor =
+            TokensProcessor::new(true, false, Default::default(), None, None, None);
+
+        let mut doc = Vec::new();
+        PrefixTokenizer::tokenize(&text, &tokens_processor, |t| doc.push(t.into_owned()));
+        assert_eq!(doc.len(), MAX_TOKEN_CHARS);
+        assert_eq!(doc.last(), Some(&cut));
+
+        // The query path doesn't go through `process_token`, but cuts the same way
+        let mut query = Vec::new();
+        PrefixTokenizer::tokenize_query(&text, &tokens_processor, |t| query.push(t.into_owned()));
+        assert_eq!(query, [cut]);
     }
 }
