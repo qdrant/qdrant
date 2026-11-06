@@ -13,6 +13,7 @@ use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::IoUringFile;
 use common::universal_io::{MmapFile, UserData};
 use quantization::turboquant::EncodedQueryTQ;
+use quantization::turboquant::quantization::TurboQuantizer;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::dense_vector_storage::DenseVectorStorageImpl;
@@ -578,6 +579,9 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
     ) -> ScoreType;
 
     fn get_quantized_vector(&self, key: PointOffsetType) -> Cow<'_, [u8]>;
+
+    /// The quantizer the vectors are encoded with.
+    fn quantizer(&self) -> &TurboQuantizer;
 }
 
 /// Scoring surface the Turbo multivector query scorers need from a multivector

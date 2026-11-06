@@ -1,7 +1,7 @@
 //! NEON kernels for the symmetric 4-bit paths (`score_4bit_internal*`) on
 //! aarch64.  The codebook is stored as signed i8 (`CODEBOOK_I8`).
 
-use super::{CODEBOOK_I8, CODEBOOK_SCALE};
+use super::{CODEBOOK_I8, centroid_dot};
 
 /// NEON implementation of [`super::score_4bit_internal`].  Both PQ-encoded
 /// vectors are unpacked into i8 codebook values via `vqtbl1q_s8`, multiplied
@@ -52,7 +52,7 @@ pub unsafe fn score_4bit_internal_neon(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_full * 8;
         let acc_i64 = i64::from(vaddvq_s32(acc))
             + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 
@@ -119,7 +119,7 @@ pub unsafe fn score_4bit_internal_neon_sdot(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_pairs * 16;
         let acc_i64 = i64::from(vaddvq_s32(acc))
             + super::score_4bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 

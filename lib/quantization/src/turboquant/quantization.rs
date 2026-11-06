@@ -94,6 +94,77 @@ impl ErrorCorrection {
             mm_const,
         }
     }
+
+    /// The correction of symmetric scores of `bits`: 2 or 4, the only widths TQ+ weights, see
+    /// [`TurboQuantizer::score_symmetric_ec`].
+    pub(crate) fn symmetric(&self, bits: TQBits) -> SymmetricCorrection {
+        let codebook_scale_sq = match bits {
+            TQBits::Bits2 => CODEBOOK_SCALE_SQ_2BIT,
+            TQBits::Bits4 => CODEBOOK_SCALE_SQ_4BIT,
+            TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits8 | TQBits::Bits16 => {
+                unreachable!("TQ+ weights the symmetric scores of 2 and 4 bits only, not {bits:?}")
+            }
+        };
+        SymmetricCorrection {
+            div: self.weight_scale * codebook_scale_sq,
+            mm: self.mm_const,
+        }
+    }
+}
+
+/// How TQ+ turns the weighted code sum `Σ c_a · c_b · D'²` of two vectors, with the codebook
+/// values and weights as the integers the kernels multiply, into their centroid dot: divided
+/// by `weight_scale · CODEBOOK_SCALE²`, plus `xm_a + xm_b − ⟨M, M⟩`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SymmetricCorrection {
+    div: f32,
+    mm: f32,
+}
+
+impl SymmetricCorrection {
+    #[inline(always)]
+    pub(crate) fn centroid_dot(
+        self,
+        weighted: f32,
+        values_a: &SymmetricValues,
+        values_b: &SymmetricValues,
+    ) -> f32 {
+        weighted / self.div + values_a.correction + values_b.correction - self.mm
+    }
+}
+
+/// What [`TurboQuantizer::score_symmetric`] reads of a vector besides its codes, the others 0.
+/// The matrix operands keep these per vector.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SymmetricValues {
+    /// [`TqVectorExtras::scaling_factor`]
+    pub scale: f32,
+    /// [`TqVectorExtras::l2_length`] squared, for L2
+    pub l2_sq: f32,
+    /// [`TqVectorExtras::ec_correction`], for TQ+
+    pub correction: f32,
+}
+
+/// The last step of [`TurboQuantizer::score_symmetric`] for Dot and Cosine, or L2 if `l2`: the
+/// score of two vectors from their centroid dot `raw` and their values.
+#[inline(always)]
+pub(crate) fn symmetric_score(
+    l2: bool,
+    raw: f32,
+    values_a: &SymmetricValues,
+    values_b: &SymmetricValues,
+) -> f32 {
+    if l2 {
+        // ||v1 - v2||² = ||v1||² + ||v2||² - 2·⟨v1, v2⟩.
+        // `v*_scale = l2 / cn` already folds renorm in, so the cross
+        // term `2 · raw_dot · sf_a · sf_b` reconstructs `2·⟨v1, v2⟩`
+        // exactly the way Dot/Cosine do. `l2_length` is fetched
+        // separately for the `||v||²` term — we can't read it back
+        // out of `sf` without `cn`.
+        values_a.l2_sq + values_b.l2_sq - 2.0 * values_a.scale * values_b.scale * raw
+    } else {
+        raw * values_a.scale * values_b.scale
+    }
 }
 
 /// Vectors per sub-run of [`TurboQuantizer::score_precomputed_batch`]: 64
@@ -444,15 +515,22 @@ impl TurboQuantizer {
     /// For asymmetric scoring (original vector against quantized vector), refer to [`Self::score_precomputed`]
     /// and precompute the query first.
     pub fn score_symmetric(&self, v1: &[u8], v2: &[u8]) -> f32 {
+        let l2 = match self.distance {
+            DistanceType::Cosine | DistanceType::Dot => false,
+            DistanceType::L2 => true,
+            DistanceType::L1 => return self.score_symmetric_l1(v1, v2),
+        };
         let (data_v1, extra_v1) = self.split_vector(v1);
         let (data_v2, extra_v2) = self.split_vector(v2);
+        let values_v1 = self.symmetric_values(&extra_v1);
+        let values_v2 = self.symmetric_values(&extra_v2);
 
         // For TQ+, the SIMD kernels' uniform-weight dot can't produce the
         // per-coord-weighted `Σ X+_a_i · X+_b_i · D'_i²` we need. Fall back to
         // a scalar loop and add the precomputed `xm_a + xm_b − ⟨M, M⟩`.
         // SIMD support for this path is a follow-up.
         let raw_dot = match &self.error_correction {
-            Some(ec) => self.score_symmetric_ec(data_v1, data_v2, &extra_v1, &extra_v2, ec),
+            Some(ec) => self.score_symmetric_ec(data_v1, data_v2, &values_v1, &values_v2, ec),
             None => match self.bits {
                 TQBits::Bits1 => score_1bit_internal(data_v1, data_v2),
                 TQBits::Bits1_5 => score_1bit_internal(data_v1, data_v2),
@@ -463,34 +541,42 @@ impl TurboQuantizer {
             },
         };
 
-        let v1_scale = extra_v1.scaling_factor();
-        let v2_scale = extra_v2.scaling_factor();
+        symmetric_score(l2, raw_dot, &values_v1, &values_v2)
+    }
 
-        match self.distance {
-            DistanceType::Cosine | DistanceType::Dot => raw_dot * v1_scale * v2_scale,
+    /// [`Self::score_symmetric`] for L1, where we need to fully dequantize both vectors.
+    fn score_symmetric_l1(&self, v1: &[u8], v2: &[u8]) -> f32 {
+        // The rotation is linear, so `|R⁻¹d1 - R⁻¹d2| = |R⁻¹(d1 - d2)|`:
+        // subtracting in rotated space needs one inverse rotation, not two.
+        let deq_v1: Vec<f64> = self.dequantize(v1);
+        let mut diff: Vec<f64> = self.dequantize(v2);
+        for (d, &x) in diff.iter_mut().zip(&deq_v1) {
+            *d = x - *d;
+        }
+        self.apply_inverse_rotation(diff.as_mut_slice());
+        diff.iter().map(|&x| x.abs() as f32).sum()
+    }
+
+    /// The values of a vector that [`Self::score_symmetric`] reads besides its codes.
+    #[inline]
+    pub(crate) fn symmetric_values(&self, extras: &TqVectorExtras<'_>) -> SymmetricValues {
+        let l2_sq = match self.distance {
             DistanceType::L2 => {
-                // ||v1 - v2||² = ||v1||² + ||v2||² - 2·⟨v1, v2⟩.
-                // `v*_scale = l2 / cn` already folds renorm in, so the cross
-                // term `2 · raw_dot · sf_a · sf_b` reconstructs `2·⟨v1, v2⟩`
-                // exactly the way Dot/Cosine do. `l2_length` is fetched
-                // separately for the `||v||²` term — we can't read it back
-                // out of `sf` without `cn`.
-                let l2_a = extra_v1.l2_length();
-                let l2_b = extra_v2.l2_length();
-                l2_a * l2_a + l2_b * l2_b - 2.0 * v1_scale * v2_scale * raw_dot
+                let l2 = extras.l2_length();
+                l2 * l2
             }
-            DistanceType::L1 => {
-                // Fallback case for L1, where we need to fully dequantize both vectors.
-                // The rotation is linear, so `|R⁻¹d1 - R⁻¹d2| = |R⁻¹(d1 - d2)|`:
-                // subtracting in rotated space needs one inverse rotation, not two.
-                let deq_v1: Vec<f64> = self.dequantize(v1);
-                let mut diff: Vec<f64> = self.dequantize(v2);
-                for (d, &x) in diff.iter_mut().zip(&deq_v1) {
-                    *d = x - *d;
-                }
-                self.apply_inverse_rotation(diff.as_mut_slice());
-                diff.iter().map(|&x| x.abs() as f32).sum()
-            }
+            DistanceType::Cosine | DistanceType::Dot | DistanceType::L1 => 0.0,
+        };
+        // TQ+ corrects the symmetric scores of 2 and 4 bits only, see `score_symmetric_ec`
+        let correction = match (&self.error_correction, self.bits) {
+            (Some(_), TQBits::Bits2 | TQBits::Bits4) => extras.ec_correction(),
+            (Some(_), TQBits::Bits1 | TQBits::Bits1_5 | TQBits::Bits8 | TQBits::Bits16)
+            | (None, _) => 0.0,
+        };
+        SymmetricValues {
+            scale: extras.scaling_factor(),
+            l2_sq,
+            correction,
         }
     }
 
@@ -512,22 +598,17 @@ impl TurboQuantizer {
         &self,
         data_v1: &[u8],
         data_v2: &[u8],
-        extra_v1: &TqVectorExtras<'_>,
-        extra_v2: &TqVectorExtras<'_>,
+        values_v1: &SymmetricValues,
+        values_v2: &SymmetricValues,
         ec: &ErrorCorrection,
     ) -> f32 {
         // Bits2 / Bits4: integer SIMD-amenable weighted dot. The kernel
-        // returns `Σ c_a_int · c_b_int · weights_i16` as i64; we divide back
-        // by `weight_scale · CODEBOOK_SCALE²` to recover the f32 centroid dot.
-        let (raw_int, codebook_scale_sq) = match self.bits {
-            TQBits::Bits2 => (
-                score_2bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
-                CODEBOOK_SCALE_SQ_2BIT,
-            ),
-            TQBits::Bits4 => (
-                score_4bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
-                CODEBOOK_SCALE_SQ_4BIT,
-            ),
+        // returns `Σ c_a_int · c_b_int · weights_i16` as i64, which the
+        // correction divides back by `weight_scale · CODEBOOK_SCALE²` to
+        // recover the f32 centroid dot.
+        let raw_int = match self.bits {
+            TQBits::Bits2 => score_2bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
+            TQBits::Bits4 => score_4bit_internal_weighted(data_v1, data_v2, &ec.d_prime_sq_i16),
             TQBits::Bits8 | TQBits::Bits16 => {
                 unreachable!("{:?} does not support TQ+ error correction", self.bits)
             }
@@ -539,11 +620,8 @@ impl TurboQuantizer {
                 return score_1bit_internal(data_v1, data_v2);
             }
         };
-        let weighted = raw_int as f32 / (ec.weight_scale * codebook_scale_sq);
-
-        let xm_a = extra_v1.ec_correction();
-        let xm_b = extra_v2.ec_correction();
-        weighted + xm_a + xm_b - ec.mm_const
+        ec.symmetric(self.bits)
+            .centroid_dot(raw_int as f32, values_v1, values_v2)
     }
 
     /// Precompute the Hadamard rotation of `query` and hand it to the
