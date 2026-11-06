@@ -27,8 +27,17 @@
 //! Projections are summed in f64 and stored in f32, 48 bytes per point. The f64 sums stay within
 //! a small fraction of an f32 ulp of the exact ones up to the largest dimension, so the order of
 //! summation doesn't matter. A tie sets the bit both ways, as `>=` does in the paper.
+//!
+//! The same pass also takes a 64-bit fingerprint of every projected vector, a hash of its values'
+//! bits with -0.0 as 0.0, 8 bytes per point, from which [`super::duplicates`] finds identical vectors. They are
+//! returned apart from the sketches, so that the build can free them once the duplicates are
+//! found, before its peak. Identical vectors get identical fingerprints and projections. A vector with a NaN gets none: it scores
+//! NaN against every point, its copies too, so it's no duplicate to the scorer, and its
+//! projections of 0 would match the zero vector's.
 
+use std::hash::{BuildHasher as _, Hasher as _};
 use std::marker::PhantomData;
+use std::num::NonZeroU64;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -68,9 +77,18 @@ pub(super) struct Sketches {
     projections: Vec<[f32; HASH_BITS]>,
 }
 
+/// A hash of the bits of each vector that [`Sketches::new`] projected, to find identical vectors
+/// with [`Fingerprints::same_vector`].
+pub(super) struct Fingerprints {
+    /// By point id, like [`Sketches::projections`]. `None` for a vector with a NaN, and for points
+    /// that weren't given.
+    fingerprints: Vec<Option<NonZeroU64>>,
+}
+
 impl Sketches {
     /// Projections of the vectors of `points`, which must be sorted and distinct, as debug builds
-    /// check. `None` if the vectors aren't dense, so the caller builds with HNSW.
+    /// check, and their fingerprints. `None` if the vectors aren't dense, so the caller builds
+    /// with HNSW.
     ///
     /// Reads the vectors once, in batches, in parallel on the current rayon pool, and checks
     /// `stopped` before each batch. Fails on points past the stored vectors, which the id tracker
@@ -80,7 +98,7 @@ impl Sketches {
         points: &[PointOffsetType],
         seed: u64,
         stopped: &AtomicBool,
-    ) -> OperationResult<Option<Self>> {
+    ) -> OperationResult<Option<(Self, Fingerprints)>> {
         let vectors = match vector_storage {
             VectorStorageEnum::DenseVolatile(vs) => dense(vs),
             #[cfg(test)]
@@ -144,32 +162,41 @@ impl Sketches {
         let normalize = vector_storage.distance() == Distance::Cosine;
         let len = points.last().map_or(0, |&last| last as usize + 1);
         let mut projections = vec![[0.0; HASH_BITS]; len];
+        let mut fingerprints = vec![None; len];
 
         // Each batch writes the range of ids from its first to its last point
-        let mut rest = projections.as_mut_slice();
+        let mut rest = (projections.as_mut_slice(), fingerprints.as_mut_slice());
         let mut rest_start = 0;
         let batches: Vec<_> = points
             .chunks(BATCH_SIZE)
             .map(|batch| {
                 let start = batch[0] as usize;
                 let end = batch[batch.len() - 1] as usize + 1;
-                let (_, tail) = std::mem::take(&mut rest).split_at_mut(start - rest_start);
-                let (own, tail) = tail.split_at_mut(end - start);
-                (rest, rest_start) = (tail, end);
-                (batch, own)
+                let (projections, fingerprints) = std::mem::take(&mut rest);
+                let skip = start - rest_start;
+                let (own_projections, projections) = projections[skip..].split_at_mut(end - start);
+                let (own_fingerprints, fingerprints) =
+                    fingerprints[skip..].split_at_mut(end - start);
+                (rest, rest_start) = ((projections, fingerprints), end);
+                (batch, own_projections, own_fingerprints)
             })
             .collect();
 
-        batches.into_par_iter().try_for_each(|(batch, own)| {
-            check_process_stopped(stopped)?;
-            let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-            let start = batch[0];
-            vectors.for_each_in_batch(batch, &mut |i, vector| {
-                own[(batch[i] - start) as usize] = project(vector, &hyperplanes, normalize);
-            })
-        })?;
+        batches
+            .into_par_iter()
+            .try_for_each(|(batch, projections, fingerprints)| {
+                check_process_stopped(stopped)?;
+                let _scope = ambient::unmeasured_guard(reason("Internal operation"));
+                let start = batch[0];
+                vectors.for_each_in_batch(batch, &mut |i, vector| {
+                    let at = (batch[i] - start) as usize;
+                    let (projected, nan) = project(vector, &hyperplanes, normalize);
+                    projections[at] = projected;
+                    fingerprints[at] = (!nan).then(|| fingerprint(vector));
+                })
+            })?;
 
-        Ok(Some(Self { projections }))
+        Ok(Some((Self { projections }, Fingerprints { fingerprints })))
     }
 
     /// HashPrune bucket of `candidate` for `point`: bit `i` set if `H_i · candidate >= H_i · point`.
@@ -186,6 +213,27 @@ impl Sketches {
             hash |= u16::from(c >= p) << bit;
         }
         hash
+    }
+}
+
+impl Fingerprints {
+    /// The fingerprint of the vector of `point`, `None` if it has a NaN. `point` must be among
+    /// those given to [`Sketches::new`].
+    pub fn get(&self, point: PointOffsetType) -> Option<NonZeroU64> {
+        self.fingerprints[point as usize]
+    }
+
+    /// Whether the vectors of `a` and `b` are probably identical: same fingerprint and same
+    /// projections in `sketches`, made with these fingerprints, and neither has a NaN. Distinct
+    /// vectors only pass on a 64-bit hash collision that also leaves all projections equal, or if
+    /// they are only a few ulps apart, which makes no difference to a graph. Both points must be
+    /// among those given to [`Sketches::new`].
+    pub fn same_vector(&self, sketches: &Sketches, a: PointOffsetType, b: PointOffsetType) -> bool {
+        let (a, b) = (a as usize, b as usize);
+        self.fingerprints[a].is_some()
+            && self.fingerprints[a] == self.fingerprints[b]
+            && std::iter::zip(&sketches.projections[a], &sketches.projections[b])
+                .all(|(x, y)| x.to_bits() == y.to_bits())
     }
 }
 
@@ -207,8 +255,13 @@ fn standard_normal(rng: &mut StdRng) -> f64 {
     radius * (std::f64::consts::TAU * rng.random::<f64>()).cos()
 }
 
-/// Projections of `vector` onto `hyperplanes`, of the unit vector if `normalize`.
-fn project(vector: &[f32], hyperplanes: &[[f64; HASH_BITS]], normalize: bool) -> [f32; HASH_BITS] {
+/// Projections of `vector` onto `hyperplanes`, of the unit vector if `normalize`, and whether
+/// any of them was NaN, which is stored as 0.
+fn project(
+    vector: &[f32],
+    hyperplanes: &[[f64; HASH_BITS]],
+    normalize: bool,
+) -> ([f32; HASH_BITS], bool) {
     debug_assert_eq!(vector.len(), hyperplanes.len());
     // One independent sum per hyperplane, which vectorizes across the hyperplanes
     let mut sums = [0.0; HASH_BITS];
@@ -219,11 +272,42 @@ fn project(vector: &[f32], hyperplanes: &[[f64; HASH_BITS]], normalize: bool) ->
         }
     }
     let scale = if normalize { inverse_norm(vector) } else { 1.0 };
-    sums.map(|sum| {
+    let mut nan = false;
+    let projections = sums.map(|sum| {
         let projection = (sum * scale) as f32;
         // NaN compares false both ways, which would break the properties of `hash`
+        nan |= projection.is_nan();
         if projection.is_nan() { 0.0 } else { projection }
-    })
+    });
+    (projections, nan)
+}
+
+/// A hash of the bits of `vector`, the same in every build of this binary. Only compared for
+/// equality, so it needn't be stable across versions.
+///
+/// -0.0 hashes as 0.0: it scores and projects the same, so vectors that differ only in the sign
+/// of a zero are copies to the graph. `vector` has no NaN, which has no fingerprint.
+fn fingerprint(vector: &[f32]) -> NonZeroU64 {
+    // Fixed seeds: the default random state would differ between processes
+    let state = ahash::RandomState::with_seeds(
+        0x243f_6a88_85a3_08d3,
+        0x1319_8a2e_0370_7344,
+        0xa409_3822_299f_31d0,
+        0x082e_fa98_ec4e_6c89,
+    );
+    // Canonicalized through a buffer on the stack, a chunk at a time: a branch-free add, about
+    // as fast as hashing the vector as it is, where searching for -0.0 first was not
+    let mut hasher = state.build_hasher();
+    let mut buffer = [0.0f32; 256];
+    for chunk in vector.chunks(buffer.len()) {
+        let canonical = &mut buffer[..chunk.len()];
+        for (canonical, &x) in canonical.iter_mut().zip(chunk) {
+            // -0.0 + 0.0 is 0.0, and every other value stays as it is
+            *canonical = x + 0.0;
+        }
+        hasher.write(bytemuck::cast_slice::<f32, u8>(canonical));
+    }
+    NonZeroU64::new(hasher.finish()).unwrap_or(NonZeroU64::MIN)
 }
 
 /// `1 / ‖vector‖`, or 0 for the zero vector, which Cosine scores 0 against everything.
@@ -486,6 +570,7 @@ mod tests {
             Sketches::new(&self.storage, points, seed, &AtomicBool::new(false))
                 .unwrap()
                 .expect("dense vectors")
+                .0
         }
     }
 
@@ -865,7 +950,7 @@ mod tests {
         let expected: Vec<_> = (0..count)
             .map(|id| match id % 5 {
                 2 => [0.0; HASH_BITS],
-                _ => project(&vectors[id], &hyperplanes, true),
+                _ => project(&vectors[id], &hyperplanes, true).0,
             })
             .collect();
         let expected = to_bits(&expected);
@@ -1027,6 +1112,33 @@ mod tests {
         for c in [0, 9] {
             assert_eq!(sketches.hash(3, c) ^ sketches.hash(c, 3), ALL);
         }
+    }
+
+    /// Vectors that differ only in the sign of a zero score the same, so they are the same
+    /// vector, while one that differs in a value isn't.
+    #[rstest]
+    fn signed_zeros_are_the_same_vector(
+        #[values(Distance::Dot, Distance::Cosine)] distance: Distance,
+    ) {
+        let _scope = ambient::test_guard();
+        let mut vectors = random_vectors(Kind::F32, distance, 3, DIM, 21);
+        vectors[0][5] = 0.0;
+        vectors[1] = vectors[0].clone();
+        vectors[1][5] = -0.0;
+        vectors[2] = vectors[0].clone();
+        vectors[2][6] = f32::from_bits(vectors[2][6].to_bits() ^ 1);
+        let fixture = Fixture::new(Kind::F32, distance, &vectors);
+        assert!(original(&fixture.storage, 1)[5].is_sign_negative());
+
+        let points = [0, 1, 2];
+        let (sketches, fingerprints) =
+            Sketches::new(&fixture.storage, &points, SEED, &AtomicBool::new(false))
+                .unwrap()
+                .unwrap();
+        assert_eq!(fingerprints.get(0), fingerprints.get(1));
+        assert!(fingerprints.same_vector(&sketches, 0, 1));
+        assert_ne!(fingerprints.get(0), fingerprints.get(2));
+        assert!(!fingerprints.same_vector(&sketches, 0, 2));
     }
 
     /// The LSH property: two candidates of a point share a bit with probability `1 - θ/π`, for
