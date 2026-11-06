@@ -1,4 +1,5 @@
 from random import random
+import shutil
 import subprocess
 import pytest
 
@@ -8,9 +9,10 @@ from .helpers.collection_setup import drop_collection
 num_vectors = 200000
 dims = 1024
 
-@pytest.skip("Too big for CI, requires bfb installed", allow_module_level=True)
 @pytest.fixture(autouse=True, scope='module')
 def setup(collection_name):
+    if shutil.which("bfb") is None:
+        pytest.skip("Too big for CI, requires bfb installed")
     drop_collection(collection_name)
     
     response = request_with_validation(
@@ -59,7 +61,7 @@ def test_search_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
 
 def test_search_batch_timeout(collection_name):
@@ -93,7 +95,7 @@ def test_search_batch_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
     
@@ -136,7 +138,7 @@ def test_recommend_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
     
@@ -173,7 +175,7 @@ def test_recommend_batch_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
     
 
@@ -224,5 +226,5 @@ def test_discover_timeout(collection_name):
     )
     
     assert not response.ok
-    assert response.status_code == 500
+    assert response.status_code == 408
     assert response.json()['status']['error'].__contains__("Timeout error: Operation 'Search' timed out after 1 seconds")
