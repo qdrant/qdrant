@@ -260,3 +260,36 @@ fn padded_disk_mask_reads_like_the_log() {
     );
     assert!(from_log.deleted_point_bitslice().len() > POINTS as usize);
 }
+
+/// A reload that fails to read the mask consumes none of the log: the next reload applies the
+/// deletes the failed one read from the log, and the held ones it ingested still release.
+#[cfg_attr(
+    windows,
+    ignore = "renames id_tracker.deleted while the reader holds it memory-mapped, which Windows \
+              refuses"
+)]
+#[test]
+fn failed_reload_keeps_the_log_deletes() {
+    for format in FORMATS {
+        let dir = segment(format);
+        let mut tracker = open(format, dir.path(), DeleteGating::Held { gate: 7 });
+        assert_eq!(deleted(&tracker), [2], "{format:?}");
+
+        delete(dir.path(), &[5], 7);
+        delete(dir.path(), &[6], 9);
+
+        let mask = dir.path().join("id_tracker.deleted");
+        let moved = dir.path().join("id_tracker.deleted.moved");
+        fs_err::rename(&mask, &moved).unwrap();
+        assert!(
+            tracker.live_reload(&MmapFs, None).is_err(),
+            "{format:?}: a reload without its mask fails",
+        );
+        assert_eq!(deleted(&tracker), [2], "{format:?}");
+        fs_err::rename(&moved, &mask).unwrap();
+
+        assert_eq!(reload(&mut tracker), [5], "{format:?}");
+        assert_eq!(deleted(&tracker), [2, 5], "{format:?}");
+        assert_eq!(tracker.release_held_deletes(9), [6], "{format:?}");
+    }
+}

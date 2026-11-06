@@ -40,26 +40,32 @@ impl<S: UniversalRead> ReadOnlyImmutableIdTracker<S> {
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
     ) -> OperationResult<LiveReloadResult> {
-        let mut newly_deleted = self.delete_log.read_new(fs)?;
-
-        if let Some(fresh) = StoredBitSlice::<S>::open(
+        // Every fallible read comes before any state changes, and the log, whose read advances
+        // its cursor, comes last: a failed reload consumes nothing, and the next one reads the
+        // same deletes again.
+        let fresh = StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
             Self::open_options(),
             Default::default(),
         )
-        .ok_unchanged()?
-        {
-            // `mappings` already reflects every previously reported deletion, so
-            // it is the diff baseline: a set bit not yet dropped there is new.
-            let deleted = fresh.read_all()?;
-            newly_deleted.extend(
-                deleted
-                    .iter_ones()
-                    .map(|internal_id| internal_id as PointOffsetType)
-                    .filter(|&internal_id| !self.mappings.is_deleted_point(internal_id)),
-            );
-            drop(deleted);
+        .ok_unchanged()?;
+
+        // `mappings` already reflects every previously reported deletion, so
+        // it is the diff baseline: a set bit not yet dropped there is new.
+        let mut newly_deleted: Vec<PointOffsetType> = match &fresh {
+            Some(fresh) => fresh
+                .read_all()?
+                .iter_ones()
+                .map(|internal_id| internal_id as PointOffsetType)
+                .filter(|&internal_id| !self.mappings.is_deleted_point(internal_id))
+                .collect(),
+            None => Vec::new(),
+        };
+
+        newly_deleted.extend(self.delete_log.read_new(fs)?);
+
+        if let Some(fresh) = fresh {
             self.deleted = fresh;
         }
 

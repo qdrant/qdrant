@@ -43,9 +43,10 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         &mut self,
         fs: &impl UniversalReadFs<File = S>,
     ) -> OperationResult<LiveReloadResult> {
-        let mut slots = self.delete_log.read_new(fs)?;
-
-        if let Some(fresh) = StoredBitSlice::<S>::open(
+        // Every fallible read comes before any state changes, and the log, whose read advances
+        // its cursor, comes last: a failed reload consumes nothing, and the next one reads the
+        // same deletes again.
+        let mut slots: Vec<PointOffsetType> = match StoredBitSlice::<S>::open(
             fs,
             deleted_path(&self.path),
             Self::open_options(Populate::No),
@@ -53,13 +54,15 @@ impl<S: UniversalRead> ReadOnlyDiskIdTracker<S> {
         )
         .ok_unchanged()?
         {
-            slots.extend(
-                fresh
-                    .read_all()?
-                    .iter_ones()
-                    .map(|slot| slot as PointOffsetType),
-            );
-        }
+            Some(fresh) => fresh
+                .read_all()?
+                .iter_ones()
+                .map(|slot| slot as PointOffsetType)
+                .collect(),
+            None => Vec::new(),
+        };
+
+        slots.extend(self.delete_log.read_new(fs)?);
 
         slots.sort_unstable();
         slots.dedup();
