@@ -122,6 +122,20 @@ impl Query16bitSimd {
         }
     }
 
+    /// The query codes and the scale of their integer dot product, for
+    /// kernels with their own query layout: the score's dot term is
+    /// `scale · (Σ q_i · s_i) as f32`.
+    pub(crate) fn signed_query(&self) -> (Vec<i32>, f32) {
+        let values = self
+            .codes
+            .as_chunks::<CODE_BYTES>()
+            .0
+            .iter()
+            .map(|&code| i32::from(i16::from_le_bytes(code)))
+            .collect();
+        (values, self.postprocess_scale)
+    }
+
     /// `Σ q_i · s_i` against one encoded vector's codes.
     pub fn dotprod(&self, vector: &[u8]) -> f32 {
         let vector = &vector[..self.codes.len()];

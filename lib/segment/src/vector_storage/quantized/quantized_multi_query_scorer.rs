@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use common::ambient::hw::HwScale;
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, PackedMultiQuery};
 
 use super::quantized_query_scorer::InternalScorerUnsupported;
 use crate::common::operation_error::OperationResult;
@@ -23,6 +23,8 @@ where
 {
     hw: HwScale,
     query: Vec<QuantizedStorage::EncodedQuery>,
+    /// `query` packed for the batched MaxSim kernel, when the storage has one.
+    packed: Option<PackedMultiQuery>,
     quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
 }
 
@@ -57,6 +59,9 @@ where
         }
 
         let query = quantized_multivector_storage.encode_query(&query);
+        let packed = quantized_multivector_storage
+            .inner_storage()
+            .pack_multi_query_if_faster(&query);
 
         Self {
             hw: HwScale {
@@ -64,6 +69,7 @@ where
                 vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
             },
             query,
+            packed,
             quantized_multivector_storage,
         }
     }
@@ -78,6 +84,9 @@ where
         let Some(query) = quantized_multivector_storage.encode_internal_vector(point_id) else {
             return Err(InternalScorerUnsupported);
         };
+        let packed = quantized_multivector_storage
+            .inner_storage()
+            .pack_multi_query_if_faster(&query);
 
         Ok(Self {
             hw: HwScale {
@@ -85,6 +94,7 @@ where
                 vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
             },
             query,
+            packed,
             quantized_multivector_storage,
         })
     }
@@ -105,6 +115,12 @@ where
 
         self.hw
             .vector_io_read(size_of::<MultivectorOffset>() * ids.len());
+
+        if let Some(packed) = &self.packed {
+            return self
+                .quantized_multivector_storage
+                .score_points_batch_packed(ids, packed, scores);
+        }
 
         self.quantized_multivector_storage.score_points_batch(
             ids,

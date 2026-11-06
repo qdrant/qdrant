@@ -18,6 +18,7 @@ use strum::EnumIter;
 
 use crate::encoded_storage::validate_storage_vector_size;
 use crate::encoded_vectors::{calibration_vectors, validate_vector_parameters};
+use crate::packed_multi_query::{PackedMultiQuery, PackedMultiQueryBinary, crossover};
 use crate::vector_stats::{VectorElementStats, VectorStats};
 use crate::{
     DistanceType, EncodedStorage, EncodedStorageBuilder, EncodedStorageWrite, EncodedVectors,
@@ -920,6 +921,69 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage> EncodedVectors
 
     fn score(&self, query: &Self::EncodedQuery, encoded_vector: &[u8]) -> f32 {
         self.score_bytes(True, query, encoded_vector)
+    }
+
+    fn packed_pays(&self, vectors_count: usize, stored: bool) -> bool {
+        let table = match (stored, self.metadata.query_encoding, self.metadata.encoding) {
+            (false, QueryEncoding::Scalar4bits | QueryEncoding::Scalar8bits, _) => {
+                crossover::BINARY_SCALAR_QUERY
+            }
+            (false, QueryEncoding::SameAsStorage, Encoding::OneBit) => crossover::BINARY_1BIT_QUERY,
+            (false, QueryEncoding::SameAsStorage, Encoding::OneAndHalfBits) => {
+                crossover::BINARY_1_5BIT_QUERY
+            }
+            (false, QueryEncoding::SameAsStorage, Encoding::TwoBits) => {
+                crossover::BINARY_2BIT_QUERY
+            }
+            (true, _, Encoding::OneBit) => crossover::BINARY_1BIT_STORED,
+            (true, _, Encoding::OneAndHalfBits) => crossover::BINARY_1_5BIT_STORED,
+            (true, _, Encoding::TwoBits) => crossover::BINARY_2BIT_STORED,
+        };
+        crossover::pays(table, self.metadata.vector_parameters.dim, vectors_count)
+    }
+
+    fn pack_multi_query(&self, query: &[Self::EncodedQuery]) -> Option<PackedMultiQuery> {
+        let bits_count = match query.first()? {
+            EncodedQueryBQ::Binary(_) => 1,
+            EncodedQueryBQ::Scalar8bits(_) => u8::BITS as usize,
+            EncodedQueryBQ::Scalar4bits(_) => u8::BITS as usize / 2,
+        };
+        let bytes = query.iter().map(|query| match query {
+            EncodedQueryBQ::Binary(vector) => vector.as_bytes(),
+            EncodedQueryBQ::Scalar8bits(vector) | EncodedQueryBQ::Scalar4bits(vector) => {
+                bytemuck::cast_slice(vector.encoded_vector.as_slice())
+            }
+        });
+        let vector_len = self.get_quantized_vector_size();
+        Some(PackedMultiQuery::Binary(PackedMultiQueryBinary::new(
+            bytes,
+            vector_len,
+            size_of::<TBitsStoreType>(),
+            bits_count,
+            self.metadata.vector_parameters.dim,
+            self.metadata.vector_parameters.distance_type,
+            self.metadata.vector_parameters.invert,
+            // `score_bytes` counts bytes.
+            vector_len,
+        )))
+    }
+
+    fn pack_multi_stored<'a>(
+        &self,
+        vectors: impl ExactSizeIterator<Item = &'a [u8]>,
+    ) -> Option<PackedMultiQuery> {
+        let vector_len = self.get_quantized_vector_size();
+        Some(PackedMultiQuery::Binary(PackedMultiQueryBinary::new(
+            vectors.map(|vector| &vector[..vector_len]),
+            vector_len,
+            size_of::<TBitsStoreType>(),
+            1,
+            self.metadata.vector_parameters.dim,
+            self.metadata.vector_parameters.distance_type,
+            self.metadata.vector_parameters.invert,
+            // `score_internal` counts storage elements.
+            vector_len / size_of::<TBitsStoreType>(),
+        )))
     }
 
     fn score_internal(&self, i: PointOffsetType, j: PointOffsetType) -> f32 {
