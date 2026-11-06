@@ -28,13 +28,13 @@ def test_collection_creation_after_dropping(tmp_path: pathlib.Path):
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    leader = wait_peer_added(bootstrap_api_uri)
+    wait_peer_added(bootstrap_api_uri)
 
     for i in range(1, len(peer_dirs)):
         peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
 
     # Wait for cluster
-    wait_for_uniform_cluster_status(peer_api_uris, leader)
+    wait_for_uniform_cluster_status(peer_api_uris)
 
     # Check that there are no collections on all peers
     for uri in peer_api_uris:

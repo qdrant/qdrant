@@ -118,18 +118,24 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     """
     assert_project_root()
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+    peer_api_uris, peer_dirs, _bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
-    removed_peer_uri = peer_api_uris[1]
-    removed_peer_dir = peer_dirs[1]
+    # Remove the follower: removing the leader of a 2-node cluster can strand the survivor (#10691)
+    first_peer_index = get_leader_index(peer_api_uris)
+    removed_peer_index = 1 - first_peer_index
+    first_peer_uri = peer_api_uris[first_peer_index]
+    removed_peer_uri = peer_api_uris[removed_peer_index]
+    removed_peer_dir = peer_dirs[removed_peer_index]
     removed_peer_id = get_cluster_info(removed_peer_uri)["peer_id"]
-    first_peer_id = get_cluster_info(peer_api_uris[0])["peer_id"]
+    first_peer_info = get_cluster_info(first_peer_uri)
+    first_peer_id = first_peer_info["peer_id"]
+    first_peer_p2p_uri = first_peer_info["peers"][str(first_peer_id)]["uri"]
 
-    res = requests.delete(f"{peer_api_uris[0]}/cluster/peer/{removed_peer_id}?timeout=60")
+    res = requests.delete(f"{first_peer_uri}/cluster/peer/{removed_peer_id}?timeout=60")
     assert_http_ok(res)
-    wait_for(check_cluster_size, peer_api_uris[0], 1)
+    wait_for(check_cluster_size, first_peer_uri, 1)
 
-    removed_peer_process = processes[1]
+    removed_peer_process = processes[removed_peer_index]
     removed_peer_process.kill()
     processes.remove(removed_peer_process)
 
@@ -152,7 +158,7 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     # entries outside `conf_state` as cluster members.
     raft_state_path = removed_peer_dir / "storage" / "raft_state.json"
     raft_state = json.loads(raft_state_path.read_text())
-    raft_state["peer_address_by_id"][str(first_peer_id)] = bootstrap_uri
+    raft_state["peer_address_by_id"][str(first_peer_id)] = first_peer_p2p_uri
     raft_state_path.write_text(json.dumps(raft_state))
 
     # Push the old cluster's commit index well ahead of anything the
@@ -160,12 +166,12 @@ def test_reinit_removed_peer_readyz_ignores_old_cluster(tmp_path: pathlib.Path):
     # several consensus entries on the (now single-node) old cluster.
     for i in range(3):
         res = requests.put(
-            f"{peer_api_uris[0]}/collections/ahead_{i}?timeout=60",
+            f"{first_peer_uri}/collections/ahead_{i}?timeout=60",
             json={"vectors": {"size": 4, "distance": "Dot"}},
         )
         assert_http_ok(res)
 
-    old_commit = get_cluster_info(peer_api_uris[0])["raft_info"]["commit"]
+    old_commit = get_cluster_info(first_peer_uri)["raft_info"]["commit"]
 
     # Restart the single-voter peer (no `--reinit`), with the old first peer
     # still alive and reachable at the injected address. This peer's own

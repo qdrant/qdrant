@@ -36,40 +36,39 @@ def test_two_follower_nodes_down(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
+    leader_index = get_leader_index(peer_api_uris)
+    # Descending, so popping one index doesn't shift the other
+    follower_indices = sorted((index for index in range(N_PEERS) if index != leader_index), reverse=True)
+
     # upload points to the leader
-    upload_process = run_update_points_in_background(peer_api_uris[0], "test_collection")
+    upload_process = run_update_points_in_background(peer_api_uris[leader_index], "test_collection")
 
     time.sleep(0.3)
 
-    # Kill third peer
-    p = processes.pop()
-    restart_port_3 = p.p2p_port
-    p.kill()
-    peer_api_uris.pop()
-
-    # Kill second peer
-    p = processes.pop()
-    restart_port_2 = p.p2p_port
-    p.kill()
-    peer_api_uris.pop()
+    # Kill both followers
+    restart_ports = {}
+    for index in follower_indices:
+        p = processes.pop(index)
+        restart_ports[index] = p.p2p_port
+        p.kill()
+        peer_api_uris.pop(index)
 
     time.sleep(0.3)
 
     # Stop pushing points to the leader
     upload_process.kill()
 
-    # Restart third peer on same ports
-    new_url_3 = start_peer(peer_dirs[2], f"peer_{3}_restarted.log", bootstrap_uri, restart_port_3)
-    peer_api_uris.append(new_url_3)
-
-    # Restart second peer on same ports
-    new_url_2 = start_peer(peer_dirs[1], f"peer_{2}_restarted.log", bootstrap_uri, restart_port_2)
-    peer_api_uris.append(new_url_2)
+    # Restart followers on same ports
+    new_urls = []
+    for index in follower_indices:
+        new_url = start_peer(peer_dirs[index], f"peer_{index}_restarted.log", bootstrap_uri, restart_ports[index])
+        peer_api_uris.append(new_url)
+        new_urls.append(new_url)
 
     # Wait for peers to be online
-    wait_for_peer_online(new_url_3)
-    time.sleep(1)
-    wait_for_peer_online(new_url_2)
+    for new_url in new_urls:
+        wait_for_peer_online(new_url)
+        time.sleep(1)
 
     timeout = 10
     while True:

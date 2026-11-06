@@ -163,6 +163,7 @@ def test_consensus_snapshot_create_collection(tmp_path: pathlib.Path, replicatio
     p = processes.pop()
     restart_port = p.p2p_port
     p.kill()
+    wait_for_live_leader(peers[0], last_peer_id)
 
     # Bootstrap collection
     create_collection(peers[0], shard_number=3, replication_factor=replication_factor)

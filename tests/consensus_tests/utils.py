@@ -361,7 +361,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    leader = wait_peer_added(bootstrap_api_uri, headers=headers)
+    wait_peer_added(bootstrap_api_uri, headers=headers)
 
     port = None
     # Start other peers
@@ -370,10 +370,12 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
             port = port_seed + i * 100
         peer_api_uris.append(start_peer(peer_dirs[i], f"{log_file_prefix}peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env, use_peer_proxy=use_peer_proxy))
 
-    # Wait for cluster
-    wait_for_uniform_cluster_status(peer_api_uris, leader, headers=headers)
+    # Wait for cluster. Don't require the bootstrap peer to stay leader: a runner stall
+    # longer than the election timeout lets a joining peer win a new term during startup.
+    wait_for_uniform_cluster_status(peer_api_uris, headers=headers)
 
     return peer_api_uris, peer_dirs, bootstrap_uri
+
 
 
 def make_peer_folder(base_path: Path, peer_number: int) -> Path:
@@ -457,6 +459,24 @@ def get_leader(peer_api_uri: str, headers={}) -> str:
     r = requests.get(f"{peer_api_uri}/cluster", headers=headers, timeout=10)
     assert_http_ok(r)
     return r.json()["result"]["raft_info"]["leader"]
+
+
+def get_leader_index(peer_api_uris: [str], headers={}) -> int:
+    """Index in `peer_api_uris` of the current leader, as seen by the first peer."""
+    leader = get_leader(peer_api_uris[0], headers=headers)
+    return next(
+        index for index, uri in enumerate(peer_api_uris)
+        if get_cluster_info(uri, headers=headers)["peer_id"] == leader
+    )
+
+
+def wait_for_live_leader(peer_api_uri: str, dead_peer_id: int, headers={}):
+    """Wait until `peer_api_uri` follows a leader other than `dead_peer_id`.
+
+    Raft drops proposals while there is no leader, so call this after killing a
+    peer that may have been the leader and before proposing through the survivors.
+    """
+    wait_for(lambda: get_leader(peer_api_uri, headers=headers) not in (None, 0, dead_peer_id))
 
 
 def check_leader(peer_api_uri: str, expected_leader: str, headers={}) -> bool:
