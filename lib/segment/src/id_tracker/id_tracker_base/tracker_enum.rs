@@ -14,6 +14,10 @@ use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
+#[cfg_attr(
+    any(target_os = "linux", target_os = "android"),
+    expect(clippy::large_enum_variant)
+)]
 #[derive(Debug)]
 pub enum IdTrackerEnum {
     MutableIdTracker(MutableIdTracker),

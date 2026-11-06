@@ -304,7 +304,7 @@ impl Wal {
         }
 
         Ok(self.open_segment_start_index()
-            + self.open_segment.segment.append(entry).unwrap() as u64)
+            + self.open_segment.segment.append(entry)?.unwrap() as u64)
     }
 
     pub fn flush_open_segment(&mut self) -> Result<()> {
@@ -354,10 +354,10 @@ impl Wal {
         if from >= open_start_index {
             self.open_segment
                 .segment
-                .truncate((from - open_start_index) as usize);
+                .truncate((from - open_start_index) as usize)?;
         } else {
             // Truncate the open segment completely.
-            self.open_segment.segment.truncate(0);
+            self.open_segment.segment.truncate(0)?;
 
             match self.find_closed_segment(from) {
                 Ok(index) => {
@@ -371,7 +371,7 @@ impl Wal {
                             let segment = &mut self.closed_segments[index];
                             segment
                                 .segment
-                                .truncate((from - segment.start_index) as usize);
+                                .truncate((from - segment.start_index) as usize)?;
                             // flushing closed segment after truncation
                             segment.segment.flush()?;
                         }

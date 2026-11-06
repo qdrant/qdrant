@@ -35,6 +35,10 @@ use super::on_disk_numeric_index::OnDiskNumericIndex;
 use crate::index::field_index::numeric_point::Numericable;
 use crate::index::field_index::on_disk_point_to_values::StoredValue;
 
+#[cfg_attr(
+    any(target_os = "linux", target_os = "android"),
+    expect(clippy::large_enum_variant)
+)]
 pub enum NumericIndexInner<T: Encodable + Numericable + StoredValue + Send + Sync + Default>
 where
     Vec<T>: Blob,
