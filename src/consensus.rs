@@ -1603,6 +1603,7 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
+    use collection::operations::types::PeerMetadata;
     use collection::operations::vector_params_builder::VectorParamsBuilder;
     use collection::shards::channel_service::ChannelService;
     use common::budget::ResourceBudget;
@@ -1630,8 +1631,13 @@ mod tests {
         settings.storage.storage_path = storage_dir.path().to_path_buf();
         tracing_subscriber::fmt::init();
         let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
-        let persistent_state =
+        let mut persistent_state =
             Persistent::load_or_init(&settings.storage.storage_path, true, false, None).unwrap();
+        // Prevent the background `sync_local_state` from proposing an unrelated
+        // `UpdatePeerMetadata` entry while this test inspects the Raft commit index.
+        persistent_state
+            .update_peer_metadata(persistent_state.this_peer_id(), PeerMetadata::current())
+            .unwrap();
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
