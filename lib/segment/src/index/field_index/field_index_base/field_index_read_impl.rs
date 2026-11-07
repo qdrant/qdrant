@@ -59,6 +59,26 @@ impl PayloadFieldIndexRead for FieldIndex {
         }
     }
 
+    fn filter_cancellable<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        match self {
+            FieldIndex::IntIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::DatetimeIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::IntMapIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::KeywordIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::FloatIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::GeoIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::BoolIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::FullTextIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::UuidIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::UuidMapIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+            FieldIndex::NullIndex(idx) => idx.filter_cancellable(condition, is_stopped),
+        }
+    }
+
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,

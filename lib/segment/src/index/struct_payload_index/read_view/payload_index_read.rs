@@ -209,7 +209,7 @@ where
             let primary_clause_iterators: OperationResult<Option<Vec<_>>> = query_cardinality
                 .primary_clauses
                 .iter()
-                .map(|clause| self.query_field(clause))
+                .map(|clause| self.query_field(clause, is_stopped))
                 .collect();
 
             if let Some(primary_iterators) = primary_clause_iterators? {

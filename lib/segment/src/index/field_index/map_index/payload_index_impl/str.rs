@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use blobstore::Blob;
 use common::ambient;
@@ -17,7 +18,7 @@ use super::super::regex_index::{
     RegexCandidateStats, RegexMatcher, StrMapIndexRegexRead, compiled,
 };
 use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::map_index::IdIter;
@@ -31,6 +32,7 @@ use crate::types::{
     AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchRegex,
     MatchSubstring, MatchValue, PayloadKeyType, ValueVariants,
 };
+use crate::vector_storage::DEFAULT_STOPPED;
 
 impl PayloadFieldIndex for MapIndex<str> {
     fn wipe(self) -> OperationResult<()> {
@@ -59,7 +61,15 @@ impl PayloadFieldIndexRead for MapIndex<str> {
         &'a self,
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition)
+        filter_impl(self, condition, &DEFAULT_STOPPED)
+    }
+
+    fn filter_cancellable<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        filter_impl(self, condition, is_stopped)
     }
 
     fn estimate_cardinality(
@@ -98,7 +108,15 @@ where
         &'a self,
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition)
+        filter_impl(self, condition, &DEFAULT_STOPPED)
+    }
+
+    fn filter_cancellable<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        filter_impl(self, condition, is_stopped)
     }
 
     fn estimate_cardinality(
@@ -162,9 +180,11 @@ fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
 fn scan_keys_for_regex<'a, T: MapIndexRead<'a, str>>(
     index: &'a T,
     matcher: &RegexMatcher,
+    is_stopped: &AtomicBool,
 ) -> OperationResult<Vec<EcoString>> {
     let mut keys = Vec::new();
     index.for_each_value(|key| {
+        check_process_stopped(is_stopped)?;
         if matcher.is_match(key) {
             keys.push(EcoString::from(key));
         }
@@ -180,6 +200,7 @@ fn compile_regex(regex: &str) -> OperationResult<std::sync::Arc<RegexMatcher>> {
 fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead + StrMapIndexRegexRead>(
     index: &'a T,
     condition: &'a FieldCondition,
+    is_stopped: &AtomicBool,
 ) -> OperationResult<Option<IdIter<'a>>> {
     let result: Option<IdIter<'a>> = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
@@ -225,10 +246,10 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead + StrMapInde
         }
         Some(Match::Regex(MatchRegex { regex })) => {
             let matcher = compile_regex(regex)?;
-            let keys = match index.regex_keys(&matcher)? {
+            let keys = match index.regex_keys(&matcher, is_stopped)? {
                 Some(keys) => keys,
                 // No regex index on this index instance: check every key.
-                None => scan_keys_for_regex(index, &matcher)?,
+                None => scan_keys_for_regex(index, &matcher, is_stopped)?,
             };
             Some(index.iter_for_values(keys.into_iter())?)
         }
