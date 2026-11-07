@@ -1,7 +1,9 @@
 mod condition_converter;
 pub use condition_converter::IdsConditionChecker;
 mod filtering;
+mod materialization;
 mod nested;
+pub use materialization::MaterializationHint;
 mod optimizer;
 mod payload_index_read;
 mod value_retriever;

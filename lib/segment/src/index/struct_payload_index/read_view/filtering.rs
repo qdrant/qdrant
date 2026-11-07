@@ -1,6 +1,7 @@
 use common::types::{DeferredBehavior, PointOffsetType};
 
 use super::StructPayloadIndexReadView;
+use super::materialization::MaterializationHint;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
@@ -85,12 +86,12 @@ where
         Ok(candidates.min(available))
     }
 
-    /// `expected_checks`: see [`Self::optimize_filter`].
+    /// `materialization`: see [`Self::optimize_filter`].
     pub fn optimized_filter<'q>(
         &'q self,
         filter: &'q Filter,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<OptimizedFilter<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
@@ -99,7 +100,7 @@ where
             payload_provider,
             self.available_point_count(),
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
 
         Ok(optimized_filter)

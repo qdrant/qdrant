@@ -9,6 +9,7 @@ use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::StructPayloadIndexReadView;
+use super::materialization::MaterializationHint;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::id_tracker::IdTrackerRead;
@@ -198,7 +199,10 @@ where
             let optimized_filter = self.optimized_filter(
                 filter,
                 deferred_behavior,
-                Some(self.available_point_count()),
+                Some(MaterializationHint {
+                    expected_checks: self.available_point_count(),
+                    primary: None,
+                }),
             )?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
@@ -248,10 +252,14 @@ where
                     EitherVariant::B(iter.take(first_n))
                 } else {
                     // Some conditions are primary clauses, some are not
-                    // Every candidate of the primary clauses is checked once.
-                    let expected_checks = self.primary_candidates(query_cardinality)?;
+                    // Every candidate of the primary clauses is checked once. The primary
+                    // conditions themselves are not read up front again.
+                    let materialization = MaterializationHint {
+                        expected_checks: self.primary_candidates(query_cardinality)?,
+                        primary: Some(query_cardinality),
+                    };
                     let optimized_filter =
-                        self.optimized_filter(filter, deferred_behavior, Some(expected_checks))?;
+                        self.optimized_filter(filter, deferred_behavior, Some(materialization))?;
                     let iter = optimized_filter.into_matches(
                         joined_primary_iterator
                             .filter(move |&id| !visited_list.check_and_update_visited(id)),
@@ -266,7 +274,10 @@ where
             let optimized_filter = self.optimized_filter(
                 filter,
                 deferred_behavior,
-                Some(self.available_point_count()),
+                Some(MaterializationHint {
+                    expected_checks: self.available_point_count(),
+                    primary: None,
+                }),
             )?;
 
             let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);

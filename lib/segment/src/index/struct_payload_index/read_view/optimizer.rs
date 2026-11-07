@@ -1,9 +1,13 @@
 use std::cmp::Reverse;
 
-use common::types::DeferredBehavior;
+use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
 
 use super::StructPayloadIndexReadView;
+use super::materialization::{
+    ConvertedCondition, DISK_POSTING_TO_CHECKS_RATIO, MaterializationHint, PostingMerge,
+    RAM_POSTING_TO_CHECKS_RATIO, merge_postings, reads_posting_list,
+};
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::condition_checker::ConditionCheckerEnum;
@@ -12,19 +16,12 @@ use crate::index::query_estimator::{
     combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
     invert_estimation,
 };
-use crate::index::query_optimization::bits_checker::BitsConditionChecker;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::payload_storage::PayloadStorageRead;
 use crate::types::{Condition, FieldCondition, Filter, MinShould};
 use crate::vector_storage::VectorStorageRead;
-
-/// Largest posting list, relative to the expected number of checks, worth reading into
-/// a bitset for an on-disk index (a check is a random read when the page cache is cold).
-const DISK_POSTING_TO_CHECKS_RATIO: usize = 64;
-
-/// Same as [`DISK_POSTING_TO_CHECKS_RATIO`], for an index held in RAM.
-const RAM_POSTING_TO_CHECKS_RATIO: usize = 4;
 
 impl<'a, P, I, V, F> StructPayloadIndexReadView<'a, P, I, V, F>
 where
@@ -48,9 +45,11 @@ where
     /// * `filter` - original filter
     /// * `payload_provider` - provides the payload storage
     /// * `total` - total number of points in segment (used for cardinality estimation)
-    /// * `expected_checks` - how many points the caller will check against the result,
-    ///   if known. A field condition whose posting list is small relative to that is read
-    ///   into a bitset up front instead of being checked through its index point by point.
+    /// * `materialization` - how many points the caller will check against the result,
+    ///   and which primary clauses produce them, if known. A field condition whose posting
+    ///   list is small relative to the number of checks is read up front instead of being
+    ///   checked through its index point by point; the posting lists of one clause are
+    ///   merged into a single [`PointSet`].
     ///
     /// # Result
     ///
@@ -61,7 +60,7 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<(OptimizedFilter<'b>, CardinalityEstimation)> {
         let mut filter_estimations: Vec<CardinalityEstimation> = vec![];
         let Filter {
@@ -76,7 +75,7 @@ where
             payload_provider.clone(),
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         filter_estimations.push(estimation);
 
@@ -93,7 +92,7 @@ where
             payload_provider.clone(),
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         filter_estimations.push(estimation);
 
@@ -102,7 +101,7 @@ where
             payload_provider.clone(),
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         filter_estimations.push(estimation);
 
@@ -111,7 +110,7 @@ where
             payload_provider,
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         filter_estimations.push(estimation);
 
@@ -124,14 +123,51 @@ where
         ))
     }
 
+    /// Convert each condition into a checker. Posting lists read up front (see
+    /// [`MaterializationHint`]) become one [`PointSet`] each, not merged.
     pub fn convert_conditions<'b, S: PayloadStorageRead + 'b>(
         &'b self,
         conditions: &'b [Condition],
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<Vec<(ConditionCheckerEnum<'b>, CardinalityEstimation)>> {
+        let context =
+            materialization.map(|hint| hint.point_set_context(self.id_tracker.total_point_count()));
+        Ok(self
+            .convert_conditions_with_postings(
+                conditions,
+                payload_provider,
+                total,
+                deferred_behavior,
+                materialization,
+            )?
+            .into_iter()
+            .map(|(converted, estimation)| {
+                let checker = match converted {
+                    ConvertedCondition::Checker(checker) => checker,
+                    ConvertedCondition::Posting(posting) => {
+                        // A posting is only read when there is a hint, so a context too.
+                        let context = context.expect("posting read without a hint");
+                        ConditionCheckerEnum::Points(PointSet::union(vec![posting], context))
+                    }
+                };
+                (checker, estimation)
+            })
+            .collect())
+    }
+
+    /// Convert each condition into a checker, or read its posting list up front when that
+    /// is cheaper than checking it point by point; the caller merges the posting lists.
+    fn convert_conditions_with_postings<'b, S: PayloadStorageRead + 'b>(
+        &'b self,
+        conditions: &'b [Condition],
+        payload_provider: PayloadProvider<S>,
+        total: usize,
+        deferred_behavior: DeferredBehavior,
+        materialization: Option<MaterializationHint<'_>>,
+    ) -> OperationResult<Vec<(ConvertedCondition<'b>, CardinalityEstimation)>> {
         conditions
             .iter()
             .map(|condition| match condition {
@@ -141,9 +177,12 @@ where
                         payload_provider.clone(),
                         total,
                         deferred_behavior,
-                        expected_checks,
+                        materialization,
                     )?;
-                    Ok((ConditionCheckerEnum::Filter(optimized_filter), estimation))
+                    Ok((
+                        ConvertedCondition::Checker(ConditionCheckerEnum::Filter(optimized_filter)),
+                        estimation,
+                    ))
                 }
                 Condition::Field(_)
                 | Condition::IsEmpty(_)
@@ -155,19 +194,20 @@ where
                 | Condition::CustomIdChecker(_) => {
                     let estimation =
                         self.condition_cardinality(condition, None, deferred_behavior)?;
-                    if let Some(expected_checks) = expected_checks
+                    if let Some(hint) = materialization
                         && let Condition::Field(field_condition) = condition
-                        && let Some(bits) =
-                            self.materialize(field_condition, &estimation, expected_checks)?
+                        && !hint.is_primary(condition)
+                        && let Some(posting) =
+                            self.read_posting(field_condition, &estimation, hint.expected_checks)?
                     {
-                        return Ok((ConditionCheckerEnum::Bits(bits), estimation));
+                        return Ok((ConvertedCondition::Posting(posting), estimation));
                     }
                     let condition_checker = self.condition_converter(
                         condition,
                         payload_provider.clone(),
                         deferred_behavior,
                     )?;
-                    Ok((condition_checker, estimation))
+                    Ok((ConvertedCondition::Checker(condition_checker), estimation))
                 }
             })
             .collect()
@@ -179,23 +219,28 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
         if conditions.is_empty() {
             // Empty `should` => match every point.
             return Ok((Vec::new(), CardinalityEstimation::exact(total)));
         }
 
-        let mut converted = self.convert_conditions(
+        let mut converted = self.convert_conditions_with_postings(
             conditions,
             payload_provider,
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         // More probable conditions first
         converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
+        let conditions = merge_postings(
+            conditions,
+            PostingMerge::Union,
+            self.point_set_context(materialization),
+        );
 
         Ok((conditions, combine_should_estimations(&estimations, total)))
     }
@@ -207,14 +252,16 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
+        // "At least `min_count` of" needs a count per point, so posting lists read up
+        // front stay one set each instead of being merged.
         let mut converted = self.convert_conditions(
             conditions,
             payload_provider,
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         // More probable conditions first if min_count < number of conditions
         if min_count < conditions.len() / 2 {
@@ -237,18 +284,23 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
-        let mut converted = self.convert_conditions(
+        let mut converted = self.convert_conditions_with_postings(
             conditions,
             payload_provider,
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         // Less probable conditions first
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
+        let conditions = merge_postings(
+            conditions,
+            PostingMerge::Intersection,
+            self.point_set_context(materialization),
+        );
 
         Ok((conditions, combine_must_estimations(&estimations, total)))
     }
@@ -259,18 +311,24 @@ where
         payload_provider: PayloadProvider<S>,
         total: usize,
         deferred_behavior: DeferredBehavior,
-        expected_checks: Option<usize>,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<(Vec<ConditionCheckerEnum<'b>>, CardinalityEstimation)> {
-        let mut converted = self.convert_conditions(
+        let mut converted = self.convert_conditions_with_postings(
             conditions,
             payload_provider,
             total,
             deferred_behavior,
-            expected_checks,
+            materialization,
         )?;
         // More probable conditions first, as it will be reverted
         converted.sort_by_key(|(_, estimation)| estimation.exp);
         let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
+        // None of the conditions may match: one set of the points matching any of them.
+        let conditions = merge_postings(
+            conditions,
+            PostingMerge::Union,
+            self.point_set_context(materialization),
+        );
 
         Ok((
             conditions,
@@ -284,19 +342,26 @@ where
         ))
     }
 
-    /// Read the posting list of `condition` into a bitset, if that is cheaper than
-    /// checking `expected_checks` points through the index one by one.
+    fn point_set_context(
+        &self,
+        materialization: Option<MaterializationHint<'_>>,
+    ) -> Option<PointSetContext> {
+        materialization.map(|hint| hint.point_set_context(self.id_tracker.total_point_count()))
+    }
+
+    /// Read the posting list of `condition`, if that is cheaper than checking
+    /// `expected_checks` points through the index one by one.
     ///
     /// A posting entry is 4 sequential bytes, while a per-point check is a lookup that,
     /// on an on-disk index with a cold page cache, is a random read. So reading a posting
     /// list pays off up to [`DISK_POSTING_TO_CHECKS_RATIO`] times the number of checks for
     /// an on-disk index, and up to [`RAM_POSTING_TO_CHECKS_RATIO`] times for an in-RAM one.
-    fn materialize(
+    fn read_posting(
         &self,
         condition: &FieldCondition,
         estimation: &CardinalityEstimation,
         expected_checks: usize,
-    ) -> OperationResult<Option<BitsConditionChecker>> {
+    ) -> OperationResult<Option<Vec<PointOffsetType>>> {
         if !reads_posting_list(condition) {
             return Ok(None);
         }
@@ -313,35 +378,9 @@ where
                 continue;
             }
             if let Some(points) = index.filter(condition)? {
-                let len = self.id_tracker.total_point_count();
-                return Ok(Some(BitsConditionChecker::from_points(len, points)));
+                return Ok(Some(points.collect()));
             }
         }
         Ok(None)
     }
-}
-
-/// Whether the index answers `condition` by reading posting lists or sorted values,
-/// so that materializing it costs about one sequential entry per match. Geo conditions
-/// re-check every point of the matching geohash cells and `values_count` scans points,
-/// so those stay per-point checks.
-fn reads_posting_list(condition: &FieldCondition) -> bool {
-    let FieldCondition {
-        key: _,
-        r#match,
-        range,
-        geo_bounding_box,
-        geo_radius,
-        geo_polygon,
-        values_count,
-        is_empty,
-        is_null,
-    } = condition;
-    (r#match.is_some() || range.is_some())
-        && geo_bounding_box.is_none()
-        && geo_radius.is_none()
-        && geo_polygon.is_none()
-        && values_count.is_none()
-        && is_empty.is_none()
-        && is_null.is_none()
 }

@@ -674,38 +674,44 @@ fn test_build_field_index_without_journal() {
     assert!(!has_journal(&segment, &second));
 }
 
-/// A secondary condition read into a bitset (`expected_checks` given) must accept
-/// exactly the points the per-point index check accepts, and the plain path built
-/// on it must return exactly the brute-force matches.
+/// Conditions read up front into point sets (a [`MaterializationHint`] given) must accept
+/// exactly the points the per-point index checks accept, for every clause that merges
+/// posting lists (`must` intersects, `should` and `must_not` unite) and with the primary
+/// clauses excluded, and the plain path built on them must return the brute-force matches.
 #[test]
 fn materialized_conditions_match_per_point_checks() {
     use common::condition_checker::ConditionChecker;
     use common::types::DeferredBehavior;
+
+    use crate::index::struct_payload_index::MaterializationHint;
 
     let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
     let _scope = ambient::test_guard();
 
     let narrow = JsonPath::from_str("narrow").unwrap();
     let small = JsonPath::from_str("small").unwrap();
+    let mid = JsonPath::from_str("mid").unwrap();
     let num_points = 6600u64;
-    // `narrow = "n7"` holds 66 points, `small = "s"` holds 200: small enough to be
-    // materialized for 66 checks with the in-RAM ratio. Both match 2607 and 5907.
-    let matches = |i: u64| i % 100 == 7 && i.is_multiple_of(33);
+    // `narrow = "n7"` holds 66 points, `small = "s"` holds 200 and `mid = "m"` 3300: with
+    // 66 checks, `small` passes the in-RAM ratio (4) and `mid` doesn't.
+    let in_narrow = |i: u64| i % 100 == 7;
+    let in_small = |i: u64| i.is_multiple_of(33);
+    let in_mid = |i: u64| !i.is_multiple_of(2);
 
     let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
     for i in 0..num_points {
         segment
             .upsert_point(0, i.into(), only_default_vector(&[1.0, 1.0]))
             .unwrap();
-        let small_value = if i.is_multiple_of(33) { "s" } else { "t" };
         let payload: Payload = serde_json::from_value(serde_json::json!({
             "narrow": format!("n{}", i % 100),
-            "small": small_value,
+            "small": if in_small(i) { "s" } else { "t" },
+            "mid": if in_mid(i) { "m" } else { "x" },
         }))
         .unwrap();
         segment.set_full_payload(0, i.into(), &payload).unwrap();
     }
-    for key in [&narrow, &small] {
+    for key in [&narrow, &small, &mid] {
         segment
             .create_field_index(
                 0,
@@ -715,43 +721,89 @@ fn materialized_conditions_match_per_point_checks() {
             .unwrap();
     }
 
-    let filter = Filter {
-        should: None,
-        min_should: None,
-        must: Some(vec![
-            Condition::Field(FieldCondition::new_match(
-                narrow.clone(),
-                Match::new_value(ValueVariants::String("n7".to_string())),
-            )),
-            Condition::Field(FieldCondition::new_match(
-                small.clone(),
-                Match::new_value(ValueVariants::String("s".to_string())),
-            )),
-        ]),
-        must_not: None,
+    let cond = |key: &JsonPath, value: &str| {
+        Condition::Field(FieldCondition::new_match(
+            key.clone(),
+            Match::new_value(ValueVariants::String(value.to_string())),
+        ))
     };
-
-    let expected: Vec<u64> = (0..num_points).filter(|&i| matches(i)).collect();
-    assert!(!expected.is_empty());
+    let filter = |must: Vec<Condition>,
+                  should: Option<Vec<Condition>>,
+                  must_not: Option<Vec<Condition>>| Filter {
+        should,
+        min_should: None,
+        must: Some(must),
+        must_not,
+    };
+    // (filter, brute force)
+    #[expect(clippy::type_complexity)]
+    let cases: Vec<(Filter, Box<dyn Fn(u64) -> bool>)> = vec![
+        (
+            filter(vec![cond(&narrow, "n7"), cond(&small, "s")], None, None),
+            Box::new(move |i| in_narrow(i) && in_small(i)),
+        ),
+        (
+            filter(
+                vec![
+                    cond(&narrow, "n7"),
+                    cond(&small, "s"),
+                    cond(&small, "s"),
+                    cond(&mid, "m"),
+                ],
+                None,
+                None,
+            ),
+            Box::new(move |i| in_narrow(i) && in_small(i) && in_mid(i)),
+        ),
+        (
+            filter(
+                vec![cond(&narrow, "n7")],
+                Some(vec![cond(&small, "s"), cond(&narrow, "n8")]),
+                None,
+            ),
+            Box::new(move |i| in_narrow(i) && (in_small(i) || i % 100 == 8)),
+        ),
+        (
+            filter(
+                vec![cond(&narrow, "n7")],
+                None,
+                Some(vec![cond(&small, "s"), cond(&narrow, "n9")]),
+            ),
+            Box::new(move |i| in_narrow(i) && !in_small(i)),
+        ),
+    ];
 
     segment.payload_index.borrow().with_view(|view| {
-        let per_point = view
-            .optimized_filter(&filter, DeferredBehavior::VisibleOnly, None)
-            .unwrap();
-        let materialized = view
-            .optimized_filter(&filter, DeferredBehavior::VisibleOnly, Some(66))
-            .unwrap();
-        for point in 0..num_points as u32 {
-            assert_eq!(
-                per_point.check(point).unwrap(),
-                materialized.check(point).unwrap(),
-                "point {point}",
-            );
-        }
+        for (case, (filter, brute_force)) in cases.iter().enumerate() {
+            let expected: Vec<u64> = (0..num_points).filter(|&i| brute_force(i)).collect();
+            assert!(!expected.is_empty(), "case {case}");
 
-        let mut hits = view.query_points(&filter, &AtomicBool::new(false)).unwrap();
-        hits.sort_unstable();
-        let hits: Vec<u64> = hits.into_iter().map(u64::from).collect();
-        assert_eq!(hits, expected);
+            let estimation = view.estimate_cardinality(filter).unwrap();
+            let per_point = view
+                .optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
+                .unwrap();
+            for primary in [None, Some(&estimation)] {
+                let hint = MaterializationHint {
+                    expected_checks: 66,
+                    primary,
+                };
+                let materialized = view
+                    .optimized_filter(filter, DeferredBehavior::VisibleOnly, Some(hint))
+                    .unwrap();
+                for point in 0..num_points as u32 {
+                    assert_eq!(
+                        per_point.check(point).unwrap(),
+                        materialized.check(point).unwrap(),
+                        "case {case}, primary {}, point {point}",
+                        primary.is_some(),
+                    );
+                }
+            }
+
+            let mut hits = view.query_points(filter, &AtomicBool::new(false)).unwrap();
+            hits.sort_unstable();
+            let hits: Vec<u64> = hits.into_iter().map(u64::from).collect();
+            assert_eq!(hits, expected, "case {case}");
+        }
     });
 }
