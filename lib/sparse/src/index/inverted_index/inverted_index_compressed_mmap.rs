@@ -315,6 +315,27 @@ impl<W: Weight, S: UniversalRead + 'static> InvertedIndex for InvertedIndexCompr
             len => Some(len as DimId - 1),
         }
     }
+
+    /// Reads the whole header table in one sequential read, instead of one random read per
+    /// posting list as the default implementation does through [`Self::posting_list_len_batch`].
+    fn total_element_count(&self) -> UioResult<usize> {
+        let storage_len = self.storage.len::<u8>()?;
+        let headers = self.read_all_headers()?;
+        let headers = <[PostingListFileHeader<W>]>::ref_from_bytes(&headers)
+            .map_err(|_| corrupted_index())?;
+        headers
+            .iter()
+            .enumerate()
+            .try_fold(0usize, |total, (id, header)| {
+                let remainders_end = headers
+                    .get(id + 1)
+                    .map_or(storage_len, |next| next.ids_start);
+                let count = header
+                    .postings_count(remainders_end)
+                    .ok_or_else(corrupted_index)?;
+                Ok(total + count)
+            })
+    }
 }
 
 impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<W, S> {
@@ -341,6 +362,17 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
         Ok(view)
     }
 
+    /// Reads the headers of all posting lists as one contiguous, sequential range.
+    fn read_all_headers(&self) -> UioResult<ACow<'_>> {
+        let headers = self.storage.read_bytes(
+            0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
+            Sequential,
+            align_of::<PostingListFileHeader<W>>(),
+        )?;
+        HwMetric::VectorIoRead.bump(headers.len());
+        Ok(headers)
+    }
+
     /// Calls `callback` for each posting list view in the file.
     /// Views are ephemeral, so they cannot outlive the closure.
     ///
@@ -351,12 +383,7 @@ impl<W: Weight, S: UniversalRead + Debug + 'static> InvertedIndexCompressedMmap<
     ) -> UioResult<()> {
         // Phase 1: read all headers as one contiguous range.
         let storage_len = self.storage.len::<u8>()?;
-        let headers = self.storage.read_bytes(
-            0..(self.file_header.posting_count * Self::HEADER_SIZE) as u64,
-            Sequential,
-            align_of::<PostingListFileHeader<W>>(),
-        )?;
-        HwMetric::VectorIoRead.bump(headers.len());
+        let headers = self.read_all_headers()?;
         let headers = <[PostingListFileHeader<W>]>::ref_from_bytes(&headers)
             .map_err(|_| corrupted_index())?;
 
@@ -617,6 +644,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_total_element_count_empty_mmap() {
+        let _scope = ambient::test_guard();
+        let ram = InvertedIndexCompressedImmutableRam::<f32>::from_ram_index(
+            &MmapFs,
+            Cow::Owned(InvertedIndexRam::empty()),
+            Builder::new().prefix("test_empty_ram").tempdir().unwrap(),
+        )
+        .unwrap();
+        let tmp_dir_path = Builder::new().prefix("test_empty_mmap").tempdir().unwrap();
+        InvertedIndexCompressedMmap::<f32, MmapFile>::convert_and_save(
+            &MmapFs,
+            &ram,
+            &tmp_dir_path,
+        )
+        .unwrap();
+        let index =
+            InvertedIndexCompressedMmap::<f32, MmapFile>::open_ro(&MmapFs, tmp_dir_path.path())
+                .unwrap();
+        assert_eq!(index.max_index(), None);
+        assert_eq!(index.total_element_count().unwrap(), 0);
+    }
+
     fn check_inverted_index_mmap<S: UniversalRead + 'static, W: Weight>()
     where
         S::Fs: Default,
@@ -666,6 +716,18 @@ mod tests {
         assert_eq!(index.file_header.posting_count, 6);
         assert_eq!(index.file_header.vector_count, 9);
         assert_eq!(index.total_element_count().unwrap(), ELEMENTS);
+        // The sequential override agrees with the per-header batched lengths.
+        let mut batched = 0;
+        index
+            .posting_list_len_batch(
+                (0..=index.max_index().unwrap()).map(|dim| ((), dim)),
+                |(), len| {
+                    batched += len;
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(batched, ELEMENTS);
 
         compare_indexes(&inverted_index_ram, &index);
 
