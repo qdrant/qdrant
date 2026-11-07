@@ -20,6 +20,7 @@ use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -148,6 +149,18 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
+    fn is_on_disk(&self) -> bool {
+        match self.get_storage_type() {
+            StorageType::Mmap {
+                layout: ImmutableLayout::Mmap,
+            } => true,
+            StorageType::Mmap {
+                layout: ImmutableLayout::Heap,
+            }
+            | StorageType::Gridstore => false,
+        }
+    }
+
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
         Ok(match self {
             FieldIndex::IntIndex(index) => index.get_telemetry_data(),
