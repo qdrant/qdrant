@@ -10,9 +10,13 @@ use super::re2::to_engine_pattern;
 pub const MAX_REGEX_LEN: usize = 1024;
 
 /// Limit of the compiled program. Matching time is linear in the program
-/// size, so this bounds the cost per checked value; Unicode classes under
-/// counted repetition (`\pL{1000}`) are what hits it.
-const COMPILED_SIZE_LIMIT: usize = 10 << 20;
+/// size, so this bounds the cost per checked value, and compilation time.
+///
+/// Typical patterns compile to KiBs, and ASCII repetitions up to the RE2 limit
+/// (`.{1,1000}`, `[^,]{1,1000}`) to about 1 MiB. What hits the limit is a
+/// Unicode class under a large counted repetition: `\pL{1,40}` fits,
+/// `\pL{1,100}` (4 MiB) doesn't.
+const COMPILED_SIZE_LIMIT: usize = 2 << 20;
 
 /// Cache of the lazy DFA. Too small a cache makes the engine fall back to a
 /// much slower one on Unicode-heavy patterns: a Unicode `\w{1,100}x` over 1M
@@ -147,11 +151,15 @@ mod tests {
             Err(RegexError::TooLong { .. }),
         ));
         // Too big once compiled.
-        assert!(matches!(
-            RegexMatcher::new(r"\pL{1000}"),
-            Err(RegexError::Invalid(_))
-        ));
+        for pattern in [r"\pL{1000}", r"\pL{1,100}x", "(?:a{1000}){1000}"] {
+            assert!(
+                matches!(RegexMatcher::new(pattern), Err(RegexError::Invalid(_))),
+                "{pattern}",
+            );
+        }
         // Big, but within limits.
-        assert!(RegexMatcher::new(r"\pL{1,100}x").is_ok());
+        for pattern in [r"\pL{1,40}x", ".{1,1000}", "[^,]{1,1000}", r"^\w{1,1000}$"] {
+            assert!(RegexMatcher::new(pattern).is_ok(), "{pattern}");
+        }
     }
 }
