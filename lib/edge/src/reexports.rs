@@ -84,6 +84,17 @@ pub mod internal {
     pub use shard::snapshots::snapshot_manifest::SnapshotManifest;
 }
 
+/// Re-export feature flags configuration and initialization.
+pub mod flags {
+    pub use common::flags::{FeatureFlags, feature_flags, init_feature_flags};
+}
+
+/// Re-export multi-mmap support configuration and initialization.
+pub mod mmap {
+    pub use common::fs::check_mmap_functionality;
+    pub use common::mmap::{MULTI_MMAP_IS_SUPPORTED, MULTI_MMAP_SUPPORT_CHECK_RESULT};
+}
+
 /// Re-export WAL configuration for advanced/embedded use cases.
 ///
 /// Set it on [`crate::EdgeConfig`] via
