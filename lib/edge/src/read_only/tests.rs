@@ -716,6 +716,62 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
     assert_eq!(exact_count(&follower), 30);
 }
 
+/// CreateIndex / DropIndex mutate payload indexes in place on a surviving
+/// segment. The follower must config-reload before point-delta live_reload so
+/// DropIndex does not leave it looking for wiped index files.
+#[test]
+fn live_reload_picks_up_create_and_drop_index() {
+    use segment::types::{Payload, PayloadFieldSchema, PayloadSchemaType};
+    use shard::operations::CollectionUpdateOperations::FieldIndexOperation;
+    use shard::operations::{CreateIndex, FieldIndexOperations};
+
+    let dir = tempfile::Builder::new()
+        .prefix("edge-ro-payload-index")
+        .tempdir()
+        .unwrap();
+
+    let leader = EdgeShard::new(dir.path(), test_config()).unwrap();
+    let points = (1..=20)
+        .map(|id| {
+            let mut p = point(id);
+            let payload = serde_json::json!({ "tag": format!("t{}", id % 3) });
+            p.payload = Some(Payload::from(payload.as_object().unwrap().clone()));
+            p
+        })
+        .collect::<Vec<_>>();
+    leader
+        .update(PointOperation(UpsertPoints(PointsList(points))))
+        .unwrap();
+    leader.flush().unwrap();
+
+    let follower = open_follower(dir.path());
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 20);
+
+    leader
+        .update(FieldIndexOperation(FieldIndexOperations::CreateIndex(
+            CreateIndex {
+                field_name: "tag".parse().unwrap(),
+                field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+            },
+        )))
+        .unwrap();
+    leader.flush().unwrap();
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 20);
+
+    leader
+        .update(FieldIndexOperation(FieldIndexOperations::DeleteIndex(
+            "tag".parse().unwrap(),
+        )))
+        .unwrap();
+    leader.flush().unwrap();
+    // Without config reload this fails with FileNotFound on wiped *-null compact_flags.
+    follower.live_reload().unwrap();
+    assert_eq!(exact_count(&follower), 20);
+    assert_follower_vectors(&follower, &[1, 10, 20]);
+}
+
 /// A segment whose reload failed is reopened in place: it serves the leader's
 /// current state, and later reloads continue from the reopened segment.
 #[test]
