@@ -72,7 +72,11 @@ async fn build_shard(
     .unwrap()
 }
 
-async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
+async fn retrieve_point_with_behavior(
+    shard: &LocalShard,
+    point_id: u64,
+    deferred_behavior: DeferredBehavior,
+) -> bool {
     let request = Arc::new(PointRequestInternal {
         ids: vec![point_id.into()],
         with_payload: None,
@@ -86,12 +90,16 @@ async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
             &WithVector::Bool(false),
             &current_runtime,
             None,
-            DeferredBehavior::VisibleOnly,
+            deferred_behavior,
         )
         .measured(AmbientContext::new())
         .await
         .unwrap();
     !retrieved.is_empty()
+}
+
+async fn retrieve_point(shard: &LocalShard, point_id: u64) -> bool {
+    retrieve_point_with_behavior(shard, point_id, DeferredBehavior::VisibleOnly).await
 }
 
 const NUM_POINTS: u64 = 100;
@@ -232,8 +240,8 @@ async fn test_wait_deferred_does_not_block_update_worker() {
     a_handle.abort();
 }
 
-/// Test that with `prevent_unoptimized=true` and `wait=false`, points that reach
-/// the indexing threshold are not guaranteed to be visible immediately.
+/// Test that `wait=false` acknowledges after the WAL write, while applied points
+/// past the indexing threshold remain hidden from `VisibleOnly` until optimized.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_deferred_points_wait_false() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -248,7 +256,9 @@ async fn test_deferred_points_wait_false() {
             .unwrap(),
     );
 
-    let config = create_deferred_points_config();
+    let mut config = create_deferred_points_config();
+    // Keep deferred points deferred while their visibility is inspected.
+    config.optimizer_config.max_optimization_threads = Some(0);
     let shard = build_shard(&config, collection_dir.path(), payload_index_schema).await;
 
     // Push all points with wait=false — returns immediately without waiting for application
@@ -258,14 +268,22 @@ async fn test_deferred_points_wait_false() {
             .update(op.into(), WaitUntil::Wal, None)
             .measured(AmbientContext::new())
             .await;
-        assert!(
-            result.is_ok(),
-            "Upsert with wait=false should succeed for point {i}"
+        assert_eq!(
+            result
+                .unwrap_or_else(|err| {
+                    panic!("Upsert with wait=false failed for point {i}: {err}")
+                })
+                .status,
+            UpdateStatus::Acknowledged,
+            "Upsert with wait=false should only be acknowledged for point {i}"
         );
     }
 
-    // Immediately after sending all upserts with wait=false,
-    // count how many points are visible.
+    // Wait until every WAL operation has been applied to a segment. With the
+    // optimizer disabled, points past the indexing threshold stay deferred.
+    shard.plunge_async().await.unwrap().await.unwrap();
+
+    // Count query-visible points.
     let mut visible_count = 0;
     for i in 1..=NUM_POINTS {
         if retrieve_point(&shard, i).await {
@@ -273,16 +291,26 @@ async fn test_deferred_points_wait_false() {
         }
     }
 
-    // With wait=false the update worker may not have processed all operations yet,
-    // especially once the indexing threshold is reached and optimization is triggered.
-    // We assert that NOT all points are visible, showing that wait=false
-    // does not guarantee point visibility unlike wait=true.
+    // Every operation has been applied, but with the optimizer disabled the points
+    // past the indexing threshold remain deferred. `wait=false` acknowledged them
+    // without waiting for visibility (with `wait=true` this would block forever),
+    // so `VisibleOnly` must see some but not all of them.
     eprintln!("Visible points with wait=false: {visible_count}/{NUM_POINTS}");
     assert!(
-        visible_count < NUM_POINTS as usize,
-        "With wait=false, not all {NUM_POINTS} points should be immediately visible, \
-         but found {visible_count} visible. This means the update worker processed \
-         all operations before we could check — the indexing threshold may be too high."
+        0 < visible_count && visible_count < NUM_POINTS as usize,
+        "Expected both visible and deferred points after draining the update worker, \
+         but found {visible_count}/{NUM_POINTS} visible"
+    );
+
+    let mut applied_count = 0;
+    for i in 1..=NUM_POINTS {
+        if retrieve_point_with_behavior(&shard, i, DeferredBehavior::WithDeferred).await {
+            applied_count += 1;
+        }
+    }
+    assert_eq!(
+        applied_count, NUM_POINTS as usize,
+        "All acknowledged points should be applied even when some remain deferred"
     );
 
     shard.stop_gracefully().await;
