@@ -280,7 +280,13 @@ where
         Some(_) | None => {}
     }
 
-    Ok(combine_must_estimations(&filter_estimations, total))
+    let mut estimation = combine_must_estimations(&filter_estimations, total);
+    // An approximate count must not report a possibly non-empty filter as empty.
+    // `max == 0` is a proven-empty result; otherwise preserve at least one match.
+    if estimation.exp == 0 && estimation.max > 0 {
+        estimation.exp = 1;
+    }
+    Ok(estimation)
 }
 
 fn estimate_should<F>(
@@ -672,6 +678,49 @@ mod tests {
 
         let res = combine_must_estimations(&estimations, 10_000);
         eprintln!("res = {res:#?}");
+    }
+
+    #[test]
+    fn approximate_compound_filter_does_not_round_down_to_zero() {
+        let estimator = |condition: &Condition| match condition {
+            Condition::Nested(_) => Ok(CardinalityEstimation::exact(3)),
+            Condition::Field(field) => Ok(match field.key.to_string().as_str() {
+                "n" => CardinalityEstimation::exact(10),
+                "color" => CardinalityEstimation::exact(6),
+                _ => CardinalityEstimation::unknown(200),
+            }),
+            _ => panic!("unexpected condition"),
+        };
+        let filter = Filter {
+            should: Some(vec![
+                Condition::new_nested(
+                    JsonPath::new("nested"),
+                    Filter::new_must(test_condition("x")),
+                ),
+                test_condition("n"),
+            ]),
+            min_should: None,
+            must: Some(vec![test_condition("color")]),
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&estimator, &filter, 200).unwrap();
+
+        assert!(estimation.max > 0);
+        assert!(estimation.exp > 0);
+        assert!(estimation.min <= estimation.exp);
+        assert!(estimation.exp <= estimation.max);
+    }
+
+    #[test]
+    fn proven_empty_filter_still_estimates_zero() {
+        let estimator = |_condition: &Condition| Ok(CardinalityEstimation::exact(0));
+        let filter = Filter::new_must(test_condition("color"));
+
+        let estimation = estimate_filter(&estimator, &filter, 200).unwrap();
+
+        assert_eq!(estimation.max, 0);
+        assert_eq!(estimation.exp, 0);
     }
 
     #[test]
