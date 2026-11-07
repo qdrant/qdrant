@@ -165,6 +165,28 @@ impl VectorIndexEnum {
         Ok(())
     }
 
+    /// Sparse elements in the index, `None` for a dense one. An immutable index keeps a deleted
+    /// point's elements until it is rebuilt.
+    pub fn sparse_element_count(&self) -> OperationResult<Option<usize>> {
+        let count = match self {
+            Self::Plain(_) | Self::Hnsw(_) => return Ok(None),
+            Self::SparseRam(index) => index.inverted_index().total_element_count()?,
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.inverted_index().total_element_count()?
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.inverted_index().total_element_count()?
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.inverted_index().total_element_count()?
+            }
+            Self::SparseCompressedMmapF32(index) => index.inverted_index().total_element_count()?,
+            Self::SparseCompressedMmapF16(index) => index.inverted_index().total_element_count()?,
+            Self::SparseCompressedMmapU8(index) => index.inverted_index().total_element_count()?,
+        };
+        Ok(Some(count))
+    }
+
     pub fn as_hnsw(&self) -> Option<&HNSWIndex> {
         match self {
             VectorIndexEnum::Plain(_) => None,
