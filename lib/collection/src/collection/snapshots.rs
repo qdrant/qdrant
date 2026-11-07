@@ -176,7 +176,16 @@ impl Collection {
     ) -> CollectionResult<()> {
         match snapshot_data {
             SnapshotData::Packed(snapshot_path) => {
-                tar_unpack_file(&snapshot_path, target_dir)?;
+                // tar_unpack_file returns std::io::Error on a malformed or empty
+                // archive. The blanket `From<std::io::Error> for CollectionError`
+                // wraps that as `File IO error: ...` and maps to service_error
+                // (HTTP 500). The upload endpoint is a client input surface:
+                // a malformed archive is a 4xx, not a server fault. Map the
+                // decode failure to `bad_input` so the API returns a controlled
+                // 400. Part of issue #10553 (the malformed-archive half; the
+                // empty-archive path leak is closed by the missing-config check
+                // below).
+                tar_unpack_file(&snapshot_path, target_dir).map_err(map_tar_unpack_error)?;
                 snapshot_path.close()?;
             }
             SnapshotData::Unpacked(snapshot_dir) => {
@@ -505,5 +514,44 @@ impl Collection {
             .ok_or_else(|| shard_not_found_error(shard_id))?
             .get_partial_snapshot_manifest()
             .await
+    }
+}
+
+/// Map a `tar_unpack_file` `std::io::Error` to `CollectionError::bad_input`.
+/// Used at the upload/recover boundary so a malformed or empty uploaded archive
+/// produces a controlled 400 instead of an HTTP 500 with a "File IO error: ..."
+/// prefix that would otherwise carry the server-side path through the blanket
+/// `From<std::io::Error> for CollectionError` impl. See issue #10553.
+fn map_tar_unpack_error(err: std::io::Error) -> CollectionError {
+    CollectionError::bad_input(format!(
+        "Snapshot archive is not a valid tar archive: {err}"
+    ))
+}
+
+#[cfg(test)]
+mod map_tar_unpack_error_tests {
+    use std::io;
+
+    use crate::operations::types::CollectionError;
+
+    use super::map_tar_unpack_error;
+
+    /// Regression for issue #10553 (malformed-archive half): a malformed
+    /// uploaded snapshot must produce a controlled 400 via `bad_input`,
+    /// not the HTTP 500 with a "File IO error: ..." prefix that the blanket
+    /// `From<std::io::Error> for CollectionError` impl would otherwise
+    /// produce. The error message must NOT contain "File IO error: " (the
+    /// blanket impl's prefix) because that carries server-side paths
+    /// through to the client.
+    #[test]
+    fn test_map_tar_unpack_error_returns_bad_input() {
+        let err = io::Error::new(io::ErrorKind::InvalidData, "garbage archive header");
+        let mapped = map_tar_unpack_error(err);
+        let message = match &mapped {
+            CollectionError::BadInput { description } => description.clone(),
+            other => panic!("expected BadInput, got {other:?}"),
+        };
+        assert!(message.starts_with("Snapshot archive is not a valid tar archive"));
+        assert!(!message.contains("File IO error: "));
     }
 }
