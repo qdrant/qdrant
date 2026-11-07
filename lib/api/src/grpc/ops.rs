@@ -2,6 +2,19 @@ use std::collections::HashMap;
 
 use crate::grpc::{HardwareUsage, InferenceUsage, ModelUsage, Usage};
 
+/// Sum of two optional counters. `None` means "not measured", so it only
+/// survives when both sides are `None`.
+fn add_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    match (a, b) {
+        (None, None) => None,
+        (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
+    }
+}
+
+fn is_zero_opt(value: Option<u64>) -> bool {
+    value.is_none_or(|v| v == 0)
+}
+
 impl HardwareUsage {
     pub fn add(&mut self, other: Self) {
         let Self {
@@ -12,15 +25,20 @@ impl HardwareUsage {
             payload_index_io_write,
             vector_io_read,
             vector_io_write,
+            remote_io_cached_read,
+            remote_io_non_cached_read,
         } = other;
 
-        self.cpu += cpu;
-        self.payload_io_read += payload_io_read;
-        self.payload_io_write += payload_io_write;
-        self.payload_index_io_read += payload_index_io_read;
-        self.payload_index_io_write += payload_index_io_write;
-        self.vector_io_read += vector_io_read;
-        self.vector_io_write += vector_io_write;
+        self.cpu = add_opt(self.cpu, cpu);
+        self.payload_io_read = add_opt(self.payload_io_read, payload_io_read);
+        self.payload_io_write = add_opt(self.payload_io_write, payload_io_write);
+        self.payload_index_io_read = add_opt(self.payload_index_io_read, payload_index_io_read);
+        self.payload_index_io_write = add_opt(self.payload_index_io_write, payload_index_io_write);
+        self.vector_io_read = add_opt(self.vector_io_read, vector_io_read);
+        self.vector_io_write = add_opt(self.vector_io_write, vector_io_write);
+        self.remote_io_cached_read = add_opt(self.remote_io_cached_read, remote_io_cached_read);
+        self.remote_io_non_cached_read =
+            add_opt(self.remote_io_non_cached_read, remote_io_non_cached_read);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -32,15 +50,19 @@ impl HardwareUsage {
             payload_index_io_write,
             vector_io_read,
             vector_io_write,
-        } = self;
+            remote_io_cached_read,
+            remote_io_non_cached_read,
+        } = *self;
 
-        *cpu == 0
-            && *payload_io_read == 0
-            && *payload_io_write == 0
-            && *payload_index_io_read == 0
-            && *payload_index_io_write == 0
-            && *vector_io_read == 0
-            && *vector_io_write == 0
+        is_zero_opt(cpu)
+            && is_zero_opt(payload_io_read)
+            && is_zero_opt(payload_io_write)
+            && is_zero_opt(payload_index_io_read)
+            && is_zero_opt(payload_index_io_write)
+            && is_zero_opt(vector_io_read)
+            && is_zero_opt(vector_io_write)
+            && is_zero_opt(remote_io_cached_read)
+            && is_zero_opt(remote_io_non_cached_read)
     }
 
     pub fn into_non_empty(self) -> Option<Self> {
