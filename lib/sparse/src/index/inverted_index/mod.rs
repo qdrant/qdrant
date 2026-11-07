@@ -138,6 +138,20 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     /// Get max existed index
     fn max_index(&self) -> Option<DimOffset>;
+
+    /// Elements across all posting lists, i.e. the (dimension, weight) pairs of the indexed
+    /// vectors, independent of how the postings are stored. Reads only the posting list headers.
+    fn total_element_count(&self) -> UioResult<usize> {
+        let Some(max_index) = self.max_index() else {
+            return Ok(0);
+        };
+        let mut total = 0usize;
+        self.posting_list_len_batch((0..=max_index).map(|dim| ((), dim)), |(), len| {
+            total += len;
+            Ok(())
+        })?;
+        Ok(total)
+    }
 }
 
 /// Error returned from [`InvertedIndex::get_batch`] and [`InvertedIndex::posting_list_len_batch`].
