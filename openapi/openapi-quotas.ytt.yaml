@@ -17,14 +17,16 @@ paths:
       tags:
         - Quotas
       summary: Set global quotas
-      description: Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts
+      description: |
+        Replace the cluster-wide resource quota configuration. The new configuration is propagated to every peer through consensus and persisted, so it survives restarts.
+        The request must set `enabled`. Unknown fields are rejected.
       operationId: update_quotas
       requestBody:
         description: Quota configuration to apply
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/QuotaConfig"
+              $ref: "#/components/schemas/UpdateQuotas"
       parameters:
         - name: wait
           in: query
