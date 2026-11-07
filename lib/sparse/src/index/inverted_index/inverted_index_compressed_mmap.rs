@@ -635,6 +635,10 @@ mod tests {
         builder.add(8, [(1, 5.0)].into());
         builder.add(9, [(1, 6.0)].into());
         let inverted_index_ram = builder.build();
+        // 4 + 4 + 3 + 2 + 5 * 1 elements, whatever the format.
+        const ELEMENTS: usize = 18;
+        assert_eq!(inverted_index_ram.total_element_count().unwrap(), ELEMENTS);
+        assert_eq!(InvertedIndexRam::empty().total_element_count().unwrap(), 0);
         let tmp_dir_path = Builder::new().prefix("test_index_dir1").tempdir().unwrap();
         let inverted_index_ram = InvertedIndexCompressedImmutableRam::from_ram_index(
             &MmapFs,
@@ -642,6 +646,7 @@ mod tests {
             &tmp_dir_path,
         )
         .unwrap();
+        assert_eq!(inverted_index_ram.total_element_count().unwrap(), ELEMENTS);
 
         let tmp_dir_path = Builder::new().prefix("test_index_dir2").tempdir().unwrap();
 
@@ -660,6 +665,7 @@ mod tests {
         // posting_count: 0th entry is always empty + 1st + 2nd + 3rd + 4th empty + 5th
         assert_eq!(index.file_header.posting_count, 6);
         assert_eq!(index.file_header.vector_count, 9);
+        assert_eq!(index.total_element_count().unwrap(), ELEMENTS);
 
         compare_indexes(&inverted_index_ram, &index);
 
