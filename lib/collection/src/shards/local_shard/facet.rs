@@ -136,7 +136,7 @@ impl LocalShard {
         .await
         .map_err(|_: Elapsed| CollectionError::timeout(timeout, "facet"))??;
 
-        Ok(hits)
+        Ok(hits.into_iter().filter(|hit| hit.count > 0).collect())
     }
 
     async fn unique_values(
