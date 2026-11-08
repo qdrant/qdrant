@@ -808,3 +808,173 @@ fn materialized_conditions_match_per_point_checks() {
         }
     });
 }
+
+/// A geo condition read up front as its covering cells must still accept exactly the
+/// points the per-point geo check accepts: the cells are a superset that only skips the
+/// exact check for points outside them. Covers `must`, `should` and `must_not`.
+#[test]
+fn geo_cells_prefilter_matches_per_point_checks() {
+    use common::condition_checker::ConditionChecker;
+    use common::types::DeferredBehavior;
+    use ordered_float::OrderedFloat;
+
+    use crate::index::field_index::{FieldIndexRead, PayloadFieldIndexRead};
+    use crate::index::query_optimization::expected_checks::ExpectedChecks;
+    use crate::index::struct_payload_index::MaterializationHint;
+    use crate::types::{CheckGeoPoint, GeoPoint, GeoRadius};
+
+    let dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
+    let _scope = ambient::test_guard();
+
+    let narrow = JsonPath::from_str("narrow").unwrap();
+    let location = JsonPath::from_str("location").unwrap();
+    let num_points = 6600u64;
+    // Points on a 0.01° grid, 100 per row.
+    let point_of =
+        |i: u64| GeoPoint::new_unchecked((i % 100) as f64 * 0.01, (i / 100) as f64 * 0.01);
+    let in_narrow = |i: u64| i % 100 < 60;
+    let radius = GeoRadius {
+        center: GeoPoint::new_unchecked(0.5, 0.3),
+        radius: OrderedFloat(5_000.0),
+    };
+    let in_radius = move |i: u64| radius.check_point(&point_of(i));
+
+    let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+    for i in 0..num_points {
+        segment
+            .upsert_point(0, i.into(), only_default_vector(&[1.0, 1.0]))
+            .unwrap();
+        let point = point_of(i);
+        let payload: Payload = serde_json::from_value(serde_json::json!({
+            "narrow": if in_narrow(i) { "n" } else { "w" },
+            "location": { "lon": point.lon.0, "lat": point.lat.0 },
+        }))
+        .unwrap();
+        segment.set_full_payload(0, i.into(), &payload).unwrap();
+    }
+    segment
+        .create_field_index(
+            0,
+            &narrow,
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+        )
+        .unwrap();
+    segment
+        .create_field_index(
+            0,
+            &location,
+            Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)),
+        )
+        .unwrap();
+
+    let geo_condition = FieldCondition::new_geo_radius(location.clone(), radius);
+
+    // The cells are a strict superset of the exact matches, so the pre-filter is
+    // exercised on both sides: points it rejects and points the exact check rejects.
+    {
+        let payload_index = segment.payload_index.borrow();
+        let geo_index = &payload_index.field_indexes[&location][0];
+        let exact: Vec<_> = geo_index.filter(&geo_condition).unwrap().unwrap().collect();
+        let cells: std::collections::HashSet<_> = geo_index
+            .filter_candidates(&geo_condition)
+            .unwrap()
+            .unwrap()
+            .collect();
+        assert!(!exact.is_empty());
+        assert!(exact.iter().all(|point| cells.contains(point)));
+        assert!(cells.len() > exact.len());
+        assert!(cells.len() < num_points as usize);
+    }
+
+    let narrow_cond = Condition::Field(FieldCondition::new_match(
+        narrow.clone(),
+        Match::new_value(ValueVariants::String("n".to_string())),
+    ));
+    let geo_cond = Condition::Field(geo_condition);
+    let filter = |must: Vec<Condition>,
+                  should: Option<Vec<Condition>>,
+                  must_not: Option<Vec<Condition>>| Filter {
+        should,
+        min_should: None,
+        must: Some(must),
+        must_not,
+    };
+    // (filter, brute force)
+    #[expect(clippy::type_complexity)]
+    let cases: Vec<(Filter, Box<dyn Fn(u64) -> bool>)> = vec![
+        (
+            filter(vec![narrow_cond.clone(), geo_cond.clone()], None, None),
+            Box::new(move |i| in_narrow(i) && in_radius(i)),
+        ),
+        (
+            filter(
+                vec![narrow_cond.clone()],
+                Some(vec![geo_cond.clone()]),
+                None,
+            ),
+            Box::new(move |i| in_narrow(i) && in_radius(i)),
+        ),
+        (
+            filter(
+                vec![narrow_cond.clone()],
+                None,
+                Some(vec![geo_cond.clone()]),
+            ),
+            Box::new(move |i| in_narrow(i) && !in_radius(i)),
+        ),
+    ];
+
+    segment.payload_index.borrow().with_view(|view| {
+        for (case, (filter, brute_force)) in cases.iter().enumerate() {
+            let expected: Vec<u64> = (0..num_points).filter(|&i| brute_force(i)).collect();
+            assert!(!expected.is_empty(), "case {case}");
+
+            let estimation = view.estimate_cardinality(filter).unwrap();
+            let per_point = view
+                .optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
+                .unwrap();
+            for primary in [None, Some(&estimation)] {
+                // Enough checks for the cells to pass the in-RAM size limit.
+                let hint = MaterializationHint {
+                    expected_checks: ExpectedChecks::Batched {
+                        count: num_points as usize,
+                    },
+                    primary,
+                };
+                let prefiltered = view
+                    .optimized_filter(filter, DeferredBehavior::VisibleOnly, Some(hint))
+                    .unwrap();
+                for point in 0..num_points as u32 {
+                    assert_eq!(
+                        per_point.check(point).unwrap(),
+                        prefiltered.check(point).unwrap(),
+                        "case {case}, primary {}, point {point}",
+                        primary.is_some(),
+                    );
+                }
+                // Batched checks go through the same pre-filter.
+                let mut ids: Vec<u32> = (0..num_points as u32).collect();
+                let n = prefiltered
+                    .check_batched(
+                        &mut ids,
+                        common::condition_checker::Select::Matches,
+                        common::condition_checker::Rest::Discard,
+                    )
+                    .unwrap();
+                let mut batched: Vec<u64> = ids[..n].iter().map(|&id| u64::from(id)).collect();
+                batched.sort_unstable();
+                assert_eq!(
+                    batched,
+                    expected,
+                    "case {case}, primary {}",
+                    primary.is_some()
+                );
+            }
+
+            let mut hits = view.query_points(filter, &AtomicBool::new(false)).unwrap();
+            hits.sort_unstable();
+            let hits: Vec<u64> = hits.into_iter().map(u64::from).collect();
+            assert_eq!(hits, expected, "case {case}");
+        }
+    });
+}

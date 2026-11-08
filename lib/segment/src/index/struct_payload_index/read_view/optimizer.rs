@@ -5,7 +5,8 @@ use itertools::Itertools;
 
 use super::StructPayloadIndexReadView;
 use super::materialization::{
-    ConvertedCondition, MaterializationHint, PostingMerge, merge_postings, reads_posting_list,
+    ConvertedCondition, MaterializationHint, PostingMerge, merge_postings, prefilter_by_candidates,
+    reads_posting_list,
 };
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
@@ -207,6 +208,22 @@ where
                         payload_provider.clone(),
                         deferred_behavior,
                     )?;
+                    if let Some(hint) = materialization
+                        && let Condition::Field(field_condition) = condition
+                        && !hint.is_primary(condition)
+                        && let Some(candidates) = self.read_candidates(
+                            field_condition,
+                            &estimation,
+                            hint.expected_checks,
+                        )?
+                    {
+                        let candidates = PointSet::union(
+                            vec![candidates],
+                            hint.point_set_context(self.id_tracker.total_point_count()),
+                        );
+                        let checker = prefilter_by_candidates(candidates, condition_checker);
+                        return Ok((ConvertedCondition::Checker(checker), estimation));
+                    }
                     Ok((ConvertedCondition::Checker(condition_checker), estimation))
                 }
             })
@@ -369,6 +386,33 @@ where
                 continue;
             }
             if let Some(points) = index.filter(condition)? {
+                return Ok(Some(points.collect()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Read the candidate points of `condition` (see [`FieldIndexRead::filter_candidates`]),
+    /// if that is cheaper than checking the expected points through the index one by one.
+    ///
+    /// The candidates are a superset of the matches, so each candidate still gets the exact
+    /// per-point check; only points outside the candidates skip it. That pays off under the
+    /// same rule as a posting list ([`ExpectedChecks::reads_posting`]): `estimation` of a
+    /// geo condition counts the points of its covering cells, which is what is read here.
+    fn read_candidates(
+        &self,
+        condition: &FieldCondition,
+        estimation: &CardinalityEstimation,
+        expected_checks: ExpectedChecks,
+    ) -> OperationResult<Option<Vec<PointOffsetType>>> {
+        let Some(indexes) = self.field_indexes.get(&condition.key) else {
+            return Ok(None);
+        };
+        for index in indexes {
+            if !expected_checks.reads_posting(estimation.exp, index.is_cold()) {
+                continue;
+            }
+            if let Some(points) = index.filter_candidates(condition)? {
                 return Ok(Some(points.collect()));
             }
         }

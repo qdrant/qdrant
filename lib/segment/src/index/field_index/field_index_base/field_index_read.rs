@@ -51,6 +51,16 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// [`Memory::Cold`]: crate::types::Memory::Cold
     fn is_cold(&self) -> bool;
 
+    /// Points that may match `condition`: a superset of [`PayloadFieldIndexRead::filter`]
+    /// that the index collects without reading per-point values, for an index whose
+    /// `filter` has to check each candidate's values. `None` if there is no such superset.
+    ///
+    /// Only the geo index has one: the points of the geohash cells covering the area.
+    fn filter_candidates<'a>(
+        &'a self,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
+
     /// Number of values for `point_id`.
     fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize>;
 

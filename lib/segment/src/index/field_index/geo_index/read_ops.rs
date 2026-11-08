@@ -239,6 +239,39 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
     Ok(None)
 }
 
+/// Points stored under the geohash cells that cover the condition's area, without
+/// checking their coordinates.
+///
+/// A superset of [`filter`]: the cells only approximate the area, and [`filter`] reads
+/// every candidate's values to drop the ones outside it. Collecting the cell points is
+/// a scan of the hash-sorted point map, not a lookup per point.
+pub(crate) fn cell_points<'a, G: GeoIndexRead + ?Sized>(
+    geo: &'a G,
+    condition: &FieldCondition,
+) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    let FieldCondition {
+        key: _,
+        r#match: _,
+        range: _,
+        geo_bounding_box,
+        geo_radius,
+        geo_polygon,
+        values_count: _,
+        is_empty: _,
+        is_null: _,
+    } = condition;
+    let geo_hashes = if let Some(geo_bounding_box) = geo_bounding_box {
+        rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION)?
+    } else if let Some(geo_radius) = geo_radius {
+        circle_hashes(geo_radius, GEO_QUERY_MAX_REGION)?
+    } else if let Some(geo_polygon) = geo_polygon {
+        polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION)?
+    } else {
+        return Ok(None);
+    };
+    Ok(Some(geo.iterator(geo_hashes)?))
+}
+
 pub(super) fn estimate_cardinality<G: GeoIndexRead + ?Sized>(
     geo: &G,
     condition: &FieldCondition,

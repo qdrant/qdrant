@@ -10,6 +10,7 @@ use common::types::PointOffsetType;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_optimization::expected_checks::ExpectedChecks;
+use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::types::{Condition, FieldCondition};
 
@@ -82,10 +83,28 @@ pub(super) fn merge_postings<'b>(
     checkers.into_iter().flatten().collect()
 }
 
+/// Check `checker` only for points in `candidates`, a superset of its matches read up
+/// front: a point outside the candidates is rejected by a set lookup instead of a
+/// per-point read of the index.
+pub(super) fn prefilter_by_candidates(
+    candidates: PointSet,
+    checker: ConditionCheckerEnum<'_>,
+) -> ConditionCheckerEnum<'_> {
+    // `must` checks in order: the set first, the exact check only for its survivors.
+    ConditionCheckerEnum::Filter(OptimizedFilter::new(
+        Vec::new(),
+        Vec::new(),
+        0,
+        vec![ConditionCheckerEnum::Points(candidates), checker],
+        Vec::new(),
+    ))
+}
+
 /// Whether the index answers `condition` by reading posting lists or sorted values,
 /// so that reading it up front costs about one sequential entry per match. Geo conditions
-/// re-check every point of the matching geohash cells and `values_count` scans points,
-/// so those stay per-point checks.
+/// re-check every point of the matching geohash cells, so only their cells are read up
+/// front, as a pre-filter ([`prefilter_by_candidates`]); `values_count` scans points,
+/// so it stays a per-point check.
 pub(super) fn reads_posting_list(condition: &FieldCondition) -> bool {
     let FieldCondition {
         key: _,

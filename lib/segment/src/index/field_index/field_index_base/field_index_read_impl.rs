@@ -15,7 +15,7 @@ use crate::index::field_index::full_text_index::full_text_index_read::{
     FullTextIndexRead, fill_text_statistics, score_bm25,
 };
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
-use crate::index::field_index::geo_index::GeoIndexRead;
+use crate::index::field_index::geo_index::{GeoIndexRead, read_ops as geo_read_ops};
 use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView, NumericView};
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
@@ -148,6 +148,26 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
+    fn filter_candidates<'a>(
+        &'a self,
+        condition: &FieldCondition,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        match self {
+            FieldIndex::GeoIndex(index) => geo_read_ops::cell_points(index, condition),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => Ok(None),
+        }
+    }
+
     fn is_cold(&self) -> bool {
         match self {
             FieldIndex::IntIndex(index) => index.is_cold(),
