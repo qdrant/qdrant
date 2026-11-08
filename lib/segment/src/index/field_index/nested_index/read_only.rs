@@ -41,10 +41,6 @@ impl<S: UniversalReadExt> NestedInnerIndex for ReadOnlyFieldIndex<S> {
         ReadOnlyFieldIndex::ram_usage_bytes(self)
     }
 
-    fn is_cold(&self) -> bool {
-        ReadOnlyFieldIndex::is_cold(self)
-    }
-
     fn populate(&self) -> OperationResult<()> {
         ReadOnlyFieldIndex::populate(self)
     }

@@ -83,8 +83,6 @@ pub trait NestedInnerIndex: FieldIndexRead {
 
     fn ram_usage_bytes(&self) -> usize;
 
-    fn is_cold(&self) -> bool;
-
     fn populate(&self) -> OperationResult<()>;
 
     fn clear_cache(&self) -> OperationResult<()>;
@@ -108,10 +106,6 @@ impl NestedInnerIndex for FieldIndex {
 
     fn ram_usage_bytes(&self) -> usize {
         FieldIndex::ram_usage_bytes(self)
-    }
-
-    fn is_cold(&self) -> bool {
-        FieldIndex::is_cold(self)
     }
 
     fn populate(&self) -> OperationResult<()> {
@@ -210,10 +204,6 @@ impl<I: NestedInnerIndex, M: ElementMapRead> NestedFieldIndex<I, M> {
 
     pub fn ram_usage_bytes(&self) -> usize {
         self.inner.ram_usage_bytes() + self.element_map.ram_usage_bytes()
-    }
-
-    pub fn is_cold(&self) -> bool {
-        self.inner.is_cold()
     }
 
     pub fn populate(&self) -> OperationResult<()> {
@@ -544,6 +534,10 @@ impl PayloadFieldIndex for NestedFieldIndex {
 }
 
 impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex<I, M> {
+    fn is_cold(&self) -> bool {
+        self.inner.is_cold()
+    }
+
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
         let telemetry = self.inner.get_telemetry_data()?;
         Ok(PayloadIndexTelemetry {
