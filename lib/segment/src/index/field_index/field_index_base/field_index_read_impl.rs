@@ -20,7 +20,6 @@ use crate::index::field_index::nested_index::{ElementConditionChecker, FacetView
 use crate::index::field_index::null_index::NullIndexRead;
 use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIndexRead};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::payload_config::{ImmutableLayout, StorageType};
 use crate::index::query_optimization::rescore_formula::value_retriever::VariableRetrieverFn;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -149,15 +148,20 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
-    fn is_on_disk(&self) -> bool {
-        match self.get_storage_type() {
-            StorageType::Mmap {
-                layout: ImmutableLayout::Mmap,
-            } => true,
-            StorageType::Mmap {
-                layout: ImmutableLayout::Heap,
-            }
-            | StorageType::Gridstore => false,
+    fn is_cold(&self) -> bool {
+        match self {
+            FieldIndex::IntIndex(index) => index.is_cold(),
+            FieldIndex::DatetimeIndex(index) => index.is_cold(),
+            FieldIndex::IntMapIndex(index) => index.is_cold(),
+            FieldIndex::KeywordIndex(index) => index.is_cold(),
+            FieldIndex::FloatIndex(index) => index.is_cold(),
+            FieldIndex::GeoIndex(index) => index.is_cold(),
+            FieldIndex::BoolIndex(index) => index.is_cold(),
+            FieldIndex::FullTextIndex(index) => index.is_cold(),
+            FieldIndex::UuidIndex(index) => index.is_cold(),
+            FieldIndex::UuidMapIndex(index) => index.is_cold(),
+            FieldIndex::NullIndex(index) => index.is_cold(),
+            FieldIndex::Nested(index) => index.is_cold(),
         }
     }
 

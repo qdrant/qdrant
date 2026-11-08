@@ -476,7 +476,7 @@ fn build_index_reloads_in_new_mode_on_on_disk_change() {
         create_id_tracker_fixture, create_payload_storage_fixture,
     };
     use crate::fixtures::payload_fixtures::INT_KEY;
-    use crate::index::field_index::PayloadFieldIndexRead;
+    use crate::index::field_index::{FieldIndexRead as _, PayloadFieldIndexRead};
     use crate::index::{BuildIndexResult, PayloadIndex};
     use crate::types::PayloadSchemaParams;
 

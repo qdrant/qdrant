@@ -176,9 +176,21 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
 }
 
 impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
-    fn is_on_disk(&self) -> bool {
-        // Read-only indexes always read through their storage files.
-        true
+    fn is_cold(&self) -> bool {
+        match self {
+            ReadOnlyFieldIndex::IntMapIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::KeywordIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::UuidMapIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::IntIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::DatetimeIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::FloatIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::UuidIndex(index) => index.is_cold(),
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::is_cold(index),
+            ReadOnlyFieldIndex::Nested(index) => index.is_cold(),
+        }
     }
 
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {

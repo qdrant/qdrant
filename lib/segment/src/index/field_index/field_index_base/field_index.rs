@@ -223,23 +223,6 @@ impl FieldIndex {
         }
     }
 
-    pub fn is_cold(&self) -> bool {
-        match self {
-            FieldIndex::IntIndex(index) => index.is_cold(),
-            FieldIndex::DatetimeIndex(index) => index.is_cold(),
-            FieldIndex::IntMapIndex(index) => index.is_cold(),
-            FieldIndex::KeywordIndex(index) => index.is_cold(),
-            FieldIndex::FloatIndex(index) => index.is_cold(),
-            FieldIndex::GeoIndex(index) => index.is_cold(),
-            FieldIndex::BoolIndex(index) => index.is_cold(),
-            FieldIndex::FullTextIndex(index) => index.is_cold(),
-            FieldIndex::UuidIndex(index) => index.is_cold(),
-            FieldIndex::UuidMapIndex(index) => index.is_cold(),
-            FieldIndex::NullIndex(index) => index.is_cold(),
-            FieldIndex::Nested(index) => index.is_cold(),
-        }
-    }
-
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
@@ -318,7 +301,7 @@ impl FieldIndex {
         }
     }
 
-    pub(super) fn get_storage_type(&self) -> StorageType {
+    fn get_storage_type(&self) -> StorageType {
         match self {
             FieldIndex::IntIndex(index) => index.get_storage_type(),
             FieldIndex::DatetimeIndex(index) => index.get_storage_type(),

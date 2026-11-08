@@ -13,10 +13,10 @@ use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::types::{Condition, FieldCondition};
 
 /// Largest posting list, relative to the expected number of checks, worth reading up front
-/// for an on-disk index (a check is a random read when the page cache is cold).
+/// for a cold index (`memory: cold`, a check is a random read when the page cache is cold).
 pub(super) const DISK_POSTING_TO_CHECKS_RATIO: usize = 64;
 
-/// Same as [`DISK_POSTING_TO_CHECKS_RATIO`], for an index held in RAM.
+/// Same as [`DISK_POSTING_TO_CHECKS_RATIO`], for an index held in RAM (cached or pinned).
 pub(super) const RAM_POSTING_TO_CHECKS_RATIO: usize = 4;
 
 /// What the caller of `optimize_filter` knows about how the filter will be used.

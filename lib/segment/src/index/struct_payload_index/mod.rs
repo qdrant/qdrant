@@ -21,8 +21,8 @@ use common::defaults::log_load_timing;
 use common::reason::reason;
 use fs_err as fs;
 
-use super::field_index::FieldIndex;
 use super::field_index::index_selector::IndexSelector;
+use super::field_index::{FieldIndex, FieldIndexRead as _};
 use super::payload_config::{FullPayloadIndexType, PayloadFieldSchemaWithIndexType};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::IndexesMap;

@@ -353,9 +353,9 @@ where
     /// `expected_checks` points through the index one by one.
     ///
     /// A posting entry is 4 sequential bytes, while a per-point check is a lookup that,
-    /// on an on-disk index with a cold page cache, is a random read. So reading a posting
+    /// on a cold index (`memory: cold`), is a random disk read. So reading a posting
     /// list pays off up to [`DISK_POSTING_TO_CHECKS_RATIO`] times the number of checks for
-    /// an on-disk index, and up to [`RAM_POSTING_TO_CHECKS_RATIO`] times for an in-RAM one.
+    /// a cold index, and up to [`RAM_POSTING_TO_CHECKS_RATIO`] times for a cached or pinned one.
     fn read_posting(
         &self,
         condition: &FieldCondition,
@@ -369,7 +369,7 @@ where
             return Ok(None);
         };
         for index in indexes {
-            let ratio = if index.is_on_disk() {
+            let ratio = if index.is_cold() {
                 DISK_POSTING_TO_CHECKS_RATIO
             } else {
                 RAM_POSTING_TO_CHECKS_RATIO
