@@ -9,6 +9,7 @@ use common::iterator_ext::IteratorExt;
 use common::types::{DeferredBehavior, PointOffsetType, ScoreType, ScoredPointOffset};
 
 use super::StructPayloadIndexReadView;
+use super::materialization::MaterializationHint;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::id_tracker::IdTrackerRead;
@@ -166,6 +167,7 @@ where
                 payload_provider,
                 total,
                 DeferredBehavior::VisibleOnly,
+                None,
             )?
             .into_iter()
             .map(|(checker, _estimation)| checker)
@@ -194,7 +196,14 @@ where
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
-            let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
+            let optimized_filter = self.optimized_filter(
+                filter,
+                deferred_behavior,
+                Some(MaterializationHint {
+                    expected_checks: self.available_point_count(),
+                    primary: None,
+                }),
+            )?;
             // Worst case: query expected to return few matches, but index can't be used
             let matched_points =
                 optimized_filter.into_matches(full_scan_iterator.stop_if(is_stopped), first)?;
@@ -243,7 +252,14 @@ where
                     EitherVariant::B(iter.take(first_n))
                 } else {
                     // Some conditions are primary clauses, some are not
-                    let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
+                    // Every candidate of the primary clauses is checked once. The primary
+                    // conditions themselves are not read up front again.
+                    let materialization = MaterializationHint {
+                        expected_checks: self.primary_candidates(query_cardinality)?,
+                        primary: Some(query_cardinality),
+                    };
+                    let optimized_filter =
+                        self.optimized_filter(filter, deferred_behavior, Some(materialization))?;
                     let iter = optimized_filter.into_matches(
                         joined_primary_iterator
                             .filter(move |&id| !visited_list.check_and_update_visited(id)),
@@ -255,7 +271,14 @@ where
 
             // We can't use primary conditions, so we fall back to iterating over all ids
             // and applying full filter.
-            let optimized_filter = self.optimized_filter(filter, deferred_behavior)?;
+            let optimized_filter = self.optimized_filter(
+                filter,
+                deferred_behavior,
+                Some(MaterializationHint {
+                    expected_checks: self.available_point_count(),
+                    primary: None,
+                }),
+            )?;
 
             let id_tracker_iterator = point_mappings.iter_internal_with_behavior(deferred_behavior);
 
@@ -288,7 +311,7 @@ where
     }
 
     fn filter_context<'b>(&'b self, filter: &'b Filter) -> OperationResult<OptimizedFilter<'b>> {
-        self.optimized_filter(filter, DeferredBehavior::VisibleOnly)
+        self.optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
     }
 
     fn for_each_payload_block(

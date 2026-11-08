@@ -148,6 +148,23 @@ impl PayloadFieldIndexRead for FieldIndex {
 }
 
 impl FieldIndexRead for FieldIndex {
+    fn is_cold(&self) -> bool {
+        match self {
+            FieldIndex::IntIndex(index) => index.is_cold(),
+            FieldIndex::DatetimeIndex(index) => index.is_cold(),
+            FieldIndex::IntMapIndex(index) => index.is_cold(),
+            FieldIndex::KeywordIndex(index) => index.is_cold(),
+            FieldIndex::FloatIndex(index) => index.is_cold(),
+            FieldIndex::GeoIndex(index) => index.is_cold(),
+            FieldIndex::BoolIndex(index) => index.is_cold(),
+            FieldIndex::FullTextIndex(index) => index.is_cold(),
+            FieldIndex::UuidIndex(index) => index.is_cold(),
+            FieldIndex::UuidMapIndex(index) => index.is_cold(),
+            FieldIndex::NullIndex(index) => index.is_cold(),
+            FieldIndex::Nested(index) => index.is_cold(),
+        }
+    }
+
     fn get_telemetry_data(&self) -> OperationResult<PayloadIndexTelemetry> {
         Ok(match self {
             FieldIndex::IntIndex(index) => index.get_telemetry_data(),

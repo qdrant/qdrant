@@ -1,6 +1,7 @@
 use common::types::{DeferredBehavior, PointOffsetType};
 
 use super::StructPayloadIndexReadView;
+use super::materialization::MaterializationHint;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
@@ -62,10 +63,35 @@ where
         }
     }
 
+    /// Estimated number of points the primary clauses of `estimation` yield, which is
+    /// how many points get checked against the rest of the filter.
+    pub(super) fn primary_candidates(
+        &self,
+        estimation: &CardinalityEstimation,
+    ) -> OperationResult<usize> {
+        let available = self.available_point_count();
+        let candidates = estimation
+            .primary_clauses
+            .iter()
+            .map(|clause| {
+                Ok(match clause {
+                    PrimaryCondition::Condition(condition) => self
+                        .estimate_field_condition(condition, None)?
+                        .map_or(available, |estimation| estimation.exp),
+                    PrimaryCondition::Ids(ids) => ids.resolved_point_offsets.len(),
+                    PrimaryCondition::HasVector(_) => available,
+                })
+            })
+            .sum::<OperationResult<usize>>()?;
+        Ok(candidates.min(available))
+    }
+
+    /// `materialization`: see [`Self::optimize_filter`].
     pub fn optimized_filter<'q>(
         &'q self,
         filter: &'q Filter,
         deferred_behavior: DeferredBehavior,
+        materialization: Option<MaterializationHint<'_>>,
     ) -> OperationResult<OptimizedFilter<'q>> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
@@ -74,6 +100,7 @@ where
             payload_provider,
             self.available_point_count(),
             deferred_behavior,
+            materialization,
         )?;
 
         Ok(optimized_filter)

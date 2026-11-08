@@ -25,6 +25,7 @@ use crate::index::field_index::numeric_index::{
 #[cfg(feature = "testing")]
 use crate::index::plain_payload_index::PlainFilterContext;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
+use crate::index::query_optimization::point_set::PointSet;
 use crate::index::struct_payload_index::IdsConditionChecker;
 use crate::types::{
     FloatPayloadType, GeoBoundingBox, GeoRadius, IntPayloadType, PolygonWrapper, UuidIntType,
@@ -45,6 +46,7 @@ pub enum ConditionCheckerEnum<'a> {
     Dyn(Box<dyn ConditionChecker<Error = OperationError> + 'a>),
     Filter(OptimizedFilter<'a>),
     Ids(IdsConditionChecker),
+    Points(PointSet),
     #[cfg(feature = "testing")]
     Plain(PlainFilterContext<'a>),
     #[cfg(feature = "testing")]
@@ -101,7 +103,7 @@ impl ConditionCheckerEnum<'_> {
     pub fn reads_cold_index(&self) -> bool {
         match self {
             Self::Filter(c) => c.reads_cold_index(),
-            Self::Constant(_) | Self::Dyn(_) | Self::Ids(_) => false,
+            Self::Constant(_) | Self::Dyn(_) | Self::Ids(_) | Self::Points(_) => false,
             #[cfg(feature = "testing")]
             Self::Plain(_) | Self::TestBitOfId(_) => false,
             Self::BoolImmutable(_) | Self::BoolMutable(_) | Self::BoolRoMmap(_) => false,
@@ -143,6 +145,7 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Constant(c) => c.check_batched(ids, select, rest),
             Self::Filter(c) => c.check_batched(ids, select, rest),
             Self::Ids(c) => c.check_batched(ids, select, rest),
+            Self::Points(c) => c.check_batched(ids, select, rest),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check_batched(ids, select, rest),
             #[cfg(feature = "testing")]
@@ -182,6 +185,7 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Dyn(c) => c.check(point_id),
             Self::Filter(c) => c.check(point_id),
             Self::Ids(c) => c.check(point_id),
+            Self::Points(c) => c.check(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check(point_id),
             #[cfg(feature = "testing")]
@@ -221,6 +225,7 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Dyn(c) => c.check_infallible(point_id),
             Self::Filter(c) => c.check_infallible(point_id),
             Self::Ids(c) => c.check_infallible(point_id),
+            Self::Points(c) => c.check_infallible(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check_infallible(point_id),
             #[cfg(feature = "testing")]

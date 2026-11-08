@@ -140,23 +140,6 @@ impl<S: UniversalReadExt> ReadOnlyFieldIndex<S> {
         }
     }
 
-    pub fn is_cold(&self) -> bool {
-        match self {
-            ReadOnlyFieldIndex::IntMapIndex(index) => index.is_cold(),
-            ReadOnlyFieldIndex::KeywordIndex(index) => index.is_cold(),
-            ReadOnlyFieldIndex::UuidMapIndex(index) => index.is_cold(),
-            ReadOnlyFieldIndex::IntIndex(index) => index.is_cold(),
-            ReadOnlyFieldIndex::DatetimeIndex(index) => index.is_cold(),
-            ReadOnlyFieldIndex::FloatIndex(index) => index.is_cold(),
-            ReadOnlyFieldIndex::UuidIndex(index) => index.is_cold(),
-            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::is_cold(index),
-            ReadOnlyFieldIndex::FullTextIndex(index) => FullTextIndexRead::is_cold(index),
-            ReadOnlyFieldIndex::BoolIndex(index) => BoolIndexRead::is_cold(index),
-            ReadOnlyFieldIndex::NullIndex(index) => NullIndexRead::is_cold(index),
-            ReadOnlyFieldIndex::Nested(index) => index.is_cold(),
-        }
-    }
-
     /// Populate all pages in the mmap. Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         match self {

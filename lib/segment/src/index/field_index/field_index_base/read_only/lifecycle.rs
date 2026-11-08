@@ -497,8 +497,8 @@ mod tests {
 
     use super::*;
     use crate::data_types::index::KeywordIndexParams;
-    use crate::index::field_index::FieldIndexBuilderTrait;
     use crate::index::field_index::index_selector::IndexSelector;
+    use crate::index::field_index::{FieldIndexBuilderTrait, FieldIndexRead as _};
     use crate::types::PayloadSchemaParams;
 
     /// An mmap-variant index opens read-only where the schema places it:

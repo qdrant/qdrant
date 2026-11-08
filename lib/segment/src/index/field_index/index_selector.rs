@@ -678,7 +678,7 @@ mod tests {
     use crate::data_types::index::{
         GeoIndexParams, IntegerIndexParams, KeywordIndexParams, TextIndexParams,
     };
-    use crate::index::field_index::FieldIndexBuilderTrait;
+    use crate::index::field_index::{FieldIndexBuilderTrait, FieldIndexRead as _};
 
     /// A non-appendable build serves as-is (live index creation installs it), so it
     /// must apply the placement like an open: only the cold one is left on disk.
