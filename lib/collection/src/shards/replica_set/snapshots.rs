@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::fs::{safe_delete_with_suffix, sync_parent_dir_async};
+use common::fs::safe_delete_with_suffix;
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::tokio as tokio_fs;
@@ -17,7 +17,7 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_initializing_flag_path;
+use crate::shards::{create_shard_initializing_flag, shard_initializing_flag_path};
 
 #[cfg(test)]
 type RestoreLocalReplicaBeforeFlagHook = (
@@ -224,9 +224,7 @@ impl ShardReplicaSet {
         // set shard_id initialization flag
         // the file is removed after full recovery to indicate a well-formed shard
         // for example: some of the files may go missing if node gets killed during shard directory move/replace
-        let flag_file = tokio_fs::File::create(&shard_flag).await?;
-        flag_file.sync_all().await?;
-        sync_parent_dir_async(&shard_flag).await?;
+        create_shard_initializing_flag(collection_path, self.shard_id).await?;
 
         let local_manifest = match local.take() {
             Some(shard) if snapshot_manifest.is_empty() => {
@@ -451,10 +449,7 @@ impl ShardReplicaSet {
         // Mark the shard as initializing before touching disk, so a crash during or
         // after clearing is detected on next startup and the shard is reloaded as a
         // dummy that triggers recovery.
-        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
-        let flag_file = tokio_fs::File::create(&shard_flag).await?;
-        flag_file.sync_all().await?;
-        sync_parent_dir_async(&shard_flag).await?;
+        create_shard_initializing_flag(collection_path, self.shard_id).await?;
 
         // Replace the local shard with a dummy rather than removing it entirely, so APIs
         // keep reporting a local shard while the data is cleared and the replacement

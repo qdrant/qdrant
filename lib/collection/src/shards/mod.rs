@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use channel_service::ChannelService;
 use common::defaults;
+use common::fs::sync_parent_dir_async;
 use fs_err::tokio as tokio_fs;
 use shard::ShardId;
 use tokio::time::{sleep_until, timeout_at};
@@ -43,6 +44,23 @@ pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
 /// Path to a shard directory
 pub fn shard_initializing_flag_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
     collection_path.join(format!("shard_{shard_id}.initializing"))
+}
+
+/// Create the shard initializing flag and make it durable
+///
+/// Syncs both the flag file and its parent directory, so the flag survives a crash.
+/// Returns the path to the flag.
+pub async fn create_shard_initializing_flag(
+    collection_path: &Path,
+    shard_id: ShardId,
+) -> CollectionResult<PathBuf> {
+    let shard_flag = shard_initializing_flag_path(collection_path, shard_id);
+
+    let flag_file = tokio_fs::File::create(&shard_flag).await?;
+    flag_file.sync_all().await?;
+    sync_parent_dir_async(&shard_flag).await?;
+
+    Ok(shard_flag)
 }
 
 /// Verify that a shard exists by loading its configuration.
