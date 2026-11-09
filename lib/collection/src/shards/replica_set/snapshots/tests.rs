@@ -376,3 +376,70 @@ fn dummy_on_replica_failure() -> ChangePeerFromState {
 fn dummy_abort_shard_transfer() -> AbortShardTransfer {
     Arc::new(|_shard_transfer, _reason| {})
 }
+
+/// Regression test for #9745.
+///
+/// `ShardReplicaSet::queue_proxify_local` previously extracted the local shard
+/// slot with `local.take()` and then awaited
+/// `QueueProxyShard::new_from_version`. If the caller's future was dropped
+/// (or a `grpc-timeout` fired) between the take and the subsequent
+/// `local.insert(...)`, the slot was left as `None` — every later
+/// `match local.deref()` at the top of the function then surfaced
+/// "Cannot queue proxify local shard N because it is not active" and the
+/// replica was wedged until it was rebuilt.
+///
+/// The fix swaps `local.take()` for
+/// `local.replace(Shard::Dummy(DummyShard::new(...)))` and
+/// `local.insert(...)` for `local.replace(...)`, so the slot is never
+/// `None` while the await runs. This test exercises the same code path
+/// on the failure return by passing an out-of-range `from_version`:
+/// `QueueProxyShard::new_from_version` returns `Err(...)`, and the
+/// `Err` arm of `queue_proxify_local` must restore the slot to
+/// `Shard::Local`. Pre-fix and post-fix both reach the `Err` arm
+/// successfully, but the cancellation arm only succeeds post-fix.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_queue_proxify_local_keeps_local_slot_populated_on_failure() {
+    use std::sync::Arc;
+
+    use parking_lot::Mutex as ParkingMutex;
+
+    use crate::shards::remote_shard::RemoteShard;
+    use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
+
+    let collection_dir = Builder::new()
+        .prefix("queue-proxify-local-failure-path")
+        .tempdir()
+        .unwrap();
+
+    let replica_set = new_shard_replica_set(&collection_dir, TEST_TARGET_SHARD_ID).await;
+
+    // An out-of-range `from_version` forces `QueueProxyShard::new_from_version`
+    // to return `Err` after its `lock()` await resolves. The `Err` arm of
+    // `queue_proxify_local` must restore the local shard slot from the
+    // `Dummy` placeholder back to `Shard::Local`. The local slot is
+    // checked to remain populated under both the `Err` and `Ok`
+    // return paths.
+    let result = replica_set
+        .queue_proxify_local(
+            RemoteShard::new(
+                TEST_TARGET_SHARD_ID,
+                TEST_COLLECTION_ID.to_string(),
+                42,
+                ChannelService::default(),
+            ),
+            Some(u64::MAX),
+            Arc::new(ParkingMutex::new(TransferTaskProgress::new())),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "queue_proxify_local must fail when from_version is out of WAL bounds",
+    );
+
+    let local_guard = replica_set.local.read().await;
+    assert!(
+        local_guard.is_some(),
+        "local slot must remain populated after queue_proxify_local Err (regression test for #9745)",
+    );
+}
