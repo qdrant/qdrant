@@ -77,6 +77,24 @@ fn read_status_len<S: UniversalRead>(
     Ok(status.read_whole()?[0].len())
 }
 
+/// Build a bitmap of the set flags in `0..len`.
+///
+/// Scans only up to the logical length: the flags file is preallocated to at
+/// least `MINIMAL_MMAP_SIZE`, and reading the whole of it would fetch (or
+/// fault in) that unused capacity on every materialization.
+fn scan_trues<S: UniversalRead>(
+    storage: &StoredBitSlice<S>,
+    len: usize,
+) -> OperationResult<RoaringBitmap> {
+    let bitmap = RoaringBitmap::from_sorted_iter(
+        storage
+            .iter_ones_up_to(len as u64)?
+            .map(|i| i as PointOffsetType),
+    )
+    .expect("iter_ones_up_to iterates in sorted order");
+    Ok(bitmap)
+}
+
 impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     /// Schedule background prefetch of the two files this storage reads.
     ///
@@ -154,10 +172,7 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
             return Ok(bitmap);
         }
 
-        let bitmap = RoaringBitmap::from_sorted_iter(
-            self.storage.iter_ones()?.map(|i| i as PointOffsetType),
-        )
-        .expect("iter_ones iterates in sorted order");
+        let bitmap = scan_trues(&self.storage, self.len)?;
 
         Ok(self.bitmap.get_or_init(|| bitmap - &self.removed))
     }
@@ -214,7 +229,18 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
     ///
     /// [1]: crate::common::live_reload::LiveReload
     pub fn live_reload(&mut self, fs: &impl UniversalReadFs<File = S>) -> OperationResult<()> {
-        if let Some(storage) = StoredBitSlice::<S>::open(
+        // The logical length grows as points are appended; refresh it so
+        // length-driven readers (the null index's `iter_falses`) stay correct.
+        // Once the index exists its status file always does, so absence here is
+        // a genuine not-found (segment removed mid-reload), not a lazy file.
+        //
+        // The resync below scans only up to the length, so it must use the new
+        // one or it would miss appended points.
+        let new_len = read_status_len(fs, &self.directory)
+            .ok_unchanged()?
+            .unwrap_or(self.len);
+
+        match StoredBitSlice::<S>::open(
             fs,
             self.directory.join(FLAGS_FILE),
             open_options(Populate::No),
@@ -222,24 +248,28 @@ impl<S: UniversalRead> ReadOnlyRoaringFlags<S> {
         )
         .ok_unchanged()?
         {
-            if let Some(bitmap) = self.bitmap.get_mut() {
-                *bitmap = RoaringBitmap::from_sorted_iter(
-                    storage.iter_ones()?.map(|i| i as PointOffsetType),
-                )
-                .expect("iter_ones iterates in sorted order")
-                    - &self.removed;
+            Some(storage) => {
+                if let Some(bitmap) = self.bitmap.get_mut() {
+                    *bitmap = scan_trues(&storage, new_len)? - &self.removed;
+                }
+
+                self.storage = storage;
             }
-
-            self.storage = storage;
+            // The flags file is unchanged since the previous reload, but the
+            // length may not be: a cached snapshot can catch the flags and the
+            // status of one flush across two reloads. The previous resync then
+            // scanned only up to the old length, so rescan the held handle,
+            // which still mirrors the unchanged file.
+            None => {
+                if new_len != self.len
+                    && let Some(bitmap) = self.bitmap.get_mut()
+                {
+                    *bitmap = scan_trues(&self.storage, new_len)? - &self.removed;
+                }
+            }
         }
 
-        // The logical length grows as points are appended; refresh it so
-        // length-driven readers (the null index's `iter_falses`) stay correct.
-        // Once the index exists its status file always does, so absence here is
-        // a genuine not-found (segment removed mid-reload), not a lazy file.
-        if let Some(new_len) = read_status_len(fs, &self.directory).ok_unchanged()? {
-            self.len = new_len;
-        }
+        self.len = new_len;
 
         Ok(())
     }
@@ -269,10 +299,11 @@ impl<S: UniversalRead> RoaringFlagsRead for ReadOnlyRoaringFlags<S> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::SystemTime;
 
     use common::universal_io::{
-        DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, MmapFile, MmapFs,
-        UniversalReadFs,
+        CachedFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, FileInfo, MmapFile,
+        MmapFs, UniversalReadFs,
     };
     use tempfile::Builder;
 
@@ -310,8 +341,8 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // Materialize the bitmap: scans (and locally caches) the whole
-        // preallocated flags file — the pre-write state this test must escape.
+        // Materialize the bitmap: scans (and locally caches) the flags up to
+        // `len` — the pre-write state this test must escape.
         assert!(flags.get_bitmap().unwrap().contains(5));
         assert_eq!(flags.len(), 100);
 
@@ -320,6 +351,8 @@ mod tests {
         writer.set(50, true).unwrap();
         writer.set(5, false).unwrap();
         writer.set_len(&MmapFs, 120).unwrap();
+        // Past the old length: only found if the resync scans up to the new one.
+        writer.set(110, true).unwrap();
         writer.flusher()().unwrap();
 
         flags.live_reload(&cache_fs).unwrap();
@@ -327,6 +360,10 @@ mod tests {
         let bitmap = flags.get_bitmap().unwrap();
         assert!(bitmap.contains(6));
         assert!(bitmap.contains(50));
+        assert!(
+            bitmap.contains(110),
+            "flag past the old length must be picked up by the resync"
+        );
         assert!(
             !bitmap.contains(5),
             "cleared flag must not survive a reload"
@@ -368,5 +405,69 @@ mod tests {
         let bitmap = flags.get_bitmap().unwrap();
         assert!(bitmap.contains(5));
         assert!(bitmap.contains(6));
+    }
+
+    /// One writer flush caught across two cached reloads: the first sees the
+    /// new flags with the old status, the second the new status with the flags
+    /// reported unchanged. The second must still pick up the flags below the
+    /// grown length, though it gets no fresh flags handle.
+    #[test]
+    fn live_reload_rescans_unchanged_flags_when_len_grows() {
+        let tmp = Builder::new().prefix("roaring_reload").tempdir().unwrap();
+        let dir = tmp.path().join("flags");
+        fs_err::create_dir_all(&dir).unwrap();
+        let status_path = status_file(&dir);
+        let flags_path = dir.join(FLAGS_FILE);
+
+        let mut writer = DynamicStoredFlags::<MmapFile>::open(&MmapFs, &dir, Populate::No).unwrap();
+        writer.set_len(&MmapFs, 100).unwrap();
+        writer.set(5, true).unwrap();
+        writer.flusher()().unwrap();
+        let old_status = fs_err::read(&status_path).unwrap();
+
+        let mut flags = ReadOnlyRoaringFlags::<MmapFile>::open(&MmapFs, &dir)
+            .unwrap()
+            .unwrap();
+        assert!(flags.get_bitmap().unwrap().contains(5));
+
+        writer.set_len(&MmapFs, 120).unwrap();
+        writer.set(110, true).unwrap();
+        writer.flusher()().unwrap();
+        let new_status = fs_err::read(&status_path).unwrap();
+        // Release the writer's status mmap: Windows can't truncate a mapped file,
+        // which the status rewrites below do.
+        drop(writer);
+
+        // Reload 1: the new flags, but the status from before the flush.
+        fs_err::write(&status_path, &old_status).unwrap();
+        flags.live_reload(&MmapFs).unwrap();
+        assert_eq!(flags.len(), 100);
+        assert!(!flags.get_bitmap().unwrap().contains(110));
+
+        // Reload 2: the new status, with the flags unchanged between snapshots.
+        fs_err::write(&status_path, &new_status).unwrap();
+        let info = |path: &Path, etag: &str| {
+            Some(FileInfo {
+                size: fs_err::metadata(path).unwrap().len(),
+                last_modified: Some(SystemTime::UNIX_EPOCH),
+                etag: Some(etag.to_string()),
+            })
+        };
+        let mut cached_fs = CachedFs::new(MmapFs, &dir).unwrap();
+        cached_fs.set_file_info(flags_path.clone(), info(&flags_path, "flags"));
+        cached_fs.set_file_info(status_path.clone(), info(&status_path, "status-1"));
+        cached_fs.rotate_cache_file_info();
+        cached_fs.set_file_info(flags_path.clone(), info(&flags_path, "flags"));
+        cached_fs.set_file_info(status_path.clone(), info(&status_path, "status-2"));
+
+        flags.live_preload(&cached_fs);
+        flags.live_reload(&cached_fs).unwrap();
+
+        assert_eq!(flags.len(), 120);
+        assert!(
+            flags.get_bitmap().unwrap().contains(110),
+            "flag below the grown length must be picked up with the flags file unchanged"
+        );
+        assert!(flags.get_bitmap().unwrap().contains(5));
     }
 }
