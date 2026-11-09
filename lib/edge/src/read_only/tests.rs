@@ -11,24 +11,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::universal_io::{MmapFile, MmapFs};
-use segment::common::operation_error::OperationResult;
-use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
-use segment::types::{Distance, ExtendedPointId, WithPayloadInterface, WithVector};
+use segment::types::ExtendedPointId;
 use shard::files::{SEGMENTS_PATH, segment_manifest_path};
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
-use shard::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
 use uuid::Uuid;
 
-use crate::config::vectors::EdgeVectorParams;
+use crate::PointOperations::{DeletePoints, UpsertPoints};
 use crate::edge_shard::scan_segment_dirs;
-use crate::read_only::{
-    ListedSegment, LocalSegmentEnumerator, ManifestSegmentEnumerator, ReadOnlyEdgeShard,
-    SegmentEnumerator,
+use crate::{
+    CountRequest, Distance, EdgeConfig, EdgeShard, EdgeShardRead, EdgeVectorParams, ListedSegment,
+    LocalSegmentEnumerator, ManifestSegmentEnumerator, OperationResult, PointStructPersisted,
+    ReadOnlyEdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder, SegmentEnumerator,
+    VectorInternal, VectorStructInternal, VectorStructPersisted, WithPayloadInterface, WithVector,
 };
-use crate::read_view::EdgeShardRead;
-use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder};
 
 pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
 

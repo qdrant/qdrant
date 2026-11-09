@@ -6,15 +6,14 @@ use common::ambient;
 use common::reason::Reason;
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::{Mutex, RwLock};
-use segment::common::operation_error::{OperationResult, check_process_stopped};
-use segment::data_types::load_profile::LoadProfile;
+use segment::common::operation_error::check_process_stopped;
 use segment::index::UniversalReadExt;
 use segment::types::SeqNumberType;
 
-use crate::EdgeConfig;
+use crate::read_only::Waterline;
 use crate::read_only::enumerate::{ManifestSegmentEnumerator, SegmentEnumerator};
 use crate::read_only::holder::ReadOnlySegmentHolder;
-use crate::read_only::{ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, Waterline};
+use crate::{EdgeConfig, LoadProfile, OperationResult, ReadOnlyEdgeShard, ReadOnlyEdgeShardPools};
 
 impl ReadOnlyEdgeShard<MmapFile> {
     /// Open a read-only follower over local memory-mapped files, discovering segments from the

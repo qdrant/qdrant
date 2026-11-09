@@ -10,15 +10,14 @@ use common::universal_io::MmapFs;
 use segment::types::{ExtendedPointId, SeqNumberType};
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::CollectionUpdateOperations::PointOperation;
-use shard::operations::point_ops::PointOperations::DeletePoints;
 use tempfile::TempDir;
 
+use crate::PointOperations::DeletePoints;
 use crate::read_only::tests::{
     delete as leader_delete, exact_count, init_serverless_feature_flags, open_follower, point,
     scrolled_ids, test_config, upsert,
 };
-use crate::update_only::{PointApplyKind, UpdateOnlyEdgeShard};
-use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
+use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard, PointApplyKind, UpdateOnlyEdgeShard};
 
 /// A flushed shard directory holding points 1 to 10, with the leader that
 /// wrote it closed — a writer opens a directory, not a running shard.
@@ -227,9 +226,10 @@ mod store {
 
     use super::*;
     use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
-    use crate::read_only::{ManifestSegmentEnumerator, ReadOnlyEdgeShard};
-    use crate::read_view::EdgeShardRead as _;
-    use crate::{QueryRequestBuilder, RetrieveRequestBuilder};
+    use crate::{
+        EdgeShardRead as _, ManifestSegmentEnumerator, QueryRequestBuilder, ReadOnlyEdgeShard,
+        RetrieveRequestBuilder,
+    };
 
     mod point_count;
 
@@ -359,9 +359,7 @@ mod store {
     fn store_past_deferred_threshold_keeps_the_old_copy() {
         use std::sync::atomic::AtomicBool;
 
-        use segment::data_types::load_profile::LoadProfile;
-
-        use crate::read_only::LocalSegmentEnumerator;
+        use crate::{LoadProfile, LocalSegmentEnumerator};
 
         let dir = vacuumed_leader("edge-update-store-deferred");
         recreate_payload_storages_append_only(dir.path());
@@ -1537,14 +1535,12 @@ fn segment_files(dir: &std::path::Path, segment: uuid::Uuid) -> Vec<std::path::P
 #[cfg(unix)]
 #[test]
 fn an_update_whose_store_fails_keeps_the_point() {
-    use segment::types::{Payload, WithPayloadInterface, WithVector};
     use shard::files::segment_manifest_path;
-    use shard::operations::payload_ops::{PayloadOps, SetPayloadOp};
-    use shard::segment_manifest::SegmentsManifest;
 
-    use crate::RetrieveRequestBuilder;
-    use crate::read_only::ManifestSegmentEnumerator;
-    use crate::read_view::EdgeShardRead;
+    use crate::{
+        EdgeShardRead, ManifestSegmentEnumerator, Payload, PayloadOps, RetrieveRequestBuilder,
+        SegmentsManifest, SetPayloadOp, WithPayloadInterface, WithVector,
+    };
 
     init_serverless_feature_flags();
     let dir = leader_with_ten_points("edge-abandoned-update");

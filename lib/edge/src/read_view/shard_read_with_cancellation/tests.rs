@@ -2,16 +2,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use common::universal_io::MmapFile;
 use parking_lot::{RwLock, RwLockReadGuard};
-use segment::common::operation_error::OperationError;
-use segment::data_types::vectors::{NamedQuery, VectorInternal};
 use segment::segment::read_only::ReadOnlySegment;
-use shard::query::ScoringQuery;
-use shard::query::query_enum::QueryEnum;
 
 use super::*;
 use crate::read_only::tests::{VECTOR_NAME, open_follower, test_config, upsert};
-use crate::read_view::{EdgeShardRead, ReadSegmentHandle, build_segment_pool};
-use crate::{EdgeShard, QueryRequestBuilder};
+use crate::read_view::build_segment_pool;
+use crate::{
+    EdgeShard, EdgeShardRead, NamedQuery, OperationError, QueryEnum, QueryRequestBuilder,
+    ReadSegmentHandle, ScoringQuery, VectorInternal,
+};
 
 fn assert_cancelled<T>(result: OperationResult<T>) {
     assert!(matches!(result, Err(OperationError::Cancelled { .. })));

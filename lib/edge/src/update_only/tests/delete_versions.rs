@@ -12,23 +12,22 @@ use std::sync::atomic::AtomicBool;
 
 use common::universal_io::{MmapFile, MmapFs};
 use parking_lot::Mutex;
-use segment::common::operation_error::OperationResult;
 use segment::id_tracker::delete_versions::DeleteVersioning;
-use segment::types::{ExtendedPointId, SeqNumberType, WithPayloadInterface, WithVector};
+use segment::types::{ExtendedPointId, SeqNumberType};
 use shard::files::SEGMENTS_PATH;
 use shard::operations::CollectionUpdateOperations;
 use shard::operations::CollectionUpdateOperations::PointOperation;
-use shard::operations::point_ops::PointOperations::DeletePoints;
-use shard::operations::point_ops::PointStructPersisted;
 use uuid::Uuid;
 
 use super::store::{recreate_payload_storages_append_only, store_batch};
 use super::vacuumed_leader;
+use crate::PointOperations::DeletePoints;
 use crate::read_only::tests::{exact_count, open_follower, point};
-use crate::read_only::{ListedSegment, LocalSegmentEnumerator, SegmentEnumerator};
-use crate::read_view::EdgeShardRead as _;
-use crate::update_only::{PointApplyKind, UpdateOnlyEdgeShard};
-use crate::{CountRequest, ReadOnlyEdgeShard, RetrieveRequestBuilder};
+use crate::{
+    CountRequest, EdgeShardRead as _, ListedSegment, LocalSegmentEnumerator, OperationResult,
+    PointApplyKind, PointStructPersisted, ReadOnlyEdgeShard, RetrieveRequestBuilder,
+    SegmentEnumerator, UpdateOnlyEdgeShard, WithPayloadInterface, WithVector,
+};
 
 /// The point the fixture moves; it lives in an immutable segment after the vacuum.
 const MOVED: u64 = 500;

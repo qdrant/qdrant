@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 use common::ambient;
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use segment::common::operation_error::check_process_stopped;
 
 pub use self::handle::ReadSegmentHandle;
 pub use self::ops::{Group, SearchMatrixResponse, ShardInfo};
@@ -18,7 +18,7 @@ pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
 #[cfg(feature = "serverless")]
 pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
-use crate::EdgeConfig;
+use crate::{EdgeConfig, OperationError, OperationResult};
 
 /// A consistent read snapshot of an edge shard: owned segment handles (collected in retrieval order,
 /// non-appendable first then appendable) plus an immutable config snapshot.
