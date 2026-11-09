@@ -2,19 +2,18 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use segment::common::operation_error::{OperationResult, check_process_stopped};
-use segment::data_types::facets::FacetResponse;
+use segment::common::operation_error::check_process_stopped;
 use segment::index::UniversalReadExt;
-use segment::types::{PointIdType, ScoredPoint};
+use segment::types::PointIdType;
 use shard::retrieve::record_internal::RecordInternal;
 
 use super::shard_read::{sealed, view};
-use super::{EdgeReadView, Group, ReadViewProvider, SearchMatrixResponse, ShardInfo};
-use crate::requests::{
-    CountRequest, FacetRequest, GroupRequest, QueryBatchRequest, QueryRequest, RetrieveRequest,
-    ScrollRequest, SearchMatrixRequest, SearchRequest,
+use super::{EdgeReadView, ReadViewProvider};
+use crate::{
+    CountRequest, EdgeConfig, FacetRequest, FacetResponse, Group, GroupRequest, OperationResult,
+    QueryBatchRequest, QueryRequest, ReadOnlyEdgeShard, RetrieveRequest, ScoredPoint,
+    ScrollRequest, SearchMatrixRequest, SearchMatrixResponse, SearchRequest, ShardInfo,
 };
-use crate::{EdgeConfig, ReadOnlyEdgeShard};
 
 /// Cancellation-aware counterpart to [`EdgeShardRead`](super::EdgeShardRead) for
 /// [`ReadOnlyEdgeShard`]. Set the shared flag to `true` to cancel a synchronous read.

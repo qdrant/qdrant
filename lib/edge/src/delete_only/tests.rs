@@ -5,20 +5,19 @@ use std::collections::HashMap;
 
 use common::ambient;
 use common::universal_io::MmapFs;
-use segment::common::operation_error::OperationResult;
 use segment::segment::update_only::TrackerLookup;
 use segment::types::{ExtendedPointId, SeqNumberType};
 use shard::operations::CollectionUpdateOperations::PointOperation;
 use shard::operations::point_ops::PointInsertOperationsInternal::PointsList;
-use shard::operations::point_ops::PointOperations::{DeletePoints, UpsertPoints};
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::delete_only::DeleteOnlyEdgeShard;
+use crate::PointOperations::{DeletePoints, UpsertPoints};
 use crate::read_only::tests::{exact_count, open_follower, point, test_config, upsert};
-use crate::read_only::{ListedSegment, LocalSegmentEnumerator, SegmentEnumerator};
-use crate::update_only::UpdateOnlyEdgeShard;
-use crate::{EdgeConfig, EdgeOptimizersConfig, EdgeShard};
+use crate::{
+    DeleteOnlyEdgeShard, EdgeConfig, EdgeOptimizersConfig, EdgeShard, ListedSegment,
+    LocalSegmentEnumerator, OperationResult, SegmentEnumerator, UpdateOnlyEdgeShard,
+};
 
 /// Version of the newer copies of points 1-3.
 const NEWER: SeqNumberType = 100;
@@ -218,9 +217,7 @@ fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
     use common::universal_io::MmapFile;
     use segment::id_tracker::delete_versions::DeleteVersioning;
 
-    use crate::read_only::ReadOnlyEdgeShard;
-    use crate::read_view::EdgeShardRead as _;
-    use crate::requests::count::CountRequest;
+    use crate::{CountRequest, EdgeShardRead as _, ReadOnlyEdgeShard, ReadOnlyOpenOptions};
 
     let approximate_count = |follower: &ReadOnlyEdgeShard<MmapFile>| {
         follower
@@ -232,15 +229,17 @@ fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
     };
 
     let (dir, immutable) = shadowed_leader("edge-delete-only-gated");
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator_and_waterline(
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         dir.path(),
         LocalSegmentEnumerator::new(dir.path()),
-        None,
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions {
+            config: None,
+            load_profile: None,
+            pools: Default::default(),
+            waterline: Some(NEWER),
+        },
         &AtomicBool::new(false),
-        Some(NEWER),
     )
     .unwrap();
     assert_eq!(approximate_count(&follower), 303, "both copies of 1-3");

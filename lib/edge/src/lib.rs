@@ -32,6 +32,8 @@ pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 pub use delete_only::DeleteOnlyEdgeShard;
 pub use edge_shard::EdgeShard;
 #[cfg(feature = "serverless")]
+pub(crate) use read_only::ReadOnlyOpenOptions;
+#[cfg(feature = "serverless")]
 pub use read_only::{
     ListedSegment, LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator,
     ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, SegmentEnumerator,

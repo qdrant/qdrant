@@ -5,9 +5,8 @@ use parking_lot::RwLock;
 use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 
-use crate::EdgeConfig;
-use crate::read_only::ReadOnlyEdgeShard;
 use crate::read_view::ReadViewProvider;
+use crate::{EdgeConfig, ReadOnlyEdgeShard};
 
 /// The follower's segments are homogeneous, so its handle is the concrete
 /// `Arc<RwLock<ReadOnlySegment<S>>>` — the read path is fully monomorphized, no dynamic dispatch.
