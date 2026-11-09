@@ -134,6 +134,14 @@ impl PayloadIndexRead for PlainPayloadIndex {
         )))
     }
 
+    fn filter_context_for_serial_checks<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<OptimizedFilter<'a>> {
+        // No field indexes, so no posting lists to read up front.
+        self.filter_context(filter)
+    }
+
     fn for_each_payload_block(
         &self,
         _field: PayloadKeyTypeRef,

@@ -81,9 +81,7 @@ pub trait PayloadIndexRead {
     fn filter_context_for_serial_checks<'a>(
         &'a self,
         filter: &'a Filter,
-    ) -> OperationResult<OptimizedFilter<'a>> {
-        self.filter_context(filter)
-    }
+    ) -> OperationResult<OptimizedFilter<'a>>;
 
     /// Look up a numeric index for the given payload key, if one exists.
     ///
