@@ -264,6 +264,10 @@ impl ReadSegmentEntry for Segment {
         self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
     }
 
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        Ok(self.with_view(|view| view.max_available_vectors_size_in_bytes()))
+    }
+
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,

@@ -172,4 +172,17 @@ where
             .size_of_searchable_vectors_in_bytes();
         Ok(size)
     }
+
+    /// Max of [`Self::available_vectors_size_in_bytes`] over all vector names.
+    pub fn max_available_vectors_size_in_bytes(&self) -> usize {
+        self.vector_data
+            .values()
+            .map(|vector_data| {
+                vector_data
+                    .vector_index()
+                    .size_of_searchable_vectors_in_bytes()
+            })
+            .max()
+            .unwrap_or(0)
+    }
 }
