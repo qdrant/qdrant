@@ -71,9 +71,8 @@ where
             crate::common::blobstore_config::storage_config(CreateOptions::DEFAULT),
         )?;
 
-        if populate {
-            storage.populate()?;
-        }
+        // No populate here: a freshly created storage is all holes, populating its
+        // preallocated pages only maps zero pages.
 
         Ok(Self { storage, populate })
     }
