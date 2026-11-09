@@ -377,7 +377,7 @@ mod tests {
                 },
             )
             .unwrap();
-            std::fs::write(
+            fs_err::write(
                 GraphLayers::get_links_path(dir.path(), layers.links.format()),
                 layers.links.as_bytes().unwrap(),
             )
