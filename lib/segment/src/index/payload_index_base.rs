@@ -72,6 +72,17 @@ pub trait PayloadIndexRead {
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> OperationResult<OptimizedFilter<'a>>;
 
+    /// [`Self::filter_context`] for a consumer that checks points one at a time, waiting
+    /// for each check (graph walk, cardinality sampling), so conditions on cold indexes
+    /// can be read into point sets up front (see [`ExpectedChecks::Serial`]). Indexes that
+    /// can't materialize conditions return the plain filter context.
+    ///
+    /// [`ExpectedChecks::Serial`]: crate::index::query_optimization::expected_checks::ExpectedChecks::Serial
+    fn filter_context_for_serial_checks<'a>(
+        &'a self,
+        filter: &'a Filter,
+    ) -> OperationResult<OptimizedFilter<'a>>;
+
     /// Look up a numeric index for the given payload key, if one exists.
     ///
     /// Used by ordered reads to stream values from the index in sort order.

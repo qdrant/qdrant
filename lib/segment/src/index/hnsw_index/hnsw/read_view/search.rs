@@ -81,9 +81,7 @@ where
                 vector.to_owned(),
                 self.vector_storage,
                 Some(quantized_vectors),
-                filter
-                    .map(|f| self.payload_index.filter_context(f))
-                    .transpose()?,
+                filter.map(|f| self.graph_filter_context(f)).transpose()?,
                 deleted_points,
             )?;
             let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
@@ -115,9 +113,7 @@ where
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
             trace::mark!("filter_context begin");
-            let filter_context = filter
-                .map(|f| self.payload_index.filter_context(f))
-                .transpose()?;
+            let filter_context = filter.map(|f| self.graph_filter_context(f)).transpose()?;
             trace::mark!("search_scorer begin");
             let points_scorer = construct_search_scorer(
                 vector,
@@ -311,6 +307,15 @@ where
             params,
             vector_query_context,
         )
+    }
+
+    /// Filter context for a graph search. The walk checks one point at a time and can't
+    /// go on until the check returns, so conditions on cold indexes are read up front.
+    fn graph_filter_context<'f>(
+        &'f self,
+        filter: &'f Filter,
+    ) -> OperationResult<OptimizedFilter<'f>> {
+        self.payload_index.filter_context_for_serial_checks(filter)
     }
 
     /// The first `n` points matching `filter`, in payload index order.
