@@ -384,6 +384,14 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Block all access to the local shard until the returned guard is dropped. Test-only.
+    #[cfg(test)]
+    pub(crate) async fn lock_local_for_test(
+        &self,
+    ) -> tokio::sync::RwLockWriteGuard<'_, Option<crate::shards::shard::Shard>> {
+        self.local.write().await
+    }
+
     /// Synchronously flush every segment in the local shard. Test-only — `stop_gracefully`
     /// signals the periodic flush worker to stop but never triggers a final flush, so
     /// tests that need on-disk consistency without waiting for the periodic tick use this.
