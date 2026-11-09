@@ -1,6 +1,8 @@
 #![allow(deprecated)]
 use std::collections::HashMap;
+use std::sync::Once;
 
+use common::flags::{FeatureFlags, init_feature_flags};
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use segment::types::{Distance, ExtendedPointId, Payload};
 use shard::operations::CollectionUpdateOperations::PointOperation;
@@ -13,7 +15,21 @@ use crate::{EdgeConfig, EdgeShard};
 
 pub(crate) const VECTOR_NAME: &str = "edge-test-vector";
 
+/// All unit-test shard fixtures share serverless flags so followers and update-only
+/// writers can read their storage formats, regardless of which fixture runs first.
+/// Default initialization is tested in separate processes in `tests/initialization.rs`.
+pub(crate) fn init_serverless_feature_flags() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        init_feature_flags(FeatureFlags {
+            serverless_compatible: true,
+            ..FeatureFlags::default()
+        });
+    });
+}
+
 pub(crate) fn test_config() -> EdgeConfig {
+    init_serverless_feature_flags();
     EdgeConfig {
         on_disk_payload: Some(false),
         payload_memory: None,

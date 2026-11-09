@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use common::flags::{FeatureFlags, init_feature_flags};
 use common::universal_io::{MmapFile, MmapFs};
 use segment::common::operation_error::OperationResult;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
@@ -28,21 +27,10 @@ use crate::read_only::{
     SegmentEnumerator,
 };
 use crate::read_view::EdgeShardRead;
+use crate::test_helpers::init_serverless_feature_flags;
 use crate::{CountRequest, EdgeConfig, EdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder};
 
 pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
-
-/// Initialize the process-global feature flags the way a serverless
-/// deployment runs, which is what every edge shard serves in production.
-///
-/// Feature flags are first-init-wins for the whole process, so every fixture
-/// in this binary initializes the same set to stay deterministic regardless
-/// of test order. The field is private, set through the same route a config
-/// file takes.
-pub(crate) fn init_serverless_feature_flags() {
-    let flags: FeatureFlags = serde_json::from_str(r#"{ "serverless_compatible": true }"#).unwrap();
-    init_feature_flags(flags);
-}
 
 pub(crate) fn test_config() -> EdgeConfig {
     init_serverless_feature_flags();
