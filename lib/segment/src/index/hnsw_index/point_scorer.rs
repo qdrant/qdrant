@@ -112,6 +112,12 @@ impl<'a> ScorerFilters<'a> {
         }
     }
 
+    /// Whether matches are restricted by a payload predicate, beyond deletion checks.
+    #[must_use]
+    pub(super) fn has_payload_filter(&self) -> bool {
+        self.filter_context.is_some()
+    }
+
     /// Return true if vector satisfies current search context for given point:
     /// exists, not deleted, and satisfies filter context.
     pub fn check_vector(&self, point_id: PointOffsetType) -> bool {

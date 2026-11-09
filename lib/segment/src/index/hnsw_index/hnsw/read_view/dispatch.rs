@@ -63,8 +63,9 @@ where
                 // Because an HNSW graph is built, we'd normally always assume to search the graph.
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
+                // Payload-only graphs can be disconnected and leave vectors outside all blocks.
                 let plain_search = exact
-                    || is_hnsw_disabled
+                    || self.config.m == 0
                     || self.vector_storage.available_vector_count()
                         < self.config.full_scan_threshold;
 
@@ -268,12 +269,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+    use std::cell::Cell;
     use std::sync::Arc;
 
     use common::ambient;
     use common::bitvec::{BitSlice, BitVec};
+    use common::fs::atomic_save_bin;
     use common::types::{PointOffsetType, TelemetryDetail};
-    use common::universal_io::MmapFile;
+    use common::universal_io::{MmapFile, MmapFs};
     use rstest::rstest;
 
     use super::*;
@@ -283,12 +287,14 @@ mod tests {
     use crate::index::hnsw_index::HnswM;
     use crate::index::hnsw_index::config::HnswGraphConfig;
     use crate::index::hnsw_index::entry_points::EntryPoints;
-    use crate::index::hnsw_index::graph::HnswGraph;
-    use crate::index::hnsw_index::graph_layers::GraphLayers;
+    use crate::index::hnsw_index::graph::{GraphSearchArgs, HnswGraph, SearchScorers};
+    use crate::index::hnsw_index::graph_layers::{GraphLayerData, GraphLayers};
+    use crate::index::hnsw_index::graph_layers_batched::GraphLayersBatched;
     use crate::index::hnsw_index::graph_links::{
         GraphLinks, GraphLinksFormatParam, GraphLinksResidency,
     };
     use crate::index::hnsw_index::hnsw::telemetry::HNSWSearchesTelemetry;
+    use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::index::visited_pool::VisitedPool;
     use crate::segment::Segment;
     use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -310,48 +316,90 @@ mod tests {
     fn unfiltered_search_reaches_live_points_after_deletions(
         #[case] deletion: Deletion,
         #[values(true, false)] with_indexed_count: bool,
+        #[values(1, 2)] bridge_count: usize,
+        #[values(false, true)] batched: bool,
     ) {
         let _scope = ambient::test_guard();
         let dir = tempfile::tempdir().unwrap();
         let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
-        for (point, vector) in [[0.0, 1.0], [0.5, 0.5], [1.0, 0.0]].iter().enumerate() {
+        let point_count = bridge_count + 2;
+        for point in 0..point_count {
+            let x = point as f32 / (point_count - 1) as f32;
             segment
                 .upsert_point(
                     point as u64,
                     (point as u64).into(),
-                    only_default_vector(vector),
+                    only_default_vector(&[x, 1.0 - x]),
                 )
                 .unwrap();
         }
 
-        // The entry stays live. Point 1 is the only path to the unique self-match, point 2.
+        // The entry stays live, with one or two deleted bridges before the self-match.
+        let links = (0..point_count)
+            .map(|point| {
+                let mut neighbors = Vec::new();
+                if point > 0 {
+                    neighbors.push((point - 1) as PointOffsetType);
+                }
+                if point + 1 < point_count {
+                    neighbors.push((point + 1) as PointOffsetType);
+                }
+                vec![neighbors]
+            })
+            .collect();
         let hnsw_m = HnswM::new2(2);
         let mut entry_points = EntryPoints::new(1);
         entry_points.new_point(0, 0, |_| true);
-        let graph = HnswGraph::<MmapFile>::Direct(Arc::new(GraphLayers {
+        let layers = GraphLayers {
             hnsw_m,
             links: GraphLinks::new_from_edges(
-                vec![vec![vec![1]], vec![vec![0, 2]], vec![vec![1]]],
-                GraphLinksFormatParam::Plain,
+                links,
+                if batched {
+                    GraphLinksFormatParam::Compressed
+                } else {
+                    GraphLinksFormatParam::Plain
+                },
                 hnsw_m,
             )
             .unwrap(),
             entry_points,
             visited_pool: VisitedPool::new(),
             residency: GraphLinksResidency::Pinned,
-        }));
-        let mut config = HnswGraphConfig::new(2, 8, 0, 1, None, 3);
+        };
+        let graph = if batched {
+            atomic_save_bin(
+                &GraphLayers::get_path(dir.path()),
+                &GraphLayerData {
+                    m: hnsw_m.m,
+                    m0: hnsw_m.m0,
+                    ef_construct: 8,
+                    entry_points: Cow::Borrowed(&layers.entry_points),
+                },
+            )
+            .unwrap();
+            std::fs::write(
+                GraphLayers::get_links_path(dir.path(), layers.links.format()),
+                layers.links.as_bytes().unwrap(),
+            )
+            .unwrap();
+            HnswGraph::<MmapFile>::Batched(Arc::new(
+                GraphLayersBatched::open(&MmapFs, dir.path(), GraphLinksResidency::Cold).unwrap(),
+            ))
+        } else {
+            HnswGraph::Direct(Arc::new(layers))
+        };
+        let mut config = HnswGraphConfig::new(2, 8, 0, 1, None, point_count);
         if !with_indexed_count {
             config.indexed_vector_count = None;
         }
         let telemetry = HNSWSearchesTelemetry::new();
         let query = QueryVector::Nearest(vec![1.0, 0.0].into());
+        let query_context = QueryContext::default();
         let search = |segment: &Segment, exact, deleted: &BitSlice, acorn| {
             let id_tracker = segment.id_tracker.borrow();
             let vector_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_storage
                 .borrow();
-            let query_context = QueryContext::default();
             let mut segment_context = query_context.get_segment_query_context();
             if matches!(deletion, Deletion::Proxy) {
                 segment_context = segment_context.with_deleted_points(deleted);
@@ -404,10 +452,20 @@ mod tests {
                 }
             };
 
-        let expected = vec![ScoredPointOffset { idx: 2, score: 1.0 }];
-        let mut deleted = BitVec::repeat(false, 3);
+        let expected = vec![ScoredPointOffset {
+            idx: (point_count - 1) as PointOffsetType,
+            score: 1.0,
+        }];
+        let mut deleted = BitVec::repeat(false, point_count);
         assert_eq!(search(&segment, false, &deleted, None), expected);
-        delete(&mut segment, &mut deleted, 1, 10);
+        for point in 1..point_count - 1 {
+            delete(
+                &mut segment,
+                &mut deleted,
+                point as PointOffsetType,
+                10 + point as u64,
+            );
+        }
         assert_eq!(search(&segment, true, &deleted, None), expected);
         assert_eq!(search(&segment, false, &deleted, None), expected);
 
@@ -421,10 +479,6 @@ mod tests {
             AcornSearchParams {
                 enable: true,
                 max_selectivity: Some(0.0.into()),
-            },
-            AcornSearchParams {
-                enable: true,
-                max_selectivity: Some(0.5.into()),
             },
             AcornSearchParams {
                 enable: true,
@@ -444,19 +498,82 @@ mod tests {
                 &deleted,
                 Some(AcornSearchParams {
                     enable: true,
+                    max_selectivity: Some(0.5.into())
+                })
+            ),
+            one_hop_result,
+        );
+        assert_eq!(
+            search(
+                &segment,
+                false,
+                &deleted,
+                Some(AcornSearchParams {
+                    enable: true,
                     max_selectivity: Some(1.0.into()),
                 })
             ),
             expected,
         );
 
-        delete(&mut segment, &mut deleted, 0, 11);
+        delete(&mut segment, &mut deleted, 0, 20);
         assert_eq!(search(&segment, true, &deleted, None), expected);
         assert_eq!(search(&segment, false, &deleted, None), expected);
 
-        delete(&mut segment, &mut deleted, 2, 12);
+        {
+            let id_tracker = segment.id_tracker.borrow();
+            let vector_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .borrow();
+            let deleted_points = if matches!(deletion, Deletion::Proxy) {
+                deleted.as_bitslice()
+            } else {
+                id_tracker.deleted_point_bitslice()
+            };
+            let scorer = FilteredScorer::new(
+                query.clone(),
+                &*vector_storage,
+                None::<&QuantizedVectors>,
+                None,
+                deleted_points,
+            )
+            .unwrap();
+            let requested_seeds = Cell::new(None);
+            let no_seeds = |n: usize| {
+                requested_seeds.set(Some(n));
+                Ok(Vec::new())
+            };
+            // The reader can return no seeds, so the huge beam never needs allocation.
+            let result = graph
+                .search(GraphSearchArgs {
+                    top: 1,
+                    ef: usize::MAX / 2 + 1,
+                    algorithm: SearchAlgorithm::Acorn,
+                    scorers: SearchScorers::Regular(scorer),
+                    custom_entry_points: None,
+                    filtered_points_reader: Some(&no_seeds),
+                    is_stopped: &crate::vector_storage::DEFAULT_STOPPED,
+                })
+                .unwrap();
+            assert!(result.is_empty());
+            assert_eq!(requested_seeds.get(), Some(usize::MAX));
+        }
+
+        delete(
+            &mut segment,
+            &mut deleted,
+            (point_count - 1) as PointOffsetType,
+            21,
+        );
         assert!(search(&segment, true, &deleted, None).is_empty());
         assert!(search(&segment, false, &deleted, None).is_empty());
+        if matches!(deletion, Deletion::Vector) {
+            // A cancelled context detects any needless scan of the remaining point mappings.
+            query_context
+                .is_stopped_handle()
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            assert!(search(&segment, false, &deleted, None).is_empty());
+        }
         assert_eq!(
             telemetry
                 .acorn
@@ -471,7 +588,99 @@ mod tests {
                 .lock()
                 .get_statistics(TelemetryDetail::default())
                 .count,
-            9
+            if matches!(deletion, Deletion::Vector) {
+                10
+            } else {
+                9
+            }
+        );
+    }
+
+    #[test]
+    fn unfiltered_payload_only_search_includes_vectors_outside_payload_blocks() {
+        let _scope = ambient::test_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        for (point, vector) in [[0.0, 1.0], [0.1, 0.9], [0.2, 0.8], [1.0, 0.0]]
+            .iter()
+            .enumerate()
+        {
+            segment
+                .upsert_point(
+                    point as u64,
+                    (point as u64).into(),
+                    only_default_vector(vector),
+                )
+                .unwrap();
+        }
+        let hnsw_m = HnswM::new2(0);
+        let mut entry_points = EntryPoints::new(1);
+        entry_points.new_point(0, 0, |_| true);
+        let graph = HnswGraph::<MmapFile>::Direct(Arc::new(GraphLayers {
+            hnsw_m,
+            links: GraphLinks::new_from_edges(
+                vec![vec![vec![]]; 4],
+                GraphLinksFormatParam::Plain,
+                hnsw_m,
+            )
+            .unwrap(),
+            entry_points,
+            visited_pool: VisitedPool::new(),
+            residency: GraphLinksResidency::Pinned,
+        }));
+        segment.delete_point(10, 0.into()).unwrap();
+        let config = HnswGraphConfig::new(0, 8, 0, 1, Some(2), 4);
+        let telemetry = HNSWSearchesTelemetry::new();
+        let id_tracker = segment.id_tracker.borrow();
+        let vector_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .borrow();
+        let query_context = QueryContext::default();
+        let segment_context = query_context.get_segment_query_context();
+        let vector_context = segment_context.get_vector_context(DEFAULT_VECTOR_NAME, None);
+        let query = QueryVector::Nearest(vec![1.0, 0.0].into());
+
+        let result = segment
+            .payload_index
+            .borrow()
+            .with_view(|payload_index| {
+                HNSWIndexReadView {
+                    id_tracker: &*id_tracker,
+                    vector_storage: &*vector_storage,
+                    quantized_vectors: None::<&QuantizedVectors>,
+                    payload_index,
+                    config: &config,
+                    graph: &graph,
+                    searches_telemetry: &telemetry,
+                }
+                .search(
+                    &[&query],
+                    None,
+                    1,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(1),
+                        ..Default::default()
+                    }),
+                    &vector_context,
+                )
+            })
+            .unwrap();
+        assert_eq!(result, vec![vec![ScoredPointOffset { idx: 3, score: 1.0 }]]);
+        assert_eq!(
+            telemetry
+                .unfiltered_plain
+                .lock()
+                .get_statistics(TelemetryDetail::default())
+                .count,
+            1
+        );
+        assert_eq!(
+            telemetry
+                .unfiltered_hnsw
+                .lock()
+                .get_statistics(TelemetryDetail::default())
+                .count,
+            0
         );
     }
 }

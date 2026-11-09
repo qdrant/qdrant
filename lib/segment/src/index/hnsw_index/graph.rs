@@ -177,7 +177,7 @@ impl<S: UniversalRead> HnswGraph<S> {
             SearchScorers::Regular(scorer) => scorer,
             SearchScorers::WithVectors(scorers) => scorers.links,
         };
-        let seeds_num = SEEDS_PER_EF * ef.max(top);
+        let seeds_num = SEEDS_PER_EF.saturating_mul(ef.max(top));
         let Some(entry) = self.get_entry_point(
             scorer,
             custom_entry_points,

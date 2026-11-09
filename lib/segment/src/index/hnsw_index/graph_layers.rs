@@ -199,6 +199,7 @@ pub trait GraphLayersBase {
         let mut to_score = Vec::with_capacity(capacity);
         let mut to_explore = Vec::with_capacity(capacity);
         let mut tail_bridges = Vec::new();
+        let expand_deleted = !points_scorer.filters().has_payload_filter();
 
         while let Some(candidate) = search_context.candidates.pop() {
             check_process_stopped(is_stopped)?;
@@ -240,9 +241,13 @@ pub trait GraphLayersBase {
                 to_explore.push(hop1);
             }
 
-            // Collect 2-hop neighbors (neighbors of neighbors)
-            for &hop1 in &to_explore {
+            // Filtered ACORN stays two-hop. Without a payload predicate, continue through
+            // consecutive deleted nodes, which must never be scored.
+            let mut explored = 0;
+            while explored < to_explore.len() {
                 check_process_stopped(is_stopped)?;
+                let hop1 = to_explore[explored];
+                explored += 1;
 
                 let total_limit = to_score.len().saturating_add(hop2_limit);
                 _ = self.try_for_each_link(hop1, level, |hop2| {
@@ -253,11 +258,18 @@ pub trait GraphLayersBase {
                     }
 
                     if points_scorer.filters().check_vector(hop2) {
+                        if to_score.len() >= total_limit {
+                            hop2_visited_list.unvisit(hop2);
+                            return ControlFlow::Continue(());
+                        }
                         hop1_visited_list.check_and_update_visited(hop2);
                         to_score.push(hop2);
-                        if to_score.len() >= total_limit {
+                        if !expand_deleted && to_score.len() >= total_limit {
                             return ControlFlow::Break(());
                         }
+                    } else if expand_deleted {
+                        hop1_visited_list.check_and_update_visited(hop2);
+                        to_explore.push(hop2);
                     }
                     ControlFlow::Continue(())
                 });

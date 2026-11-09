@@ -341,8 +341,12 @@ where
         deleted_points: &BitSlice,
         is_stopped: &AtomicBool,
     ) -> OperationResult<Vec<PointOffsetType>> {
+        let available_vectors = self.vector_storage.available_vector_count();
+        if n == 0 || available_vectors == 0 {
+            return Ok(Vec::new());
+        }
         let not_deleted = self.vector_storage.not_deleted_checker(deleted_points);
-        let mut points = Vec::with_capacity(n.min(self.vector_storage.available_vector_count()));
+        let mut points = Vec::with_capacity(n.min(available_vectors));
         for point in self.id_tracker.point_mappings().iter_internal() {
             check_process_stopped(is_stopped)?;
             if not_deleted.check(point)? {
