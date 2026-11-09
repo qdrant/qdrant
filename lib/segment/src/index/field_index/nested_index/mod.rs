@@ -534,10 +534,6 @@ impl PayloadFieldIndex for NestedFieldIndex {
 }
 
 impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex<I, M> {
-    fn checks_read_disk(&self) -> bool {
-        self.inner.checks_read_disk()
-    }
-
     fn is_cold(&self) -> bool {
         self.inner.is_cold()
     }

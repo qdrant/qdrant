@@ -365,7 +365,7 @@ where
             return Ok(None);
         };
         for index in indexes {
-            if estimation.exp > expected_checks.max_posting_len(index.checks_read_disk()) {
+            if estimation.exp > expected_checks.max_posting_len(index.is_cold()) {
                 continue;
             }
             if let Some(points) = index.filter(condition)? {

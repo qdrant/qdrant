@@ -15,14 +15,14 @@ pub enum CheckConsumer {
     Graph,
 }
 
-/// Posting-list entries worth reading per avoided check when a check is a disk read:
-/// an entry is 4 sequential bytes, a check on a cold page cache is a random read.
+/// Posting-list entries worth reading per avoided check when the index is cold
+/// (`memory: cold`): an entry is 4 sequential bytes, a check is a random disk read.
 const DISK_POSTING_TO_CHECKS_RATIO: usize = 64;
 
-/// Same, when a check is a memory lookup on the plain path.
+/// Same, for an index held in RAM (cached or pinned) on the plain path.
 const PLAIN_POSTING_TO_CHECKS_RATIO: usize = 4;
 
-/// Same, when a check is a memory lookup in graph search. Each check there is cheap
+/// Same, for an index held in RAM in graph search. Each check there is cheap
 /// relative to the vector scoring around it, so only lists no longer than the checks pay.
 const GRAPH_POSTING_TO_CHECKS_RATIO: usize = 1;
 
@@ -50,9 +50,10 @@ impl ExpectedChecks {
         }
     }
 
-    /// Largest posting list worth reading into a bitset instead of `count` per-point checks.
-    pub fn max_posting_len(self, checks_read_disk: bool) -> usize {
-        let ratio = match (checks_read_disk, self.consumer) {
+    /// Largest posting list worth reading into a bitset instead of `count` per-point checks
+    /// through an index that is cold (`memory: cold`) or not.
+    pub fn max_posting_len(self, cold_index: bool) -> usize {
+        let ratio = match (cold_index, self.consumer) {
             (true, CheckConsumer::Plain | CheckConsumer::Graph) => DISK_POSTING_TO_CHECKS_RATIO,
             (false, CheckConsumer::Plain) => PLAIN_POSTING_TO_CHECKS_RATIO,
             (false, CheckConsumer::Graph) => GRAPH_POSTING_TO_CHECKS_RATIO,
