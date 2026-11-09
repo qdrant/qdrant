@@ -13,7 +13,7 @@ use bitvec::order::Lsb0;
 use itertools::{Either, Itertools};
 
 use crate::bitvec::BitVec;
-use crate::generic_consts::Random;
+use crate::generic_consts::{Random, Sequential};
 use crate::universal_io::{
     Flusher, OpenOptions, ReadRange, TypedStorage, UioResult, UniversalIoError, UniversalRead,
     UniversalReadFs, UniversalWrite, UniversalWriteFs,
@@ -202,6 +202,33 @@ impl<S: UniversalRead> StoredBitSlice<S> {
         }
     }
 
+    /// Read the bits in `0..bit_len` (clamped to the storage length).
+    ///
+    /// Like [`Self::read_all`], but skips any trailing capacity past `bit_len`.
+    /// Reads with a sequential access hint, as it is meant for whole-prefix
+    /// scans, unlike [`Self::read_bit_range`].
+    pub fn read_bits_up_to(&self, bit_len: u64) -> UioResult<Cow<'_, BitSlice>> {
+        let bit_len = bit_len.min(self.bit_len());
+        if bit_len == 0 {
+            return Ok(Cow::Borrowed(BitSlice::empty()));
+        }
+
+        let num_elements = bit_len.div_ceil(u64::from(BITS_PER_ELEMENT));
+        let elements = self
+            .storage
+            .read(ReadRange::new(0, num_elements), Sequential)?;
+
+        let bit_len = bit_len as usize;
+        match elements {
+            Cow::Borrowed(slice) => Ok(Cow::Borrowed(&BitSlice::from_slice(slice)[..bit_len])),
+            Cow::Owned(vec) => {
+                let mut bits = BitVec::from_vec(vec);
+                bits.truncate(bit_len);
+                Ok(Cow::Owned(bits))
+            }
+        }
+    }
+
     /// Count the number of set bits in the entire storage.
     pub fn count_ones(&self) -> UioResult<usize> {
         Ok(self.read_all()?.count_ones())
@@ -217,6 +244,17 @@ impl<S: UniversalRead> StoredBitSlice<S> {
     /// cleared get back exactly their set positions.
     pub fn iter_ones(&self) -> UioResult<impl Iterator<Item = u64> + '_> {
         let cow_bitslice = self.read_all()?;
+        let iter = match cow_bitslice {
+            Cow::Borrowed(bitslice) => Either::Left(bitslice.iter_ones().map(|i| i as u64)),
+            Cow::Owned(bitvec) => Either::Right(OwnedOnes::new(bitvec, |bv| bv.iter_ones())),
+        };
+        Ok(iter)
+    }
+
+    /// Like [`Self::iter_ones`], but only reads and scans bits in `0..bit_len`
+    /// (clamped to the storage length).
+    pub fn iter_ones_up_to(&self, bit_len: u64) -> UioResult<impl Iterator<Item = u64> + '_> {
+        let cow_bitslice = self.read_bits_up_to(bit_len)?;
         let iter = match cow_bitslice {
             Cow::Borrowed(bitslice) => Either::Left(bitslice.iter_ones().map(|i| i as u64)),
             Cow::Owned(bitvec) => Either::Right(OwnedOnes::new(bitvec, |bv| bv.iter_ones())),
@@ -756,6 +794,35 @@ mod tests {
         assert_eq!(bs.len(), storage.bit_len() as usize);
         // With mmap backend, read_all returns Cow::Borrowed (zero-copy)
         assert_matches!(bs, Cow::Borrowed(_));
+    }
+
+    #[test]
+    fn test_iter_ones_up_to() {
+        // 2 u64 elements = 128 bits, set bits 3, 70 and 127
+        let mut data = [0u8; 16];
+        data[0] = 0b0000_1000;
+        data[8] = 0b0100_0000;
+        data[15] = 0b1000_0000;
+        let f = create_temp_file(&data);
+
+        let storage: MmapBitSlice =
+            StoredBitSlice::open(&MmapFs, f.path(), OpenOptions::new_for_test(), ()).unwrap();
+
+        let ones = |bit_len| {
+            storage
+                .iter_ones_up_to(bit_len)
+                .unwrap()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ones(0), Vec::<u64>::new());
+        assert_eq!(ones(70), vec![3]);
+        assert_eq!(ones(71), vec![3, 70]);
+        // Clamped to the storage length
+        assert_eq!(ones(10_000), vec![3, 70, 127]);
+        assert_eq!(
+            ones(10_000),
+            storage.iter_ones().unwrap().collect::<Vec<_>>()
+        );
     }
 
     #[test]
