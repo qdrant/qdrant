@@ -159,7 +159,11 @@ where
                 // The filter context's lifetime is tied to the payload view, which is already
                 // held by this read view.
                 let use_graph = {
-                    let filter_context = self.payload_index.filter_context(query_filter)?;
+                    // Samples are checked one at a time, so conditions on cold indexes are
+                    // read up front: a few sequential reads instead of a random read per sample.
+                    let filter_context = self
+                        .payload_index
+                        .filter_context_for_serial_checks(query_filter)?;
                     sample_check_cardinality(
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),
