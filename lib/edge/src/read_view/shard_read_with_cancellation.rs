@@ -172,6 +172,3 @@ where
 fn scope(is_stopped: Arc<AtomicBool>) -> EdgeScope {
     EdgeScope::new().with_cancellation(is_stopped)
 }
-
-#[cfg(test)]
-mod tests;

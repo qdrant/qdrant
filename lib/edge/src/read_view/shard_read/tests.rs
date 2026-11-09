@@ -7,8 +7,7 @@ use segment::segment::read_only::ReadOnlySegment;
 
 use super::*;
 use crate::read_only::tests::{VECTOR_NAME, open_follower, test_config, upsert};
-use crate::read_view::shard_read::run;
-use crate::read_view::{EdgeReadView, build_segment_pool};
+use crate::read_view::build_segment_pool;
 use crate::{
     EdgeShard, NamedQuery, OperationError, OperationResult, QueryEnum, QueryRequestBuilder,
     ReadSegmentHandle, ScoringQuery, VectorInternal,

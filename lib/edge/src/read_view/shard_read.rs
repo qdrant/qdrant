@@ -13,6 +13,9 @@ use crate::{
     ShardInfo,
 };
 
+#[cfg(all(test, feature = "serverless"))]
+mod tests;
+
 pub(super) mod sealed {
     /// Empty marker supertrait of [`EdgeShardRead`](super::EdgeShardRead). Unnameable outside the
     /// crate, so downstream crates cannot implement `EdgeShardRead`; it carries no methods, so
