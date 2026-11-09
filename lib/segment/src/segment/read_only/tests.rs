@@ -697,7 +697,7 @@ fn read_only_segment_config_reload_payload_index() {
         .config_reload_diff(&MmapFs)
         .expect("config reload diff");
     assert!(!diff.is_empty());
-    read_only.apply_config_reload(diff);
+    let _retired = read_only.apply_config_reload(diff);
     {
         let payload_index = read_only.payload_index.borrow();
         assert!(payload_index.field_indexes.contains_key(&kw_field));
@@ -711,13 +711,17 @@ fn read_only_segment_config_reload_payload_index() {
         .expect("config reload diff");
     assert!(diff.is_empty());
 
-    // Drop `num` again on disk and reload: the index is removed.
+    // Drop `num` again on disk and reload: the index is removed, and handed back
+    // to the caller instead of being dropped inside the apply.
     reduced_config.save(&config_path).unwrap();
     let diff = read_only
         .config_reload_diff(&MmapFs)
         .expect("config reload diff");
     assert!(!diff.is_empty());
-    read_only.apply_config_reload(diff);
+    let (retired_vectors, retired_field_indexes) = read_only.apply_config_reload(diff);
+    assert!(retired_vectors.is_empty());
+    assert!(!retired_field_indexes.is_empty());
+    drop(retired_field_indexes);
     {
         let payload_index = read_only.payload_index.borrow();
         assert!(payload_index.field_indexes.contains_key(&kw_field));
