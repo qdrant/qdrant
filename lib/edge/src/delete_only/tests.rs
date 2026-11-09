@@ -215,7 +215,7 @@ fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
     use common::universal_io::MmapFile;
     use segment::id_tracker::delete_versions::DeleteVersioning;
 
-    use crate::{CountRequest, EdgeShardRead as _, ReadOnlyEdgeShard};
+    use crate::{CountRequest, EdgeShardRead as _, ReadOnlyEdgeShard, ReadOnlyOpenOptions};
 
     let approximate_count = |follower: &ReadOnlyEdgeShard<MmapFile>| {
         follower
@@ -227,15 +227,17 @@ fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
     };
 
     let (dir, immutable) = shadowed_leader("edge-delete-only-gated");
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator_and_waterline(
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         dir.path(),
         LocalSegmentEnumerator::new(dir.path()),
-        None,
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions {
+            config: None,
+            load_profile: None,
+            pools: Default::default(),
+            waterline: Some(NEWER),
+        },
         &AtomicBool::new(false),
-        Some(NEWER),
     )
     .unwrap();
     assert_eq!(approximate_count(&follower), 303, "both copies of 1-3");

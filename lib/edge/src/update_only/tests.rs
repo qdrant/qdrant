@@ -228,7 +228,7 @@ mod store {
     use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
     use crate::{
         EdgeShardRead as _, ManifestSegmentEnumerator, QueryRequestBuilder, ReadOnlyEdgeShard,
-        RetrieveRequestBuilder,
+        ReadOnlyOpenOptions, RetrieveRequestBuilder,
     };
 
     mod point_count;
@@ -427,9 +427,15 @@ mod store {
             MmapFs,
             dir.path(),
             LocalSegmentEnumerator::new(dir.path()),
-            None,
-            Some(LoadProfile::for_retrieve().with_deferred_points_threshold_kb(Some(threshold_kb))),
-            Default::default(),
+            ReadOnlyOpenOptions {
+                config: None,
+                load_profile: Some(
+                    LoadProfile::for_retrieve()
+                        .with_deferred_points_threshold_kb(Some(threshold_kb)),
+                ),
+                pools: Default::default(),
+                waterline: None,
+            },
             &AtomicBool::new(false),
         )
         .unwrap();

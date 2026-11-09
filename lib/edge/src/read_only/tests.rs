@@ -22,8 +22,9 @@ use crate::edge_shard::scan_segment_dirs;
 use crate::{
     CountRequest, Distance, EdgeConfig, EdgeShard, EdgeShardRead, EdgeVectorParams, ListedSegment,
     LocalSegmentEnumerator, ManifestSegmentEnumerator, OperationResult, PointStructPersisted,
-    ReadOnlyEdgeShard, RetrieveRequestBuilder, ScrollRequestBuilder, SegmentEnumerator,
-    VectorInternal, VectorStructInternal, VectorStructPersisted, WithPayloadInterface, WithVector,
+    ReadOnlyEdgeShard, ReadOnlyOpenOptions, RetrieveRequestBuilder, ScrollRequestBuilder,
+    SegmentEnumerator, VectorInternal, VectorStructInternal, VectorStructPersisted,
+    WithPayloadInterface, WithVector,
 };
 
 pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
@@ -100,9 +101,7 @@ pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFil
         MmapFs,
         path,
         LocalSegmentEnumerator::new(path),
-        None,
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions::default(),
         &AtomicBool::new(false),
     )
     .unwrap()
@@ -207,9 +206,12 @@ fn follower_with_load_profile_serves_reads() {
         MmapFs,
         dir.path(),
         LocalSegmentEnumerator::new(dir.path()),
-        None,
-        Some(scroll_request.load_profile()),
-        Default::default(),
+        ReadOnlyOpenOptions {
+            config: None,
+            load_profile: Some(scroll_request.load_profile()),
+            pools: Default::default(),
+            waterline: None,
+        },
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -397,9 +399,12 @@ fn provided_config_overrides_tunables_at_open() {
         MmapFs,
         dir.path(),
         LocalSegmentEnumerator::new(dir.path()),
-        Some(provided),
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions {
+            config: Some(provided),
+            load_profile: None,
+            pools: Default::default(),
+            waterline: None,
+        },
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -481,9 +486,7 @@ fn follower_uses_injected_enumerator() {
             segments_path,
             exclude: hidden,
         },
-        None,
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -614,9 +617,7 @@ fn open_rejects_a_cancelled_flag() {
         MmapFs,
         dir.path(),
         LocalSegmentEnumerator::new(dir.path()),
-        None,
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions::default(),
         &stopped,
     ));
     assert!(stopped.load(Ordering::Relaxed));
@@ -686,9 +687,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
             stopped: stopped.clone(),
             armed: armed.clone(),
         },
-        None,
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions::default(),
         &stopped,
     )
     .unwrap();

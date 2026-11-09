@@ -25,8 +25,9 @@ use crate::PointOperations::DeletePoints;
 use crate::read_only::tests::{exact_count, open_follower, point};
 use crate::{
     CountRequest, EdgeShardRead as _, ListedSegment, LocalSegmentEnumerator, OperationResult,
-    PointApplyKind, PointStructPersisted, ReadOnlyEdgeShard, RetrieveRequestBuilder,
-    SegmentEnumerator, UpdateOnlyEdgeShard, WithPayloadInterface, WithVector,
+    PointApplyKind, PointStructPersisted, ReadOnlyEdgeShard, ReadOnlyOpenOptions,
+    RetrieveRequestBuilder, SegmentEnumerator, UpdateOnlyEdgeShard, WithPayloadInterface,
+    WithVector,
 };
 
 /// The point the fixture moves; it lives in an immutable segment after the vacuum.
@@ -100,15 +101,17 @@ fn open_gated_with(
     enumerator: impl SegmentEnumerator + 'static,
     waterline: SeqNumberType,
 ) -> ReadOnlyEdgeShard<MmapFile> {
-    ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator_and_waterline(
+    ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         shard,
         enumerator,
-        None,
-        None,
-        Default::default(),
+        ReadOnlyOpenOptions {
+            config: None,
+            load_profile: None,
+            pools: Default::default(),
+            waterline: Some(waterline),
+        },
         &AtomicBool::new(false),
-        Some(waterline),
     )
     .unwrap()
 }
