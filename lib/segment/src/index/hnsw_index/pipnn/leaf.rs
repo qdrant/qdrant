@@ -11,6 +11,11 @@
 //! likely a cache miss on a reservoir, while finding a mutual pick only takes a look at the
 //! neighbor's `k` picks, which are in cache. The edge then also carries the score of its own
 //! direction. Leaves that share points still send the same edge once each.
+//!
+//! Progress: the leaf k-NN adds the points of the level as point-equivalents of its work, handed
+//! out to the leaves as shares by the square of their sizes, see [`progress`](super::progress).
+//! So a count of half the points means about half of the pairs are scored, not that the leaves
+//! of half the points are done.
 
 use std::sync::atomic::AtomicBool;
 
@@ -19,7 +24,7 @@ use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use rayon::prelude::*;
 
-use super::progress::Progress;
+use super::progress::Share;
 use super::top_k_pool::TopKPool;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK};
@@ -37,14 +42,14 @@ use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK}
 ///   id in a sorted leaf. Leaves with fewer than 2 points have no edges.
 /// - Runs in parallel over the leaves, in the current rayon pool: `edge` is called from many
 ///   threads at once, in no particular order.
-/// - Adds all of `progress` by the time it returns: each leaf its share once its edges are sent,
-///   by the square of its size, about the pairs its matrix call scores.
+/// - Adds all of `progress`, the points of the level, by the time it returns: each leaf its share
+///   once its edges are sent, by the square of its size, about the pairs its matrix call scores.
 pub(super) fn for_each_leaf_edge(
     scorer: &MatrixScorer<'_>,
     leaves: &[Vec<PointOffsetType>],
     k: usize,
     stopped: &AtomicBool,
-    progress: Progress<'_>,
+    progress: Share<'_>,
     edge: impl Fn(PointOffsetType, PointOffsetType, ScoreType) + Sync,
 ) -> OperationResult<()> {
     // A point has at most `len - 1` neighbors in its leaf, so a larger `k` would only size the
@@ -106,7 +111,7 @@ fn leaf_edges(
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
-    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use common::bitvec::BitVec;
     use parking_lot::Mutex;
@@ -119,6 +124,7 @@ mod tests {
     use super::*;
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::{VectorElementType, VectorRef};
+    use crate::index::hnsw_index::pipnn::progress::TestCounter;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::types::{
         BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
@@ -136,7 +142,7 @@ mod tests {
     const K: usize = super::super::DEFAULT_LEAF_K;
     /// Uneven leaf sizes, including leaves without pairs.
     const SIZES: &[usize] = &[150, 0, 1, 2, 3, 5, 200, 17, 64, 2, 120, 1, 90, 33];
-    /// Progress of a call, more units than it has leaves.
+    /// Points of a call's share, more than it has leaves.
     const PROGRESS: u64 = 1_000_003;
 
     type Edge = (PointOffsetType, PointOffsetType, ScoreType);
@@ -274,13 +280,13 @@ mod tests {
         stopped: &AtomicBool,
     ) -> (OperationResult<()>, Vec<Edge>) {
         let edges = Mutex::new(Vec::new());
-        let counter = AtomicU64::new(0);
-        let progress = Progress::new(&counter, PROGRESS);
+        let counter = TestCounter::default();
+        let progress = counter.share(PROGRESS);
         let result = for_each_leaf_edge(scorer, leaves, k, stopped, progress, |p, q, score| {
             edges.lock().push((p, q, score));
         });
         let want = if result.is_ok() { PROGRESS } else { 0 };
-        assert_eq!(counter.into_inner(), want, "progress");
+        assert_eq!(counter.load(), want, "progress");
         (result, sorted(edges.into_inner()))
     }
 
@@ -594,9 +600,9 @@ mod tests {
             .build()
             .unwrap();
         let threads = Mutex::new(HashSet::new());
-        let counter = AtomicU64::new(0);
+        let counter = TestCounter::default();
         pool.install(|| {
-            let progress = Progress::new(&counter, PROGRESS);
+            let progress = counter.share(PROGRESS);
             for_each_leaf_edge(
                 &scorer,
                 &leaves,
@@ -650,8 +656,8 @@ mod tests {
             .unwrap();
         let stopped = AtomicBool::new(false);
         let count = AtomicUsize::new(0);
-        let counter = AtomicU64::new(0);
-        let progress = Progress::new(&counter, PROGRESS);
+        let counter = TestCounter::default();
+        let progress = counter.share(PROGRESS);
         let result = pool.install(|| {
             for_each_leaf_edge(&scorer, &leaves, K, &stopped, progress, |_, _, _| {
                 count.fetch_add(1, Ordering::Relaxed);
@@ -664,7 +670,7 @@ mod tests {
         // On one thread, the first leaf has all the edges, and its share by size
         let squares: Vec<u64> = SIZES.iter().map(|&size| (size as u64).pow(2)).collect();
         let first = PROGRESS * squares[0] / squares.iter().sum::<u64>();
-        assert_eq!(counter.into_inner(), first);
+        assert_eq!(counter.load(), first);
     }
 
     /// The progress rises leaf by leaf: on one thread, each leaf sees the shares of the leaves
@@ -679,10 +685,10 @@ mod tests {
             .num_threads(1)
             .build()
             .unwrap();
-        let counter = AtomicU64::new(0);
+        let counter = TestCounter::default();
         let seen = Mutex::new(Vec::new());
         pool.install(|| {
-            let progress = Progress::new(&counter, PROGRESS);
+            let progress = counter.share(PROGRESS);
             for_each_leaf_edge(
                 &scorer,
                 &leaves,
@@ -690,7 +696,7 @@ mod tests {
                 &AtomicBool::new(false),
                 progress,
                 |_, _, _| {
-                    seen.lock().push(counter.load(Ordering::Relaxed));
+                    seen.lock().push(counter.load());
                 },
             )
         })
@@ -700,6 +706,6 @@ mod tests {
         assert_eq!(seen.first(), Some(&0));
         assert!(seen.iter().any(|&seen| 0 < seen && seen < PROGRESS));
         assert!(*seen.last().unwrap() < PROGRESS);
-        assert_eq!(counter.into_inner(), PROGRESS);
+        assert_eq!(counter.load(), PROGRESS);
     }
 }

@@ -42,9 +42,12 @@
 //!
 //! # Progress
 //!
-//! One counter for the whole build, with its total fixed before the first level. Every phase of
-//! each level that gets links adds its share as its work gets done, by the phase's share of the
-//! time, see [`progress`].
+//! One subtask for each of partitioning, the leaf k-NN, and the final prune, across all levels,
+//! and a total on the build's own tracker. Their totals are fixed before the first level: each
+//! phase the points of every level that gets links, and the total all phases together. Every
+//! piece of work adds its points to its phase and to the total as it gets done: the final prune
+//! the points it pruned, partitioning and the leaf k-NN point-equivalents in proportion to their
+//! work, see [`progress`].
 //!
 //! # Memory
 //!
@@ -83,7 +86,7 @@ mod prune;
 mod sketches;
 mod top_k_pool;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use common::bitvec::BitSlice;
@@ -96,7 +99,7 @@ use rayon::prelude::*;
 
 use self::hash_prune::Reservoirs;
 pub(super) use self::partition::PartitionParams;
-use self::progress::LevelProgress;
+use self::progress::{BuildProgress, Phase, Share};
 use self::sketches::Sketches;
 use super::HnswM;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -183,11 +186,13 @@ impl PipnnParams {
 ///   with HNSW.
 /// - Runs on the current rayon pool. The links only depend on the input and `params`, not on the
 ///   number of threads.
-/// - Starts `progress`, and tracks it once the sketches are done, so the caller doesn't. The
-///   total is fixed then, [`LevelProgress::units`] for each level that gets links, and the phases
-///   add their shares as their work gets done: the count rises with the time spent and ends at
-///   the total. On `None`, `progress` isn't tracked yet, so the caller can build with HNSW under
-///   it.
+/// - Starts `tracker`, and once the sketches are done, adds the subtasks `partition`,
+///   `leaf_knn` and `prune` to it and tracks it, see [`BuildProgress`], so the caller doesn't.
+///   Each subtask's total is the points of every level that gets links, and `tracker` itself
+///   has 3 times as many, one per point and phase. Partitioning and the leaf k-NN count
+///   point-equivalents of their work. The counts only rise, and on success end at their totals.
+///   On `None`, `tracker` has no subtasks and isn't tracked yet, so the caller can build with
+///   HNSW under it. The sketches count nothing.
 /// - Fails if stopped, on invalid parameters, on points past the stored vectors, and on failed
 ///   reads.
 ///
@@ -206,7 +211,7 @@ pub(super) fn build_links(
     hnsw_m: HnswM,
     params: &PipnnParams,
     stopped: &AtomicBool,
-    progress: &ProgressTracker,
+    tracker: &ProgressTracker,
 ) -> OperationResult<Option<Vec<Vec<Vec<PointOffsetType>>>>> {
     debug_assert!(
         points.is_sorted_by(|a, b| a < b),
@@ -220,7 +225,7 @@ pub(super) fn build_links(
     );
     params.validate()?;
     check_process_stopped(stopped)?;
-    progress.start();
+    tracker.start();
     let timer = Instant::now();
 
     // One stream of seeds: the sketches' first, then one per level in level order, so the
@@ -244,7 +249,7 @@ pub(super) fn build_links(
     let levels = links.iter().map(Vec::len).max().unwrap_or(0);
     let level_seeds: Vec<u64> = (0..levels).map(|_| seeds.random()).collect();
 
-    // The points of each level, which fix the total of the progress
+    // The points of each level, which fix the totals of the progress
     let mut level_lens = vec![0; levels];
     for lists in &links {
         level_lens[..lists.len()]
@@ -253,11 +258,11 @@ pub(super) fn build_links(
     }
     // Without pairs or a degree limit, a level has no links
     let has_links = |level: usize| level_lens[level] >= 2 && hnsw_m.level_m(level) > 0;
-    let total = (0..levels)
+    let points_with_links = (0..levels)
         .filter(|&level| has_links(level))
-        .map(|level| LevelProgress::units(level_lens[level]))
+        .map(|level| level_lens[level] as u64)
         .sum();
-    let counter = progress.track_progress(Some(total));
+    let mut progress = BuildProgress::new(tracker, points_with_links);
 
     let build = Build {
         scorer,
@@ -277,8 +282,7 @@ pub(super) fn build_links(
         debug_assert_eq!(level_points.len(), level_lens[level]);
         let level_m = hnsw_m.level_m(level);
         if has_links(level) {
-            let progress = LevelProgress::new(&counter, level_points.len());
-            let level_links = build.level(level, &level_points, level_m, seed, progress)?;
+            let level_links = build.level(level, &level_points, level_m, seed, &mut progress)?;
             debug_assert_eq!(level_links.len(), level_points.len());
             let on_level = links.iter_mut().filter(|lists| lists.len() > level);
             for (lists, level_links) in on_level.zip(level_links) {
@@ -297,11 +301,7 @@ pub(super) fn build_links(
         points.len(),
         timer.elapsed(),
     );
-    debug_assert_eq!(
-        counter.load(Ordering::Relaxed),
-        total,
-        "PiPNN progress must end at its total",
-    );
+    debug_assert!(progress.is_done(), "PiPNN progress must end at its totals");
     debug_assert_eq!(
         broken_invariant(
             &links,
@@ -480,14 +480,15 @@ struct LevelStats {
 impl Build<'_, '_> {
     /// Links of `points`, the points of `level` (sorted, distinct, at least 2), in their order,
     /// at least one and at most `level_m` each, which must be at least 1. `seed` is the level's
-    /// partitioning seed. Adds all of `progress`, and logs the level once it's done.
+    /// partitioning seed. Adds the points to each phase of `progress`, and logs the level once
+    /// it's done.
     fn level(
         &self,
         level: usize,
         points: &[PointOffsetType],
         level_m: usize,
         seed: u64,
-        progress: LevelProgress<'_>,
+        progress: &mut BuildProgress,
     ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
         let capacity = level_m.saturating_mul(self.params.reservoir_factor);
         let mut stats = LevelStats::default();
@@ -502,8 +503,9 @@ impl Build<'_, '_> {
             self.quantized_vectors,
             self.point_deleted,
             self.stopped,
-            progress.prune,
+            progress.start(Phase::Prune),
         )?;
+        progress.end(Phase::Prune);
         drop(reservoirs);
         let not_deleted = self.vector_storage.not_deleted_checker(self.point_deleted);
         let fallbacks = link_empty_lists(&mut links, points, &not_deleted);
@@ -528,16 +530,17 @@ impl Build<'_, '_> {
     }
 
     /// The reservoirs of `points`, the points of a level (sorted, distinct, at least 2),
-    /// `capacity` each, filled with the bidirected k-NN edges of their leaves. Adds the shares
-    /// of `progress` for partitioning and the leaf k-NN, and records both in `stats`.
+    /// `capacity` each, filled with the bidirected k-NN edges of their leaves. Adds the points to
+    /// the partitioning and the leaf k-NN of `progress`, and records both in `stats`.
     fn candidates(
         &self,
         points: &[PointOffsetType],
         capacity: usize,
         seed: u64,
-        progress: LevelProgress<'_>,
+        progress: &mut BuildProgress,
         stats: &mut LevelStats,
     ) -> OperationResult<Reservoirs> {
+        let len = points.len() as u64;
         let timer = Instant::now();
         let leaves = partition::partition(
             self.scorer,
@@ -545,8 +548,9 @@ impl Build<'_, '_> {
             &self.params.partition,
             seed,
             self.stopped,
-            progress.partition,
+            Share::new(progress.start(Phase::Partition), len),
         )?;
+        progress.end(Phase::Partition);
         stats.partition_time = timer.elapsed();
         stats.leaves = leaves.len();
         stats.memberships = leaves.iter().map(Vec::len).sum();
@@ -566,11 +570,12 @@ impl Build<'_, '_> {
             &leaves,
             leaf_k,
             self.stopped,
-            progress.leaf_knn,
+            Share::new(progress.start(Phase::LeafKnn), len),
             |point, candidate, score| {
                 reservoirs.insert(point, candidate, sketches.hash(point, candidate), score);
             },
         )?;
+        progress.end(Phase::LeafKnn);
         drop(leaves);
         stats.leaf_knn_time = timer.elapsed();
         Ok(reservoirs)
@@ -580,15 +585,15 @@ impl Build<'_, '_> {
 #[cfg(test)]
 mod orchestration_tests {
     use std::collections::HashSet;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::Ordering;
 
     use common::ambient;
     use common::bitvec::BitVec;
-    use common::progress_tracker::{ProgressView, new_progress_tracker};
+    use common::progress_tracker::{ProgressTree, ProgressView, new_progress_tracker};
     use rstest::rstest;
     use tempfile::TempDir;
 
-    use super::progress::{LEAF_KNN_UNITS, PARTITION_UNITS};
+    use super::progress::{NodeState, PHASES, node_state};
     use super::*;
     use crate::data_types::vectors::{VectorElementType, VectorRef};
     use crate::types::{
@@ -716,9 +721,7 @@ mod orchestration_tests {
             )
         }
 
-        /// [`Self::build_links`], checking the progress: a build with links ends at
-        /// [`progress_total`], one that can't sketch leaves it untracked, and one that fails
-        /// stays at most at its total.
+        /// [`Self::build_links`], checking the progress, see [`check_progress`].
         fn build_with(
             &self,
             points: &[PointOffsetType],
@@ -729,15 +732,7 @@ mod orchestration_tests {
         ) -> OperationResult<Option<Links>> {
             let (view, progress) = new_progress_tracker();
             let links = self.build_links(points, levels, hnsw_m, params, stopped, &progress);
-            let (done, total) = done_and_total(&view);
-            match &links {
-                Ok(Some(_)) => {
-                    let want = Some(progress_total(points, levels, hnsw_m));
-                    assert_eq!((done, total), (want, want), "progress");
-                }
-                Ok(None) => assert_eq!((done, total), (None, None), "progress"),
-                Err(_) => assert!(done <= total, "progress {done:?} of {total:?}"),
-            }
+            check_progress(&view, &links, points_with_links(points, levels, hnsw_m));
             links
         }
 
@@ -747,59 +742,143 @@ mod orchestration_tests {
                 .expect("dense vectors")
         }
 
-        /// The reservoirs of a level of `points`, as [`build_links`] fills them, and the
-        /// sketches that hashed their candidates.
-        fn candidates(
-            &self,
-            points: &[PointOffsetType],
-            capacity: usize,
-            progress: LevelProgress<'_>,
-            stats: &mut LevelStats,
-        ) -> (Reservoirs, Sketches) {
-            let stopped = AtomicBool::new(false);
-            let sketches = Sketches::new(&self.storage, points, 3, &stopped)
+        /// The sketches of `points`, as [`build_links`] projects them.
+        fn sketches(&self, points: &[PointOffsetType]) -> Sketches {
+            Sketches::new(&self.storage, points, 3, &AtomicBool::new(false))
                 .unwrap()
-                .unwrap();
+                .unwrap()
+        }
+
+        /// Runs `f` with a [`Build`] over `sketches`, as [`build_links`] sets it up.
+        fn with_build<R>(&self, sketches: &Sketches, f: impl FnOnce(&Build<'_, '_>) -> R) -> R {
             let scorer = self.scorer();
             let params = params();
-            let build = Build {
+            let stopped = AtomicBool::new(false);
+            f(&Build {
                 scorer: &scorer,
-                sketches: &sketches,
+                sketches,
                 vector_storage: &self.storage,
                 quantized_vectors: self.quantized.as_ref(),
                 point_deleted: &self.deleted,
                 params: &params,
                 stopped: &stopped,
-            };
-            let reservoirs = build
-                .candidates(points, capacity, 4, progress, stats)
-                .unwrap();
+            })
+        }
+
+        /// The reservoirs of a level of `points`, as [`build_links`] fills them, and the
+        /// sketches that hashed their candidates. Checks the progress of a build of just that
+        /// level: partitioning and the leaf k-NN have counted it and finished, and the final
+        /// prune hasn't started.
+        fn candidates(
+            &self,
+            points: &[PointOffsetType],
+            capacity: usize,
+            stats: &mut LevelStats,
+        ) -> (Reservoirs, Sketches) {
+            let sketches = self.sketches(points);
+            let (view, tracker) = new_progress_tracker();
+            let len = points.len() as u64;
+            let mut progress = BuildProgress::new(&tracker, len);
+            let reservoirs = self.with_build(&sketches, |build| {
+                build
+                    .candidates(points, capacity, 4, &mut progress, stats)
+                    .unwrap()
+            });
+            assert_eq!(
+                done_and_total(&view),
+                (Some(2 * len), Some(build_total(len)))
+            );
+            assert_eq!(
+                phase_states(&view),
+                [(true, true, len), (true, true, len), (false, false, 0)],
+            );
             (reservoirs, sketches)
         }
     }
 
-    /// Progress units of a build of `points` with `levels` by id: [`LevelProgress::units`] for
-    /// each level with at least 2 points and a degree limit.
-    fn progress_total(points: &[PointOffsetType], levels: &[usize], hnsw_m: HnswM) -> u64 {
+    /// Whether each phase under `view` started and finished, and its count.
+    fn phase_states(view: &ProgressView) -> Vec<(bool, bool, u64)> {
+        let phases = phases(view).into_iter();
+        let states =
+            phases.map(|(_, started, finished, done, _)| (started, finished, done.unwrap()));
+        states.collect()
+    }
+
+    /// The total of each phase of a build of `points` with `levels` by id: the points of each
+    /// level with at least 2 points and a degree limit, summed up.
+    fn points_with_links(points: &[PointOffsetType], levels: &[usize], hnsw_m: HnswM) -> u64 {
         let top = points.iter().map(|&point| levels[point as usize]).max();
-        let level_units = |level| {
+        let level_points = |level| {
             let len = points
                 .iter()
                 .filter(|&&point| levels[point as usize] >= level)
                 .count();
             if len >= 2 && hnsw_m.level_m(level) > 0 {
-                LevelProgress::units(len)
+                len as u64
             } else {
                 0
             }
         };
-        top.map_or(0, |top| (0..=top).map(level_units).sum())
+        top.map_or(0, |top| (0..=top).map(level_points).sum())
+    }
+
+    /// The total that [`build_links`] tracks for phases of `points` each.
+    fn build_total(points: u64) -> u64 {
+        PHASES.len() as u64 * points
     }
 
     /// Done and total of the progress that [`build_links`] tracked, `None` if it didn't.
     fn done_and_total(view: &ProgressView) -> (Option<u64>, Option<u64>) {
         let tree = view.snapshot("");
         (tree.done, tree.total)
+    }
+
+    /// The phases under the progress of [`build_links`].
+    fn phases(view: &ProgressView) -> Vec<NodeState> {
+        phases_of(&view.snapshot(""))
+    }
+
+    /// The phases under `tree`, a snapshot of the progress of [`build_links`].
+    fn phases_of(tree: &ProgressTree) -> Vec<NodeState> {
+        let phases = tree.children.iter().map(|phase| {
+            assert!(phase.children.is_empty());
+            node_state(phase)
+        });
+        phases.collect()
+    }
+
+    /// The progress of a [`build_links`] call that returned `links`, with `points` per phase:
+    /// - With links, each phase ended at its total and finished, and the total, which adds up
+    ///   the phases, ended at its own.
+    /// - Without, nothing is tracked or listed, so HNSW can build under it.
+    /// - On failure, each count is at most its total, and so is the total.
+    fn check_progress(view: &ProgressView, links: &OperationResult<Option<Links>>, points: u64) {
+        let (done, total) = done_and_total(view);
+        let phases = phases(view);
+        match links {
+            Ok(Some(_)) => {
+                let want = Some(build_total(points));
+                assert_eq!((done, total), (want, want), "progress");
+                let want: Vec<_> = PHASES
+                    .iter()
+                    .map(|phase| {
+                        let name = phase.name().to_string();
+                        (name, true, true, Some(points), Some(points))
+                    })
+                    .collect();
+                assert_eq!(phases, want);
+            }
+            Ok(None) => {
+                assert_eq!((done, total), (None, None), "progress");
+                assert!(phases.is_empty(), "{phases:?}");
+            }
+            Err(_) => {
+                assert!(done <= total, "progress {done:?} of {total:?}");
+                for (name, _, _, done, total) in phases {
+                    assert!(done <= total, "{name} {done:?} of {total:?}");
+                }
+            }
+        }
     }
 
     #[expect(deprecated, reason = "always_ram")]
@@ -1027,9 +1106,7 @@ mod orchestration_tests {
         let points = &fixture.points[..len];
         let capacity = 2 * M;
         let mut stats = LevelStats::default();
-        let counter = AtomicU64::new(0);
-        let progress = LevelProgress::new(&counter, len);
-        let (reservoirs, sketches) = fixture.candidates(points, capacity, progress, &mut stats);
+        let (reservoirs, sketches) = fixture.candidates(points, capacity, &mut stats);
         assert_eq!(stats.leaves, 1);
         assert_eq!(stats.leaf_k, capacity.min(len - 1));
 
@@ -1060,9 +1137,7 @@ mod orchestration_tests {
         let _scope = ambient::test_guard();
         let fixture = Fixture::new(Distance::Euclid, None);
         let mut stats = LevelStats::default();
-        let counter = AtomicU64::new(0);
-        let progress = LevelProgress::new(&counter, LEAF + 1);
-        fixture.candidates(&fixture.points[..LEAF + 1], 2 * M, progress, &mut stats);
+        fixture.candidates(&fixture.points[..LEAF + 1], 2 * M, &mut stats);
         assert!(stats.leaves > 1);
         assert_eq!(stats.leaf_k, params().leaf_k);
     }
@@ -1173,9 +1248,9 @@ mod orchestration_tests {
                     &AtomicBool::new(false),
                     &progress,
                 );
+                // Left for HNSW to track, without subtasks
+                check_progress(&view, &links, 0);
                 assert_eq!(links.unwrap(), None, "{storage:?}");
-                // Left for HNSW to track
-                assert_eq!(done_and_total(&view), (None, None));
             }
         }
     }
@@ -1305,8 +1380,8 @@ mod orchestration_tests {
         check_links(&links, points, &levels, hnsw_m());
     }
 
-    /// While a build runs, its progress only rises, under a total that's fixed from the start,
-    /// and ends at it.
+    /// While a build runs, its total and each phase only rise, under totals that are fixed from
+    /// the start, and end at them.
     #[test]
     fn progress_rises_to_its_total() {
         let _scope = ambient::test_guard();
@@ -1314,12 +1389,25 @@ mod orchestration_tests {
         let levels = random_levels(3);
         let (view, progress) = new_progress_tracker();
         let finished = AtomicBool::new(false);
+        // Done and total of the build, then of each phase, from one snapshot. `None` until all
+        // phases are listed with their totals, which `BuildProgress::new` adds one by one
+        let sample = || {
+            let tree = view.snapshot("");
+            let phases = phases_of(&tree);
+            let listed = phases.len() == PHASES.len()
+                && phases.iter().all(|&(_, _, _, _, total)| total.is_some());
+            let counts = phases
+                .into_iter()
+                .map(|(_, _, _, done, total)| (done, total));
+            let sample = std::iter::once((tree.done, tree.total)).chain(counts);
+            listed.then(|| sample.collect::<Vec<_>>())
+        };
         let samples = std::thread::scope(|scope| {
             let sampler = scope.spawn(|| {
                 let mut samples = Vec::new();
                 while !finished.load(Ordering::Acquire) {
-                    if let (Some(done), Some(total)) = done_and_total(&view) {
-                        samples.push((done, total));
+                    if let Some(sample) = sample() {
+                        samples.push(sample);
                     }
                     std::thread::yield_now();
                 }
@@ -1338,44 +1426,51 @@ mod orchestration_tests {
             links.unwrap().unwrap();
             sampler.join().unwrap()
         });
-        let total = progress_total(&fixture.points, &levels, hnsw_m());
-        assert!(
-            samples
-                .iter()
-                .all(|&(done, at)| done <= total && at == total)
-        );
-        assert!(samples.is_sorted(), "progress went down");
-        assert_eq!(done_and_total(&view), (Some(total), Some(total)));
+        let points = points_with_links(&fixture.points, &levels, hnsw_m());
+        let totals = [build_total(points), points, points, points];
+        assert!(samples.len() > 1, "no samples");
+        for (counter, &total) in totals.iter().enumerate() {
+            let counts: Vec<_> = samples.iter().map(|sample| sample[counter]).collect();
+            assert!(
+                counts
+                    .iter()
+                    .all(|&(done, at)| done <= Some(total) && at == Some(total)),
+                "counter {counter}",
+            );
+            assert!(counts.is_sorted(), "counter {counter} went down");
+        }
+        let ended: Vec<_> = totals
+            .iter()
+            .map(|&total| (Some(total), Some(total)))
+            .collect();
+        assert_eq!(sample(), Some(ended));
     }
 
-    /// Partitioning and the leaf k-NN of a level add their shares before its final prune, so the
-    /// progress is well past 0 before level 0 ends. The final prune adds the rest.
+    /// Each phase runs from its first level to its last, and its `end` finishes it right after its
+    /// last level, while the build's progress is still alive, not before and not only on drop.
     #[test]
-    fn progress_passes_0_before_level_0_ends() {
+    fn phases_finish_after_their_last_level() {
         let _scope = ambient::test_guard();
         let fixture = Fixture::new(Distance::Euclid, None);
-        let points = &fixture.points;
-        let counter = AtomicU64::new(0);
-        let progress = LevelProgress::new(&counter, points.len());
-        let mut stats = LevelStats::default();
-        let (reservoirs, _) = fixture.candidates(points, 2 * M, progress, &mut stats);
-        assert!(stats.leaves > 1);
-        let before_prune = counter.load(Ordering::Relaxed);
-        let len = points.len() as u64;
-        assert_eq!(before_prune, (PARTITION_UNITS + LEAF_KNN_UNITS) * len);
-
-        prune::prune(
-            &reservoirs,
-            points,
-            2 * M,
-            &fixture.storage,
-            None,
-            &fixture.deleted,
-            &AtomicBool::new(false),
-            progress.prune,
-        )
-        .unwrap();
-        assert_eq!(counter.into_inner(), LevelProgress::units(points.len()));
+        let level_0 = &fixture.points;
+        let level_1: Vec<_> = level_0.iter().copied().step_by(4).collect();
+        let (len_0, len_1) = (level_0.len() as u64, level_1.len() as u64);
+        let (view, tracker) = new_progress_tracker();
+        let mut progress = BuildProgress::new(&tracker, len_0 + len_1);
+        let sketches = fixture.sketches(level_0);
+        fixture.with_build(&sketches, |build| {
+            build
+                .level(0, level_0, hnsw_m().level_m(0), 1, &mut progress)
+                .unwrap();
+            assert_eq!(phase_states(&view), [(true, false, len_0); 3]);
+            build
+                .level(1, &level_1, hnsw_m().level_m(1), 2, &mut progress)
+                .unwrap();
+        });
+        assert!(progress.is_done());
+        assert_eq!(phase_states(&view), [(true, true, len_0 + len_1); 3]);
+        let total = build_total(len_0 + len_1);
+        assert_eq!(done_and_total(&view), (Some(total), Some(total)));
     }
 
     /// A build stopped once it made progress fails, with its progress between what it had then
@@ -1412,7 +1507,8 @@ mod orchestration_tests {
         });
         let at_stop = at_stop.expect("the build ended before it made progress");
         assert!(matches!(result, Err(OperationError::Cancelled { .. })));
-        let total = progress_total(&fixture.points, &levels, hnsw_m());
+        let points = points_with_links(&fixture.points, &levels, hnsw_m());
+        let total = build_total(points);
         let (Some(done), Some(at)) = done_and_total(&view) else {
             panic!("no progress");
         };
@@ -1421,6 +1517,10 @@ mod orchestration_tests {
             at_stop <= done && done < total,
             "{at_stop}, {done} of {total}"
         );
+        for (name, _, _, done, at) in phases(&view) {
+            assert_eq!(at, Some(points), "{name}");
+            assert!(done <= Some(points), "{name} {done:?} of {points}");
+        }
     }
 
     /// A NaN vector scores NaN against every other point, so it has no candidates. On each level

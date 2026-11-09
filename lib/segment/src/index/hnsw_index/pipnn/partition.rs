@@ -35,10 +35,13 @@
 //! don't depend on the other points of its matrix call, so the leaves don't depend on the number
 //! of threads either.
 //!
-//! Progress: a step that carves keeps half of its share for its matrix calls, adding it per call,
-//! and hands the other half to its clusters by size. A cluster that becomes a leaf, or is cut
-//! into chunks, adds its share at once; one that is carved again splits it the same way. The top
-//! step of a large level and the steps below it take about the same time.
+//! Progress: partitioning adds the points of the level as point-equivalents of its work, handed
+//! out as shares, see [`progress`](super::progress). A step must hand shares to its clusters
+//! before it knows their work, so a step that carves keeps half of its share for its matrix
+//! calls, adding it per call, and hands the other half to its clusters by size. A cluster that
+//! becomes a leaf, or is cut into chunks, adds its share at once; one that is carved again splits
+//! it the same way. The top step of a large level and the steps below it take about the same
+//! time.
 
 use std::num::NonZeroU16;
 use std::sync::atomic::AtomicBool;
@@ -51,7 +54,7 @@ use rand::seq::SliceRandom as _;
 use rand::{RngExt as _, SeedableRng as _};
 use rayon::prelude::*;
 
-use super::progress::Progress;
+use super::progress::Share;
 use super::top_k_pool::TopKPool;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer};
@@ -154,7 +157,7 @@ pub(super) fn partition(
     params: &PartitionParams,
     seed: u64,
     stopped: &AtomicBool,
-    progress: Progress<'_>,
+    progress: Share<'_>,
 ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
     // Every step relies on it
     debug_assert!(
@@ -239,7 +242,7 @@ impl Carving<'_, '_> {
         depth: usize,
         seed: u64,
         stalls: usize,
-        progress: Progress<'_>,
+        progress: Share<'_>,
     ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
         let params = self.params;
         if points.len() <= params.max_leaf_size {
@@ -345,7 +348,7 @@ impl Carving<'_, '_> {
         points: &[PointOffsetType],
         leaders: &[PointOffsetType],
         fanout: usize,
-        progress: Progress<'_>,
+        progress: Share<'_>,
     ) -> OperationResult<Vec<Option<NonZeroU16>>> {
         // Points with NaN scores get fewer picks
         let mut nearest = vec![None; points.len() * fanout];
@@ -502,13 +505,13 @@ fn top_k_size(params: &PartitionParams, len: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::sync::atomic::AtomicU64;
 
     use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
     use crate::data_types::vectors::{VectorElementType, VectorRef};
+    use crate::index::hnsw_index::pipnn::progress::TestCounter;
     use crate::types::{
         BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
         QuantizationConfig, ScalarQuantizationConfig,
@@ -521,7 +524,7 @@ mod tests {
     use crate::vector_storage::{VectorStorage as _, VectorStorageEnum};
 
     const LEAF: usize = 64;
-    /// Progress of a call, more units than it has pieces of work.
+    /// Points of a call's share, more than it has pieces of work.
     const PROGRESS: u64 = 1_000_003;
 
     /// Small leaves, so that a few thousand points take two or three levels of carving. Leaders
@@ -590,17 +593,17 @@ mod tests {
             params: &PartitionParams,
             seed: u64,
         ) -> Vec<Vec<PointOffsetType>> {
-            let counter = AtomicU64::new(0);
+            let counter = TestCounter::default();
             let leaves = partition(
                 &self.scorer(),
                 points,
                 params,
                 seed,
                 &AtomicBool::new(false),
-                Progress::new(&counter, PROGRESS),
+                counter.share(PROGRESS),
             )
             .unwrap();
-            assert_eq!(counter.into_inner(), PROGRESS, "progress");
+            assert_eq!(counter.load(), PROGRESS, "progress");
             leaves
         }
     }
@@ -924,24 +927,24 @@ mod tests {
     fn stopped() {
         let _scope = ambient::test_guard();
         let fixture = Fixture::uniform(1000, 8, Distance::Euclid);
-        let counter = AtomicU64::new(0);
+        let counter = TestCounter::default();
         let result = partition(
             &fixture.scorer(),
             all(1000),
             &params(),
             1,
             &AtomicBool::new(true),
-            Progress::new(&counter, PROGRESS),
+            counter.share(PROGRESS),
         );
         assert!(matches!(result, Err(OperationError::Cancelled { .. })));
-        assert_eq!(counter.into_inner(), 0);
+        assert_eq!(counter.load(), 0);
     }
 
     /// Every step adds its share, also when the share is smaller than its pieces of work, for
     /// leaves, merged clusters, and the chunks of duplicates.
     #[rstest]
     fn progress_ends_at_its_share(
-        #[values(0, 1, 7, 1_000_003)] units: u64,
+        #[values(0, 1, 7, 1_000_003)] share: u64,
         #[values(false, true)] duplicates: bool,
     ) {
         let _scope = ambient::test_guard();
@@ -951,18 +954,18 @@ mod tests {
             vectors[..1000].fill(vec![0.5; 8]);
         }
         let fixture = Fixture::new(&vectors, Distance::Euclid, None);
-        let counter = AtomicU64::new(0);
+        let counter = TestCounter::default();
         let leaves = partition(
             &fixture.scorer(),
             all(points),
             &params(),
             1,
             &AtomicBool::new(false),
-            Progress::new(&counter, units),
+            counter.share(share),
         )
         .unwrap();
         check_leaves(&leaves, &all(points), LEAF);
-        assert_eq!(counter.into_inner(), units);
+        assert_eq!(counter.load(), share);
     }
 
     #[test]
@@ -979,7 +982,7 @@ mod tests {
             &params,
             1,
             &AtomicBool::new(false),
-            Progress::new(&AtomicU64::new(0), PROGRESS),
+            TestCounter::default().share(PROGRESS),
         );
         assert!(result.is_err());
     }

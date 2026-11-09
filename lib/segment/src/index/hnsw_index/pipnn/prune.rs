@@ -34,6 +34,9 @@
 //! Points are pruned in jobs of [`POINTS_PER_JOB`] consecutive points on the current rayon pool,
 //! one scorer per job, each writing to its own range of the result. A point's links only depend on
 //! its reservoir and on `score_internal`, so the result doesn't depend on the number of threads.
+//!
+//! Progress: each job adds its points to the counter of the final prune once it's done, see
+//! [`progress`](super::progress).
 
 use std::sync::atomic::AtomicBool;
 
@@ -44,7 +47,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use rayon::prelude::*;
 
 use super::hash_prune::Reservoirs;
-use super::progress::Progress;
+use super::progress::Counter;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::links_container::LinksContainer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
@@ -67,8 +70,8 @@ const POINTS_PER_JOB: usize = 64;
 /// As for HNSW, `point_deleted` must have a flag for every point: missing flags count as deleted.
 ///
 /// Runs in parallel on the current rayon pool, and checks `stopped` before every
-/// [`POINTS_PER_JOB`] points. Adds all of `progress` by the time it returns, each job its share
-/// by its points. Fails if a scorer can't be created.
+/// [`POINTS_PER_JOB`] points. Adds all of `points` to `progress` by the time it returns, each job
+/// its own once it's done. Fails if a scorer can't be created.
 #[expect(
     clippy::too_many_arguments,
     reason = "the level and the inputs of HNSW's scorers"
@@ -81,7 +84,7 @@ pub(super) fn prune(
     quantized_vectors: Option<&QuantizedVectors>,
     point_deleted: &BitSlice,
     stopped: &AtomicBool,
-    progress: Progress<'_>,
+    progress: Counter<'_>,
 ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
     debug_assert!(
         points.is_sorted_by(|a, b| a < b),
@@ -91,18 +94,16 @@ pub(super) fn prune(
     // Empty lists don't allocate
     let mut links = vec![Vec::new(); points.len()];
     if level_m == 0 || points.is_empty() {
-        progress.add();
+        progress.add(points.len() as u64);
         return Ok(links);
     }
 
-    let shares = progress.split(points.chunks(POINTS_PER_JOB).map(|job| job.len() as u64));
     points
         .par_chunks(POINTS_PER_JOB)
         .zip(links.par_chunks_mut(POINTS_PER_JOB))
-        .zip(shares)
         // Every job stealable until the end, see `HNSW_BUILD_MAX_PAR_LEN`
         .with_max_len(1)
-        .try_for_each(|((points, links), progress)| -> OperationResult<()> {
+        .try_for_each(|(points, links)| -> OperationResult<()> {
             check_process_stopped(stopped)?;
             let Some(&first) = points.first() else {
                 return Ok(());
@@ -130,7 +131,7 @@ pub(super) fn prune(
                 );
                 *links = container.links().to_vec();
             }
-            progress.add();
+            progress.add(points.len() as u64);
             Ok(())
         })?;
     Ok(links)
@@ -152,7 +153,6 @@ fn candidates(
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::sync::atomic::AtomicU64;
 
     use common::bitvec::BitVec;
     use rand::rngs::StdRng;
@@ -164,6 +164,7 @@ mod tests {
     use super::*;
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::{VectorElementType, VectorRef};
+    use crate::index::hnsw_index::pipnn::progress::TestCounter;
     use crate::types::{
         BinaryQuantization, BinaryQuantizationConfig, BinaryQuantizationEncoding, Distance,
         QuantizationConfig, ScalarQuantizationConfig,
@@ -184,8 +185,6 @@ mod tests {
     const RANDOM: usize = 8;
     /// Small enough that many points reach it.
     const LEVEL_M: usize = 6;
-    /// Progress of a call, more units than it has jobs.
-    const PROGRESS: u64 = 1_000_003;
 
     #[derive(Clone, Copy, Debug)]
     enum Data {
@@ -318,15 +317,15 @@ mod tests {
             reservoirs
         }
 
-        /// [`prune`], which must add all of its progress if it succeeds, and none if stopped
-        /// before.
+        /// [`prune`], which must add all of its points to the progress if it succeeds, and none
+        /// if stopped before.
         fn prune(
             &self,
             reservoirs: &Reservoirs,
             level_m: usize,
             stopped: &AtomicBool,
         ) -> OperationResult<Vec<Vec<PointOffsetType>>> {
-            let counter = AtomicU64::new(0);
+            let counter = TestCounter::default();
             let links = prune(
                 reservoirs,
                 &self.points,
@@ -335,10 +334,10 @@ mod tests {
                 self.quantized.as_ref(),
                 &self.deleted,
                 stopped,
-                Progress::new(&counter, PROGRESS),
+                counter.counter(),
             );
-            let want = if links.is_ok() { PROGRESS } else { 0 };
-            assert_eq!(counter.into_inner(), want, "progress");
+            let want = if links.is_ok() { self.points.len() } else { 0 };
+            assert_eq!(counter.load(), want as u64, "progress");
             links
         }
 
@@ -715,7 +714,7 @@ mod tests {
         let _scope = ambient::test_guard();
         let fixture = Fixture::new(Data::Random, Distance::Dot, None);
         let reservoirs = Reservoirs::new(&[], CAPACITY);
-        let counter = AtomicU64::new(0);
+        let counter = TestCounter::default();
         let links = prune(
             &reservoirs,
             &[],
@@ -724,11 +723,11 @@ mod tests {
             None,
             &fixture.deleted,
             &AtomicBool::new(false),
-            Progress::new(&counter, PROGRESS),
+            counter.counter(),
         )
         .unwrap();
         assert!(links.is_empty());
-        assert_eq!(counter.into_inner(), PROGRESS);
+        assert_eq!(counter.load(), 0);
     }
 
     #[test]
@@ -736,7 +735,7 @@ mod tests {
         let _scope = ambient::test_guard();
         let fixture = Fixture::new(Data::Random, Distance::Dot, None);
         let reservoirs = Reservoirs::new(&[7], CAPACITY);
-        let counter = AtomicU64::new(0);
+        let counter = TestCounter::default();
         let links = prune(
             &reservoirs,
             &[7],
@@ -745,10 +744,10 @@ mod tests {
             None,
             &fixture.deleted,
             &AtomicBool::new(false),
-            Progress::new(&counter, PROGRESS),
+            counter.counter(),
         )
         .unwrap();
         assert_eq!(links, vec![Vec::<PointOffsetType>::new()]);
-        assert_eq!(counter.into_inner(), PROGRESS);
+        assert_eq!(counter.load(), 1);
     }
 }
