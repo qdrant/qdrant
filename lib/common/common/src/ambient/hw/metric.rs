@@ -14,6 +14,8 @@ pub enum HwMetric {
     PayloadIndexIoWrite = 4,
     VectorIoRead = 5,
     VectorIoWrite = 6,
+    RemoteIoCachedRead = 7,
+    RemoteIoNonCachedRead = 8,
 }
 
 impl HwMetric {

@@ -3614,8 +3614,8 @@ impl From<AmbientContext> for HardwareUsage {
             payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
             vector_io_read: m(HwMetric::VectorIoRead),
             vector_io_write: m(HwMetric::VectorIoWrite),
-            remote_io_cached_read: None, // todo(remote-metrics): fill this
-            remote_io_non_cached_read: None, // todo(remote-metrics): fill this
+            remote_io_cached_read: m(HwMetric::RemoteIoCachedRead),
+            remote_io_non_cached_read: m(HwMetric::RemoteIoNonCachedRead),
         }
     }
 }
@@ -3630,8 +3630,8 @@ impl From<HardwareUsage> for HardwareData {
             payload_index_io_write,
             vector_io_read,
             vector_io_write,
-            remote_io_cached_read: _,     // todo(remote-metrics): use this
-            remote_io_non_cached_read: _, // todo(remote-metrics): use this
+            remote_io_cached_read,
+            remote_io_non_cached_read,
         } = value;
 
         let m = |value: Option<u64>| value.unwrap_or_default() as usize;
@@ -3644,6 +3644,8 @@ impl From<HardwareUsage> for HardwareData {
             HwMetric::PayloadIndexIoWrite => m(payload_index_io_write),
             HwMetric::VectorIoRead => m(vector_io_read),
             HwMetric::VectorIoWrite => m(vector_io_write),
+            HwMetric::RemoteIoCachedRead => m(remote_io_cached_read),
+            HwMetric::RemoteIoNonCachedRead => m(remote_io_non_cached_read),
         })
     }
 }
