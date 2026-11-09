@@ -132,9 +132,6 @@ where
 /// its postings, instead of the compact keys-only dictionary. A prefix
 /// condition has no such fallback — an ordered dictionary is the whole point
 /// of serving it, so without one it is left to the per-point checker.
-///
-/// Reads on this path are not billed: the enumeration methods of
-/// [`MapIndexRead`] carry no hardware counter.
 fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
     index: &'a T,
     substring: &str,
