@@ -683,14 +683,21 @@ impl Collection {
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         use crate::common::memory_reporter::CollectionMemoryReport;
 
-        let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.select_shards(
-            &crate::operations::shard_selector_internal::ShardSelectorInternal::All,
-        )?;
+        // Select shards under a short read lock, don't hold it across shard requests
+        let shards: Vec<Arc<ShardReplicaSet>> = {
+            let shards_holder = self.shards_holder.read().await;
+            shards_holder
+                .select_shards(
+                    &crate::operations::shard_selector_internal::ShardSelectorInternal::All,
+                )?
+                .into_iter()
+                .map(|(shard, _shard_key)| Arc::clone(shard))
+                .collect()
+        };
 
         let mut futures: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
-            .map(|(shard, _shard_key)| shard.memory_report())
+            .map(|shard| async move { shard.memory_report().await })
             .collect();
 
         let mut reports = Vec::new();
