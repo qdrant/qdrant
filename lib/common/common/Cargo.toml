@@ -42,6 +42,7 @@ ph = { workspace = true }
 pin-project-lite = { workspace = true }
 quick_cache = "0.7.0"
 rand = { workspace = true }
+rayon = { workspace = true }
 roaring = { workspace = true }
 schemars = { workspace = true }
 self_cell = { workspace = true }

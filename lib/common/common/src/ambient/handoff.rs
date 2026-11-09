@@ -12,10 +12,25 @@ pub fn current() -> Handoff {
 
 /// Run rayon (or any other work-stealing) calls.
 /// Closures passed to rayon must enter the provided scope, see [`Handoff::enter`].
+///
+/// Look at [`super::tests::masked_context_prevents_misattributing`] for an
+/// example of an issue that this function prevents.
 pub fn parallel<R>(f: impl FnOnce(&Handoff) -> R) -> R {
     let handoff = current();
     let _scope = Scope::masked();
     f(&handoff)
+}
+
+/// Extension trait for [`rayon::ThreadPool`].
+pub trait ThreadPoolExt {
+    /// Shortcut for `thread_pool.install()` inside `ambient::parallel()`.
+    fn ambient_install<OP: FnOnce(&Handoff) -> R + Send, R: Send>(&self, op: OP) -> R;
+}
+
+impl ThreadPoolExt for rayon::ThreadPool {
+    fn ambient_install<OP: FnOnce(&Handoff) -> R + Send, R: Send>(&self, op: OP) -> R {
+        parallel(|handoff| self.install(|| op(handoff)))
+    }
 }
 
 /// Run `f` without measuring it.
