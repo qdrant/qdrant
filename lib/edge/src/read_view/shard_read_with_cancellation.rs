@@ -1,3 +1,5 @@
+#![expect(deprecated)]
+
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -7,35 +9,20 @@ use segment::index::UniversalReadExt;
 use segment::types::PointIdType;
 use shard::retrieve::record_internal::RecordInternal;
 
-use super::shard_read::{sealed, view};
-use super::{EdgeReadView, ReadViewProvider};
+use super::ReadViewProvider;
 use crate::{
-    CountRequest, EdgeConfig, EdgeScope, FacetRequest, FacetResponse, Group, GroupRequest,
-    OperationResult, QueryBatchRequest, QueryRequest, ReadOnlyEdgeShard, RetrieveRequest,
-    ScoredPoint, ScrollRequest, SearchMatrixRequest, SearchMatrixResponse, SearchRequest,
-    ShardInfo,
+    CountRequest, EdgeConfig, EdgeScope, EdgeShardRead, FacetRequest, FacetResponse, Group,
+    GroupRequest, OperationResult, QueryBatchRequest, QueryRequest, ReadOnlyEdgeShard,
+    RetrieveRequest, ScoredPoint, ScrollRequest, SearchMatrixRequest, SearchMatrixResponse,
+    SearchRequest, ShardInfo,
 };
 
-/// Cancellation-aware counterpart to [`EdgeShardRead`](super::EdgeShardRead) for
-/// [`ReadOnlyEdgeShard`]. Set the shared flag to `true` to cancel a synchronous read.
-///
-/// Cancellation is cooperative: engine loops and boundaries between stages check the flag.
-/// Blocking I/O, lock acquisition, and indivisible computations can delay observation.
-/// Once cancellation is observed, the call returns [`OperationError::Cancelled`](segment::common::operation_error::OperationError::Cancelled),
-/// never a successful partial result. The read never sets or resets the caller's flag;
-/// use a fresh flag for a new operation after cancellation.
-///
-/// All nested queries, prefetches, rescoring, and retrieval share the same flag.
-/// Metadata accessors also return a result so they can report cancellation.
-/// If both read traits are imported, use qualified calls such as
-/// `EdgeShardReadWithCancellation::query(&shard, request, is_stopped)`.
+#[deprecated(note = "use `EdgeShardRead` on `shard.with(&scope)` with a cancellable `EdgeScope`")]
 pub trait EdgeShardReadWithCancellation: sealed::Sealed {
-    /// Snapshot the current config.
     fn config_snapshot(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<Arc<EdgeConfig>>;
 
     fn path(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<&Path>;
 
-    /// This method is DEPRECATED and should be replaced with query.
     fn search(
         &self,
         request: SearchRequest,
@@ -48,13 +35,6 @@ pub trait EdgeShardReadWithCancellation: sealed::Sealed {
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
-    /// Execute several [`QueryRequest`]s as one planned batch.
-    ///
-    /// Cheaper than running the same requests one by one: the batch is planned as a whole, so its
-    /// leaf searches share a single pass over the segments, and leaves that differ only in their
-    /// query vector are pushed down to each segment as one multi-vector search.
-    ///
-    /// Returns one result list per request, in request order.
     fn query_batch(
         &self,
         request: QueryBatchRequest,
@@ -96,15 +76,19 @@ pub trait EdgeShardReadWithCancellation: sealed::Sealed {
     fn info(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<ShardInfo>;
 }
 
+mod sealed {
+    pub trait Sealed {}
+}
+
+impl<S: UniversalReadExt + 'static> sealed::Sealed for ReadOnlyEdgeShard<S> {}
+
 impl<S: UniversalReadExt + 'static> EdgeShardReadWithCancellation for ReadOnlyEdgeShard<S>
 where
     S::Fs: Send + Sync,
 {
     fn config_snapshot(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<Arc<EdgeConfig>> {
         check_process_stopped(&is_stopped)?;
-        let config = ReadViewProvider::config_snapshot(self);
-        check_process_stopped(&is_stopped)?;
-        Ok(config)
+        Ok(ReadViewProvider::config_snapshot(self))
     }
 
     fn path(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<&Path> {
@@ -117,7 +101,7 @@ where
         request: SearchRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        run(self, is_stopped, |view| view.search(request.into()))
+        self.with(&scope(is_stopped)).search(request)
     }
 
     fn query(
@@ -125,7 +109,7 @@ where
         request: QueryRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        run(self, is_stopped, |view| view.query(request.into()))
+        self.with(&scope(is_stopped)).query(request)
     }
 
     fn query_batch(
@@ -133,10 +117,7 @@ where
         request: QueryBatchRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        run(self, is_stopped, |view| {
-            let QueryBatchRequest { queries } = request;
-            view.query_batch(queries.into_iter().map(Into::into).collect())
-        })
+        self.with(&scope(is_stopped)).query_batch(request)
     }
 
     fn scroll(
@@ -144,7 +125,7 @@ where
         request: ScrollRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
-        run(self, is_stopped, |view| view.scroll(request.into()))
+        self.with(&scope(is_stopped)).scroll(request)
     }
 
     fn retrieve(
@@ -152,18 +133,11 @@ where
         request: RetrieveRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<RecordInternal>> {
-        run(self, is_stopped, |view| {
-            let RetrieveRequest {
-                point_ids,
-                with_payload,
-                with_vector,
-            } = request;
-            view.retrieve(&point_ids, with_payload, with_vector)
-        })
+        self.with(&scope(is_stopped)).retrieve(request)
     }
 
     fn count(&self, request: CountRequest, is_stopped: Arc<AtomicBool>) -> OperationResult<usize> {
-        run(self, is_stopped, |view| view.count(request.into()))
+        self.with(&scope(is_stopped)).count(request)
     }
 
     fn facet(
@@ -171,7 +145,7 @@ where
         request: FacetRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<FacetResponse> {
-        run(self, is_stopped, |view| view.facet(request.into()))
+        self.with(&scope(is_stopped)).facet(request)
     }
 
     fn search_matrix(
@@ -179,7 +153,7 @@ where
         request: SearchMatrixRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<SearchMatrixResponse> {
-        run(self, is_stopped, |view| view.search_matrix(request))
+        self.with(&scope(is_stopped)).search_matrix(request)
     }
 
     fn query_groups(
@@ -187,25 +161,16 @@ where
         request: GroupRequest,
         is_stopped: Arc<AtomicBool>,
     ) -> OperationResult<Vec<Group>> {
-        run(self, is_stopped, |view| view.query_groups(request))
+        self.with(&scope(is_stopped)).query_groups(request)
     }
 
     fn info(&self, is_stopped: Arc<AtomicBool>) -> OperationResult<ShardInfo> {
-        run(self, is_stopped, |view| view.info())
+        self.with(&scope(is_stopped)).info()
     }
 }
 
-fn run<T: ReadViewProvider, R>(
-    shard: &T,
-    is_stopped: Arc<AtomicBool>,
-    operation: impl FnOnce(&EdgeReadView<T::Handle>) -> OperationResult<R>,
-) -> OperationResult<R> {
-    check_process_stopped(&is_stopped)?;
-    let view = view(shard, &EdgeScope::new().with_cancellation(is_stopped));
-    view.check_stopped()?;
-    let result = operation(&view);
-    view.check_stopped()?;
-    result
+fn scope(is_stopped: Arc<AtomicBool>) -> EdgeScope {
+    EdgeScope::new().with_cancellation(is_stopped)
 }
 
 #[cfg(test)]

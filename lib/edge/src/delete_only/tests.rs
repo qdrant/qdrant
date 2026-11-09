@@ -212,12 +212,12 @@ fn deletes_record_the_given_version() {
 )]
 #[test]
 fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
-    use std::sync::atomic::AtomicBool;
-
     use common::universal_io::MmapFile;
     use segment::id_tracker::delete_versions::DeleteVersioning;
 
-    use crate::{CountRequest, EdgeShardRead as _, ReadOnlyEdgeShard, ReadOnlyOpenOptions};
+    use crate::{
+        CountRequest, EdgeScope, EdgeShardRead as _, ReadOnlyEdgeShard, ReadOnlyOpenOptions,
+    };
 
     let approximate_count = |follower: &ReadOnlyEdgeShard<MmapFile>| {
         follower
@@ -239,7 +239,7 @@ fn followers_drop_outdated_copies_once_the_waterline_covers_the_dedup() {
             pools: Default::default(),
             waterline: Some(NEWER),
         },
-        &AtomicBool::new(false),
+        &EdgeScope::new(),
     )
     .unwrap();
     assert_eq!(approximate_count(&follower), 303, "both copies of 1-3");

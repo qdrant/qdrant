@@ -33,13 +33,12 @@ pub use config::vectors::{EdgeSparseVectorParams, EdgeVectorParams};
 pub use delete_only::DeleteOnlyEdgeShard;
 pub use edge_shard::EdgeShard;
 #[cfg(feature = "serverless")]
-pub(crate) use read_only::ReadOnlyOpenOptions;
-#[cfg(feature = "serverless")]
 pub use read_only::{
     ListedSegment, LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator,
-    ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, SegmentEnumerator,
+    ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, ReadOnlyOpenOptions, SegmentEnumerator,
 };
 #[cfg(feature = "serverless")]
+#[expect(deprecated, reason = "re-export")]
 pub use read_view::EdgeShardReadWithCancellation;
 pub use read_view::{EdgeShardRead, Group, ReadSegmentHandle, SearchMatrixResponse, ShardInfo};
 pub use reexports::*;
@@ -47,7 +46,7 @@ pub use requests::{
     CountRequest, FacetRequest, GroupRequest, Prefetch, QueryBatchRequest, QueryRequest,
     RetrieveRequest, ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
-pub(crate) use scope::EdgeScope;
+pub use scope::{EdgeScope, Scoped};
 pub use shard::files::WAL_PATH;
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 #[cfg(feature = "serverless")]

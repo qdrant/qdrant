@@ -17,6 +17,7 @@ pub use self::ops::{Group, SearchMatrixResponse, ShardInfo};
 pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
 #[cfg(feature = "serverless")]
+#[expect(deprecated, reason = "re-export")]
 pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
 use crate::{EdgeConfig, EdgeScope, OperationError, OperationResult};
 
