@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -31,6 +32,21 @@ pub trait PayloadFieldIndexRead {
         &'a self,
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
+
+    /// [`Self::filter`] for a query that can be cancelled: gives up with
+    /// [`OperationError::Cancelled`](crate::common::operation_error::OperationError::Cancelled)
+    /// once `is_stopped` is set.
+    ///
+    /// Only conditions whose selection takes work proportional to the index
+    /// rather than to the result (a regex checks keys one by one) look at
+    /// `is_stopped`; for the rest it is [`Self::filter`].
+    fn filter_cancellable<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        _is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        self.filter(condition)
+    }
 
     /// Return estimation of amount of points which satisfy given condition.
     /// Returns `Ok(None)` if the condition does not match the index type

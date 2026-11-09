@@ -942,6 +942,7 @@ fn test_str_prefix_payload_blocks() {
                 | Match::TextAny(_)
                 | Match::Phrase(_)
                 | Match::Substring(_)
+                | Match::Regex(_)
                 | Match::Any(_)
                 | Match::Except(_) => value_blocks.push(block.cardinality),
             }

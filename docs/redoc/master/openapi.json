@@ -9124,6 +9124,9 @@
             "$ref": "#/components/schemas/MatchSubstring"
           },
           {
+            "$ref": "#/components/schemas/MatchRegex"
+          },
+          {
             "$ref": "#/components/schemas/MatchAny"
           },
           {
@@ -9213,6 +9216,18 @@
         ],
         "properties": {
           "substring": {
+            "type": "string"
+          }
+        }
+      },
+      "MatchRegex": {
+        "description": "Match keyword values that match the given regular expression.\n\nRE2 syntax (https://github.com/google/re2/wiki/Syntax), except `\\C`, `\\Q...\\E` and octal escapes. Matches anywhere in the value unless anchored with `^` / `$`, and is case-sensitive unless the pattern opts out with `(?i)`. Matching time is linear in the value length. Served by a keyword index, which selects candidate values with a trigram index when created with the `regex` option; without a keyword index, falls back to reading the payload.",
+        "type": "object",
+        "required": [
+          "regex"
+        ],
+        "properties": {
+          "regex": {
             "type": "string"
           }
         }

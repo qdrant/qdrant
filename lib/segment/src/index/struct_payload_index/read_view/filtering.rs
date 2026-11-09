@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::types::{DeferredBehavior, PointOffsetType};
 
 use super::StructPayloadIndexReadView;
@@ -44,6 +46,7 @@ where
     pub(super) fn query_field<'q>(
         &'q self,
         condition: &'q PrimaryCondition,
+        is_stopped: &AtomicBool,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'q>>> {
         match condition {
             PrimaryCondition::Condition(field_condition) => {
@@ -52,7 +55,11 @@ where
                 };
                 field_indexes
                     .iter()
-                    .find_map(|field_index| field_index.filter(field_condition).transpose())
+                    .find_map(|field_index| {
+                        field_index
+                            .filter_cancellable(field_condition, is_stopped)
+                            .transpose()
+                    })
                     .transpose()
             }
             PrimaryCondition::Ids(ids) => {

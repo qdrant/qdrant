@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::iter;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use blobstore::Blob;
 use common::ambient;
@@ -13,8 +14,11 @@ use super::super::key::MapIndexKey;
 use super::super::prefix_index::{PrefixIndexStats, StrMapIndexPrefixRead};
 use super::super::read_only::ReadOnlyMapIndex;
 use super::super::read_ops::{MapConditionChecker, MapIndexRead};
+use super::super::regex_index::{
+    RegexCandidateStats, RegexMatcher, StrMapIndexRegexRead, compiled,
+};
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::index::UniversalReadExt;
 use crate::index::condition_checker::ConditionCheckerEnum;
 use crate::index::field_index::map_index::IdIter;
@@ -25,9 +29,10 @@ use crate::index::field_index::{
 };
 use crate::index::query_estimator::combine_should_estimations;
 use crate::types::{
-    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchSubstring,
-    MatchValue, PayloadKeyType, ValueVariants,
+    AnyVariants, FieldCondition, Match, MatchAny, MatchExcept, MatchPrefix, MatchRegex,
+    MatchSubstring, MatchValue, PayloadKeyType, ValueVariants,
 };
+use crate::vector_storage::DEFAULT_STOPPED;
 
 impl PayloadFieldIndex for MapIndex<str> {
     fn wipe(self) -> OperationResult<()> {
@@ -56,7 +61,15 @@ impl PayloadFieldIndexRead for MapIndex<str> {
         &'a self,
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition)
+        filter_impl(self, condition, &DEFAULT_STOPPED)
+    }
+
+    fn filter_cancellable<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        filter_impl(self, condition, is_stopped)
     }
 
     fn estimate_cardinality(
@@ -95,7 +108,15 @@ where
         &'a self,
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
-        filter_impl(self, condition)
+        filter_impl(self, condition, &DEFAULT_STOPPED)
+    }
+
+    fn filter_cancellable<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        filter_impl(self, condition, is_stopped)
     }
 
     fn estimate_cardinality(
@@ -151,9 +172,35 @@ fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
     Ok(keys)
 }
 
-fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
+/// Keys `matcher` matches, enumerated from the map index itself.
+///
+/// Fallback for a regex condition on an index instance without a regex
+/// index: one check per distinct value rather than one per point, and no
+/// payload reads.
+fn scan_keys_for_regex<'a, T: MapIndexRead<'a, str>>(
+    index: &'a T,
+    matcher: &RegexMatcher,
+    is_stopped: &AtomicBool,
+) -> OperationResult<Vec<EcoString>> {
+    let mut keys = Vec::new();
+    index.for_each_value(|key| {
+        check_process_stopped(is_stopped)?;
+        if matcher.is_match(key) {
+            keys.push(EcoString::from(key));
+        }
+        Ok(())
+    })?;
+    Ok(keys)
+}
+
+fn compile_regex(regex: &str) -> OperationResult<std::sync::Arc<RegexMatcher>> {
+    compiled(regex).map_err(|err| OperationError::validation_error(err.to_string()))
+}
+
+fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead + StrMapIndexRegexRead>(
     index: &'a T,
     condition: &'a FieldCondition,
+    is_stopped: &AtomicBool,
 ) -> OperationResult<Option<IdIter<'a>>> {
     let result: Option<IdIter<'a>> = match &condition.r#match {
         Some(Match::Value(MatchValue { value })) => match value {
@@ -197,13 +244,25 @@ fn filter_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
             };
             Some(index.iter_for_values(keys.into_iter())?)
         }
+        Some(Match::Regex(MatchRegex { regex })) => {
+            let matcher = compile_regex(regex)?;
+            let keys = match index.regex_keys(&matcher, is_stopped)? {
+                Some(keys) => keys,
+                // No regex index on this index instance: check every key.
+                None => scan_keys_for_regex(index, &matcher, is_stopped)?,
+            };
+            Some(index.iter_for_values(keys.into_iter())?)
+        }
         _ => None,
     };
 
     Ok(result)
 }
 
-fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRead>(
+fn estimate_cardinality_impl<
+    'a,
+    T: MapIndexRead<'a, str> + StrMapIndexPrefixRead + StrMapIndexRegexRead,
+>(
     index: &'a T,
     condition: &FieldCondition,
 ) -> OperationResult<Option<CardinalityEstimation>> {
@@ -267,9 +326,43 @@ fn estimate_cardinality_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixRea
             CardinalityEstimation::unknown(index.get_indexed_points())
                 .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
         ),
+        // The trigram query bounds the matches without reading postings or
+        // checking keys. A pattern without trigrams, or an index without a
+        // regex index, would need the full key scan `filter` does anyway:
+        // report the uninformed estimate, as for a substring.
+        Some(Match::Regex(MatchRegex { regex })) => {
+            let matcher = compile_regex(regex)?;
+            let estimation = match index.regex_candidate_stats(matcher.query())? {
+                Some(RegexCandidateStats { keys, postings }) => {
+                    regex_cardinality(index, keys, postings)
+                }
+                None => CardinalityEstimation::unknown(index.get_indexed_points()),
+            };
+            Some(
+                estimation
+                    .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone()))),
+            )
+        }
         _ => None,
     };
     Ok(estimation)
+}
+
+/// Cardinality of a regex condition from the candidate keys of its trigram
+/// query: the union of those keys bounds it from above, but any candidate may
+/// fail the regex, so nothing bounds it from below.
+fn regex_cardinality<'a, T: MapIndexRead<'a, str>>(
+    index: &'a T,
+    keys: usize,
+    postings: usize,
+) -> CardinalityEstimation {
+    let CardinalityEstimation { exp, max, .. } = keys_union_cardinality(index, keys, postings);
+    CardinalityEstimation {
+        primary_clauses: vec![],
+        min: 0,
+        exp,
+        max,
+    }
 }
 
 /// Cardinality of a condition that selects every point holding at least one
@@ -558,6 +651,11 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, str> + 'a>(
         Match::Substring(MatchSubstring { substring }) => {
             Some(index.match_substring_checker(substring.as_str()))
         }
+        // An invalid pattern is rejected when the request is validated; if
+        // one gets here anyway, the payload fallback won't match it either.
+        Match::Regex(MatchRegex { regex }) => compiled(regex)
+            .ok()
+            .map(|matcher| index.match_regex_checker(matcher)),
         // Conditions this index can't serve: Match::Text/TextAny/Phrase
         // (handled by FullTextIndex) and value-type mismatches (e.g.
         // Match::Value(Integer) against a string-keyed map).

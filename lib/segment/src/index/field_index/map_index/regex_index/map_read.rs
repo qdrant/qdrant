@@ -3,6 +3,8 @@
 //! Variants without one (built without the `regex` option) return `None`;
 //! the caller then checks every key instead.
 
+use std::sync::atomic::AtomicBool;
+
 use blobstore::Blob;
 use common::universal_io::UniversalRead;
 use ecow::EcoString;
@@ -33,7 +35,16 @@ pub struct RegexCandidateStats {
 /// All methods return `Ok(None)` when the index instance has no regex index.
 pub trait StrMapIndexRegexRead {
     /// Keys `matcher` matches, in no particular order.
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>>;
+    ///
+    /// Checking keys against the regex is the expensive part of a regex
+    /// condition, so it gives up with
+    /// [`OperationError::Cancelled`](crate::common::operation_error::OperationError::Cancelled)
+    /// once `is_stopped` is set.
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>>;
 
     /// Upper bounds over the keys `query` admits, without verifying them
     /// against the regex. Also `Ok(None)` when the query admits every key.
@@ -44,14 +55,16 @@ pub trait StrMapIndexRegexRead {
 }
 
 impl StrMapIndexRegexRead for InMemoryMapIndex<str> {
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
-        Ok(self.regex_index.as_ref().map(|regex_index| {
-            regex_index
-                .matching_keys(matcher)
-                .into_iter()
-                .cloned()
-                .collect()
-        }))
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        let Some(regex_index) = &self.regex_index else {
+            return Ok(None);
+        };
+        let keys = regex_index.matching_keys(matcher, is_stopped)?;
+        Ok(Some(keys.into_iter().cloned().collect()))
     }
 
     fn regex_candidate_stats(
@@ -74,8 +87,12 @@ impl StrMapIndexRegexRead for InMemoryMapIndex<str> {
 }
 
 impl StrMapIndexRegexRead for MutableMapIndex<str> {
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
-        self.in_memory_index.regex_keys(matcher)
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        self.in_memory_index.regex_keys(matcher, is_stopped)
     }
 
     fn regex_candidate_stats(
@@ -87,8 +104,12 @@ impl StrMapIndexRegexRead for MutableMapIndex<str> {
 }
 
 impl<S: UniversalRead> StrMapIndexRegexRead for ReadOnlyAppendableMapIndex<str, S> {
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
-        self.in_memory_index.regex_keys(matcher)
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        self.in_memory_index.regex_keys(matcher, is_stopped)
     }
 
     fn regex_candidate_stats(
@@ -101,8 +122,12 @@ impl<S: UniversalRead> StrMapIndexRegexRead for ReadOnlyAppendableMapIndex<str, 
 
 /// Served by the regex index file of the backing storage, kept populated.
 impl<S: UniversalRead> StrMapIndexRegexRead for ImmutableMapIndex<str, S> {
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
-        self.storage.regex_keys(matcher)
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
+        self.storage.regex_keys(matcher, is_stopped)
     }
 
     fn regex_candidate_stats(
@@ -116,9 +141,13 @@ impl<S: UniversalRead> StrMapIndexRegexRead for ImmutableMapIndex<str, S> {
 /// Postings counts are recorded at build time, so the stats include points
 /// deleted since; the keys themselves are always verified with the regex.
 impl<S: UniversalRead> StrMapIndexRegexRead for OnDiskMapIndex<str, S> {
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
         self.regex_index()
-            .map(|regex_index| regex_index.matching_keys(matcher))
+            .map(|regex_index| regex_index.matching_keys(matcher, is_stopped))
             .transpose()
     }
 
@@ -134,11 +163,15 @@ impl<S: UniversalRead> StrMapIndexRegexRead for OnDiskMapIndex<str, S> {
 }
 
 impl StrMapIndexRegexRead for MapIndex<str> {
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
         match self {
-            MapIndex::Mutable(index) => index.regex_keys(matcher),
-            MapIndex::Immutable(index) => index.regex_keys(matcher),
-            MapIndex::OnDisk(index) => index.regex_keys(matcher),
+            MapIndex::Mutable(index) => index.regex_keys(matcher, is_stopped),
+            MapIndex::Immutable(index) => index.regex_keys(matcher, is_stopped),
+            MapIndex::OnDisk(index) => index.regex_keys(matcher, is_stopped),
         }
     }
 
@@ -158,11 +191,15 @@ impl<S: UniversalRead> StrMapIndexRegexRead for ReadOnlyMapIndex<str, S>
 where
     Vec<<str as MapIndexKey>::Owned>: Blob + Send + Sync,
 {
-    fn regex_keys(&self, matcher: &RegexMatcher) -> OperationResult<Option<Vec<EcoString>>> {
+    fn regex_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Option<Vec<EcoString>>> {
         match self {
-            ReadOnlyMapIndex::Appendable(index) => index.regex_keys(matcher),
-            ReadOnlyMapIndex::Immutable(index) => index.regex_keys(matcher),
-            ReadOnlyMapIndex::OnDisk(index) => index.regex_keys(matcher),
+            ReadOnlyMapIndex::Appendable(index) => index.regex_keys(matcher, is_stopped),
+            ReadOnlyMapIndex::Immutable(index) => index.regex_keys(matcher, is_stopped),
+            ReadOnlyMapIndex::OnDisk(index) => index.regex_keys(matcher, is_stopped),
         }
     }
 

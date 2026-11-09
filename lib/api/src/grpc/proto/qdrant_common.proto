@@ -127,6 +127,11 @@ message Match {
     string prefix = 11;
     // Match keywords containing the given substring
     string substring = 12;
+    // Match keywords the given regular expression matches, anywhere in the
+    // value unless anchored with `^` / `$`. RE2 syntax
+    // (https://github.com/google/re2/wiki/Syntax), except `\C`, `\Q...\E` and
+    // octal escapes.
+    string regex = 13;
   }
 }
 

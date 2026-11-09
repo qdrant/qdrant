@@ -1,5 +1,6 @@
 use std::borrow::{Borrow, Cow};
 use std::hash::{BuildHasher, Hash};
+use std::sync::Arc;
 
 use blobstore::Blob;
 use common::condition_checker::{CheckItem, ConditionChecker, Partitioner, Rest, Select};
@@ -10,6 +11,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 
 use super::key::MapIndexKey;
+use super::regex_index::RegexMatcher;
 use super::{IdIter, MapIndex};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::CardinalityEstimation;
@@ -257,6 +259,18 @@ pub trait MapIndexRead<'a, N: MapIndexKey + ?Sized + 'a>: Sized {
             index: self,
 
             predicate: MapPredicate::Substring(<N as MapIndexKey>::to_owned(substring.borrow())),
+        }
+    }
+
+    /// Condition checker for [`crate::types::Match::Regex`].
+    fn match_regex_checker(
+        &'a self,
+        matcher: Arc<RegexMatcher>,
+    ) -> MapConditionChecker<'a, N, Self> {
+        MapConditionChecker {
+            index: self,
+
+            predicate: MapPredicate::Regex(matcher),
         }
     }
 
@@ -536,6 +550,9 @@ enum MapPredicate<N: MapIndexKey + ?Sized> {
     /// For [`crate::types::Match::Substring`]; meaningful for string keys only
     /// ([`MapIndexKey::contains`] is constant `false` elsewhere).
     Substring(<N as MapIndexKey>::Owned),
+    /// For [`crate::types::Match::Regex`]; meaningful for string keys only
+    /// ([`MapIndexKey::as_str`] is `None` elsewhere).
+    Regex(Arc<RegexMatcher>),
     /// For [`crate::types::Match::Any`] and [`crate::types::Match::Except`],
     /// Linear scan version.
     AnyScan {
@@ -585,6 +602,9 @@ impl<'a, N: MapIndexKey + ?Sized + 'a, T> MapConditionChecker<'a, N, T> {
             MapPredicate::Value(expected) => value == expected.borrow(),
             MapPredicate::Prefix(prefix) => N::starts_with(value, prefix.borrow()),
             MapPredicate::Substring(substring) => N::contains(value, substring.borrow()),
+            MapPredicate::Regex(matcher) => {
+                value.as_str().is_some_and(|text| matcher.is_match(text))
+            }
             MapPredicate::AnyScan { list, negate } => {
                 list.iter().any(|key| key.borrow() == value) != *negate
             }

@@ -1,5 +1,5 @@
 use segment::payload_storage::condition_checker::ValueChecker;
-use segment::types::{Match, MatchPhrase, MatchSubstring, MatchText, MatchTextAny};
+use segment::types::{Match, MatchPhrase, MatchRegex, MatchSubstring, MatchText, MatchTextAny};
 use serde_json::Value;
 
 /// Regression for <https://github.com/qdrant/qdrant/issues/10182>
@@ -80,4 +80,32 @@ fn test_unindexed_substring_is_case_sensitive_substring() {
     });
     assert!(!m.check_match(&Value::Number(1.into())));
     assert!(!m.check_match(&Value::Null));
+}
+
+/// Unindexed `regex`: the pattern is matched against the raw value, anywhere
+/// unless anchored, case-sensitive unless `(?i)`.
+#[test]
+fn test_unindexed_regex_match() {
+    let regex_match = |regex: &str, stored: &str| {
+        Match::Regex(MatchRegex {
+            regex: regex.to_string(),
+        })
+        .check_match(&Value::String(stored.to_string()))
+    };
+
+    assert!(regex_match("ness", "goodness only"));
+    assert!(regex_match(r"^good\w+ only$", "goodness only"));
+    assert!(!regex_match("^only", "goodness only"));
+    assert!(!regex_match("hello", "Hello, world!"));
+    assert!(regex_match("(?i)hello", "Hello, world!"));
+    assert!(regex_match("", "anything"));
+    assert!(regex_match("^$", ""));
+
+    // Non-string payload values never match, nor does an invalid pattern.
+    let m = Match::Regex(MatchRegex {
+        regex: "1".to_string(),
+    });
+    assert!(!m.check_match(&Value::Number(1.into())));
+    assert!(!m.check_match(&Value::Null));
+    assert!(!regex_match("(", "("));
 }

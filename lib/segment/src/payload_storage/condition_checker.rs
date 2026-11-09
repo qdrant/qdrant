@@ -8,11 +8,12 @@ use serde_json::Value;
 
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::tokenizers::{Tokenizer, TokenizerTextKind};
+use crate::index::field_index::map_index::regex_index::compiled;
 use crate::types::{
     AnyVariants, CheckGeoPoint, DateTimePayloadType, FieldCondition, FloatPayloadType,
     GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchPhrase,
-    MatchPrefix, MatchSubstring, MatchText, MatchTextAny, MatchValue, Range, RangeInterface,
-    ValueVariants, ValuesCount,
+    MatchPrefix, MatchRegex, MatchSubstring, MatchText, MatchTextAny, MatchValue, Range,
+    RangeInterface, ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -266,6 +267,18 @@ impl ValueChecker for Match {
             },
             Match::Substring(MatchSubstring { substring }) => match payload {
                 Value::String(stored) => stored.contains(substring.as_str()),
+                Value::Null
+                | Value::Bool(_)
+                | Value::Number(_)
+                | Value::Array(_)
+                | Value::Object(_) => false,
+            },
+            // Compiled once per pattern, not per value: see `compiled`. An
+            // invalid pattern (rejected at request validation) matches nothing.
+            Match::Regex(MatchRegex { regex }) => match payload {
+                Value::String(stored) => {
+                    compiled(regex).is_ok_and(|matcher| matcher.is_match(stored))
+                }
                 Value::Null
                 | Value::Bool(_)
                 | Value::Number(_)

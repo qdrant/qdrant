@@ -24,7 +24,8 @@
 //!   boundary markers;
 //! - [`query`](self::query) — regex → trigram query analysis;
 //! - [`matcher`](self::matcher) — [`RegexMatcher`], the compiled pattern and
-//!   its safety limits;
+//!   its safety limits; [`cache`](self::cache) shares compilations across the
+//!   segments of a query;
 //! - [`re2`](self::re2) — the public syntax is RE2's: patterns are checked
 //!   against it and rewritten for the engine;
 //! - [`candidates`](self::candidates) — evaluation of a trigram query over
@@ -37,6 +38,7 @@
 //! - [`map_read`](self::map_read) — [`StrMapIndexRegexRead`], the key
 //!   selection trait implemented by every map index variant.
 
+mod cache;
 mod candidates;
 mod format;
 mod in_memory;
@@ -51,6 +53,7 @@ mod writer;
 #[cfg(test)]
 mod tests;
 
+pub use self::cache::compiled;
 pub use self::candidates::{Candidates, TrigramPostings, candidates};
 pub use self::in_memory::InMemoryRegexIndex;
 pub use self::map_read::{RegexCandidateStats, StrMapIndexRegexRead};

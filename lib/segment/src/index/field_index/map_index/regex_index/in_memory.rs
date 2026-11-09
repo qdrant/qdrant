@@ -2,6 +2,7 @@
 //! index, held in RAM next to it.
 
 use std::borrow::{Borrow, Cow};
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHashMap;
 
@@ -9,7 +10,7 @@ use super::candidates::{Candidates, TrigramPostings, candidates};
 use super::matcher::RegexMatcher;
 use super::query::TrigramQuery;
 use super::trigram::{Trigram, key_trigrams};
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{CancellableResult, OperationResult, check_process_stopped};
 
 /// Trigram index over the distinct keys of an appendable map index.
 ///
@@ -75,18 +76,33 @@ impl<K: Borrow<str>> InMemoryRegexIndex<K> {
     }
 
     /// Keys the regex matches.
-    pub fn matching_keys<'a>(&'a self, matcher: &RegexMatcher) -> Vec<&'a K> {
+    ///
+    /// Checks `is_stopped` before every key, and gives up once it is set.
+    pub fn matching_keys<'a>(
+        &'a self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<&'a K>> {
         match self.candidate_keys(matcher.query()) {
-            Some(keys) => keys
-                .filter(|key| matcher.is_match((*key).borrow()))
-                .collect(),
-            None => self
-                .keys
-                .iter()
-                .filter(|key| matcher.is_match((*key).borrow()))
-                .collect(),
+            Some(keys) => select_matching(keys, matcher, is_stopped),
+            None => select_matching(self.keys.iter(), matcher, is_stopped),
         }
     }
+}
+
+fn select_matching<'a, K: Borrow<str> + 'a>(
+    keys: impl Iterator<Item = &'a K>,
+    matcher: &RegexMatcher,
+    is_stopped: &AtomicBool,
+) -> CancellableResult<Vec<&'a K>> {
+    let mut selected = Vec::new();
+    for key in keys {
+        check_process_stopped(is_stopped)?;
+        if matcher.is_match(key.borrow()) {
+            selected.push(key);
+        }
+    }
+    Ok(selected)
 }
 
 impl<K> TrigramPostings for InMemoryRegexIndex<K> {
@@ -115,7 +131,12 @@ mod tests {
 
     fn matching(index: &InMemoryRegexIndex<String>, pattern: &str) -> Vec<String> {
         let matcher = RegexMatcher::new(pattern).unwrap();
-        let mut keys: Vec<String> = index.matching_keys(&matcher).into_iter().cloned().collect();
+        let mut keys: Vec<String> = index
+            .matching_keys(&matcher, &AtomicBool::new(false))
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect();
         keys.sort();
         keys
     }

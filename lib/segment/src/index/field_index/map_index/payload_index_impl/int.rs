@@ -265,6 +265,7 @@ fn condition_checker_impl<'a, T: MapIndexRead<'a, IntPayloadType> + 'a>(
         | Match::TextAny(_)
         | Match::Phrase(_)
         | Match::Prefix(_)
-        | Match::Substring(_) => None,
+        | Match::Substring(_)
+        | Match::Regex(_) => None,
     }
 }

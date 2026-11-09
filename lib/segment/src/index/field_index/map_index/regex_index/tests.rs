@@ -169,6 +169,7 @@ fn query_admits_tricky_keys() {
 /// Key selection of the map index variants, against a scan of the data.
 mod map_index {
     use std::collections::BTreeSet;
+    use std::sync::atomic::AtomicBool;
 
     use common::ambient;
     use common::types::PointOffsetType;
@@ -178,9 +179,12 @@ mod map_index {
     use tempfile::TempDir;
 
     use super::super::{RegexMatcher, StrMapIndexRegexRead};
+    use crate::common::operation_error::OperationError;
     use crate::index::field_index::map_index::MapIndex;
     use crate::index::field_index::map_index::read_only::ReadOnlyMapIndex;
-    use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
+    use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndexRead, ValueIndexer};
+    use crate::json_path::JsonPath;
+    use crate::types::{FieldCondition, Match};
 
     pub(super) const PATTERNS: &[&str] = &[
         "Einstein",
@@ -244,7 +248,7 @@ mod map_index {
         for pattern in PATTERNS {
             let matcher = RegexMatcher::new(pattern).unwrap();
             let keys: BTreeSet<String> = index
-                .regex_keys(&matcher)
+                .regex_keys(&matcher, &AtomicBool::new(false))
                 .unwrap()
                 .expect("regex index is enabled")
                 .into_iter()
@@ -262,6 +266,16 @@ mod map_index {
                 assert!(stats.keys >= expected.len(), "{pattern}: {stats:?}");
                 assert!(stats.postings >= postings, "{pattern}: {stats:?}");
             }
+        }
+
+        // A cancelled query gives up instead of checking the keys.
+        for pattern in [".", "(?i)einstein"] {
+            let result =
+                index.regex_keys(&RegexMatcher::new(pattern).unwrap(), &AtomicBool::new(true));
+            assert!(
+                matches!(result, Err(OperationError::Cancelled { .. })),
+                "{pattern}: {result:?}",
+            );
         }
     }
 
@@ -286,12 +300,25 @@ mod map_index {
         let mut index = MapIndex::<str>::new_mutable(dir.path().to_path_buf(), false, false)
             .unwrap()
             .unwrap();
+        // Without a regex index every key is checked, and a cancelled query
+        // gives up on that too.
+        let condition = FieldCondition::new_match(JsonPath::new("key"), Match::new_regex("."));
+        assert!(matches!(
+            index.filter_cancellable(&condition, &AtomicBool::new(true)),
+            Err(OperationError::Cancelled { .. }),
+        ));
+        assert!(
+            index
+                .filter_cancellable(&condition, &AtomicBool::new(false))
+                .unwrap()
+                .is_some()
+        );
         let MapIndex::Mutable(mutable) = &mut index else {
             panic!("expected the mutable variant");
         };
         assert!(
             mutable
-                .regex_keys(&RegexMatcher::new("a").unwrap())
+                .regex_keys(&RegexMatcher::new("a").unwrap(), &AtomicBool::new(false))
                 .unwrap()
                 .is_none()
         );
@@ -362,12 +389,14 @@ mod map_index {
 /// The regex index file, against a scan of its keys.
 mod file {
     use std::collections::BTreeSet;
+    use std::sync::atomic::AtomicBool;
 
     use common::ambient;
     use common::universal_io::{MmapFile, MmapFs, Populate};
     use tempfile::TempDir;
 
     use super::super::{RegexIndex, RegexMatcher, build_regex_index};
+    use crate::common::operation_error::OperationError;
 
     /// Enough keys for many key blocks.
     fn keys() -> Vec<String> {
@@ -438,7 +467,7 @@ mod file {
                 .cloned()
                 .collect();
             let actual: Vec<String> = index
-                .matching_keys(&matcher)
+                .matching_keys(&matcher, &AtomicBool::new(false))
                 .unwrap()
                 .into_iter()
                 .map(|key| key.to_string())
@@ -457,6 +486,16 @@ mod file {
                 assert!(stats.postings >= expected_points, "{pattern}: {stats:?}");
             }
         }
+
+        // A cancelled query gives up, on a full scan and on candidates alike.
+        for pattern in [".", "ray_4999"] {
+            let result =
+                index.matching_keys(&RegexMatcher::new(pattern).unwrap(), &AtomicBool::new(true));
+            assert!(
+                matches!(result, Err(OperationError::Cancelled { .. })),
+                "{pattern}: {result:?}",
+            );
+        }
     }
 
     #[test]
@@ -466,7 +505,12 @@ mod file {
         let index = build(&dir, &[]);
         for pattern in ["abc", "."] {
             let matcher = RegexMatcher::new(pattern).unwrap();
-            assert!(index.matching_keys(&matcher).unwrap().is_empty());
+            assert!(
+                index
+                    .matching_keys(&matcher, &AtomicBool::new(false))
+                    .unwrap()
+                    .is_empty()
+            );
         }
     }
 
@@ -489,7 +533,11 @@ mod file {
         let matcher = RegexMatcher::new("_4998_").unwrap();
         let stats = index.candidate_stats(matcher.query()).unwrap().unwrap();
         assert!(stats.keys < 10, "{stats:?}");
-        let found: BTreeSet<_> = index.matching_keys(&matcher).unwrap().into_iter().collect();
+        let found: BTreeSet<_> = index
+            .matching_keys(&matcher, &AtomicBool::new(false))
+            .unwrap()
+            .into_iter()
+            .collect();
         assert_eq!(found.len(), 1);
     }
 }
@@ -497,6 +545,8 @@ mod file {
 /// The immutable variants: built with the regex index file, opened in RAM
 /// and on disk, writable and read-only.
 mod immutable_map_index {
+    use std::sync::atomic::AtomicBool;
+
     use common::ambient;
     use common::bitvec::BitVec;
     use common::types::PointOffsetType;
@@ -579,13 +629,20 @@ mod immutable_map_index {
             .unwrap();
         let _scope = ambient::test_guard();
         let matcher = RegexMatcher::new("Einstein").unwrap();
-        assert!(index.regex_keys(&matcher).unwrap().is_none());
+        assert!(
+            index
+                .regex_keys(&matcher, &AtomicBool::new(false))
+                .unwrap()
+                .is_none()
+        );
         assert!(!dir.path().join(REGEX_INDEX_PATH).exists());
     }
 }
 
 /// The `regex` option of keyword index params reaches every variant.
 mod index_option {
+    use std::sync::atomic::AtomicBool;
+
     use common::ambient;
     use common::bitvec::BitVec;
     use common::types::PointOffsetType;
@@ -614,7 +671,10 @@ mod index_option {
             panic!("expected a keyword index");
         };
         let matcher = RegexMatcher::new("abc").unwrap();
-        index.regex_keys(&matcher).unwrap().is_some()
+        index
+            .regex_keys(&matcher, &AtomicBool::new(false))
+            .unwrap()
+            .is_some()
     }
 
     #[rstest]
@@ -664,12 +724,140 @@ mod index_option {
             panic!("expected a keyword index");
         };
         let matcher = RegexMatcher::new("abc").unwrap();
-        assert_eq!(read_only.regex_keys(&matcher).unwrap().is_some(), expected);
+        assert_eq!(
+            read_only
+                .regex_keys(&matcher, &AtomicBool::new(false))
+                .unwrap()
+                .is_some(),
+            expected
+        );
 
         let mut reopened = selector
             .new_index(&field, &schema, false, &deleted)
             .unwrap()
             .unwrap();
         assert_eq!(has_regex_index(&reopened.pop().unwrap()), expected);
+    }
+}
+
+/// `match: { regex }` served by the keyword index: filter, estimation and
+/// per-point checks, with and without the regex index.
+mod condition {
+    use std::collections::BTreeSet;
+
+    use common::ambient;
+    use common::bitvec::BitVec;
+    use common::condition_checker::ConditionChecker;
+    use common::types::PointOffsetType;
+    use rstest::rstest;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    use super::super::RegexMatcher;
+    use super::map_index::{PATTERNS, data};
+    use crate::index::field_index::map_index::MapIndex;
+    use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndexRead};
+    use crate::json_path::JsonPath;
+    use crate::types::{FieldCondition, Match, Memory};
+
+    #[derive(Debug, Clone, Copy)]
+    enum Variant {
+        Mutable,
+        InRam,
+        OnDisk,
+    }
+
+    fn build(dir: &TempDir, data: &[Vec<String>], variant: Variant, regex: bool) -> MapIndex<str> {
+        let _scope = ambient::test_guard();
+        let deleted = BitVec::repeat(false, 1024);
+        let values: Vec<Vec<Value>> = data
+            .iter()
+            .map(|values| values.iter().map(|v| Value::from(v.as_str())).collect())
+            .collect();
+        match variant {
+            Variant::Mutable => {
+                let mut builder = MapIndex::<str>::builder_mutable(dir.path().to_path_buf(), false);
+                if regex {
+                    builder.enable_regex_index();
+                }
+                builder.init().unwrap();
+                for (idx, values) in values.iter().enumerate() {
+                    let values: Vec<&Value> = values.iter().collect();
+                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                }
+                builder.finalize().unwrap()
+            }
+            Variant::InRam | Variant::OnDisk => {
+                let memory = match variant {
+                    Variant::InRam => Memory::Pinned,
+                    Variant::Mutable | Variant::OnDisk => Memory::Cold,
+                };
+                let mut builder =
+                    MapIndex::<str>::builder_immutable(dir.path(), memory, &deleted, false);
+                if regex {
+                    builder.enable_regex_index();
+                }
+                builder.init().unwrap();
+                for (idx, values) in values.iter().enumerate() {
+                    let values: Vec<&Value> = values.iter().collect();
+                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                }
+                builder.finalize().unwrap()
+            }
+        }
+    }
+
+    #[rstest]
+    fn served_by_the_keyword_index(
+        #[values(Variant::Mutable, Variant::InRam, Variant::OnDisk)] variant: Variant,
+        #[values(true, false)] regex: bool,
+    ) {
+        let dir = TempDir::with_prefix("regex_condition").unwrap();
+        let data = data();
+        let index = build(&dir, &data, variant, regex);
+
+        let _scope = ambient::test_guard();
+        for pattern in PATTERNS {
+            let matcher = RegexMatcher::new(pattern).unwrap();
+            let expected: BTreeSet<PointOffsetType> = data
+                .iter()
+                .enumerate()
+                .filter(|(_, values)| values.iter().any(|value| matcher.is_match(value)))
+                .map(|(idx, _)| idx as PointOffsetType)
+                .collect();
+
+            let condition =
+                FieldCondition::new_match(JsonPath::new("key"), Match::new_regex(pattern));
+
+            let filtered: BTreeSet<_> = index.filter(&condition).unwrap().unwrap().collect();
+            assert_eq!(filtered, expected, "{variant:?} {pattern}");
+
+            let estimation = index.estimate_cardinality(&condition).unwrap().unwrap();
+            assert!(!estimation.primary_clauses.is_empty(), "{pattern}");
+            assert!(
+                estimation.min <= expected.len() && expected.len() <= estimation.max,
+                "{variant:?} {pattern}: {} not within {estimation:?}",
+                expected.len(),
+            );
+
+            let checker = index.condition_checker(&condition).unwrap().unwrap();
+            for idx in 0..data.len() as PointOffsetType {
+                assert_eq!(
+                    checker.check(idx).unwrap(),
+                    expected.contains(&idx),
+                    "{variant:?} {pattern} point {idx}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_pattern_is_an_error() {
+        let dir = TempDir::with_prefix("regex_condition_invalid").unwrap();
+        let index = build(&dir, &data(), Variant::Mutable, true);
+        let condition = FieldCondition::new_match(JsonPath::new("key"), Match::new_regex("(ab"));
+        let _scope = ambient::test_guard();
+        assert!(index.filter(&condition).is_err());
+        assert!(index.estimate_cardinality(&condition).is_err());
     }
 }

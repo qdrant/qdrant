@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::ambient::hw::HwMetric;
 use common::generic_consts::{Random, Sequential};
@@ -22,7 +23,7 @@ use super::map_read::RegexCandidateStats;
 use super::matcher::RegexMatcher;
 use super::query::TrigramQuery;
 use super::trigram::Trigram;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 
 /// Read granularity of a scan over every key.
 const SCAN_CHUNK_BYTES: u64 = 1024 * 1024;
@@ -150,21 +151,33 @@ impl<S: UniversalRead> RegexIndex<S> {
     }
 
     /// Keys `matcher` matches, in ascending byte order.
-    pub fn matching_keys(&self, matcher: &RegexMatcher) -> OperationResult<Vec<EcoString>> {
+    ///
+    /// Checks `is_stopped` before every key, and gives up with
+    /// [`OperationError::Cancelled`] once it is set.
+    pub fn matching_keys(
+        &self,
+        matcher: &RegexMatcher,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<EcoString>> {
         let postings = Postings {
             index: self,
             directory: self.directory()?,
         };
         let mut keys = Vec::new();
         let mut check = |key: &str| {
+            if is_stopped.load(Ordering::Relaxed) {
+                return false;
+            }
             if matcher.is_match(key) {
                 keys.push(EcoString::from(key));
             }
+            true
         };
         match candidates(matcher.query(), &postings)? {
             Candidates::All => self.for_each_key(&mut check)?,
             Candidates::Ids(ids) => self.for_each_key_of(&ids, &mut check)?,
         }
+        check_process_stopped(is_stopped)?;
         Ok(keys)
     }
 
@@ -179,8 +192,9 @@ impl<S: UniversalRead> RegexIndex<S> {
         Ok(candidate_bounds(query, directory))
     }
 
-    /// Invoke `f` on every key, in ascending byte order.
-    fn for_each_key(&self, f: &mut dyn FnMut(&str)) -> OperationResult<()> {
+    /// Invoke `f` on every key, in ascending byte order, until it returns
+    /// `false`.
+    fn for_each_key(&self, f: &mut dyn FnMut(&str) -> bool) -> OperationResult<()> {
         let mut chunk_start = 0;
         while chunk_start < self.blocks.len() {
             let bytes_start = self.blocks[chunk_start].bytes.start;
@@ -202,10 +216,14 @@ impl<S: UniversalRead> RegexIndex<S> {
                 let block_bytes = bytes
                     .get((block.bytes.start - bytes_start) as usize..)
                     .ok_or_else(|| corrupt("key block is truncated"))?;
+                let mut go_on = true;
                 decode_block(block_bytes, block.key_count, &mut |_, key| {
-                    f(key);
-                    true
+                    go_on = f(key);
+                    go_on
                 })?;
+                if !go_on {
+                    return Ok(());
+                }
             }
             chunk_start = chunk_end;
         }
@@ -213,8 +231,8 @@ impl<S: UniversalRead> RegexIndex<S> {
     }
 
     /// Invoke `f` on the keys with the given ids (ascending), reading only
-    /// the blocks that hold them.
-    fn for_each_key_of(&self, ids: &[u32], f: &mut dyn FnMut(&str)) -> OperationResult<()> {
+    /// the blocks that hold them, until it returns `false`.
+    fn for_each_key_of(&self, ids: &[u32], f: &mut dyn FnMut(&str) -> bool) -> OperationResult<()> {
         // Group the ids by block: (block index, range of `ids`).
         let mut groups: Vec<(usize, Range<usize>)> = Vec::new();
         let mut start = 0;
@@ -243,18 +261,23 @@ impl<S: UniversalRead> RegexIndex<S> {
             )
         });
 
+        let mut go_on = true;
         self.storage.read_batch::<_, u8, _, OperationError>(
             reads,
             Random,
             |(block_index, ids_range), bytes| {
+                // The batch can't be left early: skip the remaining blocks.
+                if !go_on {
+                    return Ok(());
+                }
                 let block = &self.blocks[block_index];
                 let mut wanted = ids[ids_range].iter().copied().peekable();
                 decode_block(bytes, block.key_count, &mut |offset, key| {
                     if wanted.peek() == Some(&(block.first_id + offset)) {
                         wanted.next();
-                        f(key);
+                        go_on = f(key);
                     }
-                    wanted.peek().is_some()
+                    go_on && wanted.peek().is_some()
                 })
             },
         )

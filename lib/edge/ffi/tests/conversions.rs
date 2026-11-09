@@ -792,6 +792,9 @@ fn text_match_variants_convert() {
         Match::Substring {
             substring: "ab".to_string(),
         },
+        Match::Regex {
+            regex: "^a.b$".to_string(),
+        },
     ];
     let converted: Vec<SegmentMatch> = cases
         .into_iter()
@@ -801,6 +804,14 @@ fn text_match_variants_convert() {
     assert!(matches!(converted[1], SegmentMatch::Phrase(_)));
     assert!(matches!(converted[2], SegmentMatch::Prefix(_)));
     assert!(matches!(converted[3], SegmentMatch::Substring(_)));
+    assert!(matches!(converted[4], SegmentMatch::Regex(_)));
+
+    // An invalid pattern is rejected at conversion.
+    let invalid: Result<SegmentMatch, _> = Match::Regex {
+        regex: "(".to_string(),
+    }
+    .try_into();
+    assert!(invalid.is_err());
 }
 
 #[test]
