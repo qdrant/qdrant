@@ -86,7 +86,14 @@ where
                         .indexed_vector_count
                         .unwrap_or_else(|| self.vector_storage.total_vector_count());
                     // Point tombstones do not necessarily delete the stored vector.
-                    let algorithm = if self.id_tracker.deleted_point_count() != 0
+                    let algorithm = if params.is_some_and(|params| params.acorn.is_some()) {
+                        self.graph_algorithm(
+                            &CardinalityEstimation::exact(
+                                self.vector_storage.available_vector_count(),
+                            ),
+                            params,
+                        )
+                    } else if self.id_tracker.deleted_point_count() != 0
                         || self.vector_storage.available_vector_count() < indexed_vectors
                         || query_context.deleted_points().is_some()
                     {
@@ -94,10 +101,8 @@ where
                     } else {
                         SearchAlgorithm::Hnsw
                     };
-                    let _timer = ScopeDurationMeasurer::new(match algorithm {
-                        SearchAlgorithm::Hnsw => &self.searches_telemetry.unfiltered_hnsw,
-                        SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
-                    });
+                    let _timer =
+                        ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
                     self.search_vectors_with_graph(
                         vectors,
                         None,
@@ -223,7 +228,7 @@ where
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
-        let algorithm = self.filtered_graph_algorithm(query_cardinality, params);
+        let algorithm = self.graph_algorithm(query_cardinality, params);
         let _timer = ScopeDurationMeasurer::new(match algorithm {
             SearchAlgorithm::Hnsw => &self.searches_telemetry.large_cardinality,
             SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
@@ -232,7 +237,7 @@ where
     }
 
     /// ACORN runs when it is enabled and the filter is selective enough.
-    fn filtered_graph_algorithm(
+    fn graph_algorithm(
         &self,
         query_cardinality: &CardinalityEstimation,
         params: Option<&SearchParams>,
@@ -267,7 +272,7 @@ mod tests {
 
     use common::ambient;
     use common::bitvec::{BitSlice, BitVec};
-    use common::types::PointOffsetType;
+    use common::types::{PointOffsetType, TelemetryDetail};
     use common::universal_io::MmapFile;
     use rstest::rstest;
 
@@ -287,7 +292,7 @@ mod tests {
     use crate::index::visited_pool::VisitedPool;
     use crate::segment::Segment;
     use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
-    use crate::types::Distance;
+    use crate::types::{AcornSearchParams, Distance};
     use crate::vector_storage::VectorStorage;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
@@ -341,7 +346,7 @@ mod tests {
         }
         let telemetry = HNSWSearchesTelemetry::new();
         let query = QueryVector::Nearest(vec![1.0, 0.0].into());
-        let search = |segment: &Segment, exact, deleted: &BitSlice| {
+        let search = |segment: &Segment, exact, deleted: &BitSlice, acorn| {
             let id_tracker = segment.id_tracker.borrow();
             let vector_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_storage
@@ -371,6 +376,7 @@ mod tests {
                         1,
                         Some(&SearchParams {
                             exact,
+                            acorn,
                             ..Default::default()
                         }),
                         &vector_context,
@@ -384,7 +390,7 @@ mod tests {
                 match deletion {
                     Deletion::Point => {
                         segment
-                            .delete_point(version, (point as u64).into())
+                            .delete_point(version, u64::from(point).into())
                             .unwrap();
                     }
                     Deletion::Vector => {
@@ -400,17 +406,72 @@ mod tests {
 
         let expected = vec![ScoredPointOffset { idx: 2, score: 1.0 }];
         let mut deleted = BitVec::repeat(false, 3);
-        assert_eq!(search(&segment, false, &deleted), expected);
+        assert_eq!(search(&segment, false, &deleted, None), expected);
         delete(&mut segment, &mut deleted, 1, 10);
-        assert_eq!(search(&segment, true, &deleted), expected);
-        assert_eq!(search(&segment, false, &deleted), expected);
+        assert_eq!(search(&segment, true, &deleted, None), expected);
+        assert_eq!(search(&segment, false, &deleted, None), expected);
+
+        // Explicit requests can retain ordinary HNSW's one-hop traversal.
+        let one_hop_result = vec![ScoredPointOffset { idx: 0, score: 0.0 }];
+        for acorn in [
+            AcornSearchParams {
+                enable: false,
+                max_selectivity: None,
+            },
+            AcornSearchParams {
+                enable: true,
+                max_selectivity: Some(0.0.into()),
+            },
+            AcornSearchParams {
+                enable: true,
+                max_selectivity: Some(0.5.into()),
+            },
+            AcornSearchParams {
+                enable: true,
+                max_selectivity: None,
+            },
+        ] {
+            assert_eq!(
+                search(&segment, false, &deleted, Some(acorn)),
+                one_hop_result,
+                "{acorn:?}",
+            );
+        }
+        assert_eq!(
+            search(
+                &segment,
+                false,
+                &deleted,
+                Some(AcornSearchParams {
+                    enable: true,
+                    max_selectivity: Some(1.0.into()),
+                })
+            ),
+            expected,
+        );
 
         delete(&mut segment, &mut deleted, 0, 11);
-        assert_eq!(search(&segment, true, &deleted), expected);
-        assert_eq!(search(&segment, false, &deleted), expected);
+        assert_eq!(search(&segment, true, &deleted, None), expected);
+        assert_eq!(search(&segment, false, &deleted, None), expected);
 
         delete(&mut segment, &mut deleted, 2, 12);
-        assert!(search(&segment, true, &deleted).is_empty());
-        assert!(search(&segment, false, &deleted).is_empty());
+        assert!(search(&segment, true, &deleted, None).is_empty());
+        assert!(search(&segment, false, &deleted, None).is_empty());
+        assert_eq!(
+            telemetry
+                .acorn
+                .lock()
+                .get_statistics(TelemetryDetail::default())
+                .count,
+            0
+        );
+        assert_eq!(
+            telemetry
+                .unfiltered_hnsw
+                .lock()
+                .get_statistics(TelemetryDetail::default())
+                .count,
+            9
+        );
     }
 }
