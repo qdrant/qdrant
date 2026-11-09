@@ -434,6 +434,9 @@ mod tests {
         writer.set(110, true).unwrap();
         writer.flusher()().unwrap();
         let new_status = fs_err::read(&status_path).unwrap();
+        // Release the writer's status mmap: Windows can't truncate a mapped file,
+        // which the status rewrites below do.
+        drop(writer);
 
         // Reload 1: the new flags, but the status from before the flush.
         fs_err::write(&status_path, &old_status).unwrap();
