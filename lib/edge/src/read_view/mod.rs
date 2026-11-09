@@ -7,7 +7,7 @@ mod shard_read_with_cancellation;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
+use common::ambient::{self, Handoff};
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use segment::common::operation_error::check_process_stopped;
@@ -18,7 +18,7 @@ pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
 #[cfg(feature = "serverless")]
 pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
-use crate::{EdgeConfig, OperationError, OperationResult};
+use crate::{EdgeConfig, EdgeScope, OperationError, OperationResult};
 
 /// A consistent read snapshot of an edge shard: owned segment handles (collected in retrieval order,
 /// non-appendable first then appendable) plus an immutable config snapshot.
@@ -35,15 +35,23 @@ pub struct EdgeReadView<H: ReadSegmentHandle> {
     pub(crate) pool: Arc<ThreadPool>,
     /// Shared by every stage and segment of this read. Never reset or set by the read itself.
     pub(crate) is_stopped: Arc<AtomicBool>,
+    /// The scope this read is measured in.
+    pub(crate) handoff: Handoff,
 }
 
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
-    pub(crate) fn new(segments: Vec<H>, config: Arc<EdgeConfig>, pool: Arc<ThreadPool>) -> Self {
+    pub(crate) fn new(
+        segments: Vec<H>,
+        config: Arc<EdgeConfig>,
+        pool: Arc<ThreadPool>,
+        scope: &EdgeScope,
+    ) -> Self {
         Self {
             segments,
             config,
             pool,
-            is_stopped: Arc::new(AtomicBool::new(false)),
+            is_stopped: scope.is_stopped().clone(),
+            handoff: scope.handoff(),
         }
     }
 

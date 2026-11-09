@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
 
-use common::ambient;
-use common::reason::Reason;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::entry::ReadSegmentEntry;
@@ -13,7 +11,7 @@ use crate::read_view::{EdgeReadView, ReadSegmentHandle};
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn count(&self, request: CountRequestInternal) -> OperationResult<usize> {
         self.check_stopped()?;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = self.handoff.enter_guard();
         let CountRequestInternal { filter, exact } = request;
 
         let points_count = if exact {

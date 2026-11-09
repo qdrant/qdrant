@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use common::ambient;
-use common::reason::Reason;
 use common::types::DeferredBehavior;
 use itertools::Itertools as _;
 use rand::RngExt;
@@ -24,7 +22,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         request: ScrollRequestInternal,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
         self.check_stopped()?;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = self.handoff.enter_guard();
         let ScrollRequestInternal {
             offset,
             limit,
@@ -79,7 +77,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         request: &QueryScrollRequestInternal,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = self.handoff.enter_guard();
         let QueryScrollRequestInternal {
             limit,
             with_vector,
