@@ -2,11 +2,12 @@ use std::sync::atomic::AtomicBool;
 
 use common::ambient::trace;
 use common::bitvec::BitSlice;
+use common::condition_checker::ConditionChecker;
 use common::types::{DeferredBehavior, PointOffsetType, ScoredPointOffset};
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::id_tracker::IdTrackerRead;
@@ -55,11 +56,12 @@ where
 
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
 
-        let first_filtered_points = filter.map(|filter| {
-            let is_stopped = &is_stopped;
-            move |n| self.first_filtered_points(filter, n, is_stopped)
-        });
-        let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
+        // Unfiltered queries also need seeds if every stored entry point was deleted.
+        let fallback_points = |n| match filter {
+            Some(filter) => self.first_filtered_points(filter, n, &is_stopped),
+            None => self.first_unfiltered_points(n, deleted_points, &is_stopped),
+        };
+        let filtered_points_reader = Some(&fallback_points as &FilteredPoints);
 
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
             match algorithm {
@@ -330,6 +332,27 @@ where
             Some(n),
         )?;
         Ok(points.collect())
+    }
+
+    /// Live vectors to seed the graph after all stored entry points were deleted.
+    fn first_unfiltered_points(
+        &self,
+        n: usize,
+        deleted_points: &BitSlice,
+        is_stopped: &AtomicBool,
+    ) -> OperationResult<Vec<PointOffsetType>> {
+        let not_deleted = self.vector_storage.not_deleted_checker(deleted_points);
+        let mut points = Vec::with_capacity(n.min(self.vector_storage.available_vector_count()));
+        for point in self.id_tracker.point_mappings().iter_internal() {
+            check_process_stopped(is_stopped)?;
+            if not_deleted.check(point)? {
+                points.push(point);
+                if points.len() == n {
+                    break;
+                }
+            }
+        }
+        Ok(points)
     }
 
     fn discover_search_with_graph(

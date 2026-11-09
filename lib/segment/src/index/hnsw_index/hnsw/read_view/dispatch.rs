@@ -79,14 +79,31 @@ where
                     let params_ref = if exact { exact_params.as_ref() } else { params };
                     self.search_plain_unfiltered_batched(vectors, top, params_ref, query_context)
                 } else {
-                    let _timer =
-                        ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
+                    // Deleted nodes can be graph bridges even without a payload filter.
+                    // Use deletion-aware traversal until the optimizer rebuilds the graph.
+                    let indexed_vectors = self
+                        .config
+                        .indexed_vector_count
+                        .unwrap_or_else(|| self.vector_storage.total_vector_count());
+                    // Point tombstones do not necessarily delete the stored vector.
+                    let algorithm = if self.id_tracker.deleted_point_count() != 0
+                        || self.vector_storage.available_vector_count() < indexed_vectors
+                        || query_context.deleted_points().is_some()
+                    {
+                        SearchAlgorithm::Acorn
+                    } else {
+                        SearchAlgorithm::Hnsw
+                    };
+                    let _timer = ScopeDurationMeasurer::new(match algorithm {
+                        SearchAlgorithm::Hnsw => &self.searches_telemetry.unfiltered_hnsw,
+                        SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
+                    });
                     self.search_vectors_with_graph(
                         vectors,
                         None,
                         top,
                         params,
-                        SearchAlgorithm::Hnsw,
+                        algorithm,
                         query_context,
                     )
                 }
@@ -226,11 +243,6 @@ where
         if !acorn.enable {
             return SearchAlgorithm::Hnsw;
         }
-        // NOTE: technically we also might want to use ACORN for unfiltered
-        // searches for segments with a lot of deleted points. But in
-        // practice, such segments most likely to be picked by an optimizer
-        // soon.
-
         let available_vector_count = self.vector_storage.available_vector_count();
         let selectivity = if available_vector_count == 0 {
             1.0
@@ -246,5 +258,159 @@ where
         } else {
             SearchAlgorithm::Hnsw
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common::ambient;
+    use common::bitvec::{BitSlice, BitVec};
+    use common::types::PointOffsetType;
+    use common::universal_io::MmapFile;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::data_types::query_context::QueryContext;
+    use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
+    use crate::entry::entry_point::{NonAppendableSegmentEntry, SegmentEntry};
+    use crate::index::hnsw_index::HnswM;
+    use crate::index::hnsw_index::config::HnswGraphConfig;
+    use crate::index::hnsw_index::entry_points::EntryPoints;
+    use crate::index::hnsw_index::graph::HnswGraph;
+    use crate::index::hnsw_index::graph_layers::GraphLayers;
+    use crate::index::hnsw_index::graph_links::{
+        GraphLinks, GraphLinksFormatParam, GraphLinksResidency,
+    };
+    use crate::index::hnsw_index::hnsw::telemetry::HNSWSearchesTelemetry;
+    use crate::index::visited_pool::VisitedPool;
+    use crate::segment::Segment;
+    use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
+    use crate::types::Distance;
+    use crate::vector_storage::VectorStorage;
+    use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+
+    #[derive(Clone, Copy)]
+    enum Deletion {
+        Point,
+        Vector,
+        Proxy,
+    }
+
+    #[rstest]
+    #[case::points(Deletion::Point)]
+    #[case::vectors(Deletion::Vector)]
+    #[case::proxy(Deletion::Proxy)]
+    fn unfiltered_search_reaches_live_points_after_deletions(
+        #[case] deletion: Deletion,
+        #[values(true, false)] with_indexed_count: bool,
+    ) {
+        let _scope = ambient::test_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let mut segment = build_simple_segment(dir.path(), 2, Distance::Dot).unwrap();
+        for (point, vector) in [[0.0, 1.0], [0.5, 0.5], [1.0, 0.0]].iter().enumerate() {
+            segment
+                .upsert_point(
+                    point as u64,
+                    (point as u64).into(),
+                    only_default_vector(vector),
+                )
+                .unwrap();
+        }
+
+        // The entry stays live. Point 1 is the only path to the unique self-match, point 2.
+        let hnsw_m = HnswM::new2(2);
+        let mut entry_points = EntryPoints::new(1);
+        entry_points.new_point(0, 0, |_| true);
+        let graph = HnswGraph::<MmapFile>::Direct(Arc::new(GraphLayers {
+            hnsw_m,
+            links: GraphLinks::new_from_edges(
+                vec![vec![vec![1]], vec![vec![0, 2]], vec![vec![1]]],
+                GraphLinksFormatParam::Plain,
+                hnsw_m,
+            )
+            .unwrap(),
+            entry_points,
+            visited_pool: VisitedPool::new(),
+            residency: GraphLinksResidency::Pinned,
+        }));
+        let mut config = HnswGraphConfig::new(2, 8, 0, 1, None, 3);
+        if !with_indexed_count {
+            config.indexed_vector_count = None;
+        }
+        let telemetry = HNSWSearchesTelemetry::new();
+        let query = QueryVector::Nearest(vec![1.0, 0.0].into());
+        let search = |segment: &Segment, exact, deleted: &BitSlice| {
+            let id_tracker = segment.id_tracker.borrow();
+            let vector_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .borrow();
+            let query_context = QueryContext::default();
+            let mut segment_context = query_context.get_segment_query_context();
+            if matches!(deletion, Deletion::Proxy) {
+                segment_context = segment_context.with_deleted_points(deleted);
+            }
+            let vector_context = segment_context.get_vector_context(DEFAULT_VECTOR_NAME, None);
+            segment
+                .payload_index
+                .borrow()
+                .with_view(|payload_index| {
+                    HNSWIndexReadView {
+                        id_tracker: &*id_tracker,
+                        vector_storage: &*vector_storage,
+                        quantized_vectors: None::<&QuantizedVectors>,
+                        payload_index,
+                        config: &config,
+                        graph: &graph,
+                        searches_telemetry: &telemetry,
+                    }
+                    .search(
+                        &[&query],
+                        None,
+                        1,
+                        Some(&SearchParams {
+                            exact,
+                            ..Default::default()
+                        }),
+                        &vector_context,
+                    )
+                })
+                .unwrap()
+                .remove(0)
+        };
+        let delete =
+            |segment: &mut Segment, deleted: &mut BitVec, point: PointOffsetType, version| {
+                match deletion {
+                    Deletion::Point => {
+                        segment
+                            .delete_point(version, (point as u64).into())
+                            .unwrap();
+                    }
+                    Deletion::Vector => {
+                        segment.vector_data[DEFAULT_VECTOR_NAME]
+                            .vector_storage
+                            .borrow_mut()
+                            .delete_vector(point)
+                            .unwrap();
+                    }
+                    Deletion::Proxy => deleted.set(point as usize, true),
+                }
+            };
+
+        let expected = vec![ScoredPointOffset { idx: 2, score: 1.0 }];
+        let mut deleted = BitVec::repeat(false, 3);
+        assert_eq!(search(&segment, false, &deleted), expected);
+        delete(&mut segment, &mut deleted, 1, 10);
+        assert_eq!(search(&segment, true, &deleted), expected);
+        assert_eq!(search(&segment, false, &deleted), expected);
+
+        delete(&mut segment, &mut deleted, 0, 11);
+        assert_eq!(search(&segment, true, &deleted), expected);
+        assert_eq!(search(&segment, false, &deleted), expected);
+
+        delete(&mut segment, &mut deleted, 2, 12);
+        assert!(search(&segment, true, &deleted).is_empty());
+        assert!(search(&segment, false, &deleted).is_empty());
     }
 }
