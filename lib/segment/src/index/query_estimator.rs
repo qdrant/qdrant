@@ -221,6 +221,12 @@ pub fn combine_must_estimations(
     }
 }
 
+/// Estimate a single condition, bounded by `total`.
+///
+/// The combinators below treat `estimation / total` as a probability, so they only keep
+/// `min <= exp <= max` when every input is within `total`. A field index can estimate above
+/// `total`: under append-only deletion it still counts tombstoned points until the segment is
+/// rebuilt, while `total` only counts available points.
 fn estimate_condition<F>(
     estimator: &F,
     condition: &Condition,
@@ -238,7 +244,9 @@ where
         | Condition::HasVector(_)
         | Condition::Slice(_)
         | Condition::Nested(_)
-        | Condition::CustomIdChecker(_) => estimator(condition),
+        | Condition::CustomIdChecker(_) => {
+            estimator(condition).map(|estimation| estimation.bounded_by(total))
+        }
     }
 }
 
@@ -719,5 +727,46 @@ mod tests {
         assert!(adjusted.min <= adjusted.exp && adjusted.exp <= adjusted.max);
         assert_eq!(adjusted.max, 11);
         assert_eq!(adjusted.exp, 11);
+    }
+
+    /// A field index that still counts tombstoned points (append-only deletion) can estimate
+    /// a condition above the available points. Combining such estimates must still yield
+    /// `min <= exp <= max`. Unbounded, this `must` gave `min: 25, exp: 24, max: 20`.
+    #[test]
+    fn test_condition_estimates_above_total() {
+        const SMALL_TOTAL: usize = 25;
+        let estimator = |condition: &Condition| -> OperationResult<CardinalityEstimation> {
+            let Condition::Field(field) = condition else {
+                panic!("unexpected condition {condition:?}");
+            };
+            let count = match field.key.to_string().as_str() {
+                "over" => 30,
+                "under" => 20,
+                key => panic!("unexpected key {key}"),
+            };
+            Ok(CardinalityEstimation::exact(count))
+        };
+        let conditions = vec![test_condition("over"), test_condition("under")];
+        let must = Filter {
+            should: None,
+            min_should: None,
+            must: Some(conditions.clone()),
+            must_not: None,
+        };
+        let should = Filter {
+            should: Some(conditions),
+            min_should: None,
+            must: None,
+            must_not: None,
+        };
+
+        for query in [must, should] {
+            let estimation = estimate_filter(&estimator, &query, SMALL_TOTAL).unwrap();
+            assert!(
+                estimation.min <= estimation.exp && estimation.exp <= estimation.max,
+                "{estimation:?}",
+            );
+            assert!(estimation.max <= SMALL_TOTAL, "{estimation:?}");
+        }
     }
 }
