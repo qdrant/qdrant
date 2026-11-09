@@ -1690,11 +1690,13 @@ message ModelUsage {
 // ---------------------------------------------
 
 message HardwareUsage {
-  uint64 cpu = 1;
-  uint64 payload_io_read = 2;
-  uint64 payload_io_write = 3;
-  uint64 payload_index_io_read = 4;
-  uint64 payload_index_io_write = 5;
-  uint64 vector_io_read = 6;
-  uint64 vector_io_write = 7;
+  optional uint64 cpu = 1;
+  optional uint64 payload_io_read = 2;
+  optional uint64 payload_io_write = 3;
+  optional uint64 payload_index_io_read = 4;
+  optional uint64 payload_index_io_write = 5;
+  optional uint64 vector_io_read = 6;
+  optional uint64 vector_io_write = 7;
+  optional uint64 remote_io_cached_read = 8;
+  optional uint64 remote_io_non_cached_read = 9;
 }

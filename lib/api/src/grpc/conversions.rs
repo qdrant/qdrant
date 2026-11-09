@@ -3605,7 +3605,7 @@ impl From<rest::SearchMatrixPair> for SearchMatrixPair {
 impl From<AmbientContext> for HardwareUsage {
     fn from(value: AmbientContext) -> Self {
         let data = value.hw_data();
-        let m = |metric: HwMetric| data[metric] as u64;
+        let m = |metric: HwMetric| Some(data[metric] as u64);
         Self {
             cpu: m(HwMetric::Cpu),
             payload_io_read: m(HwMetric::PayloadIoRead),
@@ -3614,6 +3614,8 @@ impl From<AmbientContext> for HardwareUsage {
             payload_index_io_write: m(HwMetric::PayloadIndexIoWrite),
             vector_io_read: m(HwMetric::VectorIoRead),
             vector_io_write: m(HwMetric::VectorIoWrite),
+            remote_io_cached_read: m(HwMetric::RemoteIoCachedRead),
+            remote_io_non_cached_read: m(HwMetric::RemoteIoNonCachedRead),
         }
     }
 }
@@ -3628,16 +3630,22 @@ impl From<HardwareUsage> for HardwareData {
             payload_index_io_write,
             vector_io_read,
             vector_io_write,
+            remote_io_cached_read,
+            remote_io_non_cached_read,
         } = value;
 
+        let m = |value: Option<u64>| value.unwrap_or_default() as usize;
+
         HardwareData::from_fn(|metric| match metric {
-            HwMetric::Cpu => cpu as usize,
-            HwMetric::PayloadIoRead => payload_io_read as usize,
-            HwMetric::PayloadIoWrite => payload_io_write as usize,
-            HwMetric::PayloadIndexIoRead => payload_index_io_read as usize,
-            HwMetric::PayloadIndexIoWrite => payload_index_io_write as usize,
-            HwMetric::VectorIoRead => vector_io_read as usize,
-            HwMetric::VectorIoWrite => vector_io_write as usize,
+            HwMetric::Cpu => m(cpu),
+            HwMetric::PayloadIoRead => m(payload_io_read),
+            HwMetric::PayloadIoWrite => m(payload_io_write),
+            HwMetric::PayloadIndexIoRead => m(payload_index_io_read),
+            HwMetric::PayloadIndexIoWrite => m(payload_index_io_write),
+            HwMetric::VectorIoRead => m(vector_io_read),
+            HwMetric::VectorIoWrite => m(vector_io_write),
+            HwMetric::RemoteIoCachedRead => m(remote_io_cached_read),
+            HwMetric::RemoteIoNonCachedRead => m(remote_io_non_cached_read),
         })
     }
 }
