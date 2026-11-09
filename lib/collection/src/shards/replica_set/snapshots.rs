@@ -17,6 +17,7 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_trait::ShardOperation as _;
 use crate::shards::{create_shard_initializing_flag, shard_initializing_flag_path};
 
 #[cfg(test)]
@@ -166,7 +167,7 @@ impl ShardReplicaSet {
         collection_path: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
-        // `local.take()` call and `restore` task have to be executed as a single transaction
+        // Replacing the local shard and `restore` task have to be executed as a single transaction
 
         if !LocalShard::check_data(replica_path) {
             return Ok(false);
@@ -209,67 +210,61 @@ impl ShardReplicaSet {
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
 
+        // Collect the local manifest before replacing the local shard with a dummy,
+        // so that if it fails, the local shard is left as is
+        let local_manifest = match local.as_ref() {
+            Some(_) if snapshot_manifest.is_empty() => None,
+
+            Some(shard) => {
+                let local_manifest = shard.snapshot_manifest().await.map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "failed to restore partial shard snapshot for shard {}:{}: \
+                         failed to collect snapshot manifest: \
+                         {err}",
+                        self.collection_id, self.shard_id,
+                    ))
+                })?;
+
+                local_manifest.validate().map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "failed to restore partial shard snapshot for shard {}:{}: \
+                         local shard produces invalid snapshot manifest: \
+                         {err}",
+                        self.collection_id, self.shard_id,
+                    ))
+                })?;
+
+                Some(local_manifest)
+            }
+
+            None => None,
+        };
+
         let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
 
         #[cfg(test)]
         wait_restore_local_replica_before_flag_hook_for_test(&shard_flag).await;
 
-        // Check `cancel` token one last time before creating the durable initializing flag. Once
-        // the flag exists, recovery must finish to a marker-consistent state instead of returning
-        // `Cancelled` and leaving a false dirty marker behind.
         if cancel.is_cancelled() {
             return Err(CollectionError::from(cancel::Error::Cancelled));
         }
 
-        // set shard_id initialization flag
-        // the file is removed after full recovery to indicate a well-formed shard
-        // for example: some of the files may go missing if node gets killed during shard directory move/replace
+        // Replace the local shard with a dummy placeholder while the snapshot is recovered,
+        // and create the shard initializing flag. If recovery fails, is cancelled or the node
+        // crashes, `local` is never left as `None`, and a crash is detected on restart,
+        // so the shard can be recovered.
+        //
+        // The dummy must be installed before the flag is created, so we never leave the flag
+        // next to a valid local shard and force a dummy on restart.
+        //
+        // The flag is removed and the dummy is replaced after the snapshot is restored.
+        let dummy = Shard::Dummy(DummyShard::new("Local shard is being restored"));
+        if let Some(shard) = local.replace(dummy) {
+            // Shard is no longer needed and can be dropped
+            shard.stop_gracefully().await;
+        }
+
         create_shard_initializing_flag(collection_path, self.shard_id).await?;
-
-        let local_manifest = match local.take() {
-            Some(shard) if snapshot_manifest.is_empty() => {
-                // Shard is no longer needed and can be dropped
-                shard.stop_gracefully().await;
-
-                None
-            }
-            Some(shard) => {
-                let local_manifest = shard.snapshot_manifest().await;
-
-                // If local shard produces a valid manifest, it can be replaced and no longer needed
-                // If it fails, we return it back.
-
-                match local_manifest {
-                    Ok(local_manifest) => {
-                        local_manifest.validate().map_err(|err| {
-                            CollectionError::service_error(format!(
-                                "failed to restore partial shard snapshot for shard {}:{}: \
-                                 local shard produces invalid snapshot manifest: \
-                                 {err}",
-                                self.collection_id, self.shard_id,
-                            ))
-                        })?;
-
-                        // Shard is no longer needed and can be dropped
-                        shard.stop_gracefully().await;
-
-                        Some(local_manifest)
-                    }
-
-                    Err(err) => {
-                        let _ = local.insert(shard);
-
-                        return Err(CollectionError::service_error(format!(
-                            "failed to restore partial shard snapshot for shard {}:{}: \
-                             failed to collect snapshot manifest: \
-                             {err}",
-                            self.collection_id, self.shard_id,
-                        )));
-                    }
-                }
-            }
-            None => None,
-        };
 
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
@@ -346,7 +341,7 @@ impl ShardReplicaSet {
                 LocalShard::move_data(replica_path, &self.shard_path).await?;
             }
 
-            LocalShard::load(
+            let new_local = LocalShard::load(
                 self.shard_id,
                 self.collection_id.clone(),
                 &self.shard_path,
@@ -360,14 +355,21 @@ impl ShardReplicaSet {
                 self.search_runtime.clone(),
                 self.optimizer_resource_budget.clone(),
             )
-            .await
+            .await?;
+
+            // remove shard_id initialization flag because shard is fully recovered
+            // do it before installing the shard, so if it fails, the dummy shard stays installed
+            if let Err(err) = tokio_fs::remove_file(&shard_flag).await {
+                new_local.stop_gracefully().await;
+                return Err(CollectionError::from(err));
+            }
+
+            CollectionResult::Ok(new_local)
         };
 
         match restore.await {
             Ok(new_local) => {
                 local.replace(Shard::Local(new_local));
-                // remove shard_id initialization flag because shard is fully recovered
-                tokio_fs::remove_file(&shard_flag).await?;
 
                 if recovery_type.is_partial() {
                     self.partial_snapshot_meta.snapshot_recovered();
