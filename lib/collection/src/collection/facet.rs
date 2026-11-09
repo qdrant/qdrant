@@ -11,6 +11,7 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
+use crate::shards::replica_set::ShardReplicaSet;
 
 /// Multiplier applied to the user-facing `limit` to derive the per-shard
 /// over-fetch cap when running approximate facet queries. With unique-per-point
@@ -128,19 +129,32 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        let shard_holder = self.shards_holder.read().await;
-        let target_shards = shard_holder.select_shards(&shard_selection)?;
+        // Select shards under a short read lock, don't hold it across shard requests
+        let target_shards: Vec<Arc<ShardReplicaSet>> = {
+            let shard_holder = self.shards_holder.read().await;
+            shard_holder
+                .select_shards(&shard_selection)?
+                .into_iter()
+                .map(|(shard, _shard_key)| Arc::clone(shard))
+                .collect()
+        };
 
         let mut shards_reads_f = target_shards
-            .iter()
-            .map(|(shard, _shard_key)| {
-                shard.facet(
-                    request.clone(),
-                    read_consistency,
-                    routing_token,
-                    shard_selection.is_shard_id(),
-                    timeout,
-                )
+            .into_iter()
+            .map(|shard| {
+                let request = request.clone();
+                let is_shard_id = shard_selection.is_shard_id();
+                async move {
+                    shard
+                        .facet(
+                            request,
+                            read_consistency,
+                            routing_token,
+                            is_shard_id,
+                            timeout,
+                        )
+                        .await
+                }
             })
             .collect::<FuturesUnordered<_>>();
 

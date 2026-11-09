@@ -2,13 +2,13 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::{TryFutureExt, future};
+use futures::future;
 use itertools::{Either, Itertools};
 use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{Order, ScoredPoint, ShardKey, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::time::Instant;
 
@@ -29,6 +29,7 @@ use crate::operations::universal_query::collection_query::CollectionQueryRequest
 use crate::operations::universal_query::shard_query::{
     self, FusionInternal, MmrInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
+use crate::shards::replica_set::ShardReplicaSet;
 
 /// A factor which determines if we need to use the 2-step search or not.
 /// Should be adjusted based on usage statistics.
@@ -151,9 +152,15 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
-        // query all shards concurrently
-        let shard_holder = self.shards_holder.read().await;
-        let target_shards = shard_holder.select_shards(shard_selection)?;
+        // Select shards under a short read lock, don't hold it across shard requests
+        let target_shards: Vec<(Arc<ShardReplicaSet>, Option<ShardKey>)> = {
+            let shard_holder = self.shards_holder.read().await;
+            shard_holder
+                .select_shards(shard_selection)?
+                .into_iter()
+                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
+                .collect()
+        };
 
         let num_unique_shard_keys = target_shards
             .iter()
@@ -171,29 +178,28 @@ impl Collection {
             is_auto_sharding,
         );
 
-        let all_searches = target_shards.iter().map(|(shard, shard_key)| {
-            let shard_key = shard_key.cloned();
+        // query all shards concurrently
+        let all_searches = target_shards.into_iter().map(|(shard, shard_key)| {
             let request_clone = Arc::clone(&batch_request);
-            shard
-                .query_batch(
-                    request_clone,
-                    read_consistency,
-                    routing_token,
-                    shard_selection.is_shard_id(),
-                    timeout,
-                )
-                .and_then(move |mut shard_responses| async move {
-                    if shard_key.is_none() {
-                        return Ok(shard_responses);
-                    }
+            async move {
+                let mut shard_responses = shard
+                    .query_batch(
+                        request_clone,
+                        read_consistency,
+                        routing_token,
+                        shard_selection.is_shard_id(),
+                        timeout,
+                    )
+                    .await?;
+                if shard_key.is_some() {
                     shard_responses
                         .iter_mut()
                         .flatten()
                         .flatten()
                         .for_each(|point| point.shard_key.clone_from(&shard_key));
-
-                    Ok(shard_responses)
-                })
+                }
+                CollectionResult::Ok(shard_responses)
+            }
         });
         future::try_join_all(all_searches).await
     }

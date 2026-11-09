@@ -5,7 +5,7 @@ use std::time::Duration;
 use common::ambient::AmbientFutureExt as _;
 use common::types::DeferredBehavior;
 use futures::stream::FuturesUnordered;
-use futures::{StreamExt as _, TryFutureExt, TryStreamExt as _, future};
+use futures::{StreamExt as _, TryStreamExt as _, future};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
@@ -354,32 +354,37 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        let retrieved_points: Vec<_> = {
+        // Select shards under a short read lock, don't hold it across shard requests
+        let target_shards: Vec<(Arc<ShardReplicaSet>, Option<ShardKey>)> = {
             let shards_holder = self.shards_holder.read().await;
-            let target_shards = shards_holder.select_shards(shard_selection)?;
+            shards_holder
+                .select_shards(shard_selection)?
+                .into_iter()
+                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
+                .collect()
+        };
 
-            let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
-                let shard_key = shard_key.cloned();
-                shard
+        let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
+            let request = request.clone();
+            async move {
+                let mut records = shard
                     .scroll_by(
-                        request.clone(),
+                        request,
                         read_consistency,
                         routing_token,
                         local_only,
                         timeout,
                     )
-                    .and_then(move |mut records| async move {
-                        if shard_key.is_none() {
-                            return Ok(records);
-                        }
-                        for point in &mut records {
-                            point.shard_key.clone_from(&shard_key);
-                        }
-                        Ok(records)
-                    })
-            });
-            future::try_join_all(scroll_futures).await?
-        };
+                    .await?;
+                if shard_key.is_some() {
+                    for point in &mut records {
+                        point.shard_key.clone_from(&shard_key);
+                    }
+                }
+                CollectionResult::Ok(records)
+            }
+        });
+        let retrieved_points = future::try_join_all(scroll_futures).await?;
 
         let retrieved_iter = retrieved_points.into_iter();
 
@@ -488,8 +493,15 @@ impl Collection {
         let ids_len = request.ids.len();
         let request = Arc::new(request);
 
-        let shard_holder = self.shards_holder.read().await;
-        let target_shards = shard_holder.select_shards(shard_selection)?;
+        // Select shards under a short read lock, don't hold it across shard requests
+        let target_shards: Vec<(Arc<ShardReplicaSet>, Option<ShardKey>)> = {
+            let shard_holder = self.shards_holder.read().await;
+            shard_holder
+                .select_shards(shard_selection)?
+                .into_iter()
+                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
+                .collect()
+        };
         let mut all_shard_collection_requests = target_shards
             .into_iter()
             .map(|(shard, shard_key)| {
@@ -516,7 +528,7 @@ impl Collection {
                     }
 
                     for point in &mut records {
-                        point.shard_key.clone_from(&shard_key.cloned());
+                        point.shard_key.clone_from(&shard_key);
                     }
 
                     CollectionResult::Ok(records)
