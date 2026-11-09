@@ -1,3 +1,4 @@
+mod float16_range_validation;
 mod test_facets;
 mod test_immutable_payload_index_files;
 mod test_max_available_vectors_size;

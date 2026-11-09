@@ -26,6 +26,13 @@ pub enum OperationError {
         expected_dim: usize,
         received_dim: usize,
     },
+    #[error(
+        "Vector value error: component at index {index} is not representable as a finite {datatype} value"
+    )]
+    WrongVectorValue {
+        index: usize,
+        datatype: &'static str,
+    },
     /// A storage-native (raw byte) vector blob that is incompatible with the
     /// target storage (wrong length, undecodable, or out-of-range contents).
     /// Classified as user error (maps to `BadInput`), not `ServiceError`, so a
@@ -171,6 +178,7 @@ impl IsNotFound for OperationError {
         match self {
             Self::FileNotFound { .. } => true,
             Self::WrongVectorDimension { .. }
+            | Self::WrongVectorValue { .. }
             | Self::MalformedVectorBlob { .. }
             | Self::MalformedPayloadBlob { .. }
             | Self::VectorNameNotExists { .. }
