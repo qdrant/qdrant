@@ -201,7 +201,9 @@ where
                 filter,
                 deferred_behavior,
                 Some(MaterializationHint {
-                    expected_checks: ExpectedChecks::plain(self.available_point_count()),
+                    expected_checks: ExpectedChecks::Batched {
+                        count: self.available_point_count(),
+                    },
                     primary: None,
                 }),
             )?;
@@ -256,9 +258,9 @@ where
                     // Every candidate of the primary clauses is checked once. The primary
                     // conditions themselves are not read up front again.
                     let materialization = MaterializationHint {
-                        expected_checks: ExpectedChecks::plain(
-                            self.primary_candidates(query_cardinality)?,
-                        ),
+                        expected_checks: ExpectedChecks::Batched {
+                            count: self.primary_candidates(query_cardinality)?,
+                        },
                         primary: Some(query_cardinality),
                     };
                     let optimized_filter =
@@ -278,7 +280,9 @@ where
                 filter,
                 deferred_behavior,
                 Some(MaterializationHint {
-                    expected_checks: ExpectedChecks::plain(self.available_point_count()),
+                    expected_checks: ExpectedChecks::Batched {
+                        count: self.available_point_count(),
+                    },
                     primary: None,
                 }),
             )?;

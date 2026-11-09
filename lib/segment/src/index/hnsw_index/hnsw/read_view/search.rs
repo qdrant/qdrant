@@ -38,7 +38,7 @@ where
     pub(super) fn search_with_graph(
         &self,
         vector: &QueryVector,
-        filter: Option<GraphFilter<'_>>,
+        filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
         algorithm: SearchAlgorithm,
@@ -56,15 +56,10 @@ where
 
         let oversampled_top = get_oversampled_top(self.quantized_vectors, params, top);
 
-        let first_filtered_points = filter.map(
-            |GraphFilter {
-                 filter,
-                 cardinality: _,
-             }| {
-                let is_stopped = &is_stopped;
-                move |n| self.first_filtered_points(filter, n, is_stopped)
-            },
-        );
+        let first_filtered_points = filter.map(|filter| {
+            let is_stopped = &is_stopped;
+            move |n| self.first_filtered_points(filter, n, is_stopped)
+        });
         let filtered_points_reader = first_filtered_points.as_ref().map(|f| f as &FilteredPoints);
 
         let search_with_vectors = || -> OperationResult<Option<Vec<ScoredPointOffset>>> {
@@ -87,9 +82,7 @@ where
                 vector.to_owned(),
                 self.vector_storage,
                 Some(quantized_vectors),
-                filter
-                    .map(|f| self.graph_filter_context(f, ef))
-                    .transpose()?,
+                filter.map(|f| self.graph_filter_context(f)).transpose()?,
                 deleted_points,
             )?;
             let Some(link_scorer_filtered_bytes) = link_scorer_filtered.scorer_bytes() else {
@@ -121,9 +114,7 @@ where
 
         let regular_search = || -> OperationResult<Vec<ScoredPointOffset>> {
             trace::mark!("filter_context begin");
-            let filter_context = filter
-                .map(|f| self.graph_filter_context(f, ef))
-                .transpose()?;
+            let filter_context = filter.map(|f| self.graph_filter_context(f)).transpose()?;
             trace::mark!("search_scorer begin");
             let points_scorer = construct_search_scorer(
                 vector,
@@ -169,7 +160,7 @@ where
     pub(super) fn search_vectors_with_graph(
         &self,
         vectors: &[&QueryVector],
-        filter: Option<GraphFilter<'_>>,
+        filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
         algorithm: SearchAlgorithm,
@@ -319,28 +310,14 @@ where
         )
     }
 
-    /// Filter context for a graph search with beam `ef`, sized for the checks the walk
-    /// is expected to make.
+    /// Filter context for a graph search. The walk checks one point at a time and can't
+    /// go on until the check returns, so conditions on cold indexes are read up front.
     fn graph_filter_context<'f>(
         &'f self,
-        filter: GraphFilter<'f>,
-        ef: usize,
+        filter: &'f Filter,
     ) -> OperationResult<OptimizedFilter<'f>> {
-        let GraphFilter {
-            filter,
-            cardinality,
-        } = filter;
         self.payload_index
-            .filter_context_for_checks(filter, self.graph_expected_checks(ef, cardinality))
-    }
-
-    pub(super) fn graph_expected_checks(&self, ef: usize, cardinality: usize) -> ExpectedChecks {
-        ExpectedChecks::graph(
-            ef,
-            self.config.m0,
-            cardinality,
-            self.vector_storage.available_vector_count(),
-        )
+            .filter_context_for_checks(filter, ExpectedChecks::Serial)
     }
 
     /// The first `n` points matching `filter`, in payload index order.
@@ -365,7 +342,7 @@ where
     fn discover_search_with_graph(
         &self,
         discover_query: DiscoverQuery<VectorInternal>,
-        filter: Option<GraphFilter<'_>>,
+        filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
         algorithm: SearchAlgorithm,
@@ -448,11 +425,4 @@ where
         top,
         deleted_points,
     )
-}
-
-/// A filter for graph search, with the estimated number of points it keeps.
-#[derive(Clone, Copy)]
-pub(super) struct GraphFilter<'q> {
-    pub filter: &'q Filter,
-    pub cardinality: usize,
 }

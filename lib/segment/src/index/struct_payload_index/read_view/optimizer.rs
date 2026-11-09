@@ -351,7 +351,7 @@ where
 
     /// Read the posting list of `condition`, if that is cheaper than checking the
     /// expected points through the index one by one
-    /// (see [`ExpectedChecks::max_posting_len`]).
+    /// (see [`ExpectedChecks::reads_posting`]).
     fn read_posting(
         &self,
         condition: &FieldCondition,
@@ -365,7 +365,7 @@ where
             return Ok(None);
         };
         for index in indexes {
-            if estimation.exp > expected_checks.max_posting_len(index.is_cold()) {
+            if !expected_checks.reads_posting(estimation.exp, index.is_cold()) {
                 continue;
             }
             if let Some(points) = index.filter(condition)? {

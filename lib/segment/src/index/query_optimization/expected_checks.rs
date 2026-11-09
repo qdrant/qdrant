@@ -1,64 +1,52 @@
-/// How many points the consumer of a filter is expected to check against it, and how
-/// it checks them. Decides whether a condition's posting list is read into a bitset
-/// up front instead of checking each point through the field index.
+/// How the consumer of a filter checks points against it. Decides whether a condition's
+/// posting list is read into a point set up front instead of checking each point through
+/// the field index.
 #[derive(Clone, Copy, Debug)]
-pub struct ExpectedChecks {
-    pub count: usize,
-    pub consumer: CheckConsumer,
+pub enum ExpectedChecks {
+    /// About `count` checks made in batches (plain path): on a cold index, the disk reads
+    /// of one batch overlap, so a check costs a share of the read throughput.
+    Batched { count: usize },
+    /// Checks made one at a time, each blocking the caller until it returns (graph walk,
+    /// cardinality sampling): on a cold index, every check is a full disk round trip.
+    Serial,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum CheckConsumer {
-    /// Plain search: every candidate of the primary clauses is checked, in large batches.
-    Plain,
-    /// Graph search: a few neighbours are checked at a time while the graph is walked.
-    Graph,
-}
-
-/// Posting-list entries worth reading per avoided check when the index is cold
+/// Posting-list entries worth reading per avoided batched check on a cold index
 /// (`memory: cold`): an entry is 4 sequential bytes, a check is a random disk read.
-const DISK_POSTING_TO_CHECKS_RATIO: usize = 64;
+const COLD_POSTING_TO_BATCHED_CHECKS_RATIO: usize = 64;
 
-/// Same, for an index held in RAM (cached or pinned) on the plain path.
-const PLAIN_POSTING_TO_CHECKS_RATIO: usize = 4;
-
-/// Same, for an index held in RAM in graph search. Each check there is cheap
-/// relative to the vector scoring around it, so only lists no longer than the checks pay.
-const GRAPH_POSTING_TO_CHECKS_RATIO: usize = 1;
+/// Same, for an index held in RAM (cached or pinned).
+const RAM_POSTING_TO_BATCHED_CHECKS_RATIO: usize = 4;
 
 impl ExpectedChecks {
-    pub fn plain(count: usize) -> Self {
-        Self {
-            count,
-            consumer: CheckConsumer::Plain,
+    /// Whether a posting list of `posting_len` points is worth reading up front instead
+    /// of checking points through an index that is cold (`memory: cold`) or not.
+    ///
+    /// A serial check on a cold index is a disk round trip of ~100 µs, worth tens of
+    /// thousands of sequentially read posting entries, more than any posting list in a
+    /// segment: always read. On an index held in RAM a serial check is a memory lookup,
+    /// cheap next to the vector scoring around it: never read.
+    pub fn reads_posting(self, posting_len: usize, cold_index: bool) -> bool {
+        match self {
+            ExpectedChecks::Batched { count } => {
+                let ratio = if cold_index {
+                    COLD_POSTING_TO_BATCHED_CHECKS_RATIO
+                } else {
+                    RAM_POSTING_TO_BATCHED_CHECKS_RATIO
+                };
+                posting_len <= count.saturating_mul(ratio)
+            }
+            ExpectedChecks::Serial => cold_index,
         }
     }
 
-    /// Checks of a graph search with beam `ef` over a graph of degree `m0` when the
-    /// filter keeps `cardinality` of `available` points: every visited point checks its
-    /// `m0` neighbours, and about `available / cardinality` points are visited per
-    /// accepted one.
-    pub fn graph(ef: usize, m0: usize, cardinality: usize, available: usize) -> Self {
-        let count = ef
-            .saturating_mul(m0)
-            .saturating_mul(available)
-            .checked_div(cardinality)
-            .map_or(available, |visited| visited.min(available));
-        Self {
-            count,
-            consumer: CheckConsumer::Graph,
+    /// Number of checks to size a point set for, in a segment of `total_points` points.
+    /// Serial consumers have no count; assume many checks, so sets prefer bitsets.
+    pub fn point_set_checks(self, total_points: usize) -> usize {
+        match self {
+            ExpectedChecks::Batched { count } => count,
+            ExpectedChecks::Serial => total_points,
         }
-    }
-
-    /// Largest posting list worth reading into a bitset instead of `count` per-point checks
-    /// through an index that is cold (`memory: cold`) or not.
-    pub fn max_posting_len(self, cold_index: bool) -> usize {
-        let ratio = match (cold_index, self.consumer) {
-            (true, CheckConsumer::Plain | CheckConsumer::Graph) => DISK_POSTING_TO_CHECKS_RATIO,
-            (false, CheckConsumer::Plain) => PLAIN_POSTING_TO_CHECKS_RATIO,
-            (false, CheckConsumer::Graph) => GRAPH_POSTING_TO_CHECKS_RATIO,
-        };
-        self.count.saturating_mul(ratio)
     }
 }
 
@@ -67,25 +55,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_graph_checks() {
-        // 1% selectivity: ef=100, m0=32 visits 100 * 32 * 100 points, capped at the total.
-        assert_eq!(
-            ExpectedChecks::graph(100, 32, 10_000, 1_000_000).count,
-            320_000
-        );
-        assert_eq!(
-            ExpectedChecks::graph(100, 32, 100, 1_000_000).count,
-            1_000_000
-        );
-        assert_eq!(ExpectedChecks::graph(100, 32, 0, 1_000).count, 1_000);
+    fn test_batched_ratios() {
+        let batched = ExpectedChecks::Batched { count: 1000 };
+        assert!(batched.reads_posting(64_000, true));
+        assert!(!batched.reads_posting(64_001, true));
+        assert!(batched.reads_posting(4_000, false));
+        assert!(!batched.reads_posting(4_001, false));
     }
 
     #[test]
-    fn test_ratios() {
-        let plain = ExpectedChecks::plain(1000);
-        assert_eq!(plain.max_posting_len(true), 64_000);
-        assert_eq!(plain.max_posting_len(false), 4_000);
-        let graph = ExpectedChecks::graph(10, 10, 100, 1000);
-        assert_eq!(graph.max_posting_len(false), 1000);
+    fn test_serial_reads_only_cold() {
+        assert!(ExpectedChecks::Serial.reads_posting(usize::MAX, true));
+        assert!(!ExpectedChecks::Serial.reads_posting(0, false));
+        assert_eq!(ExpectedChecks::Serial.point_set_checks(1_000), 1_000);
     }
 }

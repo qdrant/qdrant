@@ -73,9 +73,9 @@ pub trait PayloadIndexRead {
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> OperationResult<OptimizedFilter<'a>>;
 
-    /// [`Self::filter_context`] for a consumer expected to check about `expected_checks`
-    /// points, so small conditions can be read into bitsets up front. Indexes that can't
-    /// use the hint return the plain filter context.
+    /// [`Self::filter_context`] for a consumer that checks points as `expected_checks`
+    /// says, so conditions can be read into point sets up front when that is cheaper than
+    /// per-point checks. Indexes that can't use the hint return the plain filter context.
     fn filter_context_for_checks<'a>(
         &'a self,
         filter: &'a Filter,

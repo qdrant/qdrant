@@ -785,7 +785,7 @@ fn materialized_conditions_match_per_point_checks() {
                 .unwrap();
             for primary in [None, Some(&estimation)] {
                 let hint = MaterializationHint {
-                    expected_checks: ExpectedChecks::plain(66),
+                    expected_checks: ExpectedChecks::Batched { count: 66 },
                     primary,
                 };
                 let materialized = view

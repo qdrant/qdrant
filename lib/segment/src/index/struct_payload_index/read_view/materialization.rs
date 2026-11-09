@@ -33,7 +33,7 @@ impl MaterializationHint<'_> {
     pub(super) fn point_set_context(&self, total_points: usize) -> PointSetContext {
         PointSetContext {
             total_points,
-            expected_checks: self.expected_checks.count,
+            expected_checks: self.expected_checks.point_set_checks(total_points),
         }
     }
 }

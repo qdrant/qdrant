@@ -3,7 +3,6 @@ use common::types::ScoredPointOffset;
 use common::universal_io::UniversalRead;
 
 use super::HNSWIndexReadView;
-use super::search::GraphFilter;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::query_context::VectorQueryContext;
@@ -13,6 +12,7 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::query_estimator::adjust_to_available_vectors;
+use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, QuantizationSearchParams, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -160,16 +160,11 @@ where
                 // The filter context's lifetime is tied to the payload view, which is already
                 // held by this read view.
                 let use_graph = {
-                    // Sized for the graph search that follows if the sample says so:
-                    // on a cold index, checking the samples one by one costs a random
-                    // read each, while the bitsets built here are a few sequential reads.
-                    let ef = params
-                        .and_then(|params| params.hnsw_ef)
-                        .unwrap_or(self.config.ef);
-                    let filter_context = self.payload_index.filter_context_for_checks(
-                        query_filter,
-                        self.graph_expected_checks(ef, query_cardinality.exp),
-                    )?;
+                    // Samples are checked one at a time, so conditions on cold indexes are
+                    // read up front: a few sequential reads instead of a random read per sample.
+                    let filter_context = self
+                        .payload_index
+                        .filter_context_for_checks(query_filter, ExpectedChecks::Serial)?;
                     sample_check_cardinality(
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),
@@ -221,10 +216,6 @@ where
             SearchAlgorithm::Hnsw => &self.searches_telemetry.large_cardinality,
             SearchAlgorithm::Acorn => &self.searches_telemetry.acorn,
         });
-        let filter = GraphFilter {
-            filter,
-            cardinality: query_cardinality.exp,
-        };
         self.search_vectors_with_graph(vectors, Some(filter), top, params, algorithm, query_context)
     }
 
