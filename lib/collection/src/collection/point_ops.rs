@@ -20,6 +20,7 @@ use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
+use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_trait::WaitUntil;
 
@@ -428,23 +429,35 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
-        let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.select_shards(shard_selection)?;
+        // Select shards under a short read lock, don't hold it across shard requests
+        let shards: Vec<Arc<ShardReplicaSet>> = {
+            let shards_holder = self.shards_holder.read().await;
+            shards_holder
+                .select_shards(shard_selection)?
+                .into_iter()
+                .map(|(shard, _shard_key)| Arc::clone(shard))
+                .collect()
+        };
 
         let request = Arc::new(request);
 
         let mut requests: FuturesUnordered<_> = shards
             .into_iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
-            .map(|(shard, _shard_key)| {
-                shard.count(
-                    Arc::clone(&request),
-                    read_consistency,
-                    routing_token,
-                    timeout,
-                    shard_selection.is_shard_id(),
-                    DeferredBehavior::VisibleOnly,
-                )
+            .map(|shard| {
+                let request = Arc::clone(&request);
+                async move {
+                    shard
+                        .count(
+                            request,
+                            read_consistency,
+                            routing_token,
+                            timeout,
+                            shard_selection.is_shard_id(),
+                            DeferredBehavior::VisibleOnly,
+                        )
+                        .await
+                }
             })
             .collect();
 
