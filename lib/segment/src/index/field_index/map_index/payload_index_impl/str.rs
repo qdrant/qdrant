@@ -3,8 +3,6 @@ use std::iter;
 use std::path::PathBuf;
 
 use blobstore::Blob;
-use common::ambient;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use ecow::EcoString;
 
@@ -134,9 +132,6 @@ where
 /// its postings, instead of the compact keys-only dictionary. A prefix
 /// condition has no such fallback — an ordered dictionary is the whole point
 /// of serving it, so without one it is left to the per-point checker.
-///
-/// Reads on this path are not billed: the enumeration methods of
-/// [`MapIndexRead`] carry no hardware counter.
 fn scan_keys_for_substring<'a, T: MapIndexRead<'a, str>>(
     index: &'a T,
     substring: &str,
@@ -323,14 +318,7 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefixR
     for_each_prefix_payload_block(index, threshold, &key, f)?;
 
     index.for_each_value(|value| {
-        let count = ambient::unmeasured(
-            reason(
-                "`for_each_payload_block` is only used while building HNSW, which \
-                 intentionally bypasses hardware measurement.",
-            ),
-            || index.get_count_for_value(value),
-        )
-        .unwrap_or(0);
+        let count = index.get_count_for_value(value).unwrap_or(0);
         if count > threshold {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
@@ -351,9 +339,6 @@ fn for_each_prefix_payload_block<'a, T: MapIndexRead<'a, str> + StrMapIndexPrefi
     key: &PayloadKeyType,
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
-    let _scope = ambient::unmeasured_guard(reason(
-        "HNSW build; hardware measurement intentionally bypassed (see above).",
-    ));
     let Some(entries) = index.prefix_keys_with_counts("")? else {
         return Ok(());
     };

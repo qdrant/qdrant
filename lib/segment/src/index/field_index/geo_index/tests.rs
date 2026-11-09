@@ -1292,6 +1292,7 @@ fn test_block_index_fallback_equivalence() {
 /// must not fail `preopen` and must open in fallback mode.
 #[test]
 fn test_block_index_preopen() {
+    let _scope = ambient::test_guard();
     use common::universal_io::{
         CachedFs, CachedReadFs as _, Populate, ReadOnly, UniversalRead, UniversalReadFs as _,
     };

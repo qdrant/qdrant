@@ -2876,6 +2876,7 @@ pub(crate) fn between_unproxy_phases_hook() {
 /// `test_unwrap_proxy_reports_failed_propagation`, or the change is recoverable from nowhere.
 #[test]
 fn unproxy_phase_two_propagation_failure_keeps_change_recoverable() {
+    let _scope = ambient::test_guard();
     use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
     use segment::pending_changes::list_pending_changes_log_files;
     use segment::segment_constructor::get_vector_storage_path;

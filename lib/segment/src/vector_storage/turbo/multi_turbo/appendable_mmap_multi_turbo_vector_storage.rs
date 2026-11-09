@@ -14,12 +14,10 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
 use common::generic_consts::{AccessPattern, Random};
 use common::mmap::AdviceSetting;
-use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -642,7 +640,6 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let record_size = self.quantizer.quantized_size();
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let start_index = self.offsets.len() as PointOffsetType;
 
         for (blob, deleted) in other_vectors {
@@ -686,6 +683,7 @@ impl MultiTQVectorStorage for AppendableMmapMultiTurboVectorStorage {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use common::generic_consts::{Random, Sequential};
     use rand::rngs::SmallRng;
     use rand::{RngExt, SeedableRng};
@@ -898,6 +896,7 @@ mod tests {
     /// zero-record placeholders.
     #[test]
     fn update_from_builds_and_matches_independent_oracle() {
+        let _scope = ambient::test_guard();
         const COUNT: usize = 24;
         const DELETED: PointOffsetType = 3;
         // Deletion landing in the second batch so `start + offset` arithmetic is exercised.

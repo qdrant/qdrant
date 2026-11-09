@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use common::ambient;
 use common::universal_io::MmapFs;
 use segment::common::operation_error::OperationResult;
 use segment::segment::update_only::TrackerLookup;
@@ -45,6 +46,7 @@ fn only(dir: &TempDir, keep: &[Uuid]) -> Only {
 
 /// `(immutable, appendable)` segment uuids of the shard at `dir`.
 fn segments(dir: &TempDir) -> (Uuid, Uuid) {
+    let _scope = ambient::test_guard();
     let (mut immutable, mut appendable) = (None, None);
     for (uuid, listed) in LocalSegmentEnumerator::new(dir.path())
         .list_segments()

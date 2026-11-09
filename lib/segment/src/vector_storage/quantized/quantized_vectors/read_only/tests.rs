@@ -485,6 +485,7 @@ fn preopen_then_open_through_cached_fs(
     #[case] config: QuantizationConfig,
     #[case] storage_type: QuantizedVectorsStorageType,
 ) {
+    let _scope = ambient::test_guard();
     let dir = tempfile::Builder::new().prefix("src").tempdir().unwrap();
     let quant_dir = tempfile::Builder::new().prefix("quant").tempdir().unwrap();
     let mut rng = StdRng::seed_from_u64(SEED);
@@ -628,6 +629,7 @@ fn live_reload_chunked_preserves_scores() {
 /// the prefetch pool (parked mmap handles keep reading deleted files on unix).
 #[test]
 fn live_preload_then_reload_chunked_preserves_scores() {
+    let _scope = ambient::test_guard();
     reload_chunked_preserves_scores(true);
 }
 

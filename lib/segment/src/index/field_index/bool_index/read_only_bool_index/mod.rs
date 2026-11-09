@@ -239,6 +239,7 @@ mod tests {
         #[case] materialize_before_reload: bool,
         #[case] preload: bool,
     ) {
+        let _scope = ambient::test_guard();
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let dir = TempDir::with_prefix("read_only_bool_index_live_reload").unwrap();
@@ -552,6 +553,7 @@ mod tests {
     /// the pool stay readable, while any fallback open hits `NotFound`.
     #[test]
     fn preopen_then_open_through_cached_fs() {
+        let _scope = ambient::test_guard();
         let dir = TempDir::with_prefix("read_only_bool_index_preopen").unwrap();
 
         // Points 0..=2: true, false, both.
