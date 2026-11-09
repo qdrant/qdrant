@@ -110,27 +110,39 @@ impl<S: UniversalReadExt> ReadOnlyStructPayloadIndex<S> {
     /// Cheap, `&mut self`: no I/O, just swapping the already-loaded field indexes
     /// and the config into place.
     ///
+    /// Returns the field indexes that were swapped out instead of dropping them:
+    /// freeing them can be slow (large in-RAM structures, unmapping, removing
+    /// disk-cache files), so the caller should drop them after releasing any
+    /// exclusive lock it holds.
+    ///
     /// [`config_reload_diff`]: Self::config_reload_diff
-    pub fn apply_config_reload(&mut self, diff: PayloadIndexReloadDiff<S>) {
+    #[must_use = "drop the retired field indexes after releasing the exclusive lock"]
+    pub fn apply_config_reload(
+        &mut self,
+        diff: PayloadIndexReloadDiff<S>,
+    ) -> Vec<ReadOnlyFieldIndex<S>> {
         let PayloadIndexReloadDiff {
             new_config,
             added,
             removed,
         } = diff;
 
+        let mut retired = Vec::new();
         for field in &removed {
-            self.field_indexes.remove(field);
+            retired.extend(self.field_indexes.remove(field).into_iter().flatten());
         }
         for (field, indexes) in added {
             // An empty index set means the field dropped all its index types.
-            if indexes.is_empty() {
-                self.field_indexes.remove(&field);
+            let replaced = if indexes.is_empty() {
+                self.field_indexes.remove(&field)
             } else {
-                self.field_indexes.insert(field, indexes);
-            }
+                self.field_indexes.insert(field, indexes)
+            };
+            retired.extend(replaced.into_iter().flatten());
         }
 
         self.config = new_config;
+        retired
     }
 
     /// Register a vector storage in the `has_vector` lookup map.

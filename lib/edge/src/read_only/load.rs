@@ -199,7 +199,10 @@ where
 
     // 2. Apply config diffs under exclusive locks. Segments whose config reload
     //    failed skip the point-delta phases and surface that error as their result.
+    //    The components each apply swaps out are kept in `retired` and freed once
+    //    every lock is released, so slow drops never stall readers.
     let mut results: Vec<Option<(Uuid, OperationResult<()>)>> = vec![None; segments.len()];
+    let mut retired = Vec::new();
     // Parallel index list keeps `pending` at the same shape as the input `segments`
     // vec (avoids clippy::type_complexity on a 3-tuple of generics).
     let mut pending_indices = Vec::with_capacity(segments.len());
@@ -210,7 +213,8 @@ where
         match diff_res {
             Ok(diff) => {
                 if !diff.is_empty() {
-                    segment.write().apply_config_reload(diff);
+                    // The write guard is a temporary, released at the end of this statement.
+                    retired.push(segment.write().apply_config_reload(diff));
                 }
                 pending_indices.push(index);
                 pending.push((uuid, segment));
@@ -223,6 +227,7 @@ where
             }
         }
     }
+    drop(retired);
     check_process_stopped(is_stopped)?;
 
     // 3. Preload point-delta fetches concurrently on this thread.
