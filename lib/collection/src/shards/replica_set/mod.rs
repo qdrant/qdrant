@@ -46,11 +46,11 @@ use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, 
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag, point_ops};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
+use crate::shards::create_shard_initializing_flag;
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::shard_initializing_flag_path;
 use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
 #[cfg(feature = "testing")]
 use crate::update_handler::Optimizer;
@@ -653,22 +653,26 @@ impl ShardReplicaSet {
         }
     }
 
-    /// Clears the local shard data and loads an empty local shard
-    ///
-    /// Removes the shard initializing flag after the empty shard is built, before installing it. The removal happens
-    /// under the `local` lock, so it never deletes a flag created by a concurrent
-    /// [`Self::restore_local_replica_from`] for its own restore.
+    /// Clears the local shard data and loads an empty local shard.
     ///
     /// # Cancel safety
     ///
-    /// This is cancel safe. If the future is dropped, `local` is left holding a dummy shard rather
-    /// than the real thing. That dummy state is picked up like any other initialization failure: a
-    /// retried call to this method clears it and tries again.
+    /// This method is cancel safe.
+    ///
+    /// If the future is dropped, initialization is cancelled and the local shard is replaced with
+    /// a dummy.
     pub async fn init_empty_local_shard(&self, collection_path: &Path) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
-        // Keep a dummy placeholder because every await below may drop the future early on
-        // cancellation, we must never leave this at None
+        // Replace the local shard with a dummy placeholder while the shard is (re)initialized,
+        // and create the shard initializing flag. If initialization fails, is cancelled or the
+        // node crashes, `local` is never left as `None`, and a crash is detected on restart,
+        // so the shard can be recovered.
+        //
+        // The dummy must be installed before the flag is created, so we never leave the flag
+        // next to a valid local shard and force a dummy on restart.
+        //
+        // The flag is removed and the dummy is replaced after the shard is initialized.
         let current_shard = local.replace(Shard::Dummy(DummyShard::new(
             "Local shard is being initialized",
         )));
@@ -677,12 +681,16 @@ impl ShardReplicaSet {
             current_shard.stop_gracefully().await;
         }
 
+        let shard_flag = create_shard_initializing_flag(collection_path, self.shard_id).await?;
+
         if let Err(err) = LocalShard::clear(&self.shard_path).await {
             let error = format!(
                 "Failed to clear local shard at {:?}: {err}",
                 self.shard_path,
             );
+
             log::error!("{error}");
+
             local.replace(Shard::Dummy(DummyShard::new(error)));
             return Err(err);
         }
@@ -703,7 +711,6 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
-                let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
                 match fs_err::tokio::remove_file(&shard_flag).await {
                     Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
                     Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
