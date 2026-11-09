@@ -154,8 +154,10 @@ impl InMemoryBitvecFlags {
     }
 
     /// [`Self::open`] for the dynamic mode. The flags file is padded past the
-    /// logical length (held in the status file), so the bitvec is truncated to
-    /// it and `count` is exact.
+    /// logical length (held in the status file), so only bits up to it are
+    /// read: the padding is at least `MINIMAL_MMAP_SIZE`, and reading it would
+    /// fetch that unused capacity on owned-read backends. This also keeps
+    /// `count` exact.
     fn open_dynamic<S: UniversalRead>(
         fs: &impl UniversalReadFs<File = S>,
         directory: &Path,
@@ -169,13 +171,13 @@ impl InMemoryBitvecFlags {
             bitslice_open_options(Populate::No),
             Default::default(),
         )?;
-        let bits = flags.read_all()?;
-        let bitvec = bits.get(..len).map(BitVec::from_bitslice).ok_or_else(|| {
-            OperationError::service_error(format!(
+        if len as u64 > flags.bit_len() {
+            return Err(OperationError::service_error(format!(
                 "Flags file {} holds fewer than {len} bits",
                 flags_path.display(),
-            ))
-        })?;
+            )));
+        }
+        let bitvec = flags.read_bit_range(0..len as u64)?.into_owned();
         let count = bitvec.count_ones();
 
         Ok(Self {
@@ -403,6 +405,8 @@ mod tests_mod {
 
         let flags = InMemoryBitvecFlags::open::<S>(&Fs::default(), dir.path()).unwrap();
 
+        // Exactly the logical length, not the padded file capacity
+        assert_eq!(flags.as_bitslice().len(), num_flags);
         let expected_count = random_flags.iter().filter(|flag| **flag).count();
         assert_eq!(flags.count(), expected_count);
         for (i, &flag) in random_flags.iter().enumerate() {
