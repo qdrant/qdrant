@@ -189,7 +189,7 @@ enum PayloadKind {
     /// Float in `n..n + 1`, payload blocks are histogram ranges.
     Float,
 }
-const PAYLOAD_POINTS: usize = 8_000;
+const PAYLOAD_POINTS: usize = 4_000;
 const PAYLOAD_DIM: usize = 16;
 
 /// Heal an index with payload links, with and without a main graph. Filtered search on the
@@ -239,6 +239,9 @@ fn hnsw_incremental_build_payload_links(
     );
     let old_index =
         build_payload_hnsw_index(&mut rng, m, &dir.path().join("old_hnsw"), &old_segment, &[]);
+    // The old index is built from scratch on the same rows as the "same" segment, so it serves
+    // as the fresh baseline there.
+    let old_recall = filtered_recall(kind, &queries, &old_segment, &old_index);
     let old_indices = [Arc::new(AtomicRefCell::new(VectorIndexEnum::Hnsw(
         old_index,
     )))];
@@ -251,7 +254,10 @@ fn hnsw_incremental_build_payload_links(
         .chain(PAYLOAD_POINTS * 9 / 10..PAYLOAD_POINTS)
         .collect_vec();
 
-    for (name, rows_) in [("same", old_rows), ("changed", changed_rows)] {
+    for (name, rows_, fresh_recall) in [
+        ("same", old_rows, Some(old_recall)),
+        ("changed", changed_rows, None),
+    ] {
         let (rows_, ids_, vectors_, values_) = rows(rows_);
         let segment = make_payload_segment(
             kind,
@@ -268,15 +274,17 @@ fn hnsw_incremental_build_payload_links(
             &segment,
             &old_indices,
         );
-        let fresh = build_payload_hnsw_index(
-            &mut rng,
-            m,
-            &dir.path().join(format!("{name}_fresh")),
-            &segment,
-            &[],
-        );
+        let fresh_recall = fresh_recall.unwrap_or_else(|| {
+            let fresh = build_payload_hnsw_index(
+                &mut rng,
+                m,
+                &dir.path().join(format!("{name}_fresh")),
+                &segment,
+                &[],
+            );
+            filtered_recall(kind, &queries, &segment, &fresh)
+        });
         let healed_recall = filtered_recall(kind, &queries, &segment, &healed);
-        let fresh_recall = filtered_recall(kind, &queries, &segment, &fresh);
         println!(
             "m={m} {kind:?} {name}: healed recall {healed_recall:.4}, fresh recall {fresh_recall:.4}"
         );
@@ -332,7 +340,7 @@ fn build_payload_hnsw_index<R: Rng + ?Sized>(
     segment: &Segment,
     old_indices: &[Arc<AtomicRefCell<VectorIndexEnum>>],
 ) -> HNSWIndex {
-    // A payload value matches ~720-800 points, above this threshold (256 points), so filtered
+    // A payload value matches ~360-400 points, above this threshold (256 points), so filtered
     // searches use the graph, and its blocks get payload links.
     let full_scan_threshold_kb = 256 * PAYLOAD_DIM * size_of::<VectorElementType>() / 1024;
     let hnsw_config = HnswConfig {
