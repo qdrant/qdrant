@@ -1,18 +1,16 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use segment::common::operation_error::OperationResult;
-use segment::data_types::facets::FacetResponse;
-use segment::types::{PointIdType, ScoredPoint};
+use segment::types::PointIdType;
 use shard::locked_segment::LockedSegment;
 use shard::retrieve::record_internal::RecordInternal;
 
-use crate::read_view::{EdgeShardRead, ReadViewProvider};
-use crate::requests::{
-    CountRequest, FacetRequest, QueryBatchRequest, QueryRequest, RetrieveRequest, ScrollRequest,
-    SearchRequest,
+use crate::read_view::ReadViewProvider;
+use crate::{
+    CountRequest, EdgeConfig, EdgeShard, EdgeShardRead, FacetRequest, FacetResponse,
+    OperationResult, QueryBatchRequest, QueryRequest, RetrieveRequest, ScoredPoint, ScrollRequest,
+    SearchRequest, ShardInfo,
 };
-use crate::{EdgeConfig, EdgeShard, ShardInfo};
 
 /// The read-write shard's segments are heterogeneous — `Segment` and `ProxySegment` coexist during
 /// optimization — so the handle is the [`LockedSegment`] enum (static enum dispatch), and the read

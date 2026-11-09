@@ -2,16 +2,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rayon::ThreadPool;
-use segment::common::operation_error::OperationResult;
-use segment::data_types::facets::FacetResponse;
-use segment::types::{PointIdType, ScoredPoint};
+use segment::types::PointIdType;
 use shard::retrieve::record_internal::RecordInternal;
 
-use super::{EdgeReadView, Group, ReadSegmentHandle, SearchMatrixResponse, ShardInfo};
-use crate::EdgeConfig;
-use crate::requests::{
-    CountRequest, FacetRequest, GroupRequest, QueryBatchRequest, QueryRequest, RetrieveRequest,
-    ScrollRequest, SearchMatrixRequest, SearchRequest,
+use super::EdgeReadView;
+use crate::{
+    CountRequest, EdgeConfig, FacetRequest, FacetResponse, Group, GroupRequest, OperationResult,
+    QueryBatchRequest, QueryRequest, ReadSegmentHandle, RetrieveRequest, ScoredPoint,
+    ScrollRequest, SearchMatrixRequest, SearchMatrixResponse, SearchRequest, ShardInfo,
 };
 
 pub(super) mod sealed {
