@@ -299,6 +299,7 @@ fn test_create_sparse_vector_on_immutable_segment() {
 
 #[test]
 fn test_create_vector_idempotent() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_appendable_segment_with_data(dir.path());
 

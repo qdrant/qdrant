@@ -256,9 +256,6 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, SparseVector>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let _scope = ambient::unmeasured_guard(reason(
-            "This function is only used for internal operations. No need to measure.",
-        ));
         let start_index = self.next_point_offset as PointOffsetType;
         for (other_vector, other_deleted) in other_vectors.stop_if(stopped) {
             // Do not perform preprocessing - vectors should be already processed
@@ -485,6 +482,7 @@ mod test {
 
     #[test]
     fn test_reload_counts_trailing_deleted_offset() {
+        let _scope = ambient::test_guard();
         use std::borrow::Cow;
         use std::sync::atomic::AtomicBool;
 

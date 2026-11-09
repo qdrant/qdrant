@@ -48,6 +48,7 @@ const HEALS: usize = 6;
 /// a fresh build.
 #[test]
 fn test_heal_payload_links_repeatedly() {
+    let _scope = ambient::test_guard();
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new()
         .prefix("heal_payload_links")
@@ -125,6 +126,7 @@ const NEW_INTEGER_VALUE_POINTS: usize = 350;
 /// from their old links.
 #[rstest]
 fn test_heal_new_integer_value(#[values(0, 16)] m: usize, #[values(false, true)] range: bool) {
+    let _scope = ambient::test_guard();
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new()
         .prefix("heal_new_integer_value")
