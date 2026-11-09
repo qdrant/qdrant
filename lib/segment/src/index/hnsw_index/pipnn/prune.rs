@@ -3,36 +3,38 @@
 //! Uses the HNSW heuristic (RobustPrune with alpha 1) as HNSW insertion runs it
 //! (`link_with_heuristic`): the candidates best first, then
 //! [`LinksContainer::fill_from_sorted_with_heuristic`], which drops a candidate that scores higher
-//! against a link already selected than against the point. Every score comes from
+//! against a link already selected than against the point. The pair scores come from
 //! `score_internal` of the scorer HNSW insertion uses, so quantized vectors are used where
 //! configured.
 //!
-//! - **Candidates are scored again.** The reservoir only decides which candidates a point has.
-//!   Its scores come from the matrix kernels, which round differently than `score_internal` for
-//!   f32, and for an edge the point didn't pick itself from the reverse pick, whose combining step
-//!   isn't symmetric in rounding (Euclid, Cosine, scalar quantization, TurboQuant). The heuristic
-//!   compares a candidate's score with the score of a pair, so both have to come from the same
-//!   scorer. Euclid shows the worst case: near 0 a kernel score can be above 0, which
-//!   `score_internal` never is, so that candidate would never be dropped. Scoring the candidates
-//!   again costs at most one score per candidate, against up to `level_m` per candidate inside the
-//!   heuristic, and the order then uses the same tie rule as the reservoirs: the lower id.
-//! - **Skipped candidates:** the point itself, deleted points or vectors, which HNSW search never
-//!   finds either, and NaN scores, which the heuristic could never drop. Reservoirs never hold the
-//!   point itself, and the caller passes only points that aren't deleted, so neither of the first
-//!   two should occur.
+//! - **Candidates keep their reservoir scores**, in the reservoir's order: best first, ties to the
+//!   lower id. These come from the matrix kernels, which round differently than `score_internal`
+//!   for original vectors (f32, f16, u8) and TurboQuant through f32, and for an edge the point
+//!   didn't pick itself from the reverse pick. Measured against rescoring every candidate with
+//!   `score_internal` (GIST 100K and 1M, dbpedia 100K, f32 and Turbo16, with duplicate vectors
+//!   grouped), the links of 0.03 to 0.07% of the points differ and recall@10 doesn't change.
+//!   Rescoring mattered only for exact duplicate vectors, whose ties the heuristic breaks by
+//!   exact equality: a link to a copy of the point scores against the other candidates exactly as
+//!   the point does, so rounding in the candidates' own scores drops about half of them. The build groups exact duplicates into one
+//!   point before partitioning (`duplicates.rs`), so they don't reach the prune. Distinct
+//!   vectors whose quantized codes tie still can, and lose some links the same way; rescoring
+//!   wasn't measured for them.
+//! - **Skipped candidates:** the point itself, and deleted points or vectors, which HNSW search
+//!   never finds either. Reservoirs never hold the point itself or NaN scores, and the caller
+//!   passes only points that aren't deleted, so none of these should occur.
 //!
 //! # Memory and Parallelism
 //!
-//! This phase reads the vectors of all candidates of every point and is bound by memory bandwidth,
-//! not compute. Scores are computed from the stored vectors in place: copying the candidates'
-//! vectors together first doesn't help, since loading them from DRAM dominates. Only one point's
-//! candidates are held per thread at a time, and the result holds at most `level_m` ids per point.
+//! The heuristic reads the vectors of the candidates it compares, and is bound by memory
+//! bandwidth, not compute. Scores are computed from the stored vectors in place: copying the
+//! candidates' vectors together first doesn't help, since loading them from DRAM dominates. Only
+//! one point's candidates are held per thread at a time, and the result holds at most `level_m`
+//! ids per point.
 //!
 //! Points are pruned in jobs of [`POINTS_PER_JOB`] consecutive points on the current rayon pool,
 //! one scorer per job, each writing to its own range of the result. A point's links only depend on
 //! its reservoir and on `score_internal`, so the result doesn't depend on the number of threads.
 
-use std::cmp::Ordering;
 use std::sync::atomic::AtomicBool;
 
 use common::ambient;
@@ -122,7 +124,7 @@ pub(super) fn prune(
             let mut container = LinksContainer::with_capacity(level_m);
             for (&point, links) in points.iter().zip(links) {
                 container.fill_from_sorted_with_heuristic(
-                    scored_candidates(reservoirs, point, &scorer).into_iter(),
+                    candidates(reservoirs, point, &scorer).into_iter(),
                     level_m,
                     |a, b| scorer.score_internal(a, b),
                 );
@@ -134,30 +136,16 @@ pub(super) fn prune(
     Ok(links)
 }
 
-/// The candidates of `point` that can become links, scored against it by `score_internal`, best
-/// first, ties to the lower id. Leaves out the point itself, deleted points and vectors, and NaN
-/// scores.
-fn scored_candidates(
+/// The candidates of `point` that can become links, best first by their reservoir scores, ties to
+/// the lower id. Leaves out the point itself and deleted points and vectors.
+fn candidates(
     reservoirs: &Reservoirs,
     point: PointOffsetType,
     scorer: &FilteredScorer<'_>,
 ) -> Vec<ScoredPointOffset> {
     let filters = scorer.filters();
     let mut candidates = reservoirs.candidates(point);
-    candidates.retain_mut(|candidate| {
-        if candidate.idx == point || !filters.check_vector(candidate.idx) {
-            return false;
-        }
-        candidate.score = scorer.score_internal(point, candidate.idx);
-        !candidate.score.is_nan()
-    });
-    // Without NaN a total order, in which `-0.0` ties with `0.0`, as in the reservoirs
-    candidates.sort_unstable_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Equal)
-            .then(a.idx.cmp(&b.idx))
-    });
+    candidates.retain(|candidate| candidate.idx != point && filters.check_vector(candidate.idx));
     candidates
 }
 
@@ -394,39 +382,31 @@ mod tests {
                     );
                 }
                 if level_m > 0 {
-                    let best = self
-                        .sorted(point, candidates, &self.scorer(point))
-                        .first()
-                        .copied();
+                    let best = self.sorted(candidates).first().map(|&(idx, _)| idx);
                     assert_eq!(links.first(), best.as_ref(), "{point}");
                 }
             }
         }
 
-        /// The candidates of `point` that aren't deleted, by `scorer`, best first, ties to the
+        /// The candidates that aren't deleted, with their given scores, best first, ties to the
         /// lower id.
-        fn sorted(
-            &self,
-            point: PointOffsetType,
-            candidates: &[ScoredPointOffset],
-            scorer: &FilteredScorer<'_>,
-        ) -> Vec<PointOffsetType> {
+        fn sorted(&self, candidates: &[ScoredPointOffset]) -> Vec<(PointOffsetType, f32)> {
             let mut scored: Vec<_> = candidates
                 .iter()
                 .filter(|c| !self.is_deleted(c.idx))
-                .map(|c| (scorer.score_internal(point, c.idx), c.idx))
+                .map(|c| (c.idx, c.score))
                 .collect();
             scored.sort_by(|a, b| {
-                b.0.partial_cmp(&a.0)
+                b.1.partial_cmp(&a.1)
                     .expect("no NaN in the tests")
-                    .then(a.1.cmp(&b.1))
+                    .then(a.0.cmp(&b.0))
             });
-            scored.into_iter().map(|(_, idx)| idx).collect()
+            scored
         }
 
         /// The links HNSW's heuristic picks on its own for every point, as `link_with_heuristic`
-        /// runs it: with a scorer made for the point, over the candidates sorted by it, and pair
-        /// scores from it.
+        /// runs it, over the candidates sorted by their given scores, and pair scores from a
+        /// scorer made for the point.
         fn expected<'a>(
             &'a self,
             candidates: &[Vec<ScoredPointOffset>],
@@ -437,15 +417,7 @@ mod tests {
                 .iter()
                 .zip(candidates)
                 .map(|(&point, candidates)| {
-                    let scorer = scorer(point);
-                    let sorted = self.sorted(point, candidates, &scorer);
-                    heuristic(
-                        sorted
-                            .into_iter()
-                            .map(|idx| (idx, scorer.score_internal(point, idx))),
-                        level_m,
-                        &scorer,
-                    )
+                    heuristic(self.sorted(candidates).into_iter(), level_m, &scorer(point))
                 })
                 .collect()
         }
@@ -524,9 +496,11 @@ mod tests {
 
         // Both the heuristic and the limit matter
         let full = links.iter().filter(|links| links.len() == LEVEL_M).count();
-        let dropped = (fixture.points.iter().zip(&candidates).zip(&links))
-            .filter(|&((&point, candidates), links)| {
-                let sorted = fixture.sorted(point, candidates, &fixture.scorer(point));
+        let dropped = (candidates.iter().zip(&links))
+            .filter(|&(candidates, links)| {
+                let sorted: Vec<_> = (fixture.sorted(candidates).into_iter())
+                    .map(|(idx, _)| idx)
+                    .collect();
                 !sorted.starts_with(links)
             })
             .count();
@@ -576,12 +550,10 @@ mod tests {
         assert!(changed > 0, "the originals give the same links");
     }
 
-    /// The reservoir scores only select the candidates: they are scored again by
-    /// `score_internal`. Here they are unrelated to the real ones and positive, as a kernel score
-    /// can be for Euclid near 0, so the heuristic over them would never drop a candidate and
-    /// would pick other links.
+    /// The candidates keep their reservoir scores, even where they are unrelated to the real
+    /// ones: here random and positive.
     #[rstest]
-    fn rescores_the_candidates(
+    fn keeps_the_reservoir_scores(
         #[values(Distance::Dot, Distance::Cosine, Distance::Euclid)] distance: Distance,
         #[values(None, Some(scalar()))] quantization: Option<QuantizationConfig>,
     ) {
@@ -596,21 +568,16 @@ mod tests {
         let expected = fixture.expected(&candidates, LEVEL_M, |p| fixture.scorer(p));
         assert_same_links(&fixture.points, &links, &expected);
 
-        // The heuristic over the reservoirs as they are, best first by their scores
-        let reservoirs = fixture.reservoirs(&candidates);
-        let unscored: Vec<_> = fixture
-            .points
-            .iter()
-            .map(|&point| {
-                let as_kept = reservoirs.candidates(point).into_iter();
-                heuristic(
-                    as_kept.map(|c| (c.idx, c.score)),
-                    LEVEL_M,
-                    &fixture.scorer(point),
-                )
-            })
-            .collect();
-        let changed = differing(&unscored, &expected);
+        // Rescoring with `score_internal` would pick other links
+        let mut rescored = candidates;
+        let scorer = fixture.scorer(0);
+        for (&point, candidates) in fixture.points.iter().zip(&mut rescored) {
+            for candidate in candidates {
+                candidate.score = scorer.score_internal(point, candidate.idx);
+            }
+        }
+        let rescored = fixture.expected(&rescored, LEVEL_M, |p| fixture.scorer(p));
+        let changed = differing(&rescored, &expected);
         assert!(
             changed * 2 > fixture.points.len(),
             "{changed} points changed"

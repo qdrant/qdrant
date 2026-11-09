@@ -17,21 +17,22 @@ use std::sync::atomic::AtomicBool;
 use common::ambient;
 use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
-use parking_lot::Mutex;
 use rayon::prelude::*;
 
 use super::progress::Progress;
+use super::top_k_pool::TopKPool;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::vector_storage::matrix_scorer::{MatrixCols, MatrixScorer, MatrixTopK};
 
 /// Calls `edge(p, q, score)` for every edge `p → q` of the bidirected k-NN graph of each leaf:
-/// from every point of the leaf to each of its `k` best neighbors in the leaf, by
-/// `score_internal` and excluding the point itself, and back.
+/// from every point of the leaf to each of its `k` best neighbors in the leaf, by the matrix
+/// scores and excluding the point itself, and back.
 ///
 /// - Each directed edge comes once per leaf, also if both points picked each other. Leaves that
 ///   share points send the same edge once each.
-/// - `score` is `score_internal(p, q)` if `p` picked `q`, otherwise the score of the pick
-///   `q → p`. The two differ at most by rounding.
+/// - `score` is the matrix score of `p` and `q` if `p` picked `q`, otherwise of the pick
+///   `q → p`. Matrix scores equal `score_internal` up to rounding, and the two directions differ
+///   at most by rounding too.
 /// - A leaf must not repeat a point. Ties go to the lower position in the leaf, which is the lower
 ///   id in a sorted leaf. Leaves with fewer than 2 points have no edges.
 /// - Runs in parallel over the leaves, in the current rayon pool: `edge` is called from many
@@ -56,9 +57,9 @@ pub(super) fn for_each_leaf_edge(
     }
 
     let shares = progress.split(leaves.iter().map(|leaf| (leaf.len() as u64).pow(2)));
-    // Buffers of the matrix calls, reused across leaves: with large vectors, a call keeps
-    // megabytes of packed operands in them. One per leaf in progress, so about one per thread.
-    let spare_tops = Mutex::new(Vec::new());
+    // Buffers of the matrix calls, reused across leaves: one per leaf in progress, so about one
+    // per thread
+    let tops = TopKPool::new(k);
     leaves
         .par_iter()
         .zip(shares)
@@ -73,13 +74,7 @@ pub(super) fn for_each_leaf_edge(
                 return Ok(());
             }
             let _scope = ambient::unmeasured_guard(reason("Internal operation"));
-            let mut top = spare_tops
-                .lock()
-                .pop()
-                .unwrap_or_else(|| MatrixTopK::new(k));
-            let result = leaf_edges(scorer, leaf, &mut top, &edge);
-            spare_tops.lock().push(top);
-            result?;
+            tops.with(|top| leaf_edges(scorer, leaf, top, &edge))?;
             progress.add();
             Ok(())
         })
@@ -114,6 +109,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     use common::bitvec::BitVec;
+    use parking_lot::Mutex;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom as _;
     use rand::{RngExt as _, SeedableRng as _};
@@ -137,8 +133,7 @@ mod tests {
 
     const POINTS: usize = 300;
     const DIM: usize = 100;
-    /// The default leaf k, see `PipnnParams::new`.
-    const K: usize = 4;
+    const K: usize = super::super::DEFAULT_LEAF_K;
     /// Uneven leaf sizes, including leaves without pairs.
     const SIZES: &[usize] = &[150, 0, 1, 2, 3, 5, 200, 17, 64, 2, 120, 1, 90, 33];
     /// Progress of a call, more units than it has leaves.

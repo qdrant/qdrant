@@ -61,7 +61,7 @@
 //! |---|---|---|
 //! | Reservoirs of 64 slots | 652 | Leaf k-NN and final prune |
 //! | Leaves, about 30 per point | 120 | Leaf k-NN |
-//! | Partitioning, fanout 10 | about 100 | Partitioning, before the reservoirs |
+//! | Partitioning, fanout 10 | about 65 | Partitioning, before the reservoirs |
 //! | Result, before the links | about 50 | Throughout |
 //! | Sketches | 48 | Throughout |
 //! | Links | 4 per link | From the final prune on |
@@ -81,6 +81,7 @@ mod partition;
 mod progress;
 mod prune;
 mod sketches;
+mod top_k_pool;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -123,16 +124,26 @@ pub(super) struct PipnnParams {
     pub seed: u64,
 }
 
+/// Default [`PipnnParams::leaf_k`]. The paper's default is 2, and it finds that "3 or 4 would
+/// also suffice" (appendix A.3).
+const DEFAULT_LEAF_K: usize = 4;
+
+/// Default [`PipnnParams::reservoir_factor`]: reservoirs of twice the degree limit. The paper found
+/// reservoirs of 64 to 192 slots for a degree of 64 about equally good with a final prune
+/// (appendix A.5).
+const DEFAULT_RESERVOIR_FACTOR: usize = 2;
+
 impl PipnnParams {
-    /// Leaf k 4, twice the degree limit per reservoir, the default partitioning, and `seed`.
+    /// Leaf k [`DEFAULT_LEAF_K`], reservoirs of [`DEFAULT_RESERVOIR_FACTOR`] times the degree
+    /// limit, the default partitioning, and `seed`.
     ///
     /// Not `Default`: a fixed seed would build the same graph on every build of the same points,
     /// where HNSW draws a new one. So whoever builds the parameters has to pass a seed.
     pub fn new(seed: u64) -> Self {
         Self {
             partition: PartitionParams::default(),
-            leaf_k: 4,
-            reservoir_factor: 2,
+            leaf_k: DEFAULT_LEAF_K,
+            reservoir_factor: DEFAULT_RESERVOIR_FACTOR,
             seed,
         }
     }
@@ -316,8 +327,7 @@ pub(super) fn build_links(
 ///   wherever partitioning puts it.
 /// - A point can be alone in each of its leaves, though only with odd parameters, such as leaves
 ///   of at most 2 points.
-/// - The final prune skips candidates that are deleted, which `points` shouldn't hold, and those
-///   that `score_internal` scores NaN where the matrix kernels didn't.
+/// - The final prune skips candidates that are deleted, which `points` shouldn't hold.
 ///
 /// A point with links leads into the graph, which is all a search that starts at the point
 /// needs. No link is better for a NaN vector, and the other cases are rare, so the order of ids
