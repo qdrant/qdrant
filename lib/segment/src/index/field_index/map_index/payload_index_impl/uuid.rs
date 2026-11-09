@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use blobstore::Blob;
-use common::ambient;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use indexmap::IndexSet;
 use uuid::Uuid;
@@ -267,11 +265,7 @@ fn for_each_payload_block_impl<'a, T: MapIndexRead<'a, UuidIntType>>(
     f: &mut dyn FnMut(PayloadBlockCondition) -> OperationResult<()>,
 ) -> OperationResult<()> {
     index.for_each_value(|value| {
-        let count = ambient::unmeasured(
-            reason("payload_blocks only used in HNSW building, which is unmeasured."),
-            || index.get_count_for_value(value),
-        )
-        .unwrap_or(0);
+        let count = index.get_count_for_value(value).unwrap_or(0);
         if count >= threshold {
             f(PayloadBlockCondition {
                 condition: FieldCondition::new_match(

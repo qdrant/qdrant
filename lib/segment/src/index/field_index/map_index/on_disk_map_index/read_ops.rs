@@ -193,8 +193,11 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
         Ok(Box::new(ids.into_iter()))
     }
 
-    fn for_each_value(&self, f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
-        self.storage.value_to_points.for_each_key(f)
+    fn for_each_value(&self, mut f: impl FnMut(&N) -> OperationResult<()>) -> OperationResult<()> {
+        self.storage.value_to_points.for_each_key(|k| {
+            HwMetric::PayloadIndexIoRead.bump(k.write_bytes());
+            f(k)
+        })
     }
 
     fn for_each_count_per_value(
@@ -204,6 +207,7 @@ impl<'a, N: MapIndexKey + Key + ?Sized + 'a, S: UniversalRead> MapIndexRead<'a, 
     ) -> OperationResult<()> {
         let deleted = &self.storage.deleted;
         self.storage.value_to_points.for_each_entry(|k, v| {
+            HwMetric::PayloadIndexIoRead.bump(k.write_bytes() + size_of_val(v));
             let count = v
                 .iter()
                 .filter(|&&idx| {

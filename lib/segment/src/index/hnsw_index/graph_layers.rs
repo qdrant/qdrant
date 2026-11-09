@@ -806,6 +806,7 @@ mod tests {
         #[case] format: GraphLinksFormat,
         #[case] residency: GraphLinksResidency,
     ) {
+        let _scope = ambient::test_guard();
         use common::universal_io::{CachedFs, CachedReadFs};
 
         let num_vectors = 100;

@@ -2,9 +2,7 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use blink_alloc::Blink;
-use common::ambient;
 use common::ext::VecExt;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{
     MmapFs, UioResult, UniversalRead, UniversalReadFs, UniversalWrite, UserData,
@@ -61,8 +59,6 @@ impl<W: Weight, S: UniversalWrite + 'static> InvertedIndexReadWrite<S>
             }
             postings.push(new_posting_list.build());
         }
-
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
         let total_sparse_size = postings.iter().map(|p| p.view().store_size().total).sum();
 
@@ -159,7 +155,6 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
     where
         S: UniversalRead + 'static,
     {
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let mut postings = vec![None; mmap_inverted_index.file_header.posting_count];
         mmap_inverted_index.for_each_view(|id, view| {
             postings[id as usize] = Some(view.to_owned());
@@ -190,6 +185,7 @@ impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
 
 #[cfg(test)]
 mod tests {
+    use common::ambient;
     use tempfile::Builder;
 
     use super::*;
@@ -199,6 +195,7 @@ mod tests {
 
     #[test]
     fn test_save_load_tiny() {
+        let _scope = ambient::test_guard();
         let mut builder = InvertedIndexBuilder::new();
         builder.add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap());
         builder.add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap());
@@ -213,6 +210,7 @@ mod tests {
 
     #[test]
     fn test_save_load_large() {
+        let _scope = ambient::test_guard();
         let mut rnd_gen = rand::rng();
         let mut builder = InvertedIndexBuilder::new();
         // Enough elements to put some of them into chunks

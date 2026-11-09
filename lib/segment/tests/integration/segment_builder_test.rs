@@ -305,6 +305,7 @@ fn test_building_new_sparse_segment() {
 
 #[test]
 fn test_build_not_ready_defers_version_file() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
@@ -529,6 +530,7 @@ fn phase_progress(progress: &ProgressView, phase: &str) -> Option<(u64, u64)> {
 /// before any vector index work.
 #[test]
 fn test_building_cancelled_before_start() {
+    let _scope = ambient::test_guard();
     let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
@@ -620,6 +622,7 @@ fn build_cancelled_during_phase(
 /// Cancelling in the middle of the main HNSW graph must stop the build right away.
 #[test]
 fn test_building_cancelled_during_main_graph() {
+    let _scope = ambient::test_guard();
     let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
@@ -638,6 +641,7 @@ fn test_building_cancelled_during_main_graph() {
 /// right away, instead of healing the whole graph first (#10426).
 #[test]
 fn test_building_cancelled_during_heal() {
+    let _scope = ambient::test_guard();
     let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let old_segments_dir = Builder::new().prefix("old_segments_dir").tempdir().unwrap();
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
@@ -683,6 +687,7 @@ fn test_building_cancelled_during_heal() {
 /// optimization round.
 #[test]
 fn test_segment_builder_rejects_target_with_extra_vector_name() {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 

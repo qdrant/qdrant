@@ -11,10 +11,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
 use common::bitvec::BitSlice;
 use common::generic_consts::AccessPattern;
-use common::reason::reason;
 use common::types::{PointOffsetType, ScoreType};
 use common::universal_io::{MmapFile, MmapFs, Populate, UserData};
 use quantization::turboquant::quantization::TurboQuantizer;
@@ -398,7 +396,6 @@ impl DenseTQVectorStorage for AppendableMmapTurboVectorStorage {
         other_vectors: &mut impl Iterator<Item = (Cow<'a, [u8]>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         let start_index = self.storage.vectors_count() as PointOffsetType;
         let mut key = start_index;
 

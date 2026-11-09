@@ -2,10 +2,8 @@ mod old_blocks;
 
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
 use common::bitvec::BitSliceExt as _;
 use common::progress_tracker::ProgressTracker;
-use common::reason::reason;
 use common::types::{DeferredBehavior, PointOffsetType};
 use log::debug;
 
@@ -181,8 +179,6 @@ fn condition_points(
     stopped: &AtomicBool,
 ) -> OperationResult<Vec<PointOffsetType>> {
     let filter = Filter::new_must(Field(condition));
-
-    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
 
     let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 

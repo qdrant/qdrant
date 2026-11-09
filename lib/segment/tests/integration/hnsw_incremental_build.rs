@@ -49,6 +49,7 @@ const DISTANCE: Distance = Distance::Cosine;
 
 #[test]
 fn hnsw_incremental_build() {
+    let _scope = ambient::test_guard();
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -200,6 +201,7 @@ fn hnsw_incremental_build_payload_links(
     #[values(M, 0)] m: usize,
     #[values(PayloadKind::Keyword, PayloadKind::Float)] kind: PayloadKind,
 ) {
+    let _scope = ambient::test_guard();
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new()
         .prefix("hnsw_incremental_build_payload_links")

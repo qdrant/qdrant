@@ -906,6 +906,7 @@ fn test_str_prefix_match_after_deletion(#[case] index_type: IndexType) {
 /// disjoint from each other and from the exact-value blocks.
 #[test]
 fn test_str_prefix_payload_blocks() {
+    let _scope = ambient::test_guard();
     use crate::json_path::JsonPath;
     use crate::types::Match;
 

@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 
 use blobstore::BlobstoreReader;
-use common::ambient;
 use common::ambient::hw::HwMetric;
 use common::bitvec::BitSlice;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use common::universal_io::{CachedReadFs, OkNotFound, Populate, UniversalRead, UniversalReadFs};
 
@@ -60,7 +58,6 @@ impl<S: UniversalRead> ReadOnlyAppendableGeoIndex<S> {
         };
 
         let mut in_memory_index = InMemoryGeoIndex::new();
-        let _scope = ambient::unmeasured_guard(reason("Internal operation"));
         storage
             .iter::<_, OperationError>(
                 storage.max_point_offset()?.min(max_point_offset),

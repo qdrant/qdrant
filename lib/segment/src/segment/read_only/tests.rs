@@ -324,6 +324,7 @@ fn read_only_segment_graph_inline_matches_mutable() {
 #[case::mmap(false)]
 #[case::graph_inline(true)]
 fn read_only_segment_with_load_profile_matches_mutable(#[case] inline_storage: bool) {
+    let _scope = ambient::test_guard();
     let segments_dir = Builder::new().prefix("ro_segments_lp").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("ro_builder_lp").tempdir().unwrap();
 
@@ -781,6 +782,7 @@ fn vanished_segment_classifies_not_found() {
 /// first use runs the deferred graph load) surfaces the missing files.
 #[test]
 fn deferred_index_reads_nothing_at_open() {
+    let _scope = ambient::test_guard();
     use crate::data_types::load_profile::LoadProfile;
     use crate::segment_constructor::get_vector_index_path;
 

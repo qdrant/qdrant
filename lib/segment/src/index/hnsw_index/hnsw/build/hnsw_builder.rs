@@ -1,9 +1,8 @@
 use std::ops::Deref as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use common::ambient;
+use common::ambient::ThreadPoolExt;
 use common::progress_tracker::ProgressTracker;
-use common::reason::reason;
 use common::types::PointOffsetType;
 use log::debug;
 use rayon::prelude::*;
@@ -55,9 +54,6 @@ impl HnswBuilder<'_> {
 
         let insert_point = |&vector_id: &PointOffsetType| {
             check_process_stopped(stopped)?;
-            let _scope = ambient::unmeasured_guard(reason(
-                "No need to accumulate hardware, since this is an internal operation",
-            ));
 
             let points_scorer = FilteredScorer::new_internal(
                 vector_id,
@@ -78,10 +74,13 @@ impl HnswBuilder<'_> {
             points.split_at(points.len().min(SINGLE_THREADED_HNSW_BUILD_THRESHOLD));
         first_few.iter().try_for_each(insert_point)?;
         if !rest.is_empty() {
-            pool.install(|| {
+            pool.ambient_install(|handoff| {
                 rest.par_iter()
                     .with_max_len(HNSW_BUILD_MAX_PAR_LEN)
-                    .try_for_each(insert_point)
+                    .try_for_each(|vector_id| {
+                        let _scope = handoff.enter_guard();
+                        insert_point(vector_id)
+                    })
             })?;
         }
 

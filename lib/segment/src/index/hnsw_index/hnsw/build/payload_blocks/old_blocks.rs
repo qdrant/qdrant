@@ -1,6 +1,3 @@
-use common::ambient;
-use common::reason::reason;
-
 use crate::common::operation_error::OperationResult;
 use crate::index::PayloadIndexRead;
 use crate::index::field_index::PayloadBlockCondition;
@@ -56,7 +53,6 @@ pub(super) fn old_range_blocks(
         return Ok(None);
     }
 
-    let _scope = ambient::unmeasured_guard(reason("Internal operation"));
     for block in &mut blocks {
         let filter = Filter::new_must(Field(block.condition.clone()));
         let cardinality = payload_index
