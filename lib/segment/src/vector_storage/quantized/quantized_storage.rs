@@ -278,7 +278,7 @@ impl<S: UniversalRead> quantization::EncodedStorage for QuantizedStorage<S> {
     }
 
     fn vectors_count(&self) -> usize {
-        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size.get()
+        self.storage.len::<u8>().unwrap_or(0) as usize / self.quantized_vector_size
     }
 
     fn heap_size_bytes(&self) -> usize {

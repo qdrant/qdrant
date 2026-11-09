@@ -349,7 +349,7 @@ impl EncodedStorage for TestEncodedStorage {
     }
 
     fn vectors_count(&self) -> usize {
-        self.data.len() / self.quantized_vector_size.get()
+        self.data.len() / self.quantized_vector_size
     }
 
     fn heap_size_bytes(&self) -> usize {
