@@ -76,7 +76,7 @@ pub trait GeoIndexRead {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>>;
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_>;
 
     /// Materialise (geohash, points_count) pairs filtered by `filter`. The
     /// Storage variant pushes the filter down to its IO layer; the in-memory
@@ -247,8 +247,8 @@ pub(super) fn filter<'a, G: GeoIndexRead + ?Sized>(
 /// a scan of the hash-sorted point map, not a lookup per point.
 pub(crate) fn cell_points<'a, G: GeoIndexRead + ?Sized>(
     geo: &'a G,
-    condition: &FieldCondition,
-) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+    condition: &'a FieldCondition,
+) -> OperationResult<Option<impl Iterator<Item = PointOffsetType> + 'a>> {
     let FieldCondition {
         key: _,
         r#match: _,

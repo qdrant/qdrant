@@ -58,8 +58,8 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
     /// Only the geo index has one: the points of the geohash cells covering the area.
     fn filter_candidates<'a>(
         &'a self,
-        condition: &FieldCondition,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>>;
+        condition: &'a FieldCondition,
+    ) -> OperationResult<Option<impl Iterator<Item = PointOffsetType> + 'a>>;
 
     /// Number of values for `point_id`.
     fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize>;

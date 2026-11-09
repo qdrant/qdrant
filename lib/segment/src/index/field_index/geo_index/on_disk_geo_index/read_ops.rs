@@ -60,9 +60,9 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
         let points = self.all_points(values)?;
-        Ok(Box::new(points.into_iter()))
+        Ok(points.into_iter())
     }
 
     fn points_per_hash_filtered(

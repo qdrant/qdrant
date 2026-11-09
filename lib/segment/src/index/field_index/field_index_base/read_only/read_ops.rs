@@ -178,8 +178,8 @@ impl<S: UniversalReadExt> PayloadFieldIndexRead for ReadOnlyFieldIndex<S> {
 impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
     fn filter_candidates<'a>(
         &'a self,
-        condition: &FieldCondition,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        condition: &'a FieldCondition,
+    ) -> OperationResult<Option<impl Iterator<Item = PointOffsetType> + 'a>> {
         match self {
             ReadOnlyFieldIndex::GeoIndex(index) => geo_read_ops::cell_points(index, condition),
             ReadOnlyFieldIndex::IntIndex(_)

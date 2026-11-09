@@ -60,7 +60,7 @@ impl GeoIndexRead for MutableGeoIndex {
     fn iterator(
         &self,
         values: Vec<GeoHash>,
-    ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+    ) -> OperationResult<impl Iterator<Item = PointOffsetType> + '_> {
         self.in_memory_index.iterator(values)
     }
 

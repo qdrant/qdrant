@@ -536,11 +536,11 @@ impl PayloadFieldIndex for NestedFieldIndex {
 impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex<I, M> {
     fn filter_candidates<'a>(
         &'a self,
-        _condition: &FieldCondition,
-    ) -> OperationResult<Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>> {
+        _condition: &'a FieldCondition,
+    ) -> OperationResult<Option<impl Iterator<Item = PointOffsetType> + 'a>> {
         // The inner index yields element ids; nested conditions go through
         // their own checker instead.
-        Ok(None)
+        Ok(None::<std::iter::Empty<PointOffsetType>>)
     }
 
     fn is_cold(&self) -> bool {
