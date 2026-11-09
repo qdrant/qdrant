@@ -783,6 +783,17 @@ impl ReadSegmentEntry for ProxySegment {
         }
     }
 
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        // Per-name sizes are adjusted for stale vectors and pending deletes, so take
+        // the max over `available_vectors_size_in_bytes` rather than the wrapped's max.
+        let mut max_size = 0;
+        for vector_name in self.vector_names() {
+            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
+            max_size = cmp::max(max_size, inner_size);
+        }
+        Ok(max_size)
+    }
+
     fn estimate_point_count<'a>(
         &'a self,
         filter: Option<&'a Filter>,

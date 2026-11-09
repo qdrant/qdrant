@@ -256,14 +256,7 @@ pub trait ReadSegmentEntry {
     fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
 
     /// Max value from all `available_vectors_size_in_bytes`
-    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
-        let mut max_size = 0;
-        for vector_name in self.vector_names() {
-            let inner_size = self.available_vectors_size_in_bytes(&vector_name)?;
-            max_size = std::cmp::max(max_size, inner_size);
-        }
-        Ok(max_size)
-    }
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize>;
 
     /// Get segment uuid
     fn segment_uuid(&self) -> Uuid;

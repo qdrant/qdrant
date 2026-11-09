@@ -292,6 +292,10 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
         self.with_view(|view| view.available_vectors_size_in_bytes(vector_name))
     }
 
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        Ok(self.with_view(|view| view.max_available_vectors_size_in_bytes()))
+    }
+
     fn segment_uuid(&self) -> Uuid {
         self.uuid
     }
