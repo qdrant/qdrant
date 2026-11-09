@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::ambient;
 use common::flags::{FeatureFlags, init_feature_flags};
 use common::universal_io::{MmapFile, MmapFs};
 use segment::common::operation_error::OperationResult;
@@ -720,6 +721,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
 /// current state, and later reloads continue from the reopened segment.
 #[test]
 fn failed_reload_reopens_segment() {
+    let _scope = ambient::test_guard();
     let dir = tempfile::Builder::new()
         .prefix("edge-ro-reopen")
         .tempdir()

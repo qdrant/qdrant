@@ -301,6 +301,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::SystemTime;
 
+    use common::ambient;
     use common::universal_io::{
         CachedFs, DiskCache, DiskCacheConfig, DiskCacheFs, DiskCacheFsContext, FileInfo, MmapFile,
         MmapFs, UniversalReadFs,
@@ -413,6 +414,7 @@ mod tests {
     /// grown length, though it gets no fresh flags handle.
     #[test]
     fn live_reload_rescans_unchanged_flags_when_len_grows() {
+        let _scope = ambient::test_guard();
         let tmp = Builder::new().prefix("roaring_reload").tempdir().unwrap();
         let dir = tmp.path().join("flags");
         fs_err::create_dir_all(&dir).unwrap();

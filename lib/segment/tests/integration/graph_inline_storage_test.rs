@@ -229,6 +229,7 @@ fn test_graph_inline_storage_contract(
     #[case] datatype: Option<VectorStorageDatatype>,
     #[case] storage_type: VectorStorageType,
 ) {
+    let _scope = ambient::test_guard();
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let source_dir = Builder::new().prefix("source_dir").tempdir().unwrap();
     let vectors = random_vectors(NUM_VECTORS, datatype);
