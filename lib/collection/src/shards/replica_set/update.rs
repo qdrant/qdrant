@@ -130,7 +130,7 @@ impl ShardReplicaSet {
                 drop(local);
                 await_update_result(outcome, effective_timeout).await?
             }
-            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
+            Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
                 shard
                     .get()
                     .update(operation, effective_wait, effective_timeout)
@@ -436,7 +436,6 @@ impl ShardReplicaSet {
                 }
                 None
                 | Some(Shard::Local(_))
-                | Some(Shard::Proxy(_))
                 | Some(Shard::ForwardProxy(_))
                 | Some(Shard::QueueProxy(_))
                 | Some(Shard::Dummy(_)) => {

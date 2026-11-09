@@ -461,7 +461,6 @@ impl ShardReplicaSet {
         match *local_read {
             None => false,
             Some(Shard::Local(_)) => false,
-            Some(Shard::Proxy(_)) => true,
             Some(Shard::ForwardProxy(_)) => true,
             Some(Shard::QueueProxy(_)) => true,
             Some(Shard::Dummy(_)) => false,
@@ -1400,9 +1399,7 @@ impl ShardReplicaSet {
                     .map(|i| i.1.clone())
                     .collect::<Vec<_>>(),
             ),
-            Shard::Proxy(_) | Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => {
-                None
-            }
+            Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_) => None,
         }) else {
             return Ok(None);
         };
@@ -1493,7 +1490,6 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
         match local.as_ref() {
             Some(Shard::Local(local_shard)) => local_shard.memory_report().await,
-            Some(Shard::Proxy(proxy_shard)) => proxy_shard.memory_report().await,
             Some(Shard::ForwardProxy(forward_shard)) => forward_shard.memory_report().await,
             Some(Shard::QueueProxy(queue_shard)) => queue_shard.memory_report().await,
             Some(Shard::Dummy(_)) | None => {
