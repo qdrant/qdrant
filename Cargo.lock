@@ -1445,6 +1445,7 @@ dependencies = [
  "procfs",
  "quick_cache",
  "rand 0.10.3",
+ "rayon",
  "roaring",
  "rstest",
  "schemars",
