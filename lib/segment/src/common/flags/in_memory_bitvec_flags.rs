@@ -177,7 +177,7 @@ impl InMemoryBitvecFlags {
                 flags_path.display(),
             )));
         }
-        let bitvec = flags.read_bit_range(0..len as u64)?.into_owned();
+        let bitvec = flags.read_bits_up_to(len as u64)?.into_owned();
         let count = bitvec.count_ones();
 
         Ok(Self {
