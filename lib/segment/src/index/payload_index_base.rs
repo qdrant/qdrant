@@ -16,7 +16,6 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
-use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
@@ -73,15 +72,16 @@ pub trait PayloadIndexRead {
 
     fn filter_context<'a>(&'a self, filter: &'a Filter) -> OperationResult<OptimizedFilter<'a>>;
 
-    /// [`Self::filter_context`] for a consumer that checks points as `expected_checks`
-    /// says, so conditions can be read into point sets up front when that is cheaper than
-    /// per-point checks. Indexes that can't use the hint return the plain filter context.
-    fn filter_context_for_checks<'a>(
+    /// [`Self::filter_context`] for a consumer that checks points one at a time, waiting
+    /// for each check (graph walk, cardinality sampling), so conditions on cold indexes
+    /// can be read into point sets up front (see [`ExpectedChecks::Serial`]). Indexes that
+    /// can't materialize conditions return the plain filter context.
+    ///
+    /// [`ExpectedChecks::Serial`]: crate::index::query_optimization::expected_checks::ExpectedChecks::Serial
+    fn filter_context_for_serial_checks<'a>(
         &'a self,
         filter: &'a Filter,
-        expected_checks: ExpectedChecks,
     ) -> OperationResult<OptimizedFilter<'a>> {
-        let _ = expected_checks;
         self.filter_context(filter)
     }
 

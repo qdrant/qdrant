@@ -321,16 +321,15 @@ where
         self.optimized_filter(filter, DeferredBehavior::VisibleOnly, None)
     }
 
-    fn filter_context_for_checks<'b>(
+    fn filter_context_for_serial_checks<'b>(
         &'b self,
         filter: &'b Filter,
-        expected_checks: ExpectedChecks,
     ) -> OperationResult<OptimizedFilter<'b>> {
         self.optimized_filter(
             filter,
             DeferredBehavior::VisibleOnly,
             Some(MaterializationHint {
-                expected_checks,
+                expected_checks: ExpectedChecks::Serial,
                 primary: None,
             }),
         )

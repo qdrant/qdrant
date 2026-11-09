@@ -12,7 +12,6 @@ use crate::index::PayloadIndexRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::query_estimator::adjust_to_available_vectors;
-use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::types::{ACORN_MAX_SELECTIVITY_DEFAULT, Filter, QuantizationSearchParams, SearchParams};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectorsRead;
@@ -164,7 +163,7 @@ where
                     // read up front: a few sequential reads instead of a random read per sample.
                     let filter_context = self
                         .payload_index
-                        .filter_context_for_checks(query_filter, ExpectedChecks::Serial)?;
+                        .filter_context_for_serial_checks(query_filter)?;
                     sample_check_cardinality(
                         self.id_tracker
                             .sample_ids(Some(self.vector_storage.deleted_vector_bitslice())),

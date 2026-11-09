@@ -16,7 +16,6 @@ use crate::index::hnsw_index::GraphWithVectorsScorers;
 use crate::index::hnsw_index::graph::{FilteredPoints, GraphSearchArgs, SearchScorers};
 use crate::index::hnsw_index::graph_layers::SearchAlgorithm;
 use crate::index::hnsw_index::point_scorer::{BatchFilteredSearcher, FilteredScorer};
-use crate::index::query_optimization::expected_checks::ExpectedChecks;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
 use crate::index::vector_index_search_common::{
     get_oversampled_top, is_quantized_search, postprocess_search_result,
@@ -316,8 +315,7 @@ where
         &'f self,
         filter: &'f Filter,
     ) -> OperationResult<OptimizedFilter<'f>> {
-        self.payload_index
-            .filter_context_for_checks(filter, ExpectedChecks::Serial)
+        self.payload_index.filter_context_for_serial_checks(filter)
     }
 
     /// The first `n` points matching `filter`, in payload index order.
