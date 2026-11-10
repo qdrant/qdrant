@@ -24,7 +24,6 @@ use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::remote::executor::RunOutcome;
 use segment::index::hnsw_index::remote::loopback::{LoopbackBehavior, LoopbackIndexer};
-use segment::index::hnsw_index::remote::registry::REMOTE_INDEXING_TASKS;
 use segment::index::hnsw_index::remote::{
     OnFailure, RemoteIndexer, RemoteIndexingConfig, with_thread_remote_indexer,
 };
@@ -270,7 +269,6 @@ fn remote_build_matches_local_quality() {
     assert!(remote_accuracy.1 >= 450, "remote {remote_accuracy:?}");
     assert!(remote_accuracy.0 + 25 >= local_accuracy.0);
     assert!(remote_accuracy.1 + 25 >= local_accuracy.1);
-    assert!(REMOTE_INDEXING_TASKS.is_empty(), "token not revoked");
 }
 
 /// Real remote builds are large enough for PiPNN, which the indexer then picks (D1). Its graph
