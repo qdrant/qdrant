@@ -38,6 +38,33 @@ impl EntryPoints {
             extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
         }
     }
+    /// Entry points as uploaded by a remote indexer: `entry_points` best first, and up to
+    /// `extra_entry_points_num` fallbacks.
+    pub fn from_parts(
+        entry_points: Vec<EntryPoint>,
+        extra_entry_points: Vec<EntryPoint>,
+        extra_entry_points_num: usize,
+    ) -> Self {
+        let mut extra = FixedLengthPriorityQueue::new(extra_entry_points_num);
+        for entry in extra_entry_points {
+            extra.push(entry);
+        }
+        EntryPoints {
+            entry_points,
+            extra_entry_points: extra,
+        }
+    }
+
+    /// The main entry points, best first.
+    pub fn main_points(&self) -> &[EntryPoint] {
+        &self.entry_points
+    }
+
+    /// The fallback entry points, in no particular order.
+    pub fn extra_points(&self) -> Vec<EntryPoint> {
+        self.extra_entry_points.iter_unsorted().copied().collect()
+    }
+
     /// Move every entry point out, leaving this list empty with the same capacity.
     pub fn take(&mut self) -> EntryPoints {
         let taken = EntryPoints {
