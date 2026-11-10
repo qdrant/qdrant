@@ -14,7 +14,11 @@ service IndexingTask {
   // Task parameters and payload block plan.
   rpc GetTask(GetIndexingTaskRequest) returns (IndexingTaskDescription) {}
   // Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
+  // For tasks with vector source STORAGE.
   rpc ReadVectors(ReadIndexingVectorsRequest) returns (stream IndexingVectorsChunk) {}
+  // Content of one of the task's files, in chunks of about 1 MB. For vector source
+  // QUANTIZED: the quantized vectors, loaded by the indexer as they are.
+  rpc ReadFile(ReadIndexingFileRequest) returns (stream IndexingFileChunk) {}
   // The points not to link.
   rpc ReadDeleted(ReadIndexingDeletedRequest) returns (IndexingDeletedMask) {}
   // Renew the lease and report progress. The reply tells whether to go on.
@@ -29,6 +33,23 @@ enum IndexingVectorDatatype {
   IndexingFloat32 = 0;
   IndexingFloat16 = 1;
   IndexingUint8 = 2;
+  IndexingTurbo4 = 3;
+  IndexingTurbo8 = 4;
+  IndexingTurbo16 = 5;
+}
+
+// What the indexer reads to build the graph.
+enum IndexingVectorSource {
+  // `ReadVectors`: the storage's vectors, storage-native (TurboQuant storages: encoded).
+  IndexingSourceStorage = 0;
+  // `ReadFile` for each of `files`: the quantized vectors; no original vectors.
+  IndexingSourceQuantized = 1;
+}
+
+message IndexingFile {
+  // Path relative to the quantized vectors directory.
+  string name = 1;
+  uint64 size = 2;
 }
 
 enum IndexingDistance {
@@ -69,6 +90,8 @@ message IndexingTaskDescription {
   repeated uint32 graph_format_versions = 16;
   // Payload blocks chosen by core, per field, in build order.
   repeated IndexingFieldBlocks block_plan = 17;
+  IndexingVectorSource vector_source = 18;
+  repeated IndexingFile files = 19;
 }
 
 message IndexingFieldBlocks {
@@ -95,6 +118,15 @@ message IndexingVectorsChunk {
   uint32 start = 1;
   // One entry per offset from `start`. Empty: the point has no vector, or is deleted.
   repeated bytes vectors = 2;
+}
+
+message ReadIndexingFileRequest {
+  string name = 1;
+}
+
+message IndexingFileChunk {
+  uint64 offset = 1;
+  bytes data = 2;
 }
 
 message ReadIndexingDeletedRequest {}

@@ -4,8 +4,11 @@
 //! Remote indexing through the in-process loopback indexer: quality, failures, retries,
 //! lease expiry, cancellation, and the CPU permit.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use atomic_refcell::AtomicRefCell;
 use std::time::Duration;
 
 use common::ambient;
@@ -31,10 +34,16 @@ use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    Range, SearchParams, SeqNumberType,
+    BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Condition, Distance,
+    FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, PayloadSchemaType,
+    ProductQuantization, ProductQuantizationConfig, QuantizationConfig, Range,
+    ScalarQuantization, ScalarQuantizationConfig, ScalarType, SearchParams, SegmentConfig,
+    SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+};
+use segment::vector_storage::quantized::quantized_vectors::{
+    QuantizedVectors, QuantizedVectorsStorageType,
 };
 use tempfile::{Builder, TempDir};
 
@@ -54,8 +63,34 @@ fn config(on_failure: OnFailure, heartbeat_timeout: Duration) -> RemoteIndexingC
 
 /// A segment with random vectors, an indexed integer payload, and every 10th point deleted.
 fn segment(rng: &mut StdRng) -> (TempDir, Segment) {
+    segment_with(rng, None, None)
+}
+
+/// Like [`segment`], with vectors of `datatype`, and `quantization` built.
+fn segment_with(
+    rng: &mut StdRng,
+    datatype: Option<VectorStorageDatatype>,
+    quantization: Option<QuantizationConfig>,
+) -> (TempDir, Segment) {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let mut segment = build_simple_segment(dir.path(), DIM, Distance::Cosine).unwrap();
+    let config = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: DIM,
+                distance: Distance::Cosine,
+                storage_type: VectorStorageType::InRamChunkedMmap,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivector_config: None,
+                datatype,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+        id_tracker_memory: None,
+    };
+    let (mut segment, _token) = build_segment(dir.path(), &config, None, true).unwrap();
     for n in 0..NUM_VECTORS {
         let vector = random_vector(rng, DIM);
         let payload = payload_json! {INT_KEY: random_int_payload(rng, 1..=1)};
@@ -76,6 +111,19 @@ fn segment(rng: &mut StdRng) -> (TempDir, Segment) {
         .borrow_mut()
         .set_indexed(&JsonPath::new(INT_KEY), PayloadSchemaType::Integer)
         .unwrap();
+    if let Some(quantization) = quantization {
+        let data = segment.vector_data.get_mut(DEFAULT_VECTOR_NAME).unwrap();
+        let quantized = QuantizedVectors::create(
+            &data.vector_storage.borrow(),
+            &quantization,
+            QuantizedVectorsStorageType::Immutable,
+            &dir.path().join("quantized"),
+            2,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        data.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized)));
+    }
     (dir, segment)
 }
 
@@ -132,8 +180,9 @@ fn build_with(
     })
 }
 
-/// Hits out of 100 against exact search: unfiltered, and with a narrow range filter, which
-/// needs the payload block links.
+/// Ids shared with exact search, out of 500 (100 queries, top 5): unfiltered, and with a
+/// narrow range filter, which needs the payload block links. Ids, not scores: quantized
+/// indexes score differently.
 fn accuracy(segment: &Segment, index: &HNSWIndex, rng: &mut StdRng) -> (usize, usize) {
     let plain = segment.vector_data[DEFAULT_VECTOR_NAME].vector_index.borrow();
     let params = SearchParams {
@@ -150,7 +199,7 @@ fn accuracy(segment: &Segment, index: &HNSWIndex, rng: &mut StdRng) -> (usize, u
         let found = index
             .search(&[&query], None, 5, Some(&params), &Default::default())
             .unwrap();
-        hits += usize::from(exact == found);
+        hits += overlap(&exact[0], &found[0]);
 
         let left = rng.random_range(0..90);
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
@@ -168,9 +217,19 @@ fn accuracy(segment: &Segment, index: &HNSWIndex, rng: &mut StdRng) -> (usize, u
         let found = index
             .search(&[&query], Some(&filter), 5, Some(&params), &Default::default())
             .unwrap();
-        filtered_hits += usize::from(exact == found);
+        filtered_hits += overlap(&exact[0], &found[0]);
     }
     (hits, filtered_hits)
+}
+
+fn overlap(
+    exact: &[common::types::ScoredPointOffset],
+    found: &[common::types::ScoredPointOffset],
+) -> usize {
+    exact
+        .iter()
+        .filter(|e| found.iter().any(|f| f.idx == e.idx))
+        .count()
 }
 
 #[test]
@@ -202,10 +261,10 @@ fn remote_build_matches_local_quality() {
     let remote_accuracy = accuracy(&segment, &remote, &mut StdRng::seed_from_u64(1));
     eprintln!("local {local_accuracy:?}, remote {remote_accuracy:?}");
 
-    assert!(remote_accuracy.0 >= 90, "remote {remote_accuracy:?}");
-    assert!(remote_accuracy.1 >= 90, "remote {remote_accuracy:?}");
-    assert!(remote_accuracy.0 + 5 >= local_accuracy.0);
-    assert!(remote_accuracy.1 + 5 >= local_accuracy.1);
+    assert!(remote_accuracy.0 >= 450, "remote {remote_accuracy:?}");
+    assert!(remote_accuracy.1 >= 450, "remote {remote_accuracy:?}");
+    assert!(remote_accuracy.0 + 25 >= local_accuracy.0);
+    assert!(remote_accuracy.1 + 25 >= local_accuracy.1);
     assert!(REMOTE_INDEXING_TASKS.is_empty(), "token not revoked");
 }
 
@@ -226,7 +285,7 @@ fn check_recovers(
     ));
     let (_hnsw_dir, index) = build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
     let (hits, filtered_hits) = accuracy(&segment, &index, &mut rng);
-    assert!(hits >= 90 && filtered_hits >= 90, "{hits} {filtered_hits}");
+    assert!(hits >= 450 && filtered_hits >= 450, "{hits} {filtered_hits}");
     indexer
 }
 
@@ -402,4 +461,108 @@ fn cpu_permit_is_lent_while_waiting() {
     assert!(result.is_err());
     drop(permit);
     assert!(budget.has_budget_exact(4, 0), "budget accounting broken");
+}
+
+/// Local and remote build of the same segment: the remote one must be as good, and must
+/// have read `expected_bytes` (within 10%).
+fn check_remote_matches_local(
+    datatype: Option<VectorStorageDatatype>,
+    quantization: Option<QuantizationConfig>,
+    expected_bytes: usize,
+) {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(21);
+    let (_dir, segment) = segment_with(&mut rng, datatype, quantization);
+    let stopped = AtomicBool::new(false);
+
+    let (_local_dir, local) =
+        build(&segment, Arc::new(ResourcePermit::dummy(2)), &stopped, &mut rng).unwrap();
+    let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
+
+    let indexer = Arc::new(LoopbackIndexer::new(
+        config(OnFailure::Local, Duration::from_secs(10)),
+        vec![LoopbackBehavior::Build],
+    ));
+    let (_remote_dir, remote) = build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
+    assert_eq!(
+        indexer.wait_outcomes(1, Duration::from_secs(5)),
+        vec![RunOutcome::Uploaded]
+    );
+    let read = indexer.reports.lock()[0].vector_bytes_read as usize;
+    let remote_accuracy = accuracy(&segment, &remote, &mut StdRng::seed_from_u64(1));
+    eprintln!(
+        "{datatype:?}: read {read} bytes (expected ~{expected_bytes}), \
+         local {local_accuracy:?}, remote {remote_accuracy:?}"
+    );
+    assert!(
+        read.abs_diff(expected_bytes) * 10 <= expected_bytes,
+        "read {read} bytes, expected ~{expected_bytes}"
+    );
+    assert!(remote_accuracy.0 + 25 >= local_accuracy.0);
+    assert!(remote_accuracy.1 + 25 >= local_accuracy.1);
+}
+
+/// Points not deleted by `segment_with`
+const LIVE_POINTS: usize = (NUM_VECTORS - NUM_VECTORS / 10) as usize;
+
+#[test]
+fn scalar_quantization_sends_quantized_vectors_only() {
+    // One byte per dimension instead of four, plus a 4-byte correction per vector, for all
+    // offsets: quantized files are sent whole
+    check_remote_matches_local(
+        None,
+        Some(QuantizationConfig::Scalar(ScalarQuantization {
+            scalar: ScalarQuantizationConfig {
+                r#type: ScalarType::Int8,
+                quantile: None,
+                always_ram: Some(true),
+                memory: None,
+            },
+        })),
+        NUM_VECTORS as usize * (DIM + 4),
+    );
+}
+
+#[test]
+fn binary_quantization_sends_quantized_vectors_only() {
+    // One bit per dimension, padded to 128 bits: 16 bytes for these 16 dimensions
+    check_remote_matches_local(
+        None,
+        Some(QuantizationConfig::Binary(BinaryQuantization {
+            binary: BinaryQuantizationConfig {
+                always_ram: Some(true),
+                memory: None,
+                encoding: None,
+                query_encoding: None,
+            },
+        })),
+        NUM_VECTORS as usize * 16,
+    );
+}
+
+#[test]
+fn product_quantization_sends_storage_vectors() {
+    // PQ encodes queries from the original vectors, so those are sent
+    check_remote_matches_local(
+        None,
+        Some(QuantizationConfig::Product(ProductQuantization {
+            product: ProductQuantizationConfig {
+                compression: CompressionRatio::X4,
+                always_ram: Some(true),
+                memory: None,
+            },
+        })),
+        LIVE_POINTS * DIM * 4,
+    );
+}
+
+#[test]
+fn turbo_storage_is_built_remotely() {
+    // Storage-native bytes of a TurboQuant storage are already encoded: 8 bits per
+    // dimension, plus a 4-byte header per vector
+    check_remote_matches_local(
+        Some(VectorStorageDatatype::Turbo8),
+        None,
+        LIVE_POINTS * (DIM + 4),
+    );
 }

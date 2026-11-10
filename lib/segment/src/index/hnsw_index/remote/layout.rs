@@ -2,14 +2,18 @@
 
 use std::path::Path;
 
+use common::bitvec::BitVec;
+
 use crate::common::operation_error::OperationResult;
 use crate::segment_constructor::open_vector_storage_for_remote_build;
 use crate::types::{
     Distance, Indexes, MultiVectorConfig, VectorDataConfig, VectorStorageDatatype,
     VectorStorageType,
 };
+use crate::vector_storage::dense::empty_dense_vector_storage::EmptyDenseVectorStorage;
 use crate::vector_storage::{
-    DenseVectorStorageRead, MultiVectorStorageRead, VectorStorageEnum, VectorStorageRead,
+    DenseTQVectorStorageRead, DenseVectorStorageRead, MultiTQVectorStorageRead,
+    MultiVectorStorageRead, VectorStorageEnum, VectorStorageRead,
 };
 
 /// Shape of the vectors of a storage that can be built remotely: the indexer recreates a
@@ -23,8 +27,10 @@ pub struct RemoteVectorLayout {
 }
 
 impl RemoteVectorLayout {
-    /// `None` for storages that are not built remotely: sparse, empty, and TurboQuant
-    /// storages, whose bytes are encoded with per-storage parameters.
+    /// `None` for storages that are not built remotely: sparse and empty ones.
+    ///
+    /// TurboQuant storages are built remotely: their quantizer derives from dim, distance
+    /// and bits only, so the indexer recreates one that takes the encoded bytes verbatim.
     pub fn of(storage: &VectorStorageEnum) -> Option<Self> {
         let distance = storage.distance();
         let datatype = storage.datatype();
@@ -85,16 +91,18 @@ impl RemoteVectorLayout {
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
                 multi(v.vector_dim(), v.multi_vector_config())
             }
-            VectorStorageEnum::DenseTurboMemmap(_)
-            | VectorStorageEnum::DenseTurboGraphInline(_)
-            | VectorStorageEnum::DenseTurboAppendableMemmap(_)
-            | VectorStorageEnum::MultiDenseTurbo(_)
-            | VectorStorageEnum::SparseVolatile(_)
+            VectorStorageEnum::DenseTurboMemmap(v) => dense(v.vector_dim()),
+            VectorStorageEnum::DenseTurboGraphInline(v) => dense(v.vector_dim()),
+            VectorStorageEnum::DenseTurboAppendableMemmap(v) => dense(v.vector_dim()),
+            #[cfg(target_os = "linux")]
+            VectorStorageEnum::DenseTurboUring(v) => dense(v.vector_dim()),
+            VectorStorageEnum::MultiDenseTurbo(v) => {
+                multi(v.vector_dim(), MultiTQVectorStorageRead::multi_vector_config(v.as_ref()))
+            }
+            VectorStorageEnum::SparseVolatile(_)
             | VectorStorageEnum::SparseMmap(_)
             | VectorStorageEnum::EmptyDense(_)
             | VectorStorageEnum::EmptySparse(_) => None,
-            #[cfg(target_os = "linux")]
-            VectorStorageEnum::DenseTurboUring(_) => None,
         }
     }
 
@@ -117,5 +125,24 @@ impl RemoteVectorLayout {
             datatype: Some(datatype),
         };
         open_vector_storage_for_remote_build(&config, dir)
+    }
+
+    /// A storage without vectors, for builds that score from quantized vectors only: it
+    /// carries the point count, the deleted flags and the vector parameters.
+    pub fn placeholder_storage(&self, deleted: &bitvec::slice::BitSlice) -> VectorStorageEnum {
+        let Self {
+            dim,
+            datatype,
+            distance,
+            multivector_config,
+        } = *self;
+        VectorStorageEnum::EmptyDense(EmptyDenseVectorStorage::with_deleted(
+            dim,
+            distance,
+            datatype,
+            false,
+            multivector_config,
+            deleted.iter().by_vals().collect::<BitVec>(),
+        ))
     }
 }
