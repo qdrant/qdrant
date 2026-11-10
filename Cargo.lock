@@ -5201,6 +5201,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pairwise"
+version = "0.0.0"
+dependencies = [
+ "common",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6282,6 +6289,7 @@ dependencies = [
  "num-traits",
  "num_threads",
  "ordered-float 5.5.1",
+ "pairwise",
  "parking_lot 0.13.0",
  "quantization",
  "rand 0.10.3",
@@ -7243,6 +7251,7 @@ dependencies = [
  "object_store",
  "once_cell",
  "ordered-float 5.5.1",
+ "pairwise",
  "parking_lot 0.13.0",
  "posting_list",
  "pprof",
