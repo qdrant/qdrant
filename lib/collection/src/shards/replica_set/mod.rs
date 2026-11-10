@@ -653,6 +653,28 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Replace the local shard with a dummy and create the shard initializing flag.
+    ///
+    /// The dummy is installed before the flag is created, so we do not leave the flag next to
+    /// a valid local shard and load a dummy on restart. If the flag can't be created, the dummy
+    /// stays installed.
+    ///
+    /// Returns the path to the flag.
+    async fn replace_local_with_dummy(
+        &self,
+        local: &mut Option<Shard>,
+        collection_path: &Path,
+        message: &str,
+    ) -> CollectionResult<PathBuf> {
+        let dummy = Shard::Dummy(DummyShard::new(message));
+
+        if let Some(shard) = local.replace(dummy) {
+            shard.stop_gracefully().await;
+        }
+
+        create_shard_initializing_flag(collection_path, self.shard_id).await
+    }
+
     /// Clears the local shard data and loads an empty local shard.
     ///
     /// # Cancel safety
@@ -665,23 +687,19 @@ impl ShardReplicaSet {
         let mut local = self.local.write().await;
 
         // Replace the local shard with a dummy placeholder while the shard is (re)initialized,
-        // and create the shard initializing flag. If initialization fails, is cancelled or the
-        // node crashes, `local` is never left as `None`, and a crash is detected on restart,
-        // so the shard can be recovered.
+        // and create the shard initializing flag.
         //
-        // The dummy should be installed before the flag is created, so we do not leave the flag
-        // next to a valid local shard and load a dummy on restart.
+        // If initialization fails, is cancelled or the node crashes, `local` is never left as `None`,
+        // and a crash is detected on restart, so the shard can be recovered.
         //
         // The flag is removed and the dummy is replaced after the shard is initialized.
-        let current_shard = local.replace(Shard::Dummy(DummyShard::new(
-            "Local shard is being initialized",
-        )));
-
-        if let Some(current_shard) = current_shard {
-            current_shard.stop_gracefully().await;
-        }
-
-        let shard_flag = create_shard_initializing_flag(collection_path, self.shard_id).await?;
+        let shard_flag = self
+            .replace_local_with_dummy(
+                &mut local,
+                collection_path,
+                "Local shard is being initialized",
+            )
+            .await?;
 
         if let Err(err) = LocalShard::clear(&self.shard_path).await {
             let error = format!(

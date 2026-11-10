@@ -18,9 +18,7 @@ use crate::shards::replica_set::replica_set_state::ReplicaSetState;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::ShardOperation as _;
-use crate::shards::{
-    create_shard_initializing_flag, remove_shard_initializing_flag, shard_initializing_flag_path,
-};
+use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path};
 
 #[cfg(test)]
 type RestoreLocalReplicaBeforeFlagHook = (
@@ -252,21 +250,14 @@ impl ShardReplicaSet {
         }
 
         // Replace the local shard with a dummy placeholder while the snapshot is recovered,
-        // and create the shard initializing flag. If recovery fails, is cancelled or the node
-        // crashes, `local` is never left as `None`, and a crash is detected on restart,
-        // so the shard can be recovered.
+        // and create the shard initializing flag.
         //
-        // The dummy should be installed before the flag is created, so we do not leave the flag
-        // next to a valid local shard and load a dummy on restart.
+        // If recovery fails, is cancelled or the node crashes, `local` is never left as `None`,
+        // and a crash is detected on restart, so the shard can be recovered.
         //
         // The flag is removed and the dummy is replaced after the snapshot is restored.
-        let dummy = Shard::Dummy(DummyShard::new("Local shard is being restored"));
-        if let Some(shard) = local.replace(dummy) {
-            // Shard is no longer needed and can be dropped
-            shard.stop_gracefully().await;
-        }
-
-        create_shard_initializing_flag(collection_path, self.shard_id).await?;
+        self.replace_local_with_dummy(&mut local, collection_path, "Local shard is being restored")
+            .await?;
 
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
@@ -455,26 +446,22 @@ impl ShardReplicaSet {
 
         let mut local = self.local.write().await;
 
-        // Replace the local shard with a dummy rather than removing it entirely, so APIs
-        // keep reporting a local shard while the data is cleared and the replacement
-        // snapshot is recovered. `restore_local_replica_from` drops this dummy afterwards.
+        // Replace the local shard with a dummy placeholder while the shard data is cleared
+        // and the replacement snapshot is recovered, and create the shard initializing flag.
         //
-        // The dummy should be installed before the flag is created, so we do not leave the flag
-        // next to a valid local shard and load a dummy on restart.
-        let dummy = Shard::Dummy(DummyShard::new(
+        // APIs keep reporting a local shard while the dummy is installed, and a crash during
+        // or after clearing is detected on restart, so the shard can be recovered.
+        //
+        // The flag is removed and the dummy is replaced after the snapshot is restored
+        // by `restore_local_replica_from`.
+        self.replace_local_with_dummy(
+            &mut local,
+            collection_path,
             "Local shard is being cleared for snapshot recovery",
-        ));
-        if let Some(shard) = local.replace(dummy) {
-            shard.stop_gracefully().await;
-        }
-
-        // Mark the shard as initializing before touching disk, so a crash during or
-        // after clearing is detected on next startup and the shard is reloaded as a
-        // dummy that triggers recovery.
-        create_shard_initializing_flag(collection_path, self.shard_id).await?;
+        )
+        .await?;
 
         LocalShard::clear(&self.shard_path).await?;
-
         Ok(())
     }
 
