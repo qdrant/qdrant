@@ -10,6 +10,12 @@ pub fn current() -> Handoff {
     Handoff::current()
 }
 
+/// The context of the current scope, measured or not.
+/// Unlike [`current`], it is fine to call outside of any scope.
+pub fn current_context() -> Option<AmbientContext> {
+    Handoff::current_unchecked().into_context()
+}
+
 /// Run rayon (or any other work-stealing) calls.
 /// Closures passed to rayon must enter the provided scope, see [`Handoff::enter`].
 ///
