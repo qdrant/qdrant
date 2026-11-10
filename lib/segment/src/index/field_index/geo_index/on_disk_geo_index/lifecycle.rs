@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
 use ahash::AHashSet;
@@ -30,6 +31,9 @@ use crate::index::field_index::deleted_mask::{
 use crate::index::field_index::geo_hash::{GeoHash, GeoHashRaw};
 use crate::index::field_index::on_disk_point_to_values::OnDiskPointToValues;
 use crate::types::GeoPoint;
+
+/// Most point ids read by one merged read in `all_points` (256 KiB).
+const MAX_MERGED_IDS_READ: u64 = 64 * 1024;
 
 impl<S: UniversalRead> OnDiskGeoIndex<S> {
     pub fn build(
@@ -491,30 +495,27 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // │ entries < smallest_hash       │ m = matching      │ past end    │
         // └───────────────────────────────┴───────────────────┴─────────────┘
 
-        // Step 1: binary search to find the index of the `start` entry. With a
-        // block index available, this costs a single contiguous read of one
-        // block instead of `O(log n)` random reads.
-        let start_idx = if let Some(block_index) = &self.storage.points_map_block_index {
-            let block = block_index.find_block(|entry| entry.hash.normalize().cmp(&smallest_hash));
-            let entries = self.storage.points_map.read(
-                ReadRange {
-                    byte_offset: (block.start * size_of::<PointKeyValue>()) as u64,
-                    length: block.len() as u64,
-                },
-                Random,
-            )?;
-            let idx = entries
-                .binary_search_by(|entry| entry.hash.normalize().cmp(&smallest_hash))
-                .unwrap_or_else(|idx| idx);
-            (block.start + idx) as u64
-        } else {
-            binary_search_by(0..len, |idx| {
-                let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
-                let value = self.storage.points_map.read(range, Random)?;
-                OperationResult::Ok(value[0].hash.normalize().cmp(&smallest_hash))
-            })?
-            .unwrap_or_else(|index| index)
-        };
+        // Step 1: binary search for the `start` entry, and for `end`, the first entry
+        // past the last prefix. With a block index available, each costs a single
+        // contiguous read of one block instead of `O(log n)` random reads.
+        let last_hash = *geo_hashes.last().unwrap();
+        let start_idx = self.points_map_lower_bound(len, |hash| hash.cmp(&smallest_hash))?;
+        let end_idx = self.points_map_lower_bound(len, |hash| {
+            if hash.starts_with(last_hash) {
+                Ordering::Less
+            } else {
+                hash.cmp(&last_hash)
+            }
+        })?;
+        let end_idx = end_idx.max(start_idx);
+
+        // A cold index faults the scanned range in page by page otherwise.
+        self.storage
+            .points_map
+            .will_need(std::iter::once(ReadRange {
+                byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
+                length: end_idx - start_idx,
+            }));
 
         // Step 2: read entries in chunks starting from `start`. Chunks may
         // arrive out of order from the underlying IO, so we reorder them with
@@ -523,7 +524,7 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         let chunks = self.storage.points_map.read_iter(
             ReadRange {
                 byte_offset: start_idx * size_of::<PointKeyValue>() as u64,
-                length: len - start_idx,
+                length: end_idx - start_idx,
             }
             .iter_autochunks::<PointKeyValue>()
             .enumerate(),
@@ -554,11 +555,24 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
                 let current_prefix = geo_hashes[prefix_cursor];
 
                 if hash.starts_with(current_prefix) {
-                    point_map_ranges.push(ReadRange {
+                    let range = ReadRange {
                         byte_offset: u64::from(entry.ids_start)
                             * size_of::<PointOffsetType>() as u64,
                         length: u64::from(entry.ids_end.saturating_sub(entry.ids_start)),
-                    });
+                    };
+                    // Consecutive entries store their ids back to back: extend the
+                    // previous read instead of issuing one read per geohash.
+                    match point_map_ranges.last_mut() {
+                        Some(last)
+                            if last.byte_offset
+                                + last.length * size_of::<PointOffsetType>() as u64
+                                == range.byte_offset
+                                && last.length + range.length <= MAX_MERGED_IDS_READ =>
+                        {
+                            last.length += range.length;
+                        }
+                        Some(_) | None => point_map_ranges.push(range),
+                    }
                 } else if prefix_cursor + 1 == geo_hashes.len() {
                     // Past the last prefix with no match: no further entry
                     // can start with any prefix, so we're done.
@@ -571,6 +585,10 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         // non-deleted point ids.
         let mut points = AHashSet::new();
         let deleted = &self.storage.deleted;
+        // Overlap the reads of all ranges instead of faulting them in one by one.
+        self.storage
+            .points_map_ids
+            .will_need(point_map_ranges.iter().copied());
         self.storage.points_map_ids.read_batch(
             point_map_ranges.into_iter().enumerate(),
             Random,
@@ -581,6 +599,40 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         )?;
 
         Ok(points)
+    }
+
+    /// Index of the first `points_map` entry whose hash `hash_cmp` doesn't order `Less`.
+    /// `hash_cmp` must order a prefix of the sorted entries `Less` and the rest not.
+    fn points_map_lower_bound(
+        &self,
+        len: u64,
+        hash_cmp: impl Fn(GeoHash) -> Ordering,
+    ) -> OperationResult<u64> {
+        // `Equal` sorts as `Greater`, so the search lands on the first such entry.
+        let cmp = |entry: &PointKeyValue| match hash_cmp(entry.hash.normalize()) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Equal | Ordering::Greater => Ordering::Greater,
+        };
+        let idx = if let Some(block_index) = &self.storage.points_map_block_index {
+            let block = block_index.find_block(cmp);
+            let entries = self.storage.points_map.read(
+                ReadRange {
+                    byte_offset: (block.start * size_of::<PointKeyValue>()) as u64,
+                    length: block.len() as u64,
+                },
+                Random,
+            )?;
+            let idx = entries.binary_search_by(&cmp).unwrap_or_else(|idx| idx);
+            (block.start + idx) as u64
+        } else {
+            binary_search_by(0..len, |idx| {
+                let range = ReadRange::one(idx * size_of::<PointKeyValue>() as u64);
+                let value = self.storage.points_map.read(range, Random)?;
+                OperationResult::Ok(cmp(&value[0]))
+            })?
+            .unwrap_or_else(|index| index)
+        };
+        Ok(idx)
     }
 
     pub fn points_count(&self) -> usize {

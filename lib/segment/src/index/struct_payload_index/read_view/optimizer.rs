@@ -405,11 +405,19 @@ where
         estimation: &CardinalityEstimation,
         expected_checks: ExpectedChecks,
     ) -> OperationResult<Option<Vec<PointOffsetType>>> {
+        // Only for batched checks (plain path): a serial consumer (graph walk, sampling)
+        // already reads values in small batches per hop, and the cells may cover most of
+        // the segment there.
+        match expected_checks {
+            ExpectedChecks::Batched { count: _ } => {}
+            ExpectedChecks::Serial => return Ok(None),
+        }
         let Some(indexes) = self.field_indexes.get(&condition.key) else {
             return Ok(None);
         };
         for index in indexes {
-            if !expected_checks.reads_posting(estimation.exp, index.is_cold()) {
+            // In RAM a value check is a memory lookup: the cells don't pay off.
+            if !index.is_cold() || !expected_checks.reads_posting(estimation.exp, true) {
                 continue;
             }
             if let Some(points) = index.filter_candidates(condition)? {
