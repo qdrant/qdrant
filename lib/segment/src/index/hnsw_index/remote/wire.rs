@@ -368,7 +368,7 @@ impl WireGraph {
             link_counts,
             links,
             entry_points: entry_points.main_points().to_vec(),
-            extra_entry_points: entry_points.extra_points().to_vec(),
+            extra_entry_points: entry_points.extra_points(),
         }
     }
 
@@ -444,7 +444,8 @@ mod tests {
     #[test]
     fn rejects_corruptions() {
         let deleted = [false, true, false];
-        let cases: Vec<(&str, Box<dyn Fn(&mut WireGraph)>)> = vec![
+        type Corruption = Box<dyn Fn(&mut WireGraph)>;
+        let cases: Vec<(&str, Corruption)> = vec![
             ("version", Box::new(|g| g.format_version = 99)),
             ("point count", Box::new(|g| g.levels.push(0))),
             ("counts", Box::new(|g| g.link_counts.pop().map(|_| ()).unwrap())),
