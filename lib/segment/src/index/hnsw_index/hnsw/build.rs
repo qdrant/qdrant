@@ -352,9 +352,11 @@ fn remote_build_args<'a>(
         return None;
     }
 
-    // Send what the local build would score with: the quantized vectors if they are enough
-    // to build (O2), the storage's own vectors otherwise
-    let (source, files) = match quantized_vectors.filter(|q| q.builds_without_originals()) {
+    // Send the quantized vectors if the indexer can build from them (O2): scalar and binary
+    // score from them alone, TurboQuant queries are reconstructed from them as a TurboQuant
+    // storage does. Product quantization: the storage's vectors, and the indexer builds
+    // without PQ.
+    let (source, files) = match quantized_vectors.filter(|q| q.remote_build_from_quantized()) {
         Some(quantized) => match quantized_files(quantized) {
             Some(files) => (VectorSource::Quantized, files),
             None => (VectorSource::Storage, Vec::new()),
