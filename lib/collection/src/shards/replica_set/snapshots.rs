@@ -371,7 +371,7 @@ impl ShardReplicaSet {
                 return Err(err);
             }
 
-            CollectionResult::Ok(new_local)
+            Ok(new_local)
         };
 
         match restore.await {
