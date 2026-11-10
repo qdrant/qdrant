@@ -1,7 +1,7 @@
 //! TurboQuant matrix operands against `score_internal`: the best columns of each row by brute
-//! force, through every kernel the CPU supports. Exact for the widths that keep their codes;
-//! within a tolerance for those decoded to f32: 16 bits, TQ+ 2 and 4 bits, and on aarch64
-//! (or forced with `codes_in_f32`) the Normal 2, 4, and 8 bits.
+//! force, through every kernel the CPU supports. Exact for the integer widths, TQ+ 2 and 4
+//! bits included; within a tolerance for those decoded to f32: 16 bits, and on aarch64 (or
+//! forced with `codes_in_f32`) the Normal 2, 4, and 8 bits and TQ+ 2 and 4 bits.
 
 use std::sync::atomic::AtomicBool;
 
@@ -71,10 +71,7 @@ impl Fixture {
 
     /// The best `K` columns of each row by `score_internal`, as `(column position, score)`.
     fn expected(&self, rows: &[PointOffsetType], cols: Cols) -> Vec<Vec<(u32, f32)>> {
-        let col_ids = match cols {
-            Cols::Rows => rows,
-            Cols::Other(cols) => cols,
-        };
+        let col_ids = column_points(rows, cols);
         rows.iter()
             .enumerate()
             .map(|(r, &row)| {
@@ -122,6 +119,7 @@ impl Fixture {
                 let mut out = TopK::new(K);
                 operands.top_k_with(kernel, rows, cols, &mut out).unwrap();
                 let expected = self.expected(rows, cols);
+                let col_ids = column_points(rows, cols);
                 assert_eq!(out.rows(), rows.len());
                 for (r, expected) in expected.iter().enumerate() {
                     let (got_cols, got_scores) = out.row(r);
@@ -134,7 +132,8 @@ impl Fixture {
                                 .collect();
                             assert_eq!(&got, expected, "{what}, {kernel:?}, row {r}");
                         }
-                        // Near-ties may swap, so compare the scores by rank
+                        // Near-ties may swap, so compare the scores by rank, and each picked
+                        // column's score with its own
                         Some(tolerance) => {
                             assert_eq!(got_scores.len(), expected.len(), "{what}, row {r}");
                             let allowed = tolerance * self.magnitude(rows[r]);
@@ -144,11 +143,28 @@ impl Fixture {
                                     "{what}, {kernel:?}, row {r}: {got} vs {want}, allowed {allowed}",
                                 );
                             }
+                            for (&col, &got) in got_cols.iter().zip(got_scores) {
+                                let want =
+                                    self.encoded.score_internal(rows[r], col_ids[col as usize]);
+                                assert!(
+                                    (got - want).abs() <= allowed,
+                                    "{what}, {kernel:?}, row {r}, column {col}: {got} vs {want}, \
+                                     allowed {allowed}",
+                                );
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/// The points that the positions of `cols` refer to.
+fn column_points<'a>(rows: &'a [PointOffsetType], cols: Cols<'a>) -> &'a [PointOffsetType] {
+    match cols {
+        Cols::Rows => rows,
+        Cols::Other(cols) => cols,
     }
 }
 
@@ -207,12 +223,21 @@ fn codebooks_in_f32() {
     check_all_with(TQBits::Bits4, &[TQMode::Normal], true, Some(2e-6));
 }
 
-/// TQ+ codes weighted and summed in f32, restarted every 256: up to 3.6e-7 of the input
-/// magnitude here.
+/// TQ+ codes folded with `D'` into the i8 values `score_internal` multiplies, as 8-bit codes:
+/// exact. Decoded to f32 on aarch64, see [`folded_codebooks_in_f32`].
 #[test]
-fn weighted_codebooks() {
-    check_all(TQBits::Bits2, &[TQMode::Plus], Some(2e-6));
-    check_all(TQBits::Bits4, &[TQMode::Plus], Some(2e-6));
+fn folded_codebooks() {
+    let tolerance = CODES_IN_F32.then_some(2e-6);
+    check_all(TQBits::Bits2, &[TQMode::Plus], tolerance);
+    check_all(TQBits::Bits4, &[TQMode::Plus], tolerance);
+}
+
+/// The aarch64 operands of [`folded_codebooks`] on every platform: the folded values summed in
+/// f32, restarted every 256.
+#[test]
+fn folded_codebooks_in_f32() {
+    check_all_with(TQBits::Bits2, &[TQMode::Plus], true, Some(2e-6));
+    check_all_with(TQBits::Bits4, &[TQMode::Plus], true, Some(2e-6));
 }
 
 /// Integer sums of grid values: exact. Decoded to f32 on aarch64, see
