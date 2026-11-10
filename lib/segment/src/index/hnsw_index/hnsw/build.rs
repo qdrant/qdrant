@@ -173,7 +173,16 @@ impl HNSWIndex {
 
         // Healing stays local (D12)
         #[cfg(feature = "remote-indexing")]
-        let remote = remote.filter(|_| old_index.is_none());
+        let remote = match remote {
+            Some(_) if old_index.is_some() => {
+                crate::index::hnsw_index::remote::metrics::REMOTE_INDEXING_METRICS
+                    .local_for_healing
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                debug!("old graph worth healing, building locally");
+                None
+            }
+            remote => remote,
+        };
 
         debug!(
             "building HNSW for {total_vector_count} vectors with {} CPUs",

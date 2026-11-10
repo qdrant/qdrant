@@ -24,6 +24,8 @@ pub struct RemoteIndexingMetrics {
     pub fallbacks: AtomicU64,
     /// Tasks cancelled because the optimization stopped.
     pub cancelled: AtomicU64,
+    /// Large enough builds kept local because an old graph is healed instead (D12).
+    pub local_for_healing: AtomicU64,
     /// Vector bytes served to indexers.
     pub bytes_served: AtomicU64,
     /// Graph bytes received from indexers.
@@ -47,6 +49,7 @@ pub static REMOTE_INDEXING_METRICS: RemoteIndexingMetrics = RemoteIndexingMetric
     retries: AtomicU64::new(0),
     fallbacks: AtomicU64::new(0),
     cancelled: AtomicU64::new(0),
+    local_for_healing: AtomicU64::new(0),
     bytes_served: AtomicU64::new(0),
     graph_bytes_received: AtomicU64::new(0),
     queued_time_ms: AtomicU64::new(0),
@@ -68,6 +71,7 @@ impl RemoteIndexingMetrics {
             retries,
             fallbacks,
             cancelled,
+            local_for_healing,
             bytes_served,
             graph_bytes_received,
             queued_time_ms,
@@ -86,6 +90,7 @@ impl RemoteIndexingMetrics {
             ("retries", "remote indexing resubmissions with a new token", get(retries)),
             ("fallbacks", "remote builds that fell back to the local builder", get(fallbacks)),
             ("cancelled", "remote indexing tasks cancelled by core", get(cancelled)),
+            ("local_for_healing", "builds large enough for remote indexing, kept local to heal an old graph", get(local_for_healing)),
             ("bytes_served", "vector bytes served to indexers", get(bytes_served)),
             ("graph_bytes_received", "graph bytes received from indexers", get(graph_bytes_received)),
             ("queued_time_ms", "time from submission to GetTask, summed", get(queued_time_ms)),
