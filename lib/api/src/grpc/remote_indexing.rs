@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn graph_roundtrip_through_chunks() {
         let point_count = UPLOAD_CHUNK_POINTS * 2 + 7;
-        let levels: Vec<u8> = (0..point_count).map(|i| (i % 3 == 0) as u8).collect();
+        let levels: Vec<u8> = (0..point_count).map(|i| u8::from(i % 3 == 0)).collect();
         let mut link_counts = Vec::new();
         let mut links = Vec::new();
         for (i, &level) in levels.iter().enumerate() {
