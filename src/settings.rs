@@ -305,6 +305,11 @@ pub struct IndexingServiceConfig {
     #[serde(default = "default_heartbeat_timeout_sec")]
     #[validate(range(min = 1))]
     pub heartbeat_timeout_sec: u64,
+    /// Give a submitted task up if the indexer does not fetch it within this time. Nothing
+    /// heartbeats a task waiting in a queue, so this is longer than the heartbeat timeout.
+    #[serde(default = "default_queue_timeout_sec")]
+    #[validate(range(min = 1))]
+    pub queue_timeout_sec: u64,
     #[serde(default)]
     pub on_failure: IndexingOnFailure,
     #[serde(default = "default_indexing_max_retries")]
@@ -324,6 +329,10 @@ const fn default_min_index_size_bytes() -> usize {
 
 const fn default_heartbeat_timeout_sec() -> u64 {
     60
+}
+
+const fn default_queue_timeout_sec() -> u64 {
+    300
 }
 
 const fn default_indexing_max_retries() -> u32 {

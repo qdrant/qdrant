@@ -14,6 +14,8 @@ pub struct RemoteIndexingMetrics {
     pub tasks_failed: AtomicU64,
     /// Leases that expired without a heartbeat.
     pub heartbeats_missed: AtomicU64,
+    /// Tasks the indexer did not fetch within the queue lease.
+    pub queue_timeouts: AtomicU64,
     /// Heartbeats received.
     pub heartbeats: AtomicU64,
     /// Uploaded graphs rejected by validation.
@@ -44,6 +46,7 @@ pub static REMOTE_INDEXING_METRICS: RemoteIndexingMetrics = RemoteIndexingMetric
     tasks_succeeded: AtomicU64::new(0),
     tasks_failed: AtomicU64::new(0),
     heartbeats_missed: AtomicU64::new(0),
+    queue_timeouts: AtomicU64::new(0),
     heartbeats: AtomicU64::new(0),
     validation_failures: AtomicU64::new(0),
     retries: AtomicU64::new(0),
@@ -66,6 +69,7 @@ impl RemoteIndexingMetrics {
             tasks_succeeded,
             tasks_failed,
             heartbeats_missed,
+            queue_timeouts,
             heartbeats,
             validation_failures,
             retries,
@@ -85,6 +89,7 @@ impl RemoteIndexingMetrics {
             ("tasks_succeeded", "graphs built remotely and used", get(tasks_succeeded)),
             ("tasks_failed", "remote indexing failures reported by the indexer", get(tasks_failed)),
             ("heartbeats_missed", "remote indexing leases expired without heartbeat", get(heartbeats_missed)),
+            ("queue_timeouts", "remote indexing tasks not fetched within the queue lease", get(queue_timeouts)),
             ("heartbeats", "remote indexing heartbeats received", get(heartbeats)),
             ("validation_failures", "uploaded graphs rejected by validation", get(validation_failures)),
             ("retries", "remote indexing resubmissions with a new token", get(retries)),

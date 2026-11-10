@@ -35,6 +35,8 @@ pub enum LoopbackBehavior {
     Corrupt,
     /// Fetch the task and keep heartbeating without finishing, until cancelled.
     Stall,
+    /// Leave the task queued for a while, as a busy indexer does, then build it.
+    Queue(Duration),
 }
 
 /// The source of a task, reading the registry of this process.
@@ -219,12 +221,17 @@ impl RemoteIndexer for Arc<LoopbackIndexer> {
             LoopbackBehavior::Build
             | LoopbackBehavior::Fail
             | LoopbackBehavior::Corrupt
-            | LoopbackBehavior::Stall => {}
+            | LoopbackBehavior::Stall
+            | LoopbackBehavior::Queue(_) => {}
         }
         std::thread::spawn(move || {
             let source = RegistrySource { token };
             let outcome = match behavior {
                 LoopbackBehavior::Build => {
+                    run_task(&source, &this.options, &this.work_dir, None, &this.shutdown).outcome
+                }
+                LoopbackBehavior::Queue(delay) => {
+                    std::thread::sleep(delay);
                     run_task(&source, &this.options, &this.work_dir, None, &this.shutdown).outcome
                 }
                 LoopbackBehavior::Corrupt => {

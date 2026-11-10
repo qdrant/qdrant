@@ -46,6 +46,7 @@ fn config(on_failure: OnFailure, heartbeat_timeout: Duration) -> RemoteIndexingC
     RemoteIndexingConfig {
         min_index_size_bytes: 0,
         heartbeat_timeout,
+        queue_timeout: heartbeat_timeout,
         on_failure,
         max_retries: 3,
     }
@@ -290,6 +291,27 @@ fn expired_lease_falls_back_to_local() {
         Duration::from_millis(300),
     );
     assert_eq!(indexer.submissions.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn queued_task_outlives_heartbeat_timeout() {
+    // Waits 1s in the indexer's queue: longer than the 300ms heartbeat lease, within the
+    // queue lease
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(11);
+    let (_dir, segment) = segment(&mut rng);
+    let stopped = AtomicBool::new(false);
+    let mut config = config(OnFailure::Local, Duration::from_millis(300));
+    config.queue_timeout = Duration::from_secs(10);
+    let indexer = Arc::new(LoopbackIndexer::new(
+        config,
+        vec![LoopbackBehavior::Queue(Duration::from_secs(1))],
+    ));
+    build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
+    assert_eq!(
+        indexer.wait_outcomes(1, Duration::from_secs(5)),
+        vec![RunOutcome::Uploaded]
+    );
 }
 
 #[test]

@@ -144,6 +144,7 @@ impl RemoteIndexingClient {
         let remote_config = RemoteIndexingConfig {
             min_index_size_bytes: config.min_index_size_bytes,
             heartbeat_timeout: Duration::from_secs(config.heartbeat_timeout_sec),
+            queue_timeout: Duration::from_secs(config.queue_timeout_sec),
             on_failure: match config.on_failure {
                 IndexingOnFailure::Local => OnFailure::Local,
                 IndexingOnFailure::Retry => OnFailure::Retry,
