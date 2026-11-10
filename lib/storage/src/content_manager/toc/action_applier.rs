@@ -84,6 +84,8 @@ impl TableOfContent {
                 if recreate_optimizers {
                     collection.recreate_optimizers_background();
                 }
+                // Wake up the optimizers, as any update does
+                collection.trigger_optimizers().await;
 
                 Ok(())
             }
