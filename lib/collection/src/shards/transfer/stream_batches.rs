@@ -23,7 +23,7 @@ const TRANSFER_BATCH_SIZE: usize = 100;
 const TRANSFER_READ_AHEAD_BATCHES: usize = 2;
 
 /// Number of batches to send to the remote shard in parallel.
-const TRANSFER_PARALLEL_SENDS: usize = 4;
+const TRANSFER_PARALLEL_SENDS: usize = 2;
 
 /// Transfer all point records of a proxified shard to the remote shard in batches.
 ///
