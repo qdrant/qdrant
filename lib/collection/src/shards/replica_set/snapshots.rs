@@ -455,20 +455,23 @@ impl ShardReplicaSet {
 
         let mut local = self.local.write().await;
 
-        // Mark the shard as initializing before touching disk, so a crash during or
-        // after clearing is detected on next startup and the shard is reloaded as a
-        // dummy that triggers recovery.
-        create_shard_initializing_flag(collection_path, self.shard_id).await?;
-
         // Replace the local shard with a dummy rather than removing it entirely, so APIs
         // keep reporting a local shard while the data is cleared and the replacement
         // snapshot is recovered. `restore_local_replica_from` drops this dummy afterwards.
+        //
+        // The dummy should be installed before the flag is created, so we do not leave the flag
+        // next to a valid local shard and load a dummy on restart.
         let dummy = Shard::Dummy(DummyShard::new(
             "Local shard is being cleared for snapshot recovery",
         ));
         if let Some(shard) = local.replace(dummy) {
             shard.stop_gracefully().await;
         }
+
+        // Mark the shard as initializing before touching disk, so a crash during or
+        // after clearing is detected on next startup and the shard is reloaded as a
+        // dummy that triggers recovery.
+        create_shard_initializing_flag(collection_path, self.shard_id).await?;
 
         LocalShard::clear(&self.shard_path).await?;
 
