@@ -25,7 +25,8 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::VectorStorageRead as _;
 
 /// Inserts points in batches on a GPU. What the GPU fails to build is built on the CPU by
-/// `cpu`, which also holds the graph: the old graph is healed if there is one worth healing.
+/// `cpu`, which also holds the graph: the old graph is healed if there is one worth healing,
+/// and PiPNN builds the main graph where it applies.
 pub(super) struct GpuBuilder<'a> {
     /// What `select` picks without a GPU: builds what the GPU fails to build. Never `Gpu`.
     /// Kept for the whole build, so it keeps its state across the steps it builds.
@@ -138,7 +139,10 @@ impl GpuState {
             ctx.stopped,
         )?;
         if gpu_graph.is_some() {
-            log::debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+            log::debug!(
+                "{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?} on GPU",
+                timer.elapsed()
+            );
         }
         Ok(gpu_graph)
     }
