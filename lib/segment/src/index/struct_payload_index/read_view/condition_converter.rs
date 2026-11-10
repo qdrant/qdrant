@@ -129,7 +129,7 @@ where
 
                 ConditionCheckerEnum::Dyn(Box::new(PayloadConditionChecker {
                     payload_provider,
-
+                    field: None,
                     check: move |payload, point_id| {
                         let field_values = payload.get_value(&nested_path);
 
@@ -200,7 +200,8 @@ fn field_condition_checker<'a>(
     Ok(ConditionCheckerEnum::Dyn(Box::new(
         PayloadConditionChecker {
             payload_provider,
-
+            // The condition only reads `key`, which lives under its first key
+            field: Some(key.first_key.clone()),
             check: move |payload, _| check(payload),
         },
     )))
@@ -213,6 +214,8 @@ where
     F: Fn(OwnedPayloadRef, PointOffsetType) -> OperationResult<bool>,
 {
     payload_provider: PayloadProvider<S>,
+    /// Top-level field the check reads, if it reads only one: parse just that field.
+    field: Option<String>,
     check: F,
 }
 
@@ -224,8 +227,13 @@ where
     type Error = OperationError;
 
     fn check(&self, point_id: PointOffsetType) -> OperationResult<bool> {
-        self.payload_provider
-            .with_payload(point_id, |payload| (self.check)(payload, point_id))
+        let check = |payload: OwnedPayloadRef| (self.check)(payload, point_id);
+        match &self.field {
+            Some(field) => self
+                .payload_provider
+                .with_payload_field(point_id, field, check),
+            None => self.payload_provider.with_payload(point_id, check),
+        }
     }
 
     fn check_batched<K>(&self, ids: &mut [K], select: Select, rest: Rest) -> OperationResult<usize>

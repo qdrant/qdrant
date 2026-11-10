@@ -4,6 +4,7 @@ pub mod in_memory_payload_storage;
 #[cfg(feature = "testing")]
 pub mod in_memory_payload_storage_impl;
 mod memory_reporter;
+mod partial_payload;
 mod payload_storage_base;
 pub mod payload_storage_enum;
 pub mod payload_storage_impl;
