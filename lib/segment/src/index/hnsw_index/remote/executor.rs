@@ -243,7 +243,13 @@ pub fn run_task(
             Err(SourceError::PermissionDenied) => {
                 RunOutcome::Dropped("token revoked before upload".to_string())
             }
-            Err(SourceError::Other(err)) => RunOutcome::Failed(format!("upload: {err}")),
+            Err(SourceError::Other(err)) => {
+                // Tell core at once instead of letting the lease run out; if core already
+                // rejected the graph, the token is gone and this fails harmlessly
+                let reason = format!("upload: {err}");
+                let _ = source.fail(&reason);
+                RunOutcome::Failed(reason)
+            }
         },
         Err(_) if cancelled.load(Ordering::Relaxed) => {
             RunOutcome::Dropped("cancelled by core".to_string())
