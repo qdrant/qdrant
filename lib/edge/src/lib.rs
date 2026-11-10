@@ -9,6 +9,7 @@ mod read_only;
 mod read_view;
 mod reexports;
 mod requests;
+mod scope;
 mod types;
 #[cfg(feature = "serverless")]
 mod update_only;
@@ -46,6 +47,7 @@ pub use requests::{
     CountRequest, FacetRequest, GroupRequest, Prefetch, QueryBatchRequest, QueryRequest,
     RetrieveRequest, ScrollRequest, SearchMatrixRequest, SearchRequest,
 };
+pub(crate) use scope::EdgeScope;
 pub use shard::files::WAL_PATH;
 pub use shard::segment_manifest::{SegmentManifestState, SegmentsManifest};
 #[cfg(feature = "serverless")]
