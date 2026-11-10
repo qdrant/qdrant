@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+// Remote indexing (core side). Served by core on the internal gRPC port, called by an
+// indexing service that builds the HNSW graph of one vector of a segment under construction.
+//
+// Every call carries the one-time task token in the `x-qdrant-indexing-token` metadata header.
+// The token is checked by the service itself: the indexer has no API key. A token only gives
+// access to its own task, and is revoked when the task ends: further calls get
+// PERMISSION_DENIED, except `Heartbeat` on a task core cancelled, which answers CANCEL.
+service IndexingTask {
+  // Task parameters and payload block plan.
+  rpc GetTask(GetIndexingTaskRequest) returns (IndexingTaskDescription) {}
+  // Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
+  rpc ReadVectors(ReadIndexingVectorsRequest) returns (stream IndexingVectorsChunk) {}
+  // The points not to link.
+  rpc ReadDeleted(ReadIndexingDeletedRequest) returns (IndexingDeletedMask) {}
+  // Renew the lease and report progress. The reply tells whether to go on.
+  rpc Heartbeat(IndexingHeartbeatRequest) returns (IndexingHeartbeatResponse) {}
+  // Upload the finished graph: a header, then link chunks. Ends the task.
+  rpc UploadGraph(stream UploadIndexingGraphRequest) returns (UploadIndexingGraphResponse) {}
+  // Give up on the task. Core retries with a new token, or builds locally.
+  rpc Fail(FailIndexingTaskRequest) returns (FailIndexingTaskResponse) {}
+}
+
+enum IndexingVectorDatatype {
+  IndexingFloat32 = 0;
+  IndexingFloat16 = 1;
+  IndexingUint8 = 2;
+}
+
+enum IndexingDistance {
+  IndexingDistanceUnknown = 0;
+  IndexingCosine = 1;
+  IndexingEuclid = 2;
+  IndexingDot = 3;
+  IndexingManhattan = 4;
+}
+
+enum IndexingMultiVectorComparator {
+  IndexingMaxSim = 0;
+}
+
+message GetIndexingTaskRequest {}
+
+message IndexingTaskDescription {
+  // UUID of the task, also used for billing.
+  string task_id = 1;
+  string vector_name = 2;
+  uint64 dim = 3;
+  IndexingVectorDatatype datatype = 4;
+  IndexingDistance distance = 5;
+  // Set for multivectors: each vector is then a flattened list of `dim`-sized vectors.
+  optional IndexingMultiVectorComparator multivector_comparator = 6;
+  uint64 m = 7;
+  uint64 m0 = 8;
+  uint64 ef_construct = 9;
+  uint64 entry_points_num = 10;
+  uint64 payload_m = 11;
+  uint64 payload_m0 = 12;
+  // Point offsets are `0..point_count`, deleted included.
+  uint64 point_count = 13;
+  uint64 indexed_point_count = 14;
+  // Encoding of the vectors in `ReadVectors`.
+  string vector_representation = 15;
+  // Graph formats core reads. The indexer must upload one of them, or fail the task.
+  repeated uint32 graph_format_versions = 16;
+  // Payload blocks chosen by core, per field, in build order.
+  repeated IndexingFieldBlocks block_plan = 17;
+}
+
+message IndexingFieldBlocks {
+  string field = 1;
+  // Skip blocks the graph built so far already connects well.
+  bool skip_if_connected = 2;
+  repeated IndexingPayloadBlock blocks = 3;
+}
+
+message IndexingPayloadBlock {
+  // Estimated block size, which the size limit is checked against.
+  uint64 cardinality = 1;
+  repeated uint32 points = 2;
+}
+
+message ReadIndexingVectorsRequest {
+  uint32 start = 1;
+  // Exclusive. Clamped to the point count.
+  uint32 end = 2;
+}
+
+message IndexingVectorsChunk {
+  // Offset of the first vector of the chunk.
+  uint32 start = 1;
+  // One entry per offset from `start`. Empty: the point has no vector, or is deleted.
+  repeated bytes vectors = 2;
+}
+
+message ReadIndexingDeletedRequest {}
+
+message IndexingDeletedMask {
+  uint64 point_count = 1;
+  // One bit per point, LSB first: set if the point must not be linked.
+  bytes deleted = 2;
+}
+
+message IndexingHeartbeatRequest {
+  string phase = 1;
+  uint64 done = 2;
+  uint64 total = 3;
+}
+
+enum IndexingHeartbeatAction {
+  IndexingContinue = 0;
+  IndexingCancel = 1;
+}
+
+message IndexingHeartbeatResponse {
+  IndexingHeartbeatAction action = 1;
+}
+
+message IndexingEntryPoint {
+  uint32 point_id = 1;
+  uint32 level = 2;
+}
+
+message IndexingGraphHeader {
+  uint32 format_version = 1;
+  uint64 point_count = 2;
+  repeated IndexingEntryPoint entry_points = 3;
+  repeated IndexingEntryPoint extra_entry_points = 4;
+}
+
+// Consecutive points of the graph, from `start`: for each point its level, then for each of
+// its levels from 0 the number of links, and the links in the same order.
+message IndexingGraphLinks {
+  uint32 start = 1;
+  bytes levels = 2;
+  repeated uint32 link_counts = 3;
+  repeated uint32 links = 4;
+}
+
+message UploadIndexingGraphRequest {
+  oneof part {
+    IndexingGraphHeader header = 1;
+    IndexingGraphLinks links = 2;
+  }
+}
+
+message UploadIndexingGraphResponse {}
+
+message FailIndexingTaskRequest {
+  string reason = 1;
+}
+
+message FailIndexingTaskResponse {}

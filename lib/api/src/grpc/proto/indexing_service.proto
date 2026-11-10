@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package qdrant;
+option csharp_namespace = "Qdrant.Client.Grpc";
+
+// Remote indexing (indexer side). Served by an indexing service, or by a queue in front of
+// it: core submits tasks here, then the indexer connects back to `advertise_url` and pulls
+// the data through the `IndexingTask` service.
+service IndexingService {
+  rpc SubmitTask(IndexingTaskSubmission) returns (SubmitIndexingTaskResponse) {}
+}
+
+message IndexingTaskSubmission {
+  string task_id = 1;
+  // One-time token, hex. Send it back in the `x-qdrant-indexing-token` header.
+  string token = 2;
+  // Internal gRPC address of the qdrant peer serving the task, e.g. `qdrant-0.qdrant-headless:6335`.
+  string advertise_url = 3;
+  string collection = 4;
+  uint32 shard_id = 5;
+  string vector_name = 6;
+  // Version of the qdrant core, e.g. `1.18.0`.
+  string core_version = 7;
+  // Graph formats core reads.
+  repeated uint32 graph_format_versions = 8;
+  // Size of the vector data, for scheduling and billing.
+  uint64 vector_bytes = 9;
+  uint64 point_count = 10;
+  // 0 for the first submission, then one more per retry.
+  uint32 attempt = 11;
+  // Cluster identifier, if configured, for billing.
+  optional string cluster_id = 12;
+}
+
+message SubmitIndexingTaskResponse {
+  // Whether the task was accepted. A refused task is retried or built locally by core.
+  bool accepted = 1;
+  string message = 2;
+}
