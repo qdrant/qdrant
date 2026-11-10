@@ -453,6 +453,8 @@ pub enum WaitInterrupt {
     Stopped,
     /// No call from the indexer within the lease.
     LeaseExpired,
+    /// The indexer did not fetch the task within the queue lease.
+    QueueTimeout,
 }
 
 /// The builder's side of a task. Revokes the token when dropped.
@@ -481,9 +483,11 @@ impl TaskHandle {
     }
 
     /// Block until the task finishes, `should_stop` returns true, or no call from the indexer
-    /// arrives within `lease` (D6: there is no hard deadline). Wakes up every `poll` to check.
+    /// arrives within the lease (D6: there is no hard deadline): `queue_lease` until the
+    /// indexer fetches the task, `lease` after. Wakes up every `poll` to check.
     pub fn wait(
         &self,
+        queue_lease: Duration,
         lease: Duration,
         poll: Duration,
         should_stop: impl Fn() -> bool,
@@ -501,8 +505,14 @@ impl TaskHandle {
             if should_stop() {
                 return Err(WaitInterrupt::Stopped);
             }
-            if inner.last_seen.elapsed() > lease {
-                return Err(WaitInterrupt::LeaseExpired);
+            match inner.status {
+                TaskStatus::Queued if inner.last_seen.elapsed() > queue_lease => {
+                    return Err(WaitInterrupt::QueueTimeout);
+                }
+                TaskStatus::Running if inner.last_seen.elapsed() > lease => {
+                    return Err(WaitInterrupt::LeaseExpired);
+                }
+                TaskStatus::Queued | TaskStatus::Running | TaskStatus::Finished => {}
             }
             self.state.finished.wait_for(&mut inner, poll);
         }
@@ -628,7 +638,12 @@ mod tests {
         REMOTE_INDEXING_TASKS
             .fail(&token, "test".to_string())
             .unwrap();
-        let outcome = handle.wait(Duration::from_secs(1), Duration::from_millis(10), || false);
+        let outcome = handle.wait(
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            Duration::from_millis(10),
+            || false,
+        );
         assert!(matches!(outcome, Ok(TaskOutcome::Failed(_))));
         assert!(matches!(
             REMOTE_INDEXING_TASKS.heartbeat(&token, TaskProgress::default()),
@@ -644,10 +659,18 @@ mod tests {
     fn lease_expires_without_calls() {
         let (task, _storage) = new_task(3);
         let handle = REMOTE_INDEXING_TASKS.register(task);
-        let outcome = handle.wait(Duration::from_millis(50), Duration::from_millis(10), || false);
-        assert!(matches!(outcome, Err(WaitInterrupt::LeaseExpired)));
-        let outcome = handle.wait(Duration::from_secs(5), Duration::from_millis(10), || true);
+        let poll = Duration::from_millis(10);
+        let short = Duration::from_millis(50);
+        let long = Duration::from_secs(5);
+        // Queued: the queue lease applies
+        let outcome = handle.wait(short, long, poll, || false);
+        assert!(matches!(outcome, Err(WaitInterrupt::QueueTimeout)));
+        let outcome = handle.wait(long, long, poll, || true);
         assert!(matches!(outcome, Err(WaitInterrupt::Stopped)));
+        // Fetched: the heartbeat lease applies
+        REMOTE_INDEXING_TASKS.get_task(&handle.token()).unwrap();
+        let outcome = handle.wait(long, short, poll, || false);
+        assert!(matches!(outcome, Err(WaitInterrupt::LeaseExpired)));
     }
 
     #[test]
