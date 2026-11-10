@@ -4,10 +4,11 @@
 use bitvec::vec::BitVec;
 use segment::index::hnsw_index::remote::EntryPoint;
 use segment::index::hnsw_index::remote::executor::FetchedTask;
-use segment::index::hnsw_index::remote::registry::{HeartbeatAction, TaskDescription, TaskProgress};
+use segment::index::hnsw_index::remote::registry::{
+    HeartbeatAction, TaskDescription, TaskProgress,
+};
 use segment::index::hnsw_index::remote::wire::{
-    BlockPlan, FieldBlockPlan, PlannedBlock, RemoteFile, RemoteGraphParams, VectorSource,
-    WireGraph,
+    BlockPlan, FieldBlockPlan, PlannedBlock, RemoteFile, RemoteGraphParams, VectorSource, WireGraph,
 };
 use segment::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
 use uuid::Uuid;
@@ -17,8 +18,7 @@ use super::qdrant::{
     IndexingGraphHeader, IndexingGraphLinks, IndexingHeartbeatAction, IndexingHeartbeatRequest,
     IndexingHeartbeatResponse, IndexingMultiVectorComparator, IndexingPayloadBlock,
     IndexingTaskDescription, IndexingVectorDatatype, IndexingVectorSource,
-    UploadIndexingGraphRequest,
-    upload_indexing_graph_request,
+    UploadIndexingGraphRequest, upload_indexing_graph_request,
 };
 
 /// Metadata header carrying the one-time task token.
@@ -159,7 +159,9 @@ pub fn task_description_to_grpc(
 }
 
 /// The task as the indexer sees it.
-pub fn task_description_from_grpc(description: IndexingTaskDescription) -> Result<FetchedTask, String> {
+pub fn task_description_from_grpc(
+    description: IndexingTaskDescription,
+) -> Result<FetchedTask, String> {
     let IndexingTaskDescription {
         task_id,
         vector_name,
@@ -328,12 +330,14 @@ pub fn graph_to_grpc(graph: &WireGraph) -> Vec<UploadIndexingGraphRequest> {
         extra_entry_points,
     } = graph;
     let mut messages = vec![UploadIndexingGraphRequest {
-        part: Some(upload_indexing_graph_request::Part::Header(IndexingGraphHeader {
-            format_version: *format_version,
-            point_count: levels.len() as u64,
-            entry_points: entry_points.iter().map(entry_point_to_grpc).collect(),
-            extra_entry_points: extra_entry_points.iter().map(entry_point_to_grpc).collect(),
-        })),
+        part: Some(upload_indexing_graph_request::Part::Header(
+            IndexingGraphHeader {
+                format_version: *format_version,
+                point_count: levels.len() as u64,
+                entry_points: entry_points.iter().map(entry_point_to_grpc).collect(),
+                extra_entry_points: extra_entry_points.iter().map(entry_point_to_grpc).collect(),
+            },
+        )),
     }];
     let mut counts_offset = 0;
     let mut links_offset = 0;
@@ -342,12 +346,14 @@ pub fn graph_to_grpc(graph: &WireGraph) -> Vec<UploadIndexingGraphRequest> {
         let chunk_counts = &link_counts[counts_offset..counts_offset + num_counts];
         let num_links: usize = chunk_counts.iter().map(|&c| c as usize).sum();
         messages.push(UploadIndexingGraphRequest {
-            part: Some(upload_indexing_graph_request::Part::Links(IndexingGraphLinks {
-                start: (chunk_idx * UPLOAD_CHUNK_POINTS) as u32,
-                levels: chunk_levels.to_vec(),
-                link_counts: chunk_counts.to_vec(),
-                links: links[links_offset..links_offset + num_links].to_vec(),
-            })),
+            part: Some(upload_indexing_graph_request::Part::Links(
+                IndexingGraphLinks {
+                    start: (chunk_idx * UPLOAD_CHUNK_POINTS) as u32,
+                    levels: chunk_levels.to_vec(),
+                    link_counts: chunk_counts.to_vec(),
+                    links: links[links_offset..links_offset + num_links].to_vec(),
+                },
+            )),
         });
         counts_offset += num_counts;
         links_offset += num_links;
@@ -386,14 +392,20 @@ impl GraphAssembler {
                     extra_entry_points,
                 } = header;
                 if point_count as usize > self.max_points {
-                    return Err(format!("graph of {point_count} points, task has {}", self.max_points));
+                    return Err(format!(
+                        "graph of {point_count} points, task has {}",
+                        self.max_points
+                    ));
                 }
                 self.graph = Some(WireGraph {
                     format_version,
                     levels: Vec::with_capacity(point_count as usize),
                     link_counts: Vec::with_capacity(point_count as usize),
                     links: Vec::new(),
-                    entry_points: entry_points.into_iter().map(entry_point_from_grpc).collect(),
+                    entry_points: entry_points
+                        .into_iter()
+                        .map(entry_point_from_grpc)
+                        .collect(),
                     extra_entry_points: extra_entry_points
                         .into_iter()
                         .map(entry_point_from_grpc)
@@ -494,6 +506,9 @@ mod tests {
     #[test]
     fn deleted_mask_roundtrip() {
         let deleted: BitVec = (0..21).map(|i| i % 3 == 0).collect();
-        assert_eq!(deleted_from_grpc(deleted_to_grpc(&deleted)).unwrap(), deleted);
+        assert_eq!(
+            deleted_from_grpc(deleted_to_grpc(&deleted)).unwrap(),
+            deleted
+        );
     }
 }

@@ -177,7 +177,9 @@ impl<'a> RemoteBuilder<'a> {
         for attempt in 0..attempts {
             check_process_stopped(stopped)?;
             if attempt > 0 {
-                REMOTE_INDEXING_METRICS.retries.fetch_add(1, Ordering::Relaxed);
+                REMOTE_INDEXING_METRICS
+                    .retries
+                    .fetch_add(1, Ordering::Relaxed);
                 let delay = RETRY_BACKOFF
                     .saturating_mul(1 << (attempt - 1).min(16))
                     .min(MAX_RETRY_BACKOFF);
@@ -261,10 +263,7 @@ impl<'a> RemoteBuilder<'a> {
                     REMOTE_INDEXING_METRICS
                         .tasks_failed
                         .fetch_add(1, Ordering::Relaxed);
-                    log::warn!(
-                        "Remote indexing task {} failed: {reason}",
-                        handle.task_id(),
-                    );
+                    log::warn!("Remote indexing task {} failed: {reason}", handle.task_id(),);
                 }
                 Ok(TaskOutcome::Rejected(reason)) => {
                     // Counted by the registry

@@ -4,6 +4,7 @@ use common::types::PointOffsetType;
 use rand::Rng;
 use rayon::ThreadPool;
 
+use super::block_filter::BlockSkip;
 use super::context::GraphBuildContext;
 #[cfg(feature = "gpu")]
 use super::gpu_builder::{GpuBuilder, GpuState};
@@ -14,7 +15,6 @@ use super::payload_blocks::{FieldBlocks, PayloadBlock};
 use super::pipnn_builder::{self, PipnnBuilder};
 #[cfg(feature = "remote-indexing")]
 use super::remote_builder::{RemoteBuildArgs, RemoteBuilder};
-use super::block_filter::BlockSkip;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;

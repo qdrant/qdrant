@@ -96,9 +96,10 @@ impl RemoteVectorLayout {
             VectorStorageEnum::DenseTurboAppendableMemmap(v) => dense(v.vector_dim()),
             #[cfg(target_os = "linux")]
             VectorStorageEnum::DenseTurboUring(v) => dense(v.vector_dim()),
-            VectorStorageEnum::MultiDenseTurbo(v) => {
-                multi(v.vector_dim(), MultiTQVectorStorageRead::multi_vector_config(v.as_ref()))
-            }
+            VectorStorageEnum::MultiDenseTurbo(v) => multi(
+                v.vector_dim(),
+                MultiTQVectorStorageRead::multi_vector_config(v.as_ref()),
+            ),
             VectorStorageEnum::SparseVolatile(_)
             | VectorStorageEnum::SparseMmap(_)
             | VectorStorageEnum::EmptyDense(_)

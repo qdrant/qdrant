@@ -5,8 +5,7 @@
 //! an indexer or a queue in front of a pool of indexers receives it is up to the receiver.
 
 use std::path::{Component, Path};
-use std::sync::Arc;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 use api::grpc::qdrant::IndexingTaskSubmission;
@@ -30,7 +29,11 @@ pub fn init_remote_indexing(settings: &Settings) -> bool {
     };
 
     // The indexer reaches the internal port. Without auth there, it could reach Raft too.
-    if settings.service.api_key.as_deref().is_none_or(str::is_empty)
+    if settings
+        .service
+        .api_key
+        .as_deref()
+        .is_none_or(str::is_empty)
         || !settings.service.enforce_internal_auth()
     {
         log::error!(
@@ -68,9 +71,10 @@ fn collection_and_shard(index_path: &Path) -> (String, u32) {
         .components()
         .filter_map(|c| match c {
             Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
-            Component::Prefix(_) | Component::RootDir | Component::CurDir | Component::ParentDir => {
-                None
-            }
+            Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => None,
         })
         .collect();
     let Some(pos) = components.iter().rposition(|c| c == "collections") else {
@@ -199,10 +203,12 @@ mod tests {
 
     #[test]
     fn parses_collection_and_shard() {
-        let path = Path::new(
-            "/qdrant/storage/collections/my_coll/3/segments/temp/abc/vector_index-image",
-        );
+        let path =
+            Path::new("/qdrant/storage/collections/my_coll/3/segments/temp/abc/vector_index-image");
         assert_eq!(collection_and_shard(path), ("my_coll".to_string(), 3));
-        assert_eq!(collection_and_shard(Path::new("/tmp/x")), (String::new(), 0));
+        assert_eq!(
+            collection_and_shard(Path::new("/tmp/x")),
+            (String::new(), 0)
+        );
     }
 }
