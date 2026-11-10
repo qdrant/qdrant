@@ -2,8 +2,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
-use common::reason::Reason;
 use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::check_process_stopped;
@@ -14,7 +12,7 @@ use crate::read_only::Waterline;
 use crate::read_only::enumerate::{ManifestSegmentEnumerator, SegmentEnumerator};
 use crate::read_only::holder::ReadOnlySegmentHolder;
 use crate::{
-    EdgeConfig, LoadProfile, OperationResult, ReadOnlyEdgeShard, ReadOnlyEdgeShardPools,
+    EdgeConfig, EdgeScope, LoadProfile, OperationResult, ReadOnlyEdgeShard, ReadOnlyEdgeShardPools,
     ReadOnlyOpenOptions,
 };
 
@@ -22,8 +20,8 @@ impl ReadOnlyEdgeShard<MmapFile> {
     /// Open a read-only follower over local memory-mapped files, discovering segments from the
     /// leader's segment manifest. Requires the leader to write a manifest (the
     /// `write_segment_manifest` feature flag).
-    pub fn open_mmap(path: &Path) -> OperationResult<Self> {
-        Self::open(MmapFs, path, None, None)
+    pub fn open_mmap(path: &Path, scope: &EdgeScope) -> OperationResult<Self> {
+        Self::open(MmapFs, path, ReadOnlyOpenOptions::default(), scope)
     }
 }
 
@@ -49,34 +47,21 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     /// Segments are discovered through the leader's segment manifest (read via `fs`) — a read-only
     /// follower always uses the manifest, so there is no discovery to configure.
     ///
-    /// Not cancellable; see [`open_with_cancellation`](Self::open_with_cancellation).
+    /// Never returns a partially loaded shard.
     pub fn open(
         fs: S::Fs,
         path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
+        options: ReadOnlyOpenOptions,
+        scope: &EdgeScope,
     ) -> OperationResult<Self>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        let options = ReadOnlyOpenOptions {
-            config,
-            load_profile,
-            pools: ReadOnlyEdgeShardPools::default(),
-            waterline: None,
-        };
         let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator(fs, path, enumerator, options, &AtomicBool::new(false))
+        Self::open_with_enumerator(fs, path, enumerator, options, scope)
     }
 
-    /// Cancellation-aware [`open`](Self::open). Set the shared flag to `true` to cancel.
-    ///
-    /// Cancellation is cooperative, as in
-    /// [`EdgeShardReadWithCancellation`](crate::EdgeShardReadWithCancellation): the flag is checked
-    /// between the stages of the initial load and between segments within a stage. Blocking IO and
-    /// a single segment's load are indivisible and can delay the observation. Once observed, the
-    /// call returns [`OperationError::Cancelled`](segment::common::operation_error::OperationError::Cancelled)
-    /// and never a partially loaded shard. The call never sets or resets the caller's flag.
+    #[deprecated(note = "use `open` with a cancellable `EdgeScope`")]
     pub fn open_with_cancellation(
         fs: S::Fs,
         path: &Path,
@@ -93,12 +78,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             pools: ReadOnlyEdgeShardPools::default(),
             waterline: None,
         };
-        let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator(fs, path, enumerator, options, &is_stopped)
+        let scope = EdgeScope::new().with_cancellation(is_stopped);
+        Self::open(fs, path, options, &scope)
     }
 
-    /// Cancellation-aware open with caller-owned [`pools`](ReadOnlyOpenOptions::pools).
-    /// Other behavior matches [`open_with_cancellation`](Self::open_with_cancellation).
+    #[deprecated(
+        note = "use `open` with `ReadOnlyOpenOptions::pools` and a cancellable `EdgeScope`"
+    )]
     pub fn open_with_pools(
         fs: S::Fs,
         path: &Path,
@@ -116,14 +102,13 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             pools,
             waterline: None,
         };
-        let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator(fs, path, enumerator, options, &is_stopped)
+        let scope = EdgeScope::new().with_cancellation(is_stopped);
+        Self::open(fs, path, options, &scope)
     }
 
-    /// [`open_with_pools`](Self::open_with_pools) for a follower that gates versioned deletes, see
-    /// [`delete_versions`](segment::id_tracker::delete_versions).
-    ///
-    /// Later reloads take their waterline through [`live_reload_up_to`](Self::live_reload_up_to).
+    #[deprecated(
+        note = "use `open` with `ReadOnlyOpenOptions::waterline` and a cancellable `EdgeScope`"
+    )]
     pub fn open_with_waterline(
         fs: S::Fs,
         path: &Path,
@@ -142,8 +127,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             pools,
             waterline: Some(waterline),
         };
-        let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
-        Self::open_with_enumerator(fs, path, enumerator, options, &is_stopped)
+        let scope = EdgeScope::new().with_cancellation(is_stopped);
+        Self::open(fs, path, options, &scope)
     }
 
     /// Open with an explicit segment [`enumerator`](SegmentEnumerator).
@@ -160,7 +145,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         path: &Path,
         enumerator: impl SegmentEnumerator + 'static,
         options: ReadOnlyOpenOptions,
-        is_stopped: &AtomicBool,
+        scope: &EdgeScope,
     ) -> OperationResult<Self>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
@@ -171,7 +156,8 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             pools,
             waterline,
         } = options;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let is_stopped: &AtomicBool = scope.is_stopped();
+        let _scope = scope.handoff().into_scope();
         check_process_stopped(is_stopped)?;
         let provided_config = config.unwrap_or_default();
 
@@ -205,7 +191,7 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
             live_reload_lock: Default::default(),
             waterline: waterline.map(|highest| Mutex::new(Waterline { highest, gate: 0 })),
         };
-        shard.live_reload_cancellable(is_stopped, waterline)?;
+        shard.live_reload_impl(is_stopped, waterline)?;
 
         // Open-only config overlay: caller-provided tunables win over the segment-derived ones
         // (`live_reload` re-derives from the segments alone — see the `config` field docs). For an

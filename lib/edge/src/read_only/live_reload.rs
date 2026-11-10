@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient;
-use common::reason::Reason;
 use common::universal_io::{IsNotFound as _, UniversalReadFsAsync};
 use parking_lot::RwLock;
 use segment::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -14,9 +12,9 @@ use segment::segment::read_only::ReadOnlySegment;
 use segment::types::SeqNumberType;
 use uuid::Uuid;
 
-use crate::EdgeConfig;
 use crate::read_only::load::{load_segments_parallel, reload_segments_parallel};
 use crate::read_only::{ListedSegment, ReadOnlyEdgeShard};
+use crate::{EdgeConfig, EdgeScope, Scoped};
 
 /// How a single [`live_reload_attempt`](ReadOnlyEdgeShard::live_reload_attempt) ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +25,31 @@ pub enum LiveReloadOutcome {
     /// against a re-read manifest); re-run against the fresh manifest to pick up
     /// their replacements.
     ManifestChanged,
+}
+
+impl<S: UniversalReadExt + 'static> Scoped<'_, ReadOnlyEdgeShard<S>> {
+    /// [`ReadOnlyEdgeShard::live_reload`] in this scope.
+    ///
+    /// When cancelled, the shard keeps whatever state was reached: every swap is atomic and every
+    /// segment reload is applied under its write lock, so reads stay consistent and the next
+    /// live_reload continues from there.
+    pub fn live_reload(&self) -> OperationResult<LiveReloadOutcome>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        let _scope = self.scope.handoff().into_scope();
+        self.shard.live_reload_impl(self.scope.is_stopped(), None)
+    }
+
+    /// [`ReadOnlyEdgeShard::live_reload_up_to`] in this scope.
+    pub fn live_reload_up_to(&self, waterline: SeqNumberType) -> OperationResult<LiveReloadOutcome>
+    where
+        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
+    {
+        let _scope = self.scope.handoff().into_scope();
+        self.shard
+            .live_reload_impl(self.scope.is_stopped(), Some(waterline))
+    }
 }
 
 impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
@@ -49,26 +72,14 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     ///   applied reload;
     /// - a segment's essential files are missing while the manifest still lists it.
     /// - a newly listed segment failed to load for a reason other than missing files.
-    ///
-    /// Not cancellable; see [`live_reload_with_cancellation`](Self::live_reload_with_cancellation).
     pub fn live_reload(&self) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_cancellable(&AtomicBool::new(false), None)
+        self.with(&EdgeScope::new()).live_reload()
     }
 
-    /// Cancellation-aware [`live_reload`](Self::live_reload). Set the shared flag to `true` to
-    /// cancel.
-    ///
-    /// Cancellation is cooperative, as in
-    /// [`EdgeShardReadWithCancellation`](crate::EdgeShardReadWithCancellation): the flag is checked
-    /// between the stages of a live_reload (discovery, load, swap, reload) and between segments
-    /// within a stage. Blocking IO and a single segment's load or reload are indivisible and can
-    /// delay the observation. Once observed, the call returns
-    /// [`OperationError::Cancelled`] and the shard keeps whatever state was reached: every swap is
-    /// atomic and every segment reload is applied under its write lock, so reads stay consistent and
-    /// the next live_reload continues from there. The call never sets or resets the caller's flag.
+    #[deprecated(note = "use `shard.with(&scope).live_reload()` with a cancellable `EdgeScope`")]
     pub fn live_reload_with_cancellation(
         &self,
         is_stopped: Arc<AtomicBool>,
@@ -76,10 +87,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_cancellable(&is_stopped, None)
+        self.with(&EdgeScope::new().with_cancellation(is_stopped))
+            .live_reload()
     }
 
-    /// [`live_reload`](Self::live_reload) with a caller-supplied hardware counter.
+    #[deprecated(note = "use `live_reload`")]
     pub fn live_reload_with(&self) -> OperationResult<LiveReloadOutcome>
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
@@ -103,11 +115,12 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_cancellable(&AtomicBool::new(false), Some(waterline))
+        self.with(&EdgeScope::new()).live_reload_up_to(waterline)
     }
 
-    /// Cancellation-aware [`live_reload_up_to`](Self::live_reload_up_to), see
-    /// [`live_reload_with_cancellation`](Self::live_reload_with_cancellation).
+    #[deprecated(
+        note = "use `shard.with(&scope).live_reload_up_to(waterline)` with a cancellable `EdgeScope`"
+    )]
     pub fn live_reload_up_to_with_cancellation(
         &self,
         waterline: SeqNumberType,
@@ -116,24 +129,11 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     where
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
-        self.live_reload_cancellable(&is_stopped, Some(waterline))
+        self.with(&EdgeScope::new().with_cancellation(is_stopped))
+            .live_reload_up_to(waterline)
     }
 
-    /// Shared by the counter-less entry points and by [`open`](Self::open), which is a live_reload
-    /// over an empty shard.
-    pub(super) fn live_reload_cancellable(
-        &self,
-        is_stopped: &AtomicBool,
-        waterline: Option<SeqNumberType>,
-    ) -> OperationResult<LiveReloadOutcome>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
-        self.live_reload_impl(is_stopped, waterline)
-    }
-
-    fn live_reload_impl(
+    pub(super) fn live_reload_impl(
         &self,
         is_stopped: &AtomicBool,
         waterline: Option<SeqNumberType>,
