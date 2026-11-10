@@ -40,6 +40,7 @@ use segment::types::{
     FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, PayloadSchemaType,
     ProductQuantization, ProductQuantizationConfig, QuantizationConfig, Range,
     ScalarQuantization, ScalarQuantizationConfig, ScalarType, SearchParams, SegmentConfig,
+    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
     SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::quantized::quantized_vectors::{
@@ -541,8 +542,27 @@ fn binary_quantization_sends_quantized_vectors_only() {
 }
 
 #[test]
+fn turbo_quantization_sends_quantized_vectors_only() {
+    // 8 bits per dimension plus a 4-byte trailer, for all offsets. The indexer reconstructs
+    // query vectors from the codes, as a TurboQuant vector storage does; the local build uses
+    // the originals, hence the tolerance of `check_remote_matches_local`
+    check_remote_matches_local(
+        None,
+        Some(QuantizationConfig::Turbo(TurboQuantization {
+            turbo: TurboQuantQuantizationConfig {
+                always_ram: Some(true),
+                memory: None,
+                bits: Some(TurboQuantBitSize::Bits8),
+            },
+        })),
+        NUM_VECTORS as usize * (DIM + 4),
+    );
+}
+
+#[test]
 fn product_quantization_sends_storage_vectors() {
-    // PQ encodes queries from the original vectors, so those are sent
+    // PQ encodes queries from the original vectors, which are sent; the indexer builds with
+    // them alone, without PQ
     check_remote_matches_local(
         None,
         Some(QuantizationConfig::Product(ProductQuantization {

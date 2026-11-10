@@ -413,6 +413,19 @@ impl<TStorage: EncodedStorage> EncodedVectorsTQ<TStorage> {
         )
     }
 
+    /// Approximate original vector of `i`, reconstructed from its code: what a TurboQuant
+    /// vector storage returns for its vectors.
+    pub fn dequantize_vector(&self, i: PointOffsetType) -> Vec<f32> {
+        let mut dequantized = self
+            .quantizer
+            .dequantize::<f64>(&self.get_quantized_vector(i));
+        self.quantizer.apply_inverse_rotation(&mut dequantized);
+        dequantized[..self.metadata.vector_parameters.dim]
+            .iter()
+            .map(|&x| x as f32)
+            .collect()
+    }
+
     pub fn layout(&self) -> Layout {
         Layout::from_size_align(self.quantized_vector_size(), align_of::<u8>()).unwrap()
     }

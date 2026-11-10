@@ -359,15 +359,29 @@ fn build(
             (storage, None)
         }
         VectorSource::Quantized => {
-            // The quantized vectors are all the build reads: the storage only carries the
-            // point count, the deleted flags and the vector parameters
             let quantized_dir = storage_dir.path().join("quantized");
             for file in &params.files {
                 bytes_read += download_file(source, &quantized_dir, &file.name, file.size, stopped)?;
             }
-            let storage = layout.placeholder_storage(&deleted);
+            // Scalar and binary: the quantized vectors are all the build reads, the storage
+            // only carries the point count, the deleted flags and the vector parameters
+            let placeholder = layout.placeholder_storage(&deleted);
             let quantized =
-                QuantizedVectors::load_copied(&storage, &quantized_dir).map_err(other)?;
+                QuantizedVectors::load_copied(&placeholder, &quantized_dir).map_err(other)?;
+            let storage = if quantized.builds_without_originals() {
+                placeholder
+            } else {
+                // TurboQuant: queries are encoded from vectors, which are reconstructed from
+                // the codes, as a TurboQuant vector storage does. Built here, not sent.
+                dequantized_storage(
+                    params,
+                    &layout,
+                    &quantized,
+                    &deleted,
+                    &storage_dir.path().join("dequantized"),
+                    stopped,
+                )?
+            };
             (storage, Some(quantized))
         }
     };
@@ -462,6 +476,50 @@ fn read_storage(
             )));
         }
         start = end;
+    }
+    for point in deleted.iter_ones() {
+        storage
+            .delete_vector(point as PointOffsetType)
+            .map_err(other)?;
+    }
+    Ok(storage)
+}
+
+/// A storage of `layout` in `dir` with the vectors reconstructed from `quantized`, and the
+/// points not to link deleted.
+fn dequantized_storage(
+    params: &RemoteGraphParams,
+    layout: &RemoteVectorLayout,
+    quantized: &QuantizedVectors,
+    deleted: &BitVec,
+    dir: &Path,
+    stopped: &AtomicBool,
+) -> SourceResult<VectorStorageEnum> {
+    let other = |err: crate::common::operation_error::OperationError| {
+        SourceError::Other(err.to_string())
+    };
+    if params.multivector_config.is_some() {
+        return Err(SourceError::Other(
+            "cannot reconstruct multivectors from quantized vectors".to_string(),
+        ));
+    }
+    let mut storage = layout.create_storage(dir).map_err(other)?;
+    let zeros = vec![0.0; params.dim];
+    for point in 0..params.point_count as PointOffsetType {
+        if point % 1024 == 0 && stopped.load(Ordering::Relaxed) {
+            return Err(SourceError::Other("stopped".to_string()));
+        }
+        let vector = if deleted[point as usize] {
+            None
+        } else {
+            Some(quantized.dequantize_vector(point).ok_or_else(|| {
+                SourceError::Other("quantization cannot reconstruct vectors".to_string())
+            })?)
+        };
+        let vector = vector.as_deref().unwrap_or(&zeros);
+        storage
+            .insert_vector(point, VectorRef::from(vector))
+            .map_err(other)?;
     }
     for point in deleted.iter_ones() {
         storage
