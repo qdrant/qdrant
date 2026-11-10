@@ -151,6 +151,8 @@ pub struct TaskState {
     vector_storage: RwLock<Option<Arc<AtomicRefCell<VectorStorageEnum>>>>,
     /// One flag per point: set if the point is not linked (deleted, or without vector).
     deleted: Arc<BitVec>,
+    /// Files the indexer may download, by the name it asks for. Nothing else is readable.
+    files: HashMap<String, PathBuf>,
     inner: Mutex<TaskInner>,
     finished: Condvar,
     bytes_served: AtomicU64,
@@ -207,6 +209,8 @@ pub struct NewTask {
     pub block_plan: Arc<BlockPlan>,
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub deleted: Arc<BitVec>,
+    /// Files served by `read_file`: name sent to the indexer → path on disk.
+    pub files: Vec<(String, PathBuf)>,
 }
 
 impl TaskRegistry {
@@ -218,6 +222,7 @@ impl TaskRegistry {
             block_plan,
             vector_storage,
             deleted,
+            files,
         } = task;
         let task_id = Uuid::new_v4();
         let now = Instant::now();
@@ -231,6 +236,7 @@ impl TaskRegistry {
             },
             vector_storage: RwLock::new(Some(vector_storage)),
             deleted,
+            files: files.into_iter().collect(),
             inner: Mutex::new(TaskInner {
                 status: TaskStatus::Queued,
                 last_seen: now,
@@ -350,6 +356,42 @@ impl TaskRegistry {
             .bytes_served
             .fetch_add(size as u64, Ordering::Relaxed);
         Ok((vectors, next))
+    }
+
+    /// `ReadFile`: up to `max_len` bytes of a file of the task, from `offset`. Empty at the
+    /// end of the file. Only the files registered with the task can be read.
+    ///
+    /// Reads from disk: call from a blocking thread.
+    pub fn read_file(
+        &self,
+        token: &TaskToken,
+        name: &str,
+        offset: u64,
+        max_len: usize,
+    ) -> Result<Vec<u8>, RemoteTaskError> {
+        use std::io::{Read as _, Seek as _, SeekFrom};
+
+        let state = self.get(token)?;
+        state.touch();
+        let Some(path) = state.files.get(name) else {
+            return Err(RemoteTaskError::InvalidArgument(format!(
+                "no file {name:?} in this task"
+            )));
+        };
+        let io = |err: std::io::Error| RemoteTaskError::Internal(format!("{name}: {err}"));
+        let mut file = fs_err::File::open(path).map_err(io)?;
+        file.seek(SeekFrom::Start(offset)).map_err(io)?;
+        let mut data = Vec::with_capacity(max_len.min(READ_CHUNK_BYTES));
+        file.take(max_len as u64)
+            .read_to_end(&mut data)
+            .map_err(io)?;
+        state
+            .bytes_served
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
+        REMOTE_INDEXING_METRICS
+            .bytes_served
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
+        Ok(data)
     }
 
     /// `ReadDeleted`: one flag per point, set if the point must not be linked.
@@ -535,7 +577,9 @@ impl Drop for TaskHandle {
 mod tests {
     use super::*;
     use crate::data_types::vectors::VectorRef;
-    use crate::index::hnsw_index::remote::wire::VECTOR_REPRESENTATION_STORAGE_NATIVE;
+    use crate::index::hnsw_index::remote::wire::{
+        VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
+    };
     use crate::types::{Distance, VectorStorageDatatype};
     use crate::vector_storage::VectorStorage as _;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
@@ -571,10 +615,13 @@ mod tests {
                 point_count,
                 indexed_point_count: point_count - 1,
                 vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
+                vector_source: VectorSource::Storage,
+                files: Vec::new(),
             },
             block_plan: Arc::new(BlockPlan::default()),
             vector_storage: storage.clone(),
             deleted: Arc::new(deleted),
+            files: Vec::new(),
         };
         (task, storage)
     }

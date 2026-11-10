@@ -26,6 +26,26 @@ pub const SUPPORTED_GRAPH_FORMAT_VERSIONS: &[u32] = &[GRAPH_FORMAT_VERSION_V1];
 /// without quantization.
 pub const VECTOR_REPRESENTATION_STORAGE_NATIVE: &str = "storage_native_v1";
 
+/// What the indexer scores with, and so what core sends it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VectorSource {
+    /// Vectors through `ReadVectors`, in the storage-native encoding: raw for float32,
+    /// float16 and uint8, already encoded for TurboQuant storages.
+    Storage,
+    /// The quantized vectors, through `ReadFile`, and no original vectors. Used when the
+    /// local build would score from quantized data only (scalar and binary quantization), so
+    /// the remote graph is the same, from a fraction of the bytes.
+    Quantized,
+}
+
+/// A file the indexer downloads with `ReadFile`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteFile {
+    /// Path relative to the quantized vectors directory.
+    pub name: String,
+    pub size: u64,
+}
+
 /// Everything the indexer needs to build the graph, besides the vectors and the deleted mask.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoteGraphParams {
@@ -49,6 +69,9 @@ pub struct RemoteGraphParams {
     /// Number of points to link: `point_count` minus deleted.
     pub indexed_point_count: usize,
     pub vector_representation: String,
+    pub vector_source: VectorSource,
+    /// For [`VectorSource::Quantized`]: the files of the quantized vectors.
+    pub files: Vec<RemoteFile>,
 }
 
 impl RemoteGraphParams {
@@ -406,6 +429,8 @@ mod tests {
             point_count,
             indexed_point_count: point_count,
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
+            vector_source: VectorSource::Storage,
+            files: Vec::new(),
         }
     }
 

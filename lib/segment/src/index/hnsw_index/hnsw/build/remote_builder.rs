@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -18,8 +19,8 @@ use crate::index::hnsw_index::remote::registry::{
     NewTask, REMOTE_INDEXING_TASKS, TaskOutcome, WaitInterrupt,
 };
 use crate::index::hnsw_index::remote::wire::{
-    BlockPlan, RemoteGraphParams, SUPPORTED_GRAPH_FORMAT_VERSIONS,
-    VECTOR_REPRESENTATION_STORAGE_NATIVE,
+    BlockPlan, RemoteFile, RemoteGraphParams, SUPPORTED_GRAPH_FORMAT_VERSIONS,
+    VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
 };
 use crate::index::hnsw_index::remote::{
     OnFailure, RemoteIndexer, RemoteIndexingConfig, TaskScope, TaskSubmission,
@@ -53,7 +54,12 @@ pub(in crate::index::hnsw_index::hnsw) struct RemoteBuildArgs<'a> {
     pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     pub layout: RemoteVectorLayout,
     pub scope: TaskScope,
+    /// Size of the vector data, for the size threshold and billing.
     pub vector_bytes: u64,
+    /// What the indexer reads: the storage's vectors, or the quantized vectors.
+    pub source: VectorSource,
+    /// For [`VectorSource::Quantized`]: name sent to the indexer → path.
+    pub files: Vec<(String, PathBuf)>,
     /// Its CPUs are lent back to the budget while the indexer works (§4.6).
     pub permit: &'a ResourcePermit,
     /// Shows the indexer's progress in the optimizations view.
@@ -131,6 +137,15 @@ impl<'a> RemoteBuilder<'a> {
             point_count: local.ctx.vector_storage.total_vector_count(),
             indexed_point_count: local.points.len(),
             vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
+            vector_source: args.source,
+            files: args
+                .files
+                .iter()
+                .map(|(name, path)| RemoteFile {
+                    name: name.clone(),
+                    size: fs_err::metadata(path).map_or(0, |m| m.len()),
+                })
+                .collect(),
         }
     }
 
@@ -175,6 +190,7 @@ impl<'a> RemoteBuilder<'a> {
                 block_plan: plan.clone(),
                 vector_storage: self.args.vector_storage.clone(),
                 deleted: deleted.clone(),
+                files: self.args.files.clone(),
             });
             handle.set_progress_counter(counter.clone());
             let submission = TaskSubmission {

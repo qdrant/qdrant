@@ -6,16 +6,18 @@ use segment::index::hnsw_index::remote::EntryPoint;
 use segment::index::hnsw_index::remote::executor::FetchedTask;
 use segment::index::hnsw_index::remote::registry::{HeartbeatAction, TaskDescription, TaskProgress};
 use segment::index::hnsw_index::remote::wire::{
-    BlockPlan, FieldBlockPlan, PlannedBlock, RemoteGraphParams, WireGraph,
+    BlockPlan, FieldBlockPlan, PlannedBlock, RemoteFile, RemoteGraphParams, VectorSource,
+    WireGraph,
 };
 use segment::types::{Distance, MultiVectorComparator, MultiVectorConfig, VectorStorageDatatype};
 use uuid::Uuid;
 
 use super::qdrant::{
-    IndexingDeletedMask, IndexingDistance, IndexingEntryPoint, IndexingFieldBlocks,
+    IndexingDeletedMask, IndexingDistance, IndexingEntryPoint, IndexingFieldBlocks, IndexingFile,
     IndexingGraphHeader, IndexingGraphLinks, IndexingHeartbeatAction, IndexingHeartbeatRequest,
     IndexingHeartbeatResponse, IndexingMultiVectorComparator, IndexingPayloadBlock,
-    IndexingTaskDescription, IndexingVectorDatatype, UploadIndexingGraphRequest,
+    IndexingTaskDescription, IndexingVectorDatatype, IndexingVectorSource,
+    UploadIndexingGraphRequest,
     upload_indexing_graph_request,
 };
 
@@ -25,14 +27,28 @@ pub const INDEXING_TOKEN_HEADER: &str = "x-qdrant-indexing-token";
 /// Points per `IndexingGraphLinks` chunk of an upload.
 pub const UPLOAD_CHUNK_POINTS: usize = 16 * 1024;
 
-fn datatype_to_grpc(datatype: VectorStorageDatatype) -> Result<IndexingVectorDatatype, String> {
+fn datatype_to_grpc(datatype: VectorStorageDatatype) -> IndexingVectorDatatype {
     match datatype {
-        VectorStorageDatatype::Float32 => Ok(IndexingVectorDatatype::IndexingFloat32),
-        VectorStorageDatatype::Float16 => Ok(IndexingVectorDatatype::IndexingFloat16),
-        VectorStorageDatatype::Uint8 => Ok(IndexingVectorDatatype::IndexingUint8),
-        VectorStorageDatatype::Turbo4
-        | VectorStorageDatatype::Turbo8
-        | VectorStorageDatatype::Turbo16 => Err(format!("{datatype:?} is not built remotely")),
+        VectorStorageDatatype::Float32 => IndexingVectorDatatype::IndexingFloat32,
+        VectorStorageDatatype::Float16 => IndexingVectorDatatype::IndexingFloat16,
+        VectorStorageDatatype::Uint8 => IndexingVectorDatatype::IndexingUint8,
+        VectorStorageDatatype::Turbo4 => IndexingVectorDatatype::IndexingTurbo4,
+        VectorStorageDatatype::Turbo8 => IndexingVectorDatatype::IndexingTurbo8,
+        VectorStorageDatatype::Turbo16 => IndexingVectorDatatype::IndexingTurbo16,
+    }
+}
+
+fn source_to_grpc(source: VectorSource) -> IndexingVectorSource {
+    match source {
+        VectorSource::Storage => IndexingVectorSource::IndexingSourceStorage,
+        VectorSource::Quantized => IndexingVectorSource::IndexingSourceQuantized,
+    }
+}
+
+fn source_from_grpc(source: IndexingVectorSource) -> VectorSource {
+    match source {
+        IndexingVectorSource::IndexingSourceStorage => VectorSource::Storage,
+        IndexingVectorSource::IndexingSourceQuantized => VectorSource::Quantized,
     }
 }
 
@@ -41,6 +57,9 @@ fn datatype_from_grpc(datatype: IndexingVectorDatatype) -> VectorStorageDatatype
         IndexingVectorDatatype::IndexingFloat32 => VectorStorageDatatype::Float32,
         IndexingVectorDatatype::IndexingFloat16 => VectorStorageDatatype::Float16,
         IndexingVectorDatatype::IndexingUint8 => VectorStorageDatatype::Uint8,
+        IndexingVectorDatatype::IndexingTurbo4 => VectorStorageDatatype::Turbo4,
+        IndexingVectorDatatype::IndexingTurbo8 => VectorStorageDatatype::Turbo8,
+        IndexingVectorDatatype::IndexingTurbo16 => VectorStorageDatatype::Turbo16,
     }
 }
 
@@ -88,12 +107,14 @@ pub fn task_description_to_grpc(
         point_count,
         indexed_point_count,
         vector_representation,
+        vector_source,
+        files,
     } = params;
     Ok(IndexingTaskDescription {
         task_id: task_id.to_string(),
         vector_name: vector_name.clone(),
         dim: *dim as u64,
-        datatype: i32::from(datatype_to_grpc(*datatype)?),
+        datatype: i32::from(datatype_to_grpc(*datatype)),
         distance: i32::from(distance_to_grpc(*distance)),
         multivector_comparator: multivector_config.map(|config| {
             i32::from(match config.comparator {
@@ -109,6 +130,14 @@ pub fn task_description_to_grpc(
         point_count: *point_count as u64,
         indexed_point_count: *indexed_point_count as u64,
         vector_representation: vector_representation.clone(),
+        vector_source: i32::from(source_to_grpc(*vector_source)),
+        files: files
+            .iter()
+            .map(|file| IndexingFile {
+                name: file.name.clone(),
+                size: file.size,
+            })
+            .collect(),
         graph_format_versions: graph_format_versions.to_vec(),
         block_plan: block_plan
             .fields
@@ -149,7 +178,12 @@ pub fn task_description_from_grpc(description: IndexingTaskDescription) -> Resul
         vector_representation,
         graph_format_versions,
         block_plan,
+        vector_source,
+        files,
     } = description;
+    let vector_source = IndexingVectorSource::try_from(vector_source)
+        .map(source_from_grpc)
+        .map_err(|_| format!("unknown vector source {vector_source}"))?;
     let datatype = IndexingVectorDatatype::try_from(datatype)
         .map_err(|_| format!("unknown datatype {datatype}"))?;
     let distance = IndexingDistance::try_from(distance)
@@ -183,6 +217,14 @@ pub fn task_description_from_grpc(description: IndexingTaskDescription) -> Resul
             point_count: point_count as usize,
             indexed_point_count: indexed_point_count as usize,
             vector_representation,
+            vector_source,
+            files: files
+                .into_iter()
+                .map(|file| RemoteFile {
+                    name: file.name,
+                    size: file.size,
+                })
+                .collect(),
         },
         block_plan: BlockPlan {
             fields: block_plan

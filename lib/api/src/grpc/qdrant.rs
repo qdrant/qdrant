@@ -5423,9 +5423,10 @@ pub mod indexing_service_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// Remote indexing (indexer side). Served by an indexing service, or by a queue in front of
-    /// it: core submits tasks here, then the indexer connects back to `advertise_url` and pulls
-    /// the data through the `IndexingTask` service.
+    /// Remote indexing (indexer side). Core always submits tasks with this API, to the configured
+    /// URL. Whatever receives them (the indexing service itself, or a queue or sidecar in front of
+    /// a pool of indexers) implements it. The indexer then connects back to `advertise_url` and
+    /// pulls the data through the `IndexingTask` service.
     #[derive(Debug, Clone)]
     pub struct IndexingServiceClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -5553,9 +5554,10 @@ pub mod indexing_service_server {
             tonic::Status,
         >;
     }
-    /// Remote indexing (indexer side). Served by an indexing service, or by a queue in front of
-    /// it: core submits tasks here, then the indexer connects back to `advertise_url` and pulls
-    /// the data through the `IndexingTask` service.
+    /// Remote indexing (indexer side). Core always submits tasks with this API, to the configured
+    /// URL. Whatever receives them (the indexing service itself, or a queue or sidecar in front of
+    /// a pool of indexers) implements it. The indexer then connects back to `advertise_url` and
+    /// pulls the data through the `IndexingTask` service.
     #[derive(Debug)]
     pub struct IndexingServiceServer<T> {
         inner: Arc<T>,
@@ -5719,6 +5721,16 @@ pub mod indexing_service_server {
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingFile {
+    /// Path relative to the quantized vectors directory.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "2")]
+    pub size: u64,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetIndexingTaskRequest {}
 #[allow(clippy::all)]
@@ -5765,6 +5777,10 @@ pub struct IndexingTaskDescription {
     /// Payload blocks chosen by core, per field, in build order.
     #[prost(message, repeated, tag = "17")]
     pub block_plan: ::prost::alloc::vec::Vec<IndexingFieldBlocks>,
+    #[prost(enumeration = "IndexingVectorSource", tag = "18")]
+    pub vector_source: i32,
+    #[prost(message, repeated, tag = "19")]
+    pub files: ::prost::alloc::vec::Vec<IndexingFile>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -5808,6 +5824,22 @@ pub struct IndexingVectorsChunk {
     /// One entry per offset from `start`. Empty: the point has no vector, or is deleted.
     #[prost(bytes = "vec", repeated, tag = "2")]
     pub vectors: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadIndexingFileRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexingFileChunk {
+    #[prost(uint64, tag = "1")]
+    pub offset: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::all)]
 #[derive(serde::Serialize)]
@@ -5920,6 +5952,9 @@ pub enum IndexingVectorDatatype {
     IndexingFloat32 = 0,
     IndexingFloat16 = 1,
     IndexingUint8 = 2,
+    IndexingTurbo4 = 3,
+    IndexingTurbo8 = 4,
+    IndexingTurbo16 = 5,
 }
 impl IndexingVectorDatatype {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5931,6 +5966,9 @@ impl IndexingVectorDatatype {
             Self::IndexingFloat32 => "IndexingFloat32",
             Self::IndexingFloat16 => "IndexingFloat16",
             Self::IndexingUint8 => "IndexingUint8",
+            Self::IndexingTurbo4 => "IndexingTurbo4",
+            Self::IndexingTurbo8 => "IndexingTurbo8",
+            Self::IndexingTurbo16 => "IndexingTurbo16",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5939,6 +5977,40 @@ impl IndexingVectorDatatype {
             "IndexingFloat32" => Some(Self::IndexingFloat32),
             "IndexingFloat16" => Some(Self::IndexingFloat16),
             "IndexingUint8" => Some(Self::IndexingUint8),
+            "IndexingTurbo4" => Some(Self::IndexingTurbo4),
+            "IndexingTurbo8" => Some(Self::IndexingTurbo8),
+            "IndexingTurbo16" => Some(Self::IndexingTurbo16),
+            _ => None,
+        }
+    }
+}
+/// What the indexer reads to build the graph.
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingVectorSource {
+    /// `ReadVectors`: the storage's vectors, storage-native (TurboQuant storages: encoded).
+    IndexingSourceStorage = 0,
+    /// `ReadFile` for each of `files`: the quantized vectors; no original vectors.
+    IndexingSourceQuantized = 1,
+}
+impl IndexingVectorSource {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingSourceStorage => "IndexingSourceStorage",
+            Self::IndexingSourceQuantized => "IndexingSourceQuantized",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingSourceStorage" => Some(Self::IndexingSourceStorage),
+            "IndexingSourceQuantized" => Some(Self::IndexingSourceQuantized),
             _ => None,
         }
     }
@@ -6157,6 +6229,7 @@ pub mod indexing_task_client {
             self.inner.unary(req, path, codec).await
         }
         /// Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
+        /// For tasks with vector source STORAGE.
         pub async fn read_vectors(
             &mut self,
             request: impl tonic::IntoRequest<super::ReadIndexingVectorsRequest>,
@@ -6179,6 +6252,32 @@ pub mod indexing_task_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadVectors"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        /// Content of one of the task's files, in chunks of about 1 MB. For vector source
+        /// QUANTIZED: the quantized vectors, loaded by the indexer as they are.
+        pub async fn read_file(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ReadIndexingFileRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::IndexingFileChunk>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.IndexingTask/ReadFile",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.IndexingTask", "ReadFile"));
             self.inner.server_streaming(req, path, codec).await
         }
         /// The points not to link.
@@ -6310,6 +6409,7 @@ pub mod indexing_task_server {
             + std::marker::Send
             + 'static;
         /// Storage-native vector bytes of a range of point offsets, in chunks of about 1 MB.
+        /// For tasks with vector source STORAGE.
         async fn read_vectors(
             &self,
             request: tonic::Request<super::ReadIndexingVectorsRequest>,
@@ -6317,6 +6417,18 @@ pub mod indexing_task_server {
             tonic::Response<Self::ReadVectorsStream>,
             tonic::Status,
         >;
+        /// Server streaming response type for the ReadFile method.
+        type ReadFileStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::IndexingFileChunk, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// Content of one of the task's files, in chunks of about 1 MB. For vector source
+        /// QUANTIZED: the quantized vectors, loaded by the indexer as they are.
+        async fn read_file(
+            &self,
+            request: tonic::Request<super::ReadIndexingFileRequest>,
+        ) -> std::result::Result<tonic::Response<Self::ReadFileStream>, tonic::Status>;
         /// The points not to link.
         async fn read_deleted(
             &self,
@@ -6510,6 +6622,53 @@ pub mod indexing_task_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ReadVectorsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.IndexingTask/ReadFile" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReadFileSvc<T: IndexingTask>(pub Arc<T>);
+                    impl<
+                        T: IndexingTask,
+                    > tonic::server::ServerStreamingService<
+                        super::ReadIndexingFileRequest,
+                    > for ReadFileSvc<T> {
+                        type Response = super::IndexingFileChunk;
+                        type ResponseStream = T::ReadFileStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReadIndexingFileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as IndexingTask>::read_file(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReadFileSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

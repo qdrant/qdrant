@@ -17,14 +17,17 @@ use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::remote::wire::{BlockPlan, RemoteGraphParams};
 use crate::vector_storage::VectorStorageEnum;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 /// Build the graph `params` and `plan` ask for, over `vector_storage`, whose deleted vectors
-/// are the points not to link. `id_tracker` maps every offset of the storage.
+/// are the points not to link, scoring with `quantized_vectors` if given, as a local build
+/// does. `id_tracker` maps every offset of the storage.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_requested_graph(
     params: &RemoteGraphParams,
     plan: &BlockPlan,
     vector_storage: &VectorStorageEnum,
+    quantized_vectors: Option<&QuantizedVectors>,
     id_tracker: &IdTrackerEnum,
     num_threads: usize,
     gpu_device: Option<&LockedGpuDevice<'_>>,
@@ -35,7 +38,7 @@ pub(crate) fn build_requested_graph(
     let mut ctx = GraphBuildContext {
         id_tracker,
         vector_storage,
-        quantized_vectors: None,
+        quantized_vectors,
         progress: None,
         main_params: GraphParams {
             hnsw_m: params.main_m(),

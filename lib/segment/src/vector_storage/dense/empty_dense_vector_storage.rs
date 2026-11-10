@@ -35,8 +35,10 @@ pub struct EmptyDenseVectorStorage {
     multi_vector_config: Option<MultiVectorConfig>,
     /// Number of points in this storage (all reported as deleted)
     num_points: usize,
-    /// All-ones bitvec indicating every vector is deleted
+    /// One flag per point: all set, except for [`Self::with_deleted`]
     deleted_bitvec: BitVec,
+    /// Number of set flags in `deleted_bitvec`
+    deleted_count: usize,
 }
 
 impl EmptyDenseVectorStorage {
@@ -56,13 +58,38 @@ impl EmptyDenseVectorStorage {
             multi_vector_config,
             num_points,
             deleted_bitvec: BitVec::repeat(true, num_points),
+            deleted_count: num_points,
         }
     }
 
-    /// Update the number of points. All points are marked as deleted.
+    /// A placeholder whose points are deleted per `deleted`, for graph builds that score
+    /// from quantized vectors only (remote indexing). Vectors of points that are not deleted
+    /// read as zeros, so they must not be used for scoring.
+    pub fn with_deleted(
+        dim: usize,
+        distance: Distance,
+        datatype: VectorStorageDatatype,
+        cold: bool,
+        multi_vector_config: Option<MultiVectorConfig>,
+        deleted: BitVec,
+    ) -> Self {
+        Self {
+            distance,
+            dim,
+            datatype,
+            cold,
+            multi_vector_config,
+            num_points: deleted.len(),
+            deleted_count: deleted.count_ones(),
+            deleted_bitvec: deleted,
+        }
+    }
+
+    /// Update the number of points. New points are marked as deleted.
     pub fn set_num_points(&mut self, num_points: usize) {
         self.num_points = num_points;
         self.deleted_bitvec.resize(num_points, true);
+        self.deleted_count = self.deleted_bitvec.count_ones();
     }
 
     pub fn multi_vector_config(&self) -> Option<&MultiVectorConfig> {
@@ -204,12 +231,12 @@ impl VectorStorageRead for EmptyDenseVectorStorage {
         None
     }
 
-    fn is_deleted_vector(&self, _key: PointOffsetType) -> bool {
-        true
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted_bitvec.get(key as usize).is_none_or(|bit| *bit)
     }
 
     fn deleted_vector_count(&self) -> usize {
-        self.num_points
+        self.deleted_count
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
