@@ -67,8 +67,8 @@ pub struct TaskSubmission {
     pub attempt: u32,
 }
 
-/// Hands tasks to the indexing service. Implemented by the server (gRPC or HTTP entry
-/// points) and by [`loopback::LoopbackIndexer`].
+/// Hands tasks to the indexing service. Implemented by the server (gRPC `SubmitTask`, to an
+/// indexer or a queue implementing it) and by [`loopback::LoopbackIndexer`].
 pub trait RemoteIndexer: Send + Sync {
     fn config(&self) -> &RemoteIndexingConfig;
 

@@ -1,5 +1,8 @@
-//! Remote indexing, server side: the entry point clients that submit tasks (§4.8), and their
-//! registration as the process-wide `RemoteIndexer` (§4.1).
+//! Remote indexing, server side: the client that submits tasks (§4.8), and its registration
+//! as the process-wide `RemoteIndexer` (§4.1).
+//!
+//! Core always submits with gRPC `IndexingService.SubmitTask` to the configured URL. Whether
+//! an indexer or a queue in front of a pool of indexers receives it is up to the receiver.
 
 use std::path::{Component, Path};
 use std::sync::Arc;
@@ -11,11 +14,10 @@ use api::grpc::qdrant::indexing_service_client::IndexingServiceClient;
 use segment::index::hnsw_index::remote::{
     OnFailure, RemoteIndexer, RemoteIndexingConfig, TaskSubmission, set_remote_indexer,
 };
-use serde::Serialize;
 use tokio::runtime::Runtime;
 use tonic::transport::{Channel, Endpoint};
 
-use crate::settings::{IndexingEntryPoint, IndexingOnFailure, IndexingServiceConfig, Settings};
+use crate::settings::{IndexingOnFailure, IndexingServiceConfig, Settings};
 
 /// Header with the entry point API key.
 const API_KEY_HEADER: &str = "api-key";
@@ -43,9 +45,7 @@ pub fn init_remote_indexing(settings: &Settings) -> bool {
     match RemoteIndexingClient::new(config.clone()) {
         Ok(client) => {
             log::info!(
-                "Remote indexing enabled: {:?} entry point {}, advertised as {}, \
-                 min index size {} bytes",
-                config.entry_point,
+                "Remote indexing enabled: tasks to {}, advertised as {}, min index size {} bytes",
                 config.url,
                 config.advertise_url,
                 config.min_index_size_bytes,
@@ -84,11 +84,6 @@ fn collection_and_shard(index_path: &Path) -> (String, u32) {
     (collection, shard)
 }
 
-enum Transport {
-    Direct(Channel),
-    Queue(reqwest::Client),
-}
-
 /// Submits tasks to the configured entry point, on a runtime of its own: `submit` is called
 /// from optimizer threads, which must not drive the server's runtimes (§4.6).
 struct RemoteIndexingClient {
@@ -99,24 +94,8 @@ struct RemoteIndexingClient {
 struct ClientInner {
     config: IndexingServiceConfig,
     remote_config: RemoteIndexingConfig,
-    transport: Transport,
-}
-
-/// Task body for the queue entry point.
-#[derive(Serialize)]
-struct QueueTask<'a> {
-    task_id: String,
-    token: String,
-    advertise_url: &'a str,
-    collection: String,
-    shard_id: u32,
-    vector_name: &'a str,
-    core_version: &'a str,
-    graph_format_versions: &'a [u32],
-    vector_bytes: u64,
-    point_count: u64,
-    attempt: u32,
-    cluster_id: Option<&'a str>,
+    /// Lazy: the receiver may come up after core.
+    channel: Channel,
 }
 
 impl RemoteIndexingClient {
@@ -127,19 +106,12 @@ impl RemoteIndexingClient {
             .enable_all()
             .build()?;
         let timeout = Duration::from_secs(config.submit_timeout_sec);
-        let transport = match config.entry_point {
-            IndexingEntryPoint::Direct => {
-                // Lazy: the indexer may come up after core
-                let _guard = runtime.enter();
-                let channel = Endpoint::from_shared(config.url.clone())?
-                    .connect_timeout(timeout)
-                    .timeout(timeout)
-                    .connect_lazy();
-                Transport::Direct(channel)
-            }
-            IndexingEntryPoint::Queue => {
-                Transport::Queue(reqwest::Client::builder().timeout(timeout).build()?)
-            }
+        let channel = {
+            let _guard = runtime.enter();
+            Endpoint::from_shared(config.url.clone())?
+                .connect_timeout(timeout)
+                .timeout(timeout)
+                .connect_lazy()
         };
         let remote_config = RemoteIndexingConfig {
             min_index_size_bytes: config.min_index_size_bytes,
@@ -155,7 +127,7 @@ impl RemoteIndexingClient {
             inner: Arc::new(ClientInner {
                 config,
                 remote_config,
-                transport,
+                channel,
             }),
             runtime,
         })
@@ -166,68 +138,35 @@ impl ClientInner {
     async fn submit_async(&self, task: TaskSubmission) -> Result<(), String> {
         let (collection, shard_id) = collection_and_shard(&task.scope.index_path);
         let core_version = common::defaults::QDRANT_VERSION_STRING;
-        match &self.transport {
-            Transport::Direct(channel) => {
-                let mut request = tonic::Request::new(IndexingTaskSubmission {
-                    task_id: task.task_id.to_string(),
-                    token: task.token.to_hex(),
-                    advertise_url: self.config.advertise_url.clone(),
-                    collection,
-                    shard_id,
-                    vector_name: task.scope.vector_name.clone(),
-                    core_version: core_version.to_string(),
-                    graph_format_versions: task.graph_format_versions.clone(),
-                    vector_bytes: task.vector_bytes,
-                    point_count: task.point_count,
-                    attempt: task.attempt,
-                    cluster_id: self.config.cluster_id.clone(),
-                });
-                if let Some(api_key) = &self.config.api_key {
-                    let value = api_key
-                        .parse()
-                        .map_err(|err| format!("invalid api key: {err}"))?;
-                    request.metadata_mut().insert(API_KEY_HEADER, value);
-                }
-                let response = IndexingServiceClient::new(channel.clone())
-                    .submit_task(request)
-                    .await
-                    .map_err(|status| format!("SubmitTask: {status}"))?
-                    .into_inner();
-                if response.accepted {
-                    Ok(())
-                } else {
-                    Err(format!("task refused: {}", response.message))
-                }
-            }
-            Transport::Queue(client) => {
-                let body = QueueTask {
-                    task_id: task.task_id.to_string(),
-                    token: task.token.to_hex(),
-                    advertise_url: &self.config.advertise_url,
-                    collection,
-                    shard_id,
-                    vector_name: &task.scope.vector_name,
-                    core_version,
-                    graph_format_versions: &task.graph_format_versions,
-                    vector_bytes: task.vector_bytes,
-                    point_count: task.point_count,
-                    attempt: task.attempt,
-                    cluster_id: self.config.cluster_id.as_deref(),
-                };
-                let url = format!("{}/tasks", self.config.url.trim_end_matches('/'));
-                let mut request = client.post(url).json(&body);
-                if let Some(api_key) = &self.config.api_key {
-                    request = request.header(API_KEY_HEADER, api_key);
-                }
-                let response = request.send().await.map_err(|err| err.to_string())?;
-                let status = response.status();
-                if status.is_success() {
-                    Ok(())
-                } else {
-                    let text = response.text().await.unwrap_or_default();
-                    Err(format!("queue answered {status}: {text}"))
-                }
-            }
+        let mut request = tonic::Request::new(IndexingTaskSubmission {
+            task_id: task.task_id.to_string(),
+            token: task.token.to_hex(),
+            advertise_url: self.config.advertise_url.clone(),
+            collection,
+            shard_id,
+            vector_name: task.scope.vector_name.clone(),
+            core_version: core_version.to_string(),
+            graph_format_versions: task.graph_format_versions.clone(),
+            vector_bytes: task.vector_bytes,
+            point_count: task.point_count,
+            attempt: task.attempt,
+            cluster_id: self.config.cluster_id.clone(),
+        });
+        if let Some(api_key) = &self.config.api_key {
+            let value = api_key
+                .parse()
+                .map_err(|err| format!("invalid api key: {err}"))?;
+            request.metadata_mut().insert(API_KEY_HEADER, value);
+        }
+        let response = IndexingServiceClient::new(self.channel.clone())
+            .submit_task(request)
+            .await
+            .map_err(|status| format!("SubmitTask: {status}"))?
+            .into_inner();
+        if response.accepted {
+            Ok(())
+        } else {
+            Err(format!("task refused: {}", response.message))
         }
     }
 }

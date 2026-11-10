@@ -139,6 +139,7 @@ impl HNSWIndex {
             path,
             &vector_storage,
             &vector_storage_ref,
+            quantized_vectors_ref.as_ref(),
             &permit,
             &progress,
         );
@@ -335,10 +336,12 @@ fn remote_build_args<'a>(
     path: &Path,
     vector_storage: &Arc<atomic_refcell::AtomicRefCell<VectorStorageEnum>>,
     vector_storage_ref: &VectorStorageEnum,
+    quantized_vectors: Option<&QuantizedVectors>,
     permit: &'a common::budget::ResourcePermit,
     progress: &common::progress_tracker::ProgressTracker,
 ) -> Option<self::remote_builder::RemoteBuildArgs<'a>> {
     use crate::index::hnsw_index::remote::layout::RemoteVectorLayout;
+    use crate::index::hnsw_index::remote::wire::VectorSource;
     use crate::index::hnsw_index::remote::{TaskScope, remote_indexer};
 
     let indexer = remote_indexer()?;
@@ -348,6 +351,17 @@ fn remote_build_args<'a>(
     if !self::remote_builder::worth_remote(indexer.config(), vector_bytes) {
         return None;
     }
+
+    // Send what the local build would score with: the quantized vectors if they are enough
+    // to build (O2), the storage's own vectors otherwise
+    let (source, files) = match quantized_vectors.filter(|q| q.builds_without_originals()) {
+        Some(quantized) => match quantized_files(quantized) {
+            Some(files) => (VectorSource::Quantized, files),
+            None => (VectorSource::Storage, Vec::new()),
+        },
+        None => (VectorSource::Storage, Vec::new()),
+    };
+
     Some(self::remote_builder::RemoteBuildArgs {
         indexer,
         vector_storage: vector_storage.clone(),
@@ -357,9 +371,24 @@ fn remote_build_args<'a>(
             vector_name: vector_name_from_index_path(path),
         },
         vector_bytes,
+        source,
+        files,
         permit,
         progress: progress.subtask("remote_build"),
     })
+}
+
+/// The files of `quantized`, named relative to its directory. `None` if a file is outside it.
+#[cfg(feature = "remote-indexing")]
+fn quantized_files(quantized: &QuantizedVectors) -> Option<Vec<(String, std::path::PathBuf)>> {
+    quantized
+        .files()
+        .into_iter()
+        .map(|file| {
+            let name = file.strip_prefix(quantized.path()).ok()?.to_str()?.to_owned();
+            Some((name, file))
+        })
+        .collect()
 }
 
 /// The vector name of a vector index directory, see `get_vector_index_path`. Names may

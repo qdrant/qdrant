@@ -3,9 +3,10 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
-// Remote indexing (indexer side). Served by an indexing service, or by a queue in front of
-// it: core submits tasks here, then the indexer connects back to `advertise_url` and pulls
-// the data through the `IndexingTask` service.
+// Remote indexing (indexer side). Core always submits tasks with this API, to the configured
+// URL. Whatever receives them (the indexing service itself, or a queue or sidecar in front of
+// a pool of indexers) implements it. The indexer then connects back to `advertise_url` and
+// pulls the data through the `IndexingTask` service.
 service IndexingService {
   rpc SubmitTask(IndexingTaskSubmission) returns (SubmitIndexingTaskResponse) {}
 }

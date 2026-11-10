@@ -9,8 +9,9 @@ use std::pin::Pin;
 use api::grpc::qdrant::indexing_task_server::IndexingTask;
 use api::grpc::qdrant::{
     FailIndexingTaskRequest, FailIndexingTaskResponse, GetIndexingTaskRequest,
-    IndexingDeletedMask, IndexingHeartbeatRequest, IndexingHeartbeatResponse,
+    IndexingDeletedMask, IndexingFileChunk, IndexingHeartbeatRequest, IndexingHeartbeatResponse,
     IndexingTaskDescription, IndexingVectorsChunk, ReadIndexingDeletedRequest,
+    ReadIndexingFileRequest,
     ReadIndexingVectorsRequest, UploadIndexingGraphRequest, UploadIndexingGraphResponse,
 };
 use api::grpc::remote_indexing::{
@@ -19,7 +20,7 @@ use api::grpc::remote_indexing::{
 };
 use futures::Stream;
 use segment::index::hnsw_index::remote::registry::{
-    REMOTE_INDEXING_TASKS, RemoteTaskError, TaskToken,
+    READ_CHUNK_BYTES, REMOTE_INDEXING_TASKS, RemoteTaskError, TaskToken,
 };
 use segment::index::hnsw_index::remote::wire::SUPPORTED_GRAPH_FORMAT_VERSIONS;
 use tonic::{Request, Response, Status, Streaming, async_trait};
@@ -58,6 +59,15 @@ async fn blocking<T: Send + 'static>(
 }
 
 type VectorsStream = Pin<Box<dyn Stream<Item = Result<IndexingVectorsChunk, Status>> + Send>>;
+type FileStream = Pin<Box<dyn Stream<Item = Result<IndexingFileChunk, Status>> + Send>>;
+
+fn receiver_stream<T: Send + 'static>(
+    receiver: tokio::sync::mpsc::Receiver<Result<T, Status>>,
+) -> Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>> {
+    Box::pin(futures::stream::unfold(receiver, |mut receiver| async move {
+        receiver.recv().await.map(|item| (item, receiver))
+    }))
+}
 
 #[async_trait]
 impl IndexingTask for IndexingTaskService {
@@ -109,10 +119,47 @@ impl IndexingTask for IndexingTaskService {
                 }
             }
         });
-        let stream = futures::stream::unfold(receiver, |mut receiver| async move {
-            receiver.recv().await.map(|item| (item, receiver))
+        Ok(Response::new(receiver_stream(receiver)))
+    }
+
+    type ReadFileStream = FileStream;
+
+    async fn read_file(
+        &self,
+        request: Request<ReadIndexingFileRequest>,
+    ) -> Result<Response<Self::ReadFileStream>, Status> {
+        let token = token(&request)?;
+        let ReadIndexingFileRequest { name } = request.into_inner();
+        // Fail fast on a bad token or file, before streaming
+        let first = {
+            let name = name.clone();
+            blocking(move || REMOTE_INDEXING_TASKS.read_file(&token, &name, 0, READ_CHUNK_BYTES))
+                .await?
+        };
+
+        let (sender, receiver) = tokio::sync::mpsc::channel(4);
+        tokio::task::spawn_blocking(move || {
+            let mut offset = 0u64;
+            let mut data = first;
+            while !data.is_empty() {
+                let len = data.len() as u64;
+                if sender
+                    .blocking_send(Ok(IndexingFileChunk { offset, data }))
+                    .is_err()
+                {
+                    return;
+                }
+                offset += len;
+                match REMOTE_INDEXING_TASKS.read_file(&token, &name, offset, READ_CHUNK_BYTES) {
+                    Ok(next) => data = next,
+                    Err(err) => {
+                        let _ = sender.blocking_send(Err(status(err)));
+                        return;
+                    }
+                }
+            }
         });
-        Ok(Response::new(Box::pin(stream)))
+        Ok(Response::new(receiver_stream(receiver)))
     }
 
     async fn read_deleted(

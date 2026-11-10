@@ -65,6 +65,13 @@ impl QuantizedVectors {
         Ok(Some(quantized_vectors))
     }
 
+    /// Load quantized vectors from files copied from another machine, with their config.
+    /// `vector_storage` provides the vector parameters only: it may hold no vectors.
+    pub fn load_copied(vector_storage: &VectorStorageEnum, path: &Path) -> OperationResult<Self> {
+        let config: QuantizedVectorsConfig = read_json(&Self::get_config_path(path))?;
+        Self::load_impl(config, vector_storage, path)
+    }
+
     pub fn load_impl(
         config: QuantizedVectorsConfig,
         vector_storage: &VectorStorageEnum,

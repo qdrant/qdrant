@@ -260,17 +260,6 @@ pub struct GpuConfig {
     pub allow_emulated: bool,
 }
 
-/// How tasks reach the indexing service (§4.8).
-#[derive(Debug, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum IndexingEntryPoint {
-    /// gRPC `IndexingService.SubmitTask` on the indexer itself. For debugging.
-    #[default]
-    Direct,
-    /// HTTP `POST {url}/tasks` with the task as JSON, to a queue or sidecar.
-    Queue,
-}
-
 /// What to do when a remote build fails.
 #[derive(Debug, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -286,14 +275,13 @@ pub enum IndexingOnFailure {
 /// everything locally (D3).
 #[derive(Debug, Deserialize, Clone, Validate)]
 pub struct IndexingServiceConfig {
-    /// Entry point: the indexer (`direct`, e.g. `http://indexer:6340`) or a queue (`queue`).
+    /// Where tasks are submitted, with gRPC `IndexingService.SubmitTask`: an indexing service,
+    /// or a queue or sidecar implementing the same API, e.g. `http://indexer:6340`.
     #[validate(length(min = 1))]
     pub url: String,
-    /// Sent to the entry point as `api-key`.
+    /// Sent with every submission as `api-key`.
     #[serde(default)]
     pub api_key: Option<String>,
-    #[serde(default)]
-    pub entry_point: IndexingEntryPoint,
     /// Internal gRPC address the indexer connects back to, set per pod (D10),
     /// e.g. `qdrant-0.qdrant-headless:6335`.
     #[validate(length(min = 1))]

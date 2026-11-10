@@ -57,6 +57,21 @@ pub struct QuantizedVectors {
 }
 
 impl QuantizedVectors {
+    /// Directory of the quantized vector files.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Whether graph builds score from the quantized vectors alone: the query of an inserted
+    /// point is encoded from its quantized vector, so the original vectors are not read.
+    /// Product and TurboQuant quantization encode queries from the original vector.
+    pub fn builds_without_originals(&self) -> bool {
+        match &self.config.quantization_config {
+            QuantizationConfig::Scalar(_) | QuantizationConfig::Binary(_) => true,
+            QuantizationConfig::Product(_) | QuantizationConfig::Turbo(_) => false,
+        }
+    }
+
     pub fn config(&self) -> &QuantizedVectorsConfig {
         &self.config
     }
