@@ -322,7 +322,7 @@ impl ShardReplicaSet {
     /// # Warning
     ///
     /// This intentionally forgets and drops updates pending to be transferred to the remote shard.
-    /// The remote shard may therefore therefore be left in an inconsistent state, which should be
+    /// The remote shard may therefore be left in an inconsistent state, which should be
     /// resolved separately.
     ///
     /// # Cancel safety
