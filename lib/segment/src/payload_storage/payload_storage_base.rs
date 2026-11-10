@@ -29,6 +29,18 @@ pub trait PayloadStorageRead {
     /// `OwnedPayloadRef::Owned(...)` so the caller never has to handle `None`.
     fn payload_ref(&self, point_offset: PointOffsetType) -> OperationResult<OwnedPayloadRef<'_>>;
 
+    /// Like [`Self::payload_ref`], but the payload may hold only the top-level `field`.
+    ///
+    /// Lets storages that parse on read skip materializing the other values.
+    fn payload_ref_field(
+        &self,
+        point_offset: PointOffsetType,
+        field: &str,
+    ) -> OperationResult<OwnedPayloadRef<'_>> {
+        let _ = field;
+        self.payload_ref(point_offset)
+    }
+
     fn read_payloads<P: AccessPattern, U: common::universal_io::UserData>(
         &self,
         point_offsets: impl Iterator<Item = (U, PointOffsetType)>,
