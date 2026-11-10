@@ -721,12 +721,15 @@ impl ShardReplicaSet {
                 local.replace(Shard::Local(local_shard));
                 Ok(())
             }
+
             Err(err) => {
                 let error = format!(
                     "Failed to initialize local shard at {:?}: {err}",
                     self.shard_path,
                 );
+
                 log::error!("{error}");
+
                 local.replace(Shard::Dummy(DummyShard::new(error)));
                 Err(err)
             }
