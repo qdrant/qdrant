@@ -4,6 +4,7 @@ mod consensus;
 mod greeting;
 mod issues_setup;
 mod migrations;
+mod remote_indexing;
 mod settings;
 mod snapshots;
 mod startup;
@@ -468,6 +469,12 @@ fn main() -> anyhow::Result<()> {
 
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
+
+    //
+    // Remote indexing
+    //
+
+    remote_indexing::init_remote_indexing(&settings);
 
     //
     // Storage directory & filesystem compatibility
