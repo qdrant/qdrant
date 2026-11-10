@@ -269,6 +269,43 @@ fn remote_build_matches_local_quality() {
     assert!(REMOTE_INDEXING_TASKS.is_empty(), "token not revoked");
 }
 
+/// Real remote builds are large enough for PiPNN, which the indexer then picks (D1). Its graph
+/// must pass core's validation and search as well as a local build.
+#[test]
+fn remote_pipnn_graph_is_accepted() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(43);
+    let (_dir, segment) = segment(&mut rng);
+    let stopped = AtomicBool::new(false);
+
+    let (_local_dir, local) = build(
+        &segment,
+        Arc::new(ResourcePermit::dummy(2)),
+        &stopped,
+        &mut rng,
+    )
+    .unwrap();
+    let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
+
+    let indexer = Arc::new(
+        LoopbackIndexer::new(
+            config(OnFailure::Local, Duration::from_secs(10)),
+            vec![LoopbackBehavior::Build],
+        )
+        .with_pipnn_min_points(1000),
+    );
+    let (_remote_dir, remote) = build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
+    assert_eq!(
+        indexer.wait_outcomes(1, Duration::from_secs(5)),
+        vec![RunOutcome::Uploaded],
+        "PiPNN graph rejected"
+    );
+    let remote_accuracy = accuracy(&segment, &remote, &mut StdRng::seed_from_u64(1));
+    eprintln!("local {local_accuracy:?}, remote PiPNN {remote_accuracy:?}");
+    assert!(remote_accuracy.0 + 25 >= local_accuracy.0, "{remote_accuracy:?}");
+    assert!(remote_accuracy.1 + 25 >= local_accuracy.1, "{remote_accuracy:?}");
+}
+
 /// Runs a build where the indexer misbehaves per `behaviors`. Returns the indexer and whether
 /// the index searches well, i.e. the build fell back or succeeded correctly.
 fn check_recovers(

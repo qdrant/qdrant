@@ -189,6 +189,9 @@ pub struct LoopbackIndexer {
     pub outcomes: Mutex<Vec<RunOutcome>>,
     /// Reports of the runs that went through `run_task`, in order.
     pub reports: Mutex<Vec<RunReport>>,
+    /// PiPNN's minimum segment size on the build threads, see [`Self::with_pipnn_min_points`].
+    #[cfg(feature = "testing")]
+    pipnn_min_points: Option<usize>,
 }
 
 impl LoopbackIndexer {
@@ -206,7 +209,17 @@ impl LoopbackIndexer {
             submissions: AtomicUsize::new(0),
             outcomes: Mutex::new(Vec::new()),
             reports: Mutex::new(Vec::new()),
+            #[cfg(feature = "testing")]
+            pipnn_min_points: None,
         }
+    }
+
+    /// Build with PiPNN from `min_points` points, so that small test segments take the
+    /// builder real (large) remote builds take on the indexer.
+    #[cfg(feature = "testing")]
+    pub fn with_pipnn_min_points(mut self, min_points: usize) -> Self {
+        self.pipnn_min_points = Some(min_points);
+        self
     }
 
     fn behavior(&self, attempt: usize) -> LoopbackBehavior {
@@ -255,8 +268,29 @@ impl RemoteIndexer for Arc<LoopbackIndexer> {
             | LoopbackBehavior::Queue(_) => {}
         }
         std::thread::spawn(move || {
-            let source = RegistrySource { token };
-            let outcome = match behavior {
+            let run = || this.run(behavior, token);
+            #[cfg(feature = "testing")]
+            let outcome = match this.pipnn_min_points {
+                Some(min_points) => {
+                    crate::index::hnsw_index::hnsw::with_pipnn_min_points(min_points, run)
+                }
+                None => run(),
+            };
+            #[cfg(not(feature = "testing"))]
+            let outcome = run();
+            this.outcomes.lock().push(outcome);
+        });
+        Ok(())
+    }
+}
+
+impl LoopbackIndexer {
+    /// One submitted task, on its own thread.
+    fn run(self: &Arc<Self>, behavior: LoopbackBehavior, token: TaskToken) -> RunOutcome {
+        let this = self;
+        let source = RegistrySource { token };
+        {
+            match behavior {
                 LoopbackBehavior::Build => {
                     let report =
                         run_task(&source, &this.options, &this.work_dir, None, &this.shutdown);
@@ -296,9 +330,7 @@ impl RemoteIndexer for Arc<LoopbackIndexer> {
                     }
                 }
                 LoopbackBehavior::RefuseSubmit | LoopbackBehavior::Ignore => unreachable!(),
-            };
-            this.outcomes.lock().push(outcome);
-        });
-        Ok(())
+            }
+        }
     }
 }
