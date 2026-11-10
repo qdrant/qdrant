@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 use channel_service::ChannelService;
 use common::defaults;
-use common::fs::sync_parent_dir_async;
+use common::fs::{bulk_sync_dir, sync_parent_dir_async};
 use fs_err::tokio as tokio_fs;
 use shard::ShardId;
 use tokio::time::{sleep_until, timeout_at};
@@ -61,6 +61,34 @@ pub async fn create_shard_initializing_flag(
     sync_parent_dir_async(&shard_flag).await?;
 
     Ok(shard_flag)
+}
+
+/// Remove the shard initializing flag after the shard is initialized
+///
+/// Syncs the shard directory first, so the flag is never removed on disk while the shard data
+/// is not durable. A missing flag is not an error.
+///
+/// Syncing the flag's parent directory after removal is best effort, and a failure is only
+/// logged. The flag is already removed at this point, and if the removal is lost, the shard is
+/// loaded as a dummy on restart and recovered.
+pub async fn remove_shard_initializing_flag(
+    shard_path: &Path,
+    shard_flag: &Path,
+) -> CollectionResult<()> {
+    let shard_path = shard_path.to_path_buf();
+    tokio::task::spawn_blocking(move || bulk_sync_dir(&shard_path)).await??;
+
+    match tokio_fs::remove_file(shard_flag).await {
+        Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(CollectionError::from(err)),
+    }
+
+    if let Err(err) = sync_parent_dir_async(shard_flag).await {
+        log::warn!("Failed to sync parent dir of shard initializing flag {shard_flag:?}: {err}");
+    }
+
+    Ok(())
 }
 
 /// Verify that a shard exists by loading its configuration.
