@@ -22,6 +22,7 @@ use segment::types::{
     TurboQuantization,
 };
 
+use super::op::nested_indexes;
 use super::{ALL_CANDIDATES, COLLECTION_NAME, PEER_ID, QuantizationKind, VectorKind};
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
@@ -117,6 +118,7 @@ pub(super) const INITIAL_FLUSH_INTERVAL_SEC: u64 = 5;
 /// `snapshots/` subdirs, wiping any pre-existing contents — each soak run starts from a
 /// clean slate. If you need to preserve a crashed run's state for post-mortem, copy the
 /// directory out before re-running.
+#[expect(clippy::too_many_arguments)]
 pub(super) async fn fixture(
     shard_count: u32,
     storage_path: &Path,
@@ -125,6 +127,7 @@ pub(super) async fn fixture(
     indexing_threshold_kb: usize,
     on_disk: bool,
     text_params: TextIndexParams,
+    nested_index_setup: NestedIndexSetup,
 ) -> (PathBuf, PathBuf, Collection) {
     let collection_dir = storage_path.join("collection");
     let snapshots_dir = storage_path.join("snapshots");
@@ -260,7 +263,8 @@ pub(super) async fn fixture(
 
     // Eagerly index all "always-on" payload fields so filter ops run through the index path.
     // `tag` and `url` are left out — `tag` is optional on points; `url` is toggled via
-    // `Op::CreateIndex` / `Op::DropIndex` with `prefix: true`.
+    // `Op::CreateIndex` / `Op::DropIndex` with `prefix: true`. The `offers` indexes are eager
+    // only with `NestedIndexSetup::Eager`.
     let eager_indices: &[(&str, PayloadSchemaType)] = &[
         ("num", PayloadSchemaType::Integer),
         ("f", PayloadSchemaType::Float),
@@ -274,19 +278,49 @@ pub(super) async fn fixture(
         scoring: Some(TextScoringParams::default()),
         ..text_params
     }));
+    let nested_schemas = match nested_index_setup {
+        NestedIndexSetup::Eager => nested_indexes().to_vec(),
+        NestedIndexSetup::Toggled => Vec::new(),
+    };
     let eager_schemas = eager_indices
         .iter()
-        .map(|(field, schema)| (*field, PayloadFieldSchema::FieldType(*schema)))
-        .chain([("t", text_schema)]);
+        .map(|(field, schema)| {
+            (
+                field.parse().unwrap(),
+                PayloadFieldSchema::FieldType(*schema),
+            )
+        })
+        .chain([("t".parse().unwrap(), text_schema)])
+        .chain(nested_schemas);
     for (field, schema) in eager_schemas {
         collection
-            .create_payload_index_with_wait(field.parse().unwrap(), schema, true)
+            .create_payload_index_with_wait(field.clone(), schema, true)
             .measured(AmbientContext::new())
             .await
             .unwrap_or_else(|e| panic!("failed to create eager `{field}` index: {e:?}"));
     }
 
     (collection_dir, snapshots_dir, collection)
+}
+
+/// Whether a run starts with the per-element indexes of `offers`.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum NestedIndexSetup {
+    /// Both created with the collection, so nested ops take the per-element path until a
+    /// `DropIndex` removes one.
+    Eager,
+    /// Left to `CreateIndex` / `DropIndex`, so nested ops mostly fall back to the payload.
+    Toggled,
+}
+
+/// The `offers` index setup of a run, keyed off the seed so the op stream is unchanged, on a bit
+/// [`text_index_params`] does not read.
+pub(super) fn nested_index_setup(seed: u64) -> NestedIndexSetup {
+    if (seed / 12).is_multiple_of(2) {
+        NestedIndexSetup::Eager
+    } else {
+        NestedIndexSetup::Toggled
+    }
 }
 
 /// The `t` text index of a run, keyed off the seed so the op stream is unchanged. Its parity picks
