@@ -876,15 +876,12 @@ impl ShardReplicaSet {
         let local = self.local.read().await;
         match local.as_ref() {
             Some(Shard::Local(shard)) => shard.full_flush(),
-            Some(
-                shard @ (Shard::Proxy(_)
-                | Shard::ForwardProxy(_)
-                | Shard::QueueProxy(_)
-                | Shard::Dummy(_)),
-            ) => panic!(
-                "full_flush_local: expected a plain local shard, got {}",
-                shard.variant_name(),
-            ),
+            Some(shard @ (Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_))) => {
+                panic!(
+                    "full_flush_local: expected a plain local shard, got {}",
+                    shard.variant_name(),
+                )
+            }
             None => panic!("full_flush_local: replica set has no local shard"),
         }
     }
@@ -907,15 +904,12 @@ impl ShardReplicaSet {
                 .read()
                 .iter()
                 .any(|(_id, segment)| matches!(segment, LockedSegment::Proxy(_))),
-            Some(
-                shard @ (Shard::Proxy(_)
-                | Shard::ForwardProxy(_)
-                | Shard::QueueProxy(_)
-                | Shard::Dummy(_)),
-            ) => panic!(
-                "local_has_proxy_segments: expected a plain local shard, got {}",
-                shard.variant_name(),
-            ),
+            Some(shard @ (Shard::ForwardProxy(_) | Shard::QueueProxy(_) | Shard::Dummy(_))) => {
+                panic!(
+                    "local_has_proxy_segments: expected a plain local shard, got {}",
+                    shard.variant_name(),
+                )
+            }
             None => panic!("local_has_proxy_segments: replica set has no local shard"),
         }
     }
