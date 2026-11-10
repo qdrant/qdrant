@@ -44,7 +44,9 @@ pub fn mmr_from_points_with_vector(
 ) -> OperationResult<Vec<ScoredPoint>> {
     let (vectors, candidates): (Vec<_>, Vec<_>) = points_with_vector
         .into_iter()
-        .unique_by(|p| p.id)
+        // Points are identified by (id, shard key): the same numeric id may
+        // exist under different custom shard keys, and those are distinct points.
+        .unique_by(|p| (p.id, p.shard_key.clone()))
         .filter_map(|p| {
             let vector = p
                 .vector

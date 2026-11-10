@@ -679,7 +679,10 @@ impl Collection {
                             .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
                     ),
                 }
-                .dedup()
+                // Deduplicate identical points, but keep points that only share
+                // their id: the same numeric id may exist under different
+                // custom shard keys, and those are distinct points.
+                .dedup_by(|a, b| a == b && a.shard_key == b.shard_key)
                 .take(query_info.take)
                 .collect();
 
@@ -703,7 +706,9 @@ impl Collection {
                 shards_results
                     .into_iter()
                     .kmerge_by(|_, _| rng.random_bool(0.5))
-                    .unique_by(|point| point.id)
+                    // Points are identified by (id, shard key): the same numeric
+                    // id may exist under different custom shard keys.
+                    .unique_by(|point| (point.id, point.shard_key.clone()))
                     .take(query_info.take)
                     .collect()
             };

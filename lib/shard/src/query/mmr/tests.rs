@@ -7,7 +7,8 @@ use segment::data_types::vectors::{
     MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
 };
 use segment::types::{
-    Distance, MultiVectorComparator, MultiVectorConfig, PointIdType, ScoredPoint, VectorNameBuf,
+    Distance, MultiVectorComparator, MultiVectorConfig, PointIdType, ScoredPoint, ShardKey,
+    VectorNameBuf,
 };
 use sparse::common::sparse_vector::SparseVector;
 use strum::IntoEnumIterator;
@@ -365,4 +366,51 @@ fn test_mmr_multi_vector() {
         let multi_scored_points = multi_result.unwrap();
         assert_eq!(multi_scored_points.len(), 3);
     }
+}
+
+/// Points sharing a numeric ID across different custom shard keys are distinct
+/// points and must all survive MMR candidate deduplication.
+///
+/// Regression test for <https://github.com/qdrant/qdrant/issues/11475>.
+#[test]
+fn test_mmr_same_id_different_shard_keys() {
+    let distance = Distance::Dot;
+
+    let mut x1 = create_scored_point_with_vector(1.into(), vec![1.0, 0.0], None);
+    x1.shard_key = Some(ShardKey::from("x"));
+    let mut x2 = create_scored_point_with_vector(2.into(), vec![0.9, 0.0], None);
+    x2.shard_key = Some(ShardKey::from("x"));
+    let mut y1 = create_scored_point_with_vector(1.into(), vec![0.0, 1.0], None);
+    y1.shard_key = Some(ShardKey::from("y"));
+    let mut y3 = create_scored_point_with_vector(3.into(), vec![-1.0, 0.0], None);
+    y3.shard_key = Some(ShardKey::from("y"));
+    // A true duplicate (same id *and* same shard key) must still be dropped.
+    let mut x1_dup = create_scored_point_with_vector(1.into(), vec![0.2, 0.0], None);
+    x1_dup.shard_key = Some(ShardKey::from("x"));
+
+    let points = vec![x1, x2, y1, y3, x1_dup];
+
+    let mmr = MmrInternal {
+        vector: vec![1.0, 0.0].into(),
+        using: VectorNameBuf::from(""),
+        // Full relevance, so MMR reduces to nearest-neighbor ranking by score:
+        // x/1 (1.0), x/2 (0.9), y/1 (0.0), y/3 (-1.0).
+        lambda: OrderedFloat(1.0),
+        candidates_limit: 100,
+    };
+
+    let result = ambient::test(|| mmr_from_points_with_vector(points, mmr, distance, None, 4));
+
+    let scored_points = result.unwrap();
+    let selected: Vec<_> = scored_points
+        .iter()
+        .map(|p| (p.id, p.shard_key.clone()))
+        .collect();
+    let expected: Vec<(PointIdType, Option<ShardKey>)> = vec![
+        (1.into(), Some(ShardKey::from("x"))),
+        (2.into(), Some(ShardKey::from("x"))),
+        (1.into(), Some(ShardKey::from("y"))),
+        (3.into(), Some(ShardKey::from("y"))),
+    ];
+    assert_eq!(selected, expected);
 }

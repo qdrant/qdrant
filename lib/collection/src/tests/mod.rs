@@ -8,6 +8,7 @@ mod hw_metrics;
 mod load_missing_vector_name;
 mod payload;
 mod points_dedup;
+mod query_custom_sharding_dedup;
 mod query_prefetch_offset_limit;
 mod segment_manifest;
 mod sha_256_test;
