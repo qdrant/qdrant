@@ -17,6 +17,7 @@ use ::api::grpc::grpc_health_v1::{
     HealthCheckResponse as ProtocolHealthCheckResponse,
 };
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
+use ::api::grpc::qdrant::indexing_task_server::IndexingTaskServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
@@ -348,6 +349,14 @@ pub fn init_internal(
                     ShardSnapshotsServer::new(ShardSnapshotsTelemetryWrapper::new(
                         shard_snapshots_service,
                     ))
+                    .send_compressed(CompressionEncoding::Gzip)
+                    .accept_compressed(CompressionEncoding::Gzip)
+                    .max_decoding_message_size(usize::MAX),
+                )
+                .add_service(
+                    IndexingTaskServer::new(
+                        crate::tonic::api::indexing_task_api::IndexingTaskService,
+                    )
                     .send_compressed(CompressionEncoding::Gzip)
                     .accept_compressed(CompressionEncoding::Gzip)
                     .max_decoding_message_size(usize::MAX),
