@@ -2,10 +2,9 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
-use ahash::AHashSet;
 use common::ambient::hw::HwMetric;
 use common::binary_search::binary_search_by;
-use common::bitvec::{BitSlice, DeletedBitVec};
+use common::bitvec::{BitSlice, BitVec, DeletedBitVec};
 use common::fs::{atomic_save_json, clear_disk_cache};
 use common::generic_consts::{Random, Sequential};
 use common::iterator_ext::ordering_iterator::OrderingIterator;
@@ -462,9 +461,9 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
     pub(in super::super) fn all_points(
         &self,
         mut geo_hashes: Vec<GeoHash>,
-    ) -> OperationResult<AHashSet<PointOffsetType>> {
+    ) -> OperationResult<Vec<PointOffsetType>> {
         if geo_hashes.is_empty() {
-            return Ok(AHashSet::default());
+            return Ok(Vec::new());
         }
 
         let len = self.storage.points_map.len()?;
@@ -582,18 +581,45 @@ impl<S: UniversalRead> OnDiskGeoIndex<S> {
         }
 
         // Step 3: read the collected ranges and accumulate unique,
-        // non-deleted point ids.
-        let mut points = AHashSet::new();
+        // non-deleted point ids. A point with several values can sit under several
+        // geohashes: a bitset over the point ids keeps its first occurrence, which is
+        // much cheaper than hashing every id.
+        let total_ids: u64 = point_map_ranges.iter().map(|range| range.length).sum();
+        let mut points = Vec::with_capacity(total_ids as usize);
+        let mut seen = BitVec::repeat(false, self.storage.point_to_values.len());
         let deleted = &self.storage.deleted;
-        // Overlap the reads of all ranges instead of faulting them in one by one.
-        self.storage
-            .points_map_ids
-            .will_need(point_map_ranges.iter().copied());
+        // Overlap the reads instead of faulting them in one by one. The ids are stored in
+        // the scan's hash order, so one span from the first range to the last covers them
+        // all: a single large hint, where each range alone may be too small to be hinted.
+        if let (Some(first), Some(last)) = (point_map_ranges.first(), point_map_ranges.last()) {
+            let id_size = size_of::<PointOffsetType>() as u64;
+            let span_end = last.byte_offset + last.length * id_size;
+            self.storage
+                .points_map_ids
+                .will_need(std::iter::once(ReadRange {
+                    byte_offset: first.byte_offset,
+                    length: span_end.saturating_sub(first.byte_offset) / id_size,
+                }));
+        }
         self.storage.points_map_ids.read_batch(
             point_map_ranges.into_iter().enumerate(),
             Random,
             |_idx, values| {
-                points.extend(values.iter().copied().filter(|&id| deleted.is_active(id)));
+                for &id in values.iter() {
+                    if !deleted.is_active(id) {
+                        continue;
+                    }
+                    let seen_before = seen.get(id as usize).map(|bit| *bit);
+                    match seen_before {
+                        Some(true) => {}
+                        Some(false) => {
+                            seen.set(id as usize, true);
+                            points.push(id);
+                        }
+                        // Outside the value storage: can't deduplicate, keep it.
+                        None => points.push(id),
+                    }
+                }
                 UioResult::Ok(())
             },
         )?;
