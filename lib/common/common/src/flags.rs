@@ -100,6 +100,12 @@ pub struct FeatureFlags {
     /// union of its mask and its log.
     pub versioned_deletes: bool,
 
+    /// Store a TurboQuant multivector point that has no vector, or whose vector was deleted, as
+    /// an offset entry without encoded records, instead of one placeholder record. Only gates
+    /// writing: both forms are always readable. Releases before reading was added fail to
+    /// optimize a segment that holds such entries.
+    pub turbo_multivector_empty_slots: bool,
+
     /// Serverless-compatible deployment mode. Implies [`Self::write_segment_manifest`],
     /// [`Self::append_only_mutations`], [`Self::compact_bitmask`], [`Self::append_only_storages`],
     /// [`Self::compact_logstore_tracker`], [`Self::persist_proxy_segments`] and
@@ -128,6 +134,7 @@ impl Default for FeatureFlags {
             persist_proxy_segments: false,
             combined_vector_storage: true,
             versioned_deletes: false,
+            turbo_multivector_empty_slots: false,
             serverless_compatible: false,
         }
     }
@@ -166,6 +173,7 @@ impl FeatureFlags {
             combined_vector_storage: true,
             // Deliberately not enabled by `all`: it changes the persisted storage format.
             versioned_deletes: false,
+            turbo_multivector_empty_slots: true,
             serverless_compatible: false,
         }
     }
