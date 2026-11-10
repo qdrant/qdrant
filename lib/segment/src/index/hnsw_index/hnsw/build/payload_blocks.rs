@@ -242,7 +242,10 @@ pub(super) fn collect_block_plan<'f>(
                 points,
             }) = loader.load(block)?
             {
-                planned.push(PlannedBlock { cardinality, points });
+                planned.push(PlannedBlock {
+                    cardinality,
+                    points,
+                });
             }
         }
         plan.fields.push(FieldBlockPlan {

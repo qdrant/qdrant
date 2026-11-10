@@ -17,8 +17,8 @@ use ::api::grpc::grpc_health_v1::{
     HealthCheckResponse as ProtocolHealthCheckResponse,
 };
 use ::api::grpc::qdrant::collections_internal_server::CollectionsInternalServer;
-use ::api::grpc::qdrant::indexing_task_server::IndexingTaskServer;
 use ::api::grpc::qdrant::collections_server::CollectionsServer;
+use ::api::grpc::qdrant::indexing_task_server::IndexingTaskServer;
 use ::api::grpc::qdrant::points_internal_server::PointsInternalServer;
 use ::api::grpc::qdrant::points_server::PointsServer;
 use ::api::grpc::qdrant::qdrant_internal_server::QdrantInternalServer;

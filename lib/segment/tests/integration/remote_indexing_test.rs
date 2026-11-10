@@ -7,10 +7,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-use atomic_refcell::AtomicRefCell;
 use std::time::Duration;
 
+use atomic_refcell::AtomicRefCell;
 use common::ambient;
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::flags::FeatureFlags;
@@ -33,15 +32,14 @@ use segment::index::{PayloadIndex, VectorIndexRead};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
-use segment::segment_constructor::VectorIndexBuildArgs;
-use segment::segment_constructor::build_segment;
+use segment::segment_constructor::{VectorIndexBuildArgs, build_segment};
 use segment::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Condition, Distance,
     FieldCondition, Filter, HnswConfig, HnswGlobalConfig, Indexes, PayloadSchemaType,
-    ProductQuantization, ProductQuantizationConfig, QuantizationConfig, Range,
-    ScalarQuantization, ScalarQuantizationConfig, ScalarType, SearchParams, SegmentConfig,
-    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization,
-    SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    ProductQuantization, ProductQuantizationConfig, QuantizationConfig, Range, ScalarQuantization,
+    ScalarQuantizationConfig, ScalarType, SearchParams, SegmentConfig, SeqNumberType,
+    TurboQuantBitSize, TurboQuantQuantizationConfig, TurboQuantization, VectorDataConfig,
+    VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::quantized::quantized_vectors::{
     QuantizedVectors, QuantizedVectorsStorageType,
@@ -103,9 +101,7 @@ fn segment_with(
             .unwrap();
     }
     for n in (0..NUM_VECTORS).step_by(10) {
-        segment
-            .delete_point(NUM_VECTORS + n, n.into())
-            .unwrap();
+        segment.delete_point(NUM_VECTORS + n, n.into()).unwrap();
     }
     segment
         .payload_index
@@ -185,7 +181,9 @@ fn build_with(
 /// narrow range filter, which needs the payload block links. Ids, not scores: quantized
 /// indexes score differently.
 fn accuracy(segment: &Segment, index: &HNSWIndex, rng: &mut StdRng) -> (usize, usize) {
-    let plain = segment.vector_data[DEFAULT_VECTOR_NAME].vector_index.borrow();
+    let plain = segment.vector_data[DEFAULT_VECTOR_NAME]
+        .vector_index
+        .borrow();
     let params = SearchParams {
         hnsw_ef: Some(64),
         ..Default::default()
@@ -216,7 +214,13 @@ fn accuracy(segment: &Segment, index: &HNSWIndex, rng: &mut StdRng) -> (usize, u
             .search(&[&query], Some(&filter), 5, None, &Default::default())
             .unwrap();
         let found = index
-            .search(&[&query], Some(&filter), 5, Some(&params), &Default::default())
+            .search(
+                &[&query],
+                Some(&filter),
+                5,
+                Some(&params),
+                &Default::default(),
+            )
             .unwrap();
         filtered_hits += overlap(&exact[0], &found[0]);
     }
@@ -302,8 +306,14 @@ fn remote_pipnn_graph_is_accepted() {
     );
     let remote_accuracy = accuracy(&segment, &remote, &mut StdRng::seed_from_u64(1));
     eprintln!("local {local_accuracy:?}, remote PiPNN {remote_accuracy:?}");
-    assert!(remote_accuracy.0 + 25 >= local_accuracy.0, "{remote_accuracy:?}");
-    assert!(remote_accuracy.1 + 25 >= local_accuracy.1, "{remote_accuracy:?}");
+    assert!(
+        remote_accuracy.0 + 25 >= local_accuracy.0,
+        "{remote_accuracy:?}"
+    );
+    assert!(
+        remote_accuracy.1 + 25 >= local_accuracy.1,
+        "{remote_accuracy:?}"
+    );
 }
 
 /// Runs a build where the indexer misbehaves per `behaviors`. Returns the indexer and whether
@@ -323,7 +333,10 @@ fn check_recovers(
     ));
     let (_hnsw_dir, index) = build_with(&indexer, &segment, &stopped, &mut rng).unwrap();
     let (hits, filtered_hits) = accuracy(&segment, &index, &mut rng);
-    assert!(hits >= 450 && filtered_hits >= 450, "{hits} {filtered_hits}");
+    assert!(
+        hits >= 450 && filtered_hits >= 450,
+        "{hits} {filtered_hits}"
+    );
     indexer
 }
 
@@ -513,8 +526,13 @@ fn check_remote_matches_local(
     let (_dir, segment) = segment_with(&mut rng, datatype, quantization);
     let stopped = AtomicBool::new(false);
 
-    let (_local_dir, local) =
-        build(&segment, Arc::new(ResourcePermit::dummy(2)), &stopped, &mut rng).unwrap();
+    let (_local_dir, local) = build(
+        &segment,
+        Arc::new(ResourcePermit::dummy(2)),
+        &stopped,
+        &mut rng,
+    )
+    .unwrap();
     let local_accuracy = accuracy(&segment, &local, &mut StdRng::seed_from_u64(1));
 
     let indexer = Arc::new(LoopbackIndexer::new(

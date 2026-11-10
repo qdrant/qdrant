@@ -8,11 +8,11 @@ use std::pin::Pin;
 
 use api::grpc::qdrant::indexing_task_server::IndexingTask;
 use api::grpc::qdrant::{
-    FailIndexingTaskRequest, FailIndexingTaskResponse, GetIndexingTaskRequest,
-    IndexingDeletedMask, IndexingFileChunk, IndexingHeartbeatRequest, IndexingHeartbeatResponse,
+    FailIndexingTaskRequest, FailIndexingTaskResponse, GetIndexingTaskRequest, IndexingDeletedMask,
+    IndexingFileChunk, IndexingHeartbeatRequest, IndexingHeartbeatResponse,
     IndexingTaskDescription, IndexingVectorsChunk, ReadIndexingDeletedRequest,
-    ReadIndexingFileRequest,
-    ReadIndexingVectorsRequest, UploadIndexingGraphRequest, UploadIndexingGraphResponse,
+    ReadIndexingFileRequest, ReadIndexingVectorsRequest, UploadIndexingGraphRequest,
+    UploadIndexingGraphResponse,
 };
 use api::grpc::remote_indexing::{
     GraphAssembler, INDEXING_TOKEN_HEADER, deleted_to_grpc, heartbeat_action_to_grpc,
@@ -64,9 +64,10 @@ type FileStream = Pin<Box<dyn Stream<Item = Result<IndexingFileChunk, Status>> +
 fn receiver_stream<T: Send + 'static>(
     receiver: tokio::sync::mpsc::Receiver<Result<T, Status>>,
 ) -> Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>> {
-    Box::pin(futures::stream::unfold(receiver, |mut receiver| async move {
-        receiver.recv().await.map(|item| (item, receiver))
-    }))
+    Box::pin(futures::stream::unfold(
+        receiver,
+        |mut receiver| async move { receiver.recv().await.map(|item| (item, receiver)) },
+    ))
 }
 
 #[async_trait]
@@ -208,9 +209,7 @@ impl IndexingTask for IndexingTaskService {
     ) -> Result<Response<FailIndexingTaskResponse>, Status> {
         let token = token(&request)?;
         let FailIndexingTaskRequest { reason } = request.into_inner();
-        REMOTE_INDEXING_TASKS
-            .fail(&token, reason)
-            .map_err(status)?;
+        REMOTE_INDEXING_TASKS.fail(&token, reason).map_err(status)?;
         Ok(Response::new(FailIndexingTaskResponse {}))
     }
 }

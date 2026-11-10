@@ -346,9 +346,7 @@ impl WireGraph {
             for l in 0..=level as usize {
                 let links = lists.next().expect("graph is validated");
                 if !links.is_empty() {
-                    graph
-                        .links_mut(point, l)
-                        .fill_from(links.iter().copied());
+                    graph.links_mut(point, l).fill_from(links.iter().copied());
                 }
             }
         }
@@ -473,7 +471,10 @@ mod tests {
         let cases: Vec<(&str, Corruption)> = vec![
             ("version", Box::new(|g| g.format_version = 99)),
             ("point count", Box::new(|g| g.levels.push(0))),
-            ("counts", Box::new(|g| g.link_counts.pop().map(|_| ()).unwrap())),
+            (
+                "counts",
+                Box::new(|g| g.link_counts.pop().map(|_| ()).unwrap()),
+            ),
             ("links", Box::new(|g| g.links.push(1))),
             ("out of range", Box::new(|g| g.links[0] = 7)),
             ("self link", Box::new(|g| g.links[0] = 0)),
@@ -499,11 +500,11 @@ mod tests {
                     g.links = vec![2, 0, 0];
                 }),
             ),
+            ("entry level", Box::new(|g| g.entry_points[0].level = 5)),
             (
-                "entry level",
-                Box::new(|g| g.entry_points[0].level = 5),
+                "entry deleted",
+                Box::new(|g| g.entry_points[0].point_id = 1),
             ),
-            ("entry deleted", Box::new(|g| g.entry_points[0].point_id = 1)),
             ("no entry", Box::new(|g| g.entry_points.clear())),
         ];
         for (name, corrupt) in cases {
