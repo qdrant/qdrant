@@ -209,9 +209,12 @@ impl<'a> RemoteBuilder<'a> {
             // Lend the CPUs while the indexer works. Once lent, they stay lent across retries.
             self.args.permit.suspend_cpu();
 
-            let outcome = handle.wait(config.heartbeat_timeout, WAIT_POLL, || {
-                stopped.load(Ordering::Relaxed)
-            });
+            let outcome = handle.wait(
+                config.queue_timeout,
+                config.heartbeat_timeout,
+                WAIT_POLL,
+                || stopped.load(Ordering::Relaxed),
+            );
             match outcome {
                 Ok(TaskOutcome::Graph(graph)) => {
                     let task_id = handle.task_id();
@@ -267,6 +270,16 @@ impl<'a> RemoteBuilder<'a> {
                     return Err(OperationError::cancelled(
                         "optimization cancelled while waiting for remote indexing",
                     ));
+                }
+                Err(WaitInterrupt::QueueTimeout) => {
+                    REMOTE_INDEXING_METRICS
+                        .queue_timeouts
+                        .fetch_add(1, Ordering::Relaxed);
+                    log::warn!(
+                        "Remote indexing task {}: not picked up in {:?}",
+                        handle.task_id(),
+                        config.queue_timeout,
+                    );
                 }
                 Err(WaitInterrupt::LeaseExpired) => {
                     REMOTE_INDEXING_METRICS

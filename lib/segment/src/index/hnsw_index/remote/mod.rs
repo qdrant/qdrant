@@ -41,8 +41,12 @@ pub enum OnFailure {
 pub struct RemoteIndexingConfig {
     /// Go remote only if the vector data of the vector name is at least this large (D11).
     pub min_index_size_bytes: usize,
-    /// Lease: the task is given up if the indexer does not call within this time (D6).
+    /// Lease of a running task: it is given up if the indexer does not call within this
+    /// time (D6).
     pub heartbeat_timeout: Duration,
+    /// Lease of a submitted task until the indexer fetches it with `GetTask`. Separate from
+    /// `heartbeat_timeout`, because nothing heartbeats a task waiting in a queue.
+    pub queue_timeout: Duration,
     pub on_failure: OnFailure,
     /// Resubmissions with `OnFailure::Retry`.
     pub max_retries: u32,
