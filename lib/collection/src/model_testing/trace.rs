@@ -323,6 +323,9 @@ fn op_payload(op: &Op) -> Value {
         Op::ScrollFilteredByUrlPrefix(prefix) => json!({ "url_prefix": prefix }),
         Op::CountByUrlSubstring(substring) => json!({ "url_substring": substring }),
         Op::ScrollFilteredByUrlSubstring(substring) => json!({ "url_substring": substring }),
+        Op::CountByNested(filter) | Op::ScrollFilteredByNested(filter) => {
+            json!({ "nested": format!("{filter:?}") })
+        }
         Op::ScrollOrdered(dir) => json!({ "direction": dir }),
         Op::Recommend {
             positive,
