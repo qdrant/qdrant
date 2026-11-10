@@ -46,23 +46,6 @@ pub fn shard_initializing_flag_path(collection_path: &Path, shard_id: ShardId) -
     collection_path.join(format!("shard_{shard_id}.initializing"))
 }
 
-/// Create the shard initializing flag.
-///
-/// Syncs both the flag file and its parent directory, so the flag survives a crash.
-/// Returns the path to the flag.
-pub async fn create_shard_initializing_flag(
-    collection_path: &Path,
-    shard_id: ShardId,
-) -> CollectionResult<PathBuf> {
-    let shard_flag = shard_initializing_flag_path(collection_path, shard_id);
-
-    let flag_file = tokio_fs::File::create(&shard_flag).await?;
-    flag_file.sync_all().await?;
-    sync_parent_dir_async(&shard_flag).await?;
-
-    Ok(shard_flag)
-}
-
 /// Remove the shard initializing flag.
 ///
 /// If `sync_shard_path` is set, syncs the shard directory first,

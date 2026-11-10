@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::fs::sync_parent_dir_async;
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
@@ -51,7 +52,7 @@ use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::shard_trait::{ShardOperation as _, WaitUntil};
-use crate::shards::{create_shard_initializing_flag, remove_shard_initializing_flag};
+use crate::shards::{remove_shard_initializing_flag, shard_initializing_flag_path};
 #[cfg(feature = "testing")]
 use crate::update_handler::Optimizer;
 
@@ -656,8 +657,10 @@ impl ShardReplicaSet {
     /// Replace the local shard with a dummy and create the shard initializing flag.
     ///
     /// The dummy is installed before the flag is created, so we do not leave the flag next to
-    /// a valid local shard and load a dummy on restart. If the flag can't be created, the dummy
-    /// stays installed.
+    /// a valid local shard and load a dummy on restart.
+    ///
+    /// If the flag file can't be created, the operation is aborted and the previous shard is put back.
+    /// If the flag file is created, but can't be synced to disk, the dummy stays installed.
     ///
     /// Returns the path to the flag.
     async fn replace_local_with_dummy(
@@ -666,13 +669,35 @@ impl ShardReplicaSet {
         collection_path: &Path,
         message: &str,
     ) -> CollectionResult<PathBuf> {
-        let dummy = Shard::Dummy(DummyShard::new(message));
+        // Replace local shard with a dummy
+        let shard = local.replace(Shard::Dummy(DummyShard::new(message)));
 
-        if let Some(shard) = local.replace(dummy) {
+        // Create shard initializing flag.
+        //
+        // If we fail to create the flag, we can abort and put the shard back.
+        let flag_path = shard_initializing_flag_path(collection_path, self.shard_id);
+        let flag_file = match fs_err::tokio::File::create(&flag_path).await {
+            Ok(flag_file) => flag_file,
+
+            Err(err) => {
+                *local = shard;
+                return Err(CollectionError::from(err));
+            }
+        };
+
+        // If we created the flag, we have to stop and drop the local shard and sync the flag to disk.
+        //
+        // Even if we fail to sync the flag, it might be persisted to disk,
+        // so we can't put the shard back anymore.
+        if let Some(shard) = shard {
             shard.stop_gracefully().await;
         }
 
-        create_shard_initializing_flag(collection_path, self.shard_id).await
+        flag_file.sync_all().await?;
+        sync_parent_dir_async(&flag_path).await?;
+
+        // Return path to the flag
+        Ok(flag_path)
     }
 
     /// Clears the local shard data and loads an empty local shard.
