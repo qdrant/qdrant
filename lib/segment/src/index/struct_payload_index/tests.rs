@@ -1002,11 +1002,16 @@ fn geo_cells_prefilter_matches_per_point_checks() {
         .iter()
         .find(|i| i.is_cold())
         .unwrap();
+    // Residency is measured with `mincore`, which only exists on unix; elsewhere it is
+    // unknown and the cells are read.
+    #[cfg(unix)]
     assert!(
         cold_geo
             .values_resident_share()
             .is_some_and(|share| share > 0.5)
     );
+    #[cfg(not(unix))]
+    assert_eq!(cold_geo.values_resident_share(), None);
     check_geo_prefilter_cases(&cold, &cases, num_points);
     IGNORE_VALUE_RESIDENCY.set(true);
     check_geo_prefilter_cases(&cold, &cases, num_points);
