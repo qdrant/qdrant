@@ -26,7 +26,7 @@ use super::sparse::StoredSparseVector;
 use super::sparse::empty_sparse_vector_storage::EmptySparseVectorStorage;
 use super::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use super::sparse::volatile_sparse_vector_storage::VolatileSparseVectorStorage;
-use super::turbo::multi_turbo::AppendableMmapMultiTurboVectorStorage;
+use super::turbo::multi_turbo::{AppendableMmapMultiTurboVectorStorage, TurboMultiQuery};
 use super::turbo::{AppendableMmapTurboVectorStorage, TurboVectorStorageImpl};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -586,7 +586,7 @@ pub trait TurboScoring: DenseTQVectorStorageRead {
 /// `raw_turbo_multi_scorer_impl` works over either.
 pub trait TurboMultiScoring: MultiTQVectorStorageRead {
     /// Preprocess and precompute each inner query vector of a multi-query once.
-    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> Vec<EncodedQueryTQ>;
+    fn preprocess_query(&self, query: &MultiDenseVectorInternal) -> TurboMultiQuery;
 
     /// Symmetric MaxSim score between two stored points.
     fn score_internal_max_similarity(
@@ -597,7 +597,7 @@ pub trait TurboMultiScoring: MultiTQVectorStorageRead {
 
     /// Score a precomputed multi-query directly against a point's concatenated
     /// encoded records, without a separate storage fetch.
-    fn score_records_max_similarity(&self, query: &[EncodedQueryTQ], records: &[u8]) -> ScoreType;
+    fn score_records_max_similarity(&self, query: &TurboMultiQuery, records: &[u8]) -> ScoreType;
 
     /// Two-pass batched read for records (offsets, then vectors), invoking
     /// `callback` once per requested point. Lets the query scorers batch the

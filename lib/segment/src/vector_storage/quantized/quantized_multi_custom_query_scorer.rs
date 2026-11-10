@@ -1,9 +1,10 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use common::ambient::hw::{self, HwScale};
 use common::typelevel::False;
 use common::types::{PointOffsetType, ScoreType};
-use quantization::EncodedVectors;
+use quantization::{EncodedVectors, PackedMultiQuery};
 
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowMultiVector;
@@ -17,14 +18,23 @@ use crate::vector_storage::quantized::quantized_multivector_storage::{
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
+/// One multi-vector of a custom query: its encoded vectors, and the same packed
+/// for the batched MaxSim kernel when the storage has one.
+pub struct EncodedMultiQuery<TEncodedQuery> {
+    vectors: Vec<TEncodedQuery>,
+    packed: Option<PackedMultiQuery>,
+}
+
 pub struct QuantizedMultiCustomQueryScorer<'a, QuantizedStorage, OffsetStorage, TQuery>
 where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
-    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
+    TQuery: Query<EncodedMultiQuery<QuantizedStorage::EncodedQuery>>,
 {
     hw: HwScale,
     query: TQuery,
+    /// Every multi-vector of `query` is packed.
+    packed: bool,
     quantized_multivector_storage: &'a QuantizedMultivectorStorage<QuantizedStorage, OffsetStorage>,
 }
 
@@ -33,7 +43,7 @@ impl<'a, QuantizedStorage, OffsetStorage, TQuery>
 where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
-    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
+    TQuery: Query<EncodedMultiQuery<QuantizedStorage::EncodedQuery>>,
 {
     pub fn new_multi<TElement, TMetric, TOriginalQuery, TInputQuery>(
         raw_query: TInputQuery,
@@ -50,7 +60,7 @@ where
             + TransformInto<
                 TQuery,
                 TypedMultiDenseVector<TElement>,
-                Vec<QuantizedStorage::EncodedQuery>,
+                EncodedMultiQuery<QuantizedStorage::EncodedQuery>,
             > + Clone,
         TInputQuery: Query<MultiDenseVectorInternal>
             + TransformInto<TOriginalQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
@@ -69,6 +79,7 @@ where
             })
             .unwrap();
 
+        let packed = Cell::new(true);
         let query: TQuery = original_query
             .transform(&|original_vector| {
                 let original_vector_prequantized = TElement::quantization_preprocess(
@@ -76,7 +87,16 @@ where
                     TMetric::distance(),
                     Cow::Borrowed(&original_vector.flattened_vectors),
                 );
-                Ok(quantized_multivector_storage.encode_query(&original_vector_prequantized))
+                let vectors =
+                    quantized_multivector_storage.encode_query(&original_vector_prequantized);
+                let packed_vectors = quantized_multivector_storage
+                    .inner_storage()
+                    .pack_multi_query_if_faster(&vectors);
+                packed.set(packed.get() && packed_vectors.is_some());
+                Ok(EncodedMultiQuery {
+                    vectors,
+                    packed: packed_vectors,
+                })
             })
             .unwrap();
 
@@ -86,6 +106,7 @@ where
                 vector_io_read: usize::from(quantized_multivector_storage.is_cold()),
             },
             query,
+            packed: packed.get(),
             quantized_multivector_storage,
         }
     }
@@ -96,7 +117,7 @@ impl<QuantizedStorage, OffsetStorage, TQuery> QueryScorer
 where
     QuantizedStorage: quantization::EncodedVectors,
     OffsetStorage: MultivectorOffsetsStorage,
-    TQuery: Query<Vec<QuantizedStorage::EncodedQuery>>,
+    TQuery: Query<EncodedMultiQuery<QuantizedStorage::EncodedQuery>>,
 {
     fn score_stored_batch(
         &self,
@@ -109,11 +130,28 @@ where
             .vector_io_read(size_of::<MultivectorOffset>() * ids.len());
 
         hw::scale_cpu(self.hw.cpu, || {
-            self.quantized_multivector_storage.score_points_batch(
-                ids,
-                |score_fn| self.query.score_by(score_fn),
-                scores,
-            )
+            if self.packed {
+                self.quantized_multivector_storage
+                    .score_points_batch_packed_by(
+                        ids,
+                        |max_sim| {
+                            self.query.score_by(|example| {
+                                // `self.packed` holds only when every example is packed.
+                                example
+                                    .packed
+                                    .as_ref()
+                                    .map_or(ScoreType::NEG_INFINITY, max_sim)
+                            })
+                        },
+                        scores,
+                    )
+            } else {
+                self.quantized_multivector_storage.score_points_batch(
+                    ids,
+                    |score_fn| self.query.score_by(|example| score_fn(&example.vectors)),
+                    scores,
+                )
+            }
         })?;
         Ok(())
     }
