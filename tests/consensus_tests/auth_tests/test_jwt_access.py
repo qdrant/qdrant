@@ -2009,6 +2009,22 @@ def test_telemetry():
     check_access("telemetry")
 
 
+def test_telemetry_hides_other_collections():
+    other_collection = random_str()
+    fixtures.create_collection(REST_URI, collection=other_collection, headers=API_KEY_HEADERS)
+    try:
+        res = requests.get(
+            f"{REST_URI}/telemetry?details_level=2",
+            headers={"authorization": f"Bearer {TOKEN_COLL_R}"},
+        )
+        assert res.status_code == 200, res.text
+        collections = res.json()["result"]["collections"]
+        assert [c["id"] for c in collections["collections"]] == [COLL_NAME]
+        assert [s["id"] for s in collections["snapshots"]] == [COLL_NAME]
+    finally:
+        fixtures.drop_collection(REST_URI, collection=other_collection, headers=API_KEY_HEADERS)
+
+
 def test_metrics():
     check_access("metrics")
 
