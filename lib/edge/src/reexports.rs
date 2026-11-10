@@ -1,4 +1,6 @@
 mod reexports_from_qdrant_crates {
+    #[cfg(feature = "serverless")]
+    pub use common::ambient::hw::{HardwareData, HwMetric, HwSharedDrain};
     pub use common::budget::ResourceBudget;
     pub use segment::common::operation_error::{OperationError, OperationResult};
     pub use segment::data_types::facets::{FacetHit, FacetResponse, FacetValue, FacetValueHit};

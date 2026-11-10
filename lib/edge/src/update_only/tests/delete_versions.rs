@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 use common::universal_io::{MmapFile, MmapFs};
 use parking_lot::Mutex;
@@ -24,8 +23,8 @@ use super::vacuumed_leader;
 use crate::PointOperations::DeletePoints;
 use crate::read_only::tests::{exact_count, open_follower, point};
 use crate::{
-    CountRequest, EdgeShardRead as _, ListedSegment, LocalSegmentEnumerator, OperationResult,
-    PointApplyKind, PointStructPersisted, ReadOnlyEdgeShard, ReadOnlyOpenOptions,
+    CountRequest, EdgeScope, EdgeShardRead as _, ListedSegment, LocalSegmentEnumerator,
+    OperationResult, PointApplyKind, PointStructPersisted, ReadOnlyEdgeShard, ReadOnlyOpenOptions,
     RetrieveRequestBuilder, SegmentEnumerator, UpdateOnlyEdgeShard, WithPayloadInterface,
     WithVector,
 };
@@ -111,7 +110,7 @@ fn open_gated_with(
             pools: Default::default(),
             waterline: Some(waterline),
         },
-        &AtomicBool::new(false),
+        &EdgeScope::new(),
     )
     .unwrap()
 }

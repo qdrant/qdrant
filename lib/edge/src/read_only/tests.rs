@@ -21,11 +21,11 @@ use uuid::Uuid;
 use crate::PointOperations::{DeletePoints, UpsertPoints};
 use crate::edge_shard::scan_segment_dirs;
 use crate::{
-    CountRequest, Distance, EdgeConfig, EdgeShard, EdgeShardRead, EdgeVectorParams, ListedSegment,
-    LocalSegmentEnumerator, ManifestSegmentEnumerator, OperationResult, PointStructPersisted,
-    ReadOnlyEdgeShard, ReadOnlyOpenOptions, RetrieveRequestBuilder, ScrollRequestBuilder,
-    SegmentEnumerator, VectorInternal, VectorStructInternal, VectorStructPersisted,
-    WithPayloadInterface, WithVector,
+    CountRequest, Distance, EdgeConfig, EdgeScope, EdgeShard, EdgeShardRead, EdgeVectorParams,
+    ListedSegment, LocalSegmentEnumerator, ManifestSegmentEnumerator, OperationResult,
+    PointStructPersisted, ReadOnlyEdgeShard, ReadOnlyOpenOptions, RetrieveRequestBuilder,
+    ScrollRequestBuilder, SegmentEnumerator, VectorInternal, VectorStructInternal,
+    VectorStructPersisted, WithPayloadInterface, WithVector,
 };
 
 pub(crate) const VECTOR_NAME: &str = "edge-ro-test-vector";
@@ -103,7 +103,7 @@ pub(crate) fn open_follower(path: &std::path::Path) -> ReadOnlyEdgeShard<MmapFil
         path,
         LocalSegmentEnumerator::new(path),
         ReadOnlyOpenOptions::default(),
-        &AtomicBool::new(false),
+        &EdgeScope::new(),
     )
     .unwrap()
 }
@@ -213,7 +213,7 @@ fn follower_with_load_profile_serves_reads() {
             pools: Default::default(),
             waterline: None,
         },
-        &AtomicBool::new(false),
+        &EdgeScope::new(),
     )
     .unwrap();
 
@@ -406,7 +406,7 @@ fn provided_config_overrides_tunables_at_open() {
             pools: Default::default(),
             waterline: None,
         },
-        &AtomicBool::new(false),
+        &EdgeScope::new(),
     )
     .unwrap();
 
@@ -488,7 +488,7 @@ fn follower_uses_injected_enumerator() {
             exclude: hidden,
         },
         ReadOnlyOpenOptions::default(),
-        &AtomicBool::new(false),
+        &EdgeScope::new(),
     )
     .unwrap();
     assert_eq!(follower.segments_count(), all_segments.len() - 1);
@@ -568,7 +568,7 @@ fn leader_writes_manifest_and_follower_loads_it() {
     assert_eq!(from_manifest, on_disk);
 
     // The follower discovers and serves the data through the manifest.
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path()).unwrap();
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path(), &EdgeScope::new()).unwrap();
     follower.live_reload().unwrap();
     assert_eq!(exact_count(&follower), 100);
 }
@@ -607,36 +607,35 @@ fn open_rejects_a_cancelled_flag() {
     leader.flush().unwrap();
 
     let stopped = Arc::new(AtomicBool::new(true));
-    assert_cancelled(ReadOnlyEdgeShard::<MmapFile>::open_with_cancellation(
+    let scope = EdgeScope::new().with_cancellation(stopped.clone());
+    assert_cancelled(ReadOnlyEdgeShard::<MmapFile>::open(
         MmapFs,
         dir.path(),
-        None,
-        None,
-        stopped.clone(),
+        ReadOnlyOpenOptions::default(),
+        &scope,
     ));
     assert_cancelled(ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         dir.path(),
         LocalSegmentEnumerator::new(dir.path()),
         ReadOnlyOpenOptions::default(),
-        &stopped,
+        &scope,
     ));
     assert!(stopped.load(Ordering::Relaxed));
 
     // An unset flag opens exactly like the plain open and is left unset.
     let stopped = Arc::new(AtomicBool::new(false));
-    let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_cancellation(
+    let follower = ReadOnlyEdgeShard::<MmapFile>::open(
         MmapFs,
         dir.path(),
-        None,
-        None,
-        stopped.clone(),
+        ReadOnlyOpenOptions::default(),
+        &EdgeScope::new().with_cancellation(stopped.clone()),
     )
     .unwrap();
     assert_eq!(exact_count(&follower), 10);
     assert_eq!(
         follower.segments_count(),
-        ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path())
+        ReadOnlyEdgeShard::<MmapFile>::open_mmap(dir.path(), &EdgeScope::new())
             .unwrap()
             .segments_count()
     );
@@ -656,16 +655,16 @@ fn live_reload_rejects_a_cancelled_flag_and_keeps_serving() {
     leader.flush().unwrap();
 
     let stopped = Arc::new(AtomicBool::new(true));
-    assert_cancelled(follower.live_reload_with_cancellation(stopped.clone()));
+    let scope = EdgeScope::new().with_cancellation(stopped.clone());
+    assert_cancelled(follower.with(&scope).live_reload());
     assert!(stopped.load(Ordering::Relaxed));
     // Nothing was picked up, and the previous state is still served.
     assert_eq!(exact_count(&follower), 10);
 
     // A cancellation is scoped to its flag, not stored on the shard.
     let stopped = Arc::new(AtomicBool::new(false));
-    follower
-        .live_reload_with_cancellation(stopped.clone())
-        .unwrap();
+    let scope = EdgeScope::new().with_cancellation(stopped.clone());
+    follower.with(&scope).live_reload().unwrap();
     assert!(!stopped.load(Ordering::Relaxed));
     assert_eq!(exact_count(&follower), 20);
     assert_eq!(scrolled_ids(&follower).len(), 20);
@@ -680,6 +679,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
 
     let stopped = Arc::new(AtomicBool::new(false));
     let armed = Arc::new(AtomicBool::new(false));
+    let scope = EdgeScope::new().with_cancellation(stopped.clone());
     let follower = ReadOnlyEdgeShard::<MmapFile>::open_with_enumerator(
         MmapFs,
         dir.path(),
@@ -689,7 +689,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
             armed: armed.clone(),
         },
         ReadOnlyOpenOptions::default(),
-        &stopped,
+        &scope,
     )
     .unwrap();
     assert_eq!(exact_count(&follower), 10);
@@ -699,7 +699,7 @@ fn cancellation_after_discovery_leaves_the_shard_untouched() {
     upsert(&leader, 11..=30);
     leader.flush().unwrap();
     armed.store(true, Ordering::Relaxed);
-    assert_cancelled(follower.live_reload_with_cancellation(stopped.clone()));
+    assert_cancelled(follower.with(&scope).live_reload());
     assert!(stopped.load(Ordering::Relaxed));
 
     // The discovered segments were neither loaded nor swapped in.

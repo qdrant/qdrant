@@ -7,9 +7,9 @@ use shard::retrieve::record_internal::RecordInternal;
 
 use crate::read_view::ReadViewProvider;
 use crate::{
-    CountRequest, EdgeConfig, EdgeShard, EdgeShardRead, FacetRequest, FacetResponse,
-    OperationResult, QueryBatchRequest, QueryRequest, RetrieveRequest, ScoredPoint, ScrollRequest,
-    SearchRequest, ShardInfo,
+    CountRequest, EdgeConfig, EdgeScope, EdgeShard, EdgeShardRead, FacetRequest, FacetResponse,
+    OperationResult, QueryBatchRequest, QueryRequest, RetrieveRequest, Scoped, ScoredPoint,
+    ScrollRequest, SearchRequest, ShardInfo,
 };
 
 /// The read-write shard's segments are heterogeneous — `Segment` and `ProxySegment` coexist during
@@ -35,6 +35,13 @@ impl ReadViewProvider for EdgeShard {
 
     fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+impl EdgeShard {
+    /// This shard, with its operations run in `scope`.
+    pub fn with<'a>(&'a self, scope: &'a EdgeScope) -> Scoped<'a, Self> {
+        Scoped { shard: self, scope }
     }
 }
 
