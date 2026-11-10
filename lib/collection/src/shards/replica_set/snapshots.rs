@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::fs::safe_delete_with_suffix;
+use common::fs::{bulk_sync_dir, safe_delete_with_suffix, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::tar_ext;
 use fs_err::tokio as tokio_fs;
@@ -359,9 +359,26 @@ impl ShardReplicaSet {
 
             // remove shard_id initialization flag because shard is fully recovered
             // do it before installing the shard, so if it fails, the dummy shard stays installed
-            if let Err(err) = tokio_fs::remove_file(&shard_flag).await {
+            //
+            // make restored shard data durable first, so the flag is never removed on disk
+            // while the restored data is not
+            let remove_flag = async {
+                let shard_path = self.shard_path.clone();
+                tokio::task::spawn_blocking(move || bulk_sync_dir(&shard_path)).await??;
+                tokio_fs::remove_file(&shard_flag).await?;
+                CollectionResult::Ok(())
+            };
+
+            if let Err(err) = remove_flag.await {
                 new_local.stop_gracefully().await;
-                return Err(CollectionError::from(err));
+                return Err(err);
+            }
+
+            // best effort: if the flag removal is lost, the shard is loaded as a dummy and recovered
+            if let Err(err) = sync_parent_dir_async(&shard_flag).await {
+                log::warn!(
+                    "Failed to sync parent dir of shard initializing flag {shard_flag:?}: {err}"
+                );
             }
 
             CollectionResult::Ok(new_local)

@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::fs::{bulk_sync_dir, sync_parent_dir_async};
 use common::save_on_disk::SaveOnDisk;
 use common::types::DeferredBehavior;
 use replica_set_state::{ReplicaSetState, ReplicaState};
@@ -711,13 +712,31 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
-                match fs_err::tokio::remove_file(&shard_flag).await {
-                    Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => {
-                        local_shard.stop_gracefully().await;
-                        return Err(err.into());
+                // make new shard data durable first, so the flag is never removed on disk
+                // while the new data is not
+                let remove_flag = async {
+                    let shard_path = self.shard_path.clone();
+                    tokio::task::spawn_blocking(move || bulk_sync_dir(&shard_path)).await??;
+
+                    match fs_err::tokio::remove_file(&shard_flag).await {
+                        Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
+                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(err) => return Err(CollectionError::from(err)),
                     }
+
+                    CollectionResult::Ok(())
+                };
+
+                if let Err(err) = remove_flag.await {
+                    local_shard.stop_gracefully().await;
+                    return Err(err);
+                }
+
+                // best effort: if the flag removal is lost, the shard is loaded as a dummy and recovered
+                if let Err(err) = sync_parent_dir_async(&shard_flag).await {
+                    log::warn!(
+                        "Failed to sync parent dir of shard initializing flag {shard_flag:?}: {err}"
+                    );
                 }
 
                 local.replace(Shard::Local(local_shard));
