@@ -5,6 +5,8 @@ mod materialization;
 mod nested;
 pub use materialization::MaterializationHint;
 mod optimizer;
+#[cfg(test)]
+pub(crate) use optimizer::IGNORE_VALUE_RESIDENCY;
 mod payload_index_read;
 mod value_retriever;
 

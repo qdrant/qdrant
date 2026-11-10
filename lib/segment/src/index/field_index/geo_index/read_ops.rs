@@ -92,6 +92,9 @@ pub trait GeoIndexRead {
 
     fn is_cold(&self) -> bool;
 
+    /// Share of the points' coordinates held in RAM right now, from 0 to 1, if known.
+    fn values_resident_share(&self) -> Option<f64>;
+
     fn populate(&self) -> OperationResult<()>;
 
     fn clear_cache(&self) -> OperationResult<()>;

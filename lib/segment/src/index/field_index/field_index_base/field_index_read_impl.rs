@@ -168,6 +168,23 @@ impl FieldIndexRead for FieldIndex {
         }
     }
 
+    fn values_resident_share(&self) -> Option<f64> {
+        match self {
+            FieldIndex::GeoIndex(index) => GeoIndexRead::values_resident_share(index),
+            FieldIndex::IntIndex(_)
+            | FieldIndex::DatetimeIndex(_)
+            | FieldIndex::IntMapIndex(_)
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::FloatIndex(_)
+            | FieldIndex::BoolIndex(_)
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::UuidIndex(_)
+            | FieldIndex::UuidMapIndex(_)
+            | FieldIndex::NullIndex(_)
+            | FieldIndex::Nested(_) => None,
+        }
+    }
+
     fn is_cold(&self) -> bool {
         match self {
             FieldIndex::IntIndex(index) => index.is_cold(),

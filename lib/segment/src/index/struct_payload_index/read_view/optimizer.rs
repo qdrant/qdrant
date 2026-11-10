@@ -416,8 +416,12 @@ where
             return Ok(None);
         };
         for index in indexes {
-            // In RAM a value check is a memory lookup: the cells don't pay off.
-            if !index.is_cold() || !expected_checks.reads_posting(estimation.exp, true) {
+            // In RAM a value check is a memory lookup: the cells don't pay off. The same
+            // holds for a cold index whose values are mostly cached by now.
+            if !index.is_cold()
+                || values_mostly_cached(index)
+                || !expected_checks.reads_posting(estimation.exp, true)
+            {
                 continue;
             }
             if let Some(points) = index.filter_candidates(condition)? {
@@ -426,4 +430,26 @@ where
         }
         Ok(None)
     }
+}
+
+/// Share of an index's values in RAM from which its candidates aren't read: the
+/// per-point check is then mostly memory reads, cheaper than going through every
+/// candidate.
+const CACHED_VALUES_SHARE: f64 = 0.5;
+
+fn values_mostly_cached(index: &impl FieldIndexRead) -> bool {
+    #[cfg(test)]
+    if IGNORE_VALUE_RESIDENCY.get() {
+        return false;
+    }
+    index
+        .values_resident_share()
+        .is_some_and(|share| share >= CACHED_VALUES_SHARE)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests build indexes whose files are all in the page cache: this lets them read
+    /// candidates of a cold index anyway.
+    pub(crate) static IGNORE_VALUE_RESIDENCY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

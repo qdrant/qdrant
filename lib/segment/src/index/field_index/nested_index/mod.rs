@@ -543,6 +543,10 @@ impl<I: NestedInnerIndex, M: ElementMapRead> FieldIndexRead for NestedFieldIndex
         Ok(None::<std::iter::Empty<PointOffsetType>>)
     }
 
+    fn values_resident_share(&self) -> Option<f64> {
+        None
+    }
+
     fn is_cold(&self) -> bool {
         self.inner.is_cold()
     }

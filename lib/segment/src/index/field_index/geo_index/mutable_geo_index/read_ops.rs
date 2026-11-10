@@ -83,6 +83,10 @@ impl GeoIndexRead for MutableGeoIndex {
         false
     }
 
+    fn values_resident_share(&self) -> Option<f64> {
+        Some(1.0)
+    }
+
     fn populate(&self) -> OperationResult<()> {
         Ok(())
     }

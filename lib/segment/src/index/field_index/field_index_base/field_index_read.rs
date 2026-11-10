@@ -61,6 +61,11 @@ pub trait FieldIndexRead: PayloadFieldIndexRead {
         condition: &'a FieldCondition,
     ) -> OperationResult<Option<impl Iterator<Item = PointOffsetType> + 'a>>;
 
+    /// Share of the per-point values held in RAM right now (e.g. in the page cache), from
+    /// 0 to 1. `None` if unknown, or if no candidates are read for this index
+    /// ([`Self::filter_candidates`]).
+    fn values_resident_share(&self) -> Option<f64>;
+
     /// Number of values for `point_id`.
     fn values_count(&self, point_id: PointOffsetType) -> OperationResult<usize>;
 

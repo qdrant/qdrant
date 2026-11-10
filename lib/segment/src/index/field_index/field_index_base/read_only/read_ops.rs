@@ -196,6 +196,23 @@ impl<S: UniversalReadExt> FieldIndexRead for ReadOnlyFieldIndex<S> {
         }
     }
 
+    fn values_resident_share(&self) -> Option<f64> {
+        match self {
+            ReadOnlyFieldIndex::GeoIndex(index) => GeoIndexRead::values_resident_share(index),
+            ReadOnlyFieldIndex::IntIndex(_)
+            | ReadOnlyFieldIndex::DatetimeIndex(_)
+            | ReadOnlyFieldIndex::IntMapIndex(_)
+            | ReadOnlyFieldIndex::KeywordIndex(_)
+            | ReadOnlyFieldIndex::FloatIndex(_)
+            | ReadOnlyFieldIndex::BoolIndex(_)
+            | ReadOnlyFieldIndex::FullTextIndex(_)
+            | ReadOnlyFieldIndex::UuidIndex(_)
+            | ReadOnlyFieldIndex::UuidMapIndex(_)
+            | ReadOnlyFieldIndex::NullIndex(_)
+            | ReadOnlyFieldIndex::Nested(_) => None,
+        }
+    }
+
     fn is_cold(&self) -> bool {
         match self {
             ReadOnlyFieldIndex::IntMapIndex(index) => index.is_cold(),

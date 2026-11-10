@@ -86,6 +86,10 @@ impl<S: UniversalRead> GeoIndexRead for OnDiskGeoIndex<S> {
         self.cold
     }
 
+    fn values_resident_share(&self) -> Option<f64> {
+        self.storage.point_to_values.resident_share()
+    }
+
     fn populate(&self) -> OperationResult<()> {
         OnDiskGeoIndex::populate(self)
     }

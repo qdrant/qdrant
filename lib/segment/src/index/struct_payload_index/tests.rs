@@ -823,6 +823,7 @@ fn geo_cells_prefilter_matches_per_point_checks() {
 
     use ordered_float::OrderedFloat;
 
+    use super::read_view::IGNORE_VALUE_RESIDENCY;
     use super::{IndexLoadMode, StorageType, StructPayloadIndex};
     use crate::data_types::index::{GeoIndexParams, GeoIndexType};
     use crate::index::PayloadIndex;
@@ -994,7 +995,22 @@ fn geo_cells_prefilter_matches_per_point_checks() {
     ];
 
     check_geo_prefilter_cases(&segment.payload_index.borrow(), &cases, num_points);
+
+    // The cold index's files are all in the page cache here, so its cells are skipped like
+    // in RAM; read them anyway to check the cell path too.
+    let cold_geo = cold.field_indexes[&location]
+        .iter()
+        .find(|i| i.is_cold())
+        .unwrap();
+    assert!(
+        cold_geo
+            .values_resident_share()
+            .is_some_and(|share| share > 0.5)
+    );
     check_geo_prefilter_cases(&cold, &cases, num_points);
+    IGNORE_VALUE_RESIDENCY.set(true);
+    check_geo_prefilter_cases(&cold, &cases, num_points);
+    IGNORE_VALUE_RESIDENCY.set(false);
 }
 
 /// Compares, for each case, the filter optimized with every materialization hint

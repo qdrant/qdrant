@@ -288,6 +288,19 @@ impl UniversalRead for MmapFile {
         }
     }
 
+    fn resident_share(&self) -> Option<f64> {
+        if self.resident.load(Ordering::Relaxed) || self.len == 0 {
+            return Some(1.0);
+        }
+        cfg_select! {
+            unix => {
+                let resident = self.resident_bytes().ok()?;
+                Some(resident as f64 / self.len as f64)
+            }
+            _ => None,
+        }
+    }
+
     fn clear_ram_cache(&self) -> UioResult<()> {
         self.resident.store(false, Ordering::Relaxed);
         // `MADV_PAGEOUT` skips pages with more than one page-table reference,

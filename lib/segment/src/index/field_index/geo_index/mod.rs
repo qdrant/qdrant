@@ -232,6 +232,14 @@ impl GeoIndexRead for GeoIndex {
         }
     }
 
+    fn values_resident_share(&self) -> Option<f64> {
+        match self {
+            GeoIndex::Mutable(index) => GeoIndexRead::values_resident_share(index),
+            GeoIndex::Immutable(index) => GeoIndexRead::values_resident_share(index),
+            GeoIndex::OnDisk(index) => GeoIndexRead::values_resident_share(index),
+        }
+    }
+
     fn populate(&self) -> OperationResult<()> {
         match self {
             GeoIndex::Mutable(_) | GeoIndex::Immutable(_) => Ok(()),

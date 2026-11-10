@@ -170,6 +170,14 @@ impl<S: UniversalRead> GeoIndexRead for ReadOnlyGeoIndex<S> {
         }
     }
 
+    fn values_resident_share(&self) -> Option<f64> {
+        match self {
+            ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::values_resident_share(index),
+            ReadOnlyGeoIndex::Immutable(index) => GeoIndexRead::values_resident_share(index),
+            ReadOnlyGeoIndex::OnDisk(index) => GeoIndexRead::values_resident_share(index),
+        }
+    }
+
     fn populate(&self) -> OperationResult<()> {
         match self {
             ReadOnlyGeoIndex::Appendable(index) => GeoIndexRead::populate(index),
