@@ -267,6 +267,9 @@ pub struct ResourcePermit {
 
     /// Whether the CPUs are lent back to the budget, see [`Self::suspend_cpu`].
     cpu_suspended: AtomicBool,
+    /// Serializes [`Self::suspend_cpu`] and [`Self::resume_cpu`] on a shared permit, so that
+    /// CPUs are lent and taken back exactly once each.
+    cpu_lending: parking_lot::Mutex<()>,
 }
 
 impl ResourcePermit {
@@ -288,6 +291,7 @@ impl ResourcePermit {
             io_permit,
             on_manual_release: None,
             cpu_suspended: AtomicBool::new(false),
+            cpu_lending: parking_lot::Mutex::new(()),
         }
     }
 
@@ -341,6 +345,7 @@ impl ResourcePermit {
             io_permit: None,
             on_manual_release: None,
             cpu_suspended: AtomicBool::new(false),
+            cpu_lending: parking_lot::Mutex::new(()),
         }
     }
 
@@ -355,6 +360,7 @@ impl ResourcePermit {
         let Some(permit) = &self.cpu_permit else {
             return false;
         };
+        let _lending = self.cpu_lending.lock();
         if permit.num_permits() == 0 || self.cpu_suspended.swap(true, Ordering::AcqRel) {
             return false;
         }
@@ -374,6 +380,8 @@ impl ResourcePermit {
         let Some(permit) = &self.cpu_permit else {
             return true;
         };
+        // Held while waiting: a concurrent caller waits too, then finds the CPUs back
+        let _lending = self.cpu_lending.lock();
         if !self.cpu_suspended.load(Ordering::Acquire) {
             return true;
         }
@@ -480,6 +488,7 @@ impl Drop for ResourcePermit {
             io_permit,
             on_manual_release: _, // Only explicit release() should call the callback
             cpu_suspended: _,
+            cpu_lending: _,
         } = self;
 
         let _ = cpu_permit.take();
@@ -536,6 +545,25 @@ mod tests {
         permit.release(1, 0);
         assert_eq!(permit.num_cpus, 0);
         assert_eq!(available_cpus(&budget), 4);
+        drop(permit);
+        assert_eq!(available_cpus(&budget), 4);
+    }
+
+    #[test]
+    fn concurrent_resume_takes_cpus_back_once() {
+        let budget = ResourceBudget::new(4, 4);
+        let stopped = AtomicBool::new(false);
+        let permit = Arc::new(budget.try_acquire(4, 0).unwrap());
+        for _ in 0..20 {
+            assert!(permit.suspend_cpu());
+            assert_eq!(available_cpus(&budget), 4);
+            std::thread::scope(|scope| {
+                for _ in 0..4 {
+                    scope.spawn(|| assert!(permit.resume_cpu(&stopped)));
+                }
+            });
+            assert_eq!(available_cpus(&budget), 0, "CPUs taken back more than once");
+        }
         drop(permit);
         assert_eq!(available_cpus(&budget), 4);
     }

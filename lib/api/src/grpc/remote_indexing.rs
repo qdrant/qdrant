@@ -24,6 +24,10 @@ use super::qdrant::{
 /// Metadata header carrying the one-time task token.
 pub const INDEXING_TOKEN_HEADER: &str = "x-qdrant-indexing-token";
 
+/// Highest level accepted in an upload, as in `WireGraph::validate`: level `l` holds about
+/// `m^-l` of the points.
+const MAX_UPLOAD_LEVEL: u8 = 64;
+
 /// Points per `IndexingGraphLinks` chunk of an upload.
 pub const UPLOAD_CHUNK_POINTS: usize = 16 * 1024;
 
@@ -362,8 +366,9 @@ pub fn graph_to_grpc(graph: &WireGraph) -> Vec<UploadIndexingGraphRequest> {
 }
 
 /// Assembles an uploaded graph from its stream. Rejects malformed streams early, and bounds
-/// memory: the graph cannot be larger than `max_points` points with `max_links_per_point`
-/// links each. The shape is validated afterwards, by the registry.
+/// memory: at most `max_points` points and `max_links` links in total, with every chunk
+/// self-consistent (counts match levels, links match counts) before it is kept. The shape is
+/// validated afterwards, by the registry.
 pub struct GraphAssembler {
     graph: Option<WireGraph>,
     max_points: usize,
@@ -371,11 +376,11 @@ pub struct GraphAssembler {
 }
 
 impl GraphAssembler {
-    pub fn new(max_points: usize, max_links_per_point: usize) -> Self {
+    pub fn new(max_points: usize, max_links: usize) -> Self {
         Self {
             graph: None,
             max_points,
-            max_links: max_points.saturating_mul(max_links_per_point),
+            max_links,
         }
     }
 
@@ -427,6 +432,25 @@ impl GraphAssembler {
                     return Err(format!(
                         "chunk starts at {start}, expected {}",
                         graph.levels.len()
+                    ));
+                }
+                if let Some(&level) = levels.iter().find(|&&l| l > MAX_UPLOAD_LEVEL) {
+                    return Err(format!("level {level} above {MAX_UPLOAD_LEVEL}"));
+                }
+                // Each chunk must be self-consistent, so that `link_counts` is bounded by
+                // `levels`, and `links` by `link_counts`, before anything is kept
+                let expected_counts: usize = levels.iter().map(|&l| l as usize + 1).sum();
+                if link_counts.len() != expected_counts {
+                    return Err(format!(
+                        "chunk has {} link counts, its levels require {expected_counts}",
+                        link_counts.len()
+                    ));
+                }
+                let expected_links: u64 = link_counts.iter().map(|&c| u64::from(c)).sum();
+                if links.len() as u64 != expected_links {
+                    return Err(format!(
+                        "chunk has {} links, its counts require {expected_links}",
+                        links.len()
                     ));
                 }
                 if graph.levels.len() + levels.len() > self.max_points
@@ -481,7 +505,7 @@ mod tests {
                 level: 1,
             }],
         };
-        let mut assembler = GraphAssembler::new(point_count, 8);
+        let mut assembler = GraphAssembler::new(point_count, point_count * 8);
         for message in graph_to_grpc(&graph) {
             assembler.push(message).unwrap();
         }
@@ -498,9 +522,51 @@ mod tests {
             entry_points: vec![],
             extra_entry_points: vec![],
         };
-        let mut assembler = GraphAssembler::new(5, 8);
+        let mut assembler = GraphAssembler::new(5, 40);
         let messages = graph_to_grpc(&graph);
         assert!(assembler.push(messages[0].clone()).is_err());
+    }
+
+    #[test]
+    fn assembler_rejects_inconsistent_chunks() {
+        let header = UploadIndexingGraphRequest {
+            part: Some(upload_indexing_graph_request::Part::Header(
+                IndexingGraphHeader {
+                    format_version: GRAPH_FORMAT_VERSION_V1,
+                    point_count: 4,
+                    entry_points: vec![],
+                    extra_entry_points: vec![],
+                },
+            )),
+        };
+        let chunk =
+            |levels: Vec<u8>, link_counts: Vec<u32>, links: Vec<u32>| UploadIndexingGraphRequest {
+                part: Some(upload_indexing_graph_request::Part::Links(
+                    IndexingGraphLinks {
+                        start: 0,
+                        levels,
+                        link_counts,
+                        links,
+                    },
+                )),
+            };
+        let cases = [
+            // Counts without levels: would grow `link_counts` without bound
+            chunk(vec![], vec![0; 1000], vec![]),
+            // Counts do not match levels
+            chunk(vec![0, 1], vec![1, 0], vec![1]),
+            // Links do not match counts
+            chunk(vec![0], vec![2], vec![1]),
+            // Level too high
+            chunk(vec![200], vec![0; 201], vec![]),
+            // More links than the task allows
+            chunk(vec![0, 0], vec![20, 20], vec![1; 40]),
+        ];
+        for (i, case) in cases.into_iter().enumerate() {
+            let mut assembler = GraphAssembler::new(4, 16);
+            assembler.push(header.clone()).unwrap();
+            assert!(assembler.push(case).is_err(), "case {i} accepted");
+        }
     }
 
     #[test]

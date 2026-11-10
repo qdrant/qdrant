@@ -5,6 +5,7 @@
 //! these paths through without an API key, which the indexer does not have.
 
 use std::pin::Pin;
+use std::time::Duration;
 
 use api::grpc::qdrant::indexing_task_server::IndexingTask;
 use api::grpc::qdrant::{
@@ -20,14 +21,30 @@ use api::grpc::remote_indexing::{
 };
 use futures::Stream;
 use segment::index::hnsw_index::remote::registry::{
-    READ_CHUNK_BYTES, REMOTE_INDEXING_TASKS, RemoteTaskError, TaskToken,
+    READ_CHUNK_BYTES, REMOTE_INDEXING_TASKS, RemoteTaskError, TaskDescription, TaskToken,
 };
+use segment::index::hnsw_index::remote::remote_indexer;
 use segment::index::hnsw_index::remote::wire::SUPPORTED_GRAPH_FORMAT_VERSIONS;
 use tonic::{Request, Response, Status, Streaming, async_trait};
 
-/// Upper bound on links per point in an upload, before validation: generous, validation
-/// applies the exact limit.
-const MAX_UPLOAD_LINKS_PER_POINT: usize = 4096;
+/// How long an upload may go without a message, if no remote indexer is configured to say.
+const DEFAULT_UPLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Upper bound on the links of an uploaded graph, before validation applies the exact
+/// per-point limits: on every point `m0` on level 0 and `m` above, which upper levels stay
+/// within since they hold a fraction of the points, plus `payload_m0` per planned block a
+/// point is in.
+fn max_upload_links(description: &TaskDescription) -> usize {
+    let params = &description.params;
+    params
+        .point_count
+        .saturating_mul(params.m0 + params.m)
+        .saturating_add(
+            params
+                .payload_m0
+                .saturating_mul(description.block_plan.num_points()),
+        )
+}
 
 #[derive(Default)]
 pub struct IndexingTaskService;
@@ -191,10 +208,25 @@ impl IndexingTask for IndexingTaskService {
         let token = token(&request)?;
         // Bound the upload by the task, so a token cannot be used to exhaust memory
         let description = REMOTE_INDEXING_TASKS.get_task(&token).map_err(status)?;
-        let mut assembler =
-            GraphAssembler::new(description.params.point_count, MAX_UPLOAD_LINKS_PER_POINT);
+        let mut assembler = GraphAssembler::new(
+            description.params.point_count,
+            max_upload_links(&description),
+        );
+        // A stalled upload must not hold the token and the connection: no message within the
+        // heartbeat lease ends it
+        let idle_timeout = remote_indexer()
+            .map(|indexer| indexer.config().heartbeat_timeout)
+            .unwrap_or(DEFAULT_UPLOAD_IDLE_TIMEOUT);
         let mut stream = request.into_inner();
-        while let Some(message) = stream.message().await? {
+        loop {
+            let message = tokio::time::timeout(idle_timeout, stream.message())
+                .await
+                .map_err(|_| {
+                    Status::deadline_exceeded(format!("no upload message in {idle_timeout:?}"))
+                })??;
+            let Some(message) = message else {
+                break;
+            };
             assembler.push(message).map_err(Status::invalid_argument)?;
         }
         let graph = assembler.finish().map_err(Status::invalid_argument)?;
