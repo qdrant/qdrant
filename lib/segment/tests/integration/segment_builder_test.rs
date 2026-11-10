@@ -22,6 +22,7 @@ use segment::entry::entry_point::{
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::id_tracker::IdTrackerRead;
 use segment::index::hnsw_index::get_num_indexing_threads;
+use segment::index::hnsw_index::hnsw::with_pipnn_min_points;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
 use segment::segment_constructor::normalize_segment_dir;
@@ -558,6 +559,13 @@ fn test_building_cancelled_before_start() {
     assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
 }
 
+/// Items an HNSW phase may complete after a cancel. Every item checks the stop flag first, so
+/// only the items already in flight may complete: one per build thread. Allow twice that to
+/// tolerate the flag becoming visible to other threads slightly later.
+fn hnsw_items_after_cancel() -> u64 {
+    2 * build_threads()
+}
+
 /// Builds `builder`, cancelling it once `phase` has processed a tenth of its work.
 ///
 /// Checks that the build stops right away rather than at the end of the phase. This is
@@ -567,6 +575,7 @@ fn build_cancelled_during_phase(
     builder: SegmentBuilder,
     segments_path: &Path,
     phase: &'static str,
+    max_items_after_cancel: u64,
 ) -> ProgressView {
     let stopped = Arc::new(AtomicBool::new(false));
     let build_finished = Arc::new(AtomicBool::new(false));
@@ -605,10 +614,6 @@ fn build_cancelled_during_phase(
         done_final < total,
         "{phase} was completed despite cancellation",
     );
-    // Every item checks the stop flag first, so only the items already in flight may
-    // complete: one per build thread. Allow twice that to tolerate the flag becoming
-    // visible to other threads slightly later.
-    let max_items_after_cancel = 2 * build_threads();
     assert!(
         done_final - done_at_cancel <= max_items_after_cancel,
         "{phase}: {} items were processed after cancellation (at {done_at_cancel} of {total}), \
@@ -631,8 +636,46 @@ fn test_building_cancelled_during_main_graph() {
     let builder = hnsw_segment_builder(&source, temp_dir.path());
 
     // At 10% of the points, past `SINGLE_THREADED_HNSW_BUILD_THRESHOLD`, so this cancels
-    // the parallel part of the phase.
-    build_cancelled_during_phase(builder, segments_dir.path(), "main_graph");
+    // the parallel part of the phase. HNSW explicitly: the bound counts points.
+    with_pipnn_min_points(usize::MAX, || {
+        build_cancelled_during_phase(
+            builder,
+            segments_dir.path(),
+            "main_graph",
+            hnsw_items_after_cancel(),
+        )
+    });
+
+    assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
+}
+
+/// Cancelling in the middle of a PiPNN main graph must stop the build right away.
+#[test]
+fn test_building_cancelled_during_pipnn_main_graph() {
+    let _scope = ambient::test_guard();
+    let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let source = cancellation_test_segment(source_dir.path());
+    let builder = hnsw_segment_builder(&source, temp_dir.path());
+
+    // PiPNN counts the points of each level once per phase, and adds them per piece of work.
+    // A piece adds at most the points of its level, 10,000 on level 0, so allow two of those
+    // per build thread.
+    let progress = with_pipnn_min_points(0, || {
+        build_cancelled_during_phase(
+            builder,
+            segments_dir.path(),
+            "main_graph",
+            2 * build_threads() * 16_384,
+        )
+    });
+
+    // PiPNN built it: every point counts once per phase, of which there are 3, where HNSW
+    // counts it once
+    let (_, total) = phase_progress(&progress, "main_graph").unwrap();
+    assert!(total >= 3 * CANCELLATION_TEST_POINTS, "total {total}");
 
     assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
 }
@@ -664,7 +707,12 @@ fn test_building_cancelled_during_heal() {
     }
 
     let builder = hnsw_segment_builder(&old_segment, temp_dir.path());
-    let progress = build_cancelled_during_phase(builder, segments_dir.path(), "migrate");
+    let progress = build_cancelled_during_phase(
+        builder,
+        segments_dir.path(),
+        "migrate",
+        hnsw_items_after_cancel(),
+    );
 
     // Stopped within healing, before inserting into the main graph
     assert_eq!(phase_progress(&progress, "main_graph"), None);
