@@ -225,23 +225,26 @@ pub fn run_task(
                 .unwrap_or_else(|| "unknown panic".to_string());
             Err(SourceError::Other(format!("indexer panicked: {message}")))
         });
+        // Upload while still heartbeating: core only sees the upload once the whole graph
+        // has arrived, so a large graph in transit would otherwise outlast the lease
+        let result = result.map(|graph| {
+            let timer = Instant::now();
+            let uploaded = source.upload(graph);
+            report.upload_time = timer.elapsed();
+            uploaded
+        });
         drop(done_guard);
         result
     });
 
     report.outcome = match result {
-        Ok(graph) => {
-            let timer = Instant::now();
-            let uploaded = source.upload(graph);
-            report.upload_time = timer.elapsed();
-            match uploaded {
-                Ok(()) => RunOutcome::Uploaded,
-                Err(SourceError::PermissionDenied) => {
-                    RunOutcome::Dropped("token revoked before upload".to_string())
-                }
-                Err(SourceError::Other(err)) => RunOutcome::Failed(format!("upload: {err}")),
+        Ok(uploaded) => match uploaded {
+            Ok(()) => RunOutcome::Uploaded,
+            Err(SourceError::PermissionDenied) => {
+                RunOutcome::Dropped("token revoked before upload".to_string())
             }
-        }
+            Err(SourceError::Other(err)) => RunOutcome::Failed(format!("upload: {err}")),
+        },
         Err(_) if cancelled.load(Ordering::Relaxed) => {
             RunOutcome::Dropped("cancelled by core".to_string())
         }
