@@ -10,7 +10,7 @@
 //! with the nibble indices, interleave via `punpcklbw` → 16 centroid bytes
 //! in natural dim order.
 
-use super::{CODEBOOK_U8, centroid_dot};
+use super::{CODEBOOK_U8, FOLDED_MAX_DIM, centroid_dot};
 
 /// `PAIR_TABLE_EVEN_U8[nibble]` = `CODEBOOK_U8[nibble & 0b11]`.
 const PAIR_TABLE_EVEN_U8: [u8; 16] = {
@@ -241,6 +241,7 @@ pub unsafe fn score_2bit_internal_folded_sse(a: &[u8], b: &[u8], factors: &[i16]
         factors.len(),
         4 * a.len(),
     );
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     unsafe {
         let mut acc = _mm_setzero_si128();
@@ -277,6 +278,7 @@ pub unsafe fn score_2bit_internal_folded_avx2(a: &[u8], b: &[u8], factors: &[i16
 
     assert_eq!(a.len(), b.len());
     assert_eq!(factors.len(), 4 * a.len());
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     unsafe {
         let shift256 = _mm256_set1_epi8(-128_i8);

@@ -1,7 +1,7 @@
 //! NEON kernels for the symmetric 4-bit paths (`score_4bit_internal*`) on
 //! aarch64.  The codebook is stored as signed i8 (`CODEBOOK_I8`).
 
-use super::{CODEBOOK_I8, centroid_dot};
+use super::{CODEBOOK_I8, FOLDED_MAX_DIM, centroid_dot};
 
 /// NEON implementation of [`super::score_4bit_internal`].  Both PQ-encoded
 /// vectors are unpacked into i8 codebook values via `vqtbl1q_s8`, multiplied
@@ -155,6 +155,7 @@ pub unsafe fn score_4bit_internal_folded_neon(a: &[u8], b: &[u8], factors: &[i16
         factors.len(),
         2 * a.len(),
     );
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     unsafe {
         let codebook = vld1q_s8(CODEBOOK_I8.as_ptr());

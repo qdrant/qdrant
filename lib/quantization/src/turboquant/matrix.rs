@@ -653,10 +653,10 @@ unsafe fn codebook_values_avx2<const BITS: usize>(
     words * per_word
 }
 
-/// The stored bytes as they are, for each of the code types, or with `folded`, also the folded
-/// TQ+ codes, their bytes XORed with the given flip.
+/// The stored bytes as they are, for each of the code types, and the folded TQ+ codes as
+/// [`FoldedCodes`] writes them.
 macro_rules! code_operands {
-    ($elem:ident, $what:literal $(, folded: $flip:literal)?) => {
+    ($elem:ident, $what:literal) => {
         impl<S: TurboSource> MatrixOperands for TurboOperands<'_, S, $elem> {
             type Elem = $elem;
             type Combine = TurboCombine;
@@ -687,12 +687,17 @@ macro_rules! code_operands {
                             *o = $elem(byte);
                         }
                     }),
-                    $(Decode::Folded { fold, factors } => {
+                    Decode::Folded { fold, factors } => {
                         self.decode_with(ids, out, aux, |codes, out| {
-                            fold(codes, factors, code_bytes(out), $flip)
+                            $elem::write_folded(*fold, codes, factors, out)
                         })
-                    })?
-                    _ => unreachable!(concat!(stringify!($elem), " operands decode no other way")),
+                    }
+                    Decode::Grid8 | Decode::Grid16 | Decode::Codebook { .. } => {
+                        unreachable!(concat!(
+                            stringify!($elem),
+                            " operands decode no grid or codebook"
+                        ))
+                    }
                 }
             }
         }
@@ -701,8 +706,32 @@ macro_rules! code_operands {
 
 code_operands!(Codes2, "Bytes per vector, 4 codes each.");
 code_operands!(Codes4, "Bytes per vector, 2 codes each.");
-// Folded TQ+ values are stored as `value + 128`, as the 8-bit grid
-code_operands!(Codes8, "Bytes per vector.", folded: 0x80);
+code_operands!(Codes8, "Bytes per vector.");
+
+/// How the operands of a code type hold folded TQ+ codes: only 8-bit codes do.
+trait FoldedCodes: Sized {
+    /// The values of `codes` folded by `fold` with `factors`, one per position of `out`.
+    fn write_folded(fold: Fold, codes: &[u8], factors: &[i16], out: &mut [Self]);
+}
+
+impl FoldedCodes for Codes2 {
+    fn write_folded(_: Fold, _: &[u8], _: &[i16], _: &mut [Self]) {
+        unreachable!("folded TQ+ codes are 8-bit operands")
+    }
+}
+
+impl FoldedCodes for Codes4 {
+    fn write_folded(_: Fold, _: &[u8], _: &[i16], _: &mut [Self]) {
+        unreachable!("folded TQ+ codes are 8-bit operands")
+    }
+}
+
+impl FoldedCodes for Codes8 {
+    fn write_folded(fold: Fold, codes: &[u8], factors: &[i16], out: &mut [Self]) {
+        // Stored as `value + 128`, as the 8-bit grid
+        fold(codes, factors, code_bytes(out), 0x80)
+    }
+}
 
 /// The bytes of 8-bit codes.
 fn code_bytes(codes: &mut [Codes8]) -> &mut [u8] {

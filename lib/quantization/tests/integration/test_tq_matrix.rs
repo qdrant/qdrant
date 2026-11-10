@@ -71,10 +71,7 @@ impl Fixture {
 
     /// The best `K` columns of each row by `score_internal`, as `(column position, score)`.
     fn expected(&self, rows: &[PointOffsetType], cols: Cols) -> Vec<Vec<(u32, f32)>> {
-        let col_ids = match cols {
-            Cols::Rows => rows,
-            Cols::Other(cols) => cols,
-        };
+        let col_ids = column_points(rows, cols);
         rows.iter()
             .enumerate()
             .map(|(r, &row)| {
@@ -122,6 +119,7 @@ impl Fixture {
                 let mut out = TopK::new(K);
                 operands.top_k_with(kernel, rows, cols, &mut out).unwrap();
                 let expected = self.expected(rows, cols);
+                let col_ids = column_points(rows, cols);
                 assert_eq!(out.rows(), rows.len());
                 for (r, expected) in expected.iter().enumerate() {
                     let (got_cols, got_scores) = out.row(r);
@@ -134,7 +132,8 @@ impl Fixture {
                                 .collect();
                             assert_eq!(&got, expected, "{what}, {kernel:?}, row {r}");
                         }
-                        // Near-ties may swap, so compare the scores by rank
+                        // Near-ties may swap, so compare the scores by rank, and each picked
+                        // column's score with its own
                         Some(tolerance) => {
                             assert_eq!(got_scores.len(), expected.len(), "{what}, row {r}");
                             let allowed = tolerance * self.magnitude(rows[r]);
@@ -144,11 +143,28 @@ impl Fixture {
                                     "{what}, {kernel:?}, row {r}: {got} vs {want}, allowed {allowed}",
                                 );
                             }
+                            for (&col, &got) in got_cols.iter().zip(got_scores) {
+                                let want =
+                                    self.encoded.score_internal(rows[r], col_ids[col as usize]);
+                                assert!(
+                                    (got - want).abs() <= allowed,
+                                    "{what}, {kernel:?}, row {r}, column {col}: {got} vs {want}, \
+                                     allowed {allowed}",
+                                );
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/// The points that the positions of `cols` refer to.
+fn column_points<'a>(rows: &'a [PointOffsetType], cols: Cols<'a>) -> &'a [PointOffsetType] {
+    match cols {
+        Cols::Rows => rows,
+        Cols::Other(cols) => cols,
     }
 }
 

@@ -3,7 +3,7 @@
 //! The codebook is stored as unsigned u8 ∈ [0, 255] (`CODEBOOK_U8`); the
 //! kernels XOR it with 0x80 to recover the signed form in-register.
 
-use super::{CODEBOOK_U8, centroid_dot};
+use super::{CODEBOOK_U8, FOLDED_MAX_DIM, centroid_dot};
 
 #[target_feature(enable = "sse2")]
 unsafe fn hsum_i32_sse(v: core::arch::x86_64::__m128i) -> i32 {
@@ -251,6 +251,7 @@ pub unsafe fn score_4bit_internal_folded_sse(a: &[u8], b: &[u8], factors: &[i16]
         factors.len(),
         2 * a.len(),
     );
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     unsafe {
         let codebook_i8 = _mm_xor_si128(
@@ -361,6 +362,7 @@ pub unsafe fn score_4bit_internal_folded_avx2(a: &[u8], b: &[u8], factors: &[i16
         factors.len(),
         2 * a.len(),
     );
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     unsafe {
         let codebook_i8 = signed_codebook_avx2();

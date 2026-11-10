@@ -241,23 +241,19 @@ pub fn score_2bit_internal_folded_scalar(a: &[u8], b: &[u8], factors: &[i16]) ->
 /// The folded values of [`score_2bit_internal_folded`] of one vector, one per position of
 /// `out`, XORed with `flip`: see [`super::fold_codes`].
 pub(crate) fn fold_codes(codes: &[u8], factors: &[i16], out: &mut [u8], flip: u8) {
-    super::fold_codes::<2>(
-        codes,
-        factors,
-        out,
-        flip,
-        codebook_signed_i64,
-        |c, f, o, flip| {
-            match SimdBackend::detect() {
-                // SAFETY: the CPU checked by `detect`, the lengths asserted by `fold_codes`
-                #[cfg(target_arch = "x86_64")]
-                SimdBackend::Avx512Vnni | SimdBackend::Avx2 => unsafe {
-                    x64::fold_codes_avx2(c, f, o, flip)
-                },
-                _ => 0,
-            }
-        },
-    );
+    let simd: fn(&[u8], &[i16], &mut [u8], u8) -> usize = match SimdBackend::detect() {
+        // SAFETY: the CPU checked by `detect`, the lengths asserted by `super::fold_codes`
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Avx512Vnni | SimdBackend::Avx2 => {
+            |c, f, o, flip| unsafe { x64::fold_codes_avx2(c, f, o, flip) }
+        }
+        #[cfg(target_arch = "x86_64")]
+        SimdBackend::Sse => |_, _, _, _| 0,
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        SimdBackend::NeonSdot | SimdBackend::Neon => |_, _, _, _| 0,
+        SimdBackend::Scalar => |_, _, _, _| 0,
+    };
+    super::fold_codes::<2>(codes, factors, out, flip, codebook_signed_i64, simd);
 }
 
 /// Square of the codebook scale — the integer sum from

@@ -19,7 +19,7 @@
 //!
 //! Same pipeline as 4-bit from that point on (i8 × i8 → i16 + `vpadalq_s16`).
 
-use super::{CODEBOOK_I8, centroid_dot};
+use super::{CODEBOOK_I8, FOLDED_MAX_DIM, centroid_dot};
 
 /// `PAIR_TABLE_EVEN[nibble]` = `CODEBOOK_I8[nibble & 0b11]`.
 const PAIR_TABLE_EVEN: [i8; 16] = {
@@ -206,6 +206,7 @@ pub unsafe fn score_2bit_internal_folded_neon(a: &[u8], b: &[u8], factors: &[i16
         factors.len(),
         4 * a.len(),
     );
+    assert!(factors.len() <= FOLDED_MAX_DIM);
 
     unsafe {
         let mut acc = vdupq_n_s32(0);
