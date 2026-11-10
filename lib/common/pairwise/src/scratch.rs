@@ -1,4 +1,4 @@
-use crate::Bits;
+use crate::{Aux, Bits, Codes2, Codes4, Codes8};
 
 /// Buffers a kernel reuses across calls, owned by the [`TopK`](crate::TopK) it writes to.
 #[derive(Clone, Debug, Default)]
@@ -11,14 +11,17 @@ pub(crate) struct Scratch {
     pub out: AlignedBuf,
     /// A batch of decoded vectors before packing.
     pub decoded: AlignedBuf,
+    /// A row block's panels and a column panel, unpacked for tiles that do that.
+    pub unpacked_rows: AlignedBuf,
+    pub unpacked_cols: AlignedBuf,
     /// Lookup tables of the x86 bits kernel.
     #[cfg(target_arch = "x86_64")]
     pub tables: AlignedBuf,
     /// Partial counts of the x86 bits kernel.
     #[cfg(target_arch = "x86_64")]
     pub partial: AlignedBuf,
-    pub row_aux: Vec<f32>,
-    pub col_aux: Vec<f32>,
+    pub row_aux: Vec<Aux>,
+    pub col_aux: Vec<Aux>,
     /// Scores of one row of a block, and of its transposed pairs.
     pub scores: Vec<f32>,
     pub scores_t: Vec<f32>,
@@ -31,12 +34,16 @@ pub(crate) struct Scratch {
 /// Implement only for such types.
 pub(crate) unsafe trait Plain: Copy {}
 
-// SAFETY: plain numbers, alignments of 1 to 4.
+// SAFETY: plain numbers and transparent bytes, alignments of 1 to 8.
 unsafe impl Plain for f32 {}
 unsafe impl Plain for i32 {}
 unsafe impl Plain for u16 {}
+unsafe impl Plain for i16 {}
 unsafe impl Plain for u8 {}
 unsafe impl Plain for Bits {}
+unsafe impl Plain for Codes2 {}
+unsafe impl Plain for Codes4 {}
+unsafe impl Plain for Codes8 {}
 
 /// Storage for [`Plain`] values, 64-byte aligned for vector loads.
 #[derive(Clone, Default)]

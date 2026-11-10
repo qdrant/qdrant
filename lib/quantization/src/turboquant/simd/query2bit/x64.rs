@@ -10,7 +10,7 @@
 //! with the nibble indices, interleave via `punpcklbw` → 16 centroid bytes
 //! in natural dim order.
 
-use super::{CODEBOOK_SCALE, CODEBOOK_U8};
+use super::{CODEBOOK_U8, centroid_dot};
 
 /// `PAIR_TABLE_EVEN_U8[nibble]` = `CODEBOOK_U8[nibble & 0b11]`.
 const PAIR_TABLE_EVEN_U8: [u8; 16] = {
@@ -114,7 +114,7 @@ pub unsafe fn score_2bit_internal_sse(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_full * 4;
         let acc_i64 = i64::from(hsum_i32_sse(acc))
             + super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 
@@ -178,7 +178,7 @@ pub unsafe fn score_2bit_internal_avx2(a: &[u8], b: &[u8]) -> f32 {
         let simd_bytes = n_chunks * 4;
         let acc_i64 = i64::from(hsum_i32_sse(acc_sse))
             + super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_i64 as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_i64 as f32)
     }
 }
 
@@ -438,7 +438,7 @@ pub unsafe fn score_2bit_internal_avx512_vnni(a: &[u8], b: &[u8]) -> f32 {
         // Scalar tail for any bytes past the last SIMD chunk (a.len() % 4).
         let simd_bytes = n_chunks * 4;
         acc_total += super::score_2bit_internal_integer(&a[simd_bytes..], &b[simd_bytes..]);
-        acc_total as f32 / (CODEBOOK_SCALE * CODEBOOK_SCALE)
+        centroid_dot(acc_total as f32)
     }
 }
 

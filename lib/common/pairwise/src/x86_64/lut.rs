@@ -11,7 +11,7 @@ use common::types::PointOffsetType;
 
 use crate::blocked::{GROUP, emit};
 use crate::scratch::bits_as_bytes;
-use crate::{Bits, Cols, MatrixOperands, TopK};
+use crate::{Aux, Bits, Cols, MatrixOperands, TopK};
 
 /// `POPCOUNT_XOR[v][x] = popcount(v ^ x)` for nibbles.
 const POPCOUNT_XOR: [[u8; 16]; 16] = {
@@ -152,8 +152,8 @@ pub(super) fn top_k<F: MatrixOperands<Elem = Bits>>(
     let n_pad = n.next_multiple_of(TILE_COLS);
     let m_pad = m.next_multiple_of(BLOCK_ROWS);
     let (lists, s) = out.parts();
-    s.row_aux.resize(m, 0.0);
-    s.col_aux.resize(n, 0.0);
+    s.row_aux.resize(m, Aux::default());
+    s.col_aux.resize(n, Aux::default());
 
     // Rows as they are, padded with zeros to whole blocks
     let raw = s.rows.get::<Bits>(m_pad * bytes);
@@ -248,7 +248,7 @@ pub(super) fn top_k<F: MatrixOperands<Elem = Bits>>(
                 combine,
                 triangle,
                 r,
-                s.row_aux[r],
+                &s.row_aux[r],
                 c0,
                 dots,
                 &s.col_aux[c0..n],
