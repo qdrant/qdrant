@@ -124,7 +124,8 @@ where
                     // Expected number of draws from random id stream to reach `sample_target` values
                     let expected_draws =
                         sample_target.saturating_mul(available_points / unique_values_count.max(1));
-                    !self.should_pre_filter(filter, Some(expected_draws))?
+                    let cardinality = self.payload_index.estimate_cardinality(filter)?;
+                    !self.should_pre_filter(&cardinality, Some(expected_draws))
                 }
                 None => true,
             }

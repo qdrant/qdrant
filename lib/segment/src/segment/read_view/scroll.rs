@@ -10,6 +10,7 @@ use itertools::Itertools;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::PayloadIndexRead;
+use crate::index::field_index::CardinalityEstimation;
 use crate::payload_storage::PayloadStorageRead;
 use crate::segment::read_view::SegmentReadView;
 use crate::segment::vector_data_read::VectorDataRead;
@@ -30,11 +31,9 @@ where
     /// streaming approach would need to advance, it returns true.
     pub fn should_pre_filter(
         &self,
-        filter: &Filter,
+        query_cardinality: &CardinalityEstimation,
         limit: Option<usize>,
-    ) -> OperationResult<bool> {
-        let query_cardinality = self.payload_index.estimate_cardinality(filter)?;
-
+    ) -> bool {
         // ToDo: Add telemetry for this heuristics
 
         // Calculate expected number of condition checks required for
@@ -49,7 +48,7 @@ where
         // Assume it would require about `query cardinality` checks.
         let exp_index_checks = query_cardinality.max;
 
-        Ok(exp_stream_checks > exp_index_checks)
+        exp_stream_checks > exp_index_checks
     }
 
     pub fn read_by_id_stream(
@@ -71,14 +70,13 @@ where
         offset: Option<PointIdType>,
         limit: Option<usize>,
         condition: &Filter,
+        cardinality_estimation: &CardinalityEstimation,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
     ) -> OperationResult<Vec<PointIdType>> {
-        let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
-
         let internal_ids = self.payload_index.iter_filtered_points(
             condition,
-            &cardinality_estimation,
+            cardinality_estimation,
             is_stopped,
             deferred_behavior,
         )?;
@@ -151,11 +149,13 @@ where
         match filter {
             None => Ok(self.read_by_id_stream(offset, limit, deferred_behavior)),
             Some(condition) => {
-                if self.should_pre_filter(condition, limit)? {
+                let cardinality_estimation = self.payload_index.estimate_cardinality(condition)?;
+                if self.should_pre_filter(&cardinality_estimation, limit) {
                     self.filtered_read_by_index(
                         offset,
                         limit,
                         condition,
+                        &cardinality_estimation,
                         is_stopped,
                         deferred_behavior,
                     )
