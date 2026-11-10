@@ -29,6 +29,22 @@ use crate::vector_storage::{VectorStorageEnum, VectorStorageRead as _};
 /// How often the waiting optimizer thread checks `stopped` and the lease.
 const WAIT_POLL: Duration = Duration::from_millis(100);
 
+/// Wait before retry `n` (from 1): 1s, 2s, 4s, ... up to [`MAX_RETRY_BACKOFF`], so retries
+/// can outlast a short indexer outage.
+const RETRY_BACKOFF: Duration = Duration::from_secs(1);
+const MAX_RETRY_BACKOFF: Duration = Duration::from_secs(30);
+
+/// Sleep for `duration`, waking up to check `stopped`.
+fn backoff(duration: Duration, stopped: &std::sync::atomic::AtomicBool) -> OperationResult<()> {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        check_process_stopped(stopped)?;
+        std::thread::sleep(WAIT_POLL.min(deadline.saturating_duration_since(Instant::now())));
+    }
+    check_process_stopped(stopped)?;
+    Ok(())
+}
+
 /// What a remote build needs besides the build context. Created by `HNSWIndex::build` when
 /// the build is eligible (§4.2).
 pub(in crate::index::hnsw_index::hnsw) struct RemoteBuildArgs<'a> {
@@ -147,6 +163,10 @@ impl<'a> RemoteBuilder<'a> {
             check_process_stopped(stopped)?;
             if attempt > 0 {
                 REMOTE_INDEXING_METRICS.retries.fetch_add(1, Ordering::Relaxed);
+                let delay = RETRY_BACKOFF
+                    .saturating_mul(1 << (attempt - 1).min(16))
+                    .min(MAX_RETRY_BACKOFF);
+                backoff(delay, stopped)?;
             }
 
             let handle = REMOTE_INDEXING_TASKS.register(NewTask {
