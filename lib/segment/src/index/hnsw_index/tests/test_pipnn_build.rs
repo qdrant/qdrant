@@ -40,8 +40,8 @@ const DIM: usize = 16;
 const POINTS: usize = 10_000;
 const M: usize = 16;
 
-/// PiPNN counts at least this many units per point of level 0, HNSW one.
-const PIPNN_UNITS_PER_POINT: u64 = 100;
+/// PiPNN counts each point of level 0 once per phase, of which there are 3, HNSW once.
+const PIPNN_UNITS_PER_POINT: u64 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Method {
@@ -146,7 +146,8 @@ fn find_progress<'a>(tree: &'a ProgressTree, name: &str) -> Option<&'a ProgressT
         .find_map(|child| find_progress(child, name))
 }
 
-/// Which method built the main graph, from its progress: PiPNN counts work units, HNSW points.
+/// Which method built the main graph, from its progress: PiPNN counts points per phase, HNSW
+/// points.
 fn method_of(main_graph: &ProgressTree, points: usize) -> Method {
     let total = main_graph.total.expect("main graph total");
     assert_eq!(main_graph.done, Some(total), "main graph ends at its total");

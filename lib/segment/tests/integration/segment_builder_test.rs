@@ -652,6 +652,7 @@ fn test_building_cancelled_during_main_graph() {
 /// Cancelling in the middle of a PiPNN main graph must stop the build right away.
 #[test]
 fn test_building_cancelled_during_pipnn_main_graph() {
+    let _scope = ambient::test_guard();
     let source_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
@@ -659,9 +660,9 @@ fn test_building_cancelled_during_pipnn_main_graph() {
     let source = cancellation_test_segment(source_dir.path());
     let builder = hnsw_segment_builder(&source, temp_dir.path());
 
-    // PiPNN counts work units, not points, and adds them per piece of work. Its largest
-    // pieces at 10,000 points are a partitioning call at the top step (about 8,192 units) and
-    // a full leaf (about 9,000), so allow two of those per build thread.
+    // PiPNN counts the points of each level once per phase, and adds them per piece of work.
+    // A piece adds at most the points of its level, 10,000 on level 0, so allow two of those
+    // per build thread.
     let progress = with_pipnn_min_points(0, || {
         build_cancelled_during_phase(
             builder,
@@ -671,9 +672,10 @@ fn test_building_cancelled_during_pipnn_main_graph() {
         )
     });
 
-    // PiPNN built it: at least 100 units per point, where HNSW counts 1
+    // PiPNN built it: every point counts once per phase, of which there are 3, where HNSW
+    // counts it once
     let (_, total) = phase_progress(&progress, "main_graph").unwrap();
-    assert!(total >= 100 * CANCELLATION_TEST_POINTS, "total {total}");
+    assert!(total >= 3 * CANCELLATION_TEST_POINTS, "total {total}");
 
     assert_nothing_left_behind(segments_dir.path(), temp_dir.path());
 }
