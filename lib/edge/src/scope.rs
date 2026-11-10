@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use common::ambient::{AmbientContext, Handoff};
+use common::ambient::{self, AmbientContext, Handoff};
 
 /// Cancellation flag and measurement target of a read.
 pub(crate) struct EdgeScope {
@@ -10,9 +10,10 @@ pub(crate) struct EdgeScope {
 }
 
 impl EdgeScope {
+    /// Measures into the caller's context, if there is one, so the read stays in its trace.
     pub(crate) fn new() -> Self {
         Self {
-            ctx: AmbientContext::root("", None, None),
+            ctx: ambient::current_context().unwrap_or_else(|| AmbientContext::root("", None, None)),
             is_stopped: Arc::new(AtomicBool::new(false)),
         }
     }
