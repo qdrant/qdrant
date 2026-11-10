@@ -669,8 +669,8 @@ impl ShardReplicaSet {
         // node crashes, `local` is never left as `None`, and a crash is detected on restart,
         // so the shard can be recovered.
         //
-        // The dummy must be installed before the flag is created, so we never leave the flag
-        // next to a valid local shard and force a dummy on restart.
+        // The dummy should be installed before the flag is created, so we do not leave the flag
+        // next to a valid local shard and load a dummy on restart.
         //
         // The flag is removed and the dummy is replaced after the shard is initialized.
         let current_shard = local.replace(Shard::Dummy(DummyShard::new(

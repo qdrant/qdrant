@@ -41,12 +41,12 @@ pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
     collection_path.join(shard_id.to_string())
 }
 
-/// Path to a shard directory
+/// Path to the shard initializing flag
 pub fn shard_initializing_flag_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
     collection_path.join(format!("shard_{shard_id}.initializing"))
 }
 
-/// Create the shard initializing flag and make it durable
+/// Create the shard initializing flag.
 ///
 /// Syncs both the flag file and its parent directory, so the flag survives a crash.
 /// Returns the path to the flag.

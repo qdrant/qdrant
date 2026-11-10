@@ -256,8 +256,8 @@ impl ShardReplicaSet {
         // crashes, `local` is never left as `None`, and a crash is detected on restart,
         // so the shard can be recovered.
         //
-        // The dummy must be installed before the flag is created, so we never leave the flag
-        // next to a valid local shard and force a dummy on restart.
+        // The dummy should be installed before the flag is created, so we do not leave the flag
+        // next to a valid local shard and load a dummy on restart.
         //
         // The flag is removed and the dummy is replaced after the snapshot is restored.
         let dummy = Shard::Dummy(DummyShard::new("Local shard is being restored"));
@@ -359,8 +359,11 @@ impl ShardReplicaSet {
             )
             .await?;
 
-            // remove shard_id initialization flag because shard is fully recovered
-            // do it before installing the shard, so if it fails, the dummy shard stays installed
+            // Local shard was loaded successfully, sync shard data to disk and remove
+            // the shard initializing flag.
+            //
+            // We should remove the flag before replacing the dummy with the new local shard,
+            // so we do not leave the flag next to a valid local shard and load a dummy on restart.
             let res = remove_shard_initializing_flag(&shard_flag, Some(&self.shard_path)).await;
 
             if let Err(err) = res {
