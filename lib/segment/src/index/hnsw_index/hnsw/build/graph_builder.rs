@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicU64;
 
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use rand::Rng;
 use rayon::ThreadPool;
@@ -71,7 +72,8 @@ impl<'a> GraphBuilder<'a> {
     ///    old graph, and what fails on the GPU is built by the method of rules 3 to 5, which
     ///    the GPU method keeps for the whole build: the old graph is healed if the GPU fails.
     /// 3. An old graph worth healing: healing.
-    /// 4. PiPNN, if it applies, see [`PipnnBuilder::new`].
+    /// 4. PiPNN, unless the `pipnn_graph_building` feature flag is off, if it applies, see
+    ///    [`PipnnBuilder::new`].
     /// 5. Otherwise, HNSW.
     pub fn select(
         ctx: GraphBuildContext<'a>,
@@ -105,16 +107,18 @@ impl<'a> GraphBuilder<'a> {
     }
 
     /// The method `select` picks without a GPU: healing if there is an old graph worth
-    /// healing, otherwise PiPNN if it applies, HNSW if not. `local` has the levels of
-    /// `old_index`.
+    /// healing, otherwise PiPNN if it is enabled and applies, HNSW if not. `local` has the
+    /// levels of `old_index`.
     fn without_gpu(local: LocalBuilder<'a>, old_index: Option<&'a OldIndex<'a>>) -> Self {
         match old_index {
             // Healing wins, also over PiPNN, which can't build incrementally
             Some(old_index) => Self::Healing(HealingBuilder::from_local(local, old_index)),
-            None => match PipnnBuilder::new(local) {
+            None if feature_flags().pipnn_graph_building => match PipnnBuilder::new(local) {
                 Ok(builder) => Self::Pipnn(builder),
                 Err(local) => Self::Hnsw(HnswBuilder(*local)),
             },
+            // PiPNN is switched off
+            None => Self::Hnsw(HnswBuilder(local)),
         }
     }
 
