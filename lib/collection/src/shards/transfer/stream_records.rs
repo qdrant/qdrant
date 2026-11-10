@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 use semver::Version;
 use shard::count::CountRequestInternal;
 
+use super::stream_batches::transfer_batches;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::CollectionId;
@@ -15,8 +16,6 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::SharedShardHolder;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, TransferStage};
-
-pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 
 /// Minimum version all peers need to be to use the intermediate `ActiveRead` state during transfer
 const STATE_ACTIVE_READ_MIN_VERSION: Version = Version::new(1, 16, 0);
@@ -47,16 +46,6 @@ pub(super) async fn transfer_stream_records(
     let cutoff;
     let filter = transfer_config.filter;
     let merge_points = filter.is_some();
-
-    #[cfg(feature = "staging")]
-    let staging_delay = std::env::var("QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC")
-        .ok()
-        .map(|val| {
-            std::time::Duration::from_secs_f64(
-                val.parse::<f64>()
-                    .expect("invalid QDRANT_STAGING_SHARD_TRANSFER_DELAY_SEC value"),
-            )
-        });
 
     // Whether we need an intermediate replica state (ActiveRead) during transfer to sync nodes
     // We use this when transferring between different shard IDs to ensure data consistency, this
@@ -132,49 +121,15 @@ pub(super) async fn transfer_stream_records(
     progress.lock().set_stage(TransferStage::Transferring);
     log::trace!("Transferring points to shard {shard_id} by streaming records");
 
-    let mut offset = None;
-
-    loop {
-        // Read batch under shard holder lock
-        let prepared_batch = {
-            let shard_holder = shard_holder.read().await;
-
-            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-                // Forward proxy gone?!
-                // That would be a programming error.
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} is not found"
-                )));
-            };
-
-            replica_set
-                .read_transfer_batch(offset, TRANSFER_BATCH_SIZE, None, merge_points)
-                .await?
-
-            // Shard holder lock is dropped here, but the forward proxy update lock is still
-            // held inside the prepared batch, preventing concurrent updates between reading
-            // and sending.
-        };
-
-        #[cfg(feature = "staging")]
-        if let Some(delay) = staging_delay {
-            tokio::time::sleep(delay).await;
-        }
-
-        // Send batch to remote shard without holding the shard holder lock.
-        // This is important because sending can take a very long time (especially the last
-        // batch which waits for the remote to fully process). Holding the shard holder lock
-        // during this time would block all other operations on the collection.
-        let result = prepared_batch.send(&remote_shard).await?;
-
-        offset = result.next_page_offset;
-        progress.lock().add(result.count);
-
-        // If this is the last batch, finalize
-        if offset.is_none() {
-            break;
-        }
-    }
+    transfer_batches(
+        &shard_holder,
+        shard_id,
+        &remote_shard,
+        None,
+        merge_points,
+        &progress,
+    )
+    .await?;
 
     // Sync all peers with intermediate replica state, switch to ActiveRead and sync all peers
     if sync_intermediate_state {
