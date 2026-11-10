@@ -321,6 +321,8 @@ fn op_payload(op: &Op) -> Value {
         Op::CountByUrlPrefix(prefix) => json!({ "url_prefix": prefix }),
         Op::ScrollFilteredByTag(tag) => json!({ "tag": tag }),
         Op::ScrollFilteredByUrlPrefix(prefix) => json!({ "url_prefix": prefix }),
+        Op::CountByUrlSubstring(substring) => json!({ "url_substring": substring }),
+        Op::ScrollFilteredByUrlSubstring(substring) => json!({ "url_substring": substring }),
         Op::ScrollOrdered(dir) => json!({ "direction": dir }),
         Op::Recommend {
             positive,

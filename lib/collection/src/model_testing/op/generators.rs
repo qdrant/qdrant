@@ -76,6 +76,22 @@ const URL_PREFIX_PROBES: [&str; 8] = [
     "", // matches every point that has `url`
     "qdrant",
 ];
+/// Unanchored probes for `url` substring matching: mid-value pieces no prefix probe reaches,
+/// pieces spanning a separator, a whole value, a case variant the byte-wise match must miss,
+/// and the empty string, which matches every point that has `url`.
+const URL_SUBSTRING_PROBES: [&str; 11] = [
+    "qdrant",
+    "example.com",
+    ".tech/",
+    "/docs",
+    "://",
+    "p://f",
+    "files.",
+    "https://qdrant.tech/blog",
+    "QDRANT",
+    "nonexistent",
+    "",
+];
 // Geo coords live in a small EU-shaped rectangle, snapped to 0.1 degree.
 const GEO_LAT_LO: f64 = 40.0;
 const GEO_LAT_HI: f64 = 50.0;
@@ -97,6 +113,10 @@ pub(super) fn random_url(rng: &mut impl Rng) -> &'static str {
 
 pub(super) fn random_url_prefix_probe(rng: &mut impl Rng) -> &'static str {
     URL_PREFIX_PROBES.choose(rng).unwrap()
+}
+
+pub(super) fn random_url_substring_probe(rng: &mut impl Rng) -> &'static str {
+    URL_SUBSTRING_PROBES.choose(rng).unwrap()
 }
 
 /// Words a BM25 query over `t` draws from: every word of `TEXT_WORDS`, a form only a query holds

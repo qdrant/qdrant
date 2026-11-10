@@ -11,8 +11,9 @@ use generators::{
     random_existing_ids, random_flush_interval_sec, random_num, random_partial_named_vectors,
     random_payload, random_payload_key, random_payload_keys, random_point, random_prefetch,
     random_query_for_name, random_recommend_strategy, random_scroll_filter, random_slice,
-    random_tag, random_text_query, random_update_mode, random_url_prefix_probe, random_vector_name,
-    random_vector_name_subset, random_with_payload, random_with_vector, upsert_fallback,
+    random_tag, random_text_query, random_update_mode, random_url_prefix_probe,
+    random_url_substring_probe, random_vector_name, random_vector_name_subset, random_with_payload,
+    random_with_vector, upsert_fallback,
 };
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::Distribution;
@@ -272,6 +273,11 @@ pub(super) enum Op {
         filter_num: Option<i64>,
         filter_url_prefix: Option<String>,
     },
+    /// Verification op: count points whose `url` contains the given substring. With the `url`
+    /// index present the match is a scan of its key dictionary, without it a payload read.
+    CountByUrlSubstring(String),
+    /// Verification op: scroll all points whose `url` contains the given substring.
+    ScrollFilteredByUrlSubstring(String),
 }
 
 /// `QueryText` limit meaning "every match": above any id pool the tester is normally run with.
@@ -345,7 +351,7 @@ pub(super) struct Swarm {
 }
 
 impl Swarm {
-    const N: usize = 41;
+    const N: usize = 43;
 
     /// Op names, aligned 1:1 with `BASE` and the `match` arms in `Op::random`.
     const NAMES: [&'static str; Self::N] = [
@@ -390,6 +396,8 @@ impl Swarm {
         "CountBySlice",
         "SetFlushInterval",
         "QueryText",
+        "CountByUrlSubstring",
+        "ScrollFilteredByUrlSubstring",
     ];
 
     /// Each op's *natural* relative weight — the default distribution before swarm masking.
@@ -449,6 +457,8 @@ impl Swarm {
         // it rare enough that the workload isn't dominated by worker churn.
         1, // SetFlushInterval
         4, // QueryText
+        3, // CountByUrlSubstring
+        3, // ScrollFilteredByUrlSubstring
     ];
 
     /// Indices kept enabled in every swarm config: without a way to insert points the run can't
@@ -576,7 +586,8 @@ impl Op {
                 // Randomly toggle one of two keyword indices, preserving coverage of both the
                 // plain keyword-equality path (`tag`) and the prefix path (`url`):
                 // - `tag`: plain keyword index, exercised by exact match ops;
-                // - `url`: prefix-enabled keyword index, exercised by prefix match ops.
+                // - `url`: prefix-enabled keyword index, exercised by prefix and substring match
+                //   ops.
                 // When the index is absent, the corresponding filters fall back to full-scan;
                 // when present, the index path is exercised across segment variants.
                 let (field, schema) = if rng.random_bool(0.5) {
@@ -831,6 +842,8 @@ impl Op {
                         .then(|| random_url_prefix_probe(rng).to_string()),
                 }
             }
+            41 => Op::CountByUrlSubstring(random_url_substring_probe(rng).to_string()),
+            42 => Op::ScrollFilteredByUrlSubstring(random_url_substring_probe(rng).to_string()),
             n => panic!("unexpected op index {n}"),
         }
     }
@@ -880,6 +893,8 @@ impl Op {
             Op::CreateSnapshot => "CreateSnapshot",
             Op::SetFlushInterval(_) => "SetFlushInterval",
             Op::QueryText { .. } => "QueryText",
+            Op::CountByUrlSubstring(_) => "CountByUrlSubstring",
+            Op::ScrollFilteredByUrlSubstring(_) => "ScrollFilteredByUrlSubstring",
         }
     }
 }
@@ -971,6 +986,36 @@ pub(super) fn url_prefix_matches(payload: &Payload, prefix: &str) -> bool {
         .get("url")
         .and_then(|v| v.as_str())
         .is_some_and(|url| url.starts_with(prefix))
+}
+
+/// A string match on `url`, for the count and scroll verifiers: the engine filter and the
+/// model predicate it must agree with.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum UrlMatch<'a> {
+    Prefix(&'a str),
+    Substring(&'a str),
+}
+
+impl UrlMatch<'_> {
+    pub(super) fn filter(self) -> Filter {
+        match self {
+            UrlMatch::Prefix(prefix) => match_url_prefix_filter(prefix),
+            UrlMatch::Substring(substring) => Filter::new_must(Condition::Field(
+                FieldCondition::new_match("url".parse().unwrap(), Match::new_substring(substring)),
+            )),
+        }
+    }
+
+    pub(super) fn matches(self, payload: &Payload) -> bool {
+        match self {
+            UrlMatch::Prefix(prefix) => url_prefix_matches(payload, prefix),
+            UrlMatch::Substring(substring) => payload
+                .0
+                .get("url")
+                .and_then(|v| v.as_str())
+                .is_some_and(|url| url.contains(substring)),
+        }
+    }
 }
 
 pub(super) fn passes_read_filters(
