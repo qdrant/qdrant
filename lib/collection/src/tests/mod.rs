@@ -5,6 +5,7 @@ mod facet;
 mod fix_payload_indices;
 pub mod fixtures;
 mod hw_metrics;
+mod load_missing_vector_name;
 mod payload;
 mod points_dedup;
 mod query_prefetch_offset_limit;
