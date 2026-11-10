@@ -587,6 +587,8 @@ def test_shard_transfer_blocking_shard_holder(tmp_path: pathlib.Path):
 # Must be top-level: Python 3.14 defaults to the forkserver start method, which
 # pickles Process targets (nested locals are not picklable).
 def overwrite_points_in_loop(peer_url, num_points):
+    # Setting payload on a deleted point fails, only pick points that exist
+    existing = list(range(num_points))
     counter = 0
     while True:
         counter += 1
@@ -595,14 +597,14 @@ def overwrite_points_in_loop(peer_url, num_points):
         r = requests.post(
             f"{peer_url}/collections/{COLLECTION_NAME}/points/payload?wait=true",
             json={
-                "points": random.sample(range(num_points), 10),
+                "points": random.sample(existing, 10),
                 "payload": {"counter": counter},
             },
         )
         assert_http_ok(r)
 
         # Delete a point, and reinsert it every other time
-        point_id = random.randrange(num_points)
+        point_id = random.choice(existing)
         r = requests.post(
             f"{peer_url}/collections/{COLLECTION_NAME}/points/delete?wait=true",
             json={"points": [point_id]},
@@ -610,6 +612,8 @@ def overwrite_points_in_loop(peer_url, num_points):
         assert_http_ok(r)
         if counter % 2 == 0:
             upsert_random_points(peer_url, 1, COLLECTION_NAME, offset=point_id)
+        else:
+            existing.remove(point_id)
 
         sleep(0.05)
 
@@ -672,8 +676,10 @@ def test_shard_stream_transfer_no_stale_batches(tmp_path: pathlib.Path):
     )
     wait_for_collection_shard_transfers_count(peer_api_uris[source], COLLECTION_NAME, 0)
 
+    updater_running = update_process.is_alive()
     update_process.kill()
     update_process.join()
+    assert updater_running, "Updater process stopped before the transfer ended"
     sleep(1)
 
     # The target must now hold an active replica
