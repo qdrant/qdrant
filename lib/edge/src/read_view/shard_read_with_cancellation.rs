@@ -10,9 +10,10 @@ use shard::retrieve::record_internal::RecordInternal;
 use super::shard_read::{sealed, view};
 use super::{EdgeReadView, ReadViewProvider};
 use crate::{
-    CountRequest, EdgeConfig, FacetRequest, FacetResponse, Group, GroupRequest, OperationResult,
-    QueryBatchRequest, QueryRequest, ReadOnlyEdgeShard, RetrieveRequest, ScoredPoint,
-    ScrollRequest, SearchMatrixRequest, SearchMatrixResponse, SearchRequest, ShardInfo,
+    CountRequest, EdgeConfig, EdgeScope, FacetRequest, FacetResponse, Group, GroupRequest,
+    OperationResult, QueryBatchRequest, QueryRequest, ReadOnlyEdgeShard, RetrieveRequest,
+    ScoredPoint, ScrollRequest, SearchMatrixRequest, SearchMatrixResponse, SearchRequest,
+    ShardInfo,
 };
 
 /// Cancellation-aware counterpart to [`EdgeShardRead`](super::EdgeShardRead) for
@@ -200,8 +201,7 @@ fn run<T: ReadViewProvider, R>(
     operation: impl FnOnce(&EdgeReadView<T::Handle>) -> OperationResult<R>,
 ) -> OperationResult<R> {
     check_process_stopped(&is_stopped)?;
-    let mut view = view(shard);
-    view.is_stopped = is_stopped;
+    let view = view(shard, &EdgeScope::new().with_cancellation(is_stopped));
     view.check_stopped()?;
     let result = operation(&view);
     view.check_stopped()?;
