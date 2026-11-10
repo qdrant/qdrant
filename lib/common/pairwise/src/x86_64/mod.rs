@@ -1,15 +1,19 @@
-//! AVX2 kernels: an FMA tile for f32, byte multiply-adds for u8, and nibble lookups for bits.
+//! AVX2 kernels: an FMA tile for f32, byte multiply-adds for u8, nibble lookups for bits, and
+//! i16 multiply-adds for the code types.
 //! AVX-512F adds a wider f32 tile.
 //!
 //! Each entry point is the one `#[target_feature]` function of its kernel. The drivers below
 //! it are `#[inline(always)]`, so they compile with the same features.
 
 mod avx512;
+mod codes;
 mod gemm;
 mod lut;
 
 use common::types::PointOffsetType;
 
+use self::codes::CodeTile;
+pub(crate) use self::codes::{MAX_CODES, Unpack};
 use crate::{Bits, Cols, MatrixOperands, TopK, blocked};
 
 /// # Safety
@@ -62,4 +66,18 @@ pub(crate) unsafe fn top_k_bits<F: MatrixOperands<Elem = Bits>>(
     out: &mut TopK,
 ) -> Result<(), F::Error> {
     lut::top_k(operands, rows, cols, out)
+}
+
+/// # Safety
+///
+/// The CPU must support AVX2 and FMA, and `operands.depth() * U::CODES` must be at most
+/// [`MAX_CODES`].
+#[target_feature(enable = "avx2,fma")]
+pub(crate) unsafe fn top_k_codes<U: Unpack, F: MatrixOperands<Elem = U>>(
+    operands: &F,
+    rows: &[PointOffsetType],
+    cols: Cols<'_>,
+    out: &mut TopK,
+) -> Result<(), F::Error> {
+    blocked::top_k::<CodeTile<U>, F>(operands, rows, cols, out)
 }
