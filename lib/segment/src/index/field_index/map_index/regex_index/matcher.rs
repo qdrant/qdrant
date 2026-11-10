@@ -111,8 +111,8 @@ mod tests {
         assert!(is_match(r"^[\w é]+$", "café x"));
         assert!(!is_match(r"\s", "\u{a0}\u{b}"));
         // `é` is not an ASCII word character, so there is a boundary before it.
-        assert!(is_match(r"caf\b", "café"));
-        assert!(!is_match(r"caf\B", "café"));
+        assert!(is_match(r"caf\b", "café")); // codespell:ignore caf
+        assert!(!is_match(r"caf\B", "café")); // codespell:ignore caf
         // Everything else stays Unicode-aware.
         assert!(is_match(r"^\pL+$", "café"));
         assert!(is_match(r"^.{4}$", "café"));

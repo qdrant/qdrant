@@ -147,7 +147,7 @@ fn query_admits_tricky_keys() {
         ("(?i)été", &["ÉTÉ"]),
         // ASCII-only Perl classes and word boundaries (RE2 semantics).
         (r"\wbc", &["abc", "Ébc_bc"]),
-        (r"caf\b", &["café"]),
+        (r"caf\b", &["café"]), // codespell:ignore caf
         // Line anchors and word boundaries don't touch the key boundary.
         ("(?m)^abc", &["x\nabc"]),
         (r"abc\b", &["x abc y"]),

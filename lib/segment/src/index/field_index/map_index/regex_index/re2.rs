@@ -27,9 +27,13 @@ const MAX_REPEAT: u32 = 1000;
 
 /// General categories RE2 supports (all but `Cn`, `LC`, `L&`).
 const GENERAL_CATEGORIES: &[&str] = &[
-    "C", "Cc", "Cf", "Co", "Cs", "L", "Ll", "Lm", "Lo", "Lt", "Lu", "M", "Mc", "Me", "Mn", "N",
-    "Nd", "Nl", "No", "P", "Pc", "Pd", "Pe", "Pf", "Pi", "Po", "Ps", "S", "Sc", "Sk", "Sm", "So",
-    "Z", "Zl", "Zp", "Zs",
+    "C", "Cc", "Cf", "Co", "Cs", // Other
+    "L", "Ll", "Lm", "Lo", "Lt", "Lu", // Letter
+    "M", "Mc", "Me", "Mn", // Mark
+    "N", "Nd", "Nl", "No", // Number. codespell:ignore nd
+    "P", "Pc", "Pd", "Pe", "Pf", "Pi", "Po", "Ps", // Punctuation
+    "S", "Sc", "Sk", "Sm", "So", // Symbol
+    "Z", "Zl", "Zp", "Zs", // Separator
 ];
 
 /// Scripts RE2 supports, as listed in its syntax reference.
@@ -190,7 +194,7 @@ const SCRIPTS: &[&str] = &[
     "Tirhuta",
     "Toto",
     "Ugaritic",
-    "Vai",
+    "Vai", // codespell:ignore vai
     "Vithkuqi",
     "Wancho",
     "Warang_Citi",
@@ -346,7 +350,7 @@ impl ast::Visitor for Re2Visitor {
             Ast::Repetition(repetition) => match repetition.op.kind {
                 RepetitionKind::Range(
                     RepetitionRange::Exactly(n)
-                    | RepetitionRange::AtLeast(n)
+                    | RepetitionRange::AtLeast(n) // codespell:ignore atleast
                     | RepetitionRange::Bounded(_, n),
                 ) if n > MAX_REPEAT => {
                     return Err(RegexError::Unsupported(format!(
