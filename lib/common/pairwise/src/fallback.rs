@@ -4,7 +4,7 @@
 
 use common::types::PointOffsetType;
 
-use crate::combine::Combine as _;
+use crate::combine::{CombineDispatch as _, ScorePair};
 use crate::operands::{KernelElem, MatrixOperands};
 use crate::{Cols, TopK};
 
@@ -15,6 +15,7 @@ pub(crate) fn top_k<F: MatrixOperands>(
     out: &mut TopK,
 ) -> Result<(), F::Error> {
     let combine = operands.combine();
+    let score = |dot, aux_a, aux_b| combine.dispatch(ScorePair { dot, aux_a, aux_b });
     let rows = Decoded::new(operands, rows)?;
     match cols {
         // One triangle: the inner product is symmetric, so each pair is computed once and
@@ -23,8 +24,8 @@ pub(crate) fn top_k<F: MatrixOperands>(
             for r in 0..rows.len() {
                 for c in r + 1..rows.len() {
                     let dot = F::Elem::dot(rows.vector(r), rows.vector(c));
-                    out.push(r, c as u32, combine.score(dot, rows.aux[r], rows.aux[c]));
-                    out.push(c, r as u32, combine.score(dot, rows.aux[c], rows.aux[r]));
+                    out.push(r, c as u32, score(dot, rows.aux[r], rows.aux[c]));
+                    out.push(c, r as u32, score(dot, rows.aux[c], rows.aux[r]));
                 }
             }
         }
@@ -33,7 +34,7 @@ pub(crate) fn top_k<F: MatrixOperands>(
             for r in 0..rows.len() {
                 for c in 0..cols.len() {
                     let dot = F::Elem::dot(rows.vector(r), cols.vector(c));
-                    out.push(r, c as u32, combine.score(dot, rows.aux[r], cols.aux[c]));
+                    out.push(r, c as u32, score(dot, rows.aux[r], cols.aux[c]));
                 }
             }
         }
