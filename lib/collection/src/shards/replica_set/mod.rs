@@ -711,9 +711,9 @@ impl ShardReplicaSet {
 
         match local_shard_res {
             Ok(local_shard) => {
-                if let Err(err) =
-                    remove_shard_initializing_flag(&self.shard_path, &shard_flag).await
-                {
+                let res = remove_shard_initializing_flag(&shard_flag, Some(&self.shard_path)).await;
+
+                if let Err(err) = res {
                     local_shard.stop_gracefully().await;
                     return Err(err);
                 }

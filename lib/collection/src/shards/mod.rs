@@ -63,20 +63,20 @@ pub async fn create_shard_initializing_flag(
     Ok(shard_flag)
 }
 
-/// Remove the shard initializing flag after the shard is initialized
+/// Remove the shard initializing flag.
 ///
-/// Syncs the shard directory first, so the flag is never removed on disk while the shard data
-/// is not durable. A missing flag is not an error.
+/// If `sync_shard_path` is set, syncs the shard directory first,
+/// so the flag is removed after the shard data is synced to disk.
 ///
-/// Syncing the flag's parent directory after removal is best effort, and a failure is only
-/// logged. The flag is already removed at this point, and if the removal is lost, the shard is
-/// loaded as a dummy on restart and recovered.
+/// A missing flag file is ignored.
 pub async fn remove_shard_initializing_flag(
-    shard_path: &Path,
     shard_flag: &Path,
+    sync_shard_path: Option<&Path>,
 ) -> CollectionResult<()> {
-    let shard_path = shard_path.to_path_buf();
-    tokio::task::spawn_blocking(move || bulk_sync_dir(&shard_path)).await??;
+    if let Some(shard_path) = sync_shard_path {
+        let shard_path = shard_path.to_path_buf();
+        tokio::task::spawn_blocking(move || bulk_sync_dir(&shard_path)).await??;
+    }
 
     match tokio_fs::remove_file(shard_flag).await {
         Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
