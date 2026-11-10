@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use atomic_refcell::AtomicRefCell;
 use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
-use parking_lot::{Condvar, Mutex};
+use parking_lot::{Condvar, Mutex, RwLock};
 use rand::RngExt as _;
 use uuid::Uuid;
 
@@ -146,7 +146,9 @@ pub struct TaskState {
     scope: TaskScope,
     description: TaskDescription,
     /// Read-only: writes to the segment go to the proxies while it is built (§4.4).
-    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    /// Taken on revoke, under the write lock, which waits for reads in flight: the segment
+    /// builder must be the only owner again once the task ends (graph-inline finalization).
+    vector_storage: RwLock<Option<Arc<AtomicRefCell<VectorStorageEnum>>>>,
     /// One flag per point: set if the point is not linked (deleted, or without vector).
     deleted: Arc<BitVec>,
     inner: Mutex<TaskInner>,
@@ -227,7 +229,7 @@ impl TaskRegistry {
                 params,
                 block_plan,
             },
-            vector_storage,
+            vector_storage: RwLock::new(Some(vector_storage)),
             deleted,
             inner: Mutex::new(TaskInner {
                 status: TaskStatus::Queued,
@@ -261,7 +263,9 @@ impl TaskRegistry {
 
     fn revoke(&self, token: &TaskToken, reason: Tombstone) {
         let removed = self.tasks.lock().remove(token);
-        if removed.is_some() {
+        if let Some(state) = removed {
+            // Waits for reads in flight
+            state.vector_storage.write().take();
             let mut tombstones = self.tombstones.lock();
             let now = Instant::now();
             tombstones.retain(|_, (at, _)| now.duration_since(*at) < TOMBSTONE_TTL);
@@ -320,7 +324,11 @@ impl TaskRegistry {
         let _scope = common::ambient::unmeasured_guard(common::reason::reason(
             "remote indexing reads, not a request",
         ));
-        let storage = state.vector_storage.borrow();
+        let storage_guard = state.vector_storage.read();
+        let Some(storage) = storage_guard.as_ref() else {
+            return Err(RemoteTaskError::PermissionDenied);
+        };
+        let storage = storage.borrow();
         let mut vectors = Vec::new();
         let mut size = 0;
         let mut next = start;
@@ -516,6 +524,131 @@ impl Drop for TaskHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::vectors::VectorRef;
+    use crate::index::hnsw_index::remote::wire::VECTOR_REPRESENTATION_STORAGE_NATIVE;
+    use crate::types::{Distance, VectorStorageDatatype};
+    use crate::vector_storage::VectorStorage as _;
+    use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
+
+    fn new_task(point_count: usize) -> (NewTask, Arc<AtomicRefCell<VectorStorageEnum>>) {
+        let mut storage = new_volatile_dense_vector_storage(2, Distance::Dot);
+        for i in 0..point_count {
+            let v = [i as f32, 1.0];
+            storage
+                .insert_vector(i as PointOffsetType, VectorRef::from(&v[..]))
+                .unwrap();
+        }
+        let storage = Arc::new(AtomicRefCell::new(storage));
+        let mut deleted = BitVec::repeat(false, point_count);
+        deleted.set(1, true);
+        let task = NewTask {
+            scope: TaskScope {
+                index_path: PathBuf::from("/tmp/x"),
+                vector_name: String::new(),
+            },
+            params: RemoteGraphParams {
+                vector_name: String::new(),
+                dim: 2,
+                datatype: VectorStorageDatatype::Float32,
+                distance: Distance::Dot,
+                multivector_config: None,
+                m: 4,
+                m0: 8,
+                ef_construct: 8,
+                entry_points_num: 1,
+                payload_m: 4,
+                payload_m0: 8,
+                point_count,
+                indexed_point_count: point_count - 1,
+                vector_representation: VECTOR_REPRESENTATION_STORAGE_NATIVE.to_string(),
+            },
+            block_plan: Arc::new(BlockPlan::default()),
+            vector_storage: storage.clone(),
+            deleted: Arc::new(deleted),
+        };
+        (task, storage)
+    }
+
+    #[test]
+    fn token_lifecycle() {
+        let (task, storage) = new_task(5);
+        let handle = REMOTE_INDEXING_TASKS.register(task);
+        let token = handle.token();
+        assert_eq!(Arc::strong_count(&storage), 2);
+
+        let description = REMOTE_INDEXING_TASKS.get_task(&token).unwrap();
+        assert_eq!(description.task_id, handle.task_id());
+        let (vectors, next) = REMOTE_INDEXING_TASKS.read_vectors(&token, 0, 100).unwrap();
+        assert_eq!(next, 5);
+        assert_eq!(vectors.len(), 5);
+        assert_eq!(vectors[0].len(), 8);
+        assert!(vectors[1].is_empty(), "deleted points are not served");
+        assert_eq!(
+            REMOTE_INDEXING_TASKS
+                .heartbeat(&token, TaskProgress::default())
+                .unwrap(),
+            HeartbeatAction::Continue
+        );
+
+        // Unknown tokens learn nothing
+        let other = TaskToken::random();
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.get_task(&other),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.heartbeat(&other, TaskProgress::default()),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+
+        // Core gives up: heartbeat says CANCEL, everything else is denied, storage released
+        drop(handle);
+        assert_eq!(Arc::strong_count(&storage), 1);
+        assert_eq!(
+            REMOTE_INDEXING_TASKS
+                .heartbeat(&token, TaskProgress::default())
+                .unwrap(),
+            HeartbeatAction::Cancel
+        );
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.read_vectors(&token, 0, 1),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.upload(&token, WireGraph::default()),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+    }
+
+    #[test]
+    fn finished_token_is_denied() {
+        let (task, _storage) = new_task(3);
+        let handle = REMOTE_INDEXING_TASKS.register(task);
+        let token = handle.token();
+        REMOTE_INDEXING_TASKS
+            .fail(&token, "test".to_string())
+            .unwrap();
+        let outcome = handle.wait(Duration::from_secs(1), Duration::from_millis(10), || false);
+        assert!(matches!(outcome, Ok(TaskOutcome::Failed(_))));
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.heartbeat(&token, TaskProgress::default()),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+        assert!(matches!(
+            REMOTE_INDEXING_TASKS.fail(&token, "again".to_string()),
+            Err(RemoteTaskError::PermissionDenied)
+        ));
+    }
+
+    #[test]
+    fn lease_expires_without_calls() {
+        let (task, _storage) = new_task(3);
+        let handle = REMOTE_INDEXING_TASKS.register(task);
+        let outcome = handle.wait(Duration::from_millis(50), Duration::from_millis(10), || false);
+        assert!(matches!(outcome, Err(WaitInterrupt::LeaseExpired)));
+        let outcome = handle.wait(Duration::from_secs(5), Duration::from_millis(10), || true);
+        assert!(matches!(outcome, Err(WaitInterrupt::Stopped)));
+    }
 
     #[test]
     fn token_hex_roundtrip() {
