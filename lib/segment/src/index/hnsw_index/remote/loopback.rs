@@ -12,8 +12,7 @@ use common::types::PointOffsetType;
 use parking_lot::Mutex;
 
 use super::executor::{
-    FetchedTask, RunOptions, RunOutcome, RunReport, SourceError, SourceResult, TaskSource,
-    run_task,
+    FetchedTask, RunOptions, RunOutcome, RunReport, SourceError, SourceResult, TaskSource, run_task,
 };
 use super::registry::{
     HeartbeatAction, READ_CHUNK_BYTES, REMOTE_INDEXING_TASKS, RemoteTaskError, TaskProgress,
@@ -49,9 +48,7 @@ pub struct RegistrySource {
 fn source_err(err: RemoteTaskError) -> SourceError {
     match err {
         RemoteTaskError::PermissionDenied => SourceError::PermissionDenied,
-        RemoteTaskError::InvalidArgument(e) | RemoteTaskError::Internal(e) => {
-            SourceError::Other(e)
-        }
+        RemoteTaskError::InvalidArgument(e) | RemoteTaskError::Internal(e) => SourceError::Other(e),
     }
 }
 

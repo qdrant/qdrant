@@ -387,7 +387,11 @@ fn quantized_files(quantized: &QuantizedVectors) -> Option<Vec<(String, std::pat
         .files()
         .into_iter()
         .map(|file| {
-            let name = file.strip_prefix(quantized.path()).ok()?.to_str()?.to_owned();
+            let name = file
+                .strip_prefix(quantized.path())
+                .ok()?
+                .to_str()?
+                .to_owned();
             Some((name, file))
         })
         .collect()

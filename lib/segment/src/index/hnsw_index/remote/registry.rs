@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::vec::BitVec;
+use common::generic_consts::Random;
 use common::types::PointOffsetType;
 use parking_lot::{Condvar, Mutex, RwLock};
 use rand::RngExt as _;
@@ -20,8 +21,6 @@ use uuid::Uuid;
 
 use super::metrics::REMOTE_INDEXING_METRICS;
 use super::wire::{BlockPlan, GraphLimits, RemoteGraphParams, WireGraph};
-use common::generic_consts::Random;
-
 use crate::common::operation_error::OperationError;
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead};
 
@@ -251,7 +250,9 @@ impl TaskRegistry {
         });
         let token = TaskToken::random();
         self.tasks.lock().insert(token, state.clone());
-        REMOTE_INDEXING_METRICS.tasks_registered.fetch_add(1, Ordering::Relaxed);
+        REMOTE_INDEXING_METRICS
+            .tasks_registered
+            .fetch_add(1, Ordering::Relaxed);
         TaskHandle {
             registry: self,
             token,
@@ -299,9 +300,10 @@ impl TaskRegistry {
         if inner.status == TaskStatus::Queued {
             inner.status = TaskStatus::Running;
             inner.started_at = Some(now);
-            REMOTE_INDEXING_METRICS
-                .queued_time_ms
-                .fetch_add(now.duration_since(inner.queued_at).as_millis() as u64, Ordering::Relaxed);
+            REMOTE_INDEXING_METRICS.queued_time_ms.fetch_add(
+                now.duration_since(inner.queued_at).as_millis() as u64,
+                Ordering::Relaxed,
+            );
         }
         Ok(state.description.clone())
     }
@@ -417,7 +419,9 @@ impl TaskRegistry {
                 };
             }
         };
-        REMOTE_INDEXING_METRICS.heartbeats.fetch_add(1, Ordering::Relaxed);
+        REMOTE_INDEXING_METRICS
+            .heartbeats
+            .fetch_add(1, Ordering::Relaxed);
         if let Some(counter) = state.progress_counter.lock().as_ref() {
             counter.store(progress.done, Ordering::Relaxed);
         }

@@ -20,15 +20,13 @@ use super::wire::{
     VectorSource, WireGraph,
 };
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorRef};
-use crate::vector_storage::VectorStorageEnum;
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::id_tracker::IdTrackerEnum;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-use crate::id_tracker::IdTracker as _;
+use crate::id_tracker::{IdTracker as _, IdTrackerEnum};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::hnsw::build_requested_graph;
 use crate::types::ExtendedPointId;
-use crate::vector_storage::{VectorStorage as _, VectorStorageRead as _};
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::{VectorStorage as _, VectorStorageEnum, VectorStorageRead as _};
 
 /// A task as the indexer reads it with `GetTask`.
 #[derive(Debug, Clone)]
@@ -68,8 +66,11 @@ pub trait TaskSource: Sync {
     fn read_deleted(&self) -> SourceResult<BitVec>;
 
     /// Feed the content of the task file `name` to `sink`, in order.
-    fn read_file(&self, name: &str, sink: &mut dyn FnMut(&[u8]) -> SourceResult<()>)
-    -> SourceResult<()>;
+    fn read_file(
+        &self,
+        name: &str,
+        sink: &mut dyn FnMut(&[u8]) -> SourceResult<()>,
+    ) -> SourceResult<()>;
 
     fn heartbeat(&self, progress: TaskProgress) -> SourceResult<HeartbeatAction>;
 
@@ -89,9 +90,7 @@ pub struct RunOptions {
 impl Default for RunOptions {
     fn default() -> Self {
         Self {
-            num_threads: common::defaults::thread_count_for_hnsw(
-                common::cpu::get_num_cpus(),
-            ),
+            num_threads: common::defaults::thread_count_for_hnsw(common::cpu::get_num_cpus()),
             heartbeat_interval: Duration::from_secs(5),
             read_batch: 65536,
         }
@@ -250,9 +249,7 @@ pub fn run_task(
             let _ = source.fail("shutdown");
             RunOutcome::Shutdown
         }
-        Err(SourceError::PermissionDenied) => {
-            RunOutcome::Dropped("token revoked".to_string())
-        }
+        Err(SourceError::PermissionDenied) => RunOutcome::Dropped("token revoked".to_string()),
         Err(SourceError::Other(reason)) => {
             let _ = source.fail(&reason);
             RunOutcome::Failed(reason)
@@ -263,7 +260,10 @@ pub fn run_task(
 
 /// Reject tasks this indexer cannot serve (D9).
 fn check_task(task: &FetchedTask) -> Result<(), String> {
-    if !task.graph_format_versions.contains(&GRAPH_FORMAT_VERSION_V1) {
+    if !task
+        .graph_format_versions
+        .contains(&GRAPH_FORMAT_VERSION_V1)
+    {
         return Err(format!(
             "no common graph format: core reads {:?}, indexer writes {GRAPH_FORMAT_VERSION_V1}",
             task.graph_format_versions,
@@ -318,9 +318,8 @@ fn build(
     report: &mut RunReport,
 ) -> SourceResult<WireGraph> {
     let params = &task.params;
-    let other = |err: crate::common::operation_error::OperationError| {
-        SourceError::Other(err.to_string())
-    };
+    let other =
+        |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
 
     let timer = Instant::now();
     let deleted = source.read_deleted()?;
@@ -361,7 +360,8 @@ fn build(
         VectorSource::Quantized => {
             let quantized_dir = storage_dir.path().join("quantized");
             for file in &params.files {
-                bytes_read += download_file(source, &quantized_dir, &file.name, file.size, stopped)?;
+                bytes_read +=
+                    download_file(source, &quantized_dir, &file.name, file.size, stopped)?;
             }
             // Scalar and binary: the quantized vectors are all the build reads, the storage
             // only carries the point count, the deleted flags and the vector parameters
@@ -436,9 +436,8 @@ fn read_storage(
     stopped: &AtomicBool,
     bytes_read: &mut u64,
 ) -> SourceResult<VectorStorageEnum> {
-    let other = |err: crate::common::operation_error::OperationError| {
-        SourceError::Other(err.to_string())
-    };
+    let other =
+        |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
     let mut storage = layout.create_storage(dir).map_err(other)?;
     // Points without a vector keep their offset with a zero vector, and are deleted below.
     // Inserted as a vector rather than bytes: TurboQuant storages encode it.
@@ -495,9 +494,8 @@ fn dequantized_storage(
     dir: &Path,
     stopped: &AtomicBool,
 ) -> SourceResult<VectorStorageEnum> {
-    let other = |err: crate::common::operation_error::OperationError| {
-        SourceError::Other(err.to_string())
-    };
+    let other =
+        |err: crate::common::operation_error::OperationError| SourceError::Other(err.to_string());
     if params.multivector_config.is_some() {
         return Err(SourceError::Other(
             "cannot reconstruct multivectors from quantized vectors".to_string(),
