@@ -6297,6 +6297,7 @@ dependencies = [
  "common",
  "criterion",
  "fs-err",
+ "nix 0.31.3",
  "num-traits",
  "num_threads",
  "ordered-float 5.5.1",
