@@ -385,6 +385,7 @@ enum BatchScorers<'a> {
 }
 
 impl BatchScorers<'_> {
+    /// Score an accepted point block and update each query's queue through the active scorer path.
     fn score_points(
         &mut self,
         points: &[PointOffsetType],
@@ -416,6 +417,7 @@ impl BatchScorers<'_> {
         Ok(())
     }
 
+    /// Consume the per-query queues and return their results in the original query order.
     fn into_results(self) -> Vec<Vec<ScoredPointOffset>> {
         match self {
             Self::Individual(scorers) => scorers
@@ -441,6 +443,7 @@ impl<'a> BatchFilteredSearcher<'a> {
     /// Create a new batch filtered searcher.
     ///
     /// If present, `quantized_vectors` will be used for scoring, otherwise `vectors` will be used.
+    /// Supported quantized batches share a scorer; other queries retain individual scorers.
     pub fn new<V, Q>(
         queries: &[&QueryVector],
         vectors: &'a V,
@@ -599,6 +602,7 @@ impl<'a> BatchFilteredSearcher<'a> {
         Ok(scorer_batch.into_results())
     }
 
+    /// Score filtered, non-deleted iterator candidates and collect each query's top results.
     /// This function expects deferred points to be already filtered from the iterator.
     pub fn peek_top_iter(
         mut self,

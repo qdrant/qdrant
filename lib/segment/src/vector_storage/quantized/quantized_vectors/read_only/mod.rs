@@ -144,6 +144,7 @@ impl<S: UniversalRead> QuantizedVectorsRead for ReadOnlyQuantizedVectors<S> {
         self.raw_scorer(query)
     }
 
+    /// Request shared scoring with the read-only storage's quantization and preprocessing policy.
     fn raw_batch_scorer<'a>(
         &'a self,
         queries: &[&QueryVector],

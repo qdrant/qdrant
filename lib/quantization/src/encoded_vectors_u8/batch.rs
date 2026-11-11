@@ -38,6 +38,7 @@ enum Kernel {
 }
 
 impl Kernel {
+    /// Select the preferred batch kernel supported by the current CPU, or the scalar fallback.
     fn best() -> Self {
         #[cfg(target_arch = "x86_64")]
         {
@@ -63,6 +64,7 @@ impl Kernel {
         Self::Scalar
     }
 
+    /// Fill the query-major integer dot-product matrix using the selected kernel.
     fn score(self, queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: &mut [i32]) {
         match self {
             // SAFETY: these variants are only constructed after runtime feature detection.
@@ -168,6 +170,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 }
 
+/// Compute query-major integer dot products as the scalar reference for the SIMD kernels.
 fn score_scalar(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: &mut [i32]) {
     let count = vectors.len() / dim;
     for (q, query) in queries.iter().enumerate() {
@@ -182,8 +185,15 @@ fn score_scalar(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: 
     }
 }
 
+/// Score up to four queries per vector load with AVX-512 VNNI.
+///
 /// Codes are 0..=127, so unsigned-by-signed byte products and i32 sums are exact
 /// up to Qdrant's maximum dimension. The last 16/32/48 bytes use masked loads.
+///
+/// # Safety
+///
+/// Requires AVX-512F, AVX-512BW and AVX-512VNNI. `dim` must be positive and padded to
+/// 16 bytes, with complete query/vector rows and space for the query-major score matrix.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx512f,avx512bw,avx512vnni")]
 unsafe fn score_avx512(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: &mut [i32]) {
@@ -213,6 +223,12 @@ unsafe fn score_avx512(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, s
     }
 }
 
+/// Score up to four queries per vector load with AVX-VNNI, including a 16-byte tail.
+///
+/// # Safety
+///
+/// Requires AVX2 and AVX-VNNI. `dim` must be positive and padded to 16 bytes, with
+/// complete query/vector rows and space for the query-major score matrix.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,avxvnni")]
 unsafe fn score_avx(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: &mut [i32]) {
@@ -255,6 +271,12 @@ unsafe fn score_avx(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scor
     }
 }
 
+/// Share each 16-byte vector load across up to four queries using NEON SDOT.
+///
+/// # Safety
+///
+/// Requires NEON and dot-product support. `dim` must be positive and padded to
+/// 16 bytes, with complete query/vector rows and space for the query-major score matrix.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon,dotprod")]
 unsafe fn score_neon(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: &mut [i32]) {
@@ -282,6 +304,11 @@ unsafe fn score_neon(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, sco
 /// Four queries by four stored vectors. SMMLA multiplies two contiguous 8-byte query
 /// rows by two contiguous 8-byte vector columns into [q0v0, q0v1, q1v0, q1v1].
 /// Each loaded vector pair is shared by both query pairs; incomplete pairs are zero-filled.
+///
+/// # Safety
+///
+/// Requires NEON and i8mm. `dim` must be positive and padded to 16 bytes, with
+/// complete query/vector rows and space for the query-major score matrix.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon,i8mm")]
 unsafe fn score_i8mm(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: &mut [i32]) {
@@ -360,6 +387,7 @@ mod tests {
     use crate::encoded_storage::{TestEncodedStorage, TestEncodedStorageBuilder};
     use crate::encoded_vectors_u8::{ScalarQuantizationMethod, get_quantized_vector_size};
 
+    /// Include the scalar oracle and every SIMD kernel executable on this CPU.
     fn kernels() -> Vec<Kernel> {
         let mut kernels = vec![Kernel::Scalar];
         #[cfg(target_arch = "x86_64")]
@@ -385,6 +413,7 @@ mod tests {
         kernels
     }
 
+    /// Quantize a deterministic fixture for the requested dimension, distance and inversion.
     fn encoded(
         dim: usize,
         distance_type: DistanceType,
@@ -413,6 +442,7 @@ mod tests {
         .unwrap()
     }
 
+    /// Compare every available kernel with independent scores across distances and batch tails.
     #[test]
     fn query_batch_matches_independent_scores_bitwise() {
         let _scope = ambient::test_guard();
@@ -560,6 +590,7 @@ mod tests {
         }
     }
 
+    /// Check exact accumulation of maximum SQ8 codes at the maximum supported dimension.
     #[test]
     fn maximum_codes_do_not_saturate() {
         let dim = 65_536;
@@ -577,6 +608,7 @@ mod tests {
         }
     }
 
+    /// Reject a prepared batch from another dimension before entering its scoring kernel.
     #[test]
     fn rejects_batch_from_different_dimension_before_kernel() {
         let _scope = ambient::test_guard();
@@ -602,6 +634,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Ensure distance, single-query and unsupported-CPU fallbacks do not consume lazy queries.
     #[test]
     fn fallback_does_not_preprocess_queries() {
         let _scope = ambient::test_guard();
@@ -619,6 +652,7 @@ mod tests {
         }
     }
 
+    /// Keep empty batches, single queries and Manhattan distance on independent scorers.
     #[test]
     fn single_query_and_l1_use_independent_scorers() {
         let _scope = ambient::test_guard();
@@ -646,24 +680,31 @@ mod tests {
         fail: bool,
     }
     impl EncodedStorage for CallbackStorage {
+        /// Model storage that requires the fallible batch-read interface.
         fn is_in_ram_or_mmap() -> bool {
             false
         }
+        /// Mark the fixture as cold so its reads follow cold-storage accounting.
         fn is_cold(&self) -> bool {
             true
         }
+        /// Preserve the wrapped fixture's vector count.
         fn vectors_count(&self) -> usize {
             self.inner.vectors_count()
         }
+        /// Report the heap bytes owned by the wrapped fixture.
         fn heap_size_bytes(&self) -> usize {
             self.inner.heap_size_bytes()
         }
+        /// Fail if the batch scorer bypasses the fallible batch-read interface.
         fn get_vector_data(&self, _: PointOffsetType) -> Cow<'_, [u8]> {
             panic!("must use for_each_batch")
         }
+        /// Reject optional direct reads so tests exercise only the batch callback path.
         fn get_vector_data_opt(&self, _: PointOffsetType) -> Option<Cow<'_, [u8]>> {
             panic!("must use for_each_batch")
         }
+        /// Return callbacks in reverse request order, or inject a storage read error.
         fn for_each_batch(
             &self,
             ids: &[PointOffsetType],
@@ -677,14 +718,17 @@ mod tests {
             }
             Ok(())
         }
+        /// Report no files because this fixture stores its encoded data in memory.
         fn files(&self) -> Vec<PathBuf> {
             vec![]
         }
+        /// Report no immutable files for the in-memory fixture.
         fn immutable_files(&self) -> Vec<PathBuf> {
             vec![]
         }
     }
 
+    /// Preserve requested score positions despite reversed callbacks and propagate read failures.
     #[test]
     fn query_batch_preserves_callback_order_and_read_errors() {
         let _scope = ambient::test_guard();

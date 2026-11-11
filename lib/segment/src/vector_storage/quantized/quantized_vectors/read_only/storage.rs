@@ -116,6 +116,7 @@ impl<S: UniversalRead> fmt::Debug for ReadOnlyQuantizedVectorStorage<S> {
 }
 
 impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
+    /// Offer shared scoring for scalar RAM or mmap storage, leaving other formats on fallback.
     pub(super) fn raw_batch_scorer<'a>(
         &'a self,
         queries: &[&QueryVector],

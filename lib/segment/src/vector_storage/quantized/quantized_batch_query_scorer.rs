@@ -15,6 +15,7 @@ use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 /// A query-major score matrix over one shared block of point ids.
 pub trait RawBatchScorer {
+    /// Fill one score row per prepared query, preserving point order and propagating read errors.
     fn score_points(
         &mut self,
         points: &[PointOffsetType],
@@ -29,6 +30,7 @@ struct ScalarBatchScorer<'a, S: EncodedStorage> {
 }
 
 impl<S: EncodedStorage> RawBatchScorer for ScalarBatchScorer<'_, S> {
+    /// Score all prepared queries while charging encoded-vector I/O once for the shared block.
     fn score_points(
         &mut self,
         points: &[PointOffsetType],
@@ -43,6 +45,8 @@ impl<S: EncodedStorage> RawBatchScorer for ScalarBatchScorer<'_, S> {
     }
 }
 
+/// Build a shared scorer for supported dense nearest queries, source datatypes and CPU kernels.
+/// Return `None` when callers should retain their independent query scorers.
 pub(super) fn scalar_batch_scorer<'a, S: EncodedStorage>(
     storage: &'a EncodedVectorsU8<S>,
     queries: &[&QueryVector],
@@ -84,6 +88,8 @@ pub(super) fn scalar_batch_scorer<'a, S: EncodedStorage>(
     }
 }
 
+/// Lazily encode validated dense queries with their source datatype and metric preprocessing.
+/// Unsupported batch kernels return before the query iterator is consumed.
 fn prepare<'a, E, M, S>(
     storage: &'a EncodedVectorsU8<S>,
     queries: &[&QueryVector],
@@ -125,6 +131,7 @@ mod tests {
     use crate::vector_storage::quantized::quantized_query_scorer::QuantizedQueryScorer;
     use crate::vector_storage::query_scorer::QueryScorer;
 
+    /// Compare source-datatype preprocessing bitwise and reject custom or multivector queries.
     #[allow(deprecated)]
     fn check_preprocessing<E, M>(distance: DistanceType)
     where
@@ -206,6 +213,7 @@ mod tests {
         }
     }
 
+    /// Exercise shared preprocessing for Float32, Float16 and Uint8 across supported distances.
     #[test]
     fn scalar_batch_reuses_source_datatype_preprocessing() {
         macro_rules! check {
