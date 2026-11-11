@@ -368,8 +368,9 @@ impl ShardReplicaSet {
 
     /// Read a transfer batch without sending it yet.
     ///
-    /// Returns a [`PreparedTransferBatch`] that holds the update lock. The caller can then drop
-    /// other locks (e.g. the shard holder lock) before calling [`PreparedTransferBatch::send`].
+    /// Returns a [`PreparedTransferBatch`] that holds a shared guard on the update lock. The caller
+    /// can then drop other locks (e.g. the shard holder lock) before calling
+    /// [`PreparedTransferBatch::send`].
     ///
     /// # Cancel safety
     ///
