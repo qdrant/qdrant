@@ -450,12 +450,13 @@ impl Collection {
         &self,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<CollectionInfo> {
-        let shards_holder = self.shards_holder.read().await;
-        let shards = shards_holder.select_shards(shard_selection)?;
+        let shards = self
+            .select_shards(shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
         let mut requests: futures::stream::FuturesUnordered<_> = shards
-            .into_iter()
+            .iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`
-            .map(|(shard, _shard_key)| shard.info(shard_selection.is_shard_id()))
+            .map(|shard| shard.info(shard_selection.is_shard_id()))
             .collect();
 
         let mut info = match requests.try_next().await? {
