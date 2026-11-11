@@ -484,3 +484,6 @@ fn to_json(value: &impl Serialize) -> StorageResult<serde_json::Value> {
         StorageError::service_error(format!("failed to serialize consensus state: {err}"))
     })
 }
+
+#[cfg(test)]
+mod tests;
