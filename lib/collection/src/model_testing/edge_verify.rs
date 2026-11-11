@@ -15,9 +15,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 #[cfg(feature = "edge-verify")]
-use common::universal_io::{MmapFile, MmapFs};
+use common::universal_io::MmapFile;
 #[cfg(feature = "edge-verify")]
-use edge::{EdgeShardRead, ReadOnlyEdgeShard, ScrollRequest};
+use edge::{EdgeScope, EdgeShardRead, ReadOnlyEdgeShard, ScrollRequest};
 use segment::common::operation_error::OperationResult;
 #[cfg(feature = "edge-verify")]
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
@@ -68,10 +68,11 @@ impl EdgeVerifier {
              enable_serverless_compatible() before init_feature_flags, before the \
              collection is built",
         );
+        let scope = EdgeScope::new();
         let shards = (0..shard_count)
             .map(|shard_id| {
                 let path = shard_path(collection_dir, shard_id);
-                ReadOnlyEdgeShard::<MmapFile>::open(MmapFs, &path, None, None).unwrap_or_else(|e| {
+                ReadOnlyEdgeShard::<MmapFile>::open_mmap(&path, &scope).unwrap_or_else(|e| {
                     panic!("failed to open edge follower over {}: {e}", path.display())
                 })
             })
