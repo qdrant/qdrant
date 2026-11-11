@@ -656,9 +656,6 @@ pub async fn run(
     // reproducible; each redraw is logged with its op tick so a failure is attributable to the
     // config that was live. (This consumes rng draws, so the op stream differs from a non-swarm
     // build for the same seed.)
-    // Read once: feature flags are process-global and stable for the run. Edge-verify and
-    // `--append-only-mutations` both set this; masking DeleteVectors* must follow so the
-    // harness never emits Logstore-incompatible named-vector deletes.
     let mut swarm = op::Swarm::random(rng, enable_force_off, disable_snapshots);
     let initial_enabled = swarm.enabled_ops();
     trace.swarm(0, &initial_enabled);
@@ -1550,11 +1547,9 @@ mod tests {
     /// Not run by default CI (needs the feature):
     /// `cargo nextest run -p collection --features edge-verify -E 'test(harness_edge_verify)'`
     ///
-    /// Append-only constraints for this cell:
-    /// - `DeleteVectors` / `DeleteVectorsByFilter` are masked by the swarm (Logstore rejects
-    ///   named-vector deletes under append-only).
-    /// - Cardinality adjustment clamps when clone-and-tombstone leaves
-    ///   `available_vectors > available_points` (see `adjust_to_available_vectors`).
+    /// Append-only note: cardinality adjustment clamps when clone-and-tombstone leaves
+    /// `available_vectors > available_points` (see `adjust_to_available_vectors`). Named-vector
+    /// deletes stay in the swarm — append-only soft-delete support landed in #11388.
     /// Keep the gate out of required CI until a longer soak looks clean.
     #[cfg(feature = "edge-verify")]
     #[tokio::test(flavor = "multi_thread")]
