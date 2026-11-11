@@ -30,7 +30,7 @@ impl LocalShard {
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &AdaptiveSearchHandle,
-        timeout: Duration,
+        mut timeout: Duration,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         if core_request.searches.is_empty() {
             return Ok(vec![]);
@@ -38,11 +38,15 @@ impl LocalShard {
 
         if self.shared_storage_config.dynamic_search_batch_max > 0
             && super::search_batcher::eligible(&core_request)
-            && let Some(result) = self
+        {
+            let admission_started = std::time::Instant::now();
+            if let Some(result) = self
                 .coalesced_search(core_request.clone(), search_runtime_handle.clone(), timeout)
                 .await
-        {
-            return result;
+            {
+                return result;
+            }
+            timeout = timeout.saturating_sub(admission_started.elapsed());
         }
 
         let skip_batching = if core_request.searches.len() <= CHUNK_SIZE {

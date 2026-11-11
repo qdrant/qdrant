@@ -85,7 +85,16 @@ impl LocalShard {
         runtime: AdaptiveSearchHandle,
         timeout: Duration,
     ) -> Option<Response> {
-        let config = self.collection_config.read().await;
+        let deadline = Instant::now() + timeout;
+        let config = match tokio::time::timeout_at(deadline, self.collection_config.read()).await {
+            Ok(config) => config,
+            Err(_) => {
+                return Some(Err(CollectionError::timeout(
+                    timeout,
+                    "dynamic search configuration",
+                )));
+            }
+        };
         let vector = config
             .params
             .vectors
@@ -124,7 +133,6 @@ impl LocalShard {
                 })
             })
             .clone();
-        let deadline = Instant::now() + timeout;
         let (tx, rx) = oneshot::channel();
         {
             let mut queue = batcher.queue.lock();
