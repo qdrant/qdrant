@@ -198,6 +198,7 @@ def run_case(pool, refs, concurrency, seconds, filtered):
     issued = 0
 
     def worker():
+        """Send one request at a time while participating in the fixed outstanding-request budget."""
         nonlocal issued
         local = []
         gate.wait()
@@ -228,6 +229,7 @@ def run_case(pool, refs, concurrency, seconds, filtered):
                      for r in results if not r[3])
     latencies = sorted(r[1] * 1000 for r in results)
     def percentile(p):
+        """Select an observed latency rank from the fully drained cohort."""
         return latencies[min(len(latencies)-1, int((len(latencies)-1)*p))]
     digest = hashlib.sha256(json.dumps([(r[0], fingerprint(r[2]['result'])) for r in results if not r[3]], separators=(',', ':')).encode()).hexdigest()
     result = {'response_sha256': digest, 'concurrency': concurrency, 'filtered': filtered, 'requests': len(results),

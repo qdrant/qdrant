@@ -182,6 +182,7 @@ pub(super) fn new_dispatcher_with_proposals() -> (
     open_dispatcher(storage_dir)
 }
 
+/// Open a dispatcher over the supplied temporary storage for alias persistence tests.
 pub(super) fn open_dispatcher(
     storage_dir: TempDir,
 ) -> (

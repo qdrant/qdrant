@@ -410,6 +410,7 @@ fn get_collection(toc: &TableOfContent, name: &str) -> Arc<Collection> {
         .unwrap()
 }
 
+/// Create an isolated table of contents and retain its temporary storage directory.
 fn new_toc() -> (TempDir, Arc<TableOfContent>) {
     let storage_dir = Builder::new().prefix("storage").tempdir().unwrap();
 

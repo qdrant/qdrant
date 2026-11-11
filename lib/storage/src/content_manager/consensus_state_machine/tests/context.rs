@@ -31,6 +31,7 @@ fn from_storage_config() {
     assert_eq!(context, expected);
 }
 
+/// Build distinct sentinel values to verify the storage-to-node configuration projection.
 fn storage_config() -> StorageConfig {
     // Give copied and ignored fields of the same type different values,
     // so the test catches mapping the wrong field into `NodeContext`
