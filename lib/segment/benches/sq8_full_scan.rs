@@ -4,7 +4,7 @@
 
 use std::hint::black_box;
 use std::path::PathBuf;
-use std::sync::{Barrier, Mutex, mpsc};
+use std::sync::{Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -297,6 +297,7 @@ fn assert_results(
 
 /// Measure one closed-loop case with a fixed worker pool and bounded outstanding requests.
 /// Stop admissions at the deadline, drain all work, then verify results and compute latencies.
+/// Startup failures disconnect the workers before the scope waits for them to exit.
 fn concurrency_sample(
     args: &Args,
     dataset: &Dataset,
@@ -326,14 +327,14 @@ fn concurrency_sample(
     let requests_rx = Mutex::new(requests_rx);
     let (completed_tx, completed_rx) =
         mpsc::sync_channel::<Result<CompletedRequest, Box<dyn std::any::Any + Send>>>(concurrency);
-    let ready = Barrier::new(args.search_threads + 1);
+    let (ready_tx, ready_rx) = mpsc::channel();
 
     let (start, elapsed, completed, budget_exceeded) = std::thread::scope(|scope| {
         for worker in 0..args.search_threads {
             let completed_tx = completed_tx.clone();
             let requests_rx = &requests_rx;
-            let ready = &ready;
-            scope.spawn(move || {
+            let ready_tx = ready_tx.clone();
+            let spawned = std::thread::Builder::new().spawn_scoped(scope, move || {
                 let _scope = ambient::test_guard();
                 // Warm the actual worker threads before timing, including per-thread
                 // feature setup. Workers never combine separate requests into a batch.
@@ -355,12 +356,11 @@ fn concurrency_sample(
                         assert_results(&result, reference, warm_offset, batch);
                     }
                 }));
-                // A failed warmup must not leave the other threads stuck at the barrier.
-                ready.wait();
-                if let Err(error) = warmup {
-                    let _ = completed_tx.send(Err(error));
+                let failed = warmup.is_err();
+                if ready_tx.send(warmup).is_err() || failed {
                     return;
                 }
+                drop(ready_tx);
                 loop {
                     // Hold the receiver lock only while dequeuing, never while searching.
                     let request = requests_rx.lock().unwrap().recv();
@@ -391,9 +391,26 @@ fn concurrency_sample(
                     }
                 }
             });
+            if let Err(error) = spawned {
+                // Already-started workers can finish warmup and observe disconnection.
+                drop(requests_tx);
+                drop(completed_rx);
+                panic!("failed to spawn search worker {worker}: {error}");
+            }
         }
         drop(completed_tx);
-        ready.wait();
+        drop(ready_tx);
+        for _ in 0..args.search_threads {
+            if let Err(error) = ready_rx
+                .recv()
+                .expect("search worker exited during startup")
+            {
+                drop(requests_tx);
+                drop(completed_rx);
+                std::panic::resume_unwind(error);
+            }
+        }
+        drop(ready_rx);
         let start = Instant::now();
         let deadline = start + window;
         let mut next_id = 0;
@@ -584,12 +601,7 @@ fn main() {
                 scan,
                 args.points,
             );
-            for (actual, reference) in actual.iter().zip(&reference) {
-                assert_eq!(actual.len(), reference.len());
-                for (a, b) in actual.iter().zip(reference) {
-                    assert_eq!((a.idx, a.score.to_bits()), (b.idx, b.score.to_bits()));
-                }
-            }
+            assert_results(&actual, &reference, 0, batch);
             if args.concurrency.is_empty() {
                 for _ in 0..args.warmup {
                     black_box(run(
