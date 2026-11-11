@@ -40,6 +40,7 @@ impl ShardReplicaSet {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        require_local: bool,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
         let partial_snapshot_create_request_guard = if manifest.is_some() {
@@ -48,19 +49,46 @@ impl ShardReplicaSet {
             None
         };
 
-        let replica_state = self.replica_state.clone();
         let temp_path = temp_path.to_path_buf();
 
         let local_read = self.local.read().await;
 
-        let maybe_local_snapshot_future = if let Some(local) = &*local_read {
-            Some(
+        // Capture replica state under the same read guard used to create the snapshot.
+        // `remove_local` clears `is_local` before it takes the local write lock, so the
+        // captured state always matches the local shard snapshotted below.
+        let replica_state = self.replica_state.read().clone();
+
+        // Check under the same read guard, so the local shard can't be removed between
+        // the check and snapshot setup
+        let has_local = replica_state.is_local
+            && match &*local_read {
+                Some(Shard::Local(_) | Shard::Dummy(_) | Shard::QueueProxy(_)) => true,
+                Some(Shard::ForwardProxy(_)) | None => false,
+            };
+
+        if require_local && !has_local {
+            return Err(CollectionError::bad_input(format!(
+                "Shard {} is not a local or queue proxy shard",
+                self.shard_id,
+            )));
+        }
+
+        let replica_state_bytes = serde_json::to_vec(&replica_state).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to serialize replica state of shard {}: {err}",
+                self.shard_id,
+            ))
+        })?;
+
+        // Don't archive local data the captured replica state doesn't claim,
+        // restore would skip it anyway
+        let maybe_local_snapshot_future = match &*local_read {
+            Some(local) if replica_state.is_local => Some(
                 local
                     .get_snapshot_creator(&temp_path, &tar, format, manifest, save_wal)
                     .await?,
-            )
-        } else {
-            None
+            ),
+            Some(_) | None => None,
         };
 
         drop(local_read);
@@ -72,7 +100,8 @@ impl ShardReplicaSet {
                 local_snapshot_future.await?;
             }
 
-            replica_state.save_to_tar(&tar, REPLICA_STATE_FILE).await?;
+            tar.append_data(replica_state_bytes, Path::new(REPLICA_STATE_FILE))
+                .await?;
 
             let shard_config = ShardConfig::new_replica_set();
             shard_config.save_to_tar(&tar).await?;
