@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicU64;
 
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use rand::Rng;
 use rayon::ThreadPool;
@@ -11,6 +12,7 @@ use super::healing_builder::HealingBuilder;
 use super::hnsw_builder::HnswBuilder;
 use super::local_builder::LocalBuilder;
 use super::payload_blocks::FieldBlocks;
+use super::pipnn_builder::PipnnBuilder;
 use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -24,6 +26,7 @@ use crate::vector_storage::VectorStorageRead as _;
 pub(super) enum GraphBuilder<'a> {
     Hnsw(HnswBuilder<'a>),
     Healing(HealingBuilder<'a>),
+    Pipnn(PipnnBuilder<'a>),
     #[cfg(feature = "gpu")]
     Gpu(Box<GpuBuilder<'a>>),
 }
@@ -66,10 +69,12 @@ impl<'a> GraphBuilder<'a> {
     /// 1. Small segments, or nothing to build: HNSW, or healing if there is an old graph.
     ///    Nothing else would pay off.
     /// 2. A GPU: GPU, even if the old graph could be healed. Points keep their levels from the
-    ///    old graph, and what fails on the GPU is built by the method of rules 3 and 4, which
+    ///    old graph, and what fails on the GPU is built by the method of rules 3 to 5, which
     ///    the GPU method keeps for the whole build: the old graph is healed if the GPU fails.
     /// 3. An old graph worth healing: healing.
-    /// 4. Otherwise, HNSW.
+    /// 4. PiPNN, unless the `pipnn_graph_building` feature flag is off, if it applies, see
+    ///    [`PipnnBuilder::new`].
+    /// 5. Otherwise, HNSW.
     pub fn select(
         ctx: GraphBuildContext<'a>,
         pool: &'a ThreadPool,
@@ -102,10 +107,17 @@ impl<'a> GraphBuilder<'a> {
     }
 
     /// The method `select` picks without a GPU: healing if there is an old graph worth
-    /// healing, HNSW otherwise. `local` has the levels of `old_index`.
+    /// healing, otherwise PiPNN if it is enabled and applies, HNSW if not. `local` has the
+    /// levels of `old_index`.
     fn without_gpu(local: LocalBuilder<'a>, old_index: Option<&'a OldIndex<'a>>) -> Self {
         match old_index {
+            // Healing wins, also over PiPNN, which can't build incrementally
             Some(old_index) => Self::Healing(HealingBuilder::from_local(local, old_index)),
+            None if feature_flags().pipnn_graph_building => match PipnnBuilder::new(local) {
+                Ok(builder) => Self::Pipnn(builder),
+                Err(local) => Self::Hnsw(HnswBuilder(*local)),
+            },
+            // PiPNN is switched off
             None => Self::Hnsw(HnswBuilder(local)),
         }
     }
@@ -141,6 +153,7 @@ impl<'a> GraphBuilder<'a> {
         match self {
             GraphBuilder::Hnsw(builder) => &mut builder.0,
             GraphBuilder::Healing(builder) => builder.local(),
+            GraphBuilder::Pipnn(builder) => &mut builder.local,
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.cpu.local(),
         }
@@ -152,6 +165,7 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
         match self {
             GraphBuilder::Hnsw(builder) => builder.build_main(),
             GraphBuilder::Healing(builder) => builder.build_main(),
+            GraphBuilder::Pipnn(builder) => builder.build_main(),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.build_main(),
         }
@@ -165,6 +179,7 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
         match self {
             GraphBuilder::Hnsw(builder) => builder.build_block(points, counter),
             GraphBuilder::Healing(builder) => builder.build_block(points, counter),
+            GraphBuilder::Pipnn(builder) => builder.build_block(points, counter),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.build_block(points, counter),
         }
@@ -174,6 +189,7 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
         match self {
             GraphBuilder::Hnsw(builder) => builder.finalize(),
             GraphBuilder::Healing(builder) => builder.finalize(),
+            GraphBuilder::Pipnn(builder) => builder.finalize(),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.finalize(),
         }
@@ -183,6 +199,7 @@ impl GraphBuilderMethod for GraphBuilder<'_> {
         match self {
             GraphBuilder::Hnsw(builder) => builder.seeds_payload_blocks(),
             GraphBuilder::Healing(builder) => builder.seeds_payload_blocks(),
+            GraphBuilder::Pipnn(builder) => builder.seeds_payload_blocks(),
             #[cfg(feature = "gpu")]
             GraphBuilder::Gpu(builder) => builder.seeds_payload_blocks(),
         }

@@ -227,8 +227,8 @@ mod store {
     use super::*;
     use crate::read_only::tests::{VECTOR_NAME, assert_follower_vectors, point};
     use crate::{
-        EdgeShardRead as _, ManifestSegmentEnumerator, QueryRequestBuilder, ReadOnlyEdgeShard,
-        ReadOnlyOpenOptions, RetrieveRequestBuilder,
+        EdgeScope, EdgeShardRead as _, ManifestSegmentEnumerator, QueryRequestBuilder,
+        ReadOnlyEdgeShard, ReadOnlyOpenOptions, RetrieveRequestBuilder,
     };
 
     mod point_count;
@@ -357,8 +357,6 @@ mod store {
     /// hiding deferred points still serves the old one.
     #[test]
     fn store_past_deferred_threshold_keeps_the_old_copy() {
-        use std::sync::atomic::AtomicBool;
-
         use crate::{LoadProfile, LocalSegmentEnumerator};
 
         let dir = vacuumed_leader("edge-update-store-deferred");
@@ -436,7 +434,7 @@ mod store {
                 pools: Default::default(),
                 waterline: None,
             },
-            &AtomicBool::new(false),
+            &EdgeScope::new(),
         )
         .unwrap();
         assert_eq!(

@@ -8,7 +8,6 @@ use std::time::Instant;
 
 use ahash::AHashSet;
 use chrono::{NaiveDateTime, Timelike};
-use common::ambient::AmbientContext;
 use common::ambient::hw::{HardwareData, HwMetric};
 use common::types::ScoreType;
 use itertools::Itertools;
@@ -3602,9 +3601,8 @@ impl From<rest::SearchMatrixPair> for SearchMatrixPair {
     }
 }
 
-impl From<AmbientContext> for HardwareUsage {
-    fn from(value: AmbientContext) -> Self {
-        let data = value.hw_data();
+impl From<HardwareData> for HardwareUsage {
+    fn from(data: HardwareData) -> Self {
         let m = |metric: HwMetric| Some(data[metric] as u64);
         Self {
             cpu: m(HwMetric::Cpu),

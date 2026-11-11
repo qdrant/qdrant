@@ -1,5 +1,3 @@
-use common::ambient;
-use common::reason::Reason;
 use common::types::DeferredBehavior;
 use segment::common::operation_error::OperationResult;
 use segment::types::{ExtendedPointId, WithPayload, WithPayloadInterface, WithVector};
@@ -16,7 +14,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         with_vector: Option<WithVector>,
     ) -> OperationResult<Vec<RecordInternal>> {
         self.check_stopped()?;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = self.handoff.enter_guard();
         let with_payload =
             WithPayload::from(with_payload.unwrap_or(WithPayloadInterface::Bool(true)));
         let with_vector = with_vector.unwrap_or(WithVector::Bool(false));

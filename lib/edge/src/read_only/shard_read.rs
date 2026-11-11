@@ -6,11 +6,11 @@ use segment::index::UniversalReadExt;
 use segment::segment::read_only::ReadOnlySegment;
 
 use crate::read_view::ReadViewProvider;
-use crate::{EdgeConfig, ReadOnlyEdgeShard};
+use crate::{EdgeConfig, EdgeScope, ReadOnlyEdgeShard, Scoped};
 
 /// The follower's segments are homogeneous, so its handle is the concrete
 /// `Arc<RwLock<ReadOnlySegment<S>>>` — the read path is fully monomorphized, no dynamic dispatch.
-/// The [`EdgeShardRead`](crate::EdgeShardRead) read API comes through the blanket impl over this.
+/// The read API comes through [`with`](ReadOnlyEdgeShard::with).
 impl<S: UniversalReadExt + 'static> ReadViewProvider for ReadOnlyEdgeShard<S>
 where
     S::Fs: Send + Sync,
@@ -31,5 +31,12 @@ where
 
     fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
+    /// This shard, with its operations run in `scope`.
+    pub fn with<'a>(&'a self, scope: &'a EdgeScope) -> Scoped<'a, Self> {
+        Scoped { shard: self, scope }
     }
 }

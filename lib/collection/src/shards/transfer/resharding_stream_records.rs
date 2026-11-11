@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use common::ambient::AmbientFutureExt;
 use common::reason::reason;
@@ -8,6 +7,7 @@ use parking_lot::Mutex;
 use shard::count::CountRequestInternal;
 
 use super::TransferStage;
+use super::stream_batches::transfer_batches;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -15,7 +15,6 @@ use crate::shards::CollectionId;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::SharedShardHolder;
-use crate::shards::transfer::stream_records::TRANSFER_BATCH_SIZE;
 
 /// Orchestrate shard transfer by streaming records, but only the points that fall into the new
 /// shard.
@@ -155,48 +154,15 @@ pub(crate) async fn transfer_resharding_stream_records(
     progress.lock().set_stage(TransferStage::Transferring);
     log::trace!("Transferring points to shard {shard_id} by reshard streaming records");
 
-    let mut offset = None;
-    let mut total_read = Duration::ZERO;
-    let mut total_send = Duration::ZERO;
-
-    loop {
-        // Read batch under shard holder lock
-        let prepared_batch = {
-            let shard_holder = shard_holder.read().await;
-
-            let Some(replica_set) = shard_holder.get_shard(shard_id) else {
-                // Forward proxy gone?!
-                // That would be a programming error.
-                return Err(CollectionError::service_error(format!(
-                    "Shard {shard_id} is not found"
-                )));
-            };
-
-            replica_set
-                .read_transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
-                .await?
-
-            // Shard holder lock is dropped here, but the forward proxy update lock is still
-            // held inside the prepared batch.
-        };
-
-        // Send batch to remote shard without holding the shard holder lock.
-        let result = prepared_batch.send(&remote_shard).await?;
-
-        offset = result.next_page_offset;
-        total_read += result.read_duration;
-        total_send += result.send_duration;
-        {
-            let mut p = progress.lock();
-            p.add(result.count);
-            p.set_batch_durations(total_read, total_send);
-        }
-
-        // If this is the last batch, finalize
-        if offset.is_none() {
-            break;
-        }
-    }
+    transfer_batches(
+        &shard_holder,
+        shard_id,
+        &remote_shard,
+        Some(&hashring),
+        true,
+        &progress,
+    )
+    .await?;
 
     // Update cutoff point on remote shard, disallow recovery before it
     //

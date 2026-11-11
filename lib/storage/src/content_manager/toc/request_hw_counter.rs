@@ -54,6 +54,6 @@ impl RequestHwCounter {
 
     pub fn to_grpc_api(self) -> Option<api::grpc::qdrant::HardwareUsage> {
         self.report_to_api
-            .then(|| api::grpc::qdrant::HardwareUsage::from(self.counter))
+            .then(|| api::grpc::qdrant::HardwareUsage::from(self.counter.hw_data()))
     }
 }

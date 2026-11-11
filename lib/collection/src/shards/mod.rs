@@ -4,7 +4,6 @@ mod conversions;
 pub mod dummy_shard;
 pub mod forward_proxy_shard;
 pub mod local_shard;
-pub mod proxy_shard;
 pub mod queue_proxy_shard;
 pub mod remote_shard;
 pub mod replica_set;
@@ -25,6 +24,7 @@ use std::path::{Path, PathBuf};
 
 use channel_service::ChannelService;
 use common::defaults;
+use common::fs::{bulk_sync_dir, sync_parent_dir_async};
 use fs_err::tokio as tokio_fs;
 use shard::ShardId;
 use tokio::time::{sleep_until, timeout_at};
@@ -40,9 +40,37 @@ pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
     collection_path.join(shard_id.to_string())
 }
 
-/// Path to a shard directory
+/// Path to the shard initializing flag
 pub fn shard_initializing_flag_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
     collection_path.join(format!("shard_{shard_id}.initializing"))
+}
+
+/// Remove the shard initializing flag.
+///
+/// If `sync_shard_path` is set, syncs the shard directory first,
+/// so the flag is removed after the shard data is synced to disk.
+///
+/// A missing flag file is ignored.
+pub async fn remove_shard_initializing_flag(
+    shard_flag: &Path,
+    sync_shard_path: Option<&Path>,
+) -> CollectionResult<()> {
+    if let Some(shard_path) = sync_shard_path {
+        let shard_path = shard_path.to_path_buf();
+        tokio::task::spawn_blocking(move || bulk_sync_dir(&shard_path)).await??;
+    }
+
+    match tokio_fs::remove_file(shard_flag).await {
+        Ok(()) => log::debug!("Removed shard initializing flag {shard_flag:?}"),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(CollectionError::from(err)),
+    }
+
+    if let Err(err) = sync_parent_dir_async(shard_flag).await {
+        log::warn!("Failed to sync parent dir of shard initializing flag {shard_flag:?}: {err}");
+    }
+
+    Ok(())
 }
 
 /// Verify that a shard exists by loading its configuration.

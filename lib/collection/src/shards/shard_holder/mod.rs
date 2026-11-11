@@ -63,7 +63,9 @@ use crate::shards::shard_holder::recovery_guard::{
     ActiveRecoveries, RecoveryProgressHandle, ShardRecoveryGuard,
 };
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
-use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
+use crate::shards::{
+    CollectionId, check_shard_path, remove_shard_initializing_flag, shard_initializing_flag_path,
+};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -227,6 +229,26 @@ impl ShardHolder {
                 );
             }
             sync_parent_dir_async(&shard_config_path).await?;
+
+            let Some(collection_path) = shard_path.parent() else {
+                return Err(CollectionError::service_error(format!(
+                    "Failed to get collection path of shard {shard_id} at {shard_path:?}",
+                )));
+            };
+
+            let shard_flag = shard_initializing_flag_path(collection_path, shard_id);
+
+            // Remove the shard initializing flag, so if a new shard with the same ID is created
+            // later, it's not loaded as a dummy on restart.
+            //
+            // Remove the flag after the shard config, but before the rest of the shard files:
+            // - if the flag is removed before the shard config, but the process is killed before
+            //   the shard config is removed, the shard may be loaded on restart without the flag
+            // - if the flag is removed after the shard files, but the process is killed while
+            //   the shard files are removed, the flag is left behind
+            //
+            // Shard is being removed, so there is no shard data to sync.
+            remove_shard_initializing_flag(&shard_flag, None).await?;
 
             tokio_fs::remove_dir_all(shard_path).await?;
 

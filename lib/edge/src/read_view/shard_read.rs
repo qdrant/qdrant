@@ -7,10 +7,14 @@ use shard::retrieve::record_internal::RecordInternal;
 
 use super::EdgeReadView;
 use crate::{
-    CountRequest, EdgeConfig, FacetRequest, FacetResponse, Group, GroupRequest, OperationResult,
-    QueryBatchRequest, QueryRequest, ReadSegmentHandle, RetrieveRequest, ScoredPoint,
-    ScrollRequest, SearchMatrixRequest, SearchMatrixResponse, SearchRequest, ShardInfo,
+    CountRequest, EdgeConfig, EdgeScope, FacetRequest, FacetResponse, Group, GroupRequest,
+    OperationResult, QueryBatchRequest, QueryRequest, ReadSegmentHandle, RetrieveRequest, Scoped,
+    ScoredPoint, ScrollRequest, SearchMatrixRequest, SearchMatrixResponse, SearchRequest,
+    ShardInfo,
 };
+
+#[cfg(all(test, feature = "serverless"))]
+mod tests;
 
 pub(super) mod sealed {
     /// Empty marker supertrait of [`EdgeShardRead`](super::EdgeShardRead). Unnameable outside the
@@ -19,7 +23,7 @@ pub(super) mod sealed {
     pub trait Sealed {}
 }
 
-impl<T: ReadViewProvider + ?Sized> sealed::Sealed for T {}
+impl<T: ScopedReadViewProvider + ?Sized> sealed::Sealed for T {}
 
 /// The snapshot half of the read path: how a shard exposes its segments, search pool, and config
 /// for the shared read logic. Crate-private plumbing — [`EdgeShardRead`] is implemented for every
@@ -39,6 +43,39 @@ pub(crate) trait ReadViewProvider {
     fn search_pool(&self) -> Arc<ThreadPool>;
 
     fn path(&self) -> &Path;
+}
+
+/// What [`EdgeShardRead`] is implemented for: a shard and the scope its reads run in.
+pub(crate) trait ScopedReadViewProvider {
+    type Shard: ReadViewProvider + ?Sized;
+
+    fn shard(&self) -> &Self::Shard;
+
+    fn view(&self) -> EdgeReadView<<Self::Shard as ReadViewProvider>::Handle>;
+}
+
+impl<T: ReadViewProvider + ?Sized> ScopedReadViewProvider for Scoped<'_, T> {
+    type Shard = T;
+
+    fn shard(&self) -> &T {
+        self.shard
+    }
+
+    fn view(&self) -> EdgeReadView<T::Handle> {
+        view(self.shard, self.scope)
+    }
+}
+
+impl<T: ReadViewProvider> ScopedReadViewProvider for T {
+    type Shard = T;
+
+    fn shard(&self) -> &T {
+        self
+    }
+
+    fn view(&self) -> EdgeReadView<T::Handle> {
+        view(self, &EdgeScope::new())
+    }
 }
 
 /// Read API shared by the read-write [`EdgeShard`](crate::EdgeShard) and the read-only follower
@@ -89,33 +126,35 @@ pub trait EdgeShardRead: sealed::Sealed {
     fn info(&self) -> OperationResult<ShardInfo>;
 }
 
-impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
+impl<T: ScopedReadViewProvider + ?Sized> EdgeShardRead for T {
     fn config_snapshot(&self) -> Arc<EdgeConfig> {
-        ReadViewProvider::config_snapshot(self)
+        self.shard().config_snapshot()
     }
 
     fn path(&self) -> &Path {
-        ReadViewProvider::path(self)
+        self.shard().path()
     }
 
     fn search(&self, request: SearchRequest) -> OperationResult<Vec<ScoredPoint>> {
-        view(self).search(request.into())
+        run(self, |view| view.search(request.into()))
     }
 
     fn query(&self, request: QueryRequest) -> OperationResult<Vec<ScoredPoint>> {
-        view(self).query(request.into())
+        run(self, |view| view.query(request.into()))
     }
 
     fn query_batch(&self, request: QueryBatchRequest) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let QueryBatchRequest { queries } = request;
-        view(self).query_batch(queries.into_iter().map(Into::into).collect())
+        run(self, |view| {
+            view.query_batch(queries.into_iter().map(Into::into).collect())
+        })
     }
 
     fn scroll(
         &self,
         request: ScrollRequest,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
-        view(self).scroll(request.into())
+        run(self, |view| view.scroll(request.into()))
     }
 
     fn retrieve(&self, request: RetrieveRequest) -> OperationResult<Vec<RecordInternal>> {
@@ -124,36 +163,56 @@ impl<T: ReadViewProvider + ?Sized> EdgeShardRead for T {
             with_payload,
             with_vector,
         } = request;
-        view(self).retrieve(&point_ids, with_payload, with_vector)
+        run(self, |view| {
+            view.retrieve(&point_ids, with_payload, with_vector)
+        })
     }
 
     fn count(&self, request: CountRequest) -> OperationResult<usize> {
-        view(self).count(request.into())
+        run(self, |view| view.count(request.into()))
     }
 
     fn facet(&self, request: FacetRequest) -> OperationResult<FacetResponse> {
-        view(self).facet(request.into())
+        run(self, |view| view.facet(request.into()))
     }
 
     fn search_matrix(&self, request: SearchMatrixRequest) -> OperationResult<SearchMatrixResponse> {
-        view(self).search_matrix(request)
+        run(self, |view| view.search_matrix(request))
     }
 
     fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
-        view(self).query_groups(request)
+        run(self, |view| view.query_groups(request))
     }
 
     fn info(&self) -> OperationResult<ShardInfo> {
-        view(self).info()
+        run(self, |view| view.info())
     }
+}
+
+pub(super) fn run<T: ScopedReadViewProvider + ?Sized, R, F>(
+    shard: &T,
+    operation: F,
+) -> OperationResult<R>
+where
+    F: FnOnce(&EdgeReadView<<T::Shard as ReadViewProvider>::Handle>) -> OperationResult<R>,
+{
+    let view = shard.view();
+    view.check_stopped()?;
+    let result = operation(&view);
+    view.check_stopped()?;
+    result
 }
 
 /// Build a one-shot read snapshot for a shard. Private so it is not part of the trait's surface —
 /// the snapshot is an implementation detail of the blanket [`EdgeShardRead`] impl.
-pub(super) fn view<T: ReadViewProvider + ?Sized>(shard: &T) -> EdgeReadView<T::Handle> {
+pub(super) fn view<T: ReadViewProvider + ?Sized>(
+    shard: &T,
+    scope: &EdgeScope,
+) -> EdgeReadView<T::Handle> {
     EdgeReadView::new(
         shard.read_segments(),
         shard.config_snapshot(),
         shard.search_pool(),
+        scope,
     )
 }

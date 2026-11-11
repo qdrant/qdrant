@@ -1,7 +1,5 @@
 use std::cmp;
 
-use common::ambient;
-use common::reason::Reason;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::modifier::Modifier;
 use segment::data_types::query_context::QueryContext;
@@ -45,7 +43,7 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         searches: &[CoreSearchRequest],
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         self.check_stopped()?;
-        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
+        let _scope = self.handoff.enter_guard();
         if searches.is_empty() {
             return Ok(Vec::new());
         }
