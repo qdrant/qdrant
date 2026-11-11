@@ -45,6 +45,7 @@ use crate::common::is_ready::IsReady;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::operations::OperationWithClockTag;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
+use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
 use crate::optimizers_builder::OptimizersConfig;
@@ -683,17 +684,16 @@ impl Collection {
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         use crate::common::memory_reporter::CollectionMemoryReport;
 
-        // Select shards under a short read lock, don't hold it across shard requests
-        let shards: Vec<Arc<ShardReplicaSet>> = {
-            let shards_holder = self.shards_holder.read().await;
-            shards_holder
-                .select_shards(
-                    &crate::operations::shard_selector_internal::ShardSelectorInternal::All,
-                )?
-                .into_iter()
-                .map(|(shard, _shard_key)| Arc::clone(shard))
-                .collect()
-        };
+        // Select shards under a short read lock, the temporary guard is dropped at the end
+        // of this statement, so it isn't held across shard requests
+        let shards: Vec<_> = self
+            .shards_holder
+            .read()
+            .await
+            .select_shards(&ShardSelectorInternal::All)?
+            .into_iter()
+            .map(|(shard, _shard_key)| Arc::clone(shard))
+            .collect();
 
         let mut futures: futures::stream::FuturesUnordered<_> = shards
             .into_iter()

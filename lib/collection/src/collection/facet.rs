@@ -11,7 +11,6 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
-use crate::shards::replica_set::ShardReplicaSet;
 
 /// Multiplier applied to the user-facing `limit` to derive the per-shard
 /// over-fetch cap when running approximate facet queries. With unique-per-point
@@ -129,15 +128,16 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        // Select shards under a short read lock, don't hold it across shard requests
-        let target_shards: Vec<Arc<ShardReplicaSet>> = {
-            let shard_holder = self.shards_holder.read().await;
-            shard_holder
-                .select_shards(&shard_selection)?
-                .into_iter()
-                .map(|(shard, _shard_key)| Arc::clone(shard))
-                .collect()
-        };
+        // Select shards under a short read lock, the temporary guard is dropped at the end
+        // of this statement, so it isn't held across shard requests
+        let target_shards: Vec<_> = self
+            .shards_holder
+            .read()
+            .await
+            .select_shards(&shard_selection)?
+            .into_iter()
+            .map(|(shard, _shard_key)| Arc::clone(shard))
+            .collect();
 
         let mut shards_reads_f = target_shards
             .into_iter()

@@ -8,7 +8,7 @@ use rand::RngExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{Order, ScoredPoint, ShardKey, WithPayloadInterface, WithVector};
+use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::time::Instant;
 
@@ -29,7 +29,6 @@ use crate::operations::universal_query::collection_query::CollectionQueryRequest
 use crate::operations::universal_query::shard_query::{
     self, FusionInternal, MmrInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
-use crate::shards::replica_set::ShardReplicaSet;
 
 /// A factor which determines if we need to use the 2-step search or not.
 /// Should be adjusted based on usage statistics.
@@ -152,15 +151,16 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
-        // Select shards under a short read lock, don't hold it across shard requests
-        let target_shards: Vec<(Arc<ShardReplicaSet>, Option<ShardKey>)> = {
-            let shard_holder = self.shards_holder.read().await;
-            shard_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-                .collect()
-        };
+        // Select shards under a short read lock, the temporary guard is dropped at the end
+        // of this statement, so it isn't held across shard requests
+        let target_shards: Vec<_> = self
+            .shards_holder
+            .read()
+            .await
+            .select_shards(shard_selection)?
+            .into_iter()
+            .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
+            .collect();
 
         let num_unique_shard_keys = target_shards
             .iter()

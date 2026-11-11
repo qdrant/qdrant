@@ -20,7 +20,6 @@ use crate::operations::routing::RoutingToken;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
-use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_trait::WaitUntil;
 
@@ -354,15 +353,16 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        // Select shards under a short read lock, don't hold it across shard requests
-        let target_shards: Vec<(Arc<ShardReplicaSet>, Option<ShardKey>)> = {
-            let shards_holder = self.shards_holder.read().await;
-            shards_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-                .collect()
-        };
+        // Select shards under a short read lock, the temporary guard is dropped at the end
+        // of this statement, so it isn't held across shard requests
+        let target_shards: Vec<_> = self
+            .shards_holder
+            .read()
+            .await
+            .select_shards(shard_selection)?
+            .into_iter()
+            .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
+            .collect();
 
         let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
             let request = request.clone();
@@ -434,15 +434,16 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
-        // Select shards under a short read lock, don't hold it across shard requests
-        let shards: Vec<Arc<ShardReplicaSet>> = {
-            let shards_holder = self.shards_holder.read().await;
-            shards_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, _shard_key)| Arc::clone(shard))
-                .collect()
-        };
+        // Select shards under a short read lock, the temporary guard is dropped at the end
+        // of this statement, so it isn't held across shard requests
+        let shards: Vec<_> = self
+            .shards_holder
+            .read()
+            .await
+            .select_shards(shard_selection)?
+            .into_iter()
+            .map(|(shard, _shard_key)| Arc::clone(shard))
+            .collect();
 
         let request = Arc::new(request);
 
@@ -493,15 +494,16 @@ impl Collection {
         let ids_len = request.ids.len();
         let request = Arc::new(request);
 
-        // Select shards under a short read lock, don't hold it across shard requests
-        let target_shards: Vec<(Arc<ShardReplicaSet>, Option<ShardKey>)> = {
-            let shard_holder = self.shards_holder.read().await;
-            shard_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-                .collect()
-        };
+        // Select shards under a short read lock, the temporary guard is dropped at the end
+        // of this statement, so it isn't held across shard requests
+        let target_shards: Vec<_> = self
+            .shards_holder
+            .read()
+            .await
+            .select_shards(shard_selection)?
+            .into_iter()
+            .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
+            .collect();
         let mut all_shard_collection_requests = target_shards
             .into_iter()
             .map(|(shard, shard_key)| {

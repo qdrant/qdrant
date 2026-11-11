@@ -16,8 +16,8 @@ use super::shard_transfer::AbortShardTransferScope;
 use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
+use crate::shards::replica_set::Change;
 use crate::shards::replica_set::replica_set_state::ReplicaState;
-use crate::shards::replica_set::{Change, ShardReplicaSet};
 use crate::shards::shard::PeerId;
 use crate::shards::shard_holder::SharedShardHolder;
 
@@ -450,15 +450,16 @@ impl Collection {
         &self,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<CollectionInfo> {
-        // Select shards under a short read lock, don't hold it across shard requests
-        let shards: Vec<Arc<ShardReplicaSet>> = {
-            let shards_holder = self.shards_holder.read().await;
-            shards_holder
-                .select_shards(shard_selection)?
-                .into_iter()
-                .map(|(shard, _shard_key)| Arc::clone(shard))
-                .collect()
-        };
+        // Select shards under a short read lock, the temporary guard is dropped at the end
+        // of this statement, so it isn't held across shard requests
+        let shards: Vec<_> = self
+            .shards_holder
+            .read()
+            .await
+            .select_shards(shard_selection)?
+            .into_iter()
+            .map(|(shard, _shard_key)| Arc::clone(shard))
+            .collect();
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .into_iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`
