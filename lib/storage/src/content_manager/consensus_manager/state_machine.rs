@@ -124,6 +124,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         cached.needs_reload = true;
     }
 
+    #[cfg(test)]
+    pub(super) fn state_machine_needs_reload(&self) -> bool {
+        self.state_machine.lock().needs_reload
+    }
+
     fn should_check_state_machine() -> bool {
         // Check every entry in debug builds so tests catch divergences deterministically.
         // Collection reads are expensive, so release builds check a 1% sample.

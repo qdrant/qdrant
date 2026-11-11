@@ -75,3 +75,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+mod tests;
