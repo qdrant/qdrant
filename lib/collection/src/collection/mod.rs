@@ -722,11 +722,14 @@ impl Collection {
         &self,
         shard_id: ShardId,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
-        let shard_holder_read = self.shards_holder.read().await;
-
-        let shard = shard_holder_read.get_shard(shard_id);
-        let replica_set =
-            shard.ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
+        // Don't hold the shards holder lock while awaiting the shard
+        let replica_set = self
+            .shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .cloned()
+            .ok_or_else(|| CollectionError::not_found(format!("Shard {shard_id}")))?;
 
         replica_set.local_memory_report().await
     }
