@@ -6,6 +6,9 @@ use common::types::PointOffsetType;
 use super::{EncodedQueryU8, EncodedVectorsU8};
 use crate::{DistanceType, EncodedStorage, EncodedVectors};
 
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+mod amx;
+
 /// Encoded queries and reusable scratch space for scoring one block of stored vectors.
 ///
 /// The score matrix is query-major. Scratch grows to the largest point block passed to
@@ -17,6 +20,8 @@ pub struct EncodedQueryBatchU8 {
     offsets: Vec<f32>,
     dots: Vec<i32>,
     kernel: Kernel,
+    #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+    amx: Option<amx::AmxQueries>,
 }
 
 #[derive(Clone, Copy)]
@@ -100,6 +105,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
                 .iter()
                 .all(|query| query.encoded_query.len() == self.metadata.actual_dim())
         );
+        #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+        let amx = amx::AmxQueries::new(&queries, self.metadata.actual_dim());
         Some(EncodedQueryBatchU8 {
             queries,
             dim: self.metadata.actual_dim(),
@@ -107,6 +114,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             offsets: Vec::new(),
             dots: Vec::new(),
             kernel,
+            #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+            amx,
         })
     }
 
@@ -134,9 +143,18 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
             batch.offsets[i] = offset;
         })?;
         HwMetric::Cpu.bump(self.metadata.vector_parameters().dim * scores.len());
-        batch
-            .kernel
-            .score(&batch.queries, &batch.codes, dim, &mut batch.dots);
+        #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+        let used_amx = batch
+            .amx
+            .as_ref()
+            .is_some_and(|amx| amx.score(&batch.codes, &mut batch.dots));
+        #[cfg(not(all(target_arch = "x86_64", target_os = "linux")))]
+        let used_amx = false;
+        if !used_amx {
+            batch
+                .kernel
+                .score(&batch.queries, &batch.codes, dim, &mut batch.dots);
+        }
         for (q, query) in batch.queries.iter().enumerate() {
             for (v, &offset) in batch.offsets.iter().enumerate() {
                 let i = q * ids.len() + v;
@@ -429,6 +447,8 @@ mod tests {
                             offsets: vec![],
                             dots: vec![],
                             kernel: Kernel::Scalar,
+                            #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+                            amx: None,
                         };
                         for kernel in kernels() {
                             batch.kernel = kernel;
@@ -442,6 +462,95 @@ mod tests {
                                 "dim {dim}, queries {count}, distance {distance:?}, invert {invert}"
                             );
                             vectors.score_query_batch(&mut batch, &[], &mut []).unwrap();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+    fn amx_batch_matches_independent_scores_and_simd_fallback_bitwise() {
+        let _scope = ambient::test_guard();
+        let probe_queries: Vec<_> = (0..16)
+            .map(|_| EncodedQueryU8 {
+                offset: 0.0,
+                encoded_query: vec![1; 64],
+            })
+            .collect();
+        let Some(probe) = amx::AmxQueries::new(&probe_queries, 64) else {
+            return;
+        };
+        let mut probe_scores = vec![0; 16 * 16];
+        if !probe.score(&vec![1; 16 * 64], &mut probe_scores) {
+            // AMX tests are optional on CPUs or workers without Linux permission.
+            return;
+        }
+        assert_eq!(probe_scores, vec![64; 16 * 16]);
+
+        for dim in [1, 17, 64, 65, 513] {
+            for distance in [DistanceType::Dot, DistanceType::Cosine, DistanceType::L2] {
+                for invert in [false, true] {
+                    let vectors = encoded(dim, distance, invert);
+                    for count in [17, 31, 64] {
+                        let queries: Vec<_> = (0..count)
+                            .map(|q| {
+                                vectors.encode_query(
+                                    &(0..dim)
+                                        .map(|d| ((q * 17 + d * 13) % 29) as f32 - 10.0)
+                                        .collect::<Vec<_>>(),
+                                )
+                            })
+                            .collect();
+                        let mut batch = vectors.query_batch(queries).unwrap();
+                        assert!(batch.amx.is_some());
+                        for points in [7, 17, 31, 64] {
+                            // Unsorted IDs with repeated rows exercise matrix ordering.
+                            let ids: Vec<_> = (0..points)
+                                .map(|i| ((i / 2 * 19 + 66) % 67) as PointOffsetType)
+                                .collect();
+                            let expected: Vec<_> = batch
+                                .queries
+                                .iter()
+                                .flat_map(|query| {
+                                    let mut scores = vec![0.0; ids.len()];
+                                    vectors.score_points(query, &ids, &mut scores).unwrap();
+                                    scores
+                                })
+                                .map(f32::to_bits)
+                                .collect();
+                            let mut guarded = vec![f32::INFINITY; expected.len() + 2];
+                            for _ in 0..2 {
+                                vectors
+                                    .score_query_batch(
+                                        &mut batch,
+                                        &ids,
+                                        &mut guarded[1..expected.len() + 1],
+                                    )
+                                    .unwrap();
+                                assert_eq!(guarded[0], f32::INFINITY);
+                                assert_eq!(guarded[expected.len() + 1], f32::INFINITY);
+                                assert_eq!(
+                                    guarded[1..expected.len() + 1]
+                                        .iter()
+                                        .map(|score| score.to_bits())
+                                        .collect::<Vec<_>>(),
+                                    expected,
+                                    "dim {dim}, queries {count}, points {points}, distance {distance:?}, invert {invert}"
+                                );
+                            }
+                            // A worker that cannot enable AMX must produce the same scores.
+                            let amx = batch.amx.take();
+                            let mut fallback = vec![0.0; expected.len()];
+                            vectors
+                                .score_query_batch(&mut batch, &ids, &mut fallback)
+                                .unwrap();
+                            assert_eq!(
+                                fallback.into_iter().map(f32::to_bits).collect::<Vec<_>>(),
+                                expected
+                            );
+                            batch.amx = amx;
                         }
                     }
                 }
@@ -482,6 +591,8 @@ mod tests {
             offsets: vec![],
             dots: vec![],
             kernel: Kernel::best(),
+            #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+            amx: None,
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             other.score_query_batch(&mut batch, &[0], &mut [0.0; 2])
@@ -591,6 +702,8 @@ mod tests {
             offsets: vec![],
             dots: vec![],
             kernel: Kernel::best(),
+            #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+            amx: None,
         };
         let mut vectors = EncodedVectorsU8 {
             encoded_vectors: CallbackStorage {
