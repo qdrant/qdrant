@@ -42,14 +42,13 @@ unsafe fn threshold_mask_avx2(scores: &[ScoreType], threshold: ScoreType) -> u64
 
     let threshold_simd = _mm256_set1_ps(threshold);
     let mut mask = 0;
-    let mut chunks = scores.chunks_exact(8);
-    for (i, chunk) in chunks.by_ref().enumerate() {
+    let (chunks, remainder) = scores.as_chunks::<8>();
+    for (i, chunk) in chunks.iter().enumerate() {
         // SAFETY: Each chunk contains eight f32 values; unaligned loads are allowed.
         let values = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
         let above = _mm256_cmp_ps::<_CMP_GT_OQ>(values, threshold_simd);
         mask |= (_mm256_movemask_ps(above) as u64) << (8 * i);
     }
-    let remainder = chunks.remainder();
     if !remainder.is_empty() {
         mask |= threshold_mask_scalar(remainder, threshold) << (scores.len() - remainder.len());
     }
@@ -63,13 +62,12 @@ unsafe fn threshold_mask_sse2(scores: &[ScoreType], threshold: ScoreType) -> u64
 
     let threshold_simd = _mm_set1_ps(threshold);
     let mut mask = 0;
-    let mut chunks = scores.chunks_exact(4);
-    for (i, chunk) in chunks.by_ref().enumerate() {
+    let (chunks, remainder) = scores.as_chunks::<4>();
+    for (i, chunk) in chunks.iter().enumerate() {
         // SAFETY: Each chunk contains four f32 values; unaligned loads are allowed.
         let values = unsafe { _mm_loadu_ps(chunk.as_ptr()) };
         mask |= (_mm_movemask_ps(_mm_cmpgt_ps(values, threshold_simd)) as u64) << (4 * i);
     }
-    let remainder = chunks.remainder();
     if !remainder.is_empty() {
         mask |= threshold_mask_scalar(remainder, threshold) << (scores.len() - remainder.len());
     }
@@ -86,14 +84,13 @@ unsafe fn threshold_mask_neon(scores: &[ScoreType], threshold: ScoreType) -> u64
     // SAFETY: The array contains four u32 values; unaligned loads are allowed.
     let weights = unsafe { vld1q_u32(weights.as_ptr()) };
     let mut mask = 0;
-    let mut chunks = scores.chunks_exact(4);
-    for (i, chunk) in chunks.by_ref().enumerate() {
+    let (chunks, remainder) = scores.as_chunks::<4>();
+    for (i, chunk) in chunks.iter().enumerate() {
         // SAFETY: Each chunk contains four f32 values; unaligned loads are allowed.
         let values = unsafe { vld1q_f32(chunk.as_ptr()) };
         let above = vcgtq_f32(values, threshold_simd);
         mask |= u64::from(vaddvq_u32(vandq_u32(above, weights))) << (4 * i);
     }
-    let remainder = chunks.remainder();
     if !remainder.is_empty() {
         mask |= threshold_mask_scalar(remainder, threshold) << (scores.len() - remainder.len());
     }
