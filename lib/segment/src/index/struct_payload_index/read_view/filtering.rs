@@ -141,6 +141,10 @@ where
                     deferred_behavior,
                     |_, offset| resolved_point_offsets.push(offset),
                 )?;
+                // Iterate in offset order, not in the hash order of `point_ids`: it keeps
+                // the order of equally scored points deterministic, and reads storage
+                // sequentially
+                resolved_point_offsets.sort_unstable();
                 let num_ids = resolved_point_offsets.len();
                 CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Ids(ResolvedHasId {
