@@ -198,6 +198,19 @@ impl ConsensusStateDiff {
             patch_map(state_metadata, peer_metadata, "peer_metadata", report)?;
         }
 
+        // Metadata of a removed peer remains until restart, if the peer's metadata update
+        // was committed after its removal. Applying the patch drops it, so report it.
+        let orphan_peers: Vec<_> = state_metadata
+            .keys()
+            .filter(|peer_id| !state_addresses.contains_key(peer_id))
+            .copied()
+            .collect();
+
+        for peer_id in orphan_peers {
+            let metadata = state_metadata.remove(&peer_id);
+            report.push(format!("peer_metadata.{peer_id}"), metadata.as_ref(), None)?;
+        }
+
         if let Some(cluster_metadata) = cluster_metadata {
             patch_map(
                 state_cluster_metadata,
