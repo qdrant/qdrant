@@ -1077,7 +1077,7 @@ fn resolve_seed(env_value: Option<&str>, mut draw_fresh: impl FnMut() -> u64) ->
 ///
 /// `--exact` is required: libtest matches filters as substrings, so a bare
 /// `model_testing::tests::harness` would also run `harness_no_optimizer`,
-/// `harness_no_optimizer_no_restarts`, `harness_no_optimizer_snapshots` and `harness_no_restarts`
+/// `harness_no_optimizer_snapshots` and `harness_no_restarts`
 /// — several long runs in parallel, all consuming the same `MODEL_TESTING_SEED`.
 #[cfg(test)]
 fn test_replay_command(name: &str, seed: u64) -> String {
@@ -1273,34 +1273,11 @@ mod tests {
         .await;
     }
 
-    /// End-to-end smoke run: [`OP_NUM`] seeded ops against a single-shard collection, including
-    /// the per-op verification ops, the end-of-run live check, and the final close+reopen
-    /// reload check. Catches harness rot (op/model drift, fixture breakage) on every
-    /// `cargo test` run.
+    /// Single shard, snapshots off, with the optimizer enabled: background segment churn
+    /// (merges, indexing) runs concurrently with the op stream and feeds into the final
+    /// close+reopen reload check, with no mid-run restarts.
     ///
-    /// Single shard, optimizer disabled, no mid-run restarts: keeps the run fast and
-    /// steers clear of the known-unfixed multi-shard reload bug class, so this stays green as a
-    /// regression gate for the harness itself rather than a bug-finder (that's the binary's job).
-    /// Snapshot ops are disabled here (`SNAPSHOTS_OFF`); the snapshot path has its own test
-    /// ([`harness_no_optimizer_snapshots`]).
-    #[tokio::test(flavor = "multi_thread")]
-    async fn harness_no_optimizer_no_restarts() {
-        smoke(
-            "harness_no_optimizer_no_restarts",
-            true,
-            0.0,
-            SNAPSHOTS_OFF,
-            OP_NUM,
-        )
-        .await;
-    }
-
-    /// Same configuration as [`harness_no_optimizer_no_restarts`], but with the optimizer
-    /// enabled: background segment churn (merges, indexing) runs concurrently with the op
-    /// stream and feeds into the final close+reopen reload check, with no mid-run restarts.
-    ///
-    /// This is the fourth cell of the {optimizer on/off} × {restarts on/off} matrix. Holding
-    /// restarts off isolates the optimizer/reload interaction from the WAL-replay-during-restart
+    /// Holding restarts off isolates the optimizer/reload interaction from the WAL-replay-during-restart
     /// path that [`harness`] also exercises: a failure here points at the optimizer or the final
     /// reload, not at mid-run restart recovery.
     ///
@@ -1315,7 +1292,7 @@ mod tests {
         smoke("harness_no_restarts", false, 0.0, SNAPSHOTS_OFF, OP_NUM / 2).await;
     }
 
-    /// Same configuration as [`harness_no_optimizer_no_restarts`], plus seeded mid-run
+    /// Single shard, optimizer disabled, snapshots off, plus seeded mid-run
     /// restarts (~20 expected at p=0.002 over 10k ops): each one is a cold close+reopen+full
     /// model verification, so the WAL-replay path is exercised throughout the run
     /// instead of only at the final reload check.
@@ -1434,9 +1411,9 @@ mod seed_support_tests {
     #[test]
     fn test_replay_command_points_at_the_same_test() {
         assert_eq!(
-            test_replay_command("harness_no_optimizer_no_restarts", 424242),
+            test_replay_command("harness_no_optimizer", 424242),
             "MODEL_TESTING_SEED=424242 cargo test -p collection --lib \
-             model_testing::tests::harness_no_optimizer_no_restarts -- --exact --nocapture"
+             model_testing::tests::harness_no_optimizer -- --exact --nocapture"
         );
     }
 
