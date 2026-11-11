@@ -1,8 +1,6 @@
 mod handle;
 mod ops;
 mod shard_read;
-#[cfg(feature = "serverless")]
-mod shard_read_with_cancellation;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -16,9 +14,6 @@ pub use self::handle::ReadSegmentHandle;
 pub use self::ops::{Group, SearchMatrixResponse, ShardInfo};
 pub use self::shard_read::EdgeShardRead;
 pub(crate) use self::shard_read::ReadViewProvider;
-#[cfg(feature = "serverless")]
-#[expect(deprecated, reason = "re-export")]
-pub use self::shard_read_with_cancellation::EdgeShardReadWithCancellation;
 use crate::{EdgeConfig, EdgeScope, OperationError, OperationResult};
 
 /// A consistent read snapshot of an edge shard: owned segment handles (collected in retrieval order,

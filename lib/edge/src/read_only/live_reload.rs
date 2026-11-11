@@ -79,26 +79,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         self.with(&EdgeScope::new()).live_reload()
     }
 
-    #[deprecated(note = "use `shard.with(&scope).live_reload()` with a cancellable `EdgeScope`")]
-    pub fn live_reload_with_cancellation(
-        &self,
-        is_stopped: Arc<AtomicBool>,
-    ) -> OperationResult<LiveReloadOutcome>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        self.with(&EdgeScope::new().with_cancellation(is_stopped))
-            .live_reload()
-    }
-
-    #[deprecated(note = "use `live_reload`")]
-    pub fn live_reload_with(&self) -> OperationResult<LiveReloadOutcome>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        self.live_reload_impl(&AtomicBool::new(false), None)
-    }
-
     /// [`live_reload`](Self::live_reload) of a follower opened with a waterline
     /// ([`open_with_waterline`](Self::open_with_waterline)), raising it to `waterline` first.
     ///
@@ -116,21 +96,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
         S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
     {
         self.with(&EdgeScope::new()).live_reload_up_to(waterline)
-    }
-
-    #[deprecated(
-        note = "use `shard.with(&scope).live_reload_up_to(waterline)` with a cancellable `EdgeScope`"
-    )]
-    pub fn live_reload_up_to_with_cancellation(
-        &self,
-        waterline: SeqNumberType,
-        is_stopped: Arc<AtomicBool>,
-    ) -> OperationResult<LiveReloadOutcome>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        self.with(&EdgeScope::new().with_cancellation(is_stopped))
-            .live_reload_up_to(waterline)
     }
 
     pub(super) fn live_reload_impl(

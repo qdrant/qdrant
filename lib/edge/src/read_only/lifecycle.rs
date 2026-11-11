@@ -6,15 +6,11 @@ use common::universal_io::{MmapFile, MmapFs, UniversalReadFsAsync};
 use parking_lot::{Mutex, RwLock};
 use segment::common::operation_error::check_process_stopped;
 use segment::index::UniversalReadExt;
-use segment::types::SeqNumberType;
 
 use crate::read_only::Waterline;
 use crate::read_only::enumerate::{ManifestSegmentEnumerator, SegmentEnumerator};
 use crate::read_only::holder::ReadOnlySegmentHolder;
-use crate::{
-    EdgeConfig, EdgeScope, LoadProfile, OperationResult, ReadOnlyEdgeShard, ReadOnlyEdgeShardPools,
-    ReadOnlyOpenOptions,
-};
+use crate::{EdgeConfig, EdgeScope, OperationResult, ReadOnlyEdgeShard, ReadOnlyOpenOptions};
 
 impl ReadOnlyEdgeShard<MmapFile> {
     /// Open a read-only follower over local memory-mapped files, discovering segments from the
@@ -59,76 +55,6 @@ impl<S: UniversalReadExt + 'static> ReadOnlyEdgeShard<S> {
     {
         let enumerator = ManifestSegmentEnumerator::new(fs.clone(), path);
         Self::open_with_enumerator(fs, path, enumerator, options, scope)
-    }
-
-    #[deprecated(note = "use `open` with a cancellable `EdgeScope`")]
-    pub fn open_with_cancellation(
-        fs: S::Fs,
-        path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        is_stopped: Arc<AtomicBool>,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        let options = ReadOnlyOpenOptions {
-            config,
-            load_profile,
-            pools: ReadOnlyEdgeShardPools::default(),
-            waterline: None,
-        };
-        let scope = EdgeScope::new().with_cancellation(is_stopped);
-        Self::open(fs, path, options, &scope)
-    }
-
-    #[deprecated(
-        note = "use `open` with `ReadOnlyOpenOptions::pools` and a cancellable `EdgeScope`"
-    )]
-    pub fn open_with_pools(
-        fs: S::Fs,
-        path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        pools: ReadOnlyEdgeShardPools,
-        is_stopped: Arc<AtomicBool>,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        let options = ReadOnlyOpenOptions {
-            config,
-            load_profile,
-            pools,
-            waterline: None,
-        };
-        let scope = EdgeScope::new().with_cancellation(is_stopped);
-        Self::open(fs, path, options, &scope)
-    }
-
-    #[deprecated(
-        note = "use `open` with `ReadOnlyOpenOptions::waterline` and a cancellable `EdgeScope`"
-    )]
-    pub fn open_with_waterline(
-        fs: S::Fs,
-        path: &Path,
-        config: Option<EdgeConfig>,
-        load_profile: Option<LoadProfile>,
-        pools: ReadOnlyEdgeShardPools,
-        is_stopped: Arc<AtomicBool>,
-        waterline: SeqNumberType,
-    ) -> OperationResult<Self>
-    where
-        S::Fs: UniversalReadFsAsync + Send + Sync + Clone + 'static,
-    {
-        let options = ReadOnlyOpenOptions {
-            config,
-            load_profile,
-            pools,
-            waterline: Some(waterline),
-        };
-        let scope = EdgeScope::new().with_cancellation(is_stopped);
-        Self::open(fs, path, options, &scope)
     }
 
     /// Open with an explicit segment [`enumerator`](SegmentEnumerator).
