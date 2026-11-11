@@ -469,6 +469,8 @@ mod tests {
         }
     }
 
+    /// Check native score bits, output guards, and SIMD fallback across AMX tile tails.
+    /// Skip when the host or worker cannot enable AMX; otherwise require a real tile probe.
     #[test]
     #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
     fn amx_batch_matches_independent_scores_and_simd_fallback_bitwise() {

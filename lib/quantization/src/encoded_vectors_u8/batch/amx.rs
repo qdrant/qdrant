@@ -22,7 +22,8 @@ pub(super) struct AmxQueries {
 
 impl AmxQueries {
     /// Pack queries once, independently of the thread which will score them.
-    /// Small batches remain on the blocked SIMD path.
+    /// Returns `None` for fewer than 16 queries, zero dimensions, or unsupported
+    /// CPU/OS tile state. Linux permission is checked later on the scoring worker.
     pub(super) fn new(queries: &[EncodedQueryU8], dimension: usize) -> Option<Self> {
         if queries.len() < TILE || dimension == 0 || !hardware_supported() {
             return None;
@@ -30,6 +31,11 @@ impl AmxQueries {
         Some(Self::pack(queries, dimension))
     }
 
+    /// Arrange query panels as `[query block][depth block][tile][depth / 4]
+    /// [query lane][depth % 4]`, zero-filling missing queries and depth bytes.
+    ///
+    /// # Panics
+    /// Panics if a query length differs from `dimension` or the buffer size overflows.
     fn pack(queries: &[EncodedQueryU8], dimension: usize) -> Self {
         let depth_blocks = dimension.div_ceil(DEPTH);
         let size = queries
@@ -65,10 +71,18 @@ impl AmxQueries {
 
     /// Score row-major vector codes into query-major dots. Returns `false`,
     /// without touching `scores`, when this worker must use the SIMD fallback.
+    ///
+    /// # Panics
+    /// Panics unless `vectors` contains complete rows of the prepared dimension
+    /// and `scores` has one entry per query and vector.
     pub(super) fn score(&self, vectors: &[u8], scores: &mut [i32]) -> bool {
         self.score_with_permission(vectors, scores, thread_ready)
     }
 
+    /// Validate buffer shapes and use AMX only for at least 16 queries and points.
+    /// Small blocks skip `ready`; a rejected readiness check leaves output intact.
+    /// The callback must verify CPU, OS state, and permission on the current thread
+    /// before returning `true`; tests can return `false` to exercise fallback.
     fn score_with_permission(
         &self,
         vectors: &[u8],
@@ -92,6 +106,14 @@ impl AmxQueries {
         false
     }
 
+    /// Score complete or padded gallery tiles, then transpose live results into
+    /// query-major output. Tile configuration is loaded and released for this call.
+    ///
+    /// # Safety
+    /// The current thread must have passed the AMX capability and permission checks.
+    /// The prepared dimension must be nonzero, `vectors.len()` must equal
+    /// `points * self.dimension`, and `scores.len()` must equal
+    /// `self.query_count * points`. Query panels must retain the layout from `pack`.
     #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
     unsafe fn score_ready(&self, vectors: &[u8], points: usize, scores: &mut [i32]) {
         use std::borrow::Cow;
@@ -149,6 +171,8 @@ impl AmxQueries {
     }
 }
 
+/// Cache CPU and XCR0 tile-state support without requesting Linux permission.
+/// XGETBV is reached only after CPUID confirms XSAVE and OSXSAVE support.
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 fn hardware_supported() -> bool {
     use std::arch::x86_64::{__cpuid, __cpuid_count, _xgetbv};
@@ -175,6 +199,7 @@ fn hardware_supported() -> bool {
     })
 }
 
+/// Report AMX unavailable outside Linux x86_64 so callers retain their fallback.
 #[cfg(not(all(target_arch = "x86_64", target_os = "linux")))]
 fn hardware_supported() -> bool {
     false
@@ -183,6 +208,10 @@ fn hardware_supported() -> bool {
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 const TILE_STATE: u64 = (1 << 17) | (1 << 18);
 
+/// Check process tile-state permission, requesting XTILEDATA only when needed.
+/// Cache success or failure on this worker; unsupported state or syscall failure
+/// returns `false` before tile instructions. Linux grants permission process-wide,
+/// while each worker allocates its extended state on first tile use.
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 fn thread_ready() -> bool {
     use std::cell::Cell;
@@ -222,6 +251,7 @@ fn thread_ready() -> bool {
     })
 }
 
+/// Keep workers on the fallback path when Linux AMX permission checks are unavailable.
 #[cfg(not(all(target_arch = "x86_64", target_os = "linux")))]
 fn thread_ready() -> bool {
     false
@@ -244,6 +274,12 @@ struct Tiles;
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 impl Tiles {
+    /// Load the palette-1 configuration with 16 rows and 64 bytes per tile row.
+    /// The returned guard releases tile state when it leaves scope.
+    ///
+    /// # Safety
+    /// AMX hardware/OS support and Linux permission must be established on the
+    /// current thread. Loading this configuration replaces its previous tile state.
     unsafe fn load() -> Self {
         const CONFIG: TileConfig = TileConfig {
             palette: 1,
@@ -265,6 +301,7 @@ impl Tiles {
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 impl Drop for Tiles {
+    /// Release the scoring guard's tile configuration and data on the current thread.
     fn drop(&mut self) {
         // SAFETY: Tiles is constructed only after the runtime checks succeed.
         unsafe { std::arch::asm!("tilerelease", options(nostack)) };
@@ -273,6 +310,14 @@ impl Drop for Tiles {
 
 /// One gallery tile against 1..=4 query tiles, keeping every accumulator live
 /// across the depth loop. The A tile is loaded once for each group of queries.
+/// Writes `N` consecutive 16-by-16 i32 tiles in gallery-row/query-column order.
+///
+/// # Safety
+/// `N` must be in `1..=4` and `depth_blocks` must be nonzero. The current thread
+/// must have AMX permission and the configuration installed by `Tiles::load`.
+/// `gallery` must expose 16 rows, each holding `depth_blocks * 64` readable bytes
+/// with the supplied byte stride. `queries` must expose four packed 1024-byte
+/// tiles per depth block in `pack` order. Inputs must not alias `output`.
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 unsafe fn dot_tiles<const N: usize>(
     gallery: *const u8,
@@ -338,6 +383,7 @@ mod tests {
 
     use super::*;
 
+    /// Generate deterministic 0..=127 codes varying across queries and depth positions.
     fn queries(count: usize, dimension: usize) -> Vec<EncodedQueryU8> {
         (0..count)
             .map(|q| EncodedQueryU8 {
@@ -349,6 +395,8 @@ mod tests {
             .collect()
     }
 
+    /// Compare one shape with an i64 scalar oracle, checking canaries and repeated
+    /// calls after tile release. Skip when AMX hardware or permission is unavailable.
     fn check_shape(count: usize, dimension: usize, points: usize) {
         let queries = queries(count, dimension);
         let Some(prepared) = AmxQueries::new(&queries, dimension) else {
@@ -381,6 +429,7 @@ mod tests {
         assert_eq!(again, guarded[1..1 + count * points]);
     }
 
+    /// Verify full and partial query/point tiles and depth tails against the oracle.
     #[test]
     fn amx_dots_match_integer_oracle_with_edge_tiles() {
         for dimension in [16, 48, 64, 80, 128, 512, 528, 1024] {
@@ -390,6 +439,8 @@ mod tests {
         }
     }
 
+    /// Verify denied permission preserves output and small blocks never consult
+    /// the permission callback, without requiring AMX hardware.
     #[test]
     fn amx_denied_permission_and_small_batches_leave_output_untouched() {
         let queries = queries(16, 64);
@@ -411,6 +462,8 @@ mod tests {
         assert!(scores.iter().all(|&score| score == 123));
     }
 
+    /// Share packed queries across four fresh workers and verify their dot products.
+    /// Skip on unavailable AMX; otherwise each worker must pass its readiness check.
     #[test]
     fn amx_prepared_queries_work_on_multiple_threads() {
         if !thread_ready() {
