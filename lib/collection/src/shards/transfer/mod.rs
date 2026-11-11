@@ -21,6 +21,7 @@ pub mod driver;
 pub mod helpers;
 pub mod resharding_stream_records;
 pub mod snapshot;
+mod stream_batches;
 pub mod stream_records;
 pub mod transfer_tasks_pool;
 pub mod wal_delta;
