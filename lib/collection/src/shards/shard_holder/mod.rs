@@ -1260,12 +1260,6 @@ impl ShardHolder {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is canceled
 
-        if !shard.is_local().await && !shard.is_queue_proxy().await {
-            return Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local or queue proxy shard"
-            )));
-        }
-
         let snapshot_file_name = format!(
             "{collection_name}-shard-{shard_id}-{}.snapshot",
             unique_snapshot_timestamp(),
@@ -1292,6 +1286,7 @@ impl ShardHolder {
                 SnapshotFormat::Regular,
                 None,
                 false,
+                true,
             )
             .await?;
 
@@ -1336,12 +1331,6 @@ impl ShardHolder {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
         //   and would be deleted, if future is cancelled
 
-        if !shard.is_local().await && !shard.is_queue_proxy().await {
-            return Err(CollectionError::bad_input(format!(
-                "Shard {shard_id} is not a local or queue proxy shard"
-            )));
-        }
-
         let snapshot_file_name = format!(
             "{collection_name}-shard-{shard_id}-{}.snapshot",
             unique_snapshot_timestamp(),
@@ -1369,6 +1358,7 @@ impl ShardHolder {
                 SnapshotFormat::Streamable,
                 manifest,
                 false,
+                true,
             )
             .await?;
 

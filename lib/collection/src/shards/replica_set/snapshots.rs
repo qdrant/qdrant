@@ -39,6 +39,7 @@ impl ShardReplicaSet {
         format: SnapshotFormat,
         manifest: Option<SnapshotManifest>,
         save_wal: bool,
+        require_local: bool,
     ) -> CollectionResult<impl Future<Output = CollectionResult<()>> + use<>> {
         // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
         let partial_snapshot_create_request_guard = if manifest.is_some() {
@@ -51,6 +52,20 @@ impl ShardReplicaSet {
         let temp_path = temp_path.to_path_buf();
 
         let local_read = self.local.read().await;
+
+        // Check under the same read guard used to create the snapshot, so the local shard
+        // can't be removed between the check and snapshot setup
+        let has_local = match &*local_read {
+            Some(Shard::Local(_) | Shard::Dummy(_) | Shard::QueueProxy(_)) => true,
+            Some(Shard::Proxy(_) | Shard::ForwardProxy(_)) | None => false,
+        };
+
+        if require_local && !has_local {
+            return Err(CollectionError::bad_input(format!(
+                "Shard {} is not a local or queue proxy shard",
+                self.shard_id,
+            )));
+        }
 
         let maybe_local_snapshot_future = if let Some(local) = &*local_read {
             Some(

@@ -112,6 +112,7 @@ impl Collection {
                             SnapshotFormat::Regular,
                             None,
                             save_wal,
+                            false,
                         )
                         .await?;
                     futures.push(future);
