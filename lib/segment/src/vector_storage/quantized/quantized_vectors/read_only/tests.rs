@@ -698,3 +698,164 @@ fn reload_chunked_preserves_scores(preload: bool) {
 
     assert_eq!(before, after);
 }
+
+/// Turn off shared scoring to keep an independent reference to the previous search path.
+struct IndependentScoring<'a, Q>(&'a Q);
+
+impl<Q: super::QuantizedVectorsRead> super::QuantizedVectorsRead for IndependentScoring<'_, Q> {
+    fn config(&self) -> &super::QuantizedVectorsConfig {
+        self.0.config()
+    }
+    fn default_rescoring(&self) -> bool {
+        self.0.default_rescoring()
+    }
+    fn raw_scorer<'a>(
+        &'a self,
+        query: QueryVector,
+    ) -> crate::common::operation_error::OperationResult<
+        Box<dyn crate::vector_storage::RawScorer + 'a>,
+    > {
+        self.0.raw_scorer(query)
+    }
+    fn raw_internal_scorer<'a>(
+        &'a self,
+        id: PointOffsetType,
+    ) -> Result<Box<dyn crate::vector_storage::RawScorer + 'a>, super::InternalScorerUnsupported>
+    {
+        self.0.raw_internal_scorer(id)
+    }
+}
+
+#[rstest]
+#[case::mmap(scalar_config(false))]
+#[case::ram(scalar_config(true))]
+#[case::cached(scalar_cached_config())]
+fn scalar_batch_matches_independent_scans(#[case] config: QuantizationConfig) {
+    use common::bitvec::BitVec;
+
+    use super::QuantizedVectorsRead;
+    use crate::index::hnsw_index::point_scorer::BatchFilteredSearcher;
+
+    let _scope = ambient::test_guard();
+    let dir = tempfile::tempdir().unwrap();
+    let quant_dir = tempfile::tempdir().unwrap();
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut storage = build_on_disk_storage(dir.path(), &mut rng);
+    let rw = QuantizedVectors::create(
+        &storage,
+        &config,
+        QuantizedVectorsStorageType::Immutable,
+        quant_dir.path(),
+        1,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    let ro = ReadOnlyQuantizedVectors::<MmapFile>::open(
+        &MmapFs,
+        quant_dir.path(),
+        storage.distance(),
+        storage.datatype(),
+        None,
+        storage.is_cold(),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+    let queries: Vec<_> = (0..17)
+        .map(|q| QueryVector::Nearest(storage.get_vector::<Random>(q).to_owned()))
+        .collect();
+    let refs: Vec<_> = queries.iter().collect();
+    if ro.raw_batch_scorer(&refs).is_none() {
+        return;
+    } // CPU without a blocked SQ8 kernel.
+    let mut deleted = BitVec::repeat(false, NUM_POINTS);
+    let mut shadowed = BitVec::repeat(false, NUM_POINTS);
+    for id in 0..NUM_POINTS {
+        deleted.set(id, id % 13 == 0);
+        shadowed.set(id, id % 7 == 0);
+        if id % 11 == 0 {
+            storage.delete_vector(id as PointOffsetType).unwrap();
+        }
+    }
+    let stopped = AtomicBool::new(false);
+    fn verify<Q: QuantizedVectorsRead>(
+        q: &Q,
+        storage: &VectorStorageEnum,
+        queries: &[&QueryVector],
+        deleted: &common::bitvec::BitSlice,
+        shadowed: &common::bitvec::BitSlice,
+        stopped: &AtomicBool,
+    ) {
+        let reference = IndependentScoring(q);
+        for count in [1, 3, 8, 17] {
+            for top in [0, 1, 10, 350] {
+                let queries = &queries[..count];
+                let expected = BatchFilteredSearcher::new(
+                    queries,
+                    storage,
+                    Some(&reference),
+                    None,
+                    top,
+                    deleted,
+                )
+                .unwrap()
+                .peek_top_iter((0..287).filter(|id| id % 3 == 0), stopped)
+                .unwrap();
+                let actual =
+                    BatchFilteredSearcher::new(queries, storage, Some(q), None, top, deleted)
+                        .unwrap()
+                        .peek_top_iter((0..287).filter(|id| id % 3 == 0), stopped)
+                        .unwrap();
+                assert_eq!(actual, expected);
+                let expected = BatchFilteredSearcher::new(
+                    queries,
+                    storage,
+                    Some(&reference),
+                    None,
+                    top,
+                    deleted,
+                )
+                .unwrap()
+                .peek_top_visible(Some(287), &BitVec::new(), shadowed, stopped)
+                .unwrap();
+                let actual =
+                    BatchFilteredSearcher::new(queries, storage, Some(q), None, top, deleted)
+                        .unwrap()
+                        .peek_top_visible(Some(287), &BitVec::new(), shadowed, stopped)
+                        .unwrap();
+                assert_eq!(actual, expected);
+            }
+        }
+        let stopped = AtomicBool::new(true);
+        assert!(
+            BatchFilteredSearcher::new(queries, storage, Some(q), None, 10, deleted)
+                .unwrap()
+                .peek_top_iter(0..NUM_POINTS as PointOffsetType, &stopped)
+                .is_err()
+        );
+        assert!(
+            BatchFilteredSearcher::new(queries, storage, Some(q), None, 10, deleted)
+                .unwrap()
+                .peek_top_visible(None, &BitVec::new(), shadowed, &stopped)
+                .is_err()
+        );
+    }
+    verify(&rw, &storage, &refs, &deleted, &shadowed, &stopped);
+    verify(&ro, &storage, &refs, &deleted, &shadowed, &stopped);
+    // An invalid id exercises the read-only storage's fallible batch read.
+    if !matches!(
+        ro.get_storage(),
+        super::ReadOnlyQuantizedVectorStorage::ScalarMmap(_)
+    ) {
+        return;
+    }
+    let mut scorer = ro.raw_batch_scorer(&refs).unwrap();
+    assert!(
+        scorer
+            .score_points(
+                &[NUM_POINTS as PointOffsetType + 8],
+                &mut vec![0.0; refs.len()]
+            )
+            .is_err()
+    );
+}

@@ -1,3 +1,4 @@
+use crate::vector_storage::quantized::quantized_batch_query_scorer::RawBatchScorer;
 mod lifecycle;
 mod live_reload;
 mod storage;
@@ -141,6 +142,18 @@ impl<S: UniversalRead> QuantizedVectorsRead for ReadOnlyQuantizedVectors<S> {
 
     fn raw_scorer<'a>(&'a self, query: QueryVector) -> OperationResult<Box<dyn RawScorer + 'a>> {
         self.raw_scorer(query)
+    }
+
+    fn raw_batch_scorer<'a>(
+        &'a self,
+        queries: &[&QueryVector],
+    ) -> Option<Box<dyn RawBatchScorer + 'a>> {
+        self.storage_impl.raw_batch_scorer(
+            queries,
+            &self.config.quantization_config,
+            self.distance,
+            self.datatype,
+        )
     }
 
     fn raw_internal_scorer<'a>(

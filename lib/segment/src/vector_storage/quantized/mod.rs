@@ -1,3 +1,4 @@
+pub mod quantized_batch_query_scorer;
 pub(crate) mod quantized_chunked_mmap_storage;
 mod quantized_custom_query_scorer;
 mod quantized_multi_custom_query_scorer;

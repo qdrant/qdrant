@@ -12,8 +12,13 @@ use quantization::{EncodedVectors, EncodedVectorsPQ};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::QueryVector;
 use crate::spaces::metric::Metric;
+use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 use crate::vector_storage::RawScorer;
+use crate::vector_storage::quantized::quantized_batch_query_scorer::{
+    RawBatchScorer, scalar_batch_scorer,
+};
 use crate::vector_storage::quantized::quantized_chunked_mmap_storage::QuantizedChunkedStorageRead;
 use crate::vector_storage::quantized::quantized_multivector_storage::{
     MultivectorOffsetsStorageChunkedRead, MultivectorOffsetsStorageMmap,
@@ -111,6 +116,41 @@ impl<S: UniversalRead> fmt::Debug for ReadOnlyQuantizedVectorStorage<S> {
 }
 
 impl<S: UniversalRead> ReadOnlyQuantizedVectorStorage<S> {
+    pub(super) fn raw_batch_scorer<'a>(
+        &'a self,
+        queries: &[&QueryVector],
+        config: &QuantizationConfig,
+        distance: Distance,
+        datatype: VectorStorageDatatype,
+    ) -> Option<Box<dyn RawBatchScorer + 'a>> {
+        match self {
+            Self::ScalarRam(storage) => {
+                scalar_batch_scorer(storage, queries, config, distance, datatype)
+            }
+            Self::ScalarMmap(storage) => {
+                scalar_batch_scorer(storage, queries, config, distance, datatype)
+            }
+            Self::PQRam(..)
+            | Self::PQMmap(..)
+            | Self::BinaryRam(..)
+            | Self::BinaryMmap(..)
+            | Self::BinaryChunked(..)
+            | Self::TQRam(..)
+            | Self::TQMmap(..)
+            | Self::TQChunked(..)
+            | Self::ScalarRamMulti(..)
+            | Self::ScalarMmapMulti(..)
+            | Self::PQRamMulti(..)
+            | Self::PQMmapMulti(..)
+            | Self::BinaryRamMulti(..)
+            | Self::BinaryMmapMulti(..)
+            | Self::BinaryChunkedMulti(..)
+            | Self::TQRamMulti(..)
+            | Self::TQMmapMulti(..)
+            | Self::TQChunkedMulti(..) => None,
+        }
+    }
+
     pub fn is_cold(&self) -> bool {
         match self {
             ReadOnlyQuantizedVectorStorage::ScalarRam(q) => q.is_cold(),

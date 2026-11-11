@@ -35,14 +35,8 @@ where
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement>,
     {
-        let raw_preprocessed_query = TMetric::preprocess(raw_query);
-        let original_query = TElement::slice_from_float_cow(Cow::Owned(raw_preprocessed_query));
-        let original_query_prequantized = TElement::quantization_preprocess(
-            quantization_config,
-            TMetric::distance(),
-            original_query,
-        );
-        let query = quantized_data.encode_query(&original_query_prequantized);
+        let query =
+            encode_query::<TElement, TMetric, _>(raw_query, quantized_data, quantization_config);
 
         Self {
             hw: HwScale {
@@ -101,4 +95,22 @@ where
     fn score_bytes(&self, enabled: Self::SupportsBytes, bytes: &[u8]) -> ScoreType {
         self.quantized_data.score_bytes(enabled, &self.query, bytes)
     }
+}
+
+/// Shared query preparation keeps batch and independent scorers identical for every source datatype.
+pub(super) fn encode_query<TElement, TMetric, TEncodedVectors>(
+    raw_query: DenseVector,
+    quantized_data: &TEncodedVectors,
+    quantization_config: &QuantizationConfig,
+) -> TEncodedVectors::EncodedQuery
+where
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TEncodedVectors: quantization::EncodedVectors,
+{
+    let raw_preprocessed_query = TMetric::preprocess(raw_query);
+    let original_query = TElement::slice_from_float_cow(Cow::Owned(raw_preprocessed_query));
+    let original_query_prequantized =
+        TElement::quantization_preprocess(quantization_config, TMetric::distance(), original_query);
+    quantized_data.encode_query(&original_query_prequantized)
 }
