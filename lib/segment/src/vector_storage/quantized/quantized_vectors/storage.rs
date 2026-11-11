@@ -112,6 +112,7 @@ pub enum QuantizedVectorStorage {
 }
 
 impl QuantizedVectorStorage {
+    /// Offer shared scoring for scalar RAM, mmap or chunked storage and reject other formats.
     pub(super) fn raw_batch_scorer<'a>(
         &'a self,
         queries: &[&QueryVector],

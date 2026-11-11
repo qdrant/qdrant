@@ -315,6 +315,7 @@ impl QuantizedVectorsRead for QuantizedVectors {
         self.raw_scorer(query)
     }
 
+    /// Request shared scoring using this storage's quantization, distance and source datatype.
     fn raw_batch_scorer<'a>(
         &'a self,
         queries: &[&QueryVector],

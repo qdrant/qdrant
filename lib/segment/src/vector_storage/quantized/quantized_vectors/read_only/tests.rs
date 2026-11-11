@@ -703,12 +703,15 @@ fn reload_chunked_preserves_scores(preload: bool) {
 struct IndependentScoring<'a, Q>(&'a Q);
 
 impl<Q: super::QuantizedVectorsRead> super::QuantizedVectorsRead for IndependentScoring<'_, Q> {
+    /// Preserve the wrapped storage's quantization configuration for the reference path.
     fn config(&self) -> &super::QuantizedVectorsConfig {
         self.0.config()
     }
+    /// Preserve the wrapped storage's default rescoring policy.
     fn default_rescoring(&self) -> bool {
         self.0.default_rescoring()
     }
+    /// Forward independent query scoring without enabling the optional shared batch scorer.
     fn raw_scorer<'a>(
         &'a self,
         query: QueryVector,
@@ -717,6 +720,7 @@ impl<Q: super::QuantizedVectorsRead> super::QuantizedVectorsRead for Independent
     > {
         self.0.raw_scorer(query)
     }
+    /// Preserve the wrapped storage's internal-scorer support and errors.
     fn raw_internal_scorer<'a>(
         &'a self,
         id: PointOffsetType,
@@ -726,6 +730,7 @@ impl<Q: super::QuantizedVectorsRead> super::QuantizedVectorsRead for Independent
     }
 }
 
+/// Compare shared and independent scans across storage modes, visibility masks and cancellation.
 #[rstest]
 #[case::mmap(scalar_config(false))]
 #[case::ram(scalar_config(true))]
@@ -778,6 +783,7 @@ fn scalar_batch_matches_independent_scans(#[case] config: QuantizationConfig) {
         }
     }
     let stopped = AtomicBool::new(false);
+    /// Check both scan drivers across batch/top-k sizes, then verify cancellation is propagated.
     fn verify<Q: QuantizedVectorsRead>(
         q: &Q,
         storage: &VectorStorageEnum,

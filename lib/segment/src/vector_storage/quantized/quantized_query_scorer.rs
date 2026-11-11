@@ -26,6 +26,7 @@ impl<'a, TEncodedVectors> QuantizedQueryScorer<'a, TEncodedVectors>
 where
     TEncodedVectors: quantization::EncodedVectors,
 {
+    /// Prepare one query with its source datatype and metric, retaining cold-storage I/O policy.
     pub fn new<TElement, TMetric>(
         raw_query: DenseVector,
         quantized_data: &'a TEncodedVectors,
