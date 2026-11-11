@@ -788,7 +788,7 @@ fn scalar_batch_matches_independent_scans(#[case] config: QuantizationConfig) {
     ) {
         let reference = IndependentScoring(q);
         for count in [1, 3, 8, 17] {
-            for top in [0, 1, 10, 350] {
+            for top in [1, 10, 31, 32, 350] {
                 let queries = &queries[..count];
                 let expected = BatchFilteredSearcher::new(
                     queries,
