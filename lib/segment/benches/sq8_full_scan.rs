@@ -708,7 +708,7 @@ fn main() {
 fn write_report(args: &Args, report: serde_json::Value) {
     let json = serde_json::to_string_pretty(&report).unwrap();
     if let Some(output) = &args.output {
-        std::fs::write(output, &json).unwrap();
+        fs_err::write(output, &json).unwrap();
     } else {
         println!("{json}");
     }
