@@ -128,12 +128,13 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        let shard_holder = self.shards_holder.read().await;
-        let target_shards = shard_holder.select_shards(&shard_selection)?;
+        let target_shards = self
+            .select_shards(&shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
 
         let mut shards_reads_f = target_shards
             .iter()
-            .map(|(shard, _shard_key)| {
+            .map(|shard| {
                 shard.facet(
                     request.clone(),
                     read_consistency,

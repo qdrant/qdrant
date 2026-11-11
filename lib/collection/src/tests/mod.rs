@@ -9,6 +9,7 @@ mod load_missing_vector_name;
 mod payload;
 mod points_dedup;
 mod query_prefetch_offset_limit;
+mod read_releases_shards_holder;
 mod segment_manifest;
 mod sha_256_test;
 mod shard_query;
