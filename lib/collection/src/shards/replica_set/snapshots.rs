@@ -58,7 +58,7 @@ impl ShardReplicaSet {
         // can't be removed between the check and snapshot setup
         let has_local = match &*local_read {
             Some(Shard::Local(_) | Shard::Dummy(_) | Shard::QueueProxy(_)) => true,
-            Some(Shard::Proxy(_) | Shard::ForwardProxy(_)) | None => false,
+            Some(Shard::ForwardProxy(_)) | None => false,
         };
 
         if require_local && !has_local {
