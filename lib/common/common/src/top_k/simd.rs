@@ -1,6 +1,9 @@
 use crate::types::ScoreType;
 
-/// One bit per score strictly above the threshold. At most 64 scores fit in the mask.
+/// Return a mask whose bit `i` is set exactly when `scores[i] > threshold`.
+///
+/// Requires at most 64 scores. Equal scores and NaNs leave their bits unset.
+/// Dispatches to an available SIMD implementation or the scalar fallback.
 #[inline]
 pub(super) fn threshold_mask(scores: &[ScoreType], threshold: ScoreType) -> u64 {
     debug_assert!(scores.len() <= 64);
@@ -28,6 +31,7 @@ pub(super) fn threshold_mask(scores: &[ScoreType], threshold: ScoreType) -> u64 
     threshold_mask_scalar(scores, threshold)
 }
 
+/// Build the strict-comparison mask for at most 64 scores without explicit SIMD.
 #[inline]
 fn threshold_mask_scalar(scores: &[ScoreType], threshold: ScoreType) -> u64 {
     scores.iter().enumerate().fold(0, |mask, (i, &score)| {
@@ -35,6 +39,11 @@ fn threshold_mask_scalar(scores: &[ScoreType], threshold: ScoreType) -> u64 {
     })
 }
 
+/// Build the strict-comparison mask for at most 64 scores using AVX2 and a scalar tail.
+///
+/// # Safety
+///
+/// The CPU must support AVX2. The slice does not need SIMD alignment.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn threshold_mask_avx2(scores: &[ScoreType], threshold: ScoreType) -> u64 {
@@ -55,6 +64,11 @@ unsafe fn threshold_mask_avx2(scores: &[ScoreType], threshold: ScoreType) -> u64
     mask
 }
 
+/// Build the strict-comparison mask for at most 64 scores using SSE2 and a scalar tail.
+///
+/// # Safety
+///
+/// The CPU must support SSE2, as guaranteed by x86-64. No SIMD alignment is required.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 unsafe fn threshold_mask_sse2(scores: &[ScoreType], threshold: ScoreType) -> u64 {
@@ -74,6 +88,11 @@ unsafe fn threshold_mask_sse2(scores: &[ScoreType], threshold: ScoreType) -> u64
     mask
 }
 
+/// Build the strict-comparison mask for at most 64 scores using NEON and a scalar tail.
+///
+/// # Safety
+///
+/// The CPU must support NEON. The slice does not need SIMD alignment.
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn threshold_mask_neon(scores: &[ScoreType], threshold: ScoreType) -> u64 {
@@ -101,6 +120,8 @@ unsafe fn threshold_mask_neon(scores: &[ScoreType], threshold: ScoreType) -> u64
 mod tests {
     use super::*;
 
+    /// Compare available SIMD masks with scalar results for every tail length,
+    /// unaligned starting offsets and special floating-point values.
     #[test]
     fn masks_match_scalar() {
         let values = [

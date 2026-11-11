@@ -140,6 +140,8 @@ mod test {
     use super::*;
     use crate::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
+    /// Verify exact queue contents and thresholds after each batch across ties,
+    /// special floats, chunk boundaries and both TopK strategies.
     #[test]
     fn batches_match_individual_pushes() {
         let mut rng = StdRng::seed_from_u64(42);
@@ -252,6 +254,7 @@ mod test {
         assert_eq!(TopK::new(SORTED_K).elements.capacity(), 2 * SORTED_K);
     }
 
+    /// Verify bounded reservation and scalar/batch insertion with the largest limit.
     #[test]
     fn huge_k_does_not_panic() {
         // `k` is the client-supplied search limit. A huge value must not abort

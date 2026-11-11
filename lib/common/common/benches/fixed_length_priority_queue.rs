@@ -18,6 +18,7 @@ const CASES: [(usize, usize); 9] = [
     (50_000, 10_000),
 ];
 
+/// Compare priority-queue, scalar TopK and batched TopK insertion on the same scores.
 fn bench_push(c: &mut Criterion) {
     let mut group = c.benchmark_group("top_of");
 

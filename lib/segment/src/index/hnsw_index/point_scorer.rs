@@ -637,12 +637,14 @@ mod tests {
     /// even when a payload filter rearranges a chunk before scoring it.
     #[test]
     fn batch_threshold_matches_scalar_insertion() {
+        /// Return predetermined scores while recording the actual candidate order.
         struct RecordingScorer<'a> {
             scores: &'a [ScoreType],
             visited: &'a RefCell<Vec<PointOffsetType>>,
         }
 
         impl RawScorer for RecordingScorer<'_> {
+            /// Record scored IDs and copy their predetermined scores into the output.
             fn score_points(
                 &self,
                 points: &[PointOffsetType],
@@ -655,10 +657,16 @@ mod tests {
                 Ok(())
             }
 
+            /// Reject point-to-point scoring, which these plain-scan tests never use.
+            ///
+            /// # Panics
+            ///
+            /// Always panics if a tested scan calls this unsupported path.
             fn score_internal(&self, _: PointOffsetType, _: PointOffsetType) -> ScoreType {
                 unreachable!()
             }
 
+            /// Expose no byte scorer so the tests use the recorded scoring path.
             fn scorer_bytes(&self) -> Option<&dyn QueryScorerBytes> {
                 None
             }
