@@ -27,6 +27,8 @@ enum Kernel {
     AvxVnni,
     #[cfg(target_arch = "aarch64")]
     NeonDot,
+    #[cfg(target_arch = "aarch64")]
+    NeonI8mm,
     Scalar,
 }
 
@@ -34,16 +36,24 @@ impl Kernel {
     fn best() -> Self {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+            if is_x86_feature_detected!("avx512vnni")
+                && is_x86_feature_detected!("avx512bw")
+                && is_x86_feature_detected!("avx512f")
+            {
                 return Self::Avx512Vnni;
             }
-            if is_x86_feature_detected!("avxvnni") {
+            if is_x86_feature_detected!("avxvnni") && is_x86_feature_detected!("avx2") {
                 return Self::AvxVnni;
             }
         }
         #[cfg(target_arch = "aarch64")]
-        if std::arch::is_aarch64_feature_detected!("dotprod") {
-            return Self::NeonDot;
+        {
+            if std::arch::is_aarch64_feature_detected!("i8mm") {
+                return Self::NeonI8mm;
+            }
+            if std::arch::is_aarch64_feature_detected!("dotprod") {
+                return Self::NeonDot;
+            }
         }
         Self::Scalar
     }
@@ -57,6 +67,8 @@ impl Kernel {
             Self::AvxVnni => unsafe { score_avx(queries, vectors, dim, scores) },
             #[cfg(target_arch = "aarch64")]
             Self::NeonDot => unsafe { score_neon(queries, vectors, dim, scores) },
+            #[cfg(target_arch = "aarch64")]
+            Self::NeonI8mm => unsafe { score_i8mm(queries, vectors, dim, scores) },
             Self::Scalar => score_scalar(queries, vectors, dim, scores),
         }
     }
@@ -65,20 +77,29 @@ impl Kernel {
 impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     /// Prepare a batch only when its distance and CPU have a blocked dot-product kernel.
     /// Single-query, Manhattan, and unsupported CPUs keep their existing scorer.
-    pub fn query_batch(&self, queries: Vec<EncodedQueryU8>) -> Option<EncodedQueryBatchU8> {
-        if queries.len() < 2 || self.metadata.vector_parameters().distance_type == DistanceType::L1
+    pub fn query_batch<I>(&self, queries: I) -> Option<EncodedQueryBatchU8>
+    where
+        I: IntoIterator<Item = EncodedQueryU8>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let queries = queries.into_iter();
+        if queries.len() < 2
+            || self.metadata.actual_dim() == 0
+            || self.metadata.vector_parameters().distance_type == DistanceType::L1
         {
             return None;
         }
+        let kernel = Kernel::best();
+        if matches!(kernel, Kernel::Scalar) {
+            return None;
+        }
+        // Keep query preprocessing lazy: falling back must not encode the queries twice.
+        let queries: Vec<_> = queries.collect();
         assert!(
             queries
                 .iter()
                 .all(|query| query.encoded_query.len() == self.metadata.actual_dim())
         );
-        let kernel = Kernel::best();
-        if matches!(kernel, Kernel::Scalar) {
-            return None;
-        }
         Some(EncodedQueryBatchU8 {
             queries,
             dim: self.metadata.actual_dim(),
@@ -240,6 +261,72 @@ unsafe fn score_neon(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, sco
     }
 }
 
+/// Four queries by four stored vectors. SMMLA multiplies two contiguous 8-byte query
+/// rows by two contiguous 8-byte vector columns into [q0v0, q0v1, q1v0, q1v1].
+/// Each loaded vector pair is shared by both query pairs; incomplete pairs are zero-filled.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon,i8mm")]
+unsafe fn score_i8mm(queries: &[EncodedQueryU8], vectors: &[u8], dim: usize, scores: &mut [i32]) {
+    use std::arch::aarch64::*;
+    let count = vectors.len() / dim;
+    unsafe {
+        for (block, queries) in queries.chunks(4).enumerate() {
+            for first in (0..count).step_by(4) {
+                let width = (count - first).min(4);
+                let mut accum = [[vdupq_n_s32(0); 2]; 2];
+                for d in (0..dim).step_by(8) {
+                    let mut codes = [vdupq_n_s8(0); 2];
+                    for (pair, code) in codes.iter_mut().enumerate().take(width.div_ceil(2)) {
+                        let v = first + pair * 2;
+                        let low = vld1_s8(vectors.as_ptr().add(v * dim + d).cast());
+                        let high = if pair * 2 + 1 < width {
+                            vld1_s8(vectors.as_ptr().add((v + 1) * dim + d).cast())
+                        } else {
+                            vdup_n_s8(0)
+                        };
+                        *code = vcombine_s8(low, high);
+                    }
+                    for (pair, sums) in accum.iter_mut().enumerate().take(queries.len().div_ceil(2))
+                    {
+                        let q = pair * 2;
+                        let low = vld1_s8(queries[q].encoded_query.as_ptr().add(d).cast());
+                        let high = if q + 1 < queries.len() {
+                            vld1_s8(queries[q + 1].encoded_query.as_ptr().add(d).cast())
+                        } else {
+                            vdup_n_s8(0)
+                        };
+                        let query = vcombine_s8(low, high);
+                        for (sum, &code) in sums.iter_mut().zip(&codes).take(width.div_ceil(2)) {
+                            // vmmlaq_s32 is still unstable in Rust. This is its single
+                            // instruction equivalent, enabled only after detecting i8mm.
+                            std::arch::asm!(
+                                "smmla {sum:v}.4s, {query:v}.16b, {code:v}.16b",
+                                sum = inout(vreg) *sum,
+                                query = in(vreg) query,
+                                code = in(vreg) code,
+                                options(pure, nomem, nostack),
+                            );
+                        }
+                    }
+                }
+                for (pair, sums) in accum.iter().enumerate().take(queries.len().div_ceil(2)) {
+                    for (vpair, &sum) in sums.iter().enumerate().take(width.div_ceil(2)) {
+                        let mut lanes = [0; 4];
+                        vst1q_s32(lanes.as_mut_ptr(), sum);
+                        for q in 0..(queries.len() - pair * 2).min(2) {
+                            for v in 0..(width - vpair * 2).min(2) {
+                                scores
+                                    [(block * 4 + pair * 2 + q) * count + first + vpair * 2 + v] =
+                                    lanes[q * 2 + v];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
@@ -259,16 +346,23 @@ mod tests {
         let mut kernels = vec![Kernel::Scalar];
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx512vnni") && is_x86_feature_detected!("avx512bw") {
+            if is_x86_feature_detected!("avx512vnni")
+                && is_x86_feature_detected!("avx512bw")
+                && is_x86_feature_detected!("avx512f")
+            {
                 kernels.push(Kernel::Avx512Vnni);
             }
-            if is_x86_feature_detected!("avxvnni") {
+            if is_x86_feature_detected!("avxvnni") && is_x86_feature_detected!("avx2") {
                 kernels.push(Kernel::AvxVnni);
             }
         }
         #[cfg(target_arch = "aarch64")]
         if std::arch::is_aarch64_feature_detected!("dotprod") {
             kernels.push(Kernel::NeonDot);
+        }
+        #[cfg(target_arch = "aarch64")]
+        if std::arch::is_aarch64_feature_detected!("i8mm") {
+            kernels.push(Kernel::NeonI8mm);
         }
         kernels
     }
@@ -393,6 +487,18 @@ mod tests {
             other.score_query_batch(&mut batch, &[0], &mut [0.0; 2])
         }));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn fallback_does_not_preprocess_queries() {
+        let _scope = ambient::test_guard();
+        let vectors = encoded(17, DistanceType::L1, false);
+        let queries = (0..8).map(|_| -> EncodedQueryU8 { panic!("fallback must stay lazy") });
+        assert!(vectors.query_batch(queries).is_none());
+        let vectors = encoded(17, DistanceType::Dot, false);
+        let queries =
+            (0..1).map(|_| -> EncodedQueryU8 { panic!("single-query fallback must stay lazy") });
+        assert!(vectors.query_batch(queries).is_none());
     }
 
     #[test]

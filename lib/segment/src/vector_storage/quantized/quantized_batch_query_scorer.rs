@@ -94,15 +94,12 @@ where
     M: Metric<E>,
     S: EncodedStorage,
 {
-    let queries = queries
-        .iter()
-        .map(|query| {
-            let QueryVector::Nearest(VectorInternal::Dense(vector)) = query else {
-                unreachable!("checked by scalar_batch_scorer")
-            };
-            encode_query::<E, M, _>(vector.clone(), storage, config)
-        })
-        .collect();
+    let queries = queries.iter().map(|query| {
+        let QueryVector::Nearest(VectorInternal::Dense(vector)) = query else {
+            unreachable!("checked by scalar_batch_scorer")
+        };
+        encode_query::<E, M, _>(vector.clone(), storage, config)
+    });
     let queries = storage.query_batch(queries)?;
     Some(Box::new(ScalarBatchScorer {
         storage,
