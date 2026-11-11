@@ -572,12 +572,7 @@ impl<'a> BatchFilteredSearcher<'a> {
             for BatchSearch { raw_scorer, top_k } in &mut self.scorer_batch {
                 raw_scorer.score_points(&chunk[..chunk_size], &mut scores_buffer[..chunk_size])?;
 
-                for i in 0..chunk_size {
-                    top_k.push(ScoredPointOffset {
-                        idx: chunk[i],
-                        score: scores_buffer[i],
-                    });
-                }
+                top_k.push_batch(&chunk[..chunk_size], &scores_buffer[..chunk_size]);
             }
         }
 
@@ -608,24 +603,22 @@ fn score_chunk(
     }
     for BatchSearch { raw_scorer, top_k } in scorer_batch {
         raw_scorer.score_points(chunk, &mut scores_buffer[..chunk.len()])?;
-        for i in 0..chunk.len() {
-            top_k.push(ScoredPointOffset {
-                idx: chunk[i],
-                score: scores_buffer[i],
-            });
-        }
+        top_k.push_batch(chunk, &scores_buffer[..chunk.len()]);
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use common::ambient;
     use common::bitvec::{BitSliceExt as _, BitVec};
     use rand::rngs::StdRng;
     use rand::{RngExt, SeedableRng};
 
     use super::*;
+    use crate::index::condition_checker::{ConditionCheckerEnum, TestBitOfId};
     use crate::types::Distance;
     use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage as _};
@@ -638,6 +631,143 @@ mod tests {
             }
         }
         mask
+    }
+
+    /// Both scan paths must match scalar insertion in the scorer's input order,
+    /// even when a payload filter rearranges a chunk before scoring it.
+    #[test]
+    fn batch_threshold_matches_scalar_insertion() {
+        struct RecordingScorer<'a> {
+            scores: &'a [ScoreType],
+            visited: &'a RefCell<Vec<PointOffsetType>>,
+        }
+
+        impl RawScorer for RecordingScorer<'_> {
+            fn score_points(
+                &self,
+                points: &[PointOffsetType],
+                scores: &mut [ScoreType],
+            ) -> OperationResult<()> {
+                self.visited.borrow_mut().extend_from_slice(points);
+                for (&point, score) in points.iter().zip(scores) {
+                    *score = self.scores[point as usize];
+                }
+                Ok(())
+            }
+
+            fn score_internal(&self, _: PointOffsetType, _: PointOffsetType) -> ScoreType {
+                unreachable!()
+            }
+
+            fn scorer_bytes(&self) -> Option<&dyn QueryScorerBytes> {
+                None
+            }
+        }
+
+        const TOTAL: usize = 259;
+        const CUTOFF: PointOffsetType = 253;
+        let mut rng = StdRng::seed_from_u64(42);
+        let point_deleted = random_mask(&mut rng, TOTAL, 0.1);
+        let vec_deleted = random_mask(&mut rng, TOTAL, 0.1);
+        let mapping_deleted = random_mask(&mut rng, TOTAL, 0.1);
+        let shadowed = random_mask(&mut rng, TOTAL, 0.1);
+        let scores: Vec<Vec<ScoreType>> = (0..64)
+            .map(|query| {
+                (0..TOTAL)
+                    .map(|point| match (point + query) % 41 {
+                        0 => ScoreType::NAN,
+                        1 => ScoreType::NEG_INFINITY,
+                        2 => ScoreType::INFINITY,
+                        3 => -0.0,
+                        4 => 0.0,
+                        _ => ((point * 13 + query * 7) % 19) as ScoreType - 9.0,
+                    })
+                    .collect()
+            })
+            .collect();
+        let bits = |points: Vec<ScoredPointOffset>| {
+            points
+                .into_iter()
+                .map(|point| (point.idx, point.score.to_bits()))
+                .collect::<Vec<_>>()
+        };
+
+        for batch_size in [1, 64] {
+            for k in [1, 10, 31, 32, 65, 400] {
+                for filtered in [false, true] {
+                    for visible in [false, true] {
+                        let visited: Vec<_> =
+                            (0..batch_size).map(|_| RefCell::new(Vec::new())).collect();
+                        let searcher = BatchFilteredSearcher {
+                            scorer_batch: scores
+                                .iter()
+                                .zip(&visited)
+                                .map(|(scores, visited)| BatchSearch {
+                                    raw_scorer: Box::new(RecordingScorer { scores, visited }),
+                                    top_k: TopK::new(k),
+                                })
+                                .collect(),
+                            filters: ScorerFilters::new(
+                                filtered.then(|| {
+                                    OptimizedFilter::from_checker(
+                                        ConditionCheckerEnum::TestBitOfId(TestBitOfId(1)),
+                                    )
+                                }),
+                                NotDeletedChecker {
+                                    point_deleted: &point_deleted,
+                                    vec_deleted: &vec_deleted,
+                                },
+                            ),
+                        };
+                        let extra_visible = |id: PointOffsetType| {
+                            id < CUTOFF && !mapping_deleted[id as usize] && !shadowed[id as usize]
+                        };
+                        let results = if visible {
+                            searcher.peek_top_visible(
+                                Some(CUTOFF),
+                                &mapping_deleted,
+                                &shadowed,
+                                &DEFAULT_STOPPED,
+                            )
+                        } else {
+                            searcher.peek_top_iter(
+                                (0..TOTAL as PointOffsetType).filter(|&id| extra_visible(id)),
+                                &DEFAULT_STOPPED,
+                            )
+                        }
+                        .unwrap();
+                        let expected_ids: Vec<_> = (0..TOTAL as PointOffsetType)
+                            .filter(|&id| {
+                                extra_visible(id)
+                                    && !point_deleted[id as usize]
+                                    && !vec_deleted[id as usize]
+                                    && (!filtered || id >> 1 & 1 == 1)
+                            })
+                            .collect();
+
+                        for ((result, visited), scores) in
+                            results.into_iter().zip(visited).zip(&scores)
+                        {
+                            let mut visited = visited.into_inner();
+                            let mut scalar = TopK::new(k);
+                            for &idx in &visited {
+                                scalar.push(ScoredPointOffset {
+                                    idx,
+                                    score: scores[idx as usize],
+                                });
+                            }
+                            assert_eq!(
+                                bits(result),
+                                bits(scalar.into_vec()),
+                                "B={batch_size}, k={k}, filtered={filtered}, visible={visible}"
+                            );
+                            visited.sort_unstable();
+                            assert_eq!(visited, expected_ids);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// [`BatchFilteredSearcher::peek_top_visible`] must reproduce the iterator

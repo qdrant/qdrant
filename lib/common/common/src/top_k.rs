@@ -1,4 +1,6 @@
-use crate::types::{ScoreType, ScoredPointOffset};
+use crate::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+
+mod simd;
 
 /// Avoid excessive memory allocation and allocation failures on huge limits
 const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
@@ -32,6 +34,41 @@ impl TopK {
     pub fn push(&mut self, point: ScoredPointOffset) {
         if point.score > self.threshold {
             self.cold_insert(point);
+        }
+    }
+
+    /// Push scored points in order, skipping scores at or below the threshold with SIMD.
+    ///
+    /// Has exactly the same result as calling [`Self::push`] for each point,
+    /// including ties, NaNs and infinities.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `points` and `scores` have different lengths.
+    #[inline]
+    pub fn push_batch(&mut self, points: &[PointOffsetType], scores: &[ScoreType]) {
+        assert_eq!(points.len(), scores.len());
+        for (points, scores) in points.chunks(64).zip(scores.chunks(64)) {
+            // Before the threshold is established, most scores pass. Avoid the
+            // mask and keep the ordinary insertion path for these batches.
+            if self.threshold == ScoreType::NEG_INFINITY {
+                for (&idx, &score) in points.iter().zip(scores) {
+                    self.push(ScoredPointOffset { idx, score });
+                }
+                continue;
+            }
+
+            let mut mask = simd::threshold_mask(scores, self.threshold);
+            while mask != 0 {
+                let i = mask.trailing_zeros() as usize;
+                // The threshold can rise during this batch. Recheck it through
+                // push, in the original order, to preserve tie-breaking.
+                self.push(ScoredPointOffset {
+                    idx: points[i],
+                    score: scores[i],
+                });
+                mask &= mask - 1;
+            }
         }
     }
 
@@ -103,6 +140,68 @@ mod test {
     use super::*;
     use crate::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
+    #[test]
+    fn batches_match_individual_pushes() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let special = [
+            ScoreType::NEG_INFINITY,
+            -1.0,
+            -0.0,
+            0.0,
+            1.0,
+            ScoreType::INFINITY,
+            ScoreType::NAN,
+            -ScoreType::NAN,
+            ScoreType::from_bits(1),
+            -ScoreType::from_bits(1),
+        ];
+        let cases: Vec<Vec<ScoreType>> = vec![
+            // Frequent ties, including at the rejection threshold.
+            (0..1025)
+                .map(|_| rng.random_range(-20..20) as ScoreType)
+                .collect(),
+            // Most candidates pass; the threshold rises within each batch.
+            (0..1025).map(|i| (i / 4) as ScoreType).collect(),
+            // Most candidates fail after the initial fill.
+            (0..1025).map(|i| -(i as ScoreType)).collect(),
+            special.into_iter().cycle().take(1025).collect(),
+            (0..1025)
+                .map(|_| ScoreType::from_bits(rng.random()))
+                .collect(),
+        ];
+        let bits = |points: &[ScoredPointOffset]| {
+            points
+                .iter()
+                .map(|point| (point.idx, point.score.to_bits()))
+                .collect::<Vec<_>>()
+        };
+        for scores in cases {
+            // IDs deliberately differ from score positions and from sort order.
+            let points: Vec<_> = (0..scores.len() as PointOffsetType).rev().collect();
+            for k in [1, 2, 10, 31, 32, 33, 64, 99, 257, 2000] {
+                for batch_size in [1, 3, 4, 7, 8, 9, 63, 64, 65, 127, 1000] {
+                    let mut scalar = TopK::new(k);
+                    let mut batched = TopK::new(k);
+                    batched.push_batch(&[], &[]);
+                    for (points, scores) in points.chunks(batch_size).zip(scores.chunks(batch_size))
+                    {
+                        for (&idx, &score) in points.iter().zip(scores) {
+                            scalar.push(ScoredPointOffset { idx, score });
+                        }
+                        batched.push_batch(points, scores);
+                        assert_eq!(
+                            bits(&batched.elements),
+                            bits(&scalar.elements),
+                            "k={k}, batch={batch_size}"
+                        );
+                        assert_eq!(batched.threshold().to_bits(), scalar.threshold().to_bits());
+                    }
+                    assert_eq!(bits(&batched.into_vec()), bits(&scalar.into_vec()));
+                }
+            }
+        }
+    }
+
     /// Both strategies must keep the same scores as the reference queue, minus the NaNs.
     #[test]
     fn test_against_priority_queue() {
@@ -166,7 +265,7 @@ mod test {
         );
 
         top_k.push(ScoredPointOffset { score: 1.0, idx: 1 });
-        top_k.push(ScoredPointOffset { score: 2.0, idx: 2 });
+        top_k.push_batch(&[2], &[2.0]);
         assert_eq!(top_k.len(), 2);
 
         let res = top_k.into_vec();

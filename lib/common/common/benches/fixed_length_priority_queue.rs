@@ -45,6 +45,18 @@ fn bench_push(c: &mut Criterion) {
                 top.into_vec()
             });
         });
+
+        let ids: Vec<_> = points.iter().map(|point| point.idx).collect();
+        let scores: Vec<_> = points.iter().map(|point| point.score).collect();
+        group.bench_function(BenchmarkId::new("top_k_batch", &case), |b| {
+            b.iter(|| {
+                let mut top = TopK::new(limit);
+                for (ids, scores) in ids.chunks(64).zip(scores.chunks(64)) {
+                    top.push_batch(ids, scores);
+                }
+                top.into_vec()
+            });
+        });
     }
 
     group.finish();
