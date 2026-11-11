@@ -85,10 +85,12 @@ struct SelectedPoints(u32);
 impl ConditionChecker for SelectedPoints {
     type Error = OperationError;
 
+    /// Accept an ID when its modulo-100 bucket is below the configured percentage.
     fn check(&self, id: PointOffsetType) -> Result<bool, Self::Error> {
         Ok(id % 100 < self.0)
     }
 
+    /// Apply the same deterministic predicate through the production batch-filter helper.
     fn check_batched<K: CheckItem>(
         &self,
         ids: &mut [K],
@@ -108,6 +110,8 @@ struct Dataset {
 }
 
 impl Dataset {
+    /// Build seeded unit-length vectors, their SQ8 storage, and an independent query pool.
+    /// Fixture construction and quantization finish before any measurement starts.
     fn new(args: &Args) -> Self {
         let mut rng = SmallRng::seed_from_u64(args.seed);
         let mut vector = || {
@@ -162,6 +166,8 @@ impl Dataset {
         }
     }
 
+    /// Prepare a searcher with the selected visibility or synthetic-filter scan path.
+    /// Callers time this separately for micro samples and include it in request service.
     fn searcher<'a>(
         &'a self,
         args: &Args,
@@ -186,6 +192,7 @@ impl Dataset {
     }
 }
 
+/// Execute one prepared batch through the requested production full-scan entrypoint.
 fn run(
     searcher: BatchFilteredSearcher<'_>,
     scan: Scan,
@@ -268,6 +275,7 @@ struct ConcurrencySample {
     requests: Vec<RequestLatency>,
 }
 
+/// Compare ordered IDs and score bits with the corresponding wrapped B1 query references.
 fn assert_results(
     actual: &[Vec<ScoredPointOffset>],
     reference: &[Vec<ScoredPointOffset>],
@@ -287,6 +295,8 @@ fn assert_results(
     }
 }
 
+/// Measure one closed-loop case with a fixed worker pool and bounded outstanding requests.
+/// Stop admissions at the deadline, drain all work, then verify results and compute latencies.
 fn concurrency_sample(
     args: &Args,
     dataset: &Dataset,
@@ -501,6 +511,8 @@ fn concurrency_sample(
 }
 
 #[cfg(target_os = "linux")]
+/// Open a pinned user-mode cycle counter, returning `None` when optional access is denied.
+/// Required counter access instead fails the benchmark; unavailable cycles are never estimated.
 fn cycle_counter(required: bool) -> Option<perf_event::Counter> {
     let mut builder = perf_event::Builder::new().kind(perf_event::events::Hardware::CPU_CYCLES);
     builder.exclude_kernel(true).exclude_hv(true).pinned(true);
@@ -516,6 +528,8 @@ fn cycle_counter(required: bool) -> Option<perf_event::Counter> {
     }
 }
 
+/// Validate arguments, preflight exact results, and run the selected scan measurement mode.
+/// Reports retain all samples and saved B1 references for comparisons between builds.
 fn main() {
     let args = Args::parse();
     assert!(args.dim > 0 && args.top > 0 && args.samples > 0);
@@ -705,6 +719,7 @@ fn main() {
     write_report(&args, report);
 }
 
+/// Serialize a completed report to the requested file or standard output, outside timing.
 fn write_report(args: &Args, report: serde_json::Value) {
     let json = serde_json::to_string_pretty(&report).unwrap();
     if let Some(output) = &args.output {
