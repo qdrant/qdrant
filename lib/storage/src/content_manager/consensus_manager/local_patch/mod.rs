@@ -28,7 +28,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let mut report = PatchReport::default();
         diff.apply(&mut state, &mut report)?;
 
-        if mode == PatchMode::DryRun || report.changes.is_empty() {
+        if mode == PatchMode::DryRun {
+            return Ok(report);
+        }
+
+        if report.changes.is_empty() {
+            // A previous patch may have changed peer state in memory, but failed to save it.
+            // Retrying it finds no changes, so save here, or the retry reports success while
+            // the change is still not on disk.
+            self.persistent.write().save_if_dirty()?;
             return Ok(report);
         }
 
