@@ -436,6 +436,7 @@ fn new_toc() -> (TempDir, Arc<TableOfContent>) {
         optimizers_overwrite: None,
         wal: Default::default(),
         performance: PerformanceConfig {
+            dynamic_search_batch_max: 0,
             max_search_threads: 1,
             max_optimization_runtime_threads: 1,
             optimizer_cpu_budget: 0,

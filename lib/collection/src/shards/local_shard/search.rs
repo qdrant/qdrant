@@ -36,6 +36,15 @@ impl LocalShard {
             return Ok(vec![]);
         }
 
+        if self.shared_storage_config.dynamic_search_batch_max > 0
+            && super::search_batcher::eligible(&core_request)
+            && let Some(result) = self
+                .coalesced_search(core_request.clone(), search_runtime_handle.clone(), timeout)
+                .await
+        {
+            return result;
+        }
+
         let skip_batching = if core_request.searches.len() <= CHUNK_SIZE {
             // Don't batch if we have few searches, prevents cloning request
             true
@@ -99,11 +108,31 @@ impl LocalShard {
         timeout: Duration,
         is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        Self::search_owned(
+            self.segments.clone(),
+            self.collection_config.clone(),
+            core_request,
+            search_runtime_handle,
+            timeout,
+            is_stopped_guard,
+        )
+        .await
+    }
+
+    /// Run a shard search with owned state so queued callers may cancel independently.
+    pub(super) async fn search_owned(
+        segments: shard::segment_holder::locked::LockedSegmentHolder,
+        collection_config: Arc<tokio::sync::RwLock<crate::config::CollectionConfigInternal>>,
+        core_request: Arc<CoreSearchRequestBatch>,
+        search_runtime_handle: &AdaptiveSearchHandle,
+        timeout: Duration,
+        is_stopped_guard: &StoppingGuard,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let start = std::time::Instant::now();
         let (query_context, distances) = {
-            let collection_config = self.collection_config.read().await;
+            let collection_config = collection_config.read().await;
             let query_context_opt = SegmentsSearcher::prepare_query_context(
-                self.segments.clone(),
+                segments.clone(),
                 &core_request,
                 &collection_config,
                 timeout,
@@ -135,7 +164,7 @@ impl LocalShard {
         let timeout = timeout.saturating_sub(start.elapsed());
 
         let search_request = SegmentsSearcher::search(
-            self.segments.clone(),
+            segments.clone(),
             core_request.clone(),
             search_runtime_handle,
             true,
