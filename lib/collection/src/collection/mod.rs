@@ -678,22 +678,34 @@ impl Collection {
         replica_set.local_optimizations(options).await
     }
 
+    /// Select shards and map each selected shard to an owned value.
+    ///
+    /// The `shards_holder` read lock is only held while selecting. It is released before
+    /// returning, so callers don't hold it while awaiting shard requests, which would block
+    /// writers such as `apply_state`. `map` can't return borrows of the shards holder.
+    pub(crate) async fn select_shards<T>(
+        &self,
+        shard_selection: &ShardSelectorInternal,
+        mut map: impl FnMut(&Arc<ShardReplicaSet>, Option<&ShardKey>) -> T,
+    ) -> CollectionResult<Vec<T>> {
+        let shards_holder = self.shards_holder.read().await;
+        let shards = shards_holder
+            .select_shards(shard_selection)?
+            .into_iter()
+            .map(|(shard, shard_key)| map(shard, shard_key))
+            .collect();
+        Ok(shards)
+    }
+
     /// Collect memory report across all shards (local + remote).
     pub async fn memory_report(
         &self,
     ) -> CollectionResult<crate::common::memory_reporter::CollectionMemoryReport> {
         use crate::common::memory_reporter::CollectionMemoryReport;
 
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let shards: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(&ShardSelectorInternal::All)?
-            .into_iter()
-            .map(|(shard, _shard_key)| Arc::clone(shard))
-            .collect();
+        let shards = self
+            .select_shards(&ShardSelectorInternal::All, |shard, _| Arc::clone(shard))
+            .await?;
 
         let mut futures: futures::stream::FuturesUnordered<_> =
             shards.iter().map(|shard| shard.memory_report()).collect();

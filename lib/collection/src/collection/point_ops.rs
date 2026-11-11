@@ -353,16 +353,11 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let target_shards: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(shard_selection)?
-            .into_iter()
-            .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-            .collect();
+        let target_shards = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
         let scroll_futures = target_shards.into_iter().map(|(shard, shard_key)| {
             let request = request.clone();
@@ -434,16 +429,9 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<CountResult> {
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let shards: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(shard_selection)?
-            .into_iter()
-            .map(|(shard, _shard_key)| Arc::clone(shard))
-            .collect();
+        let shards = self
+            .select_shards(shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
 
         let request = Arc::new(request);
 
@@ -489,16 +477,11 @@ impl Collection {
         let ids_len = request.ids.len();
         let request = Arc::new(request);
 
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let target_shards: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(shard_selection)?
-            .into_iter()
-            .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-            .collect();
+        let target_shards = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
         let mut all_shard_collection_requests = target_shards
             .into_iter()
             .map(|(shard, shard_key)| {

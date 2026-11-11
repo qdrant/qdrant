@@ -151,16 +151,11 @@ impl Collection {
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ShardQueryResponse>>> {
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let target_shards: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(shard_selection)?
-            .into_iter()
-            .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-            .collect();
+        let target_shards = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
         let num_unique_shard_keys = target_shards
             .iter()

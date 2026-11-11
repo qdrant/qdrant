@@ -450,16 +450,9 @@ impl Collection {
         &self,
         shard_selection: &ShardSelectorInternal,
     ) -> CollectionResult<CollectionInfo> {
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let shards: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(shard_selection)?
-            .into_iter()
-            .map(|(shard, _shard_key)| Arc::clone(shard))
-            .collect();
+        let shards = self
+            .select_shards(shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
         let mut requests: futures::stream::FuturesUnordered<_> = shards
             .iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`

@@ -156,16 +156,11 @@ impl Collection {
 
         let instant = Instant::now();
 
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let targets: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(shard_selection)?
-            .into_iter()
-            .map(|(shard, shard_key)| (Arc::clone(shard), shard_key.cloned()))
-            .collect();
+        let targets = self
+            .select_shards(shard_selection, |shard, shard_key| {
+                (Arc::clone(shard), shard_key.cloned())
+            })
+            .await?;
 
         // query all shards concurrently
         let all_searches = targets.into_iter().map(|(shard, shard_key)| {

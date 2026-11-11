@@ -128,16 +128,9 @@ impl Collection {
 
         let request = Arc::new(request);
 
-        // Select shards under a short read lock, the temporary guard is dropped at the end
-        // of this statement, so it isn't held across shard requests
-        let target_shards: Vec<_> = self
-            .shards_holder
-            .read()
-            .await
-            .select_shards(&shard_selection)?
-            .into_iter()
-            .map(|(shard, _shard_key)| Arc::clone(shard))
-            .collect();
+        let target_shards = self
+            .select_shards(&shard_selection, |shard, _| Arc::clone(shard))
+            .await?;
 
         let mut shards_reads_f = target_shards
             .iter()
