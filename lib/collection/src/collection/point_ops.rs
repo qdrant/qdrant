@@ -448,22 +448,17 @@ impl Collection {
         let request = Arc::new(request);
 
         let mut requests: FuturesUnordered<_> = shards
-            .into_iter()
+            .iter()
             // `count` requests received through internal gRPC *always* have `shard_selection`
             .map(|shard| {
-                let request = Arc::clone(&request);
-                async move {
-                    shard
-                        .count(
-                            request,
-                            read_consistency,
-                            routing_token,
-                            timeout,
-                            shard_selection.is_shard_id(),
-                            DeferredBehavior::VisibleOnly,
-                        )
-                        .await
-                }
+                shard.count(
+                    Arc::clone(&request),
+                    read_consistency,
+                    routing_token,
+                    timeout,
+                    shard_selection.is_shard_id(),
+                    DeferredBehavior::VisibleOnly,
+                )
             })
             .collect();
 

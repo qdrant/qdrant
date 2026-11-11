@@ -695,10 +695,8 @@ impl Collection {
             .map(|(shard, _shard_key)| Arc::clone(shard))
             .collect();
 
-        let mut futures: futures::stream::FuturesUnordered<_> = shards
-            .into_iter()
-            .map(|shard| async move { shard.memory_report().await })
-            .collect();
+        let mut futures: futures::stream::FuturesUnordered<_> =
+            shards.iter().map(|shard| shard.memory_report()).collect();
 
         let mut reports = Vec::new();
         while let Some(result) = futures::StreamExt::next(&mut futures).await {

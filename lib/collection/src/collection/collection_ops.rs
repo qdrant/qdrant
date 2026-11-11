@@ -461,9 +461,9 @@ impl Collection {
             .map(|(shard, _shard_key)| Arc::clone(shard))
             .collect();
         let mut requests: futures::stream::FuturesUnordered<_> = shards
-            .into_iter()
+            .iter()
             // `info` requests received through internal gRPC *always* have `shard_selection`
-            .map(|shard| async move { shard.info(shard_selection.is_shard_id()).await })
+            .map(|shard| shard.info(shard_selection.is_shard_id()))
             .collect();
 
         let mut info = match requests.try_next().await? {

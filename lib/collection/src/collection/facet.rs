@@ -140,21 +140,15 @@ impl Collection {
             .collect();
 
         let mut shards_reads_f = target_shards
-            .into_iter()
+            .iter()
             .map(|shard| {
-                let request = request.clone();
-                let is_shard_id = shard_selection.is_shard_id();
-                async move {
-                    shard
-                        .facet(
-                            request,
-                            read_consistency,
-                            routing_token,
-                            is_shard_id,
-                            timeout,
-                        )
-                        .await
-                }
+                shard.facet(
+                    request.clone(),
+                    read_consistency,
+                    routing_token,
+                    shard_selection.is_shard_id(),
+                    timeout,
+                )
             })
             .collect::<FuturesUnordered<_>>();
 
