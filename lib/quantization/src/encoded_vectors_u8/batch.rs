@@ -610,6 +610,11 @@ mod tests {
         let queries =
             (0..1).map(|_| -> EncodedQueryU8 { panic!("single-query fallback must stay lazy") });
         assert!(vectors.query_batch(queries).is_none());
+        if matches!(Kernel::best(), Kernel::Scalar) {
+            let queries = (0..2)
+                .map(|_| -> EncodedQueryU8 { panic!("unsupported CPU fallback must stay lazy") });
+            assert!(vectors.query_batch(queries).is_none());
+        }
     }
 
     #[test]
