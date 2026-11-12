@@ -97,6 +97,11 @@ impl PayloadIndexRead for PlainPayloadIndex {
         })
     }
 
+    fn materialization_cost(&self, _estimation: &CardinalityEstimation) -> OperationResult<usize> {
+        // No primary clauses: every point is a candidate
+        Ok(self.id_tracker.borrow().available_point_count())
+    }
+
     /// Forward to non nested implementation.
     fn estimate_nested_cardinality(
         &self,

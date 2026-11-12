@@ -254,7 +254,8 @@ where
         | Condition::HasVector(_)
         | Condition::Slice(_)
         | Condition::Nested(_)
-        | Condition::CustomIdChecker(_) => {
+        | Condition::CustomIdChecker(_)
+        | Condition::ResolvedPoints(_) => {
             estimator(condition).map(|estimation| estimation.bounded_by(total))
         }
     }
@@ -407,6 +408,7 @@ mod tests {
             Condition::Filter(_) => panic!("unexpected Filter"),
             Condition::Nested(_) => panic!("unexpected Nested"),
             Condition::CustomIdChecker(_) => panic!("unexpected CustomIdChecker"),
+            Condition::ResolvedPoints(_) => panic!("unexpected ResolvedPoints"),
             Condition::Slice(_) => panic!("unexpected Slice"),
             Condition::Field(field) => match field.key.to_string().as_str() {
                 "color" => CardinalityEstimation {

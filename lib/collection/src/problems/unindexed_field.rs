@@ -388,6 +388,7 @@ impl<'a> Extractor<'a> {
             // No index needed
             Condition::HasId(_) => return,
             Condition::CustomIdChecker(_) => return,
+            Condition::ResolvedPoints(_) => return,
             Condition::HasVector(_) => return,
             Condition::Slice(_) => return,
         };

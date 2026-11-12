@@ -150,7 +150,8 @@ fn is_tenant_match(condition: &Condition, schema: &PayloadIndexSchema) -> bool {
         | Condition::Slice(_)
         | Condition::Nested(_)
         | Condition::Filter(_)
-        | Condition::CustomIdChecker(_) => return false,
+        | Condition::CustomIdChecker(_)
+        | Condition::ResolvedPoints(_) => return false,
     };
 
     let selects_values = match &field.r#match {

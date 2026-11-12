@@ -1940,6 +1940,8 @@ impl From<segment::types::Condition> for Condition {
             // This type of condition should be only applied locally
             // and never be sent to the other peers
             segment::types::Condition::CustomIdChecker(_) => None,
+            // Offsets of one local segment, never sent to the other peers
+            segment::types::Condition::ResolvedPoints(_) => None,
             segment::types::Condition::HasVector(has_vector) => {
                 Some(ConditionOneOf::HasVector(HasVectorCondition {
                     has_vector: has_vector.has_vector,

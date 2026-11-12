@@ -122,6 +122,71 @@ async fn test_segments_search() {
     assert!(result[1].id == 3.into() || result[1].id == 11.into());
 }
 
+/// Groups of one batch sharing a filter get it resolved to ids once per segment; the
+/// results must match searching each request on its own.
+#[tokio::test]
+async fn test_segments_search_shared_filter() {
+    use segment::data_types::vectors::{NamedQuery, VectorInternal};
+    use segment::json_path::JsonPath;
+    use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
+    use segment::types::FieldCondition;
+    use shard::query::query_enum::QueryEnum;
+
+    use crate::collection_manager::fixtures::random_multi_vec_segment;
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let mut holder = SegmentHolder::default();
+    holder.add_new(random_multi_vec_segment(dir.path(), 10, 300, 4, 6));
+    holder.add_new(random_multi_vec_segment(dir.path(), 11, 300, 4, 6));
+    let holder = LockedSegmentHolder::new(holder);
+
+    let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
+        JsonPath::new("keyword"),
+        "keyword_3".to_string().into(),
+    )));
+    let request = |name: &str, dim: usize| CoreSearchRequest {
+        query: QueryEnum::Nearest(NamedQuery::new(
+            VectorInternal::from(random_vector(&mut rand::rng(), dim)),
+            name,
+        )),
+        with_payload: None,
+        with_vector: None,
+        filter: Some(filter.clone()),
+        params: None,
+        limit: 10,
+        score_threshold: None,
+        offset: 0,
+    };
+    let searches = vec![
+        request(VECTOR1_NAME, 4),
+        request(VECTOR2_NAME, 6),
+        request(VECTOR1_NAME, 4),
+    ];
+
+    let handle = AdaptiveSearchHandle::current_for_tests();
+    let search = |searches: Vec<CoreSearchRequest>| {
+        SegmentsSearcher::search(
+            holder.clone(),
+            Arc::new(CoreSearchRequestBatch { searches }),
+            &handle,
+            false,
+            QueryContext::new(
+                DEFAULT_INDEXING_THRESHOLD_KB,
+                Handoff::Measured(AmbientContext::new()),
+            ),
+            TEST_TIMEOUT,
+        )
+    };
+
+    let batched = search(searches.clone()).await.unwrap();
+    assert_eq!(batched.len(), searches.len());
+    for (request, batched) in searches.into_iter().zip(batched) {
+        let alone = search(vec![request]).await.unwrap().remove(0);
+        assert!(!alone.is_empty());
+        assert_eq!(batched, alone);
+    }
+}
+
 #[tokio::test]
 async fn test_segments_search_sampling() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();

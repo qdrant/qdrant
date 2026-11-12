@@ -37,6 +37,15 @@ pub struct PointSetContext {
 }
 
 impl PointSetContext {
+    /// A context for a set whose use is unknown: the representation is chosen by its
+    /// density in the segment alone, as if it will never be checked point by point.
+    pub fn by_density(total_points: usize) -> Self {
+        Self {
+            total_points,
+            expected_checks: 0,
+        }
+    }
+
     /// Whether a bitset is cheaper than a sorted list for a set of `len` points.
     /// `sorted` tells whether the points are already sorted, so the list needs no sort.
     fn prefer_bits(&self, len: usize, sorted: bool) -> bool {
@@ -70,6 +79,47 @@ impl PointSet {
             PointSet::Bits(bits) => bits.get(point_id as usize).is_some_and(|bit| *bit),
             PointSet::Sorted(points) => points.binary_search(&point_id).is_ok(),
         }
+    }
+
+    /// Number of points in the set.
+    pub fn len(&self) -> usize {
+        match self {
+            PointSet::Bits(bits) => bits.count_ones(),
+            PointSet::Sorted(points) => points.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The points of the set, in ascending order.
+    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        match self {
+            PointSet::Bits(bits) => {
+                itertools::Either::Left(bits.iter_ones().map(|point| point as PointOffsetType))
+            }
+            PointSet::Sorted(points) => itertools::Either::Right(points.iter().copied()),
+        }
+    }
+
+    /// A set of `points`, in any order and possibly repeated, written straight into the
+    /// representation `context` prefers for about `expected_len` points.
+    pub fn from_points(
+        points: impl IntoIterator<Item = PointOffsetType>,
+        expected_len: usize,
+        context: PointSetContext,
+    ) -> Self {
+        if context.prefer_bits(expected_len, false) {
+            let mut bits = BitVec::repeat(false, context.total_points);
+            for point in points {
+                set_bit(&mut bits, point);
+            }
+            return PointSet::Bits(bits);
+        }
+        let mut points: Vec<PointOffsetType> = points.into_iter().collect();
+        sort_unique(&mut points);
+        PointSet::Sorted(points)
     }
 
     /// Points that match any of `postings`.
@@ -241,5 +291,19 @@ mod tests {
         let inter = PointSet::intersection(vec![a, b.clone()], ctx);
         assert!(matches!(inter, PointSet::Bits(_)));
         assert_eq!(members(&inter, total as u32), b);
+    }
+
+    #[test]
+    fn from_points_drops_order_and_repeats_in_both_representations() {
+        let points: Vec<PointOffsetType> = vec![9, 1, 3, 3, 42, 7, 1];
+        // Few points in a large segment: list. Checked many times: bitset.
+        let list = PointSet::from_points(points.clone(), points.len(), context(10_000_000, 0));
+        assert!(matches!(list, PointSet::Sorted(_)));
+        let bits = PointSet::from_points(points, 7, context(50, 1_000_000));
+        assert!(matches!(bits, PointSet::Bits(_)));
+        for set in [list, bits] {
+            assert_eq!(set.iter().collect::<Vec<_>>(), vec![1, 3, 7, 9, 42]);
+            assert_eq!(set.len(), 5);
+        }
     }
 }
