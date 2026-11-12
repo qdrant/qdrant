@@ -19,7 +19,7 @@ use super::registry::{
     TaskToken,
 };
 use super::wire::{SUPPORTED_GRAPH_FORMAT_VERSIONS, WireGraph};
-use super::{RemoteIndexer, RemoteIndexingConfig, TaskSubmission};
+use super::{RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskSubmission};
 
 /// What the loopback indexer does with a task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +28,8 @@ pub enum LoopbackBehavior {
     Build,
     /// Refuse the submission, as an unreachable entry point would.
     RefuseSubmit,
+    /// Refuse the submission for good, as an indexer does with a too large task.
+    RefusePermanently,
     /// Accept the submission and never call core: the lease expires.
     Ignore,
     /// Fetch the task, then report a failure.
@@ -245,13 +247,20 @@ impl RemoteIndexer for Arc<LoopbackIndexer> {
         &self.config
     }
 
-    fn submit(&self, task: &TaskSubmission) -> Result<(), String> {
+    fn submit(&self, task: &TaskSubmission) -> Result<(), SubmitError> {
         let attempt = self.submissions.fetch_add(1, Ordering::SeqCst);
         let behavior = self.behavior(attempt);
         let token = task.token;
         let this = self.clone();
         match behavior {
-            LoopbackBehavior::RefuseSubmit => return Err("loopback refuses".to_string()),
+            LoopbackBehavior::RefuseSubmit => {
+                return Err(SubmitError::Transient("loopback refuses".to_string()));
+            }
+            LoopbackBehavior::RefusePermanently => {
+                return Err(SubmitError::Permanent(
+                    "loopback: task too large".to_string(),
+                ));
+            }
             LoopbackBehavior::Ignore => {
                 this.outcomes
                     .lock()
@@ -326,7 +335,9 @@ impl LoopbackIndexer {
                         }
                     }
                 }
-                LoopbackBehavior::RefuseSubmit | LoopbackBehavior::Ignore => unreachable!(),
+                LoopbackBehavior::RefuseSubmit
+                | LoopbackBehavior::RefusePermanently
+                | LoopbackBehavior::Ignore => unreachable!(),
             }
         }
     }
