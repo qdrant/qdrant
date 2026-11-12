@@ -2,7 +2,7 @@
 
 use parking_lot::Mutex;
 
-use crate::vector_storage::matrix_scorer::MatrixTopK;
+use super::MatrixTopK;
 
 /// Top-k buffers of the same `k`, handed out to one matrix call at a time and taken back after
 /// it. A matrix call doesn't use rayon, so a phase whose calls run on the current pool holds at
@@ -24,6 +24,16 @@ impl TopKPool {
             k,
             free: Mutex::default(),
         }
+    }
+
+    pub fn k(&self) -> usize {
+        self.k
+    }
+
+    /// Buffers created so far, if none is handed out.
+    #[cfg(test)]
+    pub fn buffers(&self) -> usize {
+        self.free.lock().len()
     }
 
     /// Runs `f` with a free buffer, a new one if none is free, and takes the buffer back after
