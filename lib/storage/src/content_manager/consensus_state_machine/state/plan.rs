@@ -1648,9 +1648,28 @@ impl ClusterState {
             transfers.sort_by_key(|&key| transfer_sort_key(key));
 
             for key in transfers {
+                // Aborting a resharding transfer aborts resharding, which unregisters
+                // other related transfers and, when resharding up, drops the new shard
+                let planned_collection =
+                    planned.collection(&collection).expect("collection exists");
+
+                if transfer_by_key(planned_collection, key).is_none() {
+                    continue;
+                }
+
                 let abort = planned.plan_abort_transfer(context, collection.clone(), key)?;
                 apply_actions(&mut planned, &abort);
                 actions.extend(abort);
+
+                let shard_exists = planned
+                    .collection(&collection)
+                    .expect("collection exists")
+                    .shards
+                    .contains_key(&shard_id);
+
+                if !shard_exists {
+                    return Ok(actions);
+                }
             }
         }
 
