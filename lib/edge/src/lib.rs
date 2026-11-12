@@ -37,9 +37,6 @@ pub use read_only::{
     ListedSegment, LiveReloadOutcome, LocalSegmentEnumerator, ManifestSegmentEnumerator,
     ReadOnlyEdgeShard, ReadOnlyEdgeShardPools, ReadOnlyOpenOptions, SegmentEnumerator,
 };
-#[cfg(feature = "serverless")]
-#[expect(deprecated, reason = "re-export")]
-pub use read_view::EdgeShardReadWithCancellation;
 pub use read_view::{EdgeShardRead, Group, ReadSegmentHandle, SearchMatrixResponse, ShardInfo};
 pub use reexports::*;
 pub use requests::{
