@@ -21,6 +21,7 @@ class TestStorageCompatibility:
     """
 
     VERSIONS = [
+        "v1.20.0",
         "v1.19.0",
         "v1.18.1",
         "v1.18.0",
