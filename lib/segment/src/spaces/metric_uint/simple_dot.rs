@@ -59,10 +59,14 @@ pub fn dot_similarity_bytes(
     v1: &[VectorElementTypeByte],
     v2: &[VectorElementTypeByte],
 ) -> ScoreType {
-    let mut dot_product = 0;
+    // Accumulate in `i64`: a product of two `u8` values is at most `255 * 255`,
+    // and a *single* accumulator overflows `i32` from dimension `33_027` on.
+    // `VectorParams.size` is capped at `65_536` (`lib/api/build.rs`), where the
+    // exact sum reaches `1.98 * i32::MAX` and wraps negative.
+    let mut dot_product = 0i64;
 
     for (a, b) in v1.iter().zip(v2) {
-        dot_product += i32::from(*a) * i32::from(*b);
+        dot_product += i64::from(*a) * i64::from(*b);
     }
 
     dot_product as ScoreType
