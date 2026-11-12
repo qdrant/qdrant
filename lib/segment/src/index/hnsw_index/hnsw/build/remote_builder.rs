@@ -23,7 +23,7 @@ use crate::index::hnsw_index::remote::wire::{
     VECTOR_REPRESENTATION_STORAGE_NATIVE, VectorSource,
 };
 use crate::index::hnsw_index::remote::{
-    OnFailure, RemoteIndexer, RemoteIndexingConfig, TaskScope, TaskSubmission,
+    OnFailure, RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskScope, TaskSubmission,
 };
 use crate::vector_storage::{VectorStorageEnum, VectorStorageRead as _};
 
@@ -213,15 +213,32 @@ impl<'a> RemoteBuilder<'a> {
                 plan.num_blocks(),
             );
 
-            if let Err(err) = self.args.indexer.submit(&submission) {
-                REMOTE_INDEXING_METRICS
-                    .submit_failures
-                    .fetch_add(1, Ordering::Relaxed);
-                log::warn!(
-                    "Failed to submit remote indexing task {}: {err}",
-                    submission.task_id,
-                );
-                continue;
+            match self.args.indexer.submit(&submission) {
+                Ok(()) => {}
+                Err(SubmitError::Transient(reason)) => {
+                    REMOTE_INDEXING_METRICS
+                        .submit_failures
+                        .fetch_add(1, Ordering::Relaxed);
+                    log::warn!(
+                        "Failed to submit remote indexing task {}: {reason}",
+                        submission.task_id,
+                    );
+                    continue;
+                }
+                Err(SubmitError::Permanent(reason)) => {
+                    REMOTE_INDEXING_METRICS
+                        .submit_failures
+                        .fetch_add(1, Ordering::Relaxed);
+                    REMOTE_INDEXING_METRICS
+                        .submit_refused_permanently
+                        .fetch_add(1, Ordering::Relaxed);
+                    // Retrying cannot help: build locally right away
+                    log::info!(
+                        "Remote indexing task {} refused for good, building locally: {reason}",
+                        submission.task_id,
+                    );
+                    break;
+                }
             }
 
             // Lend the CPUs while the indexer works. Once lent, they stay lent across retries.

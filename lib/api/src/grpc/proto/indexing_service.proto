@@ -34,7 +34,19 @@ message IndexingTaskSubmission {
 }
 
 message SubmitIndexingTaskResponse {
-  // Whether the task was accepted. A refused task is retried or built locally by core.
+  // Whether the task was accepted. A refused task is retried or built locally by core,
+  // depending on `refusal`.
   bool accepted = 1;
   string message = 2;
+  // Why the task was refused. Ignored when `accepted`.
+  IndexingTaskRefusal refusal = 3;
+}
+
+enum IndexingTaskRefusal {
+  // A later submission may be accepted: queue full, shutting down. Core retries per its
+  // `on_failure` policy. Also what indexers that do not set `refusal` mean.
+  IndexingRefusalTransient = 0;
+  // This task will never be accepted by this indexer: too large, unsupported graph format.
+  // Core builds it locally right away, without retrying.
+  IndexingRefusalPermanent = 1;
 }

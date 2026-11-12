@@ -8,10 +8,10 @@ use std::path::{Component, Path};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
-use api::grpc::qdrant::IndexingTaskSubmission;
 use api::grpc::qdrant::indexing_service_client::IndexingServiceClient;
+use api::grpc::qdrant::{IndexingTaskRefusal, IndexingTaskSubmission, SubmitIndexingTaskResponse};
 use segment::index::hnsw_index::remote::{
-    OnFailure, RemoteIndexer, RemoteIndexingConfig, TaskSubmission, set_remote_indexer,
+    OnFailure, RemoteIndexer, RemoteIndexingConfig, SubmitError, TaskSubmission, set_remote_indexer,
 };
 use tokio::runtime::Runtime;
 use tonic::transport::{Channel, Endpoint};
@@ -139,7 +139,7 @@ impl RemoteIndexingClient {
 }
 
 impl ClientInner {
-    async fn submit_async(&self, task: TaskSubmission) -> Result<(), String> {
+    async fn submit_async(&self, task: TaskSubmission) -> Result<(), SubmitError> {
         let (collection, shard_id) = collection_and_shard(&task.scope.index_path);
         let core_version = common::defaults::QDRANT_VERSION_STRING;
         let mut request = tonic::Request::new(IndexingTaskSubmission {
@@ -159,19 +159,33 @@ impl ClientInner {
         if let Some(api_key) = &self.config.api_key {
             let value = api_key
                 .parse()
-                .map_err(|err| format!("invalid api key: {err}"))?;
+                .map_err(|err| SubmitError::Permanent(format!("invalid api key: {err}")))?;
             request.metadata_mut().insert(API_KEY_HEADER, value);
         }
         let response = IndexingServiceClient::new(self.channel.clone())
             .submit_task(request)
             .await
-            .map_err(|status| format!("SubmitTask: {status}"))?
+            .map_err(|status| SubmitError::Transient(format!("SubmitTask: {status}")))?
             .into_inner();
-        if response.accepted {
-            Ok(())
-        } else {
-            Err(format!("task refused: {}", response.message))
-        }
+        refusal_to_result(&response)
+    }
+}
+
+/// `Ok` if the entry point accepted the task, otherwise whether retrying can help.
+fn refusal_to_result(response: &SubmitIndexingTaskResponse) -> Result<(), SubmitError> {
+    let SubmitIndexingTaskResponse {
+        accepted,
+        message,
+        refusal: _,
+    } = response;
+    if *accepted {
+        return Ok(());
+    }
+    let reason = format!("task refused: {message}");
+    // Unknown values decode as `Transient`: retrying is the safe default
+    match response.refusal() {
+        IndexingTaskRefusal::IndexingRefusalTransient => Err(SubmitError::Transient(reason)),
+        IndexingTaskRefusal::IndexingRefusalPermanent => Err(SubmitError::Permanent(reason)),
     }
 }
 
@@ -180,7 +194,7 @@ impl RemoteIndexer for RemoteIndexingClient {
         &self.inner.remote_config
     }
 
-    fn submit(&self, task: &TaskSubmission) -> Result<(), String> {
+    fn submit(&self, task: &TaskSubmission) -> Result<(), SubmitError> {
         // Never `block_on` here: the caller may be inside another runtime's context
         let (sender, receiver) = mpsc::sync_channel(1);
         let task = task.clone();
@@ -191,7 +205,7 @@ impl RemoteIndexer for RemoteIndexingClient {
         let timeout = Duration::from_secs(self.inner.config.submit_timeout_sec + 5);
         let result = receiver
             .recv_timeout(timeout)
-            .unwrap_or_else(|_| Err("submission timed out".to_string()));
+            .unwrap_or_else(|_| Err(SubmitError::Transient("submission timed out".to_string())));
         join.abort();
         result
     }
@@ -200,6 +214,47 @@ impl RemoteIndexer for RemoteIndexingClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refusal_kinds() {
+        let response = |accepted, refusal: IndexingTaskRefusal| SubmitIndexingTaskResponse {
+            accepted,
+            message: "too large".to_string(),
+            refusal: refusal as i32,
+        };
+        assert_eq!(
+            refusal_to_result(&response(
+                true,
+                IndexingTaskRefusal::IndexingRefusalPermanent
+            )),
+            Ok(())
+        );
+        assert_eq!(
+            refusal_to_result(&response(
+                false,
+                IndexingTaskRefusal::IndexingRefusalTransient
+            )),
+            Err(SubmitError::Transient(
+                "task refused: too large".to_string()
+            ))
+        );
+        assert_eq!(
+            refusal_to_result(&response(
+                false,
+                IndexingTaskRefusal::IndexingRefusalPermanent
+            )),
+            Err(SubmitError::Permanent(
+                "task refused: too large".to_string()
+            ))
+        );
+        // A refusal kind from a newer indexer is retried
+        let mut unknown = response(false, IndexingTaskRefusal::IndexingRefusalTransient);
+        unknown.refusal = 42;
+        assert!(matches!(
+            refusal_to_result(&unknown),
+            Err(SubmitError::Transient(_))
+        ));
+    }
 
     #[test]
     fn parses_collection_and_shard() {
