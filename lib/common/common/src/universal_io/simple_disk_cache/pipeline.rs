@@ -146,9 +146,7 @@ where
 
     let local = file.state()?.local;
 
-    unsafe {
-        local.write_mmap_bytes(bytes, guard.placeholder().blocks_range.clone());
-    }
+    unsafe { local.write_mmap_bytes(bytes, guard.placeholder().blocks_range.clone()) }?;
 
     guard.complete();
     Ok(())

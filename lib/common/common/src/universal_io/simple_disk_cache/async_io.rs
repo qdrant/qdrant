@@ -86,7 +86,7 @@ where
                     .await?;
 
                 let local = LocalState::new(&local_path, file_len, options)?;
-                unsafe { local.write_mmap_bytes(&content, block_range) };
+                unsafe { local.write_mmap_bytes(&content, block_range) }?;
                 State::ready(remote, local)
             }
         };
@@ -161,7 +161,7 @@ where
                 // SAFETY: `bytes` is the remote content of `blocks_range`
                 // (clamped to EOF), which covers `range`.
                 unsafe {
-                    state.local.write_mmap_bytes(&bytes, blocks_range);
+                    state.local.write_mmap_bytes(&bytes, blocks_range)?;
                     Ok(ACow::Borrowed(
                         state.local.read_mmap_bytes::<Random>(range)?,
                     ))

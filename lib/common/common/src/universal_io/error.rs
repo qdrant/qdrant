@@ -111,7 +111,7 @@ pub enum UniversalIoError {
         since: Option<std::time::SystemTime>,
     },
 
-    #[error("elements range {start}..{end} is out of bounds, file contains {elements} elements")]
+    #[error("range {start}..{end} is out of bounds (size: {elements})")]
     OutOfBounds {
         start: u64,
         end: u64,

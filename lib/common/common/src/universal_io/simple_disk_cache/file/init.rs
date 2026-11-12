@@ -114,7 +114,7 @@ where
                 let blocks_range = to_block_range(0..bytes.len() as u64);
                 // SAFETY: `bytes` covers `blocks_range` exactly, and the remote
                 // is immutable, so the mmap is filled once with correct data.
-                unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
+                unsafe { local.write_mmap_bytes(&bytes, blocks_range) }?;
                 Ok((pipeline.into_inner(), local))
             }
             // `None` means the whole-object read scheduled nothing — the remote
@@ -141,7 +141,7 @@ where
                 // SAFETY: `start` is block-aligned and `bytes` covers
                 // `blocks_range` exactly (up to EOF), and the remote is
                 // immutable, so the mmap range is filled once with correct data.
-                unsafe { local.write_mmap_bytes(&bytes, blocks_range) };
+                unsafe { local.write_mmap_bytes(&bytes, blocks_range) }?;
             }
             // Nothing was scheduled (empty range) or the read came back empty:
             // leave the mirror empty and fault blocks in lazily.
