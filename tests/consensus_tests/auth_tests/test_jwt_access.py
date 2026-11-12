@@ -418,6 +418,8 @@ ACTION_ACCESS = {
     "cluster_telemetry": EndpointAccess(True, True, True, "GET /cluster/telemetry"),
     "recover_raft_state": EndpointAccess(False, False, True, "POST /cluster/recover"),
     "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
+    "get_consensus_state": EndpointAccess(False, False, True, "GET /cluster/consensus_state"),
+    "patch_consensus_state": EndpointAccess(False, False, True, "PATCH /cluster/consensus_state"),
     ### Quotas ###
     "get_quotas": EndpointAccess(True, False, True, "GET /quotas", coll_r=False),
     "update_quotas": EndpointAccess(False, False, True, "PUT /quotas"),
@@ -1547,6 +1549,19 @@ def test_recover_raft_state():
 
 def test_delete_peer():
     check_access("delete_peer", path_params={"peer_id": "2000"})
+
+
+def test_get_consensus_state():
+    check_access("get_consensus_state")
+
+
+def test_patch_consensus_state():
+    # Empty diff in dry run mode, so an authorized call does not change anything
+    check_access(
+        "patch_consensus_state",
+        rest_request={},
+        rest_req_kwargs={"params": {"dry_run": "true"}},
+    )
 
 
 def test_get_quotas():

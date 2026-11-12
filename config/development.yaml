@@ -17,6 +17,11 @@ service:
   #grpc_port: 6334
   #api_key: your_secret_api_key_here
 
+  # Enable `PATCH /cluster/consensus_state`, which changes consensus state of this peer only,
+  # without going through consensus. Last resort tool to repair broken clusters.
+  # Disabled by default. Uncomment to enable:
+  #enable_consensus_state_patch: true
+
 cluster:
   resharding_enabled: true
 

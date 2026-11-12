@@ -105,6 +105,12 @@ pub struct ServiceConfig {
     /// has access to internal resources that should not be reachable by users.
     #[serde(default = "default_snapshot_url_recovery")]
     pub enable_snapshot_url_recovery: bool,
+
+    /// Whether to enable `PATCH /cluster/consensus_state`, which changes consensus state
+    /// of a single peer without going through consensus.
+    /// Last resort tool to repair broken clusters. Disabled by default.
+    #[serde(default)]
+    pub enable_consensus_state_patch: bool,
 }
 
 impl ServiceConfig {
