@@ -11,7 +11,6 @@ use crate::requests::GroupRequest;
 impl<H: ReadSegmentHandle> EdgeReadView<H> {
     pub(crate) fn query_groups(&self, request: GroupRequest) -> OperationResult<Vec<Group>> {
         self.check_stopped()?;
-        let _scope = self.handoff.enter_guard();
         let GroupRequest {
             query,
             group_by,

@@ -14,7 +14,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         with_vector: Option<WithVector>,
     ) -> OperationResult<Vec<RecordInternal>> {
         self.check_stopped()?;
-        let _scope = self.handoff.enter_guard();
         let with_payload =
             WithPayload::from(with_payload.unwrap_or(WithPayloadInterface::Bool(true)));
         let with_vector = with_vector.unwrap_or(WithVector::Bool(false));
