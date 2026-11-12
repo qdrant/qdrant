@@ -269,7 +269,7 @@ impl CollectionStateDiff {
 
         // Pre-existing inconsistencies must not block unrelated changes,
         // so only reject inconsistencies introduced by the diff
-        let shard_layout_violations = shard_layout::violations(state);
+        let shard_layout_problems = shard_layout::validate(state);
 
         let State {
             config: state_config,
@@ -406,13 +406,13 @@ impl CollectionStateDiff {
             )?;
         }
 
-        let new_violation = shard_layout::violations(state)
+        let new_problem = shard_layout::validate(state)
             .into_iter()
-            .find(|violation| !shard_layout_violations.contains(violation));
+            .find(|problem| !shard_layout_problems.contains(problem));
 
-        if let Some(violation) = new_violation {
+        if let Some(problem) = new_problem {
             return Err(StorageError::bad_request(format!(
-                "can't update {path}: {violation}",
+                "can't update {path}: {problem}",
             )));
         }
 
