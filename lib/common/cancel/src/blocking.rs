@@ -1,3 +1,4 @@
+use common::ambient;
 use tokio_util::task::AbortOnDropHandle;
 
 use super::*;
@@ -18,7 +19,8 @@ where
 
     let task = {
         let cancel = cancel.child_token();
-        move || task(cancel)
+        let handoff = ambient::current();
+        move || handoff.enter(|| task(cancel))
     };
 
     let guard = cancel.drop_guard();
@@ -47,7 +49,8 @@ where
 {
     let task = {
         let cancel = cancel.child_token();
-        move || task(cancel)
+        let handoff = ambient::current();
+        move || handoff.enter(|| task(cancel))
     };
 
     let handle = tokio::task::spawn_blocking(task);

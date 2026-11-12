@@ -148,6 +148,7 @@ fn cancellation_during_segment_work_is_an_error_in_serial_and_parallel_reads() {
                 build_segment_pool("cancel-test", threads, None).unwrap(),
                 &EdgeScope::new().with_cancellation(stopped.clone()),
             );
+            let _scope = view.handoff.enter_guard(); // What `run` does around every read.
             if search {
                 // The first read fills the query context. The second cancels during
                 // search, which must see the same flag as the surrounding query.

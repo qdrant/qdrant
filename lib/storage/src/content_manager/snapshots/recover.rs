@@ -11,6 +11,7 @@ use collection::shards::replica_set::replica_set_state::{
     MANUAL_RECOVERY_SHARD_STATE_VERSION, ReplicaState,
 };
 use collection::shards::shard::{PeerId, ShardId};
+use common::ambient::AmbientFutureExt;
 use common::save_on_disk::SaveOnDisk;
 use fs_err::tokio as tokio_fs;
 use shard::files::PAYLOAD_INDEX_CONFIG_FILE;
@@ -79,9 +80,12 @@ pub async fn do_recover_from_snapshot(
 
     let res = toc
         .general_runtime_handle()
-        .spawn(async move {
-            _do_recover_from_snapshot(dispatcher, auth, collection_pass, source, &client).await
-        })
+        .spawn(
+            async move {
+                _do_recover_from_snapshot(dispatcher, auth, collection_pass, source, &client).await
+            }
+            .in_current_ambient(),
+        )
         .await??;
 
     Ok(res)

@@ -22,7 +22,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         request: ScrollRequestInternal,
     ) -> OperationResult<(Vec<RecordInternal>, Option<PointIdType>)> {
         self.check_stopped()?;
-        let _scope = self.handoff.enter_guard();
         let ScrollRequestInternal {
             offset,
             limit,
@@ -77,7 +76,6 @@ impl<H: ReadSegmentHandle> EdgeReadView<H> {
         request: &QueryScrollRequestInternal,
     ) -> OperationResult<Vec<ScoredPoint>> {
         self.check_stopped()?;
-        let _scope = self.handoff.enter_guard();
         let QueryScrollRequestInternal {
             limit,
             with_vector,

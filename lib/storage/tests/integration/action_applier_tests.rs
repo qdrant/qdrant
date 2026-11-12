@@ -23,7 +23,7 @@ use collection::shards::shard_holder::ShardHolder;
 use collection::shards::shard_trait::WaitUntil;
 use collection::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
-use common::ambient::{AmbientContext, AmbientFutureExt};
+use common::ambient::{self, AmbientContext, AmbientFutureExt};
 use common::types::DeferredBehavior;
 use parking_lot::Mutex;
 use segment::data_types::vector_name_config::{DenseVectorConfig, VectorNameConfig};
@@ -81,6 +81,7 @@ fn test_slow_down_action_replay() {
 
 #[test]
 fn create_collection_action_replay() {
+    let _scope = ambient::test_guard();
     let (storage_dir, handle, dispatcher, proposals) = new_dispatcher_with_proposals();
     create_collection(&handle, &dispatcher, "other");
 
@@ -408,11 +409,13 @@ fn create_and_register_shards_action_build_failure_reload() {
 
 #[test]
 fn create_and_register_shards_action_auto_resharding_reload() {
+    let _scope = ambient::test_guard();
     create_and_register_shards_action_resharding_reload(false);
 }
 
 #[test]
 fn create_and_register_shards_action_custom_resharding_reload() {
+    let _scope = ambient::test_guard();
     create_and_register_shards_action_resharding_reload(true);
 }
 

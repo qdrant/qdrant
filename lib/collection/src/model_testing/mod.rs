@@ -1293,6 +1293,8 @@ fn replay_command(
 #[cfg(target_os = "linux")]
 #[cfg(test)]
 mod tests {
+    use common::ambient;
+
     use super::*;
 
     const OP_NUM: usize = 8_000;
@@ -1436,6 +1438,7 @@ mod tests {
     /// ([`harness_no_optimizer_snapshots`]).
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer_no_restarts() {
+        let _scope = ambient::async_test_guard();
         smoke(
             "harness_no_optimizer_no_restarts",
             true,
@@ -1462,6 +1465,7 @@ mod tests {
     /// to the shorter run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_restarts() {
+        let _scope = ambient::async_test_guard();
         // op_num halved: optimizer churn makes this the slowest no-restart variant; trim it so
         // it isn't marked SLOW by nextest (coverage is recovered across many seeded CI runs).
         smoke(
@@ -1484,6 +1488,7 @@ mod tests {
     /// seed the op stream differs from a no-restart run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer() {
+        let _scope = ambient::async_test_guard();
         smoke(
             "harness_no_optimizer",
             true,
@@ -1509,6 +1514,7 @@ mod tests {
     /// recover the per-run coverage lost to the shorter run.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness() {
+        let _scope = ambient::async_test_guard();
         // op_num quartered: optimizer churn + restarts make this the slowest variant; trim it so
         // it isn't the suite's long pole (coverage is recovered across many seeded CI runs).
         smoke("harness", false, 0.002, SNAPSHOTS_OFF, OP_NUM / 4, false).await;
@@ -1526,6 +1532,7 @@ mod tests {
     /// a fixed seed is fully reproducible.
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_no_optimizer_snapshots() {
+        let _scope = ambient::async_test_guard();
         // restart_probability 0.001: exercise drain-before-restart
         smoke(
             "harness_no_optimizer_snapshots",
@@ -1554,6 +1561,7 @@ mod tests {
     #[cfg(feature = "edge-verify")]
     #[tokio::test(flavor = "multi_thread")]
     async fn harness_edge_verify() {
+        let _scope = ambient::async_test_guard();
         // The follower assumes the serverless leader contract, same as the binary's
         // --edge-verify path: manifest-driven segment discovery plus append-only
         // mutations. Manifests alone are NOT enough: an in-place point rewrite produces

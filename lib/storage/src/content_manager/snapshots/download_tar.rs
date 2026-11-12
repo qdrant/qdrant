@@ -252,12 +252,14 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use collection::shards::transfer::RecoveryStage;
+    use common::ambient;
     use futures::StreamExt;
 
     use super::*;
 
     #[tokio::test]
     async fn test_download_and_unpack_tar() {
+        let _scope = ambient::async_test_guard();
         let mut server = mockito::Server::new_async().await;
         server
             .mock("GET", "/test-shard.snapshot")
@@ -291,6 +293,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_and_unpack_tar_reports_transfer_in_comment() {
+        let _scope = ambient::async_test_guard();
         let mut server = mockito::Server::new_async().await;
         server
             .mock("GET", "/test-shard.snapshot")
@@ -359,6 +362,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_async_cancellation() {
+        let _scope = ambient::async_test_guard();
         let is_finished: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
         let is_finished_clone = is_finished.clone();
 

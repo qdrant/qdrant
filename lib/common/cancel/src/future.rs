@@ -1,5 +1,6 @@
 use std::future::Future;
 
+use common::ambient::AmbientFutureExt;
 use tokio::task::JoinHandle;
 
 use super::*;
@@ -20,7 +21,7 @@ where
     let future = task(cancel.child_token());
 
     let guard = cancel.drop_guard();
-    let output = tokio::task::spawn(future).await?;
+    let output = tokio::task::spawn(future.in_current_ambient()).await?;
     guard.disarm();
 
     Ok(output)

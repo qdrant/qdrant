@@ -10,6 +10,8 @@ use api::grpc::{
     PeerTelemetry, QuotaUsage, WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
 use chrono::DateTime;
+use common::ambient::AmbientFutureExt;
+use common::reason::reason;
 use common::types::{DetailsLevel, TelemetryDetail};
 use storage::audit::AuditConfig;
 use storage::audit_reader::{AuditLogQuery, read_local_audit_logs};
@@ -207,6 +209,7 @@ impl QdrantInternal for QdrantInternalService {
         let entries = cancel::blocking::spawn_cancel_on_drop(move |cancel| {
             read_local_audit_logs(&config, &query, &cancel)
         })
+        .unmeasured(reason("Audit logs aren't measured"))
         .await
         .map_err(|e| Status::internal(format!("Failed to read local audit logs: {e}")))?
         .map_err(|e| Status::internal(e.to_string()))?;

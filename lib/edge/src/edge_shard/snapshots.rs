@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use common::ambient;
+use common::reason::Reason;
 use fs_err as fs;
 use segment::common::operation_error::OperationResult;
 use shard::snapshots::snapshot_manifest::SnapshotManifest;
@@ -9,10 +11,12 @@ use crate::EdgeShard;
 
 impl EdgeShard {
     pub fn unpack_snapshot(snapshot_path: &Path, target_path: &Path) -> OperationResult<()> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         SnapshotUtils::unpack_snapshot(snapshot_path, target_path)
     }
 
     pub fn snapshot_manifest(&self) -> OperationResult<SnapshotManifest> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         self.segments.read().snapshot_manifest()
     }
 
@@ -22,6 +26,7 @@ impl EdgeShard {
         snapshot_path: &Path,
         snapshot_manifest: &SnapshotManifest,
     ) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let merge_plan = SnapshotUtils::partial_snapshot_merge_plan(
             shard_path,
             current_manifest,
