@@ -17,6 +17,7 @@ use collection::shards::transfer::ShardTransfer;
 use segment::types::{PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
+use validator::Validate as _;
 
 use crate::content_manager::alias_mapping::AliasMapping;
 use crate::content_manager::consensus_manager::{CollectionsSnapshot, SnapshotData};
@@ -229,6 +230,11 @@ impl ConsensusStateDiff {
         }
 
         if let Some(quota_config) = quota_config {
+            // Deserialization doesn't validate, and setting quota config doesn't either
+            quota_config
+                .validate()
+                .map_err(|err| StorageError::bad_request(format!("invalid quota config: {err}")))?;
+
             replace(
                 state_quota_config,
                 Some(quota_config),

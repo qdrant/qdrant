@@ -581,6 +581,16 @@ fn pre_existing_shard_layout_violations_dont_block_changes() {
 }
 
 #[test]
+fn invalid_quota_config_is_rejected() {
+    let error = rejected(
+        &mut state(),
+        json!({ "quota_config": { "enabled": true, "max_disk_usage_percent": 0 } }),
+    );
+
+    assert!(error.contains("invalid quota config"), "{error}");
+}
+
+#[test]
 fn quota_config_change_is_reported() {
     let mut state = state();
 
