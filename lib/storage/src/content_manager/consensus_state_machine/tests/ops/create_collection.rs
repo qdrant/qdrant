@@ -3,6 +3,7 @@
 use collection::config::ShardingMethod;
 use collection::shards::shard::ShardId;
 use segment::data_types::collection_defaults::CollectionConfigDefaults;
+use serde_json::{Value, json};
 
 use super::*;
 use crate::content_manager::collection_meta_ops::*;
@@ -173,6 +174,69 @@ fn create_collection_reject_zero_shards() {
     assert_eq!(machine.state(), &state);
 }
 
+#[test]
+fn create_collection_vector_names() {
+    // `Single` config has an implicit unnamed vector
+    let unnamed = json!({
+        "vectors": { "size": 4, "distance": "Cosine" },
+    });
+
+    let named = json!({
+        "vectors": { "image": { "size": 4, "distance": "Cosine" } },
+        "sparse_vectors": { "text": {} },
+    });
+
+    for request in [unnamed, named] {
+        let mut machine = state_machine(ClusterState::default());
+        let outcome = machine.apply(&create_collection_op(
+            create_collection_json(request.clone()),
+            None,
+        ));
+
+        assert!(
+            outcome.is_ok(),
+            "creating a collection with valid vector names should be accepted, \
+             request: {request}, got {outcome:?}",
+        );
+
+        assert!(machine.state().has_collection(COLLECTION));
+    }
+}
+
+#[test]
+fn create_collection_reject_invalid_dense_vector_name() {
+    for vector_name in [".", ".."] {
+        create_collection_reject_invalid_vector_name(json!({
+            "vectors": { vector_name: { "size": 4, "distance": "Cosine" } },
+        }));
+    }
+}
+
+#[test]
+fn create_collection_reject_invalid_sparse_vector_name() {
+    for vector_name in [".", ".."] {
+        create_collection_reject_invalid_vector_name(json!({
+            "sparse_vectors": { vector_name: {} },
+        }));
+    }
+}
+
+fn create_collection_reject_invalid_vector_name(request: Value) {
+    let state = ClusterState::default();
+
+    let mut machine = state_machine(state.clone());
+    let outcome = machine.apply(&unchecked_create_collection_op(create_collection_json(
+        request.clone(),
+    )));
+
+    assert!(
+        matches!(outcome, Err(StorageError::BadInput { .. })),
+        "invalid vector name should be rejected as bad input, request: {request}, got {outcome:?}",
+    );
+
+    assert_eq!(machine.state(), &state);
+}
+
 /// `placement` names the peers of every shard, the way a proposer sets them.
 /// Without it the operation reaches the machine the way a single node proposes it.
 fn create_collection_op(
@@ -193,4 +257,20 @@ fn create_collection_op(
     }
 
     collection_meta_op(CollectionMetaOperations::CreateCollection(operation))
+}
+
+/// Skips the validation in `CreateCollectionOperation::new`:
+/// a committed entry reaches the machine without going through it
+fn unchecked_create_collection_op(create_collection: CreateCollection) -> ConsensusOperations {
+    let mut operation =
+        CreateCollectionOperation::new(COLLECTION.into(), create_collection_request())
+            .expect("valid operation");
+
+    operation.create_collection = create_collection;
+
+    collection_meta_op(CollectionMetaOperations::CreateCollection(operation))
+}
+
+fn create_collection_json(request: Value) -> CreateCollection {
+    serde_json::from_value(request).expect("valid create collection request")
 }

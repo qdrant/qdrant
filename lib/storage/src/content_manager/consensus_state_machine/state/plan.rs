@@ -72,6 +72,12 @@ impl ClusterState {
             )));
         }
 
+        // `CreateCollectionOperation::new` validates vector names before proposal, but a committed
+        // entry does not have to come through it. Segment creation would reject an invalid name
+        // when applying the action, a failed action is a service error, and consensus would retry
+        // the entry forever.
+        op.create_collection.validate_vector_names()?;
+
         let distribution = context.shard_distribution(op);
         let config = context.collection_config(&op.create_collection, distribution.len())?;
 
@@ -296,6 +302,12 @@ impl ClusterState {
         } = op;
 
         let collection = self.resolve_collection(collection_name)?;
+
+        // Same as in `plan_create_collection`: the API validates the name before proposal,
+        // but a committed entry does not have to come through it
+        common::validation::validate_vector_name(vector_name).map_err(|err| {
+            StorageError::bad_input(format!("Invalid vector name `{vector_name}`: {err}"))
+        })?;
 
         // Reject vector that already exists with different config.
         //
