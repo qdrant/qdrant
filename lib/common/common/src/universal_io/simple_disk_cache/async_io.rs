@@ -14,6 +14,7 @@ use super::fs::{DiskCacheFs, unique_local_path};
 use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
 use super::{DiskCacheRemote, block_aligned_fetch};
+use crate::ambient::hw::HwMetric;
 use crate::ext::aligned_vec::ACow;
 use crate::generic_consts::{AccessPattern, Random, Sequential};
 use crate::universal_io::traits::read_from_via_read_bytes;
@@ -135,6 +136,35 @@ where
         access_pattern: P,
         _align: usize,
     ) -> UioResult<ACow<'_>> {
+        HwMetric::RemoteIoCachedRead.bump(range.clone().count());
+        self.read_bytes_uncounted_async(range, access_pattern).await
+    }
+
+    fn read_from_into_async<W, I>(
+        &self,
+        from: u64,
+        init: I,
+    ) -> impl Future<Output = UioResult<W>> + Send
+    where
+        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
+        W: ChunkSink + Send + 'static,
+    {
+        read_from_via_read_bytes(self, from, init)
+    }
+
+    async fn populate_range_async(&self, range: Range<u64>) -> UioResult<()> {
+        // Fetch will mirror the block locally.
+        _ = self.read_bytes_uncounted_async(range, Sequential).await?;
+        Ok(())
+    }
+}
+
+impl<R: DiskCacheRemote> DiskCache<R> {
+    async fn read_bytes_uncounted_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+    ) -> UioResult<ACow<'_>> {
         // warn: first-touch init (`state()`) still does blocking I/O; only the
         // block fetch itself is async.
         //
@@ -168,23 +198,5 @@ where
                 }
             }
         }
-    }
-
-    fn read_from_into_async<W, I>(
-        &self,
-        from: u64,
-        init: I,
-    ) -> impl Future<Output = UioResult<W>> + Send
-    where
-        I: FnOnce(u64) -> UioResult<W> + Send + 'static,
-        W: ChunkSink + Send + 'static,
-    {
-        read_from_via_read_bytes(self, from, init)
-    }
-
-    async fn populate_range_async(&self, range: Range<u64>) -> UioResult<()> {
-        // Fetch will mirror the block locally.
-        _ = self.read_bytes_async(range, Sequential, 1).await?;
-        Ok(())
     }
 }

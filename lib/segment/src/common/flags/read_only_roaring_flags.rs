@@ -319,6 +319,7 @@ mod tests {
     /// actually reproduces (mmap readers are read-through and can't catch it).
     #[test]
     fn live_reload_over_disk_cache_sees_in_place_bit_writes() {
+        let _scope = ambient::test_guard();
         let tmp = Builder::new().prefix("roaring_reload").tempdir().unwrap();
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");
@@ -376,6 +377,7 @@ mod tests {
     /// swaps in the fresh handle, and the eventual first scan reads it.
     #[test]
     fn live_reload_before_materialization_scans_fresh_state() {
+        let _scope = ambient::test_guard();
         let tmp = Builder::new().prefix("roaring_reload").tempdir().unwrap();
         let remote_root = tmp.path().join("remote");
         let local_root = tmp.path().join("local");
