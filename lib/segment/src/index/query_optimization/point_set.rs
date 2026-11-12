@@ -37,6 +37,15 @@ pub struct PointSetContext {
 }
 
 impl PointSetContext {
+    /// A context for a set whose use is unknown: the representation is chosen by its
+    /// density in the segment alone, as if it will never be checked point by point.
+    pub fn by_density(total_points: usize) -> Self {
+        Self {
+            total_points,
+            expected_checks: 0,
+        }
+    }
+
     /// Whether a bitset is cheaper than a sorted list for a set of `len` points.
     /// `sorted` tells whether the points are already sorted, so the list needs no sort.
     fn prefer_bits(&self, len: usize, sorted: bool) -> bool {

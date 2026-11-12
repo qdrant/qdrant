@@ -304,15 +304,8 @@ where
         query_cardinality: &CardinalityEstimation,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-        expected_checks: usize,
     ) -> OperationResult<PointSet> {
-        self.materialize_filter_points(
-            filter,
-            query_cardinality,
-            is_stopped,
-            deferred_behavior,
-            expected_checks,
-        )
+        self.materialize_filter_points(filter, query_cardinality, is_stopped, deferred_behavior)
     }
 
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> OperationResult<usize> {

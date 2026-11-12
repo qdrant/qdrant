@@ -259,12 +259,8 @@ impl PayloadIndexRead for PlainPayloadIndex {
         query_cardinality: &CardinalityEstimation,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-        expected_checks: usize,
     ) -> OperationResult<PointSet> {
-        let context = PointSetContext {
-            total_points: self.id_tracker.borrow().total_point_count(),
-            expected_checks,
-        };
+        let context = PointSetContext::by_density(self.id_tracker.borrow().total_point_count());
         let points =
             self.iter_filtered_points(filter, query_cardinality, is_stopped, deferred_behavior)?;
         let points = PointSet::from_points(points, query_cardinality.exp, context);

@@ -376,18 +376,15 @@ fn test_materialize_filter_matches_query_points() {
             assert!(!expected.is_empty(), "{filter:?}");
 
             let cardinality = view.estimate_cardinality(filter).unwrap();
-            for expected_checks in [0, 1_000_000] {
-                let set = view
-                    .materialize_filter(
-                        filter,
-                        &cardinality,
-                        &stopped,
-                        common::types::DeferredBehavior::VisibleOnly,
-                        expected_checks,
-                    )
-                    .unwrap();
-                assert_eq!(set.iter().collect::<Vec<_>>(), expected, "{filter:?}");
-            }
+            let set = view
+                .materialize_filter(
+                    filter,
+                    &cardinality,
+                    &stopped,
+                    common::types::DeferredBehavior::VisibleOnly,
+                )
+                .unwrap();
+            assert_eq!(set.iter().collect::<Vec<_>>(), expected, "{filter:?}");
         }
 
         // A stopped materialization fails instead of returning a partial set
@@ -397,7 +394,6 @@ fn test_materialize_filter_matches_query_points() {
             &cardinality,
             &AtomicBool::new(true),
             common::types::DeferredBehavior::VisibleOnly,
-            0,
         );
         assert!(result.is_err());
     });

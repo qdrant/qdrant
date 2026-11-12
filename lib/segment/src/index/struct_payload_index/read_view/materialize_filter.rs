@@ -47,12 +47,8 @@ where
         query_cardinality: &CardinalityEstimation,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-        expected_checks: usize,
     ) -> OperationResult<PointSet> {
-        let context = PointSetContext {
-            total_points: self.id_tracker.total_point_count(),
-            expected_checks,
-        };
+        let context = PointSetContext::by_density(self.id_tracker.total_point_count());
         let expected_len = query_cardinality.exp;
 
         let points = if primary_clauses_cover(filter, query_cardinality)

@@ -61,19 +61,12 @@ where
             return Ok(None);
         }
 
-        // Only the searches that check points one at a time test the set: the others iterate
-        // it, since it is their filter's only primary clause
-        let expected_checks = uses
-            .iter()
-            .map(|checks| checks.lazy)
-            .fold(0usize, usize::saturating_add);
         // The visibility vector searches use
         let points = self.payload_index.materialize_filter(
             filter,
             &cardinality,
             query_context.is_stopped_flag(),
             DeferredBehavior::VisibleOnly,
-            expected_checks,
         )?;
         Ok(Some(Filter::new_must(Condition::ResolvedPoints(
             ResolvedPoints::new(self.segment_uuid, points),

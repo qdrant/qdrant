@@ -173,8 +173,8 @@ pub trait PayloadIndexRead {
 
     /// The points matching `filter`, as a [`PointSet`] for searches to check or iterate.
     ///
-    /// `query_cardinality` is the estimation of `filter`, and `expected_checks` how many
-    /// points will be checked against the set, which decides between a bitset and a list.
+    /// `query_cardinality` is the estimation of `filter`. Whether the set is a bitset or a
+    /// list depends only on its density in the segment.
     /// Fails if `is_stopped` is raised: a set is never partial.
     fn materialize_filter(
         &self,
@@ -182,7 +182,6 @@ pub trait PayloadIndexRead {
         query_cardinality: &CardinalityEstimation,
         is_stopped: &AtomicBool,
         deferred_behavior: DeferredBehavior,
-        expected_checks: usize,
     ) -> OperationResult<PointSet>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
