@@ -4296,9 +4296,6 @@ enum ConditionUntagged {
 
     #[serde(skip)]
     CustomIdChecker(CustomIdChecker),
-
-    #[serde(skip)]
-    ResolvedPoints(ResolvedPoints),
 }
 
 impl From<ConditionUntagged> for Condition {
@@ -4313,7 +4310,6 @@ impl From<ConditionUntagged> for Condition {
             ConditionUntagged::Nested(condition) => Condition::Nested(condition),
             ConditionUntagged::Filter(condition) => Condition::Filter(condition),
             ConditionUntagged::CustomIdChecker(condition) => Condition::CustomIdChecker(condition),
-            ConditionUntagged::ResolvedPoints(condition) => Condition::ResolvedPoints(condition),
         }
     }
 }

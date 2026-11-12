@@ -313,10 +313,13 @@ fn test_hnsw_with_resolved_filter() {
     }
 }
 
-/// A materialized filter holds exactly the points the filter iterates, on every filtering path
-/// (primary clauses only, primary clauses plus checks, full scan) and in both representations.
+/// A shared filter holds exactly the points the filter iterates, on every filtering path with
+/// primary clauses: primary clauses only, and primary clauses plus checks.
+///
+/// A filter without primary clauses is not covered: the struct payload index counts its
+/// materialization cost as zero, so `share_filter` never shares it.
 #[test]
-fn test_materialize_filter_matches_query_points() {
+fn test_shared_filter_holds_the_filtered_points() {
     let _scope = ambient::test_guard();
     let mut rng = StdRng::seed_from_u64(42);
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -363,39 +366,52 @@ fn test_materialize_filter_matches_query_points() {
             must: Some(vec![indexed()]),
             must_not: Some(vec![unindexed()]),
         },
-        // Full scan
-        Filter::new_must(unindexed()),
     ];
 
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let query = [QueryVector::from(random_vector(&mut rng, 4))];
+    let user = FilterUser {
+        vector_name: VECTOR1_NAME,
+        query_vectors: &query,
+        top: 10,
+        params: None,
+    };
+
     let stopped = AtomicBool::new(false);
-    let payload_index = segment.payload_index.borrow();
-    payload_index.with_view(|view| {
-        for filter in &filters {
-            let mut expected = view.query_points(filter, &stopped).unwrap();
-            expected.sort_unstable();
-            expected.dedup();
-            assert!(!expected.is_empty(), "{filter:?}");
+    for filter in &filters {
+        let mut expected = segment
+            .payload_index
+            .borrow()
+            .with_view(|view| view.query_points(filter, &stopped).unwrap());
+        expected.sort_unstable();
+        expected.dedup();
+        assert!(!expected.is_empty(), "{filter:?}");
 
-            let cardinality = view.estimate_cardinality(filter).unwrap();
-            let set = view
-                .materialize_filter(
-                    filter,
-                    &cardinality,
-                    &stopped,
-                    common::types::DeferredBehavior::VisibleOnly,
-                )
-                .unwrap();
-            assert_eq!(set.iter().collect::<Vec<_>>(), expected, "{filter:?}");
-        }
+        // Plain indexes check every candidate: two searches always share
+        let shared = segment
+            .share_filter(filter, &[user, user], &segment_query_context)
+            .unwrap()
+            .unwrap();
+        let points = resolved_points(&shared);
+        assert_eq!(points.len(), expected.len(), "{filter:?}");
+        assert_eq!(points.iter().collect::<Vec<_>>(), expected, "{filter:?}");
+    }
 
-        // A stopped materialization fails instead of returning a partial set
-        let cardinality = view.estimate_cardinality(&filters[0]).unwrap();
-        let result = view.materialize_filter(
-            &filters[0],
-            &cardinality,
-            &AtomicBool::new(true),
-            common::types::DeferredBehavior::VisibleOnly,
-        );
-        assert!(result.is_err());
-    });
+    // A stopped resolution fails instead of sharing a partial set
+    let stopped_context = QueryContext::default().with_is_stopped(Arc::new(AtomicBool::new(true)));
+    let result = segment.share_filter(
+        &filters[0],
+        &[user, user],
+        &stopped_context.get_segment_query_context(),
+    );
+    assert!(result.is_err());
+}
+
+/// The points of a filter returned by `share_filter`
+fn resolved_points(shared: &Filter) -> &PointSet {
+    match shared.must.as_deref() {
+        Some([Condition::ResolvedPoints(resolved)]) => resolved.points(),
+        other => panic!("a shared filter is a single `ResolvedPoints` condition, got {other:?}"),
+    }
 }

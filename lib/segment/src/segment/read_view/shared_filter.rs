@@ -1,10 +1,12 @@
 use common::types::DeferredBehavior;
 
+use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::filter_user::FilterUser;
 use crate::data_types::query_context::SegmentQueryContext;
 use crate::id_tracker::IdTrackerRead;
 use crate::index::query_optimization::filter_checks::worth_sharing;
+use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::index::query_optimization::resolved_points::ResolvedPoints;
 use crate::index::{PayloadIndexRead, VectorIndexRead};
 use crate::payload_storage::PayloadStorageRead;
@@ -62,12 +64,19 @@ where
         }
 
         // The visibility vector searches use
-        let points = self.payload_index.materialize_filter(
+        let is_stopped = query_context.is_stopped_flag();
+        let points = self.payload_index.iter_filtered_points(
             filter,
             &cardinality,
-            query_context.is_stopped_flag(),
+            is_stopped,
             DeferredBehavior::VisibleOnly,
         )?;
+        // Whether the set is a bitset or a list depends only on its density in the segment
+        let context = PointSetContext::by_density(self.id_tracker.total_point_count());
+        let points = PointSet::from_points(points, cardinality.exp, context);
+        // A stopped iteration ends early: never hand out a partial set
+        check_stopped(is_stopped)?;
+
         Ok(Some(Filter::new_must(Condition::ResolvedPoints(
             ResolvedPoints::new(self.segment_uuid, points),
         ))))

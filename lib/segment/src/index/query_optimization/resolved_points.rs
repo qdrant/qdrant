@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use super::point_set::PointSet;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::types::{Condition, Filter, MinShould};
+use crate::types::{Condition, Filter};
 
 /// Offsets of the points of one segment that match a filter.
 #[derive(Clone)]
@@ -92,49 +92,25 @@ impl Hash for ResolvedPoints {
 /// Fails if `filter` holds a [`Condition::ResolvedPoints`] resolved in another segment than
 /// `segment_uuid`: its offsets would select unrelated points.
 pub fn check_resolved_points(filter: &Filter, segment_uuid: Uuid) -> OperationResult<()> {
-    let Filter {
-        should,
-        min_should,
-        must,
-        must_not,
-    } = filter;
-    let min_should_conditions = min_should.iter().flat_map(|min_should| {
-        let MinShould {
-            conditions,
-            min_count: _,
-        } = min_should;
-        conditions
-    });
-    should
-        .iter()
-        .flatten()
-        .chain(min_should_conditions)
-        .chain(must.iter().flatten())
-        .chain(must_not.iter().flatten())
-        .try_for_each(|condition| check_condition(condition, segment_uuid))
-}
-
-fn check_condition(condition: &Condition, segment_uuid: Uuid) -> OperationResult<()> {
-    match condition {
-        Condition::ResolvedPoints(resolved) => {
-            if resolved.segment_uuid == segment_uuid {
-                Ok(())
-            } else {
+    filter
+        .iter_conditions()
+        .try_for_each(|condition| match condition {
+            Condition::ResolvedPoints(resolved) if resolved.segment_uuid != segment_uuid => {
                 Err(OperationError::service_error(format!(
                     "filter resolved in segment {} used in segment {segment_uuid}",
                     resolved.segment_uuid,
                 )))
             }
-        }
-        Condition::Filter(filter) => check_resolved_points(filter, segment_uuid),
-        // A nested filter checks array elements, which have no offsets: never resolved
-        Condition::Nested(_)
-        | Condition::Field(_)
-        | Condition::IsEmpty(_)
-        | Condition::IsNull(_)
-        | Condition::HasId(_)
-        | Condition::HasVector(_)
-        | Condition::Slice(_)
-        | Condition::CustomIdChecker(_) => Ok(()),
-    }
+            Condition::ResolvedPoints(_) => Ok(()),
+            Condition::Filter(filter) => check_resolved_points(filter, segment_uuid),
+            // A nested filter checks array elements, which have no offsets: never resolved
+            Condition::Nested(_)
+            | Condition::Field(_)
+            | Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasId(_)
+            | Condition::HasVector(_)
+            | Condition::Slice(_)
+            | Condition::CustomIdChecker(_) => Ok(()),
+        })
 }

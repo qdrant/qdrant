@@ -17,7 +17,6 @@ use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::index::field_index::full_text_index::{Bm25Accept, Bm25Params};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
-use crate::index::query_optimization::point_set::PointSet;
 use crate::json_path::JsonPath;
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
@@ -170,19 +169,6 @@ pub trait PayloadIndexRead {
         deferred_behavior: DeferredBehavior,
         first: Option<usize>,
     ) -> OperationResult<impl Iterator<Item = PointOffsetType> + 'a>;
-
-    /// The points matching `filter`, as a [`PointSet`] for searches to check or iterate.
-    ///
-    /// `query_cardinality` is the estimation of `filter`. Whether the set is a bitset or a
-    /// list depends only on its density in the segment.
-    /// Fails if `is_stopped` is raised: a set is never partial.
-    fn materialize_filter(
-        &self,
-        filter: &Filter,
-        query_cardinality: &CardinalityEstimation,
-        is_stopped: &AtomicBool,
-        deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<PointSet>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index

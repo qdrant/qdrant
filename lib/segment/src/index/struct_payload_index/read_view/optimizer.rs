@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::sync::Arc;
 
 use common::types::{DeferredBehavior, PointOffsetType};
 use itertools::Itertools;
@@ -150,7 +151,10 @@ where
                     ConvertedCondition::Posting(posting) => {
                         // A posting is only read when there is a hint, so a context too.
                         let context = context.expect("posting read without a hint");
-                        ConditionCheckerEnum::Points(PointSet::union(vec![posting], context))
+                        ConditionCheckerEnum::Points(Arc::new(PointSet::union(
+                            vec![posting],
+                            context,
+                        )))
                     }
                 };
                 (checker, estimation)

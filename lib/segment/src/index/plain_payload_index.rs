@@ -14,8 +14,8 @@ use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
 use super::payload_config::PayloadFieldSchemaWithIndexType;
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::{Flusher, check_stopped};
 use crate::data_types::query_context::{TextFieldStats, TextQueryContext};
 use crate::id_tracker::{IdTrackerEnum, IdTrackerRead};
 use crate::index::condition_checker::ConditionCheckerEnum;
@@ -25,7 +25,6 @@ use crate::index::field_index::numeric_index::{NumericFieldIndex, NumericFieldIn
 use crate::index::field_index::{CardinalityEstimation, FacetIndex, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::query_optimization::optimized_filter::OptimizedFilter;
-use crate::index::query_optimization::point_set::{PointSet, PointSetContext};
 use crate::index::query_optimization::rescore_formula::FormulaScorer;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use crate::index::{BuildIndexResult, PayloadIndex, PayloadIndexRead};
@@ -251,22 +250,6 @@ impl PayloadIndexRead for PlainPayloadIndex {
             .take(first.unwrap_or(usize::MAX))
             .collect::<OperationResult<_>>()?;
         Ok(matched.into_iter())
-    }
-
-    fn materialize_filter(
-        &self,
-        filter: &Filter,
-        query_cardinality: &CardinalityEstimation,
-        is_stopped: &AtomicBool,
-        deferred_behavior: DeferredBehavior,
-    ) -> OperationResult<PointSet> {
-        let context = PointSetContext::by_density(self.id_tracker.borrow().total_point_count());
-        let points =
-            self.iter_filtered_points(filter, query_cardinality, is_stopped, deferred_behavior)?;
-        let points = PointSet::from_points(points, query_cardinality.exp, context);
-        // A stopped iteration ends early
-        check_stopped(is_stopped)?;
-        Ok(points)
     }
 }
 

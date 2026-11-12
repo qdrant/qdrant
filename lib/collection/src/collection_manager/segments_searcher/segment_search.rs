@@ -60,27 +60,11 @@ pub(super) fn search_in_segment(
 
     for (group, shared_filter) in groups.into_iter().zip(&shared_filters) {
         let SearchBatchGroup {
-            params:
-                BatchSearchParams {
-                    search_type,
-                    vector_name,
-                    filter,
-                    with_payload,
-                    with_vector,
-                    top,
-                    params,
-                },
+            mut params,
             query_vectors,
         } = group;
-        let params = BatchSearchParams {
-            search_type,
-            vector_name,
-            filter: shared_filter.as_ref().or(filter),
-            with_payload,
-            with_vector,
-            top,
-            params,
-        };
+        // In this segment, a shared filter stands for the group's own
+        params.filter = shared_filter.as_ref().or(params.filter);
 
         let (mut res, mut further) = execute_batch_search(
             &*read_segment,
