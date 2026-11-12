@@ -7,6 +7,8 @@
 //! [`preview_batch`]: UpdateOnlyEdgeShard::preview_batch
 //! [`apply_batch`]: UpdateOnlyEdgeShard::apply_batch
 
+use common::ambient;
+use common::reason::Reason;
 use common::types::PointOffsetType;
 use common::universal_io::{UniversalAppendFs, UniversalReadFsAsync};
 use rayon::ThreadPool;
@@ -143,6 +145,7 @@ impl<Fs: UniversalAppendFs> UpdateOnlyEdgeShard<Fs> {
         &self,
         operations: impl IntoIterator<Item = (SeqNumberType, CollectionUpdateOperations)>,
     ) -> OperationResult<UpdateBatchPreview> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         let plan = UpdateBatchPlan::build(operations)?;
         if plan.is_empty() {
             return Ok(UpdateBatchPreview { points: Vec::new() });

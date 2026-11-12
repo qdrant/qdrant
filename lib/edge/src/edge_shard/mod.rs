@@ -60,6 +60,7 @@ impl EdgeShard {
     /// behavior follows `config.wal_enabled` and `config.wal_options` (defaults to 32 MiB segments
     /// when unset).
     pub fn new(path: &Path, config: EdgeConfig) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if has_existing_segments(path) {
             return Err(OperationError::service_error(
                 "cannot create edge shard: path already contains segment data",
@@ -130,6 +131,7 @@ impl EdgeShard {
     /// the default 32 MiB segment capacity is too large), set
     /// [`EdgeConfig::wal_options`] on the supplied config.
     pub fn load(path: &Path, config: Option<EdgeConfig>) -> OperationResult<Self> {
+        let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
         if !path.is_dir() {
             return Err(OperationError::service_error(format!(
                 "cannot load edge shard: directory {} does not exist",
@@ -595,7 +597,6 @@ fn ensure_appendable_segment(
 
     let (mut segment, token) =
         build_segment(segments_path, &config.plain_segment_config(), None, true)?;
-    let _scope = ambient::unmeasured_guard(Reason::EDGE_UNMEASURED);
     for (key, schema) in &indexed_fields {
         segment.create_field_index(0, key, Some(schema))?;
     }

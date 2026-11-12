@@ -15,7 +15,7 @@ use super::local_state::LocalState;
 use super::pipeline::{REMOTE_READ_ALIGNMENT, Source, pick_source, read_local};
 use super::{DiskCacheRemote, block_aligned_fetch};
 use crate::ext::aligned_vec::ACow;
-use crate::generic_consts::{AccessPattern, Random, Sequential};
+use crate::generic_consts::{AccessPattern, Sequential};
 use crate::universal_io::traits::read_from_via_read_bytes;
 use crate::universal_io::{
     ChunkSink, ListedFile, OpenExtra, OpenOptions, Populate, UioResult, UniversalReadAsync,
@@ -135,39 +135,11 @@ where
         access_pattern: P,
         _align: usize,
     ) -> UioResult<ACow<'_>> {
-        // warn: first-touch init (`state()`) still does blocking I/O; only the
-        // block fetch itself is async.
-        //
-        // TODO(uio): This is a targeted use of async, but maybe later we'd want
-        // a proper async pipeline
-        let state = self.state()?;
-        match pick_source::<P>(state.local, range.clone())? {
-            Source::Local {
-                range,
-                is_sequential,
-            } => {
-                // SAFETY: Source::Local confirms the range is local (or empty).
-                let bytes = unsafe { read_local::<R>(self, range, is_sequential)? };
-                Ok(ACow::Borrowed(bytes))
-            }
-            Source::Remote {
-                blocks_range,
-                blocks_byte_range,
-            } => {
-                let bytes = state
-                    .remote
-                    .read_bytes_async(blocks_byte_range, access_pattern, REMOTE_READ_ALIGNMENT)
-                    .await?;
-                // SAFETY: `bytes` is the remote content of `blocks_range`
-                // (clamped to EOF), which covers `range`.
-                unsafe {
-                    state.local.write_mmap_bytes(&bytes, blocks_range);
-                    Ok(ACow::Borrowed(
-                        state.local.read_mmap_bytes::<Random>(range)?,
-                    ))
-                }
-            }
-        }
+        self.ensure_local_async(range.clone(), access_pattern)
+            .await?;
+        // SAFETY: `ensure_local_async` made `range` local.
+        let bytes = unsafe { read_local::<R>(self, range, P::IS_SEQUENTIAL)? };
+        Ok(ACow::Borrowed(bytes))
     }
 
     fn read_from_into_async<W, I>(
@@ -184,7 +156,41 @@ where
 
     async fn populate_range_async(&self, range: Range<u64>) -> UioResult<()> {
         // Fetch will mirror the block locally.
-        _ = self.read_bytes_async(range, Sequential, 1).await?;
-        Ok(())
+        self.ensure_local_async(range, Sequential).await
+    }
+}
+
+impl<R: DiskCacheRemote> DiskCache<R> {
+    /// Fetch the blocks covering `range` into the local mirror, unless already there.
+    async fn ensure_local_async<P: AccessPattern>(
+        &self,
+        range: Range<u64>,
+        access_pattern: P,
+    ) -> UioResult<()> {
+        // warn: first-touch init (`state()`) still does blocking I/O; only the
+        // block fetch itself is async.
+        //
+        // TODO(uio): This is a targeted use of async, but maybe later we'd want
+        // a proper async pipeline
+        let state = self.state()?;
+        match pick_source::<P>(state.local, range)? {
+            Source::Local {
+                range: _,
+                is_sequential: _,
+            } => Ok(()),
+            Source::Remote {
+                blocks_range,
+                blocks_byte_range,
+            } => {
+                let bytes = state
+                    .remote
+                    .read_bytes_async(blocks_byte_range, access_pattern, REMOTE_READ_ALIGNMENT)
+                    .await?;
+                // SAFETY: `bytes` is the remote content of `blocks_range`
+                // (clamped to EOF), which covers `range`.
+                unsafe { state.local.write_mmap_bytes(&bytes, blocks_range) };
+                Ok(())
+            }
+        }
     }
 }
