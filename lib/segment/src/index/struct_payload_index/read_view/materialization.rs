@@ -5,6 +5,8 @@
 //! All such posting lists of one clause are then merged into a single [`PointSet`], so a
 //! clause pays for at most one set, and that set is a sorted list unless a bitset is cheaper.
 
+use std::sync::Arc;
+
 use common::types::PointOffsetType;
 
 use crate::index::condition_checker::ConditionCheckerEnum;
@@ -77,7 +79,7 @@ pub(super) fn merge_postings<'b>(
             PostingMerge::Intersection => PointSet::intersection(postings, context),
             PostingMerge::Union => PointSet::union(postings, context),
         };
-        checkers[0] = Some(ConditionCheckerEnum::Points(set));
+        checkers[0] = Some(ConditionCheckerEnum::Points(Arc::new(set)));
     }
     checkers.into_iter().flatten().collect()
 }

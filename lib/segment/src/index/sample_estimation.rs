@@ -2,7 +2,7 @@ use common::types::PointOffsetType;
 
 use crate::common::operation_error::OperationResult;
 
-const MAX_ESTIMATED_POINTS: usize = 1000;
+pub(crate) const MAX_ESTIMATED_POINTS: usize = 1000;
 
 /// Returns (expected cardinality ± confidence interval at ~0.95, i.e. z = 2.0)
 /// Based on <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Agresti%E2%80%93Coull_interval>

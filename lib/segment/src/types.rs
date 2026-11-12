@@ -48,6 +48,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::tiny_map::TinyMap;
 use crate::data_types::vectors::{DenseVector, VectorStructInternal};
 use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::resolved_points::ResolvedPoints;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::{JsonPath, JsonPathItem};
 use crate::spaces::metric::{Metric, MetricPostProcessing};
@@ -4270,6 +4271,11 @@ pub enum Condition {
 
     #[serde(skip)]
     CustomIdChecker(CustomIdChecker),
+
+    /// A filter already evaluated in one segment, shared by the searches of a batch.
+    /// Internal: never serialized nor received from a user.
+    #[serde(skip)]
+    ResolvedPoints(ResolvedPoints),
 }
 
 #[derive(Deserialize)]
@@ -4399,6 +4405,7 @@ impl Condition {
             | Condition::HasVector(_)
             | Condition::Slice(_)
             | Condition::CustomIdChecker(_) => 0,
+            Condition::ResolvedPoints(resolved) => resolved.len(),
         }
     }
 
@@ -4412,6 +4419,7 @@ impl Condition {
             | Condition::IsEmpty(_)
             | Condition::IsNull(_)
             | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_)
             | Condition::HasId(_)
             | Condition::HasVector(_)
             | Condition::Slice(_) => 1,
@@ -4428,7 +4436,8 @@ impl Condition {
             Condition::HasId(_)
             | Condition::HasVector(_)
             | Condition::Slice(_)
-            | Condition::CustomIdChecker(_) => None,
+            | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_) => None,
         }
     }
 
@@ -4450,7 +4459,8 @@ impl Condition {
             | Condition::HasId(_)
             | Condition::HasVector(_)
             | Condition::Slice(_)
-            | Condition::CustomIdChecker(_) => None,
+            | Condition::CustomIdChecker(_)
+            | Condition::ResolvedPoints(_) => None,
         }
     }
 }
@@ -4467,7 +4477,7 @@ impl Validate for Condition {
             Condition::Slice(slice_condition) => slice_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
-            Condition::CustomIdChecker(_) => Ok(()),
+            Condition::CustomIdChecker(_) | Condition::ResolvedPoints(_) => Ok(()),
         }
     }
 }

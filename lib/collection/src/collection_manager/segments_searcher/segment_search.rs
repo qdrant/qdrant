@@ -4,10 +4,12 @@ use std::time::Duration;
 use itertools::Itertools;
 use segment::data_types::query_context::SegmentQueryContext;
 use segment::data_types::vectors::QueryVector;
+use segment::entry::entry_point::ReadSegmentEntry;
 use segment::types::{Indexes, ScoredPoint, SegmentConfig, VectorName};
 use shard::search::{
     BatchSearchParams, CoreSearchRequestBatch, SearchBatchGroup, group_search_batches,
 };
+use shard::search_shared_filter::share_group_filters;
 
 use super::sampling::sampling_limit;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -45,19 +47,31 @@ pub(super) fn search_in_segment(
     let mut result: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
     let mut further_results: Vec<bool> = Vec::with_capacity(batch_size); // if segment have more points to return
 
-    for group in group_search_batches(&request.searches) {
+    let groups = group_search_batches(&request.searches);
+
+    // One read lock for the whole batch: filters shared between groups are resolved to the
+    // segment's points once, and those must stay valid for every group that uses them.
+    let locked_segment = segment.get();
+    let Some(read_segment) = locked_segment.try_read_for(timeout) else {
+        return Err(CollectionError::timeout(timeout, "batch search"));
+    };
+
+    let shared_filters = share_group_filters(&groups, &*read_segment, segment_query_context)?;
+
+    for (group, shared_filter) in groups.into_iter().zip(&shared_filters) {
         let SearchBatchGroup {
-            params,
+            mut params,
             query_vectors,
         } = group;
+        // In this segment, a shared filter stands for the group's own
+        params.filter = shared_filter.as_ref().or(params.filter);
 
         let (mut res, mut further) = execute_batch_search(
-            &segment,
+            &*read_segment,
             &query_vectors,
             &params,
             use_sampling,
             segment_query_context,
-            timeout,
         )?;
         further_results.append(&mut further);
         result.append(&mut res);
@@ -67,18 +81,12 @@ pub(super) fn search_in_segment(
 }
 
 fn execute_batch_search(
-    segment: &LockedSegment,
+    read_segment: &dyn ReadSegmentEntry,
     vectors_batch: &[QueryVector],
     search_params: &BatchSearchParams,
     use_sampling: bool,
     segment_query_context: &SegmentQueryContext,
-    timeout: Duration,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
-    let locked_segment = segment.get();
-    let Some(read_segment) = locked_segment.try_read_for(timeout) else {
-        return Err(CollectionError::timeout(timeout, "batch search"));
-    };
-
     let segment_points = read_segment.available_point_count_without_deferred();
     let segment_config = read_segment.config();
 
@@ -108,8 +116,6 @@ fn execute_batch_search(
         search_params.params,
         segment_query_context,
     )?;
-
-    drop(read_segment);
 
     let further_results = res
         .iter()

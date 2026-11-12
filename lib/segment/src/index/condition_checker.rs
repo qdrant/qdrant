@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common::condition_checker::{
     CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
 };
@@ -46,7 +48,10 @@ pub enum ConditionCheckerEnum<'a> {
     Dyn(Box<dyn ConditionChecker<Error = OperationError> + 'a>),
     Filter(OptimizedFilter<'a>),
     Ids(IdsConditionChecker),
-    Points(PointSet),
+    /// Read for this filter, or resolved once and shared by several searches, see
+    /// [`ResolvedPoints`](crate::index::query_optimization::resolved_points::ResolvedPoints).
+    /// Behind an `Arc` so sharing never copies the set.
+    Points(Arc<PointSet>),
     #[cfg(feature = "testing")]
     Plain(PlainFilterContext<'a>),
     #[cfg(feature = "testing")]

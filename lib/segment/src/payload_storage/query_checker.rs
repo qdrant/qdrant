@@ -38,7 +38,8 @@ where
         | Condition::HasVector(_)
         | Condition::Slice(_)
         | Condition::Nested(_)
-        | Condition::CustomIdChecker(_) => checker(condition),
+        | Condition::CustomIdChecker(_)
+        | Condition::ResolvedPoints(_) => checker(condition),
     }
 }
 
@@ -182,6 +183,8 @@ where
         Condition::CustomIdChecker(cond) => id_tracker
             .and_then(|id_tracker| id_tracker.external_id(point_id))
             .is_some_and(|point_id| cond.0.check(point_id)),
+
+        Condition::ResolvedPoints(resolved) => resolved.points().contains(point_id),
 
         Condition::Filter(_) => unreachable!(),
     };

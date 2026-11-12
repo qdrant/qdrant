@@ -8,6 +8,7 @@ mod sampling;
 mod scroll;
 mod search;
 mod segment_ops;
+mod shared_filter;
 mod vectors;
 
 use std::collections::HashMap;

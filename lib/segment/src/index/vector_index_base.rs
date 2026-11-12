@@ -17,6 +17,8 @@ use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
@@ -35,6 +37,19 @@ pub trait VectorIndexRead {
         params: Option<&SearchParams>,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
+
+    /// How [`Self::search`] of `query_vectors` would use a filter that matches about
+    /// `cardinality` points: evaluate it on every candidate, or check points lazily as it
+    /// visits them. Makes the same choice of strategy as [`Self::search`].
+    ///
+    /// No default on purpose: a new index must state how it evaluates filters.
+    fn filter_checks(
+        &self,
+        query_vectors: &[QueryVector],
+        cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks>;
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry;
 
@@ -238,6 +253,38 @@ impl VectorIndexRead for VectorIndexEnum {
             }
             VectorIndexEnum::SparseCompressedMmapU8(index) => {
                 index.search(vectors, filter, top, params, query_context)
+            }
+        }
+    }
+
+    fn filter_checks(
+        &self,
+        query_vectors: &[QueryVector],
+        cardinality: &CardinalityEstimation,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        match self {
+            Self::Plain(index) => index.filter_checks(query_vectors, cardinality, top, params),
+            Self::Hnsw(index) => index.filter_checks(query_vectors, cardinality, top, params),
+            Self::SparseRam(index) => index.filter_checks(query_vectors, cardinality, top, params),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedMmapF32(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedMmapF16(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
+            }
+            Self::SparseCompressedMmapU8(index) => {
+                index.filter_checks(query_vectors, cardinality, top, params)
             }
         }
     }

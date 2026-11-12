@@ -297,7 +297,8 @@ fn nested_from_indexes(segment: &Segment, filter: &Filter) -> Vec<bool> {
             | crate::types::Condition::HasVector(_)
             | crate::types::Condition::Slice(_)
             | crate::types::Condition::Filter(_)
-            | crate::types::Condition::CustomIdChecker(_) => None,
+            | crate::types::Condition::CustomIdChecker(_)
+            | crate::types::Condition::ResolvedPoints(_) => None,
         });
     let payload_index = segment.payload_index.borrow();
     payload_index.with_view(|view| {
