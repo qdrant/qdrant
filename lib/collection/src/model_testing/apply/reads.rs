@@ -25,10 +25,10 @@ use shard::segment_holder::SegmentId;
 
 use super::super::op::{
     FusionKind, NamedVectors, Prefetch, QUERY_TEXT_ALL, ScrollFilter, UrlMatch, canonical_sparse,
-    dense_diff, dense_matches, has_num, match_has_id_filter, match_has_vector_filter,
-    match_num_and_slice_filter, match_num_filter, match_slice_filter, match_tag_filter,
-    match_url_prefix_filter, num_matches, optional_read_filter, passes_read_filters, tag_matches,
-    url_prefix_matches,
+    dense_diff, dense_matches, has_num, is_empty_filter, is_empty_matches, is_null_filter,
+    is_null_matches, match_has_id_filter, match_has_vector_filter, match_num_and_slice_filter,
+    match_num_filter, match_slice_filter, match_tag_filter, match_url_prefix_filter, num_matches,
+    optional_read_filter, passes_read_filters, tag_matches, url_prefix_matches,
 };
 use super::super::{Model, VectorValue};
 use crate::collection::Collection;
@@ -1075,6 +1075,8 @@ pub(super) async fn apply_scroll_paged(
         ScrollFilter::NumAndSlice { num, total, index } => {
             Some(match_num_and_slice_filter(*num, *total, *index))
         }
+        ScrollFilter::IsEmpty(key) => Some(is_empty_filter(key)),
+        ScrollFilter::IsNull(key) => Some(is_null_filter(key)),
     };
     // Precompute the `has_id` set once so the per-point predicate is O(1).
     let has_id_set: AHashSet<PointIdType> = match filter {
@@ -1085,7 +1087,9 @@ pub(super) async fn apply_scroll_paged(
         | ScrollFilter::UrlPrefix(_)
         | ScrollFilter::HasVector(_)
         | ScrollFilter::Slice { .. }
-        | ScrollFilter::NumAndSlice { .. } => AHashSet::new(),
+        | ScrollFilter::NumAndSlice { .. }
+        | ScrollFilter::IsEmpty(_)
+        | ScrollFilter::IsNull(_) => AHashSet::new(),
     };
     let expected: AHashSet<PointIdType> = model
         .iter()
@@ -1109,6 +1113,8 @@ pub(super) async fn apply_scroll_paged(
                     }
                     .check(**id)
             }
+            ScrollFilter::IsEmpty(key) => is_empty_matches(&entry.payload, key),
+            ScrollFilter::IsNull(key) => is_null_matches(&entry.payload, key),
         })
         .map(|(id, _)| *id)
         .collect();
