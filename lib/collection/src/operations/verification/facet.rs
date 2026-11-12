@@ -48,7 +48,7 @@ impl StrictModeVerification for FacetParams {
     }
 
     fn request_exact(&self) -> Option<bool> {
-        None
+        Some(self.exact)
     }
 
     fn request_search_params(&self) -> Option<&SearchParams> {
