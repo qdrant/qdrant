@@ -1695,10 +1695,15 @@ impl ClusterState {
         }]
     }
 
-    pub fn plan_set_quota_config(&self, &config: &QuotaConfig) -> Actions {
+    pub fn plan_set_quota_config(&self, &config: &QuotaConfig) -> StorageResult<Actions> {
+        // The API validates the config before proposal, but a committed entry does not have to
+        // come through it. Quota storage would reject an invalid config when applying the action,
+        // a failed action is a service error, and consensus would retry the entry forever.
+        config.ensure_valid()?;
+
         // `QuotaManager::set_config` additionally clears exceeded-quota flags,
         // so we always emit the action, even if the config is the same
-        vec![Action::SetQuotaConfig { config }]
+        Ok(vec![Action::SetQuotaConfig { config }])
     }
 
     pub fn plan_add_peer(&self, peer_id: PeerId, uri: &str) -> StorageResult<Actions> {
