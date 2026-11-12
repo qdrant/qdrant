@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use ::common::ambient::AmbientFutureExt;
+use ::common::reason::reason;
 use ::common::tempfile_ext::MaybeTempPath;
 use actix_multipart::form::MultipartForm;
 use actix_multipart::form::tempfile::TempFile;
@@ -665,6 +667,7 @@ async fn create_partial_snapshot(
         shard,
         Some(manifest),
     )
+    .unmeasured(reason("Snapshot APIs aren't measured"))
     .await?;
 
     Ok(snapshot_stream)

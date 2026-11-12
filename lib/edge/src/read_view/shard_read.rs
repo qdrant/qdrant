@@ -197,6 +197,7 @@ where
     F: FnOnce(&EdgeReadView<<T::Shard as ReadViewProvider>::Handle>) -> OperationResult<R>,
 {
     let view = shard.view();
+    let _scope = view.handoff.enter_guard();
     view.check_stopped()?;
     let result = operation(&view);
     view.check_stopped()?;
