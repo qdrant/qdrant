@@ -6,12 +6,13 @@ from .utils import *
 
 N_PEERS = 3
 COLLECTION_NAME = "test_collection"
+ENABLE_PATCH_ENV = {"QDRANT__SERVICE__ENABLE_CONSENSUS_STATE_PATCH": "true"}
 
 
 def test_consensus_state_patch(tmp_path: pathlib.Path):
     assert_project_root()
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, extra_env=ENABLE_PATCH_ENV)
 
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=N_PEERS)
     wait_for_uniform_collection_existence(COLLECTION_NAME, peer_api_uris)
@@ -57,10 +58,16 @@ def test_consensus_state_patch(tmp_path: pathlib.Path):
     assert changes == []
 
     # Patched state persists across restart
+    # Restart without enabling the patch API, to check it's disabled by default
     processes.pop().kill()
     restarted_uri = start_peer(peer_dirs[-1], "peer_restarted.log", bootstrap_uri)
     wait_for_peer_online(restarted_uri)
     assert replica_state(restarted_uri, first_peer_id) == "Dead"
+
+    # Patch API is disabled by default, reading consensus state is not
+    resp = requests.patch(f"{restarted_uri}/cluster/consensus_state", json=diff)
+    assert resp.status_code == 403, resp.text
+    get_consensus_state(restarted_uri)
 
 
 def get_consensus_state(peer_api_uri: str) -> dict:
