@@ -16,7 +16,7 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
 # Note: builder's Debian release must not be newer than the runtime images' (`debian:13-slim`),
 # otherwise the binary may require a newer glibc than the runtime images provide.
 # See: <https://github.com/qdrant/qdrant/pull/7334>
-FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.98.1-bookworm  AS chef
+FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.99.1-bookworm  AS chef
 
 
 FROM chef AS planner
