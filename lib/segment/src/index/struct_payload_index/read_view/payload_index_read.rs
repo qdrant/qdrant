@@ -233,13 +233,24 @@ where
                 .collect();
 
             if let Some(primary_iterators) = primary_clause_iterators? {
+                // Whether the primary clauses yield exactly the points matching the filter, so
+                // that no candidate needs checking against it.
+                //
                 // Primary clauses only come from positive conditions, so they never cover a
                 // `must_not` condition, even one equal to a primary clause. E.g. a proxy segment
                 // reads `HasId` of its deleted points as `must: HasId(ids), must_not: HasId(ids)`.
-                let all_conditions_are_primary = filter
+                //
+                // With `min_count > 1`, the primary clauses of `min_should` are the smallest
+                // condition of each combination: candidates, not the matching points. E.g.
+                // `min_should: [A, B, A], min_count: 2` makes both A and B primary, but means A.
+                let primary_clauses_match_filter = filter
                     .must_not
                     .as_ref()
                     .is_none_or(|conditions| conditions.is_empty())
+                    && filter
+                        .min_should
+                        .as_ref()
+                        .is_none_or(|min_should| min_should.min_count <= 1)
                     && filter
                         .iter_conditions()
                         .all(|condition| query_cardinality.is_primary(condition));
@@ -255,9 +266,8 @@ where
                     )
                     .stop_if(is_stopped);
 
-                return Ok(if all_conditions_are_primary {
-                    // All conditions are primary clauses,
-                    // We can avoid post-filtering
+                return Ok(if primary_clauses_match_filter {
+                    // The primary clauses are the result: no post-filtering
                     let iter = joined_primary_iterator
                         .filter(move |&id| !visited_list.check_and_update_visited(id));
                     EitherVariant::B(iter.take(first_n))

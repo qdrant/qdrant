@@ -34,8 +34,8 @@ use segment::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_segment_with_two_named_vecs, build_simple_segment,
 };
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, PayloadSchemaType,
-    Range, SeqNumberType, WithPayload,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, HnswGlobalConfig, MinShould,
+    PayloadSchemaType, Range, SeqNumberType, WithPayload,
 };
 use tempfile::Builder;
 
@@ -532,6 +532,60 @@ fn test_shared_filter_holds_the_filtered_points() {
         &stopped_context.get_segment_query_context(),
     );
     assert!(result.is_err());
+}
+
+/// With `min_count > 1`, the primary clauses of `min_should` are only candidates: a condition
+/// repeated in it makes every condition primary, yet the filter doesn't match their union.
+#[test]
+fn test_shared_filter_min_should_with_repeated_condition() {
+    let _scope = ambient::test_guard();
+    let mut rng = StdRng::seed_from_u64(42);
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let segment = two_vector_segment(dir.path(), &mut rng);
+
+    // Larger and repeated, so it counts twice: the filter means `half = 1`
+    let half = || match_filter("half", 1).must.unwrap().remove(0);
+    // Smaller, and disjoint from `half = 1`
+    let tenth = || match_filter("tenth", 2).must.unwrap().remove(0);
+    let filter = Filter {
+        should: None,
+        min_should: Some(MinShould {
+            conditions: vec![half(), tenth(), half()],
+            min_count: 2,
+        }),
+        must: None,
+        must_not: None,
+    };
+
+    let stopped = AtomicBool::new(false);
+    let query_points = |filter: &Filter| {
+        let mut points = segment
+            .payload_index
+            .borrow()
+            .with_view(|view| view.query_points(filter, &stopped).unwrap());
+        points.sort_unstable();
+        points.dedup();
+        points
+    };
+    let expected = query_points(&Filter::new_must(half()));
+    assert_eq!(expected.len(), NUM_POINTS as usize / 2);
+    assert_eq!(query_points(&filter), expected);
+
+    let query_context = QueryContext::default();
+    let segment_query_context = query_context.get_segment_query_context();
+    let query = [QueryVector::from(random_vector(&mut rng, 4))];
+    let user = FilterUser {
+        vector_name: VECTOR1_NAME,
+        query_vectors: &query,
+        top: 10,
+        params: None,
+    };
+    let shared = segment
+        .share_filter(&filter, &[user, user], &segment_query_context)
+        .unwrap()
+        .unwrap();
+    let points = resolved_points(&shared);
+    assert_eq!(points.iter().collect::<Vec<_>>(), expected);
 }
 
 /// The points of a filter returned by `share_filter`
