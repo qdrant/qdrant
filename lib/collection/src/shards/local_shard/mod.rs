@@ -392,9 +392,11 @@ impl LocalShard {
         // Loading segments, replaying pending changes and rebuilding indices below can take a
         // long time, and holding the read guard for all of it would block config writers.
         //
-        // The shard is built from the config as of this point. Config changes made while it
-        // loads are applied to it afterwards, through the replica set: optimizers are recreated
-        // with `on_optimizer_config_update`, and vector name changes are shard operations.
+        // Everything the read guard was used for below comes from this copy: the WAL options,
+        // the deferred point threshold, the desired vector names, the optimizer parameters and
+        // the fallback appendable segment. Config changes made while the shard loads are applied
+        // to it afterwards, through the replica set: optimizers are recreated with
+        // `on_optimizer_config_update`, and vector name changes are shard operations.
         let collection_config_snapshot = collection_config.read().await.clone();
 
         let wal_path = Self::wal_path(shard_path);

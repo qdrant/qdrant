@@ -62,7 +62,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use common::ambient::{AmbientContext, AmbientFutureExt};
+    use common::ambient::{self, AmbientContext, AmbientFutureExt};
     use common::budget::ResourceBudget;
     use common::save_on_disk::SaveOnDisk;
     use segment::pending_changes::PersistedProxyChanges;
@@ -84,6 +84,7 @@ mod tests {
     /// disk phase that used to run under the collection config read guard.
     #[tokio::test(flavor = "multi_thread")]
     async fn load_does_not_block_config_writer_while_loading_segments() {
+        let _scope = ambient::async_test_guard();
         let collection_name = "load_does_not_block_config_writer".to_string();
 
         let collection_dir = Builder::new().prefix("load_config_lock").tempdir().unwrap();
@@ -135,23 +136,26 @@ mod tests {
             let collection_config = collection_config.clone();
             let payload_index_schema = payload_index_schema.clone();
             let optimizers_config = config.optimizer_config.clone();
-            tokio::spawn(async move {
-                LocalShard::load(
-                    0,
-                    collection_name,
-                    &shard_path,
-                    collection_config,
-                    optimizers_config,
-                    Arc::new(Default::default()),
-                    payload_index_schema,
-                    true,
-                    PersistedProxyChanges::Replay,
-                    update_runtime,
-                    search_runtime,
-                    ResourceBudget::default(),
-                )
-                .await
-            })
+            tokio::spawn(
+                async move {
+                    LocalShard::load(
+                        0,
+                        collection_name,
+                        &shard_path,
+                        collection_config,
+                        optimizers_config,
+                        Arc::new(Default::default()),
+                        payload_index_schema,
+                        true,
+                        PersistedProxyChanges::Replay,
+                        update_runtime,
+                        search_runtime,
+                        ResourceBudget::default(),
+                    )
+                    .await
+                }
+                .in_current_ambient(),
+            )
         };
 
         tokio::time::timeout(Duration::from_secs(30), paused_rx)
