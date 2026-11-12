@@ -75,7 +75,7 @@ impl ClusterState {
         // `CreateCollectionOperation::new` validates vector names before proposal, but a committed
         // entry does not have to come through it. Segment creation would reject an invalid name
         // when applying the action, a failed action is a service error, and consensus would retry
-        // the entry forever.
+        // the entry forever. A dense and a sparse vector with the same name would share storage.
         op.create_collection.validate_vector_names()?;
 
         let distribution = context.shard_distribution(op);

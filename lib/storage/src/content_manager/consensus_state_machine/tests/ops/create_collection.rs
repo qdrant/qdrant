@@ -221,6 +221,22 @@ fn create_collection_reject_invalid_sparse_vector_name() {
     }
 }
 
+#[test]
+fn create_collection_reject_empty_sparse_vector_name() {
+    create_collection_reject_invalid_vector_name(json!({
+        "vectors": { "size": 4, "distance": "Cosine" },
+        "sparse_vectors": { "": {} },
+    }));
+}
+
+#[test]
+fn create_collection_reject_duplicate_dense_sparse_vector_name() {
+    create_collection_reject_invalid_vector_name(json!({
+        "vectors": { "text": { "size": 4, "distance": "Cosine" } },
+        "sparse_vectors": { "text": {} },
+    }));
+}
+
 fn create_collection_reject_invalid_vector_name(request: Value) {
     let state = ClusterState::default();
 

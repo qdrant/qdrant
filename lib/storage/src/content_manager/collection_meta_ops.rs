@@ -222,6 +222,9 @@ impl CreateCollection {
     /// The unnamed slot used by `VectorsConfig::Single` is exempt: its
     /// implicit key is the empty `DEFAULT_VECTOR_NAME` constant and a
     /// `Single` config has no user-supplied name to validate.
+    ///
+    /// Sparse vectors can't use the empty name, and dense and sparse vectors
+    /// can't share a name: they would share a storage directory in a segment.
     pub fn validate_vector_names(&self) -> StorageResult<()> {
         if let collection::operations::types::VectorsConfig::Multi(multi) = &self.vectors {
             for vector_name in multi.keys() {
@@ -239,6 +242,20 @@ impl CreateCollection {
                         "Invalid sparse vector name `{vector_name}`: {err}",
                     ))
                 })?;
+            }
+
+            if sparse_config.contains_key(DEFAULT_VECTOR_NAME) {
+                return Err(StorageError::bad_input(
+                    "Sparse vector name cannot be empty",
+                ));
+            }
+
+            let mut dense_names = self.vectors.params_iter().map(|p| p.0);
+            if let Some(duplicate_name) = dense_names.find(|name| sparse_config.contains_key(*name))
+            {
+                return Err(StorageError::bad_input(format!(
+                    "Dense and sparse vector names must be unique - duplicate found with '{duplicate_name}'",
+                )));
             }
         }
 
@@ -309,23 +326,6 @@ impl CreateCollectionOperation {
         })?;
 
         create_collection.validate_vector_names()?;
-
-        // validate vector names are unique between dense and sparse vectors
-        if let Some(sparse_config) = &create_collection.sparse_vectors {
-            if sparse_config.contains_key(DEFAULT_VECTOR_NAME) {
-                return Err(StorageError::bad_input(
-                    "Sparse vector name cannot be empty",
-                ));
-            }
-
-            let mut dense_names = create_collection.vectors.params_iter().map(|p| p.0);
-            if let Some(duplicate_name) = dense_names.find(|name| sparse_config.contains_key(*name))
-            {
-                return Err(StorageError::bad_input(format!(
-                    "Dense and sparse vector names must be unique - duplicate found with '{duplicate_name}'",
-                )));
-            }
-        }
 
         Ok(Self {
             collection_name,
