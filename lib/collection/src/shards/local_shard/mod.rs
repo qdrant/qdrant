@@ -452,9 +452,6 @@ impl LocalShard {
                 let payload_index_schema = Arc::clone(&payload_index_schema);
                 let desired_vectors = desired_vector_names.clone();
                 let handle = tokio::task::spawn_blocking(move || {
-                    let _scope = ambient::unmeasured_guard(reason(
-                        "Segment loading is an internal operation",
-                    ));
                     let Some((segment_path, uuid)) = normalize_segment_dir(&segment_path)? else {
                         return CollectionResult::Ok(None);
                     };
