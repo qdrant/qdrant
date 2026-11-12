@@ -53,6 +53,10 @@ where
     }
 
     fn materialization_cost(&self, estimation: &CardinalityEstimation) -> OperationResult<usize> {
+        if estimation.primary_clauses.is_empty() {
+            // A full scan: every point is checked against the filter
+            return Ok(self.available_point_count());
+        }
         self.count_primary_candidates(estimation)
     }
 

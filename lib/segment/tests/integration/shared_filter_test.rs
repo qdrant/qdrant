@@ -313,11 +313,8 @@ fn test_hnsw_with_resolved_filter() {
     }
 }
 
-/// A shared filter holds exactly the points the filter iterates, on every filtering path with
-/// primary clauses: primary clauses only, and primary clauses plus checks.
-///
-/// A filter without primary clauses is not covered: the struct payload index counts its
-/// materialization cost as zero, so `share_filter` never shares it.
+/// A shared filter holds exactly the points the filter iterates, on every filtering path:
+/// primary clauses only, primary clauses plus checks, full scan.
 #[test]
 fn test_shared_filter_holds_the_filtered_points() {
     let _scope = ambient::test_guard();
@@ -366,6 +363,8 @@ fn test_shared_filter_holds_the_filtered_points() {
             must: Some(vec![indexed()]),
             must_not: Some(vec![unindexed()]),
         },
+        // Full scan
+        Filter::new_must(unindexed()),
     ];
 
     let query_context = QueryContext::default();
