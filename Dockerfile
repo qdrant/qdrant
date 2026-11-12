@@ -13,8 +13,8 @@ FROM --platform=${BUILDPLATFORM:-linux/amd64} tonistiigi/xx AS xx
 #
 # https://www.lpalmieri.com/posts/fast-rust-docker-builds/
 
-# Note: using bookworm base image to match GPU runtime image, otherwise we're
-# seeing runtime errors due to libc version mismatch.
+# Note: builder's Debian release must not be newer than the runtime images' (`debian:13-slim`),
+# otherwise the binary may require a newer glibc than the runtime images provide.
 # See: <https://github.com/qdrant/qdrant/pull/7334>
 FROM --platform=${BUILDPLATFORM:-linux/amd64} lukemathwalker/cargo-chef:latest-rust-1.98.1-bookworm  AS chef
 
@@ -143,38 +143,40 @@ RUN cargo sbom > qdrant.spdx.json
 FROM debian:13-slim AS qdrant-cpu
 
 
-# Base images for Qdrant with nvidia GPU support.
-FROM nvidia/opengl:1.2-glvnd-devel-ubuntu22.04 AS qdrant-gpu-nvidia
-# Set non-interactive mode for apt-get.
-ENV DEBIAN_FRONTEND=noninteractive
-# Set NVIDIA driver capabilities. By default, all capabilities are disabled.
-ENV NVIDIA_DRIVER_CAPABILITIES compute,graphics,utility
-# Copy Nvidia ICD loader file into the container.
-COPY --from=builder /qdrant/lib/gpu/nvidia_icd.json /etc/vulkan/icd.d/
-# Override maintainer label. Nvidia base image have it's own maintainer label.
-LABEL maintainer="Qdrant Team <info@qdrant.tech>"
+# Base image for Qdrant with NVIDIA GPU support.
+#
+# GPU indexing uses Vulkan. The NVIDIA Container Toolkit mounts the driver libraries into the
+# container at run time, so the image only provides the Vulkan loader and an ICD manifest.
+# `vulkan-tools` provides `vulkaninfo` to check which GPUs the container sees.
+#
+# The manifest points to `libEGL_nvidia.so.0`. It exports the Vulkan ICD entry points like
+# `libGLX_nvidia.so.0` does, but doesn't need X11 or libglvnd's `libEGL.so.1` in the image.
+# The manifest has its own file name, so it stays visible when the toolkit's CDI mode mounts
+# the host's `nvidia_icd.json` into `/etc/vulkan/icd.d/`.
+FROM debian:13-slim AS qdrant-gpu-nvidia
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libvulkan1 vulkan-tools \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/lib/dpkg/status-old
+COPY --from=builder /qdrant/lib/gpu/nvidia_egl_icd.json /usr/share/vulkan/icd.d/
+# Request all GPUs and the driver capabilities that Vulkan compute needs from the NVIDIA runtime.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
 
 
-# Base images for Qdrant with amd GPU support.
-FROM rocm/dev-ubuntu-22.04 AS qdrant-gpu-amd
-# Set non-interactive mode for apt-get.
-ENV DEBIAN_FRONTEND=noninteractive
-# Override maintainer label. AMD base image have it's own maintainer label.
-LABEL maintainer="Qdrant Team <info@qdrant.tech>"
+# Base image for Qdrant with AMD GPU support.
+#
+# GPU indexing uses Vulkan through the Mesa RADV driver. Only `/dev/dri` has to be passed into
+# the container; ROCm is not needed. `vulkan-tools` provides `vulkaninfo` to check which GPUs
+# the container sees.
+FROM debian:13-slim AS qdrant-gpu-amd
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libvulkan1 mesa-vulkan-drivers vulkan-tools \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf/* /var/lib/dpkg/status-old
 
 
 FROM qdrant-${GPU:+gpu-}${GPU:-cpu} AS qdrant
-
-# Install GPU dependencies
-ARG GPU
-
-RUN if [ -n "$GPU" ]; then \
-    apt-get update \
-    && apt-get install -y \
-    libvulkan1 \
-    libvulkan-dev \
-    vulkan-tools \
-    ; fi
 
 # Install additional packages into the container.
 # E.g., the debugger of choice: gdb/gdbserver/lldb.
