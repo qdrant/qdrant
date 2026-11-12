@@ -86,14 +86,12 @@ impl LocalShard {
         timeout: Duration,
     ) -> Option<Response> {
         let deadline = Instant::now() + timeout;
-        let config = match tokio::time::timeout_at(deadline, self.collection_config.read()).await {
-            Ok(config) => config,
-            Err(_) => {
-                return Some(Err(CollectionError::timeout(
-                    timeout,
-                    "dynamic search configuration",
-                )));
-            }
+        let Ok(config) = tokio::time::timeout_at(deadline, self.collection_config.read()).await
+        else {
+            return Some(Err(CollectionError::timeout(
+                timeout,
+                "dynamic search configuration",
+            )));
         };
         let vector = config
             .params
