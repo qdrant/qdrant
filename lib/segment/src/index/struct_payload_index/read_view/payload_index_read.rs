@@ -54,7 +54,7 @@ where
         estimate_filter(&estimator, query, available_points)
     }
 
-    fn primary_candidates(&self, estimation: &CardinalityEstimation) -> OperationResult<usize> {
+    fn materialization_cost(&self, estimation: &CardinalityEstimation) -> OperationResult<usize> {
         self.count_primary_candidates(estimation)
     }
 

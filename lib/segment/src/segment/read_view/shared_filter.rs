@@ -35,7 +35,7 @@ where
         let _scope = query_context.handoff().enter_guard();
 
         let cardinality = self.payload_index.estimate_cardinality(filter)?;
-        let candidates = self.payload_index.primary_candidates(&cardinality)?;
+        let materialization_cost = self.payload_index.materialization_cost(&cardinality)?;
 
         let mut uses = Vec::with_capacity(users.len());
         for user in users {
@@ -57,7 +57,7 @@ where
             )?;
             uses.push(checks);
         }
-        if !worth_sharing(candidates, uses.iter().copied()) {
+        if !worth_sharing(materialization_cost, uses.iter().copied()) {
             return Ok(None);
         }
 

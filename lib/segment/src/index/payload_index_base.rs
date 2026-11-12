@@ -46,9 +46,9 @@ pub trait PayloadIndexRead {
     /// A best estimation of the number of available points should be given.
     fn estimate_cardinality(&self, query: &Filter) -> OperationResult<CardinalityEstimation>;
 
-    /// Number of points evaluating the filter of `estimation` checks: the points its primary
-    /// clauses yield, or every point without primary clauses.
-    fn primary_candidates(&self, estimation: &CardinalityEstimation) -> OperationResult<usize>;
+    /// Cost of materializing the filter of `estimation`, in filter checks of one point: the
+    /// points its primary clauses yield, or every point without primary clauses.
+    fn materialization_cost(&self, estimation: &CardinalityEstimation) -> OperationResult<usize>;
 
     /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
     fn estimate_nested_cardinality(

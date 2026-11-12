@@ -36,13 +36,18 @@ impl FilterChecks {
         }
     }
 
-    /// Number of checks, if checking every candidate means checking `candidates` points.
-    pub fn cost(self, candidates: usize) -> usize {
+    /// Number of checks, given the `materialization_cost` of the filter: checking every
+    /// candidate costs as much as materializing it.
+    pub fn cost(self, materialization_cost: usize) -> usize {
         let Self {
             all_candidates,
             lazy,
         } = self;
-        let full = if all_candidates { candidates } else { 0 };
+        let full = if all_candidates {
+            materialization_cost
+        } else {
+            0
+        };
         full.saturating_add(lazy)
     }
 }
@@ -58,18 +63,21 @@ impl Add for FilterChecks {
     }
 }
 
-/// Whether resolving a filter once, by checking its `candidates`, costs less than every
-/// search of `uses` evaluating it on its own.
+/// Whether materializing a filter once, at `materialization_cost` filter checks, costs less
+/// than every search of `uses` evaluating it on its own.
 ///
-/// A search that checks every candidate anyway makes resolving free for the others, so
+/// A search that checks every candidate anyway makes materializing free for the others, so
 /// two such searches always share. Searches that only check the points they visit share
-/// only when they would check more points together than resolving does.
-pub fn worth_sharing(candidates: usize, uses: impl IntoIterator<Item = FilterChecks>) -> bool {
+/// only when they would check more points together than materializing does.
+pub fn worth_sharing(
+    materialization_cost: usize,
+    uses: impl IntoIterator<Item = FilterChecks>,
+) -> bool {
     let unshared = uses
         .into_iter()
-        .map(|checks| checks.cost(candidates))
+        .map(|checks| checks.cost(materialization_cost))
         .fold(0usize, usize::saturating_add);
-    candidates < unshared
+    materialization_cost < unshared
 }
 
 #[cfg(test)]
