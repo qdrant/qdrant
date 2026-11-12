@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common::condition_checker::{
     CheckItem, ConditionChecker, ConstantConditionChecker, Rest, Select, default_check_batched,
 };
@@ -47,6 +49,9 @@ pub enum ConditionCheckerEnum<'a> {
     Filter(OptimizedFilter<'a>),
     Ids(IdsConditionChecker),
     Points(PointSet),
+    /// A filter resolved once and shared by several searches,
+    /// see [`ResolvedPoints`](crate::index::query_optimization::resolved_points::ResolvedPoints)
+    SharedPoints(Arc<PointSet>),
     #[cfg(feature = "testing")]
     Plain(PlainFilterContext<'a>),
     #[cfg(feature = "testing")]
@@ -103,7 +108,11 @@ impl ConditionCheckerEnum<'_> {
     pub fn reads_cold_index(&self) -> bool {
         match self {
             Self::Filter(c) => c.reads_cold_index(),
-            Self::Constant(_) | Self::Dyn(_) | Self::Ids(_) | Self::Points(_) => false,
+            Self::Constant(_)
+            | Self::Dyn(_)
+            | Self::Ids(_)
+            | Self::Points(_)
+            | Self::SharedPoints(_) => false,
             #[cfg(feature = "testing")]
             Self::Plain(_) | Self::TestBitOfId(_) => false,
             Self::BoolImmutable(_) | Self::BoolMutable(_) | Self::BoolRoMmap(_) => false,
@@ -146,6 +155,7 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Filter(c) => c.check_batched(ids, select, rest),
             Self::Ids(c) => c.check_batched(ids, select, rest),
             Self::Points(c) => c.check_batched(ids, select, rest),
+            Self::SharedPoints(c) => c.check_batched(ids, select, rest),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check_batched(ids, select, rest),
             #[cfg(feature = "testing")]
@@ -186,6 +196,7 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Filter(c) => c.check(point_id),
             Self::Ids(c) => c.check(point_id),
             Self::Points(c) => c.check(point_id),
+            Self::SharedPoints(c) => c.check(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check(point_id),
             #[cfg(feature = "testing")]
@@ -226,6 +237,7 @@ impl ConditionChecker for ConditionCheckerEnum<'_> {
             Self::Filter(c) => c.check_infallible(point_id),
             Self::Ids(c) => c.check_infallible(point_id),
             Self::Points(c) => c.check_infallible(point_id),
+            Self::SharedPoints(c) => c.check_infallible(point_id),
             #[cfg(feature = "testing")]
             Self::Plain(c) => c.check_infallible(point_id),
             #[cfg(feature = "testing")]

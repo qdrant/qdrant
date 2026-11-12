@@ -11,6 +11,7 @@ use segment::common::Flusher;
 use segment::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
+use segment::data_types::filter_user::FilterUser;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
@@ -244,6 +245,16 @@ impl ReadSegmentEntry for ProxySegment {
             )?
         };
         Ok(wrapped_results)
+    }
+
+    fn share_filter(
+        &self,
+        _filter: &Filter,
+        _users: &[FilterUser<'_>],
+        _query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        // Two segments, with offsets of their own: one set of offsets can't stand for both
+        Ok(None)
     }
 
     fn score_bm25(

@@ -9,6 +9,7 @@ use uuid::Uuid;
 use super::ReadOnlySegment;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
+use crate::data_types::filter_user::FilterUser;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
@@ -65,6 +66,15 @@ impl<S: UniversalReadExt + 'static> ReadSegmentEntry for ReadOnlySegment<S> {
                 query_context,
             )
         })
+    }
+
+    fn share_filter(
+        &self,
+        filter: &Filter,
+        users: &[FilterUser<'_>],
+        query_context: &SegmentQueryContext,
+    ) -> OperationResult<Option<Filter>> {
+        self.with_view(|view| view.share_filter(filter, users, query_context))
     }
 
     fn score_bm25(

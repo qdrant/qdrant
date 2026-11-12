@@ -52,6 +52,10 @@ where
         estimate_filter(&estimator, query, available_points)
     }
 
+    fn primary_candidates(&self, estimation: &CardinalityEstimation) -> OperationResult<usize> {
+        self.count_primary_candidates(estimation)
+    }
+
     fn estimate_nested_cardinality(
         &self,
         query: &Filter,
@@ -259,7 +263,7 @@ where
                     // conditions themselves are not read up front again.
                     let materialization = MaterializationHint {
                         expected_checks: ExpectedChecks::Batched {
-                            count: self.primary_candidates(query_cardinality)?,
+                            count: self.count_primary_candidates(query_cardinality)?,
                         },
                         primary: Some(query_cardinality),
                     };

@@ -8,6 +8,8 @@ use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::QueryVector;
+use crate::index::field_index::CardinalityEstimation;
+use crate::index::query_optimization::filter_checks::FilterChecks;
 use crate::index::{UniversalReadExt, VectorIndexRead};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -23,6 +25,17 @@ impl<S: UniversalReadExt> VectorIndexRead for ReadOnlyPlainVectorIndex<S> {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         self.with_view(|view| view.search(query_vectors, filter, top, params, query_context))
+    }
+
+    fn filter_checks(
+        &self,
+        _query_vectors: &[QueryVector],
+        _cardinality: &CardinalityEstimation,
+        _top: usize,
+        _params: Option<&SearchParams>,
+    ) -> OperationResult<FilterChecks> {
+        // Reads every point matching the filter, once for all query vectors
+        Ok(FilterChecks::ALL_CANDIDATES)
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

@@ -17,6 +17,7 @@ pub mod retrieve;
 pub mod scroll;
 pub mod search;
 pub mod search_result_aggregator;
+pub mod search_shared_filter;
 pub mod segment_holder;
 pub mod segment_manifest;
 pub mod snapshots;

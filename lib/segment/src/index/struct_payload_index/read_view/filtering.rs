@@ -60,12 +60,13 @@ where
                 Ok(Some(Box::new(ids.resolved_point_offsets.iter().copied())))
             }
             PrimaryCondition::HasVector(_) => Ok(None),
+            PrimaryCondition::Points(resolved) => Ok(Some(Box::new(resolved.points().iter()))),
         }
     }
 
     /// Estimated number of points the primary clauses of `estimation` yield, which is
     /// how many points get checked against the rest of the filter.
-    pub(super) fn primary_candidates(
+    pub(super) fn count_primary_candidates(
         &self,
         estimation: &CardinalityEstimation,
     ) -> OperationResult<usize> {
@@ -80,6 +81,7 @@ where
                         .map_or(available, |estimation| estimation.exp),
                     PrimaryCondition::Ids(ids) => ids.resolved_point_offsets.len(),
                     PrimaryCondition::HasVector(_) => available,
+                    PrimaryCondition::Points(resolved) => resolved.len(),
                 })
             })
             .sum::<OperationResult<usize>>()?;
@@ -184,6 +186,9 @@ where
             Condition::CustomIdChecker(cond) => {
                 cond.0.estimate_cardinality(self.available_point_count())
             }
+
+            Condition::ResolvedPoints(resolved) => CardinalityEstimation::exact(resolved.len())
+                .with_primary_clause(PrimaryCondition::Points(resolved.clone())),
         })
     }
 }

@@ -72,6 +72,28 @@ impl PointSet {
         }
     }
 
+    /// Number of points in the set.
+    pub fn len(&self) -> usize {
+        match self {
+            PointSet::Bits(bits) => bits.count_ones(),
+            PointSet::Sorted(points) => points.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The points of the set, in ascending order.
+    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        match self {
+            PointSet::Bits(bits) => {
+                itertools::Either::Left(bits.iter_ones().map(|point| point as PointOffsetType))
+            }
+            PointSet::Sorted(points) => itertools::Either::Right(points.iter().copied()),
+        }
+    }
+
     /// Points that match any of `postings`.
     pub fn union(postings: Vec<Vec<PointOffsetType>>, context: PointSetContext) -> Self {
         let total_len: usize = postings.iter().map(Vec::len).sum();

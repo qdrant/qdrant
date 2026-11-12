@@ -191,7 +191,8 @@ where
                 | Condition::HasVector(_)
                 | Condition::Slice(_)
                 | Condition::Nested(_)
-                | Condition::CustomIdChecker(_) => {
+                | Condition::CustomIdChecker(_)
+                | Condition::ResolvedPoints(_) => {
                     let estimation =
                         self.condition_cardinality(condition, None, deferred_behavior)?;
                     if let Some(hint) = materialization

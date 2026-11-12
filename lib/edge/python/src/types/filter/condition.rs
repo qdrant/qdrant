@@ -68,6 +68,9 @@ impl<'py> IntoPyObject<'py> for PyCondition {
             Condition::CustomIdChecker(_) => {
                 unreachable!("CustomIdChecker condition is not expected in Python bindings")
             }
+            Condition::ResolvedPoints(_) => {
+                unreachable!("ResolvedPoints condition is not expected in Python bindings")
+            }
         }
     }
 }
@@ -95,6 +98,9 @@ impl Repr for PyCondition {
             Condition::Filter(filter) => PyFilter::wrap_ref(filter).fmt(f),
             Condition::CustomIdChecker(_) => {
                 unreachable!("CustomIdChecker condition is not expected in Python bindings")
+            }
+            Condition::ResolvedPoints(_) => {
+                unreachable!("ResolvedPoints condition is not expected in Python bindings")
             }
         }
     }
