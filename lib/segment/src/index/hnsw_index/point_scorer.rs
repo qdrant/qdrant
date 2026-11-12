@@ -60,6 +60,9 @@ pub struct FilteredScorer<'a> {
 pub struct ScorerFilters<'a> {
     filter_context: Option<OptimizedFilter<'a>>,
     deleted: NotDeletedChecker<'a>,
+    /// The caller knows no point and no vector of the segment is deleted, so
+    /// `deleted` passes every point and is not asked.
+    nothing_deleted: bool,
 }
 
 /// Scores points given by their position in `to_global` with a scorer over segment ids.
@@ -109,6 +112,7 @@ impl<'a> ScorerFilters<'a> {
         ScorerFilters {
             filter_context,
             deleted,
+            nothing_deleted: false,
         }
     }
 
@@ -148,7 +152,17 @@ impl ConditionChecker for ScorerFilters<'_> {
         let Self {
             filter_context,
             deleted,
+            nothing_deleted,
         } = self;
+        if *nothing_deleted {
+            return match filter_context {
+                Some(f) => f.check_batched(ids, select, rest),
+                None => Ok(match select {
+                    Select::Matches => ids.len(),
+                    Select::NonMatches => 0,
+                }),
+            };
+        }
         match select {
             Select::Matches => {
                 let n = deleted.check_batched(ids, Select::Matches, rest)?;
@@ -343,6 +357,12 @@ impl<'a> FilteredScorer<'a> {
         point_ids.truncate(n);
 
         self.score_points_unfiltered(point_ids)
+    }
+
+    /// Skip the deleted checks: the caller has established that the segment
+    /// holds no deleted point and no deleted vector.
+    pub fn assume_nothing_deleted(&mut self) {
+        self.filters.nothing_deleted = true;
     }
 
     pub fn score_points_unfiltered(
@@ -638,6 +658,39 @@ mod tests {
             }
         }
         mask
+    }
+
+    /// With no deleted flag set, [`ScorerFilters::check_batched`] must answer
+    /// the same whether or not it skips the deleted checks.
+    #[test]
+    fn check_batched_without_deleted_checks_matches_reference() {
+        const TOTAL: usize = 100;
+        let all_live = BitVec::repeat(false, TOTAL);
+        let filters = |nothing_deleted| {
+            let deleted = NotDeletedChecker {
+                point_deleted: &all_live,
+                vec_deleted: &all_live,
+            };
+            let mut filters = ScorerFilters::new(None, deleted);
+            filters.nothing_deleted = nothing_deleted;
+            filters
+        };
+        let ids: Vec<PointOffsetType> = (0..TOTAL as PointOffsetType).rev().collect();
+
+        for select in [Select::Matches, Select::NonMatches] {
+            for rest in [Rest::Keep, Rest::Discard] {
+                let mut checked = ids.clone();
+                let mut skipped = ids.clone();
+                let n_checked = filters(false)
+                    .check_batched(&mut checked, select, rest)
+                    .unwrap();
+                let n_skipped = filters(true)
+                    .check_batched(&mut skipped, select, rest)
+                    .unwrap();
+                assert_eq!(n_checked, n_skipped, "{select:?} {rest:?}");
+                assert_eq!(checked[..n_checked], skipped[..n_skipped]);
+            }
+        }
     }
 
     /// [`BatchFilteredSearcher::peek_top_visible`] must reproduce the iterator
