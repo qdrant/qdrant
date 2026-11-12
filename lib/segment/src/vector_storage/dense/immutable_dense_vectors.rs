@@ -105,6 +105,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
     /// [HEADER_SIZE] [vector_0] [vector_1] ... [vector_N-1]
     /// ```
     /// Each vector occupies `dim * size_of::<T>()` bytes.
+    #[inline(always)]
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
         let vector_data_length = self.dim * size_of::<T>();
         let offset = (key as usize) * vector_data_length + HEADER_SIZE;
@@ -115,6 +116,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
     }
 
     /// Read one vector from storage at the given byte offset.
+    #[inline(always)]
     fn raw_vector_offset<P: AccessPattern>(&self, byte_offset: usize) -> UioResult<Cow<'_, [T]>> {
         let range = ReadRange {
             byte_offset: byte_offset as u64,
@@ -126,6 +128,7 @@ impl<T: PrimitiveVectorElement, S: UniversalRead> ImmutableDenseVectorData<T, S>
 
     /// Returns vector data by key, or an error for a key past the stored
     /// vectors or a failed read.
+    #[inline(always)]
     fn read_vector<P: AccessPattern>(&self, key: PointOffsetType) -> OperationResult<Cow<'_, [T]>> {
         let offset = self.data_offset(key).ok_or_else(|| {
             OperationError::service_error(format!(
