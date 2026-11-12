@@ -3,7 +3,7 @@ pub mod diff;
 use self::diff::{ConsensusStateDiff, PatchReport};
 use super::{ConsensusManager, SnapshotData};
 use crate::content_manager::CollectionContainer;
-use crate::content_manager::errors::StorageResult;
+use crate::content_manager::errors::{StorageError, StorageResult};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PatchMode {
@@ -57,23 +57,31 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         // Invalidate it so it rebuilds from patched state on next entry.
         self.invalidate_state_machine();
 
-        self.toc.apply_collections_snapshot(collections_data)?;
+        // From here on, a failure may leave the patch partially applied
+        self.toc
+            .apply_collections_snapshot(collections_data)
+            .map_err(partially_applied)?;
 
         // Setting quota config resets exceeded quota state, so skip it if config didn't change
         if let Some(quota_config) = quota_config
             && quota_config != self.toc.quota_config()
         {
-            self.toc.set_quota_config(quota_config)?;
+            self.toc
+                .set_quota_config(quota_config)
+                .map_err(partially_applied)?;
         }
 
-        self.persistent.write().update_cluster_state(
-            address_by_id,
-            metadata_by_id,
-            cluster_metadata,
-        )?;
+        self.persistent
+            .write()
+            .update_cluster_state(address_by_id, metadata_by_id, cluster_metadata)
+            .map_err(partially_applied)?;
 
         Ok(report)
     }
+}
+
+fn partially_applied(err: StorageError) -> StorageError {
+    StorageError::service_error(format!("Patch may be partially applied: {err}"))
 }
 
 #[cfg(test)]

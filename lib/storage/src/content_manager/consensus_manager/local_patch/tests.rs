@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use collection::collection_state::{ShardInfo, State};
@@ -104,6 +104,35 @@ fn quota_config_is_set_only_if_changed() {
     assert_eq!(*container.quota_config.lock(), quota_config);
 }
 
+#[test]
+fn partial_apply_is_reported() {
+    let dir = tempdir();
+    let container = Arc::new(container());
+    let manager = manager(container.clone(), dir.path());
+    container
+        .fail_set_quota_config
+        .store(true, Ordering::Relaxed);
+
+    let mut quota_config = QuotaConfig::default();
+    quota_config.enabled = !quota_config.enabled;
+
+    let mut diff = replica_and_address_diff();
+    diff["quota_config"] = json!(quota_config);
+    let diff = serde_json::from_value(diff).expect("valid diff");
+
+    let err = manager
+        .patch_consensus_state(diff, PatchMode::Apply)
+        .expect_err("patch failed");
+
+    assert_eq!(
+        err.to_string(),
+        "Service internal error: Patch may be partially applied: \
+         Service internal error: injected failure",
+    );
+    // Collections were applied before the failure
+    assert_eq!(replica_state(&container), ReplicaState::Dead);
+}
+
 /// Mark this peer's replica of shard 0 dead and change the other peer's address
 fn replica_and_address_diff() -> Value {
     json!({
@@ -180,6 +209,7 @@ fn container() -> Container {
         aliases: Mutex::new(AliasMapping::default()),
         quota_config: Mutex::new(QuotaConfig::default()),
         quota_config_updates: AtomicUsize::new(0),
+        fail_set_quota_config: AtomicBool::new(false),
     }
 }
 
@@ -189,6 +219,7 @@ struct Container {
     aliases: Mutex<AliasMapping>,
     quota_config: Mutex<QuotaConfig>,
     quota_config_updates: AtomicUsize,
+    fail_set_quota_config: AtomicBool,
 }
 
 impl CollectionContainer for Container {
@@ -216,6 +247,10 @@ impl CollectionContainer for Container {
     }
 
     fn set_quota_config(&self, config: QuotaConfig) -> Result<(), StorageError> {
+        if self.fail_set_quota_config.load(Ordering::Relaxed) {
+            return Err(StorageError::service_error("injected failure"));
+        }
+
         self.quota_config_updates.fetch_add(1, Ordering::Relaxed);
         *self.quota_config.lock() = config;
         Ok(())
