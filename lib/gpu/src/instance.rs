@@ -15,7 +15,7 @@ static APPLICATION_NAME: &std::ffi::CStr = c"qdrant";
 /// It also manages all Vulkan API layers and API extensions.
 pub struct Instance {
     /// Vulkan API entry point. It should be kept alive while the instance is alive.
-    _entry: ash::Entry,
+    entry: ash::Entry,
 
     /// Native Vulkan instance handle.
     vk_instance: ash::Instance,
@@ -250,7 +250,7 @@ impl Instance {
         };
 
         Ok(Arc::new(Self {
-            _entry: entry,
+            entry,
             vk_instance,
             vk_physical_devices,
             allocation_callbacks,
@@ -279,6 +279,11 @@ impl Instance {
 
     pub fn vk_instance(&self) -> &ash::Instance {
         &self.vk_instance
+    }
+
+    /// Vulkan API entry point, to load instance-level functions of extensions.
+    pub(crate) fn entry(&self) -> &ash::Entry {
+        &self.entry
     }
 
     pub fn physical_devices(&self) -> &[PhysicalDevice] {

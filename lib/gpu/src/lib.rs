@@ -21,8 +21,17 @@ pub use buffer::*;
 pub mod device;
 pub use device::*;
 
+pub mod cooperative_matrix;
+pub use cooperative_matrix::{CooperativeMatrixProperties, MatrixComponentType};
+
+pub mod device_features;
+pub use device_features::IntegerDotProductProperties;
+
 pub mod instance;
 pub use instance::*;
+
+pub mod memory_budget;
+pub use memory_budget::MemoryBudget;
 
 pub mod pipeline;
 pub use pipeline::*;
@@ -31,8 +40,20 @@ pub mod shader;
 use ash::vk;
 pub use shader::*;
 
+pub mod transfer_queue;
+pub use transfer_queue::TransferQueueKind;
+
 #[cfg(test)]
 mod basic_test;
+
+#[cfg(test)]
+mod device_address_test;
+
+#[cfg(test)]
+mod device_features_test;
+
+#[cfg(test)]
+mod transfer_queue_test;
 
 #[cfg(any(test, feature = "testing"))]
 pub static GPU_TEST_INSTANCE: std::sync::LazyLock<std::sync::Arc<Instance>> =

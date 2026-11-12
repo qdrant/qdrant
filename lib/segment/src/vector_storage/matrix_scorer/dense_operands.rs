@@ -12,13 +12,37 @@ use crate::vector_storage::DenseVectorStorageRead;
 /// `score_internal`. Unlike the quantized storages', these are matrix forms of the metrics, not
 /// their own formulas: Euclid expands the squared distance around the inner product.
 #[derive(Clone, Copy, Debug)]
-pub(super) enum DenseCombine {
+pub enum DenseCombine {
     /// `dot`
     Plain,
-    /// `2·dot − aux_a − aux_b`, with the squared norm as `aux`.
+    /// `((2·dot) − aux_a[0]) − aux_b[0]`, with the squared norm as `aux[0]`: one f32 operation
+    /// at a time, in this order, each rounded to f32, without fused multiply-adds.
     Euclid,
     /// `dot · aux_a · aux_b`, with the inverse norm as `aux`.
     Cos,
+}
+
+impl DenseCombine {
+    /// The score of a pair, through the formula [`CombineDispatch::dispatch`] picks.
+    pub fn score(self, dot: f32, aux_a: &Aux, aux_b: &Aux) -> f32 {
+        self.dispatch(ScorePair { dot, aux_a, aux_b })
+    }
+}
+
+/// [`DenseCombine::score`]
+struct ScorePair<'a> {
+    dot: f32,
+    aux_a: &'a Aux,
+    aux_b: &'a Aux,
+}
+
+impl CombineFn for ScorePair<'_> {
+    type Output = f32;
+
+    #[inline(always)]
+    fn call<C: Combine>(self, combine: C) -> f32 {
+        combine.score(self.dot, self.aux_a, self.aux_b)
+    }
 }
 
 impl CombineDispatch for DenseCombine {
@@ -158,8 +182,8 @@ where
             let decoded = &mut out[i * depth..(i + 1) * depth];
             T::decode(vector, decoded);
             let value = match self.combine {
-                DenseCombine::Euclid => squared_norm(decoded),
-                DenseCombine::Cos => match squared_norm(decoded) {
+                DenseCombine::Euclid => squared_norm(decoded.iter().copied()),
+                DenseCombine::Cos => match squared_norm(decoded.iter().copied()) {
                     // A zero vector scores 0, as in `cosine_similarity_bytes`
                     0.0 => 0.0,
                     norm => 1.0 / norm.sqrt(),
@@ -171,10 +195,11 @@ where
     }
 }
 
-/// Summed in f64, so it stays exact for byte vectors of any dimension.
-fn squared_norm(vector: &[f32]) -> f32 {
+/// Summed in f64, in the order of `vector`, so it stays exact for byte vectors of any dimension.
+/// Takes the elements by value, so callers can read them from bytes without copying them first.
+pub(super) fn squared_norm(vector: impl IntoIterator<Item = f32>) -> f32 {
     vector
-        .iter()
-        .map(|&x| f64::from(x) * f64::from(x))
+        .into_iter()
+        .map(|x| f64::from(x) * f64::from(x))
         .sum::<f64>() as f32
 }

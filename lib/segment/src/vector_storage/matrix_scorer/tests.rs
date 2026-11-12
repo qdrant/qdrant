@@ -35,13 +35,13 @@ use crate::vector_storage::quantized::quantized_vectors::{
 use crate::vector_storage::turbo::appendable_turbo_vector_storage::open_appendable_turbo_vector_storage;
 use crate::vector_storage::{VectorStorage as _, VectorStorageRead as _};
 
-const POINTS: usize = 300;
+pub(super) const POINTS: usize = 300;
 /// Not a multiple of 16, so padded codes are covered.
 const DIM: usize = 100;
 const K: usize = 5;
 
 #[derive(Clone, Copy, Debug)]
-enum Element {
+pub(super) enum Element {
     F32,
     F16,
     U8,
@@ -61,16 +61,20 @@ enum Tolerance {
     Input(f32),
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     vectors: Vec<Vec<VectorElementType>>,
     distance: Distance,
-    storage: VectorStorageEnum,
-    quantized: Option<QuantizedVectors>,
+    pub storage: VectorStorageEnum,
+    pub quantized: Option<QuantizedVectors>,
     _dir: TempDir,
 }
 
 impl Fixture {
-    fn new(element: Element, distance: Distance, quantization: Option<QuantizationConfig>) -> Self {
+    pub fn new(
+        element: Element,
+        distance: Distance,
+        quantization: Option<QuantizationConfig>,
+    ) -> Self {
         let mut rng = StdRng::seed_from_u64(42);
         let dir = tempfile::tempdir().unwrap();
         let mut storage = match element {
@@ -236,7 +240,7 @@ impl Fixture {
 }
 
 #[expect(deprecated, reason = "always_ram")]
-fn scalar() -> QuantizationConfig {
+pub(super) fn scalar() -> QuantizationConfig {
     ScalarQuantizationConfig {
         r#type: Default::default(),
         quantile: None,
@@ -247,7 +251,7 @@ fn scalar() -> QuantizationConfig {
 }
 
 #[expect(deprecated, reason = "always_ram")]
-fn binary(encoding: BinaryQuantizationEncoding) -> QuantizationConfig {
+pub(super) fn binary(encoding: BinaryQuantizationEncoding) -> QuantizationConfig {
     QuantizationConfig::Binary(BinaryQuantization {
         binary: BinaryQuantizationConfig {
             always_ram: None,
@@ -302,7 +306,7 @@ fn binary_quantization(
 }
 
 #[expect(deprecated, reason = "always_ram")]
-fn turbo(bits: TurboQuantBitSize) -> QuantizationConfig {
+pub(super) fn turbo(bits: TurboQuantBitSize) -> QuantizationConfig {
     QuantizationConfig::Turbo(TurboQuantization {
         turbo: TurboQuantQuantizationConfig {
             always_ram: None,
