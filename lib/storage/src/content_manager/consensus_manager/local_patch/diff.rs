@@ -1,3 +1,5 @@
+mod shard_layout;
+
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::hash::{BuildHasher, Hash};
@@ -250,6 +252,10 @@ impl CollectionStateDiff {
             payload_index_schema,
         } = self;
 
+        // Pre-existing inconsistencies must not block unrelated changes,
+        // so only reject inconsistencies introduced by the diff
+        let shard_layout_violations = shard_layout::violations(state);
+
         let State {
             config: state_config,
             shards: state_shards,
@@ -258,10 +264,6 @@ impl CollectionStateDiff {
             shards_key_mapping: state_shards_key_mapping,
             payload_index_schema: state_payload_index_schema,
         } = state;
-
-        // Only check the mapping if the diff can change it, so pre-existing inconsistencies
-        // don't block unrelated changes
-        let check_shard_key_mapping = shards.is_some() || shards_key_mapping.is_some();
 
         if let Some(config) = config {
             if config.uuid != state_config.uuid {
@@ -359,20 +361,6 @@ impl CollectionStateDiff {
             )?;
         }
 
-        if check_shard_key_mapping {
-            let missing_shard = state_shards_key_mapping
-                .shard_ids()
-                .into_iter()
-                .find(|shard_id| !state_shards.contains_key(shard_id));
-
-            if let Some(shard_id) = missing_shard {
-                return Err(StorageError::bad_request(format!(
-                    "can't update {path}: shard key mapping references shard {shard_id}, \
-                     which doesn't exist",
-                )));
-            }
-        }
-
         if let Some(payload_index_schema) = payload_index_schema {
             patch_map(
                 &mut state_payload_index_schema.schema,
@@ -380,6 +368,16 @@ impl CollectionStateDiff {
                 &format!("{path}.payload_index_schema"),
                 report,
             )?;
+        }
+
+        let new_violation = shard_layout::violations(state)
+            .into_iter()
+            .find(|violation| !shard_layout_violations.contains(violation));
+
+        if let Some(violation) = new_violation {
+            return Err(StorageError::bad_request(format!(
+                "can't update {path}: {violation}",
+            )));
         }
 
         Ok(())

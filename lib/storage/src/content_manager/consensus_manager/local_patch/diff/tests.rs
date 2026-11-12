@@ -1,11 +1,13 @@
 //! Apply `ConsensusStateDiff` to in-memory consensus state, without storage
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use collection::collection_state::ShardInfo;
+use collection::config::ShardingMethod;
 use collection::operations::types::PeerMetadata;
 use collection::shards::replica_set::replica_set_state::ReplicaState;
 use collection::shards::shard::PeerId;
+use segment::types::ShardKey;
 use serde_json::{Value, json};
 
 use super::*;
@@ -383,19 +385,98 @@ fn new_shard_without_replicas_is_rejected() {
 
 #[test]
 fn shard_key_mapping_to_missing_shard_is_rejected() {
-    let missing_shard = json!({ "shards_key_mapping": [{ "key": "a", "shard_ids": [1] }] });
-    let removed_shard = json!({
-        "shards": { "0": null },
-        "shards_key_mapping": [{ "key": "a", "shard_ids": [0] }],
+    let missing_shard = json!({
+        "shards_key_mapping": [{ "key": "a", "shard_ids": [0] }, { "key": "b", "shard_ids": [1] }],
     });
+    let removed_shard = json!({ "shards": { "0": null } });
 
     for diff in [missing_shard, removed_shard] {
         let error = rejected(
-            &mut state(),
+            &mut custom_sharding_state(),
             json!({ "collections": { COLLECTION: { "update": diff } } }),
         );
-        assert!(error.contains("shard key mapping"), "{error}");
+        assert!(error.contains("doesn't exist"), "{error}");
     }
+}
+
+#[test]
+fn shard_with_many_shard_keys_is_rejected() {
+    let error = rejected(
+        &mut custom_sharding_state(),
+        json!({
+            "collections": {
+                COLLECTION: {
+                    "update": {
+                        "shards_key_mapping": [{ "key": "a", "shard_ids": [0] }, { "key": "b", "shard_ids": [0] }],
+                    },
+                },
+            },
+        }),
+    );
+
+    assert!(error.contains("more than one shard key"), "{error}");
+}
+
+#[test]
+fn shard_without_shard_key_is_rejected() {
+    let error = rejected(
+        &mut custom_sharding_state(),
+        json!({
+            "collections": {
+                COLLECTION: { "update": { "shards": { "1": { "replicas": { PEER_ID.to_string(): "Active" } } } } },
+            },
+        }),
+    );
+
+    assert!(error.contains("has no shard key"), "{error}");
+}
+
+#[test]
+fn shard_key_with_auto_sharding_is_rejected() {
+    let error = rejected(
+        &mut state(),
+        json!({
+            "collections": {
+                COLLECTION: { "update": { "shards_key_mapping": [{ "key": "a", "shard_ids": [0] }] } },
+            },
+        }),
+    );
+
+    assert!(error.contains("auto sharding"), "{error}");
+}
+
+#[test]
+fn pre_existing_shard_layout_violations_dont_block_changes() {
+    let mut state = custom_sharding_state();
+
+    // Shard without shard key, and shard key mapping referencing a missing shard
+    let collection = state
+        .collections_data
+        .collections
+        .get_mut(COLLECTION)
+        .unwrap();
+    let replicas = HashMap::from([(PEER_ID, ReplicaState::Active)]);
+    collection.shards.insert(1, ShardInfo { replicas });
+    collection
+        .shards_key_mapping
+        .insert(ShardKey::from("b".to_string()), HashSet::from([2]));
+
+    apply(
+        &mut state,
+        json!({
+            "collections": {
+                COLLECTION: {
+                    "update": {
+                        "shards": {
+                            "0": { "replicas": { PEER_ID.to_string(): "Dead" } },
+                            "1": { "replicas": { PEER_ID.to_string(): "Dead" } },
+                        },
+                    },
+                },
+            },
+        }),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -445,6 +526,23 @@ fn state() -> SnapshotData {
         cluster_metadata: HashMap::from([("owner".to_string(), json!("qdrant"))]),
         quota_config: Some(QuotaConfig::default()),
     }
+}
+
+/// Same as [`state`], but the collection uses custom sharding, with shard 0 under shard key `a`
+fn custom_sharding_state() -> SnapshotData {
+    let mut state = state();
+
+    let collection = state
+        .collections_data
+        .collections
+        .get_mut(COLLECTION)
+        .unwrap();
+    collection.config.params.sharding_method = Some(ShardingMethod::Custom);
+    collection
+        .shards_key_mapping
+        .insert(ShardKey::from("a".to_string()), HashSet::from([0]));
+
+    state
 }
 
 fn apply(state: &mut SnapshotData, diff: Value) -> StorageResult<PatchReport> {
