@@ -20,8 +20,8 @@ where
     P: PayloadIndexRead,
     S: UniversalRead,
 {
-    /// Filter checks [`Self::search`] makes for a filter estimated at `cardinality` points,
-    /// following the same strategy choice.
+    /// How [`Self::search`] would use a filter that matches about `cardinality` points. Makes
+    /// the same choice of strategy as [`Self::search`].
     pub(crate) fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
@@ -30,13 +30,13 @@ where
         params: Option<&SearchParams>,
     ) -> FilterChecks {
         if top == 0 || query_vectors.is_empty() {
-            return FilterChecks::NONE;
+            return FilterChecks::Lazy { expected_checks: 0 };
         }
 
         let is_hnsw_disabled = self.config.m == 0 && self.config.payload_m.unwrap_or(0) == 0;
         let exact = params.is_some_and(|params| params.exact);
         if exact || is_hnsw_disabled {
-            return FilterChecks::ALL_CANDIDATES;
+            return FilterChecks::Full;
         }
 
         let CardinalityEstimation {
@@ -58,7 +58,7 @@ where
 
         let threshold = self.config.full_scan_threshold;
         if cardinality.max < threshold {
-            return FilterChecks::ALL_CANDIDATES;
+            return FilterChecks::Full;
         }
 
         // A graph search checks the neighbours of the points it expands: about `ef` expansions
@@ -73,6 +73,8 @@ where
             // Sampling picks the strategy first, one check per sample
             checks = checks.saturating_add(MAX_ESTIMATED_POINTS);
         }
-        FilterChecks::lazy(checks)
+        FilterChecks::Lazy {
+            expected_checks: checks,
+        }
     }
 }

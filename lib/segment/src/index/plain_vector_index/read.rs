@@ -46,8 +46,8 @@ impl VectorIndexRead for PlainVectorIndex {
         _top: usize,
         _params: Option<&SearchParams>,
     ) -> OperationResult<FilterChecks> {
-        // Reads every point matching the filter, once for all query vectors
-        Ok(FilterChecks::ALL_CANDIDATES)
+        // Evaluates the filter on every candidate, once for all query vectors
+        Ok(FilterChecks::Full)
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {

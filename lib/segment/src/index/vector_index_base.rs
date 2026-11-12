@@ -38,9 +38,9 @@ pub trait VectorIndexRead {
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
-    /// Filter checks a [`Self::search`] of `query_vectors` would make on its own, for a filter
-    /// the payload index estimates at `cardinality` points. Follows the same choice between a
-    /// plain search, which checks every candidate, and a search that checks points lazily.
+    /// How [`Self::search`] of `query_vectors` would use a filter that matches about
+    /// `cardinality` points: evaluate it on every candidate, or check points lazily as it
+    /// visits them. Makes the same choice of strategy as [`Self::search`].
     ///
     /// No default on purpose: a new index must state how it evaluates filters.
     fn filter_checks(

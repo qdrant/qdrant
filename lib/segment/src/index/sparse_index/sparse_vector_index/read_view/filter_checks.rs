@@ -17,16 +17,29 @@ where
     P: PayloadIndexRead,
     TInvertedIndex: InvertedIndex,
 {
-    /// Filter checks [`Self::search`] makes for a filter estimated at `cardinality` points,
-    /// following the same strategy choice.
+    /// How [`Self::search`] would use a filter that matches about `cardinality` points. Makes
+    /// the same choice of strategy as [`Self::search`].
     pub fn filter_checks(
         &self,
         query_vectors: &[QueryVector],
         cardinality: &CardinalityEstimation,
         top: usize,
     ) -> FilterChecks {
-        if top == 0 {
-            return FilterChecks::NONE;
+        if top == 0 || query_vectors.is_empty() {
+            return FilterChecks::Lazy { expected_checks: 0 };
+        }
+
+        // Queries other than nearest are scored against every point matching the filter.
+        // A search call holds a single search type, so they don't mix with nearest queries
+        for query_vector in query_vectors {
+            match query_vector {
+                QueryVector::Nearest(_) => {}
+                QueryVector::RecommendBestScore(_)
+                | QueryVector::RecommendSumScores(_)
+                | QueryVector::Discover(_)
+                | QueryVector::Context(_)
+                | QueryVector::FeedbackNaive(_) => return FilterChecks::Full,
+            }
         }
 
         let available_vectors = self.vector_storage.available_vector_count();
@@ -51,29 +64,19 @@ where
             .full_scan_threshold
             .unwrap_or(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD);
 
-        query_vectors
-            .iter()
-            .map(|query_vector| match query_vector {
-                QueryVector::Nearest(_) if cardinality.max < threshold => {
-                    FilterChecks::ALL_CANDIDATES
-                }
-                // The inverted index checks a point once its score beats the current top:
-                // until `top` matches are found, about `top / selectivity` points
-                QueryVector::Nearest(_) => {
-                    let checks = top
-                        .saturating_mul(available_vectors)
-                        .checked_div(cardinality.exp)
-                        .unwrap_or(available_vectors)
-                        .min(available_vectors);
-                    FilterChecks::lazy(checks)
-                }
-                // Scored against every point matching the filter
-                QueryVector::RecommendBestScore(_)
-                | QueryVector::RecommendSumScores(_)
-                | QueryVector::Discover(_)
-                | QueryVector::Context(_)
-                | QueryVector::FeedbackNaive(_) => FilterChecks::ALL_CANDIDATES,
-            })
-            .fold(FilterChecks::NONE, |sum, checks| sum + checks)
+        if cardinality.max < threshold {
+            return FilterChecks::Full;
+        }
+
+        // The inverted index checks a point once its score beats the current top: until `top`
+        // matches are found, about `top / selectivity` points per query
+        let per_query = top
+            .saturating_mul(available_vectors)
+            .checked_div(cardinality.exp)
+            .unwrap_or(available_vectors)
+            .min(available_vectors);
+        FilterChecks::Lazy {
+            expected_checks: per_query.saturating_mul(query_vectors.len()),
+        }
     }
 }

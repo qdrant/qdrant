@@ -267,11 +267,12 @@ fn test_hnsw_with_resolved_filter() {
         let checks = hnsw_index
             .filter_checks(&queries, &cardinality, 10, None)
             .unwrap();
-        if graph {
-            assert!(!checks.all_candidates, "{checks:?}");
-            assert!(checks.lazy > 0, "{checks:?}");
-        } else {
-            assert_eq!(checks, FilterChecks::ALL_CANDIDATES);
+        match checks {
+            FilterChecks::Lazy { expected_checks } => {
+                assert!(graph, "{checks:?}");
+                assert!(expected_checks > 0, "{checks:?}");
+            }
+            FilterChecks::Full => assert!(!graph, "{checks:?}"),
         }
 
         // Both set representations
