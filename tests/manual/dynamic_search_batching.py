@@ -94,6 +94,15 @@ def start(binary, maximum, label, debug=False):
     raise RuntimeError('server readiness timeout')
 
 
+def validate_cpu_affinity(server_pid):
+    """Reject client/server contention using actual process affinities before generating load."""
+    server_cpus = os.sched_getaffinity(server_pid)
+    client_cpus = os.sched_getaffinity(0)
+    overlap = server_cpus & client_cpus
+    if overlap:
+        raise ValueError(f'client and server CPU masks overlap on {sorted(overlap)}; pin the client to separate CPUs')
+
+
 def stop(server):
     """Gracefully stop this runner's process without touching other Qdrant instances."""
     process, log = server
@@ -333,9 +342,12 @@ def main():
     a = p.parse_args()
     if not 0 <= a.max <= 64 or a.seconds <= 0 or a.count < 128:
         p.error('require 0 <= max <= 64, seconds > 0 and count >= 128')
+    if a.stage == 'check' and a.max < 2:
+        p.error('check requires --max >= 2 to exercise coalescing')
     a.binary = str(Path(a.binary).resolve())
     server = start(a.binary, a.max, a.label, a.debug)
     try:
+        validate_cpu_affinity(server[0].pid)
         if a.stage == 'seed':
             seed(a.count)
         elif a.stage == 'reference':

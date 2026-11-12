@@ -39,7 +39,7 @@ pub(super) struct SearchBatcher {
     dispatching: std::sync::atomic::AtomicUsize,
 }
 
-/// Only plain dense requests enter the queue. Traced requests retain their original scopes.
+/// Only measured plain dense requests enter the queue; other scopes keep the ordinary path.
 pub(super) fn eligible(request: &CoreSearchRequestBatch) -> bool {
     request.searches.len() == 1
         && request.searches[0].limit > 0
@@ -48,9 +48,9 @@ pub(super) fn eligible(request: &CoreSearchRequestBatch) -> bool {
             .as_ref()
             .is_none_or(|p| !p.exact && !p.quantization.is_some_and(|q| q.ignore))
         && matches!(&request.searches[0].query, QueryEnum::Nearest(q) if matches!(&q.query, VectorInternal::Dense(_)))
-        && !ambient::current()
-            .context()
-            .is_some_and(AmbientContext::is_traced)
+        && ambient::current()
+            .measured()
+            .is_some_and(|ctx| !ctx.is_traced())
 }
 
 /// Check all execution-affecting fields except the dense query values themselves.
@@ -85,7 +85,8 @@ impl LocalShard {
         runtime: AdaptiveSearchHandle,
         timeout: Duration,
     ) -> Option<Response> {
-        let deadline = Instant::now() + timeout;
+        // Unrepresentable deadlines retain the ordinary path's timeout handling.
+        let deadline = Instant::now().checked_add(timeout)?;
         let Ok(config) = tokio::time::timeout_at(deadline, self.collection_config.read()).await
         else {
             return Some(Err(CollectionError::timeout(
@@ -440,7 +441,7 @@ mod tests {
     /// Explicit exact/ignored-quantization and externally batched calls bypass coalescing.
     #[test]
     fn eligibility_preserves_exact_and_batch_requests() {
-        let _scope = ambient::test_guard();
+        let _scope = Handoff::Measured(AmbientContext::root("test", None, None)).into_scope();
         let mut batch = CoreSearchRequestBatch {
             searches: vec![request(vec![1.0, 2.0])],
         };
@@ -477,5 +478,69 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Err(CollectionError::ServiceError { .. })));
+    }
+    /// Unmeasured work cannot enter a batch that would charge a measured collection drain.
+    #[test]
+    fn unmeasured_requests_bypass_coalescing() {
+        let batch = CoreSearchRequestBatch {
+            searches: vec![request(vec![1.0, 2.0])],
+        };
+        let ctx = AmbientContext::root(
+            "measured",
+            Some(Arc::new(common::ambient::hw::HwSharedDrain::default())),
+            None,
+        );
+        {
+            let _scope = Handoff::Measured(ctx.clone()).into_scope();
+            assert!(eligible(&batch));
+        }
+        for handoff in [Handoff::Unmeasured(None), Handoff::Unmeasured(Some(ctx))] {
+            let _scope = handoff.into_scope();
+            assert!(!eligible(&batch));
+        }
+    }
+
+    /// Extreme timeouts fall back before touching configuration or initializing the queue.
+    #[tokio::test]
+    async fn overflowing_deadline_falls_back_without_panicking() {
+        use common::budget::ResourceBudget;
+        use common::save_on_disk::SaveOnDisk;
+
+        use crate::shards::shard_trait::ShardOperation;
+        use crate::tests::fixtures::create_collection_config_with_dim;
+
+        let _scope = ambient::async_test_guard();
+        let directory = tempfile::tempdir().unwrap();
+        let config = create_collection_config_with_dim(2);
+        let runtime = AdaptiveSearchHandle::current_for_tests();
+        let schema = Arc::new(
+            SaveOnDisk::load_or_init_default(directory.path().join("payload-schema.json")).unwrap(),
+        );
+        let shard = LocalShard::build(
+            0,
+            "deadline-test".to_owned(),
+            directory.path(),
+            Arc::new(tokio::sync::RwLock::new(config.clone())),
+            Arc::new(Default::default()),
+            schema,
+            tokio::runtime::Handle::current(),
+            runtime.clone(),
+            ResourceBudget::default(),
+            config.optimizer_config.clone(),
+        )
+        .await
+        .unwrap();
+        let result = shard
+            .coalesced_search(
+                Arc::new(CoreSearchRequestBatch {
+                    searches: vec![request(vec![1.0, 2.0])],
+                }),
+                runtime,
+                Duration::MAX,
+            )
+            .await;
+        assert!(result.is_none());
+        assert!(shard.search_batcher.get().is_none());
+        shard.stop_gracefully().await;
     }
 }
