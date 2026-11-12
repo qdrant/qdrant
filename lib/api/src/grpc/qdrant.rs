@@ -5406,11 +5406,47 @@ pub struct IndexingTaskSubmission {
 #[derive(serde::Serialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SubmitIndexingTaskResponse {
-    /// Whether the task was accepted. A refused task is retried or built locally by core.
+    /// Whether the task was accepted. A refused task is retried or built locally by core,
+    /// depending on `refusal`.
     #[prost(bool, tag = "1")]
     pub accepted: bool,
     #[prost(string, tag = "2")]
     pub message: ::prost::alloc::string::String,
+    /// Why the task was refused. Ignored when `accepted`.
+    #[prost(enumeration = "IndexingTaskRefusal", tag = "3")]
+    pub refusal: i32,
+}
+#[allow(clippy::all)]
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IndexingTaskRefusal {
+    /// A later submission may be accepted: queue full, shutting down. Core retries per its
+    /// `on_failure` policy. Also what indexers that do not set `refusal` mean.
+    IndexingRefusalTransient = 0,
+    /// This task will never be accepted by this indexer: too large, unsupported graph format.
+    /// Core builds it locally right away, without retrying.
+    IndexingRefusalPermanent = 1,
+}
+impl IndexingTaskRefusal {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::IndexingRefusalTransient => "IndexingRefusalTransient",
+            Self::IndexingRefusalPermanent => "IndexingRefusalPermanent",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "IndexingRefusalTransient" => Some(Self::IndexingRefusalTransient),
+            "IndexingRefusalPermanent" => Some(Self::IndexingRefusalPermanent),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod indexing_service_client {

@@ -8,6 +8,9 @@ pub struct RemoteIndexingMetrics {
     pub tasks_registered: AtomicU64,
     /// Submissions the entry point refused or could not be reached for.
     pub submit_failures: AtomicU64,
+    /// Submissions the entry point refused for good (too large, ...): built locally without
+    /// retrying. Also counted in `submit_failures`.
+    pub submit_refused_permanently: AtomicU64,
     /// Graphs built remotely and used.
     pub tasks_succeeded: AtomicU64,
     /// Failures reported by the indexer.
@@ -43,6 +46,7 @@ pub struct RemoteIndexingMetrics {
 pub static REMOTE_INDEXING_METRICS: RemoteIndexingMetrics = RemoteIndexingMetrics {
     tasks_registered: AtomicU64::new(0),
     submit_failures: AtomicU64::new(0),
+    submit_refused_permanently: AtomicU64::new(0),
     tasks_succeeded: AtomicU64::new(0),
     tasks_failed: AtomicU64::new(0),
     heartbeats_missed: AtomicU64::new(0),
@@ -66,6 +70,7 @@ impl RemoteIndexingMetrics {
         let Self {
             tasks_registered,
             submit_failures,
+            submit_refused_permanently,
             tasks_succeeded,
             tasks_failed,
             heartbeats_missed,
@@ -93,6 +98,11 @@ impl RemoteIndexingMetrics {
                 "submit_failures",
                 "remote indexing task submissions that failed",
                 get(submit_failures),
+            ),
+            (
+                "submit_refused_permanently",
+                "remote indexing task submissions refused for good, built locally",
+                get(submit_refused_permanently),
             ),
             (
                 "tasks_succeeded",

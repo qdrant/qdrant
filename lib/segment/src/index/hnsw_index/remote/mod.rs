@@ -15,6 +15,7 @@ pub mod layout;
 pub mod loopback;
 pub mod metrics;
 pub mod registry;
+pub mod submit_error;
 pub mod wire;
 
 use std::cell::RefCell;
@@ -25,6 +26,7 @@ use parking_lot::RwLock;
 use uuid::Uuid;
 
 pub use self::registry::{TaskScope, TaskToken};
+pub use self::submit_error::SubmitError;
 pub use crate::index::hnsw_index::entry_points::EntryPoint;
 
 /// What to do when the remote build fails: the indexer is unreachable, reports a failure, the
@@ -33,7 +35,8 @@ pub use crate::index::hnsw_index::entry_points::EntryPoint;
 pub enum OnFailure {
     /// Build locally right away.
     Local,
-    /// Submit again with a new token, up to `max_retries` times, then build locally.
+    /// Submit again with a new token, up to `max_retries` times, then build locally. A
+    /// [`SubmitError::Permanent`] refusal is built locally right away.
     Retry,
 }
 
@@ -75,7 +78,7 @@ pub trait RemoteIndexer: Send + Sync {
     /// Hand `task` to the entry point. Called from the optimizer thread, which may block, but
     /// never from an async context: implementations must not use the caller's runtime.
     /// Must return within bounded time.
-    fn submit(&self, task: &TaskSubmission) -> Result<(), String>;
+    fn submit(&self, task: &TaskSubmission) -> Result<(), SubmitError>;
 }
 
 static REMOTE_INDEXER: RwLock<Option<Arc<dyn RemoteIndexer>>> = RwLock::new(None);

@@ -392,6 +392,22 @@ fn retries_exhausted_fall_back_to_local() {
 }
 
 #[test]
+fn permanent_refusal_builds_locally_without_retrying() {
+    let indexer = check_recovers(
+        OnFailure::Retry,
+        vec![LoopbackBehavior::RefusePermanently, LoopbackBehavior::Build],
+        Duration::from_secs(10),
+    );
+    // Not resubmitted, although `max_retries` allows it and the next one would build
+    assert_eq!(indexer.submissions.load(Ordering::SeqCst), 1);
+    assert!(
+        indexer
+            .wait_outcomes(1, Duration::from_millis(200))
+            .is_empty()
+    );
+}
+
+#[test]
 fn expired_lease_falls_back_to_local() {
     let indexer = check_recovers(
         OnFailure::Local,
